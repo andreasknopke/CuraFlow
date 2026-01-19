@@ -39,12 +39,34 @@ export const db = createPool({
 // Middleware
 app.use(helmet()); // Security headers
 app.use(compression()); // Gzip compression
+
+// CORS Configuration
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? [
+      process.env.FRONTEND_URL,
+      'https://curaflow-production.up.railway.app'
+    ].filter(Boolean)
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+console.log('CORS allowed origins:', allowedOrigins);
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? (process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : ['https://your-frontend-domain.railway.app'])
-    : ['http://localhost:5173', 'http://localhost:3000'],
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.some(allowed => origin === allowed || origin.endsWith('.railway.app'))) {
+      callback(null, true);
+    } else {
+      console.warn('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
