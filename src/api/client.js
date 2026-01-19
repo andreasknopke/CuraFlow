@@ -402,6 +402,21 @@ export const base44 = {
       }
     }
   },
+  // Auth-Kompatibilitätsschicht für base44.auth.*
+  auth: {
+    updateMe: async (data) => {
+      return api.updateMe(data);
+    },
+    me: async () => {
+      return api.me();
+    },
+    login: async (email, password) => {
+      return api.login(email, password);
+    },
+    logout: () => {
+      return api.logout();
+    }
+  },
   analytics: {
     track: () => {
       // Analytics deaktiviert
