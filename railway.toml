@@ -1,10 +1,9 @@
 # Railway Deployment Configuration
 [build]
 builder = "NIXPACKS"
-buildCommand = "cd server && npm install"
 
 [deploy]
-startCommand = "cd server && npm start"
+startCommand = "npm start"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
