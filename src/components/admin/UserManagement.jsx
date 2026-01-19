@@ -20,18 +20,7 @@ export default function UserManagement() {
 
     const { data: users = [], isLoading } = useQuery({
         queryKey: ['users'],
-        queryFn: async () => {
-            const response = await fetch(`${window.location.origin}/api/functions/auth`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ action: 'listUsers' })
-            });
-            if (!response.ok) throw new Error('Fehler beim Laden');
-            return response.json();
-        },
+        queryFn: () => api.listUsers(),
     });
 
     const { data: doctors = [] } = useQuery({
@@ -40,21 +29,7 @@ export default function UserManagement() {
     });
 
     const updateUserMutation = useMutation({
-        mutationFn: async ({ id, data }) => {
-            const response = await fetch(`${window.location.origin}/api/functions/auth`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ action: 'updateUser', userId: id, data })
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Fehler');
-            }
-            return response.json();
-        },
+        mutationFn: async ({ id, data }) => api.updateUser(id, data),
         onSuccess: () => {
             queryClient.invalidateQueries(['users']);
         },
@@ -64,21 +39,7 @@ export default function UserManagement() {
     });
 
     const createUserMutation = useMutation({
-        mutationFn: async (userData) => {
-            const response = await fetch(`${window.location.origin}/api/functions/auth`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ action: 'register', ...userData })
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Fehler beim Erstellen');
-            }
-            return response.json();
-        },
+        mutationFn: async (userData) => api.register(userData),
         onSuccess: () => {
             queryClient.invalidateQueries(['users']);
             setShowCreateDialog(false);
@@ -91,21 +52,7 @@ export default function UserManagement() {
     });
 
     const deleteUserMutation = useMutation({
-        mutationFn: async (userId) => {
-            const response = await fetch(`${window.location.origin}/api/functions/auth`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ action: 'deleteUser', userId })
-            });
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.error || 'Fehler beim Löschen');
-            }
-            return response.json();
-        },
+        mutationFn: async (userId) => api.deleteUser(userId),
         onSuccess: () => {
             queryClient.invalidateQueries(['users']);
         },

@@ -99,6 +99,25 @@ class APIClient {
     }
   }
 
+  // ==================== Admin User Management ====================
+
+  async listUsers() {
+    return this.request('/api/auth/users');
+  }
+
+  async updateUser(userId, data) {
+    return this.request(`/api/auth/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ data }),
+    });
+  }
+
+  async deleteUser(userId) {
+    return this.request(`/api/auth/users/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // ==================== Database Operations ====================
 
   async dbAction(action, table, params = {}) {
