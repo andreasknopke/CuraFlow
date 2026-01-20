@@ -76,42 +76,28 @@ export default function WishListPage() {
 
   // Select first doctor by default or user's assigned doctor
   React.useEffect(() => {
-    console.log('🔍 WishList Doctor Selection Debug:', {
-        hasDoctors: doctors.length > 0,
-        user: user,
-        userDoctorId: user?.doctor_id,
-        userRole: user?.role,
-        currentSelectedDoctorId: selectedDoctorId,
-        doctors: doctors.map(d => ({ id: d.id, name: `${d.firstname} ${d.lastname}` }))
-    });
-    
     if (doctors.length > 0) {
         if (user && user.role !== 'admin') {
             // Non-admins can ONLY see their assigned doctor
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
                 if (selectedDoctorId !== user.doctor_id) {
-                    console.log('✅ Setting doctor to user.doctor_id:', user.doctor_id);
                     setSelectedDoctorId(user.doctor_id);
                 }
             } else {
                 // No doctor assigned to this user
-                console.log('⚠️ No doctor assigned to this user');
                 setSelectedDoctorId(null);
             }
         } else if (user) {
             // Admins: prefer user.doctor_id, otherwise keep current or use first
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
                 if (selectedDoctorId !== user.doctor_id) {
-                    console.log('✅ Admin: Setting doctor to user.doctor_id:', user.doctor_id);
                     setSelectedDoctorId(user.doctor_id);
                 }
             } else if (!selectedDoctorId) {
-                console.log('⚠️ Admin: No doctor_id, using first doctor:', doctors[0].id);
                 setSelectedDoctorId(doctors[0].id);
             }
         } else if (!selectedDoctorId) {
             // No user yet, set first doctor
-            console.log('⚠️ No user yet, using first doctor:', doctors[0].id);
             setSelectedDoctorId(doctors[0].id);
         }
     }

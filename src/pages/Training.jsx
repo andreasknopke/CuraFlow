@@ -38,13 +38,28 @@ export default function TrainingPage() {
   // Select doctor logic
   React.useEffect(() => {
     if (doctors.length > 0) {
-        // If user is not admin and has a doctor_id, force select that doctor
-        if (user && user.role !== 'admin' && user.doctor_id) {
-            if (selectedDoctorId !== user.doctor_id) {
-                setSelectedDoctorId(user.doctor_id);
+        if (user && user.role !== 'admin') {
+            // Non-admins can ONLY see their assigned doctor
+            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                if (selectedDoctorId !== user.doctor_id) {
+                    setSelectedDoctorId(user.doctor_id);
+                }
+            } else {
+                // No doctor assigned to this user
+                setSelectedDoctorId(null);
+            }
+        } else if (user) {
+            // Admins: prefer user.doctor_id, otherwise keep current or use default Assistenzarzt
+            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                if (selectedDoctorId !== user.doctor_id) {
+                    setSelectedDoctorId(user.doctor_id);
+                }
+            } else if (!selectedDoctorId) {
+                const assis = doctors.find(d => d.role === 'Assistenzarzt');
+                setSelectedDoctorId(assis ? assis.id : doctors[0].id);
             }
         } else if (!selectedDoctorId) {
-            // Default selection for admins or unassigned users
+            // No user yet, use default Assistenzarzt
             const assis = doctors.find(d => d.role === 'Assistenzarzt');
             setSelectedDoctorId(assis ? assis.id : doctors[0].id);
         }
