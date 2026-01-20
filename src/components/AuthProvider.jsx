@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 
 // Configuration: Set to true to use custom JWT auth, false for Base44 auth
@@ -21,6 +22,7 @@ const TOKEN_KEY = 'radioplan_jwt_token';
 
 // ============ CUSTOM JWT AUTH PROVIDER ============
 const JWTAuthProviderInner = ({ children }) => {
+    const queryClient = useQueryClient();
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [user, setUser] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -84,9 +86,11 @@ const JWTAuthProviderInner = ({ children }) => {
 
     const logout = () => {
         storeToken(null);
+        api.setToken(null);
         setToken(null);
         setUser(null);
         setIsAuthenticated(false);
+        queryClient.clear();
         window.location.href = '/AuthLogin';
     };
 
@@ -106,14 +110,13 @@ const JWTAuthProviderInner = ({ children }) => {
     const updateMe = async (data) => {
         const currentToken = token || getStoredToken();
         if (!currentToken) throw new Error('Nicht eingeloggt');
-
-        api.setToken(currentToken);
-        const result = await api.updateMe(data);
-
-        if (!response.ok) {
-            throw new Error(result.error || 'Update fehlgeschlagen');
+        if (!data || Object.keys(data).length === 0) {
+            console.warn('updateMe called with empty data');
+            return user;
         }
 
+        api.setToken(currentToken);
+        const result = await api.updateMe({ data });
         setUser(result);
         return result;
     };

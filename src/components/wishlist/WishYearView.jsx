@@ -13,9 +13,9 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
   useEffect(() => {
     const loadPreference = async () => {
       try {
-        const user = await base44.auth.me();
-        if (user?.show_occupied_wish_dates !== undefined) {
-          setShowOccupiedDates(user.show_occupied_wish_dates);
+        const user = await api.me();
+        if (user?.wish_show_occupied !== undefined) {
+          setShowOccupiedDates(user.wish_show_occupied);
         }
       } catch (e) {
         console.error("Could not load preference", e);
@@ -29,7 +29,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
     const newValue = !showOccupiedDates;
     setShowOccupiedDates(newValue);
     try {
-      await base44.auth.updateMe({ show_occupied_wish_dates: newValue });
+      await api.updateMe({ data: { wish_show_occupied: newValue } });
     } catch (e) {
       console.error("Could not save preference", e);
     }

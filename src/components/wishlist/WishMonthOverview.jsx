@@ -56,7 +56,7 @@ export default function WishMonthOverview({
         const newValue = !showOccupiedDates;
         setShowOccupiedDates(newValue);
         try {
-            await base44.auth.updateMe({ show_occupied_wish_dates: newValue });
+            await api.updateMe({ data: { wish_show_occupied: newValue } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
@@ -66,7 +66,7 @@ export default function WishMonthOverview({
     const handleShowAbsencesChange = async (checked) => {
         setShowAbsences(checked);
         try {
-            await base44.auth.updateMe({ wish_overview_show_absences: checked });
+            await api.updateMe({ data: { wish_show_absences: checked } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
@@ -75,7 +75,7 @@ export default function WishMonthOverview({
     // Save hidden doctors preference when changed
     const saveHiddenDoctors = async (newHiddenIds) => {
         try {
-            await base44.auth.updateMe({ wish_overview_hidden_doctors: newHiddenIds });
+            await api.updateMe({ data: { wish_hidden_doctors: newHiddenIds } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
