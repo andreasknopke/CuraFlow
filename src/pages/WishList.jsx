@@ -87,13 +87,18 @@ export default function WishListPage() {
                 // No doctor assigned to this user
                 setSelectedDoctorId(null);
             }
-        } else if (!selectedDoctorId) {
-            // Admins or initial load
-            if (user && user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                setSelectedDoctorId(user.doctor_id);
-            } else {
+        } else if (user) {
+            // Admins: prefer user.doctor_id, otherwise keep current or use first
+            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                if (selectedDoctorId !== user.doctor_id) {
+                    setSelectedDoctorId(user.doctor_id);
+                }
+            } else if (!selectedDoctorId) {
                 setSelectedDoctorId(doctors[0].id);
             }
+        } else if (!selectedDoctorId) {
+            // No user yet, set first doctor
+            setSelectedDoctorId(doctors[0].id);
         }
     }
   }, [doctors, selectedDoctorId, user]);
