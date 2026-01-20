@@ -88,13 +88,26 @@ app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
-const limiter = rateLimit({
+// Rate limiting - General API
+const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: 200, // limit each IP to 200 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-app.use('/api/', limiter);
+
+// Stricter rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20, // limit each IP to 20 login attempts per windowMs
+  message: 'Too many login attempts from this IP, please try again after 15 minutes.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
+});
+
+app.use('/api/', generalLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -106,6 +119,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth/login', authLimiter); // Apply stricter limit to login
 app.use('/api/auth', authRouter);
 app.use('/api/db', dbProxyRouter);
 app.use('/api/schedule', scheduleRouter);
