@@ -367,22 +367,27 @@ export default function TrainingPage() {
            
            <div className="w-px h-8 bg-slate-200 mx-2" />
 
-           <Select 
-            value={selectedDoctorId || ''} 
-            onValueChange={setSelectedDoctorId}
-            disabled={user && user.role !== 'admin' && user.doctor_id}
-           >
-            <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Arzt auswählen" />
-            </SelectTrigger>
-            <SelectContent>
-                {doctors.map(d => (
-                    <SelectItem key={d.id} value={d.id}>
-                        {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
-                    </SelectItem>
-                ))}
-            </SelectContent>
-           </Select>
+           {user?.role === 'admin' ? (
+               <Select 
+                value={selectedDoctorId || ''} 
+                onValueChange={setSelectedDoctorId}
+               >
+                <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Arzt auswählen" />
+                </SelectTrigger>
+                <SelectContent>
+                    {doctors.map(d => (
+                        <SelectItem key={d.id} value={d.id}>
+                            {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
+                        </SelectItem>
+                    ))}
+                </SelectContent>
+               </Select>
+           ) : (
+               <div className="px-3 font-medium text-slate-700">
+                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Arzt nicht gefunden' : 'Kein Arzt zugeordnet')}
+               </div>
+           )}
         </div>
       </div>
       

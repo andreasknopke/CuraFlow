@@ -178,15 +178,20 @@ export default function MyDashboardPage() {
 
     // Determine initial doctor selection
     useEffect(() => {
-        if (doctors.length > 0 && user) {
-            // If user has doctor_id and it's different from current selection, update it
-            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
+        if (doctors.length > 0 && user && !selectedDoctorId) {
+            // Admins: prefer user.doctor_id, otherwise first doctor
+            // Non-Admins: only their assigned doctor
+            if (user.role === 'admin') {
+                if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                    setSelectedDoctorId(user.doctor_id);
+                } else {
+                    setSelectedDoctorId(doctors[0].id);
+                }
+            } else {
+                if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
                     setSelectedDoctorId(user.doctor_id);
                 }
-            } else if (!selectedDoctorId) {
-                // No user.doctor_id, select first doctor if nothing selected
-                setSelectedDoctorId(doctors[0].id);
+                // If no doctor_id for non-admin, selectedDoctorId stays null
             }
         }
     }, [doctors, user, selectedDoctorId]);

@@ -76,27 +76,21 @@ export default function WishListPage() {
 
   // Select first doctor by default or user's assigned doctor
   React.useEffect(() => {
-    if (doctors.length > 0) {
+    if (doctors.length > 0 && !selectedDoctorId) {
         if (user && user.role !== 'admin') {
             // Non-admins can ONLY see their assigned doctor
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else {
-                // No doctor assigned to this user
-                setSelectedDoctorId(null);
+                setSelectedDoctorId(user.doctor_id);
             }
+            // No doctor assigned to this non-admin user: selectedDoctorId stays null
         } else if (user) {
-            // Admins: prefer user.doctor_id, otherwise keep current or use first
+            // Admins: prefer user.doctor_id, otherwise use first
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else if (!selectedDoctorId) {
+                setSelectedDoctorId(user.doctor_id);
+            } else {
                 setSelectedDoctorId(doctors[0].id);
             }
-        } else if (!selectedDoctorId) {
+        } else {
             // No user yet, set first doctor
             setSelectedDoctorId(doctors[0].id);
         }
