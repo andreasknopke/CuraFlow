@@ -164,7 +164,7 @@ router.post('/', async (req, res, next) => {
       } catch (err) {
         console.error("List Execute Error:", err.message, "SQL:", sql);
         if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
-          console.warn(`Table ${entity} doesn't exist, returning empty array`);
+          console.warn(`Table ${tableName} doesn't exist, returning empty array`);
           return res.json([]);
         }
         throw err;
@@ -175,7 +175,7 @@ router.post('/', async (req, res, next) => {
     if (action === 'get') {
       if (!id) return res.json(null);
       
-      const [rows] = await db.execute(`SELECT * FROM \`${entity}\` WHERE id = ?`, [id]);
+      const [rows] = await db.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
       return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
     }
     
@@ -186,7 +186,7 @@ router.post('/', async (req, res, next) => {
       data.updated_date = new Date();
       data.created_by = req.user?.email || 'system';
       
-      const validColumns = await getValidColumns(entity);
+      const validColumns = await getValidColumns(tableName);
       let keys = Object.keys(data);
       
       if (validColumns) {
@@ -195,7 +195,7 @@ router.post('/', async (req, res, next) => {
       
       const values = keys.map(k => toSqlValue(data[k]));
       const placeholders = keys.map(() => '?').join(',');
-      const sql = `INSERT INTO \`${entity}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
+      const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
       
       const safeValues = values.map(v => v === undefined ? null : v);
       await db.execute(sql, safeValues);
@@ -209,7 +209,7 @@ router.post('/', async (req, res, next) => {
       
       data.updated_date = new Date();
       
-      const validColumns = await getValidColumns(entity);
+      const validColumns = await getValidColumns(tableName);
       let keys = Object.keys(data).filter(k => k !== 'id');
       
       if (validColumns) {
@@ -222,11 +222,11 @@ router.post('/', async (req, res, next) => {
       const values = keys.map(k => toSqlValue(data[k]));
       values.push(id);
       
-      const sql = `UPDATE \`${entity}\` SET ${sets} WHERE id = ?`;
+      const sql = `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`;
       const safeValues = values.map(v => v === undefined ? null : v);
       await db.execute(sql, safeValues);
       
-      const [rows] = await db.execute(`SELECT * FROM \`${entity}\` WHERE id = ?`, [id]);
+      const [rows] = await db.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
       return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
     }
     
@@ -234,7 +234,7 @@ router.post('/', async (req, res, next) => {
     if (action === 'delete') {
       if (!id) return res.status(400).json({ error: "ID required for delete" });
       
-      await db.execute(`DELETE FROM \`${entity}\` WHERE id = ?`, [id]);
+      await db.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
       return res.json({ success: true });
     }
     
@@ -255,7 +255,7 @@ router.post('/', async (req, res, next) => {
       
       let keys = Array.from(allKeys);
       
-      const validColumns = await getValidColumns(entity);
+      const validColumns = await getValidColumns(tableName);
       if (validColumns) {
         keys = keys.filter(k => validColumns.includes(k));
       }
@@ -268,7 +268,7 @@ router.post('/', async (req, res, next) => {
       for (const item of processed) {
         const values = keys.map(k => toSqlValue(item[k]));
         const placeholders = keys.map(() => '?').join(',');
-        const sql = `INSERT INTO \`${entity}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
+        const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
         const safeValues = values.map(v => v === undefined ? null : v);
         await db.execute(sql, safeValues);
       }
