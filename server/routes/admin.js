@@ -10,6 +10,104 @@ router.get('/test', (req, res) => {
   res.json({ message: 'Admin routes working', timestamp: new Date().toISOString() });
 });
 
+// ===== ADMIN TOOLS (replaces Base44 functions) =====
+// Handle OPTIONS preflight
+router.options('/tools', (req, res) => {
+  res.sendStatus(200);
+});
+
+// Tools endpoint with explicit middleware
+router.post('/tools', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    console.log('Admin tools request received:', {
+      action: req.body.action,
+      user: req.user?.email,
+      hasData: !!req.body.data
+    });
+    
+    const { action, data } = req.body;
+
+    switch (action) {
+      case 'generate_db_token': {
+        console.log('Generating DB token from environment variables...');
+        // Generate token from environment variables
+        const config = {
+          host: process.env.MYSQL_HOST?.trim(),
+          user: process.env.MYSQL_USER?.trim(),
+          password: process.env.MYSQL_PASSWORD?.trim(),
+          database: process.env.MYSQL_DATABASE?.trim(),
+          port: parseInt(process.env.MYSQL_PORT?.trim() || '3306')
+        };
+
+        if (!config.host || !config.user) {
+          console.error('Missing DB configuration');
+          return res.status(400).json({ error: 'Keine Secrets gefunden' });
+        }
+
+        const json = JSON.stringify(config);
+        const token = Buffer.from(json).toString('base64');
+        
+        console.log('Token generated successfully');
+        return res.json({ token });
+      }
+
+      case 'export_mysql_as_json': {
+        // Export all tables as JSON
+        const [tables] = await db.execute('SHOW TABLES');
+        const exportData = {};
+
+        for (const table of tables) {
+          const tableName = Object.values(table)[0];
+          const [rows] = await db.execute(`SELECT * FROM \`${tableName}\``);
+          exportData[tableName] = rows;
+        }
+
+        return res.json(exportData);
+      }
+
+      case 'check': {
+        // Database integrity check placeholder
+        return res.json({ 
+          issues: [],
+          message: 'No issues found'
+        });
+      }
+
+      case 'repair': {
+        // Database repair placeholder
+        const { issuesToFix } = data || {};
+        return res.json({ 
+          message: 'Repair completed',
+          results: [`Fixed ${issuesToFix?.length || 0} issues`]
+        });
+      }
+
+      case 'wipe_database': {
+        // Wipe all data from tables (DANGEROUS!)
+        const [tables] = await db.execute('SHOW TABLES');
+        
+        for (const table of tables) {
+          const tableName = Object.values(table)[0];
+          // Skip user table to keep admin access
+          if (tableName === 'User') continue;
+          await db.execute(`DELETE FROM \`${tableName}\``);
+        }
+
+        return res.json({ 
+          message: 'Database wiped successfully',
+          warning: 'User table preserved'
+        });
+      }
+
+      default:
+        return res.status(400).json({ error: 'Unknown action' });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Apply middleware to all remaining routes
 router.use(authMiddleware);
 router.use(adminMiddleware);
 
@@ -184,102 +282,6 @@ router.post('/migrate-users', async (req, res, next) => {
       warning: 'Users should change their password after first login!',
       results
     });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// ===== ADMIN TOOLS (replaces Base44 functions) =====
-// Handle OPTIONS preflight
-router.options('/tools', (req, res) => {
-  res.sendStatus(200);
-});
-
-router.post('/tools', async (req, res, next) => {
-  try {
-    console.log('Admin tools request received:', {
-      action: req.body.action,
-      user: req.user?.email,
-      hasData: !!req.body.data
-    });
-    
-    const { action, data } = req.body;
-
-    switch (action) {
-      case 'generate_db_token': {
-        console.log('Generating DB token from environment variables...');
-        // Generate token from environment variables
-        const config = {
-          host: process.env.MYSQL_HOST?.trim(),
-          user: process.env.MYSQL_USER?.trim(),
-          password: process.env.MYSQL_PASSWORD?.trim(),
-          database: process.env.MYSQL_DATABASE?.trim(),
-          port: parseInt(process.env.MYSQL_PORT?.trim() || '3306')
-        };
-
-        if (!config.host || !config.user) {
-          console.error('Missing DB configuration');
-          return res.status(400).json({ error: 'Keine Secrets gefunden' });
-        }
-
-        const json = JSON.stringify(config);
-        const token = Buffer.from(json).toString('base64');
-        
-        console.log('Token generated successfully');
-        return res.json({ token });
-      }
-
-      case 'export_mysql_as_json': {
-        // Export all tables as JSON
-        const [tables] = await db.execute('SHOW TABLES');
-        const exportData = {};
-
-        for (const table of tables) {
-          const tableName = Object.values(table)[0];
-          const [rows] = await db.execute(`SELECT * FROM \`${tableName}\``);
-          exportData[tableName] = rows;
-        }
-
-        return res.json(exportData);
-      }
-
-      case 'check': {
-        // Database integrity check placeholder
-        return res.json({ 
-          issues: [],
-          message: 'No issues found'
-        });
-      }
-
-      case 'repair': {
-        // Database repair placeholder
-        const { issuesToFix } = data || {};
-        return res.json({ 
-          message: 'Repair completed',
-          results: [`Fixed ${issuesToFix?.length || 0} issues`]
-        });
-      }
-
-      case 'wipe_database': {
-        // Wipe all data from tables (DANGEROUS!)
-        const [tables] = await db.execute('SHOW TABLES');
-        
-        for (const table of tables) {
-          const tableName = Object.values(table)[0];
-          // Skip user table to keep admin access
-          if (tableName === 'User') continue;
-          await db.execute(`DELETE FROM \`${tableName}\``);
-        }
-
-        return res.json({ 
-          message: 'Database wiped successfully',
-          warning: 'User table preserved'
-        });
-      }
-
-      default:
-        return res.status(400).json({ error: 'Unknown action' });
-    }
   } catch (error) {
     next(error);
   }
