@@ -112,7 +112,7 @@ export default function DatabaseManagement() {
 
     // Helper to call backend with JWT token
     const invokeWithAuth = async (action, data = {}) => {
-        const response = await fetch(`${window.location.origin}/api/functions/adminTools`, {
+        const response = await fetch(`${window.location.origin}/api/admin/tools`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
