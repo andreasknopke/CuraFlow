@@ -13,9 +13,10 @@ import { Button } from "@/components/ui/button";
 import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, XCircle, Loader2, Check, X, ClipboardList, Mail, Trash2, ChevronDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useToast } from "@/components/ui/use-toast";
 
 // Admin Tasks Component with "show more" functionality
-function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handleQuickDecision, silentDeleteWishMutation }) {
+function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handleQuickDecision, silentDeleteWishMutation, isUpdating }) {
     const [showAll, setShowAll] = useState(false);
     const MAX_VISIBLE = 6;
     
@@ -90,6 +91,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                                         size="sm" 
                                                         className="flex-1 min-w-[80px] bg-red-600 hover:bg-red-700 text-white h-8 text-xs"
                                                         onClick={() => handleQuickDecision(wish, 'approve_cancellation')}
+                                                        disabled={isUpdating}
                                                     >
                                                         <Check className="w-3 h-3 mr-1" /> OK
                                                     </Button>
@@ -98,6 +100,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                                         variant="outline" 
                                                         className="flex-1 min-w-[80px] h-8 text-xs"
                                                         onClick={() => handleQuickDecision(wish, 'reject_cancellation')}
+                                                        disabled={isUpdating}
                                                     >
                                                         <X className="w-3 h-3 mr-1" /> Behalten
                                                     </Button>
@@ -108,6 +111,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                                         size="sm" 
                                                         className="flex-1 min-w-[70px] bg-green-600 hover:bg-green-700 text-white h-8 text-xs px-2"
                                                         onClick={() => handleQuickDecision(wish, 'approved')}
+                                                        disabled={isUpdating}
                                                     >
                                                         <Check className="w-3 h-3 mr-0.5" /> OK
                                                     </Button>
@@ -116,6 +120,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                                         variant="destructive" 
                                                         className="flex-1 min-w-[70px] h-8 text-xs px-2"
                                                         onClick={() => handleQuickDecision(wish, 'rejected')}
+                                                        disabled={isUpdating}
                                                     >
                                                         <X className="w-3 h-3 mr-0.5" /> Nein
                                                     </Button>
@@ -128,6 +133,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                                                 silentDeleteWishMutation.mutate(wish.id);
                                                             }
                                                         }}
+                                                        disabled={isUpdating}
                                                         title="Ohne Genehmigung löschen"
                                                     >
                                                         <Trash2 className="w-4 h-4" />
@@ -168,6 +174,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
 
 export default function MyDashboardPage() {
     const { user, isAuthenticated } = useAuth();
+    const { toast } = useToast();
     const [selectedDoctorId, setSelectedDoctorId] = useState(null);
 
     // Fetch all doctors for admin selection or to resolve current user's doctor
@@ -278,6 +285,7 @@ export default function MyDashboardPage() {
         enabled: isAdmin
     });
 
+    // CRITICAL: Must be defined BEFORE mutations that use it
     const queryClient = useQueryClient();
 
     // Mark unviewed items as viewed when user visits dashboard
@@ -362,6 +370,14 @@ export default function MyDashboardPage() {
             queryClient.invalidateQueries(['allPendingWishes']);
             queryClient.invalidateQueries(['wishes']);
             queryClient.invalidateQueries(['shifts']);
+        },
+        onError: (error) => {
+            console.error('Fehler beim Aktualisieren des Wunsches:', error);
+            toast({
+                title: "Fehler",
+                description: "Der Wunsch konnte nicht aktualisiert werden: " + error.message,
+                variant: "destructive"
+            });
         }
     });
 
@@ -385,6 +401,14 @@ export default function MyDashboardPage() {
             queryClient.invalidateQueries(['allPendingWishes']);
             queryClient.invalidateQueries(['wishes']);
             queryClient.invalidateQueries(['shifts']);
+        },
+        onError: (error) => {
+            console.error('Fehler beim Löschen des Wunsches:', error);
+            toast({
+                title: "Fehler",
+                description: "Der Wunsch konnte nicht gelöscht werden: " + error.message,
+                variant: "destructive"
+            });
         }
     });
 
@@ -393,6 +417,14 @@ export default function MyDashboardPage() {
         onSuccess: () => {
             queryClient.invalidateQueries(['allPendingWishes']);
             queryClient.invalidateQueries(['wishes']);
+        },
+        onError: (error) => {
+            console.error('Fehler beim stillen Löschen des Wunsches:', error);
+            toast({
+                title: "Fehler",
+                description: "Der Wunsch konnte nicht gelöscht werden: " + error.message,
+                variant: "destructive"
+            });
         }
     });
 
@@ -491,6 +523,7 @@ export default function MyDashboardPage() {
                     doctors={doctors}
                     handleQuickDecision={handleQuickDecision}
                     silentDeleteWishMutation={silentDeleteWishMutation}
+                    isUpdating={updateWishMutation.isPending || deleteWishMutation.isPending || silentDeleteWishMutation.isPending}
                 />
             )}
 

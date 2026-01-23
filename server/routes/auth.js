@@ -65,7 +65,7 @@ function sanitizeUser(user) {
   }
   
   // Convert boolean fields
-  const boolFields = ['schedule_show_sidebar', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active'];
+  const boolFields = ['schedule_show_sidebar', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active', 'must_change_password'];
   for (const field of boolFields) {
     if (safe[field] !== undefined) {
       safe[field] = !!safe[field];
@@ -106,6 +106,9 @@ router.post('/login', async (req, res, next) => {
       [user.id]
     );
     
+    // Check if user needs to change password
+    const mustChangePassword = user.must_change_password === 1 || user.must_change_password === true;
+    
     // Create JWT
     const token = createToken({
       sub: user.id,
@@ -116,7 +119,8 @@ router.post('/login', async (req, res, next) => {
     
     res.json({
       token,
-      user: sanitizeUser(user)
+      user: sanitizeUser(user),
+      must_change_password: mustChangePassword
     });
   } catch (error) {
     next(error);
@@ -257,8 +261,57 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
     
     const newHash = await bcrypt.hash(newPassword, 12);
     await db.execute(
-      'UPDATE app_users SET password_hash = ?, updated_date = NOW() WHERE id = ?',
+      'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
       [newHash, req.user.sub]
+    );
+    
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============ CHANGE EMAIL ============
+router.post('/change-email', authMiddleware, async (req, res, next) => {
+  try {
+    const { newEmail, password } = req.body;
+    
+    if (!newEmail || !password) {
+      return res.status(400).json({ error: 'Neue E-Mail und Passwort erforderlich' });
+    }
+    
+    if (!newEmail.includes('@')) {
+      return res.status(400).json({ error: 'Ungültige E-Mail-Adresse' });
+    }
+    
+    // Get current user
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+    
+    // Verify password
+    const validPassword = await bcrypt.compare(password, rows[0].password_hash);
+    
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Passwort ist falsch' });
+    }
+    
+    // Check if new email already exists
+    const [existing] = await db.execute(
+      'SELECT id FROM app_users WHERE email = ? AND id != ?',
+      [newEmail.toLowerCase().trim(), req.user.sub]
+    );
+    
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'Diese E-Mail-Adresse wird bereits verwendet' });
+    }
+    
+    // Update email
+    await db.execute(
+      'UPDATE app_users SET email = ?, updated_date = NOW() WHERE id = ?',
+      [newEmail.toLowerCase().trim(), req.user.sub]
     );
     
     res.json({ success: true });

@@ -27,6 +27,7 @@ const JWTAuthProviderInner = ({ children }) => {
     const [user, setUser] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [token, setToken] = useState(null);
+    const [mustChangePassword, setMustChangePassword] = useState(false);
 
     const getStoredToken = () => {
         try {
@@ -63,6 +64,8 @@ const JWTAuthProviderInner = ({ children }) => {
                 setUser(userData);
                 setToken(storedToken);
                 setIsAuthenticated(true);
+                // Check if password change is required
+                setMustChangePassword(userData.must_change_password === true);
             } catch (error) {
                 console.error('Auth check failed:', error);
                 storeToken(null);
@@ -81,6 +84,7 @@ const JWTAuthProviderInner = ({ children }) => {
         setToken(data.token);
         setUser(data.user);
         setIsAuthenticated(true);
+        setMustChangePassword(data.must_change_password === true);
         return data;
     };
 
@@ -130,6 +134,8 @@ const JWTAuthProviderInner = ({ children }) => {
             user,
             isLoading,
             token: token || getStoredToken(),
+            mustChangePassword,
+            setMustChangePassword,
             login,
             logout,
             refreshUser,

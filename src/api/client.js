@@ -78,10 +78,17 @@ class APIClient {
     });
   }
 
-  async changePassword(oldPassword, newPassword) {
+  async changePassword(currentPassword, newPassword) {
     return this.request('/api/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ oldPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
+  async changeEmail(newEmail, password) {
+    return this.request('/api/auth/change-email', {
+      method: 'POST',
+      body: JSON.stringify({ newEmail, password }),
     });
   }
 

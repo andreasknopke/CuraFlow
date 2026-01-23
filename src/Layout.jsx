@@ -5,6 +5,8 @@ import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock,
 import { api, db, base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
 import { AuthProvider, useAuth } from '@/components/AuthProvider';
+import AccountMenu from '@/components/auth/AccountMenu';
+import ForcePasswordChangeDialog from '@/components/auth/ForcePasswordChangeDialog';
 
 import { Menu, ChevronLeft } from 'lucide-react';
 import GlobalVoiceControl from '@/components/GlobalVoiceControl';
@@ -13,7 +15,7 @@ import ThemeSelector from '@/components/ThemeSelector';
 import { Palette } from 'lucide-react';
 
 function LayoutContent({ children }) {
-  const { isAuthenticated, isReadOnly, isLoading } = useAuth();
+  const { isAuthenticated, isReadOnly, isLoading, mustChangePassword, setMustChangePassword } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -286,20 +288,21 @@ function LayoutContent({ children }) {
           </div>
           
           {isAuthenticated && (
-            <button 
-              onClick={handleLogout}
-              className="ml-4 p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium"
-              title="Abmelden"
-            >
-              <span className="hidden sm:inline">Abmelden</span>
-              <LogOut className="h-5 w-5" />
-            </button>
+            <AccountMenu />
           )}
         </header>
         <main className="p-2 sm:p-4 lg:p-8">
           {children}
         </main>
       </div>
+      
+      {/* Force Password Change Dialog */}
+      {mustChangePassword && (
+        <ForcePasswordChangeDialog 
+          isOpen={mustChangePassword} 
+          onPasswordChanged={() => setMustChangePassword(false)}
+        />
+      )}
       
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
     </div>
