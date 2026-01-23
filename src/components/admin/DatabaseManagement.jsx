@@ -169,19 +169,43 @@ export default function DatabaseManagement() {
 
     // Helper to call backend with JWT token
     const invokeWithAuth = async (action, data = {}) => {
-        const response = await fetch(`${window.location.origin}/api/admin/tools`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ action, ...data })
-        });
-        const result = await response.json();
-        if (!response.ok) {
-            throw new Error(result.error || 'Fehler bei der Anfrage');
+        try {
+            const url = `${window.location.origin}/api/admin/tools`;
+            console.log('Calling admin tools:', { url, action, hasToken: !!token });
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ action, ...data })
+            });
+            
+            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Error response:', errorText);
+                
+                // Try to parse as JSON, otherwise use text
+                let result;
+                try {
+                    result = JSON.parse(errorText);
+                } catch {
+                    throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+                }
+                
+                throw new Error(result.error || `HTTP ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log('Success response:', result);
+            return { data: result };
+        } catch (error) {
+            console.error('invokeWithAuth error:', error);
+            throw error;
         }
-        return { data: result };
     };
 
     // --- MySQL Export ---

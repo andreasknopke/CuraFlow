@@ -186,10 +186,17 @@ router.post('/migrate-users', async (req, res, next) => {
 // ===== ADMIN TOOLS (replaces Base44 functions) =====
 router.post('/tools', async (req, res, next) => {
   try {
+    console.log('Admin tools request received:', {
+      action: req.body.action,
+      user: req.user?.email,
+      hasData: !!req.body.data
+    });
+    
     const { action, data } = req.body;
 
     switch (action) {
       case 'generate_db_token': {
+        console.log('Generating DB token from environment variables...');
         // Generate token from environment variables
         const config = {
           host: process.env.MYSQL_HOST?.trim(),
@@ -200,12 +207,14 @@ router.post('/tools', async (req, res, next) => {
         };
 
         if (!config.host || !config.user) {
+          console.error('Missing DB configuration');
           return res.status(400).json({ error: 'Keine Secrets gefunden' });
         }
 
         const json = JSON.stringify(config);
         const token = Buffer.from(json).toString('base64');
         
+        console.log('Token generated successfully');
         return res.json({ token });
       }
 
