@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, getYear } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, XCircle, AlertCircle, Eye, CheckSquare, Square, EyeOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, XCircle, AlertCircle, Eye, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -23,7 +23,8 @@ export default function WishMonthOverview({
     const [hiddenDoctorIds, setHiddenDoctorIds] = useState([]);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [showAbsences, setShowAbsences] = useState(true);
-    const [showOccupiedDates, setShowOccupiedDates] = useState(true);
+    // Wunschmarkierung ist immer ausgeschaltet
+    const showOccupiedDates = false;
     const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
     // Load all user preferences
@@ -32,9 +33,6 @@ export default function WishMonthOverview({
             try {
                 const user = await base44.auth.me();
                 if (user) {
-                    if (user.show_occupied_wish_dates !== undefined) {
-                        setShowOccupiedDates(user.show_occupied_wish_dates);
-                    }
                     if (user.wish_overview_show_absences !== undefined) {
                         setShowAbsences(user.wish_overview_show_absences);
                     }
@@ -50,17 +48,6 @@ export default function WishMonthOverview({
         };
         loadPreferences();
     }, []);
-
-    // Save preference when changed
-    const toggleShowOccupiedDates = async () => {
-        const newValue = !showOccupiedDates;
-        setShowOccupiedDates(newValue);
-        try {
-            await api.updateMe({ data: { wish_show_occupied: newValue } });
-        } catch (e) {
-            console.error("Could not save preference", e);
-        }
-    };
 
     // Save absences preference when changed
     const handleShowAbsencesChange = async (checked) => {
@@ -275,16 +262,6 @@ export default function WishMonthOverview({
                             Abwesenheiten
                         </label>
                     </div>
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        onClick={toggleShowOccupiedDates}
-                        className="h-8 gap-2"
-                        title="Wunsch-Markierung ein-/ausblenden"
-                    >
-                        {showOccupiedDates ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                        <span className="hidden sm:inline">Wunsch-Mark.</span>
-                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setIsConfigOpen(true)} className="h-8 gap-2">
                         <Eye className="w-4 h-4" />
                         <span className="hidden sm:inline">Ärzte</span>

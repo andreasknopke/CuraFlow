@@ -1,39 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { api, db, base44 } from "@/api/client";
-import { Eye, EyeOff } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 
 export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, activeType, isSchoolHoliday, isPublicHoliday }) {
-  const [showOccupiedDates, setShowOccupiedDates] = useState(true);
-
-  // Load user preference
-  useEffect(() => {
-    const loadPreference = async () => {
-      try {
-        const user = await api.me();
-        if (user?.wish_show_occupied !== undefined) {
-          setShowOccupiedDates(user.wish_show_occupied);
-        }
-      } catch (e) {
-        console.error("Could not load preference", e);
-      }
-    };
-    loadPreference();
-  }, []);
-
-  // Save preference when changed
-  const toggleShowOccupiedDates = async () => {
-    const newValue = !showOccupiedDates;
-    setShowOccupiedDates(newValue);
-    try {
-      await api.updateMe({ data: { wish_show_occupied: newValue } });
-    } catch (e) {
-      console.error("Could not save preference", e);
-    }
-  };
+  // Wunschmarkierung ist immer ausgeschaltet
+  const showOccupiedDates = false;
   const months = eachMonthOfInterval({
     start: startOfYear(new Date(year, 0, 1)),
     end: endOfYear(new Date(year, 0, 1))
@@ -66,15 +39,6 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
               <p className="text-slate-500">{doctor.role} • Wunschkiste {year}</p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleShowOccupiedDates}
-          className="flex items-center gap-2"
-        >
-          {showOccupiedDates ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-          Wunsch-Markierung
-        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
