@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
@@ -11,8 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Key, Copy, Server, Trash2 } from 'lucide-react';
+import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Key, Copy, Server, Trash2, Power, PowerOff } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { isDbTokenEnabled, enableDbToken, disableDbToken, deleteDbToken } from '@/components/dbTokenStorage';
 
 export default function DatabaseManagement() {
     const { token } = useAuth();
@@ -24,19 +25,64 @@ export default function DatabaseManagement() {
     const [generatedToken, setGeneratedToken] = useState(null);
     const [manualCreds, setManualCreds] = useState({ host: '', user: '', password: '', database: '', port: '3306', ssl: false });
     const [showManualTokenInput, setShowManualTokenInput] = useState(false);
+    const [tokenEnabled, setTokenEnabled] = useState(false);
+    const [currentToken, setCurrentToken] = useState(null);
     
     // Wipe Database State
     const [showWipeDialog, setShowWipeDialog] = useState(false);
     const [wipeConfirmText, setWipeConfirmText] = useState('');
     const [isWiping, setIsWiping] = useState(false);
 
+    // Load token status on mount
+    useEffect(() => {
+        setTokenEnabled(isDbTokenEnabled());
+        setCurrentToken(localStorage.getItem('db_credentials'));
+    }, []);
+
+    const handleToggleToken = async () => {
+        if (tokenEnabled) {
+            await disableDbToken();
+            setTokenEnabled(false);
+            toast.success('DB-Token deaktiviert - Standard-DB wird verwendet');
+            // Reload to apply changes
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            if (!currentToken) {
+                toast.error('Kein Token vorhanden - Bitte erst Token generieren');
+                return;
+            }
+            await enableDbToken();
+            setTokenEnabled(true);
+            toast.success('DB-Token aktiviert - Alternative DB wird verwendet');
+            // Reload to apply changes
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    };
+
+    const handleDeleteToken = async () => {
+        if (window.confirm('Token wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) {
+            await deleteDbToken();
+            setCurrentToken(null);
+            setTokenEnabled(false);
+            setGeneratedToken(null);
+            toast.success('Token gelöscht');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    };
+
     const generateTokenFromSecretsMutation = useMutation({
         mutationFn: () => invokeWithAuth('generate_db_token'),
         onSuccess: (res) => {
             setGeneratedToken(res.data.token);
+            setCurrentToken(res.data.token);
+            // Save token
+            localStorage.setItem('db_credentials', res.data.token);
             setShowManualTokenInput(false);
+            toast.success('Token generiert');
         },
-        onError: (err) => alert("Fehler: " + err.message)
+        onError: (err) => {
+            toast.error("Fehler: " + err.message);
+        }
     });
 
     const generateTokenManually = () => {
@@ -50,8 +96,12 @@ export default function DatabaseManagement() {
             const json = JSON.stringify(config);
             const token = btoa(json);
             setGeneratedToken(token);
+            setCurrentToken(token);
+            // Save token
+            localStorage.setItem('db_credentials', token);
+            toast.success('Token manuell erstellt');
         } catch (e) {
-            alert("Fehler beim Erstellen des Tokens");
+            toast.error("Fehler beim Erstellen des Tokens");
         }
     };
 
@@ -159,6 +209,21 @@ export default function DatabaseManagement() {
                 </AlertDescription>
             </Alert>
 
+            {/* Token Status Alert */}
+            {currentToken && (
+                <Alert className={tokenEnabled ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}>
+                    {tokenEnabled ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+                    <AlertTitle className={tokenEnabled ? "text-green-800" : "text-amber-800"}>
+                        DB-Token {tokenEnabled ? 'Aktiv' : 'Inaktiv'}
+                    </AlertTitle>
+                    <AlertDescription className={tokenEnabled ? "text-green-700" : "text-amber-700"}>
+                        {tokenEnabled 
+                            ? 'Alternative Datenbank wird verwendet' 
+                            : 'Standard-Datenbank wird verwendet (Token ist gespeichert, aber deaktiviert)'}
+                    </AlertDescription>
+                </Alert>
+            )}
+
             <div className="grid md:grid-cols-2 gap-6">
                 {/* DB Access Token */}
                 <Card>
@@ -166,9 +231,49 @@ export default function DatabaseManagement() {
                         <CardTitle className="flex items-center gap-2">
                             <Key className="w-5 h-5" /> DB Access Token
                         </CardTitle>
-                        <CardDescription>Token für client-seitige Credentials erzeugen</CardDescription>
+                        <CardDescription>Token für client-seitige Credentials erzeugen und verwalten</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
+                        {/* Token Status & Controls */}
+                        {currentToken && (
+                            <div className="p-4 bg-slate-50 rounded-lg border space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Badge variant={tokenEnabled ? "default" : "secondary"}>
+                                            {tokenEnabled ? "Aktiv" : "Inaktiv"}
+                                        </Badge>
+                                        <span className="text-sm text-slate-600">Token gespeichert</span>
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={handleDeleteToken}
+                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                </div>
+                                
+                                <Button
+                                    className="w-full"
+                                    variant={tokenEnabled ? "destructive" : "default"}
+                                    onClick={handleToggleToken}
+                                >
+                                    {tokenEnabled ? (
+                                        <>
+                                            <PowerOff className="w-4 h-4 mr-2" />
+                                            Token deaktivieren (zurück zur Standard-DB)
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Power className="w-4 h-4 mr-2" />
+                                            Token aktivieren (Alternative DB nutzen)
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        )}
+
                         <div className="space-y-2">
                             <Button 
                                 variant="outline" 

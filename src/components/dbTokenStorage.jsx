@@ -4,6 +4,7 @@
 const DB_NAME = 'RadioPlanDB';
 const STORE_NAME = 'settings';
 const TOKEN_KEY = 'db_credentials';
+const TOKEN_ENABLED_KEY = 'db_token_enabled';
 
 // Open IndexedDB
 const openDB = () => {
@@ -108,6 +109,74 @@ export const extractAndSaveDbTokenFromUrl = async () => {
         return dbToken;
     }
     return null;
+};
+
+// Check if token is enabled
+export const isDbTokenEnabled = () => {
+    const enabled = localStorage.getItem(TOKEN_ENABLED_KEY);
+    return enabled === 'true';
+};
+
+// Enable token
+export const enableDbToken = async () => {
+    localStorage.setItem(TOKEN_ENABLED_KEY, 'true');
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ key: TOKEN_ENABLED_KEY, value: 'true', updatedAt: Date.now() });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to save token enabled state to IndexedDB:', e);
+    }
+};
+
+// Disable token (return to standard DB)
+export const disableDbToken = async () => {
+    localStorage.setItem(TOKEN_ENABLED_KEY, 'false');
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to save token enabled state to IndexedDB:', e);
+    }
+};
+
+// Get active token (only if enabled)
+export const getActiveDbToken = () => {
+    if (!isDbTokenEnabled()) return null;
+    return localStorage.getItem(TOKEN_KEY);
+};
+
+// Delete token completely
+export const deleteDbToken = async () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_ENABLED_KEY);
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(TOKEN_KEY);
+        store.delete(TOKEN_ENABLED_KEY);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to delete token from IndexedDB:', e);
+    }
 };
 
 // Initialize: Sync from IDB, then check URL
