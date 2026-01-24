@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Key, Copy, Server, Trash2, Power, PowerOff } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { isDbTokenEnabled, enableDbToken, disableDbToken, deleteDbToken, saveDbToken } from '@/components/dbTokenStorage';
+import TokenManager from './TokenManager';
 
 export default function DatabaseManagement() {
     const { token } = useAuth();
@@ -242,29 +243,17 @@ export default function DatabaseManagement() {
                 </AlertDescription>
             </Alert>
 
-            {/* Token Status Alert */}
-            {currentToken && (
-                <Alert className={tokenEnabled ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}>
-                    {tokenEnabled ? <CheckCircle className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-amber-600" />}
-                    <AlertTitle className={tokenEnabled ? "text-green-800" : "text-amber-800"}>
-                        DB-Token {tokenEnabled ? 'Aktiv' : 'Inaktiv'}
-                    </AlertTitle>
-                    <AlertDescription className={tokenEnabled ? "text-green-700" : "text-amber-700"}>
-                        {tokenEnabled 
-                            ? 'Alternative Datenbank wird verwendet' 
-                            : 'Standard-Datenbank wird verwendet (Token ist gespeichert, aber deaktiviert)'}
-                    </AlertDescription>
-                </Alert>
-            )}
+            {/* Token Manager - Multi-Tenant Support */}
+            <TokenManager />
 
             <div className="grid md:grid-cols-2 gap-6">
-                {/* DB Access Token */}
+                {/* DB Access Token - Legacy section for manual token */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <Key className="w-5 h-5" /> DB Access Token
+                            <Key className="w-5 h-5" /> Manuelles Token
                         </CardTitle>
-                        <CardDescription>Token für client-seitige Credentials erzeugen und verwalten</CardDescription>
+                        <CardDescription>Token direkt eingeben oder aus Secrets generieren</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         {/* Token Status & Controls */}

@@ -5,6 +5,7 @@ const DB_NAME = 'RadioPlanDB';
 const STORE_NAME = 'settings';
 const TOKEN_KEY = 'db_credentials';
 const TOKEN_ENABLED_KEY = 'db_token_enabled';
+const SAVED_TOKENS_KEY = 'saved_db_tokens';
 
 // Open IndexedDB
 const openDB = () => {
@@ -184,4 +185,163 @@ export const initDbToken = async () => {
     await syncDbTokenFromIndexedDB();
     await extractAndSaveDbTokenFromUrl();
     return localStorage.getItem(TOKEN_KEY);
+};
+
+// ==========================================
+// SAVED TOKENS MANAGEMENT (Multiple Named Tokens)
+// ==========================================
+
+// Get all saved tokens
+export const getSavedTokens = () => {
+    try {
+        const saved = localStorage.getItem(SAVED_TOKENS_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        console.warn('Failed to parse saved tokens:', e);
+        return [];
+    }
+};
+
+// Save a token with a name
+export const saveNamedToken = async (name, token) => {
+    const tokens = getSavedTokens();
+    const existingIndex = tokens.findIndex(t => t.name === name);
+    
+    const tokenEntry = {
+        id: existingIndex >= 0 ? tokens[existingIndex].id : crypto.randomUUID(),
+        name,
+        token,
+        createdAt: existingIndex >= 0 ? tokens[existingIndex].createdAt : Date.now(),
+        updatedAt: Date.now()
+    };
+    
+    if (existingIndex >= 0) {
+        tokens[existingIndex] = tokenEntry;
+    } else {
+        tokens.push(tokenEntry);
+    }
+    
+    localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
+    
+    // Also save to IndexedDB for persistence
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to save tokens to IndexedDB:', e);
+    }
+    
+    return tokenEntry;
+};
+
+// Delete a saved token by id
+export const deleteNamedToken = async (id) => {
+    const tokens = getSavedTokens().filter(t => t.id !== id);
+    localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
+    
+    // Also update IndexedDB
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to update tokens in IndexedDB:', e);
+    }
+};
+
+// Rename a saved token
+export const renameToken = async (id, newName) => {
+    const tokens = getSavedTokens();
+    const token = tokens.find(t => t.id === id);
+    if (token) {
+        token.name = newName;
+        token.updatedAt = Date.now();
+        localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
+        
+        // Also update IndexedDB
+        try {
+            const db = await openDB();
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+            db.close();
+        } catch (e) {
+            console.warn('Failed to update tokens in IndexedDB:', e);
+        }
+    }
+};
+
+// Switch to a saved token (activate it)
+export const switchToToken = async (id) => {
+    const tokens = getSavedTokens();
+    const tokenEntry = tokens.find(t => t.id === id);
+    
+    if (!tokenEntry) {
+        throw new Error('Token not found');
+    }
+    
+    // Save as active token
+    await saveDbToken(tokenEntry.token);
+    await enableDbToken();
+    
+    // Store active token id
+    localStorage.setItem('active_token_id', id);
+    
+    return tokenEntry;
+};
+
+// Get currently active token id
+export const getActiveTokenId = () => {
+    return localStorage.getItem('active_token_id');
+};
+
+// Sync saved tokens from IndexedDB
+export const syncSavedTokensFromIndexedDB = async () => {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.get(SAVED_TOKENS_KEY);
+        
+        const result = await new Promise((resolve, reject) => {
+            request.onsuccess = () => {
+                db.close();
+                resolve(request.result?.value || null);
+            };
+            request.onerror = () => {
+                db.close();
+                reject(request.error);
+            };
+        });
+        
+        if (result && Array.isArray(result)) {
+            const localTokens = getSavedTokens();
+            if (result.length > localTokens.length) {
+                localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(result));
+                return result;
+            }
+        }
+        
+        return getSavedTokens();
+    } catch (e) {
+        console.warn('Failed to sync saved tokens from IndexedDB:', e);
+        return getSavedTokens();
+    }
 };
