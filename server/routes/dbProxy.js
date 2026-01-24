@@ -307,7 +307,8 @@ router.post('/', async (req, res, next) => {
     return res.status(400).json({ error: 'Unknown action' });
     
   } catch (error) {
-    console.error("DB Proxy Error:", error.message);
+    console.error("DB Proxy Error:", error.message, "Stack:", error.stack);
+    console.error("Request body:", JSON.stringify(req.body || {}).substring(0, 500));
     next(error);
   }
 });
