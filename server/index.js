@@ -210,7 +210,8 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+  console.warn('404 Not Found:', req.method, req.url, 'Body:', JSON.stringify(req.body || {}).substring(0, 200));
+  res.status(404).json({ error: 'Route not found', path: req.url, method: req.method });
 });
 
 // Start server

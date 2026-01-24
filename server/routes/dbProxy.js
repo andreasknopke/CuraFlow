@@ -79,7 +79,8 @@ const getValidColumns = async (dbPool, tableName, cacheKey) => {
 // ============ UNIFIED DB PROXY ENDPOINT ============
 router.post('/', async (req, res, next) => {
   try {
-    const { action, entity, table, data, id, query, sort, limit, skip } = req.body;
+    const { action, operation, entity, table, data, id, query, sort, limit, skip } = req.body;
+    const effectiveAction = action || operation; // Support both 'action' and 'operation' keys
     const tableName = entity || table;
     
     // Get the database pool (set by tenantDbMiddleware)
@@ -90,9 +91,13 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Entity/table required' });
     }
     
+    if (!effectiveAction) {
+      return res.status(400).json({ error: 'Action/operation required' });
+    }
+    
     // Check if this is a public read operation
     const isPublicRead = PUBLIC_READ_TABLES.includes(tableName) && 
-                         (action === 'list' || action === 'filter' || action === 'get');
+                         (effectiveAction === 'list' || effectiveAction === 'filter' || effectiveAction === 'get');
     
     // Require auth for non-public operations
     if (!isPublicRead) {
@@ -114,7 +119,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== LIST / FILTER =====
-    if (action === 'list' || action === 'filter') {
+    if (effectiveAction === 'list' || effectiveAction === 'filter') {
       let sql = `SELECT * FROM \`${tableName}\``;
       const params = [];
       
@@ -178,7 +183,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== GET =====
-    if (action === 'get') {
+    if (effectiveAction === 'get') {
       if (!id) return res.json(null);
       
       const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
@@ -186,7 +191,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== CREATE =====
-    if (action === 'create') {
+    if (effectiveAction === 'create') {
       if (!data.id) data.id = crypto.randomUUID();
       data.created_date = new Date();
       data.updated_date = new Date();
@@ -219,7 +224,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== UPDATE =====
-    if (action === 'update') {
+    if (effectiveAction === 'update') {
       if (!id) return res.status(400).json({ error: "ID required for update" });
       
       data.updated_date = new Date();
@@ -246,7 +251,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== DELETE =====
-    if (action === 'delete') {
+    if (effectiveAction === 'delete') {
       if (!id) return res.status(400).json({ error: "ID required for delete" });
       
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
@@ -254,7 +259,7 @@ router.post('/', async (req, res, next) => {
     }
     
     // ===== BULK CREATE =====
-    if (action === 'bulkCreate') {
+    if (effectiveAction === 'bulkCreate') {
       if (!Array.isArray(data) || data.length === 0) return res.json([]);
       
       const processed = data.map(item => {
