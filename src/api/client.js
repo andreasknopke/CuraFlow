@@ -50,6 +50,10 @@ class APIClient {
     };
 
     const url = `${this.baseURL}${endpoint}`;
+    
+    // Debug logging
+    console.log(`[API] ${config.method || 'GET'} ${endpoint}`);
+    
     const response = await fetch(url, config);
 
     if (!response.ok) {
