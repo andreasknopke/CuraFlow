@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { 
@@ -8,12 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Settings, Plus, Trash2, GripVertical, Save, Loader2, X } from 'lucide-react';
+import { Settings, Plus, Trash2, GripVertical, Save, Loader2, X, FolderPlus } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+
+// Default categories that always exist
+const DEFAULT_CATEGORIES = ["Rotationen", "Demonstrationen & Konsile", "Dienste"];
 
 export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -23,6 +27,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [isRenaming, setIsRenaming] = useState(false);
+    const [showAddCategory, setShowAddCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState("");
 
     const { data: workplaces = [], isLoading } = useQuery({
         queryKey: ['workplaces'],
@@ -33,6 +39,24 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
         queryKey: ['systemSettings'],
         queryFn: () => db.SystemSetting.list(),
     });
+
+    // Get custom categories from settings
+    const customCategories = useMemo(() => {
+        const setting = settings.find(s => s.key === 'workplace_categories');
+        if (setting?.value) {
+            try {
+                return JSON.parse(setting.value);
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    }, [settings]);
+
+    // All available categories (defaults + custom)
+    const allCategories = useMemo(() => {
+        return [...DEFAULT_CATEGORIES, ...customCategories];
+    }, [customCategories]);
 
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }) => {
@@ -105,6 +129,53 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
         createMutation.mutate(newItem);
     };
 
+    const handleAddCategory = async () => {
+        const trimmedName = newCategoryName.trim();
+        if (!trimmedName) {
+            toast.error("Bitte geben Sie einen Namen ein");
+            return;
+        }
+        if (allCategories.includes(trimmedName)) {
+            toast.error("Diese Kategorie existiert bereits");
+            return;
+        }
+        
+        const newCategories = [...customCategories, trimmedName];
+        await updateSettingMutation.mutateAsync({ 
+            key: 'workplace_categories', 
+            value: JSON.stringify(newCategories) 
+        });
+        
+        setNewCategoryName("");
+        setShowAddCategory(false);
+        setActiveTab(trimmedName);
+        toast.success(`Kategorie "${trimmedName}" wurde erstellt`);
+    };
+
+    const handleDeleteCategory = async (categoryName) => {
+        // Check if category has items
+        const itemsInCategory = workplaces.filter(w => w.category === categoryName);
+        
+        if (itemsInCategory.length > 0) {
+            if (!confirm(`Die Kategorie "${categoryName}" enthält ${itemsInCategory.length} Einträge. Diese werden ebenfalls gelöscht. Fortfahren?`)) {
+                return;
+            }
+            // Delete all items in category
+            for (const item of itemsInCategory) {
+                await deleteMutation.mutateAsync(item.id);
+            }
+        }
+        
+        const newCategories = customCategories.filter(c => c !== categoryName);
+        await updateSettingMutation.mutateAsync({ 
+            key: 'workplace_categories', 
+            value: JSON.stringify(newCategories) 
+        });
+        
+        setActiveTab("Rotationen");
+        toast.success(`Kategorie "${categoryName}" wurde gelöscht`);
+    };
+
     const handleSaveEdit = async () => {
         if (!editingId) return;
         
@@ -150,6 +221,9 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
         setEditForm({ ...item });
     };
 
+    // Check if current tab is a custom category
+    const isCustomCategory = customCategories.includes(activeTab);
+
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
@@ -157,22 +231,79 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                     <Settings className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+            <DialogContent className="max-w-3xl h-[85vh] flex flex-col">
                 <DialogHeader>
-                    <DialogTitle>Konfiguration: Arbeitsplätze & Demos</DialogTitle>
+                    <DialogTitle>Konfiguration: Arbeitsplätze & Dienste</DialogTitle>
                 </DialogHeader>
                 
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-                    <TabsList className="grid w-full grid-cols-4">
-                        <TabsTrigger value="Rotationen">Rotationen</TabsTrigger>
-                        <TabsTrigger value="Demonstrationen & Konsile">Demos</TabsTrigger>
-                        <TabsTrigger value="Dienste">Dienste</TabsTrigger>
-                        <TabsTrigger value="Einstellungen">Limits</TabsTrigger>
-                    </TabsList>
+                    <div className="flex items-center gap-2">
+                        <ScrollArea className="flex-1">
+                            <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto">
+                                {/* Default categories */}
+                                <TabsTrigger value="Rotationen" className="text-xs">Rotationen</TabsTrigger>
+                                <TabsTrigger value="Demonstrationen & Konsile" className="text-xs">Demos</TabsTrigger>
+                                <TabsTrigger value="Dienste" className="text-xs">Dienste</TabsTrigger>
+                                
+                                {/* Custom categories */}
+                                {customCategories.map(cat => (
+                                    <TabsTrigger key={cat} value={cat} className="text-xs group relative">
+                                        {cat}
+                                    </TabsTrigger>
+                                ))}
+                                
+                                <TabsTrigger value="Einstellungen" className="text-xs">⚙ Limits</TabsTrigger>
+                            </TabsList>
+                        </ScrollArea>
+                        
+                        {/* Add category button */}
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => setShowAddCategory(true)}
+                            title="Neue Kategorie hinzufügen"
+                        >
+                            <FolderPlus className="w-4 h-4" />
+                        </Button>
+                    </div>
+
+                    {/* Add category input */}
+                    {showAddCategory && (
+                        <div className="flex items-center gap-2 py-2 px-1 bg-slate-50 rounded-md mt-2">
+                            <Input
+                                placeholder="Name der neuen Kategorie (z.B. OP Säle)"
+                                value={newCategoryName}
+                                onChange={(e) => setNewCategoryName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                                className="flex-1"
+                                autoFocus
+                            />
+                            <Button size="sm" onClick={handleAddCategory}>
+                                <Plus className="w-4 h-4 mr-1" /> Erstellen
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => { setShowAddCategory(false); setNewCategoryName(""); }}>
+                                <X className="w-4 h-4" />
+                            </Button>
+                        </div>
+                    )}
 
                     {activeTab !== 'Einstellungen' ? (
                         <>
-                        <div className="flex justify-end py-2">
+                        <div className="flex justify-between items-center py-2">
+                             {/* Delete category button (only for custom categories) */}
+                             {isCustomCategory && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                                    onClick={() => handleDeleteCategory(activeTab)}
+                                >
+                                    <Trash2 className="w-4 h-4 mr-1" /> Kategorie löschen
+                                </Button>
+                             )}
+                             {!isCustomCategory && <div />}
+                             
                              <Button onClick={handleAddNew} size="sm" className="gap-2">
                                 <Plus className="w-4 h-4" /> Neu anlegen
                              </Button>
@@ -299,6 +430,44 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                             </div>
                                                                         )}
 
+                                                                        {/* Custom category options - basic settings */}
+                                                                        {isCustomCategory && (
+                                                                            <div className="space-y-4">
+                                                                                <div className="space-y-2">
+                                                                                    <Label>Aktive Tage</Label>
+                                                                                    <div className="flex gap-1">
+                                                                                        {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, i) => (
+                                                                                            <button
+                                                                                                key={i}
+                                                                                                type="button"
+                                                                                                onClick={() => toggleDay(i)}
+                                                                                                className={cn(
+                                                                                                    "w-8 h-8 rounded-full text-xs font-medium transition-colors",
+                                                                                                    (editForm.active_days || []).includes(i)
+                                                                                                        ? "bg-indigo-600 text-white"
+                                                                                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                                                                                )}
+                                                                                            >
+                                                                                                {day[0]}
+                                                                                            </button>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                                <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
+                                                                                    <div className="space-y-0.5">
+                                                                                        <Label className="text-base">Im Dienstplan anzeigen</Label>
+                                                                                        <div className="text-xs text-slate-500">
+                                                                                            Erscheint zusätzlich im Reiter "Dienstbesetzung"
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    <Switch
+                                                                                        checked={editForm.show_in_service_plan || false}
+                                                                                        onCheckedChange={(checked) => setEditForm({...editForm, show_in_service_plan: checked})}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
                                                                         <div className="flex justify-end gap-2 pt-2">
                                                                             <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Abbrechen</Button>
                                                                             <Button size="sm" onClick={handleSaveEdit} disabled={isRenaming}>
@@ -320,7 +489,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 {item.allows_rotation_concurrently && <Badge variant="secondary" className="text-[10px] font-normal bg-green-100 text-green-700">Rotation OK</Badge>}
                                                                                 {item.show_in_service_plan && <Badge variant="secondary" className="text-[10px] font-normal bg-purple-100 text-purple-700">Dienstplan</Badge>}
                                                                             </div>
-                                                                            {activeTab === "Demonstrationen & Konsile" && item.active_days && (
+                                                                            {(activeTab === "Demonstrationen & Konsile" || isCustomCategory) && item.active_days && (
                                                                                 <div className="flex gap-1 mt-1">
                                                                                     {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, i) => (
                                                                                         <div 
