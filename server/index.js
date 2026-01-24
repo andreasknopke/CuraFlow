@@ -16,6 +16,7 @@ import calendarRouter from './routes/calendar.js';
 import voiceRouter from './routes/voice.js';
 import adminRouter from './routes/admin.js';
 import atomicRouter from './routes/atomic.js';
+import integrationsRouter from './routes/integrations.js';
 
 // Load environment variables
 dotenv.config();
@@ -114,39 +115,25 @@ export const tenantDbMiddleware = (req, res, next) => {
 
 // CORS Configuration - MUST be before other middleware!
 const allowedOrigins = [
-  'https://curaflow-production.up.railway.app',
-  'https://curaflow-frontend-production.up.railway.app',
-  process.env.FRONTEND_URL,
-  'http://localhost:5173',
-  'http://localhost:3000'
+  'http://localhost:5173',  // Vite dev server
+  'http://localhost:3000',  // Alternative frontend port
+  'http://localhost:4173',  // Vite preview
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
 console.log('CORS allowed origins:', allowedOrigins);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 
-// Handle preflight requests explicitly
-app.options('*', cors({
-  origin: true, // Allow all origins for preflight
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-DB-Token']
-}));
-
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    // Allow all railway.app subdomains
-    if (origin.endsWith('.railway.app')) {
-      return callback(null, true);
-    }
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn('CORS blocked origin:', origin);
-      callback(null, true); // Allow anyway for debugging - change to false in production
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -207,6 +194,7 @@ app.use('/api/calendar', calendarRouter);
 app.use('/api/voice', voiceRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/atomic', atomicRouter);
+app.use('/api/integrations', integrationsRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
