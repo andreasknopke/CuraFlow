@@ -195,18 +195,27 @@ router.post('/', async (req, res, next) => {
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data);
       
-      if (validColumns) {
+      if (validColumns && validColumns.length > 0) {
         keys = keys.filter(k => validColumns.includes(k));
+      }
+      
+      if (keys.length === 0) {
+        console.error(`CREATE failed: No valid columns for ${tableName}. Data keys:`, Object.keys(data), "Valid columns:", validColumns);
+        return res.status(500).json({ error: `No valid columns found for table ${tableName}` });
       }
       
       const values = keys.map(k => toSqlValue(data[k]));
       const placeholders = keys.map(() => '?').join(',');
       const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
       
-      const safeValues = values.map(v => v === undefined ? null : v);
-      await dbPool.execute(sql, safeValues);
-      
-      return res.json(data);
+      try {
+        const safeValues = values.map(v => v === undefined ? null : v);
+        await dbPool.execute(sql, safeValues);
+        return res.json(data);
+      } catch (err) {
+        console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
+        throw err;
+      }
     }
     
     // ===== UPDATE =====
