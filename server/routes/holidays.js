@@ -36,11 +36,11 @@ router.get('/', async (req, res, next) => {
       const schoolData = await schoolRes.json();
       const publicData = await publicRes.json();
       
-      // Transform school holidays to expected format
+      // Transform school holidays to expected format (frontend expects start/end)
       const school = (Array.isArray(schoolData) ? schoolData : []).map(h => ({
         name: h.name?.[0]?.text || h.name || 'Schulferien',
-        startDate: h.startDate,
-        endDate: h.endDate
+        start: h.startDate,
+        end: h.endDate
       }));
       
       // Transform public holidays to expected format
