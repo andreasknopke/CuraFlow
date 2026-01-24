@@ -43,6 +43,20 @@ export const db = createPool({
 // Cache for tenant database pools (Multi-Tenant Support)
 const tenantPools = new Map();
 
+// Remove a tenant pool from cache (e.g., on connection error)
+export const removeTenantPool = (dbToken) => {
+  if (tenantPools.has(dbToken)) {
+    const pool = tenantPools.get(dbToken);
+    try {
+      pool.end(); // Close connections
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    tenantPools.delete(dbToken);
+    console.log(`Removed tenant pool from cache`);
+  }
+};
+
 // Get or create a connection pool for a tenant
 export const getTenantDb = (dbToken) => {
   if (!dbToken) return db; // Return default pool if no token
@@ -93,6 +107,7 @@ export const getTenantDb = (dbToken) => {
 export const tenantDbMiddleware = (req, res, next) => {
   const dbToken = req.headers['x-db-token'];
   req.db = getTenantDb(dbToken);
+  req.dbToken = dbToken; // Store for error handling
   req.isCustomDb = !!dbToken && req.db !== db;
   next();
 };

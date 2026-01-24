@@ -160,10 +160,11 @@ export const getActiveDbToken = () => {
     return localStorage.getItem(TOKEN_KEY);
 };
 
-// Delete token completely
+// Delete token completely (single active token)
 export const deleteDbToken = async () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_ENABLED_KEY);
+    localStorage.removeItem('active_token_id');
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -185,6 +186,33 @@ export const initDbToken = async () => {
     await syncDbTokenFromIndexedDB();
     await extractAndSaveDbTokenFromUrl();
     return localStorage.getItem(TOKEN_KEY);
+};
+
+// Delete ALL token data (for complete reset)
+export const deleteAllTokenData = async () => {
+    // Clear all token-related localStorage items
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(TOKEN_ENABLED_KEY);
+    localStorage.removeItem(SAVED_TOKENS_KEY);
+    localStorage.removeItem('active_token_id');
+    
+    // Clear IndexedDB
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(TOKEN_KEY);
+        store.delete(TOKEN_ENABLED_KEY);
+        store.delete(SAVED_TOKENS_KEY);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+        console.log('[TokenStorage] All token data deleted');
+    } catch (e) {
+        console.warn('Failed to delete all token data from IndexedDB:', e);
+    }
 };
 
 // ==========================================

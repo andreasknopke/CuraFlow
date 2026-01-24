@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Badge } from '@/components/ui/badge';
 import { 
     Key, Plus, Trash2, Edit2, Check, X, Database, Power, PowerOff, 
-    Building2, Copy, ChevronRight, RefreshCw 
+    Building2, Copy, ChevronRight, RefreshCw, AlertTriangle 
 } from 'lucide-react';
 import { 
     getSavedTokens, 
@@ -21,7 +21,8 @@ import {
     enableDbToken,
     disableDbToken,
     saveDbToken,
-    syncSavedTokensFromIndexedDB
+    syncSavedTokensFromIndexedDB,
+    deleteAllTokenData
 } from '@/components/dbTokenStorage';
 
 export default function TokenManager() {
@@ -158,6 +159,17 @@ export default function TokenManager() {
         setTimeout(() => window.location.reload(), 1000);
     };
     
+    const handleResetAll = async () => {
+        if (window.confirm('ACHTUNG: Alle gespeicherten Mandanten werden gelöscht und die Standard-Datenbank wird verwendet. Fortfahren?')) {
+            await deleteAllTokenData();
+            setSavedTokens([]);
+            setActiveTokenId(null);
+            setTokenEnabled(false);
+            toast.success('Alle Token-Daten gelöscht');
+            setTimeout(() => window.location.reload(), 1000);
+        }
+    };
+    
     const parseTokenInfo = (token) => {
         try {
             const decoded = JSON.parse(atob(token));
@@ -188,6 +200,18 @@ export default function TokenManager() {
                         <Button variant="ghost" size="icon" onClick={refreshTokens} title="Aktualisieren">
                             <RefreshCw className="w-4 h-4" />
                         </Button>
+                        {savedTokens.length > 0 && (
+                            <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleResetAll} 
+                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                title="Alle Token löschen"
+                            >
+                                <AlertTriangle className="w-4 h-4 mr-1" />
+                                Alle zurücksetzen
+                            </Button>
+                        )}
                         <Button onClick={() => setShowAddDialog(true)} size="sm">
                             <Plus className="w-4 h-4 mr-2" />
                             Neuer Mandant

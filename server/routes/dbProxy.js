@@ -1,5 +1,5 @@
 import express from 'express';
-import { db } from '../index.js';
+import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
 import crypto from 'crypto';
 
@@ -310,6 +310,13 @@ router.post('/', async (req, res, next) => {
   } catch (error) {
     console.error("DB Proxy Error:", error.message, "Stack:", error.stack);
     console.error("Request body:", JSON.stringify(req.body || {}).substring(0, 500));
+    
+    // If this is an access denied error and we have a custom DB token, remove it from cache
+    if (error.code === 'ER_ACCESS_DENIED_ERROR' && req.dbToken) {
+      console.log("Removing invalid tenant pool from cache due to access denied error");
+      removeTenantPool(req.dbToken);
+    }
+    
     next(error);
   }
 });
