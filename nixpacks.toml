@@ -1,0 +1,17 @@
+# Nixpacks Configuration for Frontend
+# Build with Vite, serve with serve package
+
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.setup]
+nixPkgs = ["nodejs_20", "npm-10_x"]
+
+[phases.install]
+cmds = ["npm install"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "npx serve dist -s -l $PORT --no-clipboard"
