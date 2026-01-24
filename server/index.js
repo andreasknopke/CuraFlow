@@ -20,7 +20,7 @@ import integrationsRouter from './routes/integrations.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Trust proxy - Railway runs behind a reverse proxy
+// Trust proxy - for deployment behind reverse proxies
 app.set('trust proxy', 1);
 
 // Default MySQL Connection Pool

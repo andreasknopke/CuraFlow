@@ -1,7 +1,7 @@
 /**
- * Einfacher API Client für Railway Backend
- * Kommuniziert direkt mit Express API über MySQL
- * Unterstützt Multi-Tenant via DB-Token
+ * API Client for CuraFlow Backend
+ * Communicates with Express API over MySQL
+ * Supports Multi-Tenant via DB-Token
  */
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
