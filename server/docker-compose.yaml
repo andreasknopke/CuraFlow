@@ -1,0 +1,36 @@
+# CuraFlow Docker Compose Setup
+# Usage: docker-compose up -d
+
+services:
+
+  db:
+    image: mariadb:latest
+    container_name: curaflow-db
+    restart: always
+    ports:
+      - "3307:3306"
+    environment:
+      MARIADB_ROOT_PASSWORD: curaflow123
+      MARIADB_DATABASE: curaflow
+      MARIADB_USER: curaflow
+      MARIADB_PASSWORD: curaflow123
+    volumes:
+      - curaflow-db-data:/var/lib/mysql
+      - ../../schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    container_name: curaflow-adminer
+    restart: always
+    ports:
+      - 8080:8080
+    depends_on:
+      - db
+
+volumes:
+  curaflow-db-data:

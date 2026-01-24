@@ -85,7 +85,7 @@ router.post('/login', async (req, res, next) => {
     }
     
     const [rows] = await db.execute(
-      'SELECT * FROM app_users WHERE email = ? AND is_active = 1',
+      'SELECT * FROM User WHERE email = ? AND is_active = 1',
       [email.toLowerCase().trim()]
     );
     
@@ -102,7 +102,7 @@ router.post('/login', async (req, res, next) => {
     
     // Update last login
     await db.execute(
-      'UPDATE app_users SET last_login = NOW() WHERE id = ?',
+      'UPDATE User SET last_login = NOW() WHERE id = ?',
       [user.id]
     );
     
@@ -138,7 +138,7 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
     
     // Check if user exists
     const [existing] = await db.execute(
-      'SELECT id FROM app_users WHERE email = ?',
+      'SELECT id FROM User WHERE email = ?',
       [email.toLowerCase().trim()]
     );
     
@@ -151,13 +151,12 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
     const id = crypto.randomUUID();
     
     await db.execute(
-      `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active) 
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null]
+      `INSERT INTO User (id, email, password_hash, full_name, role, is_active) 
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [id, email.toLowerCase().trim(), password_hash, full_name || '', role]
     );
-    
-    const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]);
-    
+
+    const [newUser] = await db.execute('SELECT * FROM User WHERE id = ?', [id]);
     res.status(201).json({ user: sanitizeUser(newUser[0]) });
   } catch (error) {
     next(error);
@@ -168,7 +167,7 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
 router.get('/me', authMiddleware, async (req, res, next) => {
   try {
     const [rows] = await db.execute(
-      'SELECT * FROM app_users WHERE id = ? AND is_active = 1',
+      'SELECT * FROM User WHERE id = ? AND is_active = 1',
       [req.user.sub]
     );
     
@@ -222,11 +221,11 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     values.push(req.user.sub);
     
     await db.execute(
-      `UPDATE app_users SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
+      `UPDATE User SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
       values
     );
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    const [rows] = await db.execute('SELECT * FROM User WHERE id = ?', [req.user.sub]);
     
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
@@ -247,7 +246,7 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
       return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
     }
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    const [rows] = await db.execute('SELECT * FROM User WHERE id = ?', [req.user.sub]);
     
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
@@ -261,7 +260,7 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
     
     const newHash = await bcrypt.hash(newPassword, 12);
     await db.execute(
-      'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
+      'UPDATE User SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
       [newHash, req.user.sub]
     );
     
@@ -285,7 +284,7 @@ router.post('/change-email', authMiddleware, async (req, res, next) => {
     }
     
     // Get current user
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    const [rows] = await db.execute('SELECT * FROM User WHERE id = ?', [req.user.sub]);
     
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
@@ -300,7 +299,7 @@ router.post('/change-email', authMiddleware, async (req, res, next) => {
     
     // Check if new email already exists
     const [existing] = await db.execute(
-      'SELECT id FROM app_users WHERE email = ? AND id != ?',
+      'SELECT id FROM User WHERE email = ? AND id != ?',
       [newEmail.toLowerCase().trim(), req.user.sub]
     );
     
@@ -310,7 +309,7 @@ router.post('/change-email', authMiddleware, async (req, res, next) => {
     
     // Update email
     await db.execute(
-      'UPDATE app_users SET email = ?, updated_date = NOW() WHERE id = ?',
+      'UPDATE User SET email = ?, updated_date = NOW() WHERE id = ?',
       [newEmail.toLowerCase().trim(), req.user.sub]
     );
     
@@ -323,7 +322,7 @@ router.post('/change-email', authMiddleware, async (req, res, next) => {
 // ============ LIST USERS (Admin only) ============
 router.get('/users', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
-    const [rows] = await db.execute('SELECT * FROM app_users ORDER BY created_date DESC');
+    const [rows] = await db.execute('SELECT * FROM User ORDER BY created_date DESC');
     res.json(rows.map(sanitizeUser));
   } catch (error) {
     next(error);
@@ -378,11 +377,11 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
     values.push(userId);
     
     await db.execute(
-      `UPDATE app_users SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
+      `UPDATE User SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
       values
     );
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [userId]);
+    const [rows] = await db.execute('SELECT * FROM User WHERE id = ?', [userId]);
     
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
@@ -396,7 +395,7 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
     const { userId } = req.params;
     
     await db.execute(
-      'UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?',
+      'UPDATE User SET is_active = 0, updated_date = NOW() WHERE id = ?',
       [userId]
     );
     

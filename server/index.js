@@ -3,7 +3,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import { createPool } from 'mysql2/promise';
 
 // Import routes
@@ -17,9 +16,6 @@ import voiceRouter from './routes/voice.js';
 import adminRouter from './routes/admin.js';
 import atomicRouter from './routes/atomic.js';
 import integrationsRouter from './routes/integrations.js';
-
-// Load environment variables
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;

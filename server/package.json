@@ -5,8 +5,8 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "start": "node start.js",
+    "dev": "node --watch start.js",
     "migrate": "node scripts/migrate-from-base44.js"
   },
   "dependencies": {
