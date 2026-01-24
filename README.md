@@ -173,7 +173,7 @@ npm start
 
 Expected output:
 ```
-🚀 CuraFlow Railway Server running on port 3000
+🚀 CuraFlow Server running on port 3000
 📊 Environment: development
 🗄️  Database: localhost
 ```

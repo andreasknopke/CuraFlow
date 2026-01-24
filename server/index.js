@@ -215,7 +215,7 @@ app.use((req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 CuraFlow Railway Server running on port ${PORT}`);
+  console.log(`🚀 CuraFlow Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: ${process.env.MYSQL_HOST}`);
 });
