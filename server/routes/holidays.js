@@ -4,19 +4,58 @@ import { db } from '../index.js';
 const router = express.Router();
 // Holidays are public - no auth required
 
+// State code mapping (German abbreviations to ISO codes)
+const STATE_ISO_CODES = {
+  'BW': 'DE-BW', 'BY': 'DE-BY', 'BE': 'DE-BE', 'BB': 'DE-BB',
+  'HB': 'DE-HB', 'HH': 'DE-HH', 'HE': 'DE-HE', 'MV': 'DE-MV',
+  'NI': 'DE-NI', 'NW': 'DE-NW', 'RP': 'DE-RP', 'SL': 'DE-SL',
+  'SN': 'DE-SN', 'ST': 'DE-ST', 'SH': 'DE-SH', 'TH': 'DE-TH'
+};
+
 // ===== GET HOLIDAYS =====
 router.get('/', async (req, res, next) => {
   try {
-    const { year } = req.query;
+    const { year, state = 'MV' } = req.query;
     
     if (!year) {
       return res.status(400).json({ error: 'Year parameter required' });
     }
     
-    // Simple German holidays calculation (can be expanded)
-    const holidays = calculateGermanHolidays(parseInt(year));
+    const isoStateCode = STATE_ISO_CODES[state] || 'DE-MV';
+    const countryCode = 'DE';
+    const validFrom = `${year}-01-01`;
+    const validTo = `${year}-12-31`;
     
-    res.json(holidays);
+    try {
+      // Fetch from OpenHolidays API
+      const [schoolRes, publicRes] = await Promise.all([
+        fetch(`https://openholidaysapi.org/SchoolHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`),
+        fetch(`https://openholidaysapi.org/PublicHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`)
+      ]);
+      
+      const schoolData = await schoolRes.json();
+      const publicData = await publicRes.json();
+      
+      // Transform school holidays to expected format
+      const school = (Array.isArray(schoolData) ? schoolData : []).map(h => ({
+        name: h.name?.[0]?.text || h.name || 'Schulferien',
+        startDate: h.startDate,
+        endDate: h.endDate
+      }));
+      
+      // Transform public holidays to expected format
+      const publicHolidays = (Array.isArray(publicData) ? publicData : []).map(h => ({
+        name: h.name?.[0]?.text || h.name || 'Feiertag',
+        date: h.startDate
+      }));
+      
+      res.json({ school, public: publicHolidays });
+    } catch (apiError) {
+      console.error('OpenHolidays API error:', apiError.message);
+      // Fallback to calculated holidays
+      const fallback = calculateGermanHolidays(parseInt(year));
+      res.json({ school: [], public: fallback });
+    }
   } catch (error) {
     next(error);
   }
