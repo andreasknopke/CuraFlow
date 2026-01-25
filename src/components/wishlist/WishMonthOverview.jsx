@@ -264,7 +264,7 @@ export default function WishMonthOverview({
                     </div>
                     <Button variant="outline" size="sm" onClick={() => setIsConfigOpen(true)} className="h-8 gap-2">
                         <Eye className="w-4 h-4" />
-                        <span className="hidden sm:inline">Ärzte</span>
+                        <span className="hidden sm:inline">Personal</span>
                     </Button>
                     <div className="w-px h-6 bg-slate-200 mx-1" />
                     <div className="flex items-center bg-white rounded-md border border-slate-200 shadow-sm p-0.5">
@@ -368,7 +368,7 @@ export default function WishMonthOverview({
             <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
                 <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
                     <DialogHeader>
-                        <DialogTitle>Sichtbare Ärzte</DialogTitle>
+                        <DialogTitle>Sichtbares Personal</DialogTitle>
                     </DialogHeader>
                     <div className="flex-1 overflow-y-auto pr-2">
                         <div className="grid gap-2">

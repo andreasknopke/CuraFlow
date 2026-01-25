@@ -169,7 +169,7 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
                 <div className="flex flex-1 gap-4 min-h-0">
                     {/* Doctor List */}
                     <div className="w-1/3 border-r pr-4 flex flex-col">
-                        <div className="font-medium mb-2 text-sm text-slate-500">Ärzte auswählen</div>
+                        <div className="font-medium mb-2 text-sm text-slate-500">Personen auswählen</div>
                         <ScrollArea className="flex-1">
                             <div className="space-y-1">
                                 {doctors.map(doc => (
@@ -272,7 +272,7 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
                             </div>
                         ) : (
                             <div className="flex-1 flex items-center justify-center text-slate-400">
-                                Wählen Sie einen Arzt aus der Liste
+                                Wählen Sie eine Person aus der Liste
                             </div>
                         )}
                     </div>

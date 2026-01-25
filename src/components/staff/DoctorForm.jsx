@@ -157,7 +157,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               <div className="space-y-0.5">
                   <Label htmlFor="exclude_from_staffing_plan" className="text-base">Im Stellenplan ausblenden</Label>
                   <div className="text-xs text-slate-500">
-                      Dieser Arzt wird in der Stellenplan-Berechnung ignoriert.
+                      Diese Person wird in der Stellenplan-Berechnung ignoriert.
                   </div>
               </div>
               <Switch

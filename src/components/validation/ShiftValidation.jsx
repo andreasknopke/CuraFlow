@@ -90,7 +90,7 @@ export class ShiftValidator {
         const date = new Date(dateStr);
         const doctor = this.doctors.find(d => d.id === doctorId);
         if (!doctor) {
-            result.blockers.push('Arzt nicht gefunden');
+            result.blockers.push('Person nicht gefunden');
             result.canProceed = false;
             return result;
         }

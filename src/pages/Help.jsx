@@ -92,7 +92,7 @@ export default function HelpPage() {
                                 <div className="space-y-2">
                                     <span className="font-semibold block">Methode 2: Aus der Liste</span>
                                     <p className="text-sm text-slate-600">
-                                        Ziehen Sie einen Eintrag aus dem Plan <strong>zurück in die Seitenleiste</strong> zu den verfügbaren Ärzten.
+                                        Ziehen Sie einen Eintrag aus dem Plan <strong>zurück in die Seitenleiste</strong> zum verfügbaren Personal.
                                     </p>
                                 </div>
                                 <div className="space-y-2">
@@ -120,7 +120,7 @@ export default function HelpPage() {
                                 </h3>
                                 <p className="text-sm text-slate-600">
                                     Bestimmte Dienste (wie z.B. "Dienst Vordergrund") lösen automatisch einen Freizeitausgleich am Folgetag aus.
-                                    Wenn Sie einen solchen Dienst eintragen, wird für den betroffenen Arzt am nächsten Tag automatisch "Frei" eingetragen (außer an Wochenenden und Feiertagen).
+                                    Wenn Sie einen solchen Dienst eintragen, wird für die betroffene Person am nächsten Tag automatisch "Frei" eingetragen (außer an Wochenenden und Feiertagen).
                                 </p>
                                 <div className="bg-slate-50 p-3 rounded-lg text-xs text-slate-500 border border-slate-200">
                                     Wird ein solcher Dienst verschoben oder gelöscht, wird auch das automatisch erstellte "Frei" korrigiert oder entfernt.
@@ -136,14 +136,14 @@ export default function HelpPage() {
                                     <div className="border p-3 rounded-lg bg-amber-50/50 border-amber-100">
                                         <span className="font-medium text-sm block mb-1 text-amber-800">Gelbes Warndreieck (Datum)</span>
                                         <p className="text-xs text-slate-600">
-                                            Erscheint neben dem Datum, wenn an einem Werktag alle Pflicht-Arbeitsplätze besetzt sind, aber noch Ärzte verfügbar wären, die nirgendwo eingeteilt sind.
+                                            Erscheint neben dem Datum, wenn an einem Werktag alle Pflicht-Arbeitsplätze besetzt sind, aber noch Personal verfügbar wäre, das nirgendwo eingeteilt ist.
                                             Klicken Sie auf das Dreieck, um zu sehen, wer noch "übrig" ist.
                                         </p>
                                     </div>
                                     <div className="border p-3 rounded-lg bg-red-50/50 border-red-100">
                                         <span className="font-medium text-sm block mb-1 text-red-800">Doppelbelegung & Konflikte</span>
                                         <p className="text-xs text-slate-600">
-                                            Das System verhindert aktiv ungültige Zuweisungen, z.B. wenn ein Arzt bereits als "Krank" oder "Urlaub" eingetragen ist.
+                                            Das System verhindert aktiv ungültige Zuweisungen, z.B. wenn eine Person bereits als "Krank" oder "Urlaub" eingetragen ist.
                                             Bei Versuchen, einen Dienst doppelt zu besetzen, werden Sie gewarnt oder der alte Eintrag wird ersetzt.
                                         </p>
                                     </div>

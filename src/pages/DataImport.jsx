@@ -48,7 +48,7 @@ export default function DataImportPage() {
             doctors.forEach(d => {
                 doctorNameToNewId[d.name] = d.id;
             });
-            addLog(`${doctors.length} Ärzte für ID-Mapping geladen`);
+            addLog(`${doctors.length} Personen für ID-Mapping geladen`);
 
             // Build old doctor ID -> name mapping from import data
             const oldIdToName = {};
@@ -56,7 +56,7 @@ export default function DataImportPage() {
                 data.data.Doctor.forEach(d => {
                     oldIdToName[d.id] = d.name;
                 });
-                addLog(`${data.data.Doctor.length} Ärzte in Import-Datei gefunden`);
+                addLog(`${data.data.Doctor.length} Personen in Import-Datei gefunden`);
             }
 
             // Build old ID -> new ID mapping
@@ -289,7 +289,7 @@ export default function DataImportPage() {
                         Daten-Import aus MySQL-Export
                     </CardTitle>
                     <CardDescription>
-                        Laden Sie die MySQL-Export JSON-Datei hoch. Die Ärzte-IDs werden automatisch zugeordnet.
+                        Laden Sie die MySQL-Export JSON-Datei hoch. Die Personen-IDs werden automatisch zugeordnet.
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">

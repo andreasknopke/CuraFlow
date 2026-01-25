@@ -558,7 +558,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                             <div className="space-y-4 p-1">
                                 <div className="border p-3 rounded-lg bg-slate-50 space-y-3">
                                     <div className="space-y-0.5">
-                                        <Label>Grenzwerte für Dienste (Warnung pro Arzt/Monat)</Label>
+                                        <Label>Grenzwerte für Dienste (Warnung pro Person/Monat)</Label>
                                         <p className="text-xs text-slate-500">Maximale Anzahl an Diensten bevor eine Warnung erscheint.</p>
                                     </div>
                                     <div className="grid grid-cols-1 gap-4">

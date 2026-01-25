@@ -354,7 +354,7 @@ export default function TrainingPage() {
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Ausbildungskalender</h1>
-          <p className="text-slate-500 mt-1">Rotationsplanung für Assistenzärzte</p>
+          <p className="text-slate-500 mt-1">Rotationsplanung für das Team</p>
         </div>
 
         <div className="flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
@@ -376,7 +376,7 @@ export default function TrainingPage() {
                 onValueChange={setSelectedDoctorId}
                >
                 <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Arzt auswählen" />
+                    <SelectValue placeholder="Person auswählen" />
                 </SelectTrigger>
                 <SelectContent>
                     {doctors.map(d => (
@@ -388,7 +388,7 @@ export default function TrainingPage() {
                </Select>
            ) : (
                <div className="px-3 font-medium text-slate-700">
-                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Arzt nicht gefunden' : 'Kein Arzt zugeordnet')}
+                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}
                </div>
            )}
         </div>
@@ -431,7 +431,7 @@ export default function TrainingPage() {
         </div>
       ) : (
         <div className="text-center py-12 text-slate-500">
-            Bitte wählen Sie einen Arzt aus.
+            Bitte wählen Sie eine Person aus.
         </div>
       )}
     </div>

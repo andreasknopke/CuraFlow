@@ -58,7 +58,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                         <div>
                                             <div className="flex justify-between items-start mb-1">
                                                 <span className="font-semibold text-slate-800 truncate pr-2">
-                                                    {doc?.name || 'Unbekannter Arzt'}
+                                                    {doc?.name || 'Unbekannte Person'}
                                                 </span>
                                                 <Badge variant="outline" className={wish.priority === 'high' ? "bg-red-50 text-red-700 border-red-200" : "bg-slate-50 text-slate-600"}>
                                                     {wish.priority === 'high' ? 'Hohe Prio' : 'Normal'}
@@ -500,7 +500,7 @@ export default function MyDashboardPage() {
                             <span className="text-sm font-medium text-slate-700 mr-2 hidden sm:inline">Ansicht für:</span>
                             <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
                                 <SelectTrigger className="w-full sm:w-[250px]">
-                                    <SelectValue placeholder="Arzt wählen..." />
+                                    <SelectValue placeholder="Person wählen..." />
                                 </SelectTrigger>
                                 <SelectContent>
                                     {doctors.map(doc => (
@@ -532,7 +532,7 @@ export default function MyDashboardPage() {
             {!selectedDoctorId ? (
                 <Card>
                     <CardContent className="p-12 text-center text-slate-500">
-                        {user?.doctor_id ? "Lade Daten..." : "Kein Arztprofil zugeordnet. Bitte wenden Sie sich an einen Administrator."}
+                        {user?.doctor_id ? "Lade Daten..." : "Kein Profil zugeordnet. Bitte wenden Sie sich an einen Administrator."}
                     </CardContent>
                 </Card>
             ) : (

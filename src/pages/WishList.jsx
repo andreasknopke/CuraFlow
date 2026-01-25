@@ -308,7 +308,7 @@ export default function WishListPage() {
                {user?.role === 'admin' ? (
                    <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
                     <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Arzt auswählen" />
+                        <SelectValue placeholder="Person auswählen" />
                     </SelectTrigger>
                     <SelectContent>
                         {doctors.map(d => (
@@ -318,7 +318,7 @@ export default function WishListPage() {
                    </Select>
                ) : (
                    <div className="px-3 font-medium text-slate-700">
-                       {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Arzt nicht gefunden' : 'Kein Arzt zugeordnet')}
+                       {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}
                    </div>
                )}
             </div>
@@ -402,7 +402,7 @@ export default function WishListPage() {
                     />
                   ) : (
                     <div className="text-center py-12 text-slate-500">
-                        Bitte wählen Sie einen Arzt aus.
+                        Bitte wählen Sie eine Person aus.
                     </div>
                   )}
               </TabsContent>
@@ -441,7 +441,7 @@ export default function WishListPage() {
             />
         ) : (
             <div className="text-center py-12 text-slate-500">
-                Bitte wählen Sie einen Arzt aus.
+                Bitte wählen Sie eine Person aus.
             </div>
         )
       )}

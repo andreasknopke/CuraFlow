@@ -540,7 +540,7 @@ export default function VacationPage() {
 
                    <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
                     <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Arzt auswählen" />
+                        <SelectValue placeholder="Person auswählen" />
                     </SelectTrigger>
                     <SelectContent>
                         {doctors.map(d => (
@@ -585,7 +585,7 @@ export default function VacationPage() {
             />
           ) : (
             <div className="text-center py-12 text-slate-500">
-                Bitte wählen Sie einen Arzt aus.
+                Bitte wählen Sie eine Person aus.
             </div>
           )}
         </>

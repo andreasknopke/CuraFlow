@@ -184,11 +184,11 @@ export default function AppSettingsDialog() {
                         <div className="border p-3 rounded-lg bg-slate-50 space-y-3">
                             <div className="space-y-0.5">
                                 <Label>Grenzwerte für Verfügbarkeit</Label>
-                                <p className="text-xs text-slate-500">Minimale Anzahl anwesender Ärzte (Warnung bei Unterschreitung).</p>
+                                <p className="text-xs text-slate-500">Minimale Anzahl anwesenden Personals (Warnung bei Unterschreitung).</p>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
-                                    <Label className="text-xs">Min. Fachärzte (inkl. OA/CA)</Label>
+                                    <Label className="text-xs">Min. Fachpersonal (inkl. OA/CA)</Label>
                                     <Input 
                                         type="number" 
                                         min="0"
@@ -198,7 +198,7 @@ export default function AppSettingsDialog() {
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label className="text-xs">Min. Assistenzärzte</Label>
+                                    <Label className="text-xs">Min. Assistenzpersonal</Label>
                                     <Input 
                                         type="number" 
                                         min="0"

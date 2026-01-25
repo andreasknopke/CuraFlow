@@ -97,7 +97,7 @@ export default function UserManagement() {
                             <TableHead>Name</TableHead>
                             <TableHead>Email</TableHead>
                             <TableHead>Rolle</TableHead>
-                            <TableHead>Zugeordneter Arzt</TableHead>
+                            <TableHead>Zugeordnete Person</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Aktionen</TableHead>
                         </TableRow>
@@ -128,10 +128,10 @@ export default function UserManagement() {
                                         })}
                                     >
                                         <SelectTrigger className="w-48">
-                                            <SelectValue placeholder="Kein Arzt" />
+                                            <SelectValue placeholder="Keine Person" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="none">Kein Arzt</SelectItem>
+                                            <SelectItem value="none">Keine Person</SelectItem>
                                             {doctors.map(doc => (
                                                 <SelectItem key={doc.id} value={doc.id}>
                                                     {doc.name} ({doc.initials})

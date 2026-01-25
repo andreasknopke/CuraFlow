@@ -1068,7 +1068,7 @@ export default function ScheduleBoard() {
                       const posName = resolvePosition(position);
 
                       if (!doc) {
-                          toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                          toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                           skippedCount++;
                           continue;
                       }
@@ -1144,7 +1144,7 @@ export default function ScheduleBoard() {
                   const doc = resolveDoctor(doctor_id);
 
                   if (!doc) {
-                      toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                       skippedCount++;
                   } else {
                       const tDate = target_date || source_date;
@@ -1208,7 +1208,7 @@ export default function ScheduleBoard() {
                   const doc = resolveDoctor(doctor_id);
 
                   if (!doc) {
-                      toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                       skippedCount++;
                   } else {
                       let idsToDelete = [];
@@ -2306,7 +2306,7 @@ export default function ScheduleBoard() {
                 <div>
                 <h3 className="font-semibold text-slate-700 mb-3 flex items-center">
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{doctors.length}</span>
-                    Verfügbare Ärzte
+                    Verfügbares Personal
                 </h3>
                 <Droppable droppableId="sidebar" isDropDisabled={isReadOnly}>
                     {(provided) => (
