@@ -22,12 +22,15 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   // Dynamisch Rollen aus DB laden
   const { roleNames, isLoading: rolesLoading } = useTeamRoles();
   const availableRoles = roleNames.length > 0 ? roleNames : FALLBACK_ROLES;
+  
+  // Default-Rolle (letzte in der Liste, typischerweise niedrigste Priorität)
+  const defaultRole = availableRoles[availableRoles.length - 1] || "Assistenzarzt";
 
   const [formData, setFormData] = useState(
     doctor || {
       name: "",
       initials: "",
-      role: availableRoles[availableRoles.length - 1] || "Assistenzarzt",
+      role: defaultRole,
       google_email: "",
     }
   );
@@ -35,18 +38,19 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   useEffect(() => {
     if (doctor) {
       setFormData(doctor);
-    } else {
+    } else if (open) {
+      // Nur zurücksetzen wenn Dialog geöffnet wird UND kein doctor
       setFormData({
         name: "",
         initials: "",
-        role: availableRoles[availableRoles.length - 1] || "Assistenzarzt",
+        role: defaultRole,
         google_email: "",
         fte: 1.0,
         contract_end_date: "",
         exclude_from_staffing_plan: false,
       });
     }
-  }, [doctor, open, availableRoles]);
+  }, [doctor, open]); // availableRoles entfernt - wird nur beim Öffnen benötigt
 
   const handleSubmit = (e) => {
     e.preventDefault();
