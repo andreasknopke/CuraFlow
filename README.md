@@ -70,7 +70,8 @@ NODE_ENV=development
 PORT=3000
 
 # MySQL Database Configuration (Docker Compose)
-MYSQL_HOST=localhost
+# Note: Use 127.0.0.1 instead of localhost for better macOS compatibility
+MYSQL_HOST=127.0.0.1
 MYSQL_PORT=3307
 MYSQL_USER=curaflow
 MYSQL_PASSWORD=curaflow123

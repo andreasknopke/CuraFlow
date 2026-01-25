@@ -221,6 +221,8 @@ CREATE TABLE IF NOT EXISTS `CustomHoliday` (
 CREATE TABLE IF NOT EXISTS `StaffingPlanEntry` (
   `id` VARCHAR(36) PRIMARY KEY,
   `date` DATE NOT NULL,
+  `year` INT,
+  `month` INT,
   `shift_type` VARCHAR(50),
   `workplace` VARCHAR(100),
   `required_staff` INT DEFAULT 1,
@@ -230,6 +232,7 @@ CREATE TABLE IF NOT EXISTS `StaffingPlanEntry` (
   `updated_date` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_by` VARCHAR(255),
   INDEX idx_date (`date`),
+  INDEX idx_year_month (`year`, `month`),
   INDEX idx_shift_type (`shift_type`),
   INDEX idx_workplace (`workplace`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

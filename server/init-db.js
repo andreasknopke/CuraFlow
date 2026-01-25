@@ -3,13 +3,31 @@
  * Run this to create tables if schema.sql wasn't auto-loaded
  */
 
-import { db } from './index.js';
+import dotenv from 'dotenv';
+import { createPool } from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// Load environment variables FIRST
+dotenv.config();
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Create database connection directly (don't import from index.js to avoid starting server)
+const db = createPool({
+  host: process.env.MYSQL_HOST,
+  port: parseInt(process.env.MYSQL_PORT || '3306'),
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  dateStrings: true,
+  timezone: '+00:00'
+});
 
 async function initDatabase() {
   try {
@@ -61,13 +79,14 @@ async function initDatabase() {
         // Ignore "already exists" errors
         if (error.code === 'ER_TABLE_EXISTS_ERROR' || 
             error.code === 'ER_DUP_ENTRY' ||
-            error.message.includes('Duplicate entry') ||
-            error.message.includes('already exists')) {
+            error.message?.includes('Duplicate entry') ||
+            error.message?.includes('already exists')) {
           const match = statement.match(/CREATE TABLE.*?`(\w+)`/i);
           const tableName = match ? match[1] : 'entry';
           console.log(`⏭️  ${tableName} (already exists)`);
         } else {
-          console.error(`❌ Error:`, error.message);
+          console.error(`❌ Error executing statement ${i + 1}:`, error.message || error);
+          console.error(`   SQL: ${statement.substring(0, 100)}...`);
           // Don't stop on errors, continue with next statement
         }
       }
@@ -79,9 +98,12 @@ async function initDatabase() {
     console.log('   Password: admin123');
     console.log('   ⚠️  Change password on first login!\n');
     
+    // Close database connection
+    await db.end();
     process.exit(0);
   } catch (error) {
     console.error('❌ Error initializing database:', error);
+    await db.end().catch(() => {});
     process.exit(1);
   }
 }
