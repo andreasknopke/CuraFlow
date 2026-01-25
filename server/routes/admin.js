@@ -53,10 +53,18 @@ router.post('/tools', async (req, res, next) => {
           return res.status(400).json({ error: 'Keine Secrets gefunden' });
         }
 
-        const json = JSON.stringify(config);
-        const token = Buffer.from(json).toString('base64');
+        if (!process.env.JWT_SECRET) {
+          console.error('JWT_SECRET not configured');
+          return res.status(500).json({ error: 'Server nicht korrekt konfiguriert (JWT_SECRET fehlt)' });
+        }
+
+        // Import encryption utility
+        const { encryptToken } = await import('../utils/crypto.js');
         
-        console.log('Token generated successfully');
+        const json = JSON.stringify(config);
+        const token = encryptToken(json);
+        
+        console.log('Encrypted DB token generated successfully');
         return res.json({ token });
       }
 

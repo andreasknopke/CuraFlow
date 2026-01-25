@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createPool } from 'mysql2/promise';
+import { parseDbToken } from './utils/crypto.js';
 
 // Import routes
 import authRouter from './routes/auth.js';
@@ -64,12 +65,11 @@ export const getTenantDb = (dbToken) => {
   }
   
   try {
-    // Decode token (base64 encoded JSON)
-    const configJson = Buffer.from(dbToken, 'base64').toString('utf-8');
-    const config = JSON.parse(configJson);
+    // Decrypt and parse token (supports both legacy base64 and encrypted formats)
+    const config = parseDbToken(dbToken);
     
     // Validate required fields
-    if (!config.host || !config.user || !config.database) {
+    if (!config || !config.host || !config.user || !config.database) {
       console.error('Invalid DB token: missing required fields');
       return db;
     }
