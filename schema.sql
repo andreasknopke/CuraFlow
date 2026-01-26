@@ -6,12 +6,13 @@ CREATE DATABASE IF NOT EXISTS curaflow CHARACTER SET utf8mb4 COLLATE utf8mb4_uni
 USE curaflow;
 
 -- Users table (JWT authentication)
-CREATE TABLE IF NOT EXISTS `User` (
+CREATE TABLE IF NOT EXISTS `app_users` (
   `id` VARCHAR(36) PRIMARY KEY,
   `email` VARCHAR(255) UNIQUE NOT NULL,
   `password_hash` VARCHAR(255) NOT NULL,
   `full_name` VARCHAR(255),
   `role` VARCHAR(50) DEFAULT 'user',
+  `doctor_id` VARCHAR(36),
   `is_active` BOOLEAN DEFAULT TRUE,
   `must_change_password` BOOLEAN DEFAULT FALSE,
   `last_login` DATETIME,
@@ -29,7 +30,9 @@ CREATE TABLE IF NOT EXISTS `User` (
   `updated_date` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `created_by` VARCHAR(255),
   INDEX idx_email (`email`),
-  INDEX idx_role (`role`)
+  INDEX idx_role (`role`),
+  INDEX idx_doctor_id (`doctor_id`),
+  FOREIGN KEY (`doctor_id`) REFERENCES `Doctor`(`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Doctors/Staff table
@@ -281,7 +284,7 @@ CREATE TABLE IF NOT EXISTS `VoiceAlias` (
 
 -- Insert default admin user (password: admin123)
 -- Password hash for 'admin123' using bcrypt rounds=10
-INSERT INTO `User` (`id`, `email`, `password_hash`, `full_name`, `role`, `must_change_password`, `created_by`)
+INSERT INTO `app_users` (`id`, `email`, `password_hash`, `full_name`, `role`, `must_change_password`, `created_by`)
 VALUES 
   ('00000000-0000-0000-0000-000000000001', 'admin@curaflow.local', '$2a$10$CwTycUXWue0Thq9StjUM0uJ8VfEYKkXhEKt/ZLn8WKGkEqZqL0.JO', 'Administrator', 'admin', TRUE, 'system')
 ON DUPLICATE KEY UPDATE `email` = `email`;

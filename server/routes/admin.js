@@ -139,7 +139,7 @@ router.post('/tools', async (req, res, next) => {
         for (const table of tables) {
           const tableName = Object.values(table)[0];
           // Skip user table to keep admin access
-          if (tableName === 'User' || tableName === 'app_users') continue;
+          if (tableName === 'app_users') continue;
           await db.execute(`DELETE FROM \`${tableName}\``);
         }
 

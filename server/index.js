@@ -6,7 +6,13 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
+import dotenv from 'dotenv';
 import { parseDbToken } from './utils/crypto.js';
+
+// Load environment variables if not already loaded (fallback for direct execution)
+if (!process.env.JWT_SECRET) {
+  dotenv.config();
+}
 
 // Import routes
 import authRouter from './routes/auth.js';
