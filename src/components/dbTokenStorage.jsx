@@ -114,12 +114,40 @@ export const extractAndSaveDbTokenFromUrl = async () => {
         // Clear the active_token_id since this is a new token from URL
         localStorage.removeItem('active_token_id');
         
-        // Clean URL
+        // Clean URL and reload page to ensure all queries use the new token
         const newUrl = window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, newUrl);
+        
+        // Force reload to ensure all data is fetched with new token
+        window.location.reload();
         return dbToken;
     }
     return null;
+};
+
+// Synchronous extraction for early initialization (before React renders)
+export const extractDbTokenFromUrlSync = () => {
+    const params = new URLSearchParams(window.location.search);
+    let dbToken = params.get('db_token');
+    
+    if (dbToken) {
+        // URLSearchParams converts + to space, restore them
+        dbToken = dbToken.replace(/ /g, '+');
+        
+        // Save synchronously to localStorage
+        localStorage.setItem(TOKEN_KEY, dbToken);
+        localStorage.setItem(TOKEN_ENABLED_KEY, 'true');
+        localStorage.removeItem('active_token_id');
+        
+        // Clean URL
+        const newUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // Force reload to ensure all data is fetched with new token
+        window.location.reload();
+        return true;
+    }
+    return false;
 };
 
 // Check if token is enabled
