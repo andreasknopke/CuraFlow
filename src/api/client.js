@@ -29,13 +29,8 @@ class APIClient {
   // Get active DB token (only if enabled)
   getDbToken() {
     const enabled = localStorage.getItem(DB_TOKEN_ENABLED_KEY) === 'true';
-    if (!enabled) {
-      console.log('[API] DB Token: disabled');
-      return null;
-    }
-    const token = localStorage.getItem(DB_TOKEN_KEY);
-    console.log('[API] DB Token:', token ? `enabled (${token.substring(0, 20)}...)` : 'enabled but missing');
-    return token;
+    if (!enabled) return null;
+    return localStorage.getItem(DB_TOKEN_KEY);
   }
 
   async request(endpoint, options = {}) {
@@ -55,10 +50,6 @@ class APIClient {
     };
 
     const url = `${this.baseURL}${endpoint}`;
-    
-    // Debug logging
-    console.log(`[API] ${config.method || 'GET'} ${endpoint}`);
-    
     const response = await fetch(url, config);
 
     if (!response.ok) {

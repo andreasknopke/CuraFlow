@@ -38,36 +38,29 @@ export default function TrainingPage() {
     queryFn: () => db.Workplace.list(null, 1000),
   });
 
-  // Select doctor logic
+  // Select doctor logic - only set initial value, don't override user selection
   React.useEffect(() => {
-    if (doctors.length > 0) {
+    if (doctors.length > 0 && !selectedDoctorId) {
         if (user && user.role !== 'admin') {
-            // Non-admins can ONLY see their assigned doctor
+            // Non-admins: use their assigned doctor
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else {
-                // No doctor assigned to this user
-                setSelectedDoctorId(null);
+                setSelectedDoctorId(user.doctor_id);
             }
         } else if (user) {
-            // Admins: prefer user.doctor_id, otherwise keep current or use default Assistenzarzt
+            // Admins: prefer user.doctor_id, otherwise first Assistenzarzt
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else if (!selectedDoctorId) {
+                setSelectedDoctorId(user.doctor_id);
+            } else {
                 const assis = doctors.find(d => d.role === 'Assistenzarzt');
                 setSelectedDoctorId(assis ? assis.id : doctors[0].id);
             }
-        } else if (!selectedDoctorId) {
+        } else {
             // No user yet, use default Assistenzarzt
             const assis = doctors.find(d => d.role === 'Assistenzarzt');
             setSelectedDoctorId(assis ? assis.id : doctors[0].id);
         }
     }
-  }, [doctors, selectedDoctorId, user]);
+  }, [doctors, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
