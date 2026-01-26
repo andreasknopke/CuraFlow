@@ -6,7 +6,6 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
-import dotenv from 'dotenv';
 import { parseDbToken } from './utils/crypto.js';
 
 // Load environment variables if not already loaded (fallback for direct execution)
@@ -222,7 +221,7 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 CuraFlow Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: ${process.env.MYSQL_HOST}`);
