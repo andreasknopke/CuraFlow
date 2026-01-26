@@ -19,7 +19,10 @@ const getEncryptionKey = () => {
     throw new Error('JWT_SECRET environment variable is required for encryption');
   }
   // Use SHA-256 to derive a 32-byte key from the secret
-  return crypto.createHash('sha256').update(secret).digest();
+  const key = crypto.createHash('sha256').update(secret).digest();
+  // Log first 8 chars of key hash for debugging (safe to log)
+  console.log('[crypto] JWT_SECRET hash prefix:', key.toString('hex').substring(0, 16));
+  return key;
 };
 
 /**
