@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from "sonner";
+import { api } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -76,24 +77,27 @@ export default function TokenManager() {
         }
         
         try {
-            const config = { ...newTokenCreds };
-            if (config.ssl) {
-                config.ssl = { rejectUnauthorized: false };
-            } else {
-                delete config.ssl;
-            }
-            const token = btoa(JSON.stringify(config));
-            
-            console.log('[TokenManager] Saving token:', { 
-                name: newTokenName.trim(), 
-                config: { host: config.host, database: config.database, user: config.user },
-                tokenPreview: token.substring(0, 30) + '...'
+            // Use server-side encryption for the token
+            const response = await api.request('/api/admin/tools', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'encrypt_db_token',
+                    data: {
+                        host: newTokenCreds.host,
+                        user: newTokenCreds.user,
+                        password: newTokenCreds.password,
+                        database: newTokenCreds.database,
+                        port: newTokenCreds.port,
+                        ssl: newTokenCreds.ssl
+                    }
+                })
             });
+            
+            const token = response.token;
             
             const savedEntry = await saveNamedToken(newTokenName.trim(), token);
             
             // Auto-activate the new token
-            console.log('[TokenManager] Activating token:', savedEntry.id);
             await switchToToken(savedEntry.id);
             
             setSavedTokens(getSavedTokens());
@@ -102,7 +106,7 @@ export default function TokenManager() {
             setShowAddDialog(false);
             setNewTokenName('');
             setNewTokenCreds({ host: '', user: '', password: '', database: '', port: '3306', ssl: false });
-            toast.success(`Token "${newTokenName}" gespeichert und aktiviert`);
+            toast.success(`Token "${newTokenName}" verschlüsselt und gespeichert`);
             
             // Reload to apply changes
             setTimeout(() => window.location.reload(), 1000);
@@ -175,14 +179,22 @@ export default function TokenManager() {
     
     const parseTokenInfo = (token) => {
         try {
+            // Try to decode as legacy base64 token
             const decoded = JSON.parse(atob(token));
             return {
                 host: decoded.host,
                 database: decoded.database,
-                user: decoded.user
+                user: decoded.user,
+                encrypted: false
             };
         } catch (e) {
-            return null;
+            // Token is encrypted - can't show details
+            return {
+                host: '***',
+                database: '***',
+                user: '***',
+                encrypted: true
+            };
         }
     };
     
@@ -201,20 +213,36 @@ export default function TokenManager() {
             return;
         }
         
-        // Validate token format
+        const tokenValue = importTokenValue.trim();
+        
+        // Validate token format - accept both encrypted and legacy base64 tokens
+        let isValidToken = false;
+        
+        // Try legacy base64 format first
         try {
-            const decoded = JSON.parse(atob(importTokenValue.trim()));
-            if (!decoded.host || !decoded.database) {
-                toast.error('Ungültiges Token-Format: Host und Datenbank fehlen');
-                return;
+            const decoded = JSON.parse(atob(tokenValue));
+            if (decoded.host && decoded.database) {
+                isValidToken = true;
+                // Note: Legacy tokens will work but are less secure
             }
         } catch (e) {
-            toast.error('Ungültiges Token-Format: Konnte nicht dekodiert werden');
+            // Not a legacy token, might be encrypted
+        }
+        
+        // Encrypted tokens are longer and don't decode to valid JSON directly
+        // They will be validated by the server when used
+        if (!isValidToken && tokenValue.length > 50) {
+            // Assume it's an encrypted token - server will validate
+            isValidToken = true;
+        }
+        
+        if (!isValidToken) {
+            toast.error('Ungültiges Token-Format');
             return;
         }
         
         try {
-            const savedEntry = await saveNamedToken(importTokenName.trim(), importTokenValue.trim());
+            const savedEntry = await saveNamedToken(importTokenName.trim(), tokenValue);
             await switchToToken(savedEntry.id);
             
             setSavedTokens(getSavedTokens());
@@ -365,10 +393,20 @@ export default function TokenManager() {
                                                                     Aktiv
                                                                 </Badge>
                                                             )}
+                                                            {info?.encrypted && (
+                                                                <Badge variant="secondary" className="bg-green-100 text-green-700">
+                                                                    🔒 Verschlüsselt
+                                                                </Badge>
+                                                            )}
                                                         </div>
-                                                        {info && (
+                                                        {info && !info.encrypted && (
                                                             <div className="text-xs text-slate-500 mt-0.5">
                                                                 {info.host} / {info.database}
+                                                            </div>
+                                                        )}
+                                                        {info?.encrypted && (
+                                                            <div className="text-xs text-green-600 mt-0.5">
+                                                                Verbindungsdaten sicher verschlüsselt
                                                             </div>
                                                         )}
                                                     </>
