@@ -282,6 +282,25 @@ CREATE TABLE IF NOT EXISTS `VoiceAlias` (
   INDEX idx_entity_type (`entity_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Team Roles (configurable doctor positions)
+CREATE TABLE IF NOT EXISTS `TeamRole` (
+  `id` VARCHAR(36) PRIMARY KEY,
+  `name` VARCHAR(100) NOT NULL UNIQUE,
+  `priority` INT NOT NULL DEFAULT 99,
+  `is_specialist` BOOLEAN NOT NULL DEFAULT FALSE,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Insert default team roles
+INSERT INTO `TeamRole` (`id`, `name`, `priority`, `is_specialist`) VALUES
+  (UUID(), 'Chefarzt', 0, TRUE),
+  (UUID(), 'Oberarzt', 1, TRUE),
+  (UUID(), 'Facharzt', 2, TRUE),
+  (UUID(), 'Assistenzarzt', 3, FALSE),
+  (UUID(), 'Nicht-Radiologe', 4, FALSE)
+ON DUPLICATE KEY UPDATE `priority` = VALUES(`priority`), `is_specialist` = VALUES(`is_specialist`);
+
 -- Note: Admin user is created via init-db.js during installation
 -- This ensures a unique, randomly generated password for each installation
 

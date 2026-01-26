@@ -376,15 +376,35 @@ node init-db.js
 
 ## Production Deployment
 
+**⚠️ Important:** The included `docker-compose.yaml` is designed for **development and local testing only**. Do not use it as-is for production.
+
 For production deployment:
 
-1. Generate new JWT secret
-2. Update `MYSQL_PASSWORD` in `server/.env` and `docker-compose.yaml`
-3. Build frontend: `npm run build`
-4. Deploy built files from `dist/` folder
-5. Use environment variables instead of `.env` file
-6. Enable HTTPS/SSL
-7. Configure proper CORS origins
+1. **Database Setup:**
+   - Use a managed database service (AWS RDS, Google Cloud SQL, Azure Database, etc.) or
+   - Set up a dedicated, hardened MariaDB/MySQL server with:
+     - Strong passwords (not stored in version control)
+     - Restricted network access (firewall rules, VPC)
+     - Regular backups and monitoring
+     - SSL/TLS connections enabled
+
+2. **Application Configuration:**
+   - Generate a strong, unique JWT secret: `openssl rand -base64 32`
+   - Use environment variables or a secrets manager (never commit secrets to `.env` files)
+   - Update `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`
+   - Set `JWT_SECRET` from secure source
+
+3. **Build & Deploy:**
+   - Build frontend: `npm run build`
+   - Deploy built files from `dist/` folder to a static host or CDN
+   - Deploy backend to a Node.js hosting service (PM2, Docker, cloud services)
+
+4. **Security Hardening:**
+   - Enable HTTPS/SSL (use Let's Encrypt or cloud provider certificates)
+   - Configure proper CORS origins (remove wildcards)
+   - Set secure session cookies
+   - Implement rate limiting and request validation
+   - Regular security updates and dependency audits
 
 ## Tech Stack
 
