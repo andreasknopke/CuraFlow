@@ -107,6 +107,7 @@ export const parseDbToken = (token) => {
   try {
     console.log('[parseDbToken] Received token length:', token?.length);
     console.log('[parseDbToken] Token first 50 chars:', token?.substring(0, 50));
+    console.log('[parseDbToken] Token last 50 chars:', token?.substring(token?.length - 50));
     console.log('[parseDbToken] Token contains spaces:', token?.includes(' '));
     console.log('[parseDbToken] Token contains +:', token?.includes('+'));
     
@@ -124,7 +125,7 @@ export const parseDbToken = (token) => {
     return JSON.parse(decrypted);
   } catch (error) {
     console.error('Failed to parse DB token:', error.message);
-    console.error('Token was:', token?.substring(0, 100));
+    console.error('Token was (full):', token);
     return null;
   }
 };
