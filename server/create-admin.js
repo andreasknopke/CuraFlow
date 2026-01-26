@@ -40,7 +40,7 @@ async function createAdmin() {
     
     if (existing.length > 0) {
       console.log('⚠️  Admin user already exists, updating password...');
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password, 14);
       await db.execute(
         'UPDATE app_users SET password_hash = ?, must_change_password = 1, is_active = 1 WHERE email = ?',
         [passwordHash, email]
@@ -48,7 +48,7 @@ async function createAdmin() {
       console.log('✅ Admin password updated');
     } else {
       console.log('➕ Creating new admin user...');
-      const passwordHash = await bcrypt.hash(password, 12);
+      const passwordHash = await bcrypt.hash(password, 14);
       await db.execute(
         `INSERT INTO app_users (id, email, password_hash, full_name, role, must_change_password, is_active, created_by)
          VALUES (?, ?, ?, 'Administrator', 'admin', 1, 1, 'system')`,
