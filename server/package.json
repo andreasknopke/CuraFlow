@@ -1,12 +1,12 @@
 {
-  "name": "curaflow-railway-server",
+  "name": "curaflow-server",
   "version": "1.0.0",
-  "description": "CuraFlow Railway Backend Server",
+  "description": "CuraFlow Express Backend Server",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "start": "node start.js",
+    "dev": "node --watch start.js",
     "migrate": "node scripts/migrate-from-base44.js"
   },
   "dependencies": {
@@ -21,7 +21,8 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.16.1",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^7.0.12"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

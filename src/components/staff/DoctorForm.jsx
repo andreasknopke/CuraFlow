@@ -125,7 +125,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               type="email"
               value={formData.google_email || ''}
               onChange={(e) => setFormData({ ...formData, google_email: e.target.value })}
-              placeholder="arzt@gmail.com"
+              placeholder="example@hospital.com"
             />
           </div>
 

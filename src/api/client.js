@@ -1,7 +1,7 @@
 /**
- * Einfacher API Client für Railway Backend
- * Kommuniziert direkt mit Express API über MySQL
- * Unterstützt Multi-Tenant via DB-Token
+ * API Client for CuraFlow Backend
+ * Communicates with Express API over MySQL
+ * Supports Multi-Tenant via DB-Token
  */
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
@@ -482,10 +482,68 @@ export const base44 = {
       return api.logout();
     }
   },
+  // Integrations-Kompatibilitätsschicht für base44.integrations.*
+  integrations: {
+    Core: {
+      InvokeLLM: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.InvokeLLM - migrate to direct API');
+        return api.request('/api/integrations/llm', {
+          method: 'POST',
+          body: JSON.stringify(params),
+        });
+      },
+      SendEmail: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.SendEmail - migrate to direct API');
+        return api.request('/api/integrations/email', {
+          method: 'POST',
+          body: JSON.stringify(params),
+        });
+      },
+      SendSMS: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.SendSMS - not implemented');
+        throw new Error('SMS integration not implemented');
+      },
+      UploadFile: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.UploadFile - migrate to direct API');
+        const formData = new FormData();
+        formData.append('file', params.file);
+        
+        const token = api.getToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        
+        const response = await fetch(`${api.baseURL}/api/integrations/upload`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          throw new Error('Upload failed');
+        }
+        
+        return response.json();
+      },
+      GenerateImage: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.GenerateImage - not implemented');
+        throw new Error('Image generation not implemented');
+      },
+      ExtractDataFromUploadedFile: async (params) => {
+        console.warn('[Deprecated] base44.integrations.Core.ExtractDataFromUploadedFile - not implemented');
+        throw new Error('File extraction not implemented');
+      }
+    }
+  },
   analytics: {
     track: () => {
       // Analytics deaktiviert
       console.log('[Analytics disabled]');
+    }
+  },
+  appLogs: {
+    logUserInApp: () => {
+      // App logs deaktiviert
+      console.log('[AppLogs disabled]');
+      return Promise.resolve();
     }
   }
 };
