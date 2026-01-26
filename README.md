@@ -308,13 +308,31 @@ docker compose restart
   kill $(lsof -ti:3000)
   ```
 
-### Table Doesn't Exist
+### Table Doesn't Exist or Foreign Key Error
 
-**Problem:** `Table 'curaflow.User' doesn't exist`
+**Problem:** `Table 'curaflow.app_users' doesn't exist` or `errno: 150 "Foreign key constraint is incorrectly formed"`
 
-**Solution:** Re-run database initialization:
+**Solution:** Completely reset the database (this will delete all data):
 ```bash
 cd server
+docker compose down -v    # -v flag removes volumes with data
+docker compose up -d
+# Wait 10-15 seconds for database to initialize
+node init-db.js
+```
+
+**Note:** Simply running `docker compose down` removes containers but keeps the data in volumes. Use `-v` to remove volumes and start fresh.
+
+### Admin User Already Exists
+
+**Problem:** Init script says admin user already exists after removing containers
+
+**Solution:** Docker volumes persist data even when containers are removed. Use the `-v` flag:
+```bash
+cd server
+docker compose down -v
+docker compose up -d
+# Wait 10-15 seconds
 node init-db.js
 ```
 

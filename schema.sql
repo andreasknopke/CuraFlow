@@ -5,6 +5,25 @@
 CREATE DATABASE IF NOT EXISTS curaflow CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE curaflow;
 
+-- Doctors/Staff table (created first because app_users references it)
+CREATE TABLE IF NOT EXISTS `Doctor` (
+  `id` VARCHAR(36) PRIMARY KEY,
+  `name` VARCHAR(255) NOT NULL,
+  `position` VARCHAR(100),
+  `color` VARCHAR(50),
+  `section` VARCHAR(100),
+  `email` VARCHAR(255),
+  `receive_email_notifications` BOOLEAN DEFAULT FALSE,
+  `exclude_from_staffing_plan` BOOLEAN DEFAULT FALSE,
+  `is_active` BOOLEAN DEFAULT TRUE,
+  `created_date` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_date` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `created_by` VARCHAR(255),
+  INDEX idx_name (`name`),
+  INDEX idx_position (`position`),
+  INDEX idx_section (`section`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Users table (JWT authentication)
 CREATE TABLE IF NOT EXISTS `app_users` (
   `id` VARCHAR(36) PRIMARY KEY,
@@ -33,25 +52,6 @@ CREATE TABLE IF NOT EXISTS `app_users` (
   INDEX idx_role (`role`),
   INDEX idx_doctor_id (`doctor_id`),
   FOREIGN KEY (`doctor_id`) REFERENCES `Doctor`(`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Doctors/Staff table
-CREATE TABLE IF NOT EXISTS `Doctor` (
-  `id` VARCHAR(36) PRIMARY KEY,
-  `name` VARCHAR(255) NOT NULL,
-  `position` VARCHAR(100),
-  `color` VARCHAR(50),
-  `section` VARCHAR(100),
-  `email` VARCHAR(255),
-  `receive_email_notifications` BOOLEAN DEFAULT FALSE,
-  `exclude_from_staffing_plan` BOOLEAN DEFAULT FALSE,
-  `is_active` BOOLEAN DEFAULT TRUE,
-  `created_date` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  `updated_date` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `created_by` VARCHAR(255),
-  INDEX idx_name (`name`),
-  INDEX idx_position (`position`),
-  INDEX idx_section (`section`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Shift Entries (Schedule)
