@@ -5,8 +5,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
 
-const ROLES = ["Chefarzt", "Oberarzt", "Facharzt", "Assistenzarzt", "Nicht-Radiologe"];
+// Fallback falls Rollen noch nicht geladen
+const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
 const COLORS = [
   { label: "Rot (Chef)", value: "bg-red-100 text-red-800" },
   { label: "Blau (Oberarzt)", value: "bg-blue-100 text-blue-800" },
@@ -17,11 +19,18 @@ const COLORS = [
 ];
 
 export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
+  // Dynamisch Rollen aus DB laden
+  const { roleNames, isLoading: rolesLoading } = useTeamRoles();
+  const availableRoles = roleNames.length > 0 ? roleNames : FALLBACK_ROLES;
+  
+  // Default-Rolle (letzte in der Liste, typischerweise niedrigste Priorität)
+  const defaultRole = availableRoles[availableRoles.length - 1] || "Assistenzarzt";
+
   const [formData, setFormData] = useState(
     doctor || {
       name: "",
       initials: "",
-      role: "Assistenzarzt",
+      role: defaultRole,
       google_email: "",
     }
   );
@@ -29,18 +38,19 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   useEffect(() => {
     if (doctor) {
       setFormData(doctor);
-    } else {
+    } else if (open) {
+      // Nur zurücksetzen wenn Dialog geöffnet wird UND kein doctor
       setFormData({
         name: "",
         initials: "",
-        role: "Assistenzarzt",
+        role: defaultRole,
         google_email: "",
         fte: 1.0,
         contract_end_date: "",
         exclude_from_staffing_plan: false,
       });
     }
-  }, [doctor, open]);
+  }, [doctor, open]); // availableRoles entfernt - wird nur beim Öffnen benötigt
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -56,7 +66,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>{doctor ? "Arzt bearbeiten" : "Neuen Arzt hinzufügen"}</DialogTitle>
+          <DialogTitle>{doctor ? "Teammitglied bearbeiten" : "Neues Teammitglied hinzufügen"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           <div className="grid gap-2">
@@ -89,7 +99,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((role) => (
+                  {availableRoles.map((role) => (
                     <SelectItem key={role} value={role}>
                       {role}
                     </SelectItem>
@@ -105,7 +115,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               type="email"
               value={formData.email || ''}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="arzt@klinik.de"
+              placeholder="name@klinik.de"
             />
           </div>
           <div className="grid gap-2">
@@ -147,7 +157,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               <div className="space-y-0.5">
                   <Label htmlFor="exclude_from_staffing_plan" className="text-base">Im Stellenplan ausblenden</Label>
                   <div className="text-xs text-slate-500">
-                      Dieser Arzt wird in der Stellenplan-Berechnung ignoriert.
+                      Diese Person wird in der Stellenplan-Berechnung ignoriert.
                   </div>
               </div>
               <Switch

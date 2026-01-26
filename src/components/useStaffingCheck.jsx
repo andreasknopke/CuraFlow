@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 export function useStaffingCheck(doctors, shifts) {
     const { data: settings = [] } = useQuery({
@@ -7,6 +8,9 @@ export function useStaffingCheck(doctors, shifts) {
         queryFn: () => base44.entities.SystemSetting.list(),
         staleTime: 1000 * 60 * 5 // 5 minutes
     });
+
+    // Dynamische Facharzt-Rollen aus DB laden
+    const { specialistRoles } = useTeamRoles();
 
     const minPresentSpecialists = parseInt(settings.find(s => s.key === 'min_present_specialists')?.value || '2');
     const minPresentAssistants = parseInt(settings.find(s => s.key === 'min_present_assistants')?.value || '4');
@@ -19,7 +23,7 @@ export function useStaffingCheck(doctors, shifts) {
         let totalAssistants = 0;
         doctors.forEach(d => {
              if (d.role === 'Assistenzarzt') totalAssistants++;
-             else if (['Chefarzt', 'Oberarzt', 'Facharzt'].includes(d.role)) totalSpecialists++;
+             else if (specialistRoles.includes(d.role)) totalSpecialists++;
         });
 
         // 2. Current Absences
@@ -45,7 +49,7 @@ export function useStaffingCheck(doctors, shifts) {
             const doc = doctors.find(d => d.id === id);
             if (doc) {
                 if (doc.role === 'Assistenzarzt') absentAssistants++;
-                else if (['Chefarzt', 'Oberarzt', 'Facharzt'].includes(doc.role)) absentSpecialists++;
+                else if (specialistRoles.includes(doc.role)) absentSpecialists++;
             }
         });
 

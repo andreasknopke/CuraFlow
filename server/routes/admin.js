@@ -68,6 +68,39 @@ router.post('/tools', async (req, res, next) => {
         return res.json({ token });
       }
 
+      case 'encrypt_db_token': {
+        // Encrypt manually provided DB credentials
+        const { host, user, password, database, port, ssl } = data || {};
+        
+        if (!host || !user || !database) {
+          return res.status(400).json({ error: 'Host, Benutzer und Datenbank sind erforderlich' });
+        }
+
+        if (!process.env.JWT_SECRET) {
+          console.error('JWT_SECRET not configured');
+          return res.status(500).json({ error: 'Server nicht korrekt konfiguriert (JWT_SECRET fehlt)' });
+        }
+
+        const config = {
+          host: host.trim(),
+          user: user.trim(),
+          password: password || '',
+          database: database.trim(),
+          port: parseInt(port || '3306')
+        };
+
+        if (ssl) {
+          config.ssl = { rejectUnauthorized: false };
+        }
+
+        const { encryptToken } = await import('../utils/crypto.js');
+        const json = JSON.stringify(config);
+        const token = encryptToken(json);
+        
+        console.log('Encrypted manual DB token for:', { host: config.host, database: config.database });
+        return res.json({ token });
+      }
+
       case 'export_mysql_as_json': {
         // Export all tables as JSON
         const [tables] = await db.execute('SHOW TABLES');

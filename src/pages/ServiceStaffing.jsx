@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useHolidays } from '@/components/useHolidays';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { trackDbChange } from '@/components/utils/dbTracker';
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 
@@ -101,11 +102,15 @@ export default function ServiceStaffingPage() {
 
     const relevantPositions = serviceTypes.map(t => t.id);
 
-    const ALLOWED_ROLES = {
-        'Dienst Vordergrund': ['Assistenzarzt', 'Facharzt'],
-        'Dienst Hintergrund': ['Facharzt', 'Oberarzt', 'Chefarzt'],
-        'Onko-Konsil': ['Facharzt', 'Oberarzt', 'Chefarzt']
-    };
+    // Dynamische Facharzt-Rollen aus DB laden
+    const { specialistRoles } = useTeamRoles();
+
+    // ALLOWED_ROLES dynamisch aufbauen - Fachärzte für Hintergrund-Dienste
+    const ALLOWED_ROLES = useMemo(() => ({
+        'Dienst Vordergrund': ['Assistenzarzt', ...specialistRoles.filter(r => r !== 'Chefarzt' && r !== 'Oberarzt')],
+        'Dienst Hintergrund': specialistRoles,
+        'Onko-Konsil': specialistRoles
+    }), [specialistRoles]);
 
     const absencesByDate = useMemo(() => {
         const map = {};

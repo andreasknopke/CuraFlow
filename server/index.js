@@ -3,6 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
 
@@ -218,7 +220,61 @@ app.listen(PORT, () => {
   console.log(`🚀 CuraFlow Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: ${process.env.MYSQL_HOST}`);
+  
+  // Auto-create missing tables on startup
+  try {
+    await ensureTablesExist();
+  } catch (err) {
+    console.error('⚠️  Table initialization error:', err.message);
+  }
 });
+
+// Auto-create essential tables if missing
+async function ensureTablesExist() {
+  const tables = [
+    {
+      name: 'TeamRole',
+      sql: `CREATE TABLE IF NOT EXISTS TeamRole (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        priority INT NOT NULL DEFAULT 99,
+        is_specialist BOOLEAN NOT NULL DEFAULT FALSE,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`
+    }
+  ];
+
+  for (const table of tables) {
+    try {
+      await db.execute(table.sql);
+      
+      // Seed default data for TeamRole
+      if (table.name === 'TeamRole') {
+        const [existing] = await db.execute('SELECT COUNT(*) as cnt FROM TeamRole');
+        if (existing[0].cnt === 0) {
+          const defaultRoles = [
+            { id: crypto.randomUUID(), name: 'Chefarzt', priority: 0, is_specialist: true },
+            { id: crypto.randomUUID(), name: 'Oberarzt', priority: 1, is_specialist: true },
+            { id: crypto.randomUUID(), name: 'Facharzt', priority: 2, is_specialist: true },
+            { id: crypto.randomUUID(), name: 'Assistenzarzt', priority: 3, is_specialist: false },
+            { id: crypto.randomUUID(), name: 'Nicht-Radiologe', priority: 4, is_specialist: false },
+          ];
+          for (const role of defaultRoles) {
+            await db.execute(
+              'INSERT IGNORE INTO TeamRole (id, name, priority, is_specialist) VALUES (?, ?, ?, ?)',
+              [role.id, role.name, role.priority, role.is_specialist]
+            );
+          }
+          console.log('✅ TeamRole table seeded with defaults');
+        }
+      }
+      console.log(`✅ Table ${table.name} ready`);
+    } catch (err) {
+      console.error(`❌ Failed to ensure ${table.name}:`, err.message);
+    }
+  }
+}
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

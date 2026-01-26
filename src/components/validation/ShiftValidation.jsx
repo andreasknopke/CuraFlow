@@ -1,18 +1,25 @@
 import { format, addDays, isWeekend, parseISO } from 'date-fns';
 
+// Standard Facharzt-Rollen (Fallback wenn nicht aus DB geladen)
+export const DEFAULT_SPECIALIST_ROLES = ["Chefarzt", "Oberarzt", "Facharzt"];
+export const DEFAULT_ASSISTANT_ROLES = ["Assistenzarzt"];
+
 /**
  * Zentrale Validierungsschicht für alle ShiftEntry-Operationen
  * Wird von ScheduleBoard, ServiceStaffing und Wish-Genehmigung verwendet
  */
 
 export class ShiftValidator {
-    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries }) {
+    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles }) {
         this.doctors = doctors || [];
         this.shifts = shifts || [];
         this.workplaces = workplaces || [];
         this.wishes = wishes || [];
         this.systemSettings = systemSettings || [];
         this.staffingEntries = staffingEntries || [];
+        // Dynamische Facharzt-Rollen aus DB, mit Fallback
+        this.specialistRoles = specialistRoles || DEFAULT_SPECIALIST_ROLES;
+        this.assistantRoles = DEFAULT_ASSISTANT_ROLES;
         
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
@@ -83,7 +90,7 @@ export class ShiftValidator {
         const date = new Date(dateStr);
         const doctor = this.doctors.find(d => d.id === doctorId);
         if (!doctor) {
-            result.blockers.push('Arzt nicht gefunden');
+            result.blockers.push('Person nicht gefunden');
             result.canProceed = false;
             return result;
         }
@@ -273,8 +280,6 @@ export class ShiftValidator {
         if (!doctor) return {};
 
         const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
-        const SPECIALIST_ROLES = ["Chefarzt", "Oberarzt", "Facharzt"];
-        const ASSISTANT_ROLES = ["Assistenzarzt"];
 
         // Zähle aktuelle Abwesenheiten (ohne diese neue)
         const absentOnDate = this.shifts.filter(s => 
@@ -286,15 +291,15 @@ export class ShiftValidator {
         // Füge den neuen Abwesenden hinzu
         const allAbsent = new Set([...absentOnDate, doctorId]);
 
-        // Zähle verfügbare Ärzte
-        const totalSpecialists = this.doctors.filter(d => SPECIALIST_ROLES.includes(d.role)).length;
-        const totalAssistants = this.doctors.filter(d => ASSISTANT_ROLES.includes(d.role)).length;
+        // Zähle verfügbare Ärzte (mit dynamischen Rollen)
+        const totalSpecialists = this.doctors.filter(d => this.specialistRoles.includes(d.role)).length;
+        const totalAssistants = this.doctors.filter(d => this.assistantRoles.includes(d.role)).length;
 
         const absentSpecialists = this.doctors.filter(d => 
-            SPECIALIST_ROLES.includes(d.role) && allAbsent.has(d.id)
+            this.specialistRoles.includes(d.role) && allAbsent.has(d.id)
         ).length;
         const absentAssistants = this.doctors.filter(d => 
-            ASSISTANT_ROLES.includes(d.role) && allAbsent.has(d.id)
+            this.assistantRoles.includes(d.role) && allAbsent.has(d.id)
         ).length;
 
         const presentSpecialists = totalSpecialists - absentSpecialists;

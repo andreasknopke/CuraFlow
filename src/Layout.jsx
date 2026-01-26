@@ -168,7 +168,7 @@ function LayoutContent({ children }) {
               className="flex items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 group transition-colors"
             >
               <Users className="h-5 w-5 mr-3 text-slate-500 group-hover:text-indigo-600" />
-              <span className="font-medium">Ärzteteam</span>
+              <span className="font-medium">Team</span>
             </Link>
             )}
 

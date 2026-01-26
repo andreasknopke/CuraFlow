@@ -33,6 +33,7 @@ import { useHolidays } from '@/components/useHolidays';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -265,6 +266,9 @@ export default function ScheduleBoard() {
 
   const queryClient = useQueryClient();
 
+  // Dynamische Rollenprioritäten aus DB laden
+  const { rolePriority } = useTeamRoles();
+
   // Fetch data with optimized caching
   const { data: doctors = [] } = useQuery({
     queryKey: ['doctors'],
@@ -272,7 +276,6 @@ export default function ScheduleBoard() {
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
     select: (data) => [...data].sort((a, b) => {
-      const rolePriority = { "Chefarzt": 0, "Oberarzt": 1, "Facharzt": 2, "Assistenzarzt": 3, "Nicht-Radiologe": 4 };
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
@@ -1065,7 +1068,7 @@ export default function ScheduleBoard() {
                       const posName = resolvePosition(position);
 
                       if (!doc) {
-                          toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                          toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                           skippedCount++;
                           continue;
                       }
@@ -1141,7 +1144,7 @@ export default function ScheduleBoard() {
                   const doc = resolveDoctor(doctor_id);
 
                   if (!doc) {
-                      toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                       skippedCount++;
                   } else {
                       const tDate = target_date || source_date;
@@ -1205,7 +1208,7 @@ export default function ScheduleBoard() {
                   const doc = resolveDoctor(doctor_id);
 
                   if (!doc) {
-                      toast.error(`Konnte Arzt "${doctor_id}" nicht finden.`);
+                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
                       skippedCount++;
                   } else {
                       let idsToDelete = [];
@@ -2303,7 +2306,7 @@ export default function ScheduleBoard() {
                 <div>
                 <h3 className="font-semibold text-slate-700 mb-3 flex items-center">
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{doctors.length}</span>
-                    Verfügbare Ärzte
+                    Verfügbares Personal
                 </h3>
                 <Droppable droppableId="sidebar" isDropDisabled={isReadOnly}>
                     {(provided) => (

@@ -10,7 +10,8 @@ const PUBLIC_READ_TABLES = [
   'SystemSetting',
   'ColorSetting',
   'Workplace',
-  'DemoSetting'
+  'DemoSetting',
+  'TeamRole'
 ];
 
 // Cache for table columns to avoid "Unknown column" errors
@@ -49,7 +50,7 @@ const fromSqlRow = (row) => {
       'receive_email_notifications', 'exclude_from_staffing_plan', 
       'user_viewed', 'auto_off', 'show_in_service_plan', 
       'allows_rotation_concurrently', 'allows_consecutive_days', 
-      'acknowledged', 'is_active'
+      'acknowledged', 'is_active', 'is_specialist'
     ];
     if (boolFields.includes(key)) {
       res[key] = !!res[key];
@@ -85,6 +86,49 @@ router.get('/', (req, res) => {
   });
 });
 
+// Auto-create TeamRole table if it doesn't exist (for multi-tenant support)
+const ensureTeamRoleTable = async (dbPool, cacheKey) => {
+  const tableCheckKey = `${cacheKey}:TeamRole:checked`;
+  if (COLUMNS_CACHE[tableCheckKey]) return; // Already checked this session
+  
+  try {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS TeamRole (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        priority INT NOT NULL DEFAULT 99,
+        is_specialist BOOLEAN NOT NULL DEFAULT FALSE,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Seed defaults if empty
+    const [existing] = await dbPool.execute('SELECT COUNT(*) as cnt FROM TeamRole');
+    if (existing[0].cnt === 0) {
+      const defaultRoles = [
+        { name: 'Chefarzt', priority: 0, is_specialist: true },
+        { name: 'Oberarzt', priority: 1, is_specialist: true },
+        { name: 'Facharzt', priority: 2, is_specialist: true },
+        { name: 'Assistenzarzt', priority: 3, is_specialist: false },
+        { name: 'Nicht-Radiologe', priority: 4, is_specialist: false },
+      ];
+      for (const role of defaultRoles) {
+        const id = crypto.randomUUID();
+        await dbPool.execute(
+          'INSERT IGNORE INTO TeamRole (id, name, priority, is_specialist) VALUES (?, ?, ?, ?)',
+          [id, role.name, role.priority, role.is_specialist]
+        );
+      }
+      console.log('✅ TeamRole table created and seeded for tenant');
+    }
+    COLUMNS_CACHE[tableCheckKey] = true;
+  } catch (err) {
+    console.error('Failed to ensure TeamRole table:', err.message);
+    COLUMNS_CACHE[tableCheckKey] = true; // Don't retry on error
+  }
+};
+
 // ============ UNIFIED DB PROXY ENDPOINT ============
 router.post('/', async (req, res, next) => {
   try {
@@ -95,6 +139,11 @@ router.post('/', async (req, res, next) => {
     // Get the database pool (set by tenantDbMiddleware)
     const dbPool = req.db || db;
     const cacheKey = req.headers['x-db-token'] || 'default';
+    
+    // Auto-create TeamRole table for tenants if needed
+    if (tableName === 'TeamRole') {
+      await ensureTeamRoleTable(dbPool, cacheKey);
+    }
     
     if (!tableName) {
       return res.status(400).json({ error: 'Entity/table required' });

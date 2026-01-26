@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Palette, RefreshCcw, Save } from 'lucide-react';
+import { useTeamRoles, DEFAULT_TEAM_ROLES } from './TeamRoleSettings';
 
 // Default configurations matching current hardcoded values
 export const DEFAULT_COLORS = {
@@ -104,7 +105,9 @@ export default function ColorSettingsDialog() {
     };
 
     const sectionsList = Object.keys(DEFAULT_COLORS.sections);
-    const rolesList = Object.keys(DEFAULT_COLORS.roles);
+    // Dynamisch Rollen aus DB laden statt hardcoded
+    const { roleNames: dynamicRoles } = useTeamRoles();
+    const rolesList = dynamicRoles.length > 0 ? dynamicRoles : DEFAULT_TEAM_ROLES.map(r => r.name);
     const positionsList = workplaces.map(w => w.name).sort();
 
     return (

@@ -367,7 +367,7 @@ export default function GlobalVoiceControl() {
             else if (path.includes('Schedule')) area = "Wochenplan";
             else if (path.includes('MyDashboard')) area = "Mein Dashboard";
             else if (path.includes('ServiceStaffing')) area = "Dienstbesetzung";
-            else if (path.includes('Staff')) area = "Ärzteteam";
+            else if (path.includes('Staff')) area = "Team";
             else if (path.includes('Vacation')) area = "Abwesenheiten";
             else if (path.includes('WishList')) area = "Wunschkiste";
             else if (path.includes('Training')) area = "Ausbildung";

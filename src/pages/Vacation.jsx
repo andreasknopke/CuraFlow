@@ -15,6 +15,7 @@ import ConflictDialog, { categorizeConflict } from '@/components/vacation/Confli
 
 import { useHolidays } from '@/components/useHolidays';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
@@ -25,12 +26,14 @@ export default function VacationPage() {
   
   const queryClient = useQueryClient();
 
+  // Dynamische Rollenprioritäten aus DB laden
+  const { rolePriority } = useTeamRoles();
+
   // Fetch Doctors
   const { data: doctors = [] } = useQuery({
     queryKey: ['doctors'],
     queryFn: () => db.Doctor.list(),
     select: (data) => data.sort((a, b) => {
-      const rolePriority = { "Chefarzt": 0, "Oberarzt": 1, "Facharzt": 2, "Assistenzarzt": 3 };
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
@@ -537,7 +540,7 @@ export default function VacationPage() {
 
                    <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
                     <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Arzt auswählen" />
+                        <SelectValue placeholder="Person auswählen" />
                     </SelectTrigger>
                     <SelectContent>
                         {doctors.map(d => (
@@ -582,7 +585,7 @@ export default function VacationPage() {
             />
           ) : (
             <div className="text-center py-12 text-slate-500">
-                Bitte wählen Sie einen Arzt aus.
+                Bitte wählen Sie eine Person aus.
             </div>
           )}
         </>

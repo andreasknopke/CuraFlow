@@ -23,6 +23,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StaffingPlanTable from "@/components/staff/StaffingPlanTable";
 import { trackDbChange } from '@/components/utils/dbTracker';
+import TeamRoleSettings, { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 export default function StaffPage() {
   const { isReadOnly, user } = useAuth();
@@ -42,11 +43,13 @@ export default function StaffPage() {
   const [editingDoctor, setEditingDoctor] = useState(null);
   const queryClient = useQueryClient();
 
+  // Dynamische Rollenprioritäten aus DB laden
+  const { rolePriority } = useTeamRoles();
+
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
     queryFn: () => db.Doctor.list(),
     select: (data) => data.sort((a, b) => {
-      const rolePriority = { "Chefarzt": 0, "Oberarzt": 1, "Facharzt": 2, "Assistenzarzt": 3, "Nicht-Radiologe": 4 };
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
@@ -138,15 +141,18 @@ export default function StaffPage() {
     <div className="container mx-auto max-w-6xl">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Ärzteteam</h1>
+          <h1 className="text-3xl font-bold text-slate-900">Team</h1>
           <p className="text-slate-500 mt-2">Verwaltung der Mitarbeiter und Funktionen</p>
         </div>
-        {!isReadOnly && (
-        <Button onClick={handleAddNew} className="bg-indigo-600 hover:bg-indigo-700">
-          <Plus className="w-4 h-4 mr-2" />
-          Arzt hinzufügen
-        </Button>
-        )}
+        <div className="flex gap-2">
+          {!isReadOnly && <TeamRoleSettings />}
+          {!isReadOnly && (
+          <Button onClick={handleAddNew} className="bg-indigo-600 hover:bg-indigo-700">
+            <Plus className="w-4 h-4 mr-2" />
+            Teammitglied hinzufügen
+          </Button>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="list" className="space-y-6">

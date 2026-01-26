@@ -18,7 +18,7 @@ Hier findet die operative Planung statt.
 - **Aufbau:**
   - **Zeilen:** Arbeitsplätze (z.B. CT, MRT), Dienste (Vordergrund, Hintergrund) und Status (Frei, Urlaub).
   - **Spalten:** Wochentage.
-  - **Seitenleiste:** Liste aller verfügbaren Ärzte, sortiert nach Rang (Chefarzt bis Assistenzarzt).
+  - **Seitenleiste:** Liste aller verfügbaren Mitarbeiter, sortiert nach Rang.
 - **Bedienung:**
   - **Drag & Drop:** Ärzte aus der Leiste in den Plan ziehen.
   - **Verschieben:** Einträge im Plan verschieben (Drag & Drop). Mit gedrückter `Strg`-Taste wird der Eintrag kopiert.
@@ -35,10 +35,10 @@ Fokus auf die monatliche Besetzung der Bereitschaftsdienste.
   - **Auto-Frei:** Generiert oft automatisch einen "Frei"-Eintrag für den Folgetag nach einem Nachtdienst.
   - **Export:** Drucken oder per E-Mail versenden.
 
-### C. Ärzteteam (Staff)
-Stammdatenverwaltung der Ärzte.
-- **Daten:** Name, Kürzel, Rolle (CA, OA, FA, AA), E-Mail, Arbeitszeitfaktor (FTE).
-- **Funktion:** Neue Ärzte anlegen, bearbeiten, löschen oder deaktivieren.
+### C. Team (Staff)
+Stammdatenverwaltung der Teammitglieder.
+- **Daten:** Name, Kürzel, Funktion (frei konfigurierbar), E-Mail, Arbeitszeitfaktor (FTE).
+- **Funktion:** Neue Mitarbeiter anlegen, bearbeiten, löschen oder deaktivieren.
 - **Sortierung:** Die Reihenfolge hier bestimmt die Sortierung in der Seitenleiste des Wochenplans.
 
 ### D. Abwesenheiten (Vacation)
@@ -125,9 +125,9 @@ A: Gehe zu "Administration". Dort gibt es den Bereich "Server Backup", wo du man
   - **Kopieren (Strg-Taste):** Hält man während des Ziehens die `Strg`-Taste (oder `Alt` auf Mac) gedrückt, wird der Dienst kopiert statt verschoben. Ein Plus-Symbol signalisiert dies.
   - **Rechtsklick auf Mikrofon:** Öffnet das Experten-Menü für die Sprachsteuerung (Modus-Wahl, Debugging, Alias-Training).
 
-### Ärzteteam (StaffPage)
-- **Sortierung:** Die Reihenfolge in der Liste ist per Drag & Drop änderbar. Diese Reihenfolge wird **global** für die Seitenleiste im Wochenplan übernommen. Wichtige Ärzte (z.B. Springer) können so nach oben sortiert werden.
-- **Rollen-Farben:** Die Farben der Rollen (z.B. OA = Blau) werden in den globalen Einstellungen ("Color Settings") definiert, nicht im einzelnen Arzt-Profil.
+### Team (StaffPage)
+- **Sortierung:** Die Reihenfolge in der Liste ist per Drag & Drop änderbar. Diese Reihenfolge wird **global** für die Seitenleiste im Wochenplan übernommen. Wichtige Mitarbeiter (z.B. Springer) können so nach oben sortiert werden.
+- **Funktions-Farben:** Die Farben der Funktionen (z.B. OA = Blau) werden in den globalen Einstellungen ("Color Settings") definiert, nicht im einzelnen Mitarbeiter-Profil.
 
 ### Administration & Logs
 - **System-Logs:** Hier werden alle kritischen Aktionen (Backups, Fehler, KI-Aufrufe) protokolliert.

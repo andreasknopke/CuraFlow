@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { toast } from "sonner";
+import { api } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Badge } from '@/components/ui/badge';
 import { 
     Key, Plus, Trash2, Edit2, Check, X, Database, Power, PowerOff, 
-    Building2, Copy, ChevronRight, RefreshCw, AlertTriangle 
+    Building2, Copy, ChevronRight, RefreshCw, AlertTriangle, Download 
 } from 'lucide-react';
 import { 
     getSavedTokens, 
@@ -34,6 +35,9 @@ export default function TokenManager() {
     
     // Add new token dialog
     const [showAddDialog, setShowAddDialog] = useState(false);
+    const [showImportDialog, setShowImportDialog] = useState(false);
+    const [importTokenName, setImportTokenName] = useState('');
+    const [importTokenValue, setImportTokenValue] = useState('');
     const [newTokenName, setNewTokenName] = useState('');
     const [newTokenCreds, setNewTokenCreds] = useState({ 
         host: '', 
@@ -73,24 +77,27 @@ export default function TokenManager() {
         }
         
         try {
-            const config = { ...newTokenCreds };
-            if (config.ssl) {
-                config.ssl = { rejectUnauthorized: false };
-            } else {
-                delete config.ssl;
-            }
-            const token = btoa(JSON.stringify(config));
-            
-            console.log('[TokenManager] Saving token:', { 
-                name: newTokenName.trim(), 
-                config: { host: config.host, database: config.database, user: config.user },
-                tokenPreview: token.substring(0, 30) + '...'
+            // Use server-side encryption for the token
+            const response = await api.request('/api/admin/tools', {
+                method: 'POST',
+                body: JSON.stringify({
+                    action: 'encrypt_db_token',
+                    data: {
+                        host: newTokenCreds.host,
+                        user: newTokenCreds.user,
+                        password: newTokenCreds.password,
+                        database: newTokenCreds.database,
+                        port: newTokenCreds.port,
+                        ssl: newTokenCreds.ssl
+                    }
+                })
             });
+            
+            const token = response.token;
             
             const savedEntry = await saveNamedToken(newTokenName.trim(), token);
             
             // Auto-activate the new token
-            console.log('[TokenManager] Activating token:', savedEntry.id);
             await switchToToken(savedEntry.id);
             
             setSavedTokens(getSavedTokens());
@@ -99,7 +106,7 @@ export default function TokenManager() {
             setShowAddDialog(false);
             setNewTokenName('');
             setNewTokenCreds({ host: '', user: '', password: '', database: '', port: '3306', ssl: false });
-            toast.success(`Token "${newTokenName}" gespeichert und aktiviert`);
+            toast.success(`Token "${newTokenName}" verschlüsselt und gespeichert`);
             
             // Reload to apply changes
             setTimeout(() => window.location.reload(), 1000);
@@ -172,20 +179,84 @@ export default function TokenManager() {
     
     const parseTokenInfo = (token) => {
         try {
+            // Try to decode as legacy base64 token
             const decoded = JSON.parse(atob(token));
             return {
                 host: decoded.host,
                 database: decoded.database,
-                user: decoded.user
+                user: decoded.user,
+                encrypted: false
             };
         } catch (e) {
-            return null;
+            // Token is encrypted - can't show details
+            return {
+                host: '***',
+                database: '***',
+                user: '***',
+                encrypted: true
+            };
         }
     };
     
     const copyToken = (token) => {
         navigator.clipboard.writeText(token);
         toast.success('Token kopiert');
+    };
+    
+    const handleImportToken = async () => {
+        if (!importTokenName.trim()) {
+            toast.error('Bitte einen Namen eingeben');
+            return;
+        }
+        if (!importTokenValue.trim()) {
+            toast.error('Bitte den Token einfügen');
+            return;
+        }
+        
+        const tokenValue = importTokenValue.trim();
+        
+        // Validate token format - accept both encrypted and legacy base64 tokens
+        let isValidToken = false;
+        
+        // Try legacy base64 format first
+        try {
+            const decoded = JSON.parse(atob(tokenValue));
+            if (decoded.host && decoded.database) {
+                isValidToken = true;
+                // Note: Legacy tokens will work but are less secure
+            }
+        } catch (e) {
+            // Not a legacy token, might be encrypted
+        }
+        
+        // Encrypted tokens are longer and don't decode to valid JSON directly
+        // They will be validated by the server when used
+        if (!isValidToken && tokenValue.length > 50) {
+            // Assume it's an encrypted token - server will validate
+            isValidToken = true;
+        }
+        
+        if (!isValidToken) {
+            toast.error('Ungültiges Token-Format');
+            return;
+        }
+        
+        try {
+            const savedEntry = await saveNamedToken(importTokenName.trim(), tokenValue);
+            await switchToToken(savedEntry.id);
+            
+            setSavedTokens(getSavedTokens());
+            setActiveTokenId(savedEntry.id);
+            setTokenEnabled(true);
+            setShowImportDialog(false);
+            setImportTokenName('');
+            setImportTokenValue('');
+            toast.success(`Token "${importTokenName}" importiert und aktiviert`);
+            
+            setTimeout(() => window.location.reload(), 1000);
+        } catch (e) {
+            toast.error('Fehler beim Importieren: ' + e.message);
+        }
     };
     
     return (
@@ -215,6 +286,10 @@ export default function TokenManager() {
                         <Button onClick={() => setShowAddDialog(true)} size="sm">
                             <Plus className="w-4 h-4 mr-2" />
                             Neuer Mandant
+                        </Button>
+                        <Button onClick={() => setShowImportDialog(true)} size="sm" variant="outline">
+                            <Download className="w-4 h-4 mr-2" />
+                            Token importieren
                         </Button>
                     </div>
                 </div>
@@ -318,10 +393,20 @@ export default function TokenManager() {
                                                                     Aktiv
                                                                 </Badge>
                                                             )}
+                                                            {info?.encrypted && (
+                                                                <Badge variant="secondary" className="bg-green-100 text-green-700">
+                                                                    🔒 Verschlüsselt
+                                                                </Badge>
+                                                            )}
                                                         </div>
-                                                        {info && (
+                                                        {info && !info.encrypted && (
                                                             <div className="text-xs text-slate-500 mt-0.5">
                                                                 {info.host} / {info.database}
+                                                            </div>
+                                                        )}
+                                                        {info?.encrypted && (
+                                                            <div className="text-xs text-green-600 mt-0.5">
+                                                                Verbindungsdaten sicher verschlüsselt
                                                             </div>
                                                         )}
                                                     </>
@@ -474,6 +559,55 @@ export default function TokenManager() {
                         <Button onClick={handleAddToken}>
                             <Plus className="w-4 h-4 mr-2" />
                             Speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+            
+            {/* Import Token Dialog */}
+            <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Download className="w-5 h-5" />
+                            Token importieren
+                        </DialogTitle>
+                        <DialogDescription>
+                            Fügen Sie einen Token von einem anderen Arbeitsplatz ein
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="space-y-4 py-4">
+                        <div className="space-y-2">
+                            <Label>Name des Mandanten *</Label>
+                            <Input
+                                placeholder="z.B. Radiologie, Chirurgie..."
+                                value={importTokenName}
+                                onChange={(e) => setImportTokenName(e.target.value)}
+                            />
+                        </div>
+                        
+                        <div className="space-y-2">
+                            <Label>Token *</Label>
+                            <textarea
+                                className="w-full h-32 p-3 text-sm font-mono border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                placeholder="Fügen Sie hier den kopierten Token ein..."
+                                value={importTokenValue}
+                                onChange={(e) => setImportTokenValue(e.target.value)}
+                            />
+                            <p className="text-xs text-slate-500">
+                                Kopieren Sie den Token am anderen Arbeitsplatz über das Kopier-Symbol und fügen Sie ihn hier ein.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+                            Abbrechen
+                        </Button>
+                        <Button onClick={handleImportToken}>
+                            <Download className="w-4 h-4 mr-2" />
+                            Importieren
                         </Button>
                     </DialogFooter>
                 </DialogContent>

@@ -291,7 +291,7 @@ export default function StatisticsPage() {
 
                     <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
                         <ChartCard 
-                            title="Dienste pro Arzt"
+                            title="Dienste pro Person"
                             description={month === "all" ? `Anzahl der Dienste im Jahr ${year}` : `Anzahl der Dienste im ${MONTHS[parseInt(month)]} ${year}`}
                             defaultHeight="h-[400px]"
                             className="col-span-1"
@@ -314,7 +314,7 @@ export default function StatisticsPage() {
                         </ChartCard>
                         
                         <ChartCard 
-                            title="Arbeitsplätze pro Arzt"
+                            title="Arbeitsplätze pro Person"
                             description={`Verteilung der Rotationen im Jahr ${year}`}
                             defaultHeight="h-[400px]"
                             className="col-span-1"
@@ -357,7 +357,7 @@ export default function StatisticsPage() {
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="w-[180px]">Arzt</TableHead>
+                                            <TableHead className="w-[180px]">Person</TableHead>
                                             <TableHead>Rolle</TableHead>
                                             <TableHead className="text-right font-bold border-l bg-blue-50">Σ Dienste</TableHead>
                                             {stats.serviceItems.map(item => (

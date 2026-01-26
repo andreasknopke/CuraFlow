@@ -3,6 +3,7 @@ import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDa
 import { de } from 'date-fns/locale';
 import { AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 // Memoized Cell Component
 const VacationOverviewCell = memo(({ 
@@ -116,6 +117,9 @@ const VacationOverviewCell = memo(({
 });
 
 export default function VacationOverview({ year, doctors, shifts, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, minPresentSpecialists = 2, minPresentAssistants = 4 }) {
+    // Dynamische Facharzt-Rollen aus DB laden
+    const { specialistRoles } = useTeamRoles();
+    
     const [dragStart, setDragStart] = useState(null);
     const [dragCurrent, setDragCurrent] = useState(null);
     const [dragDoctorId, setDragDoctorId] = useState(null);
@@ -196,17 +200,17 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
             
             const entry = counts.get(dStr);
             
-            // Determine category
+            // Determine category (mit dynamischen Rollen)
             if (doc.role === 'Assistenzarzt') {
                 entry.assistants++;
                 entry.assistantDetails.push(doc.name);
-            } else if (['Chefarzt', 'Oberarzt', 'Facharzt'].includes(doc.role)) {
+            } else if (specialistRoles.includes(doc.role)) {
                 entry.specialists++;
                 entry.specialistDetails.push(doc.name);
             }
         });
         return counts;
-    }, [shifts, doctors]);
+    }, [shifts, doctors, specialistRoles]);
 
     // Calculate total staff count
     const totalStaff = React.useMemo(() => {
@@ -214,10 +218,10 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
         let assistants = 0;
         doctors.forEach(d => {
              if (d.role === 'Assistenzarzt') assistants++;
-             else if (['Chefarzt', 'Oberarzt', 'Facharzt'].includes(d.role)) specialists++;
+             else if (specialistRoles.includes(d.role)) specialists++;
         });
         return { specialists, assistants };
-    }, [doctors]);
+    }, [doctors, specialistRoles]);
 
     const vacationCounts = React.useMemo(() => {
         const counts = {};

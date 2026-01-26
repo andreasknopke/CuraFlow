@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight, GraduationCap, Eraser } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DoctorYearView from '@/components/vacation/DoctorYearView';
+import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
@@ -17,12 +18,14 @@ export default function TrainingPage() {
   
   const queryClient = useQueryClient();
 
+  // Dynamische Rollenprioritäten aus DB laden
+  const { rolePriority } = useTeamRoles();
+
   // Fetch Doctors (only Assistenzärzte typically, but let's allow all for now or filter)
   const { data: doctors = [] } = useQuery({
     queryKey: ['doctors'],
     queryFn: () => db.Doctor.list(),
     select: (data) => data.sort((a, b) => {
-        const rolePriority = { "Chefarzt": 0, "Oberarzt": 1, "Facharzt": 2, "Assistenzarzt": 3 };
         const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
         if (roleDiff !== 0) return roleDiff;
         return (a.order || 0) - (b.order || 0);
@@ -35,36 +38,29 @@ export default function TrainingPage() {
     queryFn: () => db.Workplace.list(null, 1000),
   });
 
-  // Select doctor logic
+  // Select doctor logic - only set initial value, don't override user selection
   React.useEffect(() => {
-    if (doctors.length > 0) {
+    if (doctors.length > 0 && !selectedDoctorId) {
         if (user && user.role !== 'admin') {
-            // Non-admins can ONLY see their assigned doctor
+            // Non-admins: use their assigned doctor
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else {
-                // No doctor assigned to this user
-                setSelectedDoctorId(null);
+                setSelectedDoctorId(user.doctor_id);
             }
         } else if (user) {
-            // Admins: prefer user.doctor_id, otherwise keep current or use default Assistenzarzt
+            // Admins: prefer user.doctor_id, otherwise first Assistenzarzt
             if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
-                if (selectedDoctorId !== user.doctor_id) {
-                    setSelectedDoctorId(user.doctor_id);
-                }
-            } else if (!selectedDoctorId) {
+                setSelectedDoctorId(user.doctor_id);
+            } else {
                 const assis = doctors.find(d => d.role === 'Assistenzarzt');
                 setSelectedDoctorId(assis ? assis.id : doctors[0].id);
             }
-        } else if (!selectedDoctorId) {
+        } else {
             // No user yet, use default Assistenzarzt
             const assis = doctors.find(d => d.role === 'Assistenzarzt');
             setSelectedDoctorId(assis ? assis.id : doctors[0].id);
         }
     }
-  }, [doctors, selectedDoctorId, user]);
+  }, [doctors, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
@@ -351,7 +347,7 @@ export default function TrainingPage() {
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Ausbildungskalender</h1>
-          <p className="text-slate-500 mt-1">Rotationsplanung für Assistenzärzte</p>
+          <p className="text-slate-500 mt-1">Rotationsplanung für das Team</p>
         </div>
 
         <div className="flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
@@ -373,7 +369,7 @@ export default function TrainingPage() {
                 onValueChange={setSelectedDoctorId}
                >
                 <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Arzt auswählen" />
+                    <SelectValue placeholder="Person auswählen" />
                 </SelectTrigger>
                 <SelectContent>
                     {doctors.map(d => (
@@ -385,7 +381,7 @@ export default function TrainingPage() {
                </Select>
            ) : (
                <div className="px-3 font-medium text-slate-700">
-                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Arzt nicht gefunden' : 'Kein Arzt zugeordnet')}
+                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}
                </div>
            )}
         </div>
@@ -428,7 +424,7 @@ export default function TrainingPage() {
         </div>
       ) : (
         <div className="text-center py-12 text-slate-500">
-            Bitte wählen Sie einen Arzt aus.
+            Bitte wählen Sie eine Person aus.
         </div>
       )}
     </div>
