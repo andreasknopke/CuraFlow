@@ -68,6 +68,19 @@ export const getTokenFromIndexedDB = async () => {
 // Sync token from IndexedDB to localStorage (for PWA startup)
 export const syncDbTokenFromIndexedDB = async () => {
     try {
+        // Check if we just received a fresh token from URL - don't overwrite it
+        const freshFromUrl = sessionStorage.getItem('db_token_from_url');
+        if (freshFromUrl === 'true') {
+            // Clear the flag and save the new token to IndexedDB
+            sessionStorage.removeItem('db_token_from_url');
+            const localToken = localStorage.getItem(TOKEN_KEY);
+            if (localToken) {
+                await saveTokenToIndexedDB(localToken);
+                console.log('Fresh URL token saved to IndexedDB');
+            }
+            return localToken;
+        }
+        
         const localToken = localStorage.getItem(TOKEN_KEY);
         const idbToken = await getTokenFromIndexedDB();
         
@@ -100,16 +113,54 @@ export const saveDbToken = async (token) => {
 // Extract token from URL and save
 export const extractAndSaveDbTokenFromUrl = async () => {
     const params = new URLSearchParams(window.location.search);
-    const dbToken = params.get('db_token');
+    let dbToken = params.get('db_token');
     
     if (dbToken) {
+        // URLSearchParams converts + to space, so we need to handle this
+        // The original token may contain + and / characters that need to be preserved
+        // First, restore + signs that were converted to spaces
+        dbToken = dbToken.replace(/ /g, '+');
+        
         await saveDbToken(dbToken);
-        // Clean URL
+        // Enable the token so it becomes active immediately
+        await enableDbToken();
+        // Clear the active_token_id since this is a new token from URL
+        localStorage.removeItem('active_token_id');
+        
+        // Clean URL and reload page to ensure all queries use the new token
         const newUrl = window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, newUrl);
+        
+        // Force reload to ensure all data is fetched with new token
+        window.location.reload();
         return dbToken;
     }
     return null;
+};
+
+// Synchronous extraction for early initialization (before React renders)
+export const extractDbTokenFromUrlSync = () => {
+    const params = new URLSearchParams(window.location.search);
+    let dbToken = params.get('db_token');
+    
+    if (dbToken) {
+        // URLSearchParams converts + to space, restore them
+        dbToken = dbToken.replace(/ /g, '+');
+        
+        // Save synchronously to localStorage
+        localStorage.setItem(TOKEN_KEY, dbToken);
+        localStorage.setItem(TOKEN_ENABLED_KEY, 'true');
+        localStorage.removeItem('active_token_id');
+        
+        // Clean URL
+        const newUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // Force reload to ensure all data is fetched with new token
+        window.location.reload();
+        return true;
+    }
+    return false;
 };
 
 // Check if token is enabled

@@ -19,7 +19,10 @@ const getEncryptionKey = () => {
     throw new Error('JWT_SECRET environment variable is required for encryption');
   }
   // Use SHA-256 to derive a 32-byte key from the secret
-  return crypto.createHash('sha256').update(secret).digest();
+  const key = crypto.createHash('sha256').update(secret).digest();
+  // Log first 8 chars of key hash for debugging (safe to log)
+  console.log('[crypto] JWT_SECRET hash prefix:', key.toString('hex').substring(0, 16));
+  return key;
 };
 
 /**
@@ -29,6 +32,7 @@ const getEncryptionKey = () => {
  */
 export const encryptToken = (plaintext) => {
   const key = getEncryptionKey();
+  console.log('[encryptToken] JWT_SECRET hash prefix:', key.toString('hex').substring(0, 16));
   const iv = crypto.randomBytes(IV_LENGTH);
   
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
@@ -102,6 +106,12 @@ export const isLegacyToken = (token) => {
  */
 export const parseDbToken = (token) => {
   try {
+    console.log('[parseDbToken] Received token length:', token?.length);
+    console.log('[parseDbToken] Token first 50 chars:', token?.substring(0, 50));
+    console.log('[parseDbToken] Token last 50 chars:', token?.substring(token?.length - 50));
+    console.log('[parseDbToken] Token contains spaces:', token?.includes(' '));
+    console.log('[parseDbToken] Token contains +:', token?.includes('+'));
+    
     // First, check if it's a legacy unencrypted token
     if (isLegacyToken(token)) {
       console.warn('Warning: Legacy unencrypted DB token detected. Please regenerate token for security.');
@@ -110,10 +120,13 @@ export const parseDbToken = (token) => {
     }
     
     // Try to decrypt as new encrypted format
+    console.log('[parseDbToken] Attempting decryption...');
     const decrypted = decryptToken(token);
+    console.log('[parseDbToken] Decryption successful');
     return JSON.parse(decrypted);
   } catch (error) {
     console.error('Failed to parse DB token:', error.message);
+    console.error('Token was (full):', token);
     return null;
   }
 };

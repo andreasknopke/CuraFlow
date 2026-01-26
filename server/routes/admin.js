@@ -65,6 +65,8 @@ router.post('/tools', async (req, res, next) => {
         const token = encryptToken(json);
         
         console.log('Encrypted DB token generated successfully');
+        console.log('[generate_db_token] Token length:', token.length);
+        console.log('[generate_db_token] Token first 50 chars:', token.substring(0, 50));
         return res.json({ token });
       }
 
@@ -98,6 +100,8 @@ router.post('/tools', async (req, res, next) => {
         const token = encryptToken(json);
         
         console.log('Encrypted manual DB token for:', { host: config.host, database: config.database });
+        console.log('[encrypt_db_token] Generated token length:', token.length);
+        console.log('[encrypt_db_token] Token first 50 chars:', token.substring(0, 50));
         return res.json({ token });
       }
 
