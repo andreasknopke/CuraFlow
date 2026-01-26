@@ -8,6 +8,8 @@ import { createPool } from 'mysql2/promise';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 // Load environment variables FIRST
 dotenv.config();
@@ -92,11 +94,41 @@ async function initDatabase() {
       }
     }
     
-    console.log('\n✅ Database initialized successfully!');
-    console.log('🔑 Default admin login:');
-    console.log('   Email: admin@curaflow.local');
-    console.log('   Password: admin123');
-    console.log('   ⚠️  Change password on first login!\n');
+    // Create admin user with random password
+    console.log('\n🔐 Creating admin user with secure random password...');
+    
+    const adminId = '00000000-0000-0000-0000-000000000001';
+    const adminEmail = 'admin@curaflow.local';
+    
+    // Generate a secure random password (16 characters)
+    const randomPassword = crypto.randomBytes(12).toString('base64').slice(0, 16);
+    
+    // Check if admin already exists
+    const [existingAdmin] = await db.query('SELECT id FROM app_users WHERE email = ?', [adminEmail]);
+    
+    if (existingAdmin.length === 0) {
+      const passwordHash = await bcrypt.hash(randomPassword, 12);
+      
+      await db.query(
+        `INSERT INTO app_users (id, email, password_hash, full_name, role, must_change_password, is_active, created_by)
+         VALUES (?, ?, ?, 'Administrator', 'admin', 1, 1, 'system')`,
+        [adminId, adminEmail, passwordHash]
+      );
+      
+      console.log('\n✅ Database initialized successfully!');
+      console.log('\n┌─────────────────────────────────────────────────────────┐');
+      console.log('│  🔑 ADMIN CREDENTIALS - SAVE THIS IMMEDIATELY!          │');
+      console.log('├─────────────────────────────────────────────────────────┤');
+      console.log(`│  Email:    ${adminEmail.padEnd(38)}│`);
+      console.log(`│  Password: ${randomPassword.padEnd(38)}│`);
+      console.log('├─────────────────────────────────────────────────────────┤');
+      console.log('│  ⚠️  This password will NEVER be shown again!          │');
+      console.log('│  ⚠️  You MUST change it after first login!             │');
+      console.log('└─────────────────────────────────────────────────────────┘\n');
+    } else {
+      console.log('\n✅ Database initialized successfully!');
+      console.log('⏭️  Admin user already exists - keeping existing credentials\n');
+    }
     
     // Close database connection
     await db.end();

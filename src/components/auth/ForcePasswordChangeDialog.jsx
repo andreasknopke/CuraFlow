@@ -37,15 +37,6 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
       return;
     }
 
-    if (form.newPassword === 'admin123') {
-      toast({
-        title: "Fehler",
-        description: "Bitte wählen Sie ein anderes Passwort als das Standardpasswort",
-        variant: "destructive"
-      });
-      return;
-    }
-
     if (form.newPassword === form.currentPassword) {
       toast({
         title: "Fehler",

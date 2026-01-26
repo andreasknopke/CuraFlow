@@ -133,34 +133,28 @@ You should see both `curaflow-db` and `curaflow-adminer` running.
 
 ## Step 5: Initialize Database
 
-Run the initialization script to create all tables:
+Run the initialization script to create all tables and the admin user:
 
 ```bash
 node init-db.js
 ```
 
-Expected output:
+**IMPORTANT:** The script will generate a random admin password and display it **ONLY ONCE**:
+
 ```
-🔄 Initializing database...
-📊 Found X SQL statements
-✅ User
-✅ Doctor
-✅ ShiftEntry
-...
-✅ Database initialized successfully!
+🔑 ADMIN CREDENTIALS - SAVE THIS IMMEDIATELY!
+Email:    admin@curaflow.local
+Password: [randomly generated 16-character password]
+⚠️  This password will NEVER be shown again!
 ```
 
-## Step 6: Create Admin User
+**CRITICAL SECURITY NOTES:**
+- ⚠️  **Save the password immediately** - it will never be shown again
+- ⚠️  **Change the password** after first login
+- ⚠️  **Never commit** the password to version control
+- ⚠️  If you lose the password, use `node create-admin.js` to reset it
 
-Create the default admin account:
-
-```bash
-node create-admin.js
-```
-
-This creates:
-- **Email:** `admin@curaflow.local`
-- **Password:** `admin123`
+## Step 6: Start the Server
 
 The admin will be required to change the password on first login.
 
@@ -203,9 +197,9 @@ Expected output:
 2. You'll be redirected to the login page
 3. Enter credentials:
    - Email: `admin@curaflow.local`
-   - Password: `admin123`
+   - Password: [the random password shown during `node init-db.js`]
 4. You'll be prompted to change the password
-5. Enter the current password (`admin123`) and choose a new secure password
+5. Enter the current password and choose a new secure password
 
 ## Step 10: Access Database Admin (Optional)
 
@@ -340,10 +334,10 @@ node init-db.js
    cd server
    node create-admin.js
    ```
+   
+   This will generate a new random password displayed on screen.
 
-2. Use correct credentials:
-   - Email: `admin@curaflow.local`
-   - Password: `admin123`
+2. Use the credentials shown during initialization or password reset
 
 3. Check backend logs for detailed error messages
 

@@ -282,12 +282,8 @@ CREATE TABLE IF NOT EXISTS `VoiceAlias` (
   INDEX idx_entity_type (`entity_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert default admin user (password: admin123)
--- Password hash for 'admin123' using bcrypt rounds=10
-INSERT INTO `app_users` (`id`, `email`, `password_hash`, `full_name`, `role`, `must_change_password`, `created_by`)
-VALUES 
-  ('00000000-0000-0000-0000-000000000001', 'admin@curaflow.local', '$2a$10$CwTycUXWue0Thq9StjUM0uJ8VfEYKkXhEKt/ZLn8WKGkEqZqL0.JO', 'Administrator', 'admin', TRUE, 'system')
-ON DUPLICATE KEY UPDATE `email` = `email`;
+-- Note: Admin user is created via init-db.js during installation
+-- This ensures a unique, randomly generated password for each installation
 
 -- Insert some default system settings
 INSERT INTO `SystemSetting` (`id`, `setting_key`, `setting_value`, `data_type`, `description`, `created_by`)
@@ -306,4 +302,4 @@ COMMIT;
 
 -- Display setup completion message
 SELECT 'Database schema created successfully!' as Status;
-SELECT 'Default admin user: admin@curaflow.local / password: admin123 (change immediately!)' as Info;
+SELECT 'Admin user will be created with a random password during init-db.js' as Info;
