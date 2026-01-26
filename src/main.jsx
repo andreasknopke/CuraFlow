@@ -18,6 +18,9 @@ const checkUrlToken = () => {
         localStorage.setItem('db_token_enabled', 'true');
         localStorage.removeItem('active_token_id');
         
+        // Set a flag to indicate fresh token from URL - prevents IndexedDB sync from overwriting
+        sessionStorage.setItem('db_token_from_url', 'true');
+        
         // Clean URL and reload
         const newUrl = window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, newUrl);

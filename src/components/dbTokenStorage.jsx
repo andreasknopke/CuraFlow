@@ -68,6 +68,19 @@ export const getTokenFromIndexedDB = async () => {
 // Sync token from IndexedDB to localStorage (for PWA startup)
 export const syncDbTokenFromIndexedDB = async () => {
     try {
+        // Check if we just received a fresh token from URL - don't overwrite it
+        const freshFromUrl = sessionStorage.getItem('db_token_from_url');
+        if (freshFromUrl === 'true') {
+            // Clear the flag and save the new token to IndexedDB
+            sessionStorage.removeItem('db_token_from_url');
+            const localToken = localStorage.getItem(TOKEN_KEY);
+            if (localToken) {
+                await saveTokenToIndexedDB(localToken);
+                console.log('Fresh URL token saved to IndexedDB');
+            }
+            return localToken;
+        }
+        
         const localToken = localStorage.getItem(TOKEN_KEY);
         const idbToken = await getTokenFromIndexedDB();
         
