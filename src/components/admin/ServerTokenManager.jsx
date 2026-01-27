@@ -177,17 +177,18 @@ export default function ServerTokenManager() {
         }
     });
     
+    // Test connection result state for UI feedback
+    const [testResult, setTestResult] = useState(null);
+    
     // Test connection
     const testConnection = async (tokenId) => {
-        console.log('[TokenManager] Testing connection for token:', tokenId);
         setTestingId(tokenId);
+        setTestResult(null);
         try {
-            // Get the token first
-            console.log('[TokenManager] Fetching token data...');
             const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`);
-            console.log('[TokenManager] Token data received, testing connection...');
             
             if (!tokenData || !tokenData.token) {
+                setTestResult({ success: false, tokenId, message: 'Token-Daten nicht gefunden' });
                 toast.error('Token-Daten nicht gefunden');
                 return;
             }
@@ -197,16 +198,19 @@ export default function ServerTokenManager() {
                 body: JSON.stringify({ token: tokenData.token })
             });
             
-            console.log('[TokenManager] Test result:', result);
-            
-            if (result.success) {
-                toast.success(`Verbindung erfolgreich zu ${result.host}/${result.database}`);
+            if (result && result.success) {
+                const msg = `Verbindung OK: ${result.host}/${result.database}`;
+                setTestResult({ success: true, tokenId, message: msg });
+                toast.success(msg);
             } else {
-                toast.error(result.error || 'Verbindung fehlgeschlagen');
+                const msg = result?.error || 'Verbindung fehlgeschlagen';
+                setTestResult({ success: false, tokenId, message: msg });
+                toast.error(msg);
             }
         } catch (err) {
-            console.error('[TokenManager] Test error:', err);
-            toast.error('Test fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler'));
+            const msg = 'Test fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler');
+            setTestResult({ success: false, tokenId, message: msg });
+            toast.error(msg);
         } finally {
             setTestingId(null);
         }
@@ -381,80 +385,105 @@ export default function ServerTokenManager() {
                         {tokens.map(token => (
                             <div 
                                 key={token.id}
-                                className={`flex items-center justify-between p-3 rounded-lg border ${
+                                className={`p-3 rounded-lg border ${
                                     token.is_active ? 'bg-green-50 border-green-200' : 'bg-white hover:bg-slate-50'
                                 }`}
                             >
-                                <div className="flex items-center gap-3">
-                                    <Building2 className={`w-5 h-5 ${token.is_active ? 'text-green-600' : 'text-slate-400'}`} />
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-medium">{token.name}</span>
-                                            {token.is_active && (
-                                                <Badge className="bg-green-600">Aktiv</Badge>
-                                            )}
-                                        </div>
-                                        <div className="text-sm text-slate-500">
-                                            {token.host}/{token.db_name}
-                                            {token.description && <span className="ml-2 italic">- {token.description}</span>}
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <Building2 className={`w-5 h-5 ${token.is_active ? 'text-green-600' : 'text-slate-400'}`} />
+                                        <div>
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-medium">{token.name}</span>
+                                                {token.is_active && (
+                                                    <Badge className="bg-green-600">Aktiv</Badge>
+                                                )}
+                                            </div>
+                                            <div className="text-sm text-slate-500">
+                                                {token.host}/{token.db_name}
+                                                {token.description && <span className="ml-2 italic">- {token.description}</span>}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => testConnection(token.id)}
-                                        disabled={testingId === token.id}
-                                        title="Verbindung testen"
-                                    >
-                                        {testingId === token.id ? (
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                        ) : (
-                                            <TestTube className="w-4 h-4" />
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => testConnection(token.id)}
+                                            disabled={testingId === token.id}
+                                            title="Verbindung testen"
+                                        >
+                                            {testingId === token.id ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <TestTube className="w-4 h-4" />
+                                            )}
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => copyTokenToClipboard(token.id)}
+                                            title="Token kopieren"
+                                        >
+                                            <Copy className="w-4 h-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => openEditDialog(token)}
+                                            title="Bearbeiten"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
+                                        </Button>
+                                        {!token.is_active && (
+                                            <>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => activateMutation.mutate(token.id)}
+                                                    disabled={activateMutation.isPending}
+                                                    title="Aktivieren"
+                                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                                >
+                                                    <Power className="w-4 h-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    onClick={() => handleDelete(token)}
+                                                    disabled={deleteMutation.isPending}
+                                                    title="Löschen"
+                                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </>
                                         )}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => copyTokenToClipboard(token.id)}
-                                        title="Token kopieren"
-                                    >
-                                        <Copy className="w-4 h-4" />
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => openEditDialog(token)}
-                                        title="Bearbeiten"
-                                    >
-                                        <Edit2 className="w-4 h-4" />
-                                    </Button>
-                                    {!token.is_active && (
-                                        <>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => activateMutation.mutate(token.id)}
-                                                disabled={activateMutation.isPending}
-                                                title="Aktivieren"
-                                                className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                            >
-                                                <Power className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => handleDelete(token)}
-                                                disabled={deleteMutation.isPending}
-                                                title="Löschen"
-                                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </>
-                                    )}
+                                    </div>
                                 </div>
+                                {/* Test result feedback - inline display */}
+                                {testResult && testResult.tokenId === token.id && (
+                                    <div className={`mt-2 p-2 rounded text-sm flex items-center gap-2 ${
+                                        testResult.success 
+                                            ? 'bg-green-100 text-green-800 border border-green-300' 
+                                            : 'bg-red-100 text-red-800 border border-red-300'
+                                    }`}>
+                                        {testResult.success ? (
+                                            <Check className="w-4 h-4" />
+                                        ) : (
+                                            <X className="w-4 h-4" />
+                                        )}
+                                        {testResult.message}
+                                        <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="ml-auto h-6 w-6 p-0"
+                                            onClick={() => setTestResult(null)}
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
