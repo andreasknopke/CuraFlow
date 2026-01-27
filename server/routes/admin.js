@@ -472,7 +472,13 @@ router.get('/db-tokens', async (req, res, next) => {
       ORDER BY name ASC
     `);
     
-    res.json(rows);
+    // Convert is_active from MySQL tinyint to proper boolean
+    const tokens = rows.map(row => ({
+      ...row,
+      is_active: Boolean(row.is_active)
+    }));
+    
+    res.json(tokens);
   } catch (error) {
     next(error);
   }
@@ -492,7 +498,10 @@ router.get('/db-tokens/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Token nicht gefunden' });
     }
     
-    res.json(rows[0]);
+    // Convert is_active from MySQL tinyint to proper boolean
+    const token = { ...rows[0], is_active: Boolean(rows[0].is_active) };
+    
+    res.json(token);
   } catch (error) {
     next(error);
   }
@@ -511,7 +520,10 @@ router.get('/db-tokens/active/current', async (req, res, next) => {
       return res.json(null);
     }
     
-    res.json(rows[0]);
+    // Convert is_active from MySQL tinyint to proper boolean
+    const token = { ...rows[0], is_active: Boolean(rows[0].is_active) };
+    
+    res.json(token);
   } catch (error) {
     next(error);
   }

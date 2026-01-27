@@ -179,15 +179,25 @@ export default function ServerTokenManager() {
     
     // Test connection
     const testConnection = async (tokenId) => {
+        console.log('[TokenManager] Testing connection for token:', tokenId);
         setTestingId(tokenId);
         try {
             // Get the token first
+            console.log('[TokenManager] Fetching token data...');
             const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`);
+            console.log('[TokenManager] Token data received, testing connection...');
+            
+            if (!tokenData || !tokenData.token) {
+                toast.error('Token-Daten nicht gefunden');
+                return;
+            }
             
             const result = await api.request('/api/admin/db-tokens/test', {
                 method: 'POST',
                 body: JSON.stringify({ token: tokenData.token })
             });
+            
+            console.log('[TokenManager] Test result:', result);
             
             if (result.success) {
                 toast.success(`Verbindung erfolgreich zu ${result.host}/${result.database}`);
@@ -195,7 +205,8 @@ export default function ServerTokenManager() {
                 toast.error(result.error || 'Verbindung fehlgeschlagen');
             }
         } catch (err) {
-            toast.error('Test fehlgeschlagen: ' + err.message);
+            console.error('[TokenManager] Test error:', err);
+            toast.error('Test fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler'));
         } finally {
             setTestingId(null);
         }
