@@ -5,6 +5,28 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
+// Whitelist of ALL allowed table names - prevents SQL injection via table name
+const ALLOWED_TABLES = [
+  'app_users',
+  'Doctor',
+  'ShiftEntry',
+  'WishRequest',
+  'Workplace',
+  'ShiftNotification',
+  'DemoSetting',
+  'TrainingRotation',
+  'ScheduleRule',
+  'ColorSetting',
+  'ScheduleNote',
+  'SystemSetting',
+  'CustomHoliday',
+  'StaffingPlanEntry',
+  'BackupLog',
+  'SystemLog',
+  'VoiceAlias',
+  'TeamRole'
+];
+
 // Tables that can be read without authentication
 const PUBLIC_READ_TABLES = [
   'SystemSetting',
@@ -17,6 +39,22 @@ const PUBLIC_READ_TABLES = [
 // Cache for table columns to avoid "Unknown column" errors
 // Key format: "dbToken:tableName" to support multi-tenant
 const COLUMNS_CACHE = {};
+
+// HELPER: Validate and sanitize table name to prevent SQL injection
+const validateTableName = (tableName) => {
+  if (!tableName) {
+    return { valid: false, error: 'Table name is required' };
+  }
+  
+  if (!ALLOWED_TABLES.includes(tableName)) {
+    return { 
+      valid: false, 
+      error: `Invalid table name: ${tableName}. Allowed tables: ${ALLOWED_TABLES.join(', ')}` 
+    };
+  }
+  
+  return { valid: true, tableName };
+};
 
 // HELPER: Convert JS value to MySQL value
 const toSqlValue = (val) => {
@@ -61,10 +99,17 @@ const fromSqlRow = (row) => {
 
 // HELPER: Get valid columns for entity (multi-tenant aware)
 const getValidColumns = async (dbPool, tableName, cacheKey) => {
+  // Validate table name first
+  const validation = validateTableName(tableName);
+  if (!validation.valid) {
+    throw new Error(validation.error);
+  }
+  
   const fullCacheKey = `${cacheKey}:${tableName}`;
   if (COLUMNS_CACHE[fullCacheKey]) return COLUMNS_CACHE[fullCacheKey];
   
   try {
+    // Safe to use tableName here since it's validated against whitelist
     const [rows] = await dbPool.execute(`SHOW COLUMNS FROM \`${tableName}\``);
     const columns = rows.map(r => r.Field);
     COLUMNS_CACHE[fullCacheKey] = columns;
@@ -136,6 +181,12 @@ router.post('/', async (req, res, next) => {
     const effectiveAction = action || operation; // Support both 'action' and 'operation' keys
     const tableName = entity || table;
     
+    // Validate table name against whitelist - CRITICAL SECURITY CHECK
+    const validation = validateTableName(tableName);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+    
     // Get the database pool (set by tenantDbMiddleware)
     const dbPool = req.db || db;
     const cacheKey = req.headers['x-db-token'] || 'default';
@@ -143,10 +194,6 @@ router.post('/', async (req, res, next) => {
     // Auto-create TeamRole table for tenants if needed
     if (tableName === 'TeamRole') {
       await ensureTeamRoleTable(dbPool, cacheKey);
-    }
-    
-    if (!tableName) {
-      return res.status(400).json({ error: 'Entity/table required' });
     }
     
     if (!effectiveAction) {
@@ -178,6 +225,9 @@ router.post('/', async (req, res, next) => {
     
     // ===== LIST / FILTER =====
     if (effectiveAction === 'list' || effectiveAction === 'filter') {
+      // Get valid columns to prevent column name injection
+      const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+      
       let sql = `SELECT * FROM \`${tableName}\``;
       const params = [];
       
@@ -186,6 +236,11 @@ router.post('/', async (req, res, next) => {
       if (filters && Object.keys(filters).length > 0) {
         const clauses = [];
         for (const [key, val] of Object.entries(filters)) {
+          // Validate column name against valid columns
+          if (validColumns && validColumns.length > 0 && !validColumns.includes(key)) {
+            return res.status(400).json({ error: `Invalid filter column: ${key}` });
+          }
+          
           if (val && typeof val === 'object' && !Array.isArray(val)) {
             if (val.$gte !== undefined) {
               clauses.push(`\`${key}\` >= ?`);
@@ -209,6 +264,12 @@ router.post('/', async (req, res, next) => {
         if (typeof sort === 'string') {
           const desc = sort.startsWith('-');
           const field = desc ? sort.substring(1) : sort;
+          
+          // Validate sort field against valid columns
+          if (validColumns && validColumns.length > 0 && !validColumns.includes(field)) {
+            return res.status(400).json({ error: `Invalid sort column: ${field}` });
+          }
+          
           sql += ` ORDER BY \`${field}\` ${desc ? 'DESC' : 'ASC'}`;
           
           if (field !== 'id') {

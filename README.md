@@ -1,185 +1,436 @@
-# CuraFlow
+# CuraFlow Setup Guide
 
-Webbasiertes Dienstplanungs- und Personalverwaltungssystem für Krankenhäuser und Kliniken
+Complete guide to set up CuraFlow on a new development machine.
 
+## Prerequisites
 
-## Überblick
+Install the following software:
 
-CuraFlow ist eine moderne Webanwendung zur digitalen Verwaltung von Dienstplänen, Urlaubsplanung und Personalressourcen in medizinischen Einrichtungen. Das System wurde speziell für die Anforderungen von radiologischen Abteilungen und vergleichbaren Krankenhausbereichen entwickelt, lässt sich jedoch flexibel an andere Fachabteilungen anpassen.
+- **Node.js** (v18 or higher) - [Download](https://nodejs.org/)
+- **Docker Desktop** - [Download](https://www.docker.com/products/docker-desktop/)
+- **Git** (optional, for version control)
 
-Die Anwendung bietet eine intuitive Oberfläche zur Planung von Schichtdiensten, Bereitschaftsdiensten und Rotationen. Durch rollenbasierte Zugriffssteuerung können Administratoren die vollständige Kontrolle über Dienstpläne und Mitarbeiterdaten ausüben, während reguläre Mitarbeiter ihre eigenen Dienste und Wunschlisten einsehen und bearbeiten können.
+## Project Structure
 
+```
+CuraFlow/
+├── server/              # Backend (Express + MySQL)
+│   ├── .env            # Environment configuration
+│   ├── docker-compose.yaml
+│   ├── package.json
+│   └── routes/
+├── src/                # Frontend (React + Vite)
+│   ├── components/
+│   ├── pages/
+│   └── main.jsx
+├── schema.sql          # Database schema
+└── package.json        # Frontend dependencies
+```
 
-## Systemarchitektur
+## Step 1: Clone or Download Project
 
-CuraFlow besteht aus zwei Hauptkomponenten:
+```bash
+# If using Git
+git clone <repository-url>
+cd CuraFlow
 
-Frontend: React-basierte Single-Page-Application mit Vite als Build-Tool. Die Benutzeroberfläche nutzt moderne UI-Komponenten auf Basis von Radix UI und Tailwind CSS für ein responsives Design, das sowohl auf Desktop- als auch auf mobilen Endgeräten funktioniert.
+# Or download and extract the project files
+```
 
-Backend: Node.js/Express-Server mit REST-API. Die Authentifizierung erfolgt über JWT-Token. Als Datenbank wird MySQL verwendet. Das Backend unterstützt Multi-Tenant-Betrieb, sodass mehrere Mandanten (z.B. verschiedene Abteilungen oder Standorte) über eine zentrale Installation bedient werden können.
+## Step 2: Install Dependencies
 
+### Backend Dependencies
+```bash
+cd server
+npm install
+cd ..
+```
 
-## Technische Voraussetzungen
+### Frontend Dependencies
+```bash
+npm install
+```
 
-Server-Anforderungen:
-- Node.js Version 18 oder höher
-- MySQL Version 8.0 oder höher
-- Mindestens 1 GB RAM für den Anwendungsserver
-- Netzwerkzugriff für HTTPS-Verbindungen
+## Step 3: Configure Environment Variables
 
-Client-Anforderungen:
-- Moderner Webbrowser (Chrome, Firefox, Edge, Safari in aktueller Version)
-- JavaScript muss aktiviert sein
-- Bildschirmauflösung von mindestens 1024x768 Pixeln empfohlen
+### Backend Environment
 
+Copy the example environment file and configure it:
 
-## Hauptfunktionen
+```bash
+cd server
+cp .env.example .env
+```
 
-Dienstplanverwaltung (Schedule):
-Die zentrale Funktion der Anwendung ermöglicht die visuelle Planung von Diensten in einer Wochen- oder Tagesansicht. Ärzte und Mitarbeiter können per Drag-and-Drop verschiedenen Arbeitsbereichen zugeordnet werden. Das System unterscheidet zwischen Anwesenheiten, Abwesenheiten (Urlaub, Krank, Frei, Dienstreise), Diensten (Vordergrund, Hintergrund, Spätdienst) sowie Rotationen und Spezialbereichen (CT, MRT, Sonographie, Angiographie, Mammographie etc.). Die Konfiguration der Arbeitsbereiche ist vollständig anpassbar.
+The `.env` file should look like this:
 
-Mitarbeiterverwaltung (Staff):
-Verwaltung aller Ärzte und Mitarbeiter mit ihren Stammdaten. Jeder Mitarbeiter kann einer Rolle zugeordnet werden (Chefarzt, Oberarzt, Facharzt, Assistenzarzt, Nicht-Radiologe). Die Reihenfolge der Anzeige ist konfigurierbar. Es können Qualifikationen und Einschränkungen hinterlegt werden.
+```env
+# Server Configuration
+NODE_ENV=development
+PORT=3000
 
-Stellenplan (Staffing Plan):
-Erfassung des Beschäftigungsumfangs (VK-Anteil) je Mitarbeiter und Monat. Berücksichtigung von Kündigungsfristen, Mutterschutz, Elternzeit und anderen Abwesenheitsgründen. Diese Informationen fließen in die automatische Berechnung der Verfügbarkeit ein.
+# MySQL Database Configuration (Docker Compose)
+# Note: Use 127.0.0.1 instead of localhost for better macOS compatibility
+MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3307
+MYSQL_USER=curaflow
+MYSQL_PASSWORD=curaflow123
+MYSQL_DATABASE=curaflow
 
-Urlaubsplanung (Vacation):
-Jahresübersicht für jeden Mitarbeiter mit Anzeige von Urlaubstagen, Schulferien und Feiertagen. Automatische Berücksichtigung von Konflikten bei der Urlaubsplanung. Synchronisation mit dem Dienstplan.
+# JWT Configuration
+JWT_SECRET=your_generated_secret_here
 
-Wunschliste (WishList):
-Mitarbeiter können Wünsche für bestimmte Dienste oder dienstfreie Tage eintragen. Administratoren sehen eine Übersicht aller Wünsche und können diese bei der Dienstplanung berücksichtigen. Das System protokolliert die Erfüllungsquote der Wünsche.
+# Frontend Configuration
+FRONTEND_URL=http://localhost:5173
+```
 
-Statistiken (Statistics):
-Auswertungen über die Verteilung von Diensten, Rotationen und Abwesenheiten. Grafische Darstellung als Balkendiagramme und Tabellen. Export-Möglichkeit der Daten. Wunscherfüllungsberichte und Compliance-Reports.
+**Important:** Generate a new JWT secret:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-Administration (Admin):
-Zentrale Verwaltungsoberfläche für Systemadministratoren. Benutzerverwaltung mit Rollen und Berechtigungen. Datenbank-Wartungsfunktionen. Systemprotokollierung. Einstellungen für Farbschemata, Abschnittskonfiguration und weitere Anpassungen.
+Copy the output and paste it as the `JWT_SECRET` value in your `.env` file.
 
+### Frontend Environment
 
-## Sicherheit und Datenschutz
+Return to the project root and copy the frontend environment file:
 
-Die Anwendung implementiert folgende Sicherheitsmaßnahmen:
+```bash
+cd ..
+cp .env.example .env
+```
 
-- Authentifizierung über JWT-Token mit konfigurierbarer Gültigkeitsdauer
-- Passwörter werden mit bcrypt gehasht und niemals im Klartext gespeichert
-- HTTPS-Verschlüsselung für alle Verbindungen (bei korrekter Server-Konfiguration)
-- Rollenbasierte Zugriffskontrolle (Admin, User, Read-Only)
-- Rate-Limiting zum Schutz vor Brute-Force-Angriffen
-- Helmet-Middleware für HTTP-Security-Header
-- Mandantenspezifische Datenbanktrennung bei Multi-Tenant-Betrieb
+The `.env` file should contain:
 
-Für den Betrieb in Krankenhausumgebungen wird empfohlen:
-- Betrieb hinter einem Reverse-Proxy mit SSL-Terminierung
-- Regelmäßige Datensicherung der MySQL-Datenbank
-- Integration in das vorhandene Netzwerk- und Firewall-Konzept
-- Prüfung der Kompatibilität mit lokalen Datenschutzrichtlinien
+```env
+VITE_API_URL=http://localhost:3000
+```
 
+**Note:** Both `.env` files are git-ignored and will not be committed to version control.
 
-## Installation und Deployment
+## Step 4: Start Docker Database
 
-Die Anwendung kann auf verschiedenen Plattformen betrieben werden:
+Navigate to the server directory and start the Docker containers:
 
-Lokale Installation:
-1. Repository klonen
-2. Dependencies installieren mit npm install im Hauptverzeichnis und im server-Verzeichnis
-3. Umgebungsvariablen konfigurieren (siehe Abschnitt Konfiguration)
-4. MySQL-Datenbank einrichten und Migrationen ausführen
-5. Frontend bauen mit npm run build
-6. Server starten mit npm start im server-Verzeichnis
+```bash
+cd server
+docker compose up -d
+```
 
-Cloud-Deployment (Railway):
-Die Anwendung ist für das Deployment auf Railway optimiert. Detaillierte Anleitungen finden sich in den Dateien RAILWAY_DEPLOYMENT.md und RAILWAY_QUICKSTART.md. Railway bietet eine einfache Möglichkeit, sowohl das Frontend als auch das Backend inklusive MySQL-Datenbank zu hosten.
+**Important:** Docker Compose reads database credentials from your `.env` file. Make sure you've created `server/.env` from `.env.example` in Step 3 before running this command.
 
-Docker:
-Ein Dockerfile ist im Repository enthalten und ermöglicht den Betrieb in Container-Umgebungen.
+This will start:
+- **MariaDB** database on port `3307`
+- **Adminer** (database admin tool) on port `8080`
 
+Wait about 10-15 seconds for the database to fully initialize.
 
-## Konfiguration
+### Verify Docker Containers
 
-Die Anwendung wird über Umgebungsvariablen konfiguriert:
+```bash
+docker compose ps
+```
 
-MYSQL_HOST: Hostname des MySQL-Servers
-MYSQL_PORT: Port des MySQL-Servers (Standard: 3306)
-MYSQL_USER: Datenbankbenutzer
-MYSQL_PASSWORD: Datenbankpasswort
-MYSQL_DATABASE: Name der Datenbank
-JWT_SECRET: Geheimer Schlüssel für die JWT-Signierung (mindestens 32 Zeichen)
-PORT: Port für den Express-Server (Standard: 3000)
+You should see both `curaflow-db` and `curaflow-adminer` running.
 
-Optionale Variablen für erweiterte Funktionen:
-ENCRYPTION_KEY: Schlüssel für die Verschlüsselung von Mandanten-Datenbankzugangsdaten
-GOOGLE_CALENDAR_CREDENTIALS: Zugangsdaten für Google Calendar Integration
-OPENAI_API_KEY: API-Schlüssel für KI-gestützte Funktionen
+## Step 5: Initialize Database
 
+Run the initialization script to create all tables and the admin user:
 
-## Datenmodell
+```bash
+node init-db.js
+```
 
-Die Anwendung verwendet folgende Haupttabellen:
+**IMPORTANT:** The script will generate a random admin password and display it **ONLY ONCE**:
 
-app_users: Benutzerkonten mit Authentifizierungsdaten und Einstellungen
-doctors: Mitarbeiterstammdaten (Ärzte und sonstiges Personal)
-shift_entries: Einzelne Dienstplaneinträge mit Datum, Person und Position
-workplaces: Konfigurierbare Arbeitsbereiche und Dienste
-wish_requests: Dienstwünsche der Mitarbeiter
-color_settings: Anpassbare Farbschemata für Rollen und Abwesenheiten
-system_settings: Globale Systemeinstellungen
-staffing_plan_entries: Stellenplaneinträge pro Mitarbeiter und Zeitraum
-team_roles: Konfigurierbare Rollen und deren Hierarchie
+```
+🔑 ADMIN CREDENTIALS - SAVE THIS IMMEDIATELY!
+Email:    admin@curaflow.local
+Password: [randomly generated 16-character password]
+⚠️  This password will NEVER be shown again!
+```
 
-Die Tabellenstruktur kann über die SQL-Migrationen im Verzeichnis server/migrations angepasst werden.
+**CRITICAL SECURITY NOTES:**
+- ⚠️  **Save the password immediately** - it will never be shown again
+- ⚠️  **Change the password** after first login
+- ⚠️  **Never commit** the password to version control
+- ⚠️  If you lose the password, use `node create-admin.js` to reset it
 
+## Step 6: Start the Server
 
-## Schnittstellen und Integrationen
+The admin will be required to change the password on first login.
 
-REST-API:
-Alle Funktionen sind über eine dokumentierte REST-API erreichbar. Die API verwendet JSON als Datenaustauschformat. Authentifizierung erfolgt über Bearer-Token im Authorization-Header.
+## Step 7: Start Backend Server
 
-Kalender-Synchronisation:
-Optionale Integration mit Google Calendar zur automatischen Synchronisation von Diensten.
+Still in the `server/` directory:
 
-Excel-Export:
-Dienstpläne können als Excel-Dateien exportiert werden zur Weitergabe oder Archivierung.
+```bash
+npm start
+```
 
+Expected output:
+```
+🚀 CuraFlow Server running on port 3000
+📊 Environment: development
+🗄️  Database: localhost
+```
 
-## Wartung und Support
+Keep this terminal running.
 
-Datenbank-Backup:
-Regelmäßige Backups der MySQL-Datenbank werden dringend empfohlen. Die Anwendung selbst speichert keine persistenten Daten außerhalb der Datenbank.
+## Step 8: Start Frontend
 
-Logging:
-Das Backend protokolliert Zugriffe und Fehler. Die Logs können über die Admin-Oberfläche eingesehen werden.
+Open a **new terminal** window, navigate to the project root, and start the frontend:
 
-Updates:
-Bei Updates sollte zunächst ein Backup erstellt werden. Anschließend können die neuen Dateien eingespielt und eventuell erforderliche Datenbankmigrationen ausgeführt werden.
+```bash
+npm run dev
+```
 
+Expected output:
+```
+  VITE v5.x.x  ready in XXX ms
 
-## Technologie-Stack
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+```
 
-Frontend:
-- React 18 mit Vite
-- TanStack Query für Datenverwaltung
-- Tailwind CSS für Styling
-- Radix UI für Basiskomponenten
-- date-fns für Datumsberechnungen
-- Recharts für Diagramme
+## Step 9: First Login
 
-Backend:
-- Node.js mit Express
-- MySQL mit mysql2-Treiber
-- JWT für Authentifizierung
-- bcrypt für Passwort-Hashing
-- Helmet für Security-Header
-- express-rate-limit für Anfragebegrenzung
+1. Open your browser and go to: **http://localhost:5173**
+2. You'll be redirected to the login page
+3. Enter credentials:
+   - Email: `admin@curaflow.local`
+   - Password: [the random password shown during `node init-db.js`]
+4. You'll be prompted to change the password
+5. Enter the current password and choose a new secure password
 
+## Step 10: Access Database Admin (Optional)
 
-## Lizenz und Haftung
+To manage the database directly, visit: **http://localhost:8080**
 
-Diese Software wird ohne Gewährleistung bereitgestellt. Der Einsatz in produktiven Umgebungen erfolgt auf eigene Verantwortung. Vor dem produktiven Einsatz sollte eine umfassende Prüfung der Sicherheits- und Datenschutzanforderungen der jeweiligen Einrichtung erfolgen.
+Login credentials:
+- System: **MySQL**
+- Server: **db**
+- Username: **curaflow**
+- Password: **curaflow123**
+- Database: **curaflow**
 
+## Common Commands
 
-## Kontakt und Weiterentwicklung
+### Backend
+```bash
+cd server
 
-Das Projekt wird aktiv weiterentwickelt. Für Fragen zur Implementierung, Anpassungen oder Integration in bestehende Krankenhausinfrastrukturen kann der Entwickler kontaktiert werden.
+# Start server
+npm start
 
-Repository: https://github.com/andreasknopke/CuraFlow
+# Start with auto-reload
+npm run dev
+
+# Create admin user
+node create-admin.js
+
+# Initialize database
+node init-db.js
+```
+
+### Frontend
+```bash
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Preview production build
+npm run preview
+```
+
+### Docker
+```bash
+cd server
+
+# Start containers
+docker compose up -d
+
+# Stop containers
+docker compose down
+
+# Stop and remove all data
+docker compose down -v
+
+# View logs
+docker compose logs -f
+
+# Restart containers
+docker compose restart
+```
+
+## Troubleshooting
+
+### Database Connection Issues
+
+**Problem:** `ECONNREFUSED` or connection timeout
+
+**Solutions:**
+1. Verify Docker containers are running:
+   ```bash
+   cd server
+   docker compose ps
+   ```
+
+2. Check database health:
+   ```bash
+   docker compose logs db
+   ```
+
+3. Restart containers:
+   ```bash
+   docker compose restart
+   ```
+
+### JWT Secret Error
+
+**Problem:** `secretOrPrivateKey must have a value`
+
+**Solution:** Restart the backend server completely (Ctrl+C, then `npm start`)
+
+### Port Already in Use
+
+**Problem:** Port 3000 or 5173 already in use
+
+**Solutions:**
+- **Backend (3000):** Change `PORT` in `server/.env`
+- **Frontend (5173):** Vite will auto-increment to 5174
+- Or kill the process using the port:
+  ```bash
+  # Windows PowerShell
+  Get-Process -Id (Get-NetTCPConnection -LocalPort 3000).OwningProcess | Stop-Process
+  
+  # Linux/Mac
+  kill $(lsof -ti:3000)
+  ```
+
+### Table Doesn't Exist or Foreign Key Error
+
+**Problem:** `Table 'curaflow.app_users' doesn't exist` or `errno: 150 "Foreign key constraint is incorrectly formed"`
+
+**Solution:** Completely reset the database (this will delete all data):
+```bash
+cd server
+docker compose down -v    # -v flag removes volumes with data
+docker compose up -d
+# Wait 10-15 seconds for database to initialize
+node init-db.js
+```
+
+**Note:** Simply running `docker compose down` removes containers but keeps the data in volumes. Use `-v` to remove volumes and start fresh.
+
+### Admin User Already Exists
+
+**Problem:** Init script says admin user already exists after removing containers
+
+**Solution:** Docker volumes persist data even when containers are removed. Use the `-v` flag:
+```bash
+cd server
+docker compose down -v
+docker compose up -d
+# Wait 10-15 seconds
+node init-db.js
+```
+
+### Docker Not Found
+
+**Problem:** `docker: command not found`
+
+**Solution:** Install Docker Desktop and ensure it's running
+
+### Login Failed
+
+**Problem:** "Ungültige Anmeldedaten" (Invalid credentials)
+
+**Solutions:**
+1. Ensure admin user was created:
+   ```bash
+   cd server
+   node create-admin.js
+   ```
+   
+   This will generate a new random password displayed on screen.
+
+2. Use the credentials shown during initialization or password reset
+
+3. Check backend logs for detailed error messages
+
+## Data Persistence
+
+- Database data is stored in a Docker volume: `curaflow-db-data`
+- Data persists even after `docker compose down`
+- To completely reset the database:
+  ```bash
+  cd server
+  docker compose down -v
+  docker compose up -d
+  node init-db.js
+  node create-admin.js
+  ```
+
+## Production Deployment
+
+**⚠️ Important:** The included `docker-compose.yaml` is designed for **development and local testing only**. Do not use it as-is for production.
+
+For production deployment:
+
+1. **Database Setup:**
+   - Use a managed database service (AWS RDS, Google Cloud SQL, Azure Database, etc.) or
+   - Set up a dedicated, hardened MariaDB/MySQL server with:
+     - Strong passwords (not stored in version control)
+     - Restricted network access (firewall rules, VPC)
+     - Regular backups and monitoring
+     - SSL/TLS connections enabled
+
+2. **Application Configuration:**
+   - Generate a strong, unique JWT secret: `openssl rand -base64 32`
+   - Use environment variables or a secrets manager (never commit secrets to `.env` files)
+   - Update `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`
+   - Set `JWT_SECRET` from secure source
+
+3. **Build & Deploy:**
+   - Build frontend: `npm run build`
+   - Deploy built files from `dist/` folder to a static host or CDN
+   - Deploy backend to a Node.js hosting service (PM2, Docker, cloud services)
+
+4. **Security Hardening:**
+   - Enable HTTPS/SSL (use Let's Encrypt or cloud provider certificates)
+   - Configure proper CORS origins (remove wildcards)
+   - Set secure session cookies
+   - Implement rate limiting and request validation
+   - Regular security updates and dependency audits
+
+## Tech Stack
+
+- **Frontend:** React 18, Vite, TailwindCSS, shadcn/ui
+- **Backend:** Node.js, Express, JWT authentication
+- **Database:** MariaDB (via Docker)
+- **State Management:** TanStack Query (React Query)
+
+## Support
+
+For issues or questions:
+1. Check the troubleshooting section above
+2. Review server logs in the terminal
+3. Check browser console for frontend errors
+4. Verify database connection via Adminer (port 8080)
+
+## Next Steps
+
+After successful setup:
+
+1. Create additional users via Admin panel
+2. Add staff/doctors in the Staff section
+3. Configure workplaces and shift types
+4. Start scheduling shifts
+5. Explore the various modules (Schedule, Vacation, Statistics, etc.)
+
+---
+
+**Happy scheduling with CuraFlow! 🚀**

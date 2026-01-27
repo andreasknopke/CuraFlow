@@ -8,6 +8,24 @@ import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
 
+// Load environment variables if not already loaded (fallback for direct execution)
+if (!process.env.JWT_SECRET) {
+  dotenv.config();
+}
+
+// CRITICAL SECURITY: Validate JWT_SECRET exists and is strong
+if (!process.env.JWT_SECRET) {
+  console.error('❌ FATAL: JWT_SECRET environment variable is required');
+  console.error('Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  process.exit(1);
+}
+
+if (process.env.JWT_SECRET.length < 32) {
+  console.error('❌ FATAL: JWT_SECRET must be at least 32 characters long');
+  console.error('Current length:', process.env.JWT_SECRET.length);
+  process.exit(1);
+}
+
 // Import routes
 import authRouter from './routes/auth.js';
 import dbProxyRouter from './routes/dbProxy.js';
@@ -18,14 +36,12 @@ import calendarRouter from './routes/calendar.js';
 import voiceRouter from './routes/voice.js';
 import adminRouter from './routes/admin.js';
 import atomicRouter from './routes/atomic.js';
-
-// Load environment variables
-dotenv.config();
+import integrationsRouter from './routes/integrations.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Trust proxy - Railway runs behind a reverse proxy
+// Trust proxy - for deployment behind reverse proxies
 app.set('trust proxy', 1);
 
 // Default MySQL Connection Pool
@@ -115,39 +131,25 @@ export const tenantDbMiddleware = (req, res, next) => {
 
 // CORS Configuration - MUST be before other middleware!
 const allowedOrigins = [
-  'https://curaflow-production.up.railway.app',
-  'https://curaflow-frontend-production.up.railway.app',
-  process.env.FRONTEND_URL,
-  'http://localhost:5173',
-  'http://localhost:3000'
+  'http://localhost:5173',  // Vite dev server
+  'http://localhost:3000',  // Alternative frontend port
+  'http://localhost:4173',  // Vite preview
+  process.env.FRONTEND_URL
 ].filter(Boolean);
 
 console.log('CORS allowed origins:', allowedOrigins);
 console.log('NODE_ENV:', process.env.NODE_ENV);
 
-// Handle preflight requests explicitly
-app.options('*', cors({
-  origin: true, // Allow all origins for preflight
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-DB-Token']
-}));
-
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc.)
+    // Allow requests with no origin (mobile apps, curl, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    // Allow all railway.app subdomains
-    if (origin.endsWith('.railway.app')) {
-      return callback(null, true);
-    }
     
     if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       console.warn('CORS blocked origin:', origin);
-      callback(null, true); // Allow anyway for debugging - change to false in production
+      callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
@@ -208,6 +210,7 @@ app.use('/api/calendar', calendarRouter);
 app.use('/api/voice', voiceRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/atomic', atomicRouter);
+app.use('/api/integrations', integrationsRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -232,7 +235,7 @@ app.use((req, res) => {
 
 // Start server
 app.listen(PORT, async () => {
-  console.log(`🚀 CuraFlow Railway Server running on port ${PORT}`);
+  console.log(`🚀 CuraFlow Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: ${process.env.MYSQL_HOST}`);
   

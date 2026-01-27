@@ -1,13 +1,46 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { db } from '../index.js';
 
 const router = express.Router();
 
-// JWT Helper Functions
+// Security constants
 const JWT_SECRET = process.env.JWT_SECRET;
 const TOKEN_EXPIRY = '24h';
+const BCRYPT_ROUNDS = 14; // OWASP 2026 recommendation
+
+// SECURITY: Strong password validation
+function validatePassword(password) {
+  if (!password) {
+    return 'Password is required';
+  }
+  
+  if (password.length < 8) {
+    return 'Password must be at least 8 characters long';
+  }
+  
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter';
+  }
+  
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter';
+  }
+  
+  if (!/[0-9]/.test(password)) {
+    return 'Password must contain at least one number';
+  }
+  
+  if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    return 'Password must contain at least one special character (!@#$%^&*(),.?":{}|<>)';
+  }
+  
+  return null; // Valid
+}
+
+// JWT Helper Functions
 
 function createToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -136,6 +169,12 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
     }
     
+    // SECURITY: Validate password strength
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
+    }
+    
     // Check if user exists
     const [existing] = await db.execute(
       'SELECT id FROM app_users WHERE email = ?',
@@ -146,8 +185,8 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
       return res.status(409).json({ error: 'Benutzer existiert bereits' });
     }
     
-    // Hash password
-    const password_hash = await bcrypt.hash(password, 12);
+    // Hash password with increased rounds
+    const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const id = crypto.randomUUID();
     
     await db.execute(
@@ -155,9 +194,8 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
        VALUES (?, ?, ?, ?, ?, ?, 1)`,
       [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null]
     );
-    
+
     const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]);
-    
     res.status(201).json({ user: sanitizeUser(newUser[0]) });
   } catch (error) {
     next(error);
@@ -243,8 +281,10 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
       return res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
     }
     
-    if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+    // SECURITY: Validate password strength
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ error: passwordError });
     }
     
     const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
@@ -259,7 +299,9 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
       return res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
     }
     
-    const newHash = await bcrypt.hash(newPassword, 12);
+    // Hash with increased rounds
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    
     await db.execute(
       'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
       [newHash, req.user.sub]

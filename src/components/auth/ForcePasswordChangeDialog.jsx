@@ -11,7 +11,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
   const { toast } = useToast();
   const [isChanging, setIsChanging] = useState(false);
   const [form, setForm] = useState({
-    currentPassword: 'CuraFlow2026!',
+    currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
@@ -37,10 +37,10 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
       return;
     }
 
-    if (form.newPassword === 'CuraFlow2026!') {
+    if (form.newPassword === form.currentPassword) {
       toast({
         title: "Fehler",
-        description: "Bitte wählen Sie ein anderes Passwort als das Standardpasswort",
+        description: "Das neue Passwort muss sich vom aktuellen Passwort unterscheiden",
         variant: "destructive"
       });
       return;
@@ -93,6 +93,20 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
           </div>
           
           <div>
+            <Label htmlFor="currentPassword">Aktuelles Passwort</Label>
+            <Input
+              id="currentPassword"
+              type="password"
+              value={form.currentPassword}
+              onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
+              required
+              disabled={isChanging}
+              placeholder="Ihr aktuelles Passwort"
+              autoFocus
+            />
+          </div>
+          
+          <div>
             <Label htmlFor="newPassword">Neues Passwort</Label>
             <Input
               id="newPassword"
@@ -103,7 +117,6 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
               minLength={8}
               disabled={isChanging}
               placeholder="Mindestens 8 Zeichen"
-              autoFocus
             />
           </div>
           <div>
