@@ -58,6 +58,9 @@ export class HolidayCalculator {
         const apiYears = new Set();
         if (this.apiData.public) {
             this.apiData.public.forEach(h => {
+                // Skip entries without valid date
+                if (!h || !h.date) return;
+                
                 const y = parseISO(h.date).getFullYear();
                 apiYears.add(y);
                 // Format to YYYY-MM-DD for map key
@@ -139,11 +142,13 @@ export class HolidayCalculator {
         }
 
         // 2. Process School Holidays
-        let schoolRanges = [...(this.apiData.school || [])].map(r => ({
-            start: parseISO(r.start).getTime(),
-            end: parseISO(r.end).getTime(),
-            name: r.name
-        }));
+        let schoolRanges = [...(this.apiData.school || [])]
+            .filter(r => r && r.start && r.end) // Skip entries without valid dates
+            .map(r => ({
+                start: parseISO(r.start).getTime(),
+                end: parseISO(r.end).getTime(),
+                name: r.name || 'Schulferien'
+            }));
 
         // Custom School Additions
         this.customHolidays.filter(h => h.type === 'school' && h.action === 'add').forEach(h => {
