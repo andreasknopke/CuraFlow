@@ -7,14 +7,17 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2 } from 'lucide-react';
+import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Check } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
 
 export default function UserManagement() {
     const queryClient = useQueryClient();
     const { token } = useAuth();
     const [showCreateDialog, setShowCreateDialog] = useState(false);
+    const [showTenantDialog, setShowTenantDialog] = useState(false);
+    const [selectedUser, setSelectedUser] = useState(null);
     const [newUser, setNewUser] = useState({ email: '', full_name: '', password: '', role: 'user' });
     const [createError, setCreateError] = useState('');
 
@@ -31,6 +34,22 @@ export default function UserManagement() {
         queryFn: () => db.Doctor.list(),
         staleTime: 5 * 60 * 1000,
         cacheTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+
+    // Fetch available tenants (db tokens)
+    const { data: tenants = [] } = useQuery({
+        queryKey: ['serverDbTokens'],
+        queryFn: async () => {
+            try {
+                const response = await api.request('/api/admin/db-tokens');
+                return response;
+            } catch (e) {
+                console.error('Failed to load tenants:', e);
+                return [];
+            }
+        },
+        staleTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
 
@@ -90,7 +109,7 @@ export default function UserManagement() {
                 </Button>
             </div>
 
-            <div className="bg-white rounded-lg border shadow-sm">
+            <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>
@@ -98,12 +117,20 @@ export default function UserManagement() {
                             <TableHead>Email</TableHead>
                             <TableHead>Rolle</TableHead>
                             <TableHead>Zugeordnete Person</TableHead>
+                            <TableHead>Mandanten</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Aktionen</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {users.map((user) => (
+                        {users.map((user) => {
+                            const userTenants = user.allowed_tenants ? 
+                                (typeof user.allowed_tenants === 'string' ? JSON.parse(user.allowed_tenants) : user.allowed_tenants) 
+                                : null;
+                            const tenantCount = userTenants?.length || 0;
+                            const hasAllAccess = !userTenants || userTenants.length === 0;
+                            
+                            return (
                             <TableRow key={user.id}>
                                 <TableCell className="font-medium">{user.full_name}</TableCell>
                                 <TableCell>{user.email}</TableCell>
@@ -141,6 +168,24 @@ export default function UserManagement() {
                                     </Select>
                                 </TableCell>
                                 <TableCell>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="gap-1"
+                                        onClick={() => {
+                                            setSelectedUser(user);
+                                            setShowTenantDialog(true);
+                                        }}
+                                    >
+                                        <Database className="w-3 h-3" />
+                                        {hasAllAccess ? (
+                                            <span className="text-green-600">Alle</span>
+                                        ) : (
+                                            <span>{tenantCount} von {tenants.length}</span>
+                                        )}
+                                    </Button>
+                                </TableCell>
+                                <TableCell>
                                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                                         Aktiv
                                     </Badge>
@@ -174,7 +219,7 @@ export default function UserManagement() {
                                     </div>
                                 </TableCell>
                             </TableRow>
-                        ))}
+                        )})}
                     </TableBody>
                 </Table>
             </div>
@@ -252,6 +297,135 @@ export default function UserManagement() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Tenant Assignment Dialog */}
+            <Dialog open={showTenantDialog} onOpenChange={(open) => {
+                setShowTenantDialog(open);
+                if (!open) setSelectedUser(null);
+            }}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Database className="w-5 h-5" />
+                            Mandanten-Zuordnung
+                        </DialogTitle>
+                    </DialogHeader>
+                    {selectedUser && (
+                        <TenantSelector 
+                            user={selectedUser}
+                            tenants={tenants}
+                            onSave={(allowedTenants) => {
+                                updateUserMutation.mutate({
+                                    id: selectedUser.id,
+                                    data: { allowed_tenants: allowedTenants }
+                                }, {
+                                    onSuccess: () => setShowTenantDialog(false)
+                                });
+                            }}
+                            onClose={() => setShowTenantDialog(false)}
+                            isLoading={updateUserMutation.isPending}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+        </div>
+    );
+}
+
+// Separate component for tenant selection
+function TenantSelector({ user, tenants, onSave, onClose, isLoading }) {
+    const currentTenants = user.allowed_tenants ? 
+        (typeof user.allowed_tenants === 'string' ? JSON.parse(user.allowed_tenants) : user.allowed_tenants) 
+        : [];
+    
+    const [selectedTenants, setSelectedTenants] = useState(currentTenants || []);
+    const [allAccess, setAllAccess] = useState(!currentTenants || currentTenants.length === 0);
+
+    const toggleTenant = (tenantId) => {
+        setSelectedTenants(prev => 
+            prev.includes(tenantId) 
+                ? prev.filter(id => id !== tenantId)
+                : [...prev, tenantId]
+        );
+    };
+
+    const handleSave = () => {
+        // If "All Access" is selected, save null or empty array
+        onSave(allAccess ? null : selectedTenants);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="text-sm text-slate-600">
+                Benutzer: <span className="font-medium">{user.full_name || user.email}</span>
+            </div>
+
+            {/* All Access Toggle */}
+            <div className="flex items-center space-x-2 p-3 bg-slate-50 rounded-lg border">
+                <Checkbox 
+                    id="all-access"
+                    checked={allAccess}
+                    onCheckedChange={(checked) => {
+                        setAllAccess(checked);
+                        if (checked) setSelectedTenants([]);
+                    }}
+                />
+                <label 
+                    htmlFor="all-access" 
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                >
+                    Zugriff auf alle Mandanten
+                </label>
+            </div>
+
+            {/* Tenant List */}
+            {!allAccess && (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                    <Label>Erlaubte Mandanten:</Label>
+                    {tenants.length === 0 ? (
+                        <p className="text-sm text-slate-500 italic">Keine Mandanten konfiguriert</p>
+                    ) : (
+                        tenants.map(tenant => (
+                            <div 
+                                key={tenant.id} 
+                                className={`flex items-center space-x-2 p-2 rounded border cursor-pointer hover:bg-slate-50 ${
+                                    selectedTenants.includes(tenant.id) ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200'
+                                }`}
+                                onClick={() => toggleTenant(tenant.id)}
+                            >
+                                <Checkbox 
+                                    checked={selectedTenants.includes(tenant.id)}
+                                    onCheckedChange={() => toggleTenant(tenant.id)}
+                                />
+                                <div className="flex-1">
+                                    <div className="font-medium text-sm">{tenant.name}</div>
+                                    {tenant.description && (
+                                        <div className="text-xs text-slate-500">{tenant.description}</div>
+                                    )}
+                                    <div className="text-xs text-slate-400">{tenant.host}/{tenant.db_name}</div>
+                                </div>
+                                {selectedTenants.includes(tenant.id) && (
+                                    <Check className="w-4 h-4 text-indigo-600" />
+                                )}
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+
+            <DialogFooter>
+                <Button variant="outline" onClick={onClose}>
+                    Abbrechen
+                </Button>
+                <Button 
+                    onClick={handleSave}
+                    disabled={isLoading}
+                    className="bg-indigo-600 hover:bg-indigo-700"
+                >
+                    {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Speichern
+                </Button>
+            </DialogFooter>
         </div>
     );
 }

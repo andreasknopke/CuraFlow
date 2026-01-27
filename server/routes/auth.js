@@ -342,7 +342,7 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
     
     // Admin can update more fields
     const allowedFields = [
-      'full_name', 'role', 'doctor_id', 'is_active',
+      'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants',
       'theme', 'section_config', 'collapsed_sections',
       'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
       'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'

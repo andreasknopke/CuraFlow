@@ -43,6 +43,9 @@ Deno.serve(async (req) => {
                     role ENUM('admin', 'user') DEFAULT 'user',
                     doctor_id VARCHAR(36),
                     
+                    -- Multi-Tenant Access Control
+                    allowed_tenants JSON DEFAULT NULL,
+                    
                     -- User Preferences
                     theme TEXT,
                     section_config TEXT,
