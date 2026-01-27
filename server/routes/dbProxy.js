@@ -312,7 +312,17 @@ router.post('/', async (req, res, next) => {
     if (effectiveAction === 'delete') {
       if (!id) return res.status(400).json({ error: "ID required for delete" });
       
+      // Fetch record before deletion for logging
+      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
+      const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
+      
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
+      
+      // Log deletion
+      const userEmail = req.user?.email || 'unknown';
+      const timestamp = new Date().toISOString();
+      console.log(`[DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${id} | Data: ${JSON.stringify(deletedRecord)}`);
+      
       return res.json({ success: true });
     }
     
