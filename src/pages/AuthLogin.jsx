@@ -26,25 +26,36 @@ export default function AuthLoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [loginComplete, setLoginComplete] = useState(false);
 
     // Redirect if already authenticated (and no tenant selection needed)
     useEffect(() => {
-        if (!isLoading && isAuthenticated && !needsTenantSelection) {
+        console.log('[AuthLogin] useEffect check:', { isLoading, isAuthenticated, needsTenantSelection, loginComplete });
+        // Nur redirecten wenn:
+        // 1. Login-Prozess abgeschlossen (loginComplete) 
+        // 2. Authentifiziert
+        // 3. Keine Tenant-Auswahl nötig
+        if (loginComplete && isAuthenticated && !needsTenantSelection) {
+            console.log('[AuthLogin] Redirecting to dashboard');
             navigate(createPageUrl('MyDashboard'), { replace: true });
         }
-    }, [isAuthenticated, isLoading, needsTenantSelection, navigate]);
+    }, [isAuthenticated, isLoading, needsTenantSelection, loginComplete, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setIsSubmitting(true);
+        setLoginComplete(false);
 
         try {
-            const result = await login(email, password);
-            // Navigation erfolgt über useEffect wenn needsTenantSelection false ist
-            // oder nach Abschluss der Tenant-Auswahl
+            console.log('[AuthLogin] Starting login...');
+            await login(email, password);
+            console.log('[AuthLogin] Login finished, setting loginComplete=true');
+            // Warte kurz damit React die States aktualisieren kann
+            setTimeout(() => setLoginComplete(true), 100);
         } catch (err) {
             setError(err.message || 'Anmeldung fehlgeschlagen');
+            setLoginComplete(false);
         } finally {
             setIsSubmitting(false);
         }

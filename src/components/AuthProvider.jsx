@@ -87,16 +87,22 @@ const JWTAuthProviderInner = ({ children }) => {
     }, []);
 
     const login = async (email, password) => {
+        console.log('[Auth] Login started for:', email);
+        
         // Zuerst alten DB-Token zurücksetzen (wichtig bei User-Wechsel)
         try {
             await disableDbToken();
             localStorage.removeItem('active_token_id');
             localStorage.removeItem('db_credentials');
+            localStorage.removeItem('db_token_enabled');
+            console.log('[Auth] Cleared old DB tokens');
         } catch (e) {
-            console.error('Failed to clear old DB token:', e);
+            console.error('[Auth] Failed to clear old DB token:', e);
         }
         
         const data = await api.login(email, password);
+        console.log('[Auth] Login successful, user:', data.user?.email);
+        
         storeToken(data.token);
         setToken(data.token);
         setUser(data.user);
@@ -106,24 +112,23 @@ const JWTAuthProviderInner = ({ children }) => {
         // Prüfen, ob Tenant-Auswahl erforderlich ist
         try {
             api.setToken(data.token);
+            console.log('[Auth] Fetching tenants...');
             const tenantsData = await api.getMyTenants();
+            console.log('[Auth] Tenants response:', tenantsData);
             
             if (tenantsData.tenants && tenantsData.tenants.length > 0) {
+                console.log('[Auth] Found', tenantsData.tenants.length, 'tenants, hasFullAccess:', tenantsData.hasFullAccess);
                 setAllowedTenants(tenantsData.tenants);
                 setHasFullTenantAccess(tenantsData.hasFullAccess);
                 
                 // Bei jedem Login: Tenant-Auswahl anzeigen
-                // (der aktive Token könnte von einem anderen User sein)
-                if (tenantsData.tenants.length > 1 || tenantsData.hasFullAccess) {
-                    // Mehrere Tenants oder Full-Access: Dialog anzeigen
-                    setNeedsTenantSelection(true);
-                } else if (tenantsData.tenants.length === 1) {
-                    // Nur ein Tenant: automatisch aktivieren
-                    setNeedsTenantSelection(true);
-                }
+                console.log('[Auth] Setting needsTenantSelection = true');
+                setNeedsTenantSelection(true);
+            } else {
+                console.log('[Auth] No tenants found for user');
             }
         } catch (err) {
-            console.error('Failed to load tenants:', err);
+            console.error('[Auth] Failed to load tenants:', err);
             // Bei Fehler einfach weitermachen ohne Tenant-Auswahl
         }
         
