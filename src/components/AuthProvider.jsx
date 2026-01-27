@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { disableDbToken } from '@/components/dbTokenStorage';
 
 // Configuration: Set to true to use custom JWT auth, false for Base44 auth
 const USE_CUSTOM_AUTH = true; // Custom JWT auth enabled
@@ -102,18 +103,13 @@ const JWTAuthProviderInner = ({ children }) => {
                 setAllowedTenants(tenantsData.tenants);
                 setHasFullTenantAccess(tenantsData.hasFullAccess);
                 
-                // Wenn nur ein Tenant und kein Full-Access, automatisch aktivieren
-                // Ansonsten Dialog anzeigen
-                const activeTokenId = localStorage.getItem('active_token_id');
-                const isTokenEnabled = localStorage.getItem('db_token_enabled') === 'true';
-                
-                // Zeige Dialog wenn:
-                // 1. Mehr als ein Tenant ODER Full-Access (für Standard-DB Option)
-                // 2. UND kein Token bereits aktiv
-                if (!isTokenEnabled && (tenantsData.tenants.length > 1 || tenantsData.hasFullAccess)) {
+                // Bei jedem Login: Tenant-Auswahl anzeigen
+                // (der aktive Token könnte von einem anderen User sein)
+                if (tenantsData.tenants.length > 1 || tenantsData.hasFullAccess) {
+                    // Mehrere Tenants oder Full-Access: Dialog anzeigen
                     setNeedsTenantSelection(true);
-                } else if (!isTokenEnabled && tenantsData.tenants.length === 1) {
-                    // Nur ein Tenant, automatisch aktivieren
+                } else if (tenantsData.tenants.length === 1) {
+                    // Nur ein Tenant: automatisch aktivieren
                     setNeedsTenantSelection(true);
                 }
             }
@@ -129,13 +125,23 @@ const JWTAuthProviderInner = ({ children }) => {
         setNeedsTenantSelection(false);
     };
 
-    const logout = () => {
+    const logout = async () => {
         storeToken(null);
         api.setToken(null);
         setToken(null);
         setUser(null);
         setIsAuthenticated(false);
         queryClient.clear();
+        
+        // DB-Token beim Logout zurücksetzen
+        try {
+            await disableDbToken();
+            localStorage.removeItem('active_token_id');
+            localStorage.removeItem('db_credentials');
+        } catch (e) {
+            console.error('Failed to disable DB token on logout:', e);
+        }
+        
         window.location.href = '/AuthLogin';
     };
 
