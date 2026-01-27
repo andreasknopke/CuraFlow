@@ -385,17 +385,29 @@ function TenantSelector({ user, tenants, onSave, onClose, isLoading }) {
                     {tenants.length === 0 ? (
                         <p className="text-sm text-slate-500 italic">Keine Mandanten konfiguriert</p>
                     ) : (
-                        tenants.map(tenant => (
+                        tenants.map(tenant => {
+                            const isSelected = selectedTenants.includes(tenant.id);
+                            return (
                             <div 
                                 key={tenant.id} 
                                 className={`flex items-center space-x-2 p-2 rounded border cursor-pointer hover:bg-slate-50 ${
-                                    selectedTenants.includes(tenant.id) ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200'
+                                    isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200'
                                 }`}
-                                onClick={() => toggleTenant(tenant.id)}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    toggleTenant(tenant.id);
+                                }}
                             >
                                 <Checkbox 
-                                    checked={selectedTenants.includes(tenant.id)}
-                                    onCheckedChange={() => toggleTenant(tenant.id)}
+                                    checked={isSelected}
+                                    onCheckedChange={(checked) => {
+                                        if (checked && !isSelected) {
+                                            setSelectedTenants(prev => [...prev, tenant.id]);
+                                        } else if (!checked && isSelected) {
+                                            setSelectedTenants(prev => prev.filter(id => id !== tenant.id));
+                                        }
+                                    }}
                                 />
                                 <div className="flex-1">
                                     <div className="font-medium text-sm">{tenant.name}</div>
@@ -404,11 +416,11 @@ function TenantSelector({ user, tenants, onSave, onClose, isLoading }) {
                                     )}
                                     <div className="text-xs text-slate-400">{tenant.host}/{tenant.db_name}</div>
                                 </div>
-                                {selectedTenants.includes(tenant.id) && (
+                                {isSelected && (
                                     <Check className="w-4 h-4 text-indigo-600" />
                                 )}
                             </div>
-                        ))
+                        )})
                     )}
                 </div>
             )}
