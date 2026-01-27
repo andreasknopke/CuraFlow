@@ -310,7 +310,42 @@ export default function ServerTokenManager() {
         }
     };
     
+    // Migration status query
+    const { data: migrationStatus, refetch: refetchMigrations } = useQuery({
+        queryKey: ['migrationStatus'],
+        queryFn: async () => {
+            try {
+                return await api.request('/api/admin/migration-status');
+            } catch (e) {
+                console.error('Failed to load migration status:', e);
+                return { migrations: [], allApplied: true };
+            }
+        },
+        staleTime: 30000
+    });
+    
+    // Run migrations mutation
+    const runMigrationsMutation = useMutation({
+        mutationFn: async () => {
+            return await api.request('/api/admin/run-migrations', { method: 'POST' });
+        },
+        onSuccess: (data) => {
+            refetchMigrations();
+            const successCount = data.results.filter(r => r.status === 'success').length;
+            const skippedCount = data.results.filter(r => r.status === 'skipped').length;
+            if (successCount > 0) {
+                toast.success(`${successCount} Migration(en) erfolgreich ausgeführt`);
+            } else if (skippedCount > 0) {
+                toast.info('Alle Migrationen bereits angewendet');
+            }
+        },
+        onError: (err) => {
+            toast.error('Fehler: ' + err.message);
+        }
+    });
+    
     const activeToken = tokens.find(t => t.is_active);
+    const pendingMigrations = migrationStatus?.migrations?.filter(m => !m.applied) || [];
     
     return (
         <Card>
@@ -368,6 +403,47 @@ export default function ServerTokenManager() {
                         </Button>
                     )}
                 </div>
+                
+                {/* Database Migrations */}
+                {pendingMigrations.length > 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                <div>
+                                    <span className="font-medium text-amber-800">
+                                        {pendingMigrations.length} ausstehende Migration(en)
+                                    </span>
+                                    <p className="text-xs text-amber-600">
+                                        {pendingMigrations.map(m => m.description).join(', ')}
+                                    </p>
+                                </div>
+                            </div>
+                            <Button 
+                                size="sm"
+                                onClick={() => runMigrationsMutation.mutate()}
+                                disabled={runMigrationsMutation.isPending}
+                                className="bg-amber-600 hover:bg-amber-700"
+                            >
+                                {runMigrationsMutation.isPending ? (
+                                    <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                ) : (
+                                    <Database className="w-4 h-4 mr-1" />
+                                )}
+                                Migrationen ausführen
+                            </Button>
+                        </div>
+                    </div>
+                )}
+                
+                {migrationStatus && pendingMigrations.length === 0 && (
+                    <div className="p-2 bg-green-50 border border-green-200 rounded-lg">
+                        <div className="flex items-center gap-2 text-green-700 text-sm">
+                            <Check className="w-4 h-4" />
+                            <span>Datenbank-Schema ist aktuell</span>
+                        </div>
+                    </div>
+                )}
                 
                 {/* Token List */}
                 {isLoading ? (

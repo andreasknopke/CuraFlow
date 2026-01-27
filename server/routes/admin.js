@@ -437,6 +437,84 @@ router.post('/rename-position', async (req, res, next) => {
   }
 });
 
+// ===== DATABASE MIGRATIONS =====
+// Run pending migrations on the master database
+
+router.post('/run-migrations', async (req, res, next) => {
+  try {
+    const results = [];
+    
+    // Migration 1: Add allowed_tenants to app_users
+    try {
+      await db.execute(`
+        ALTER TABLE app_users 
+        ADD COLUMN IF NOT EXISTS allowed_tenants JSON DEFAULT NULL
+      `);
+      results.push({ migration: 'add_allowed_tenants', status: 'success' });
+    } catch (err) {
+      // Column might already exist
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_allowed_tenants', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_allowed_tenants', status: 'error', error: err.message });
+      }
+    }
+    
+    // Migration 2: Add must_change_password to app_users (if not exists)
+    try {
+      await db.execute(`
+        ALTER TABLE app_users 
+        ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE
+      `);
+      results.push({ migration: 'add_must_change_password', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_must_change_password', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_must_change_password', status: 'error', error: err.message });
+      }
+    }
+    
+    console.log(`[Migrations] Executed by ${req.user?.email}:`, results);
+    
+    res.json({
+      success: true,
+      message: 'Migrationen ausgeführt',
+      results
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/migration-status', async (req, res, next) => {
+  try {
+    // Check which columns exist in app_users
+    const [columns] = await db.execute(`SHOW COLUMNS FROM app_users`);
+    const columnNames = columns.map(c => c.Field);
+    
+    const migrations = [
+      { 
+        name: 'add_allowed_tenants', 
+        description: 'Mandanten-Zuordnung für User',
+        applied: columnNames.includes('allowed_tenants')
+      },
+      { 
+        name: 'add_must_change_password', 
+        description: 'Passwort-Änderung erzwingen',
+        applied: columnNames.includes('must_change_password')
+      }
+    ];
+    
+    res.json({
+      migrations,
+      allApplied: migrations.every(m => m.applied)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== DB TOKEN MANAGEMENT (Server-side Token Storage) =====
 // IMPORTANT: These tokens are ALWAYS stored on the MASTER database (from ENV variables)
 // NOT on tenant databases! This ensures tokens are available regardless of which
