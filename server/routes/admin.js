@@ -406,4 +406,338 @@ router.post('/rename-position', async (req, res, next) => {
   }
 });
 
+// ===== DB TOKEN MANAGEMENT (Server-side Token Storage) =====
+// IMPORTANT: These tokens are ALWAYS stored on the MASTER database (from ENV variables)
+// NOT on tenant databases! This ensures tokens are available regardless of which
+// tenant database is currently active.
+// We use `db` (master) instead of `req.db` (tenant) for all token operations.
+
+// Ensure db_tokens table exists on MASTER database
+async function ensureDbTokensTable(masterDb) {
+  await masterDb.execute(`
+    CREATE TABLE IF NOT EXISTS db_tokens (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      token TEXT NOT NULL,
+      host VARCHAR(255),
+      db_name VARCHAR(100),
+      description TEXT,
+      is_active BOOLEAN DEFAULT FALSE,
+      created_by VARCHAR(255),
+      created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+// GET all stored DB tokens (metadata only, not the actual token value for security)
+router.get('/db-tokens', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const [rows] = await db.execute(`
+      SELECT id, name, host, db_name, description, is_active, created_by, created_date, updated_date
+      FROM db_tokens
+      ORDER BY name ASC
+    `);
+    
+    // Convert is_active from MySQL tinyint to proper boolean
+    const tokens = rows.map(row => ({
+      ...row,
+      is_active: Boolean(row.is_active)
+    }));
+    
+    res.json(tokens);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET a specific token (includes the encrypted token value)
+router.get('/db-tokens/:id', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const [rows] = await db.execute(
+      'SELECT * FROM db_tokens WHERE id = ?',
+      [req.params.id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Token nicht gefunden' });
+    }
+    
+    // Convert is_active from MySQL tinyint to proper boolean
+    const token = { ...rows[0], is_active: Boolean(rows[0].is_active) };
+    
+    res.json(token);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET the currently active token
+router.get('/db-tokens/active/current', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const [rows] = await db.execute(
+      'SELECT * FROM db_tokens WHERE is_active = TRUE LIMIT 1'
+    );
+    
+    if (rows.length === 0) {
+      return res.json(null);
+    }
+    
+    // Convert is_active from MySQL tinyint to proper boolean
+    const token = { ...rows[0], is_active: Boolean(rows[0].is_active) };
+    
+    res.json(token);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CREATE a new DB token
+router.post('/db-tokens', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const { name, credentials, description } = req.body;
+    
+    if (!name || !credentials) {
+      return res.status(400).json({ error: 'Name und Zugangsdaten sind erforderlich' });
+    }
+    
+    const { host, user, password, database: dbName, port, ssl } = credentials;
+    
+    if (!host || !user || !dbName) {
+      return res.status(400).json({ error: 'Host, Benutzer und Datenbank sind erforderlich' });
+    }
+    
+    // Encrypt the credentials
+    const { encryptToken } = await import('../utils/crypto.js');
+    
+    const config = {
+      host: host.trim(),
+      user: user.trim(),
+      password: password || '',
+      database: dbName.trim(),
+      port: parseInt(port || '3306')
+    };
+    
+    if (ssl) {
+      config.ssl = { rejectUnauthorized: false };
+    }
+    
+    const encryptedToken = encryptToken(JSON.stringify(config));
+    const id = crypto.randomUUID();
+    
+    await db.execute(`
+      INSERT INTO db_tokens (id, name, token, host, db_name, description, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [id, name.trim(), encryptedToken, host.trim(), dbName.trim(), description || null, req.user.email]);
+    
+    console.log(`[DB-Tokens] Created token "${name}" for ${host}/${dbName} by ${req.user.email}`);
+    
+    res.json({
+      id,
+      name: name.trim(),
+      host: host.trim(),
+      db_name: dbName.trim(),
+      description: description || null,
+      token: encryptedToken,
+      created_by: req.user.email
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// UPDATE a DB token
+router.put('/db-tokens/:id', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const { name, description, credentials } = req.body;
+    const { id } = req.params;
+    
+    // Check if token exists
+    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Token nicht gefunden' });
+    }
+    
+    // If credentials are provided, re-encrypt
+    let encryptedToken = existing[0].token;
+    let host = existing[0].host;
+    let dbName = existing[0].db_name;
+    
+    if (credentials && credentials.host && credentials.user && credentials.database) {
+      const { encryptToken } = await import('../utils/crypto.js');
+      
+      const config = {
+        host: credentials.host.trim(),
+        user: credentials.user.trim(),
+        password: credentials.password || '',
+        database: credentials.database.trim(),
+        port: parseInt(credentials.port || '3306')
+      };
+      
+      if (credentials.ssl) {
+        config.ssl = { rejectUnauthorized: false };
+      }
+      
+      encryptedToken = encryptToken(JSON.stringify(config));
+      host = credentials.host.trim();
+      dbName = credentials.database.trim();
+    }
+    
+    await db.execute(`
+      UPDATE db_tokens 
+      SET name = ?, token = ?, host = ?, db_name = ?, description = ?, updated_date = NOW()
+      WHERE id = ?
+    `, [name?.trim() || existing[0].name, encryptedToken, host, dbName, description ?? existing[0].description, id]);
+    
+    console.log(`[DB-Tokens] Updated token "${name || existing[0].name}" by ${req.user.email}`);
+    
+    res.json({ success: true, id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE a DB token
+router.delete('/db-tokens/:id', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const { id } = req.params;
+    
+    const [existing] = await db.execute('SELECT name FROM db_tokens WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Token nicht gefunden' });
+    }
+    
+    await db.execute('DELETE FROM db_tokens WHERE id = ?', [id]);
+    
+    console.log(`[DB-Tokens] Deleted token "${existing[0].name}" by ${req.user.email}`);
+    
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// SET a token as active (and deactivate all others)
+router.post('/db-tokens/:id/activate', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    const { id } = req.params;
+    
+    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Token nicht gefunden' });
+    }
+    
+    // Deactivate all tokens
+    await db.execute('UPDATE db_tokens SET is_active = FALSE');
+    
+    // Activate the selected one
+    await db.execute('UPDATE db_tokens SET is_active = TRUE WHERE id = ?', [id]);
+    
+    console.log(`[DB-Tokens] Activated token "${existing[0].name}" by ${req.user.email}`);
+    
+    res.json({
+      success: true,
+      token: existing[0].token,
+      name: existing[0].name,
+      host: existing[0].host,
+      db_name: existing[0].db_name
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DEACTIVATE all tokens (return to default DB)
+router.post('/db-tokens/deactivate-all', async (req, res, next) => {
+  try {
+    await ensureDbTokensTable(db);
+    
+    await db.execute('UPDATE db_tokens SET is_active = FALSE');
+    
+    console.log(`[DB-Tokens] All tokens deactivated by ${req.user.email}`);
+    
+    res.json({ success: true, message: 'Alle Tokens deaktiviert - Standard-DB wird verwendet' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// TEST a token connection
+router.post('/db-tokens/test', async (req, res, next) => {
+  try {
+    const { credentials, token } = req.body;
+    
+    let config;
+    
+    if (credentials) {
+      // Test with provided credentials
+      config = {
+        host: credentials.host?.trim(),
+        user: credentials.user?.trim(),
+        password: credentials.password || '',
+        database: credentials.database?.trim(),
+        port: parseInt(credentials.port || '3306')
+      };
+    } else if (token) {
+      // Test with encrypted token
+      const { parseDbToken } = await import('../utils/crypto.js');
+      config = parseDbToken(token);
+    } else {
+      return res.status(400).json({ error: 'Credentials oder Token erforderlich' });
+    }
+    
+    if (!config || !config.host || !config.user || !config.database) {
+      return res.status(400).json({ error: 'Ungültige Zugangsdaten' });
+    }
+    
+    // Try to connect
+    const { createPool } = await import('mysql2/promise');
+    
+    const testPool = createPool({
+      host: config.host,
+      port: config.port || 3306,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+      waitForConnections: true,
+      connectionLimit: 1,
+      connectTimeout: 10000
+    });
+    
+    try {
+      const [result] = await testPool.execute('SELECT 1 as test');
+      await testPool.end();
+      
+      res.json({
+        success: true,
+        message: 'Verbindung erfolgreich',
+        host: config.host,
+        database: config.database
+      });
+    } catch (connErr) {
+      await testPool.end().catch(() => {});
+      res.status(400).json({
+        success: false,
+        error: 'Verbindung fehlgeschlagen: ' + connErr.message
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

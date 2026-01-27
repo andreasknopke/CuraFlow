@@ -1,133 +1,29 @@
-import React, { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import React, { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Key, Copy, Server, Trash2, Power, PowerOff } from 'lucide-react';
+import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { isDbTokenEnabled, enableDbToken, disableDbToken, deleteDbToken, saveDbToken, saveNamedToken, switchToToken, getSavedTokens, getActiveTokenId } from '@/components/dbTokenStorage';
-import TokenManager from './TokenManager';
+import { Checkbox } from "@/components/ui/checkbox";
+import ServerTokenManager from './ServerTokenManager';
 
 export default function DatabaseManagement() {
     const { token } = useAuth();
     const queryClient = useQueryClient();
     const [issues, setIssues] = useState(null);
     const [selectedIssues, setSelectedIssues] = useState([]);
-
-    // Token Generator State
-    const [generatedToken, setGeneratedToken] = useState(null);
-    const [manualCreds, setManualCreds] = useState({ host: '', user: '', password: '', database: '', port: '3306', ssl: false });
-    const [showManualTokenInput, setShowManualTokenInput] = useState(false);
-    const [tokenEnabled, setTokenEnabled] = useState(false);
-    const [currentToken, setCurrentToken] = useState(null);
     
     // Wipe Database State
     const [showWipeDialog, setShowWipeDialog] = useState(false);
     const [wipeConfirmText, setWipeConfirmText] = useState('');
     const [isWiping, setIsWiping] = useState(false);
-
-    // Load token status on mount
-    useEffect(() => {
-        setTokenEnabled(isDbTokenEnabled());
-        setCurrentToken(localStorage.getItem('db_credentials'));
-    }, []);
-
-    const handleToggleToken = async () => {
-        if (tokenEnabled) {
-            await disableDbToken();
-            setTokenEnabled(false);
-            toast.success('DB-Token deaktiviert - Standard-DB wird verwendet');
-            // Reload to apply changes
-            setTimeout(() => window.location.reload(), 1000);
-        } else {
-            if (!currentToken) {
-                toast.error('Kein Token vorhanden - Bitte erst Token generieren');
-                return;
-            }
-            await enableDbToken();
-            setTokenEnabled(true);
-            toast.success('DB-Token aktiviert - Alternative DB wird verwendet');
-            // Reload to apply changes
-            setTimeout(() => window.location.reload(), 1000);
-        }
-    };
-
-    const handleDeleteToken = async () => {
-        if (window.confirm('Token wirklich löschen? Dies kann nicht rückgängig gemacht werden.')) {
-            await deleteDbToken();
-            setCurrentToken(null);
-            setTokenEnabled(false);
-            setGeneratedToken(null);
-            toast.success('Token gelöscht');
-            setTimeout(() => window.location.reload(), 1000);
-        }
-    };
-
-    const generateTokenFromSecretsMutation = useMutation({
-        mutationFn: () => invokeWithAuth('generate_db_token'),
-        onSuccess: async (res) => {
-            const token = res.data.token;
-            console.log('[TokenGen] Token from secrets:', token.substring(0, 30) + '...');
-            setGeneratedToken(token);
-            setCurrentToken(token);
-            // Save token to both storages
-            await saveDbToken(token);
-            // Also save to named tokens for Token Manager
-            const savedEntry = await saveNamedToken('Von Secrets generiert', token);
-            await switchToToken(savedEntry.id);
-            setTokenEnabled(true);
-            setShowManualTokenInput(false);
-            toast.success('Token generiert und aktiviert');
-            // Reload to apply
-            setTimeout(() => window.location.reload(), 1000);
-        },
-        onError: (err) => {
-            toast.error("Fehler: " + err.message);
-        }
-    });
-
-    const generateTokenManually = async () => {
-        try {
-            const config = { ...manualCreds };
-            if (config.ssl) {
-                config.ssl = { rejectUnauthorized: false };
-            } else {
-                delete config.ssl;
-            }
-            const json = JSON.stringify(config);
-            const token = btoa(json);
-            console.log('[TokenGen] Manual token:', token.substring(0, 30) + '...');
-            console.log('[TokenGen] Config:', { host: config.host, database: config.database, user: config.user });
-            setGeneratedToken(token);
-            setCurrentToken(token);
-            // Save token to both storages
-            await saveDbToken(token);
-            // Also save to named tokens for Token Manager
-            const name = `${config.database}@${config.host}`;
-            const savedEntry = await saveNamedToken(name, token);
-            await switchToToken(savedEntry.id);
-            setTokenEnabled(true);
-            toast.success('Token manuell erstellt und aktiviert');
-            // Reload to apply
-            setTimeout(() => window.location.reload(), 1000);
-        } catch (e) {
-            console.error('[TokenGen] Error:', e);
-            toast.error("Fehler beim Erstellen des Tokens");
-        }
-    };
-
-    const copyToClipboard = (text) => {
-        navigator.clipboard.writeText(text);
-        toast.success("Kopiert!");
-    };
 
     // --- CHECK ---
     const checkMutation = useMutation({
@@ -182,10 +78,8 @@ export default function DatabaseManagement() {
     // Helper to call backend with JWT token
     const invokeWithAuth = async (action, data = {}) => {
         try {
-            // Use the API URL from environment, not window.location.origin
             const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
             const url = `${apiBaseUrl}/api/admin/tools`;
-            console.log('Calling admin tools:', { url, action, hasToken: !!token });
             
             const response = await fetch(url, {
                 method: 'POST',
@@ -196,25 +90,18 @@ export default function DatabaseManagement() {
                 body: JSON.stringify({ action, ...data })
             });
             
-            console.log('Response status:', response.status);
-            
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error('Error response:', errorText);
-                
-                // Try to parse as JSON, otherwise use text
                 let result;
                 try {
                     result = JSON.parse(errorText);
                 } catch {
                     throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
                 }
-                
                 throw new Error(result.error || `HTTP ${response.status}`);
             }
             
             const result = await response.json();
-            console.log('Success response:', result);
             return { data: result };
         } catch (error) {
             console.error('invokeWithAuth error:', error);
@@ -254,148 +141,10 @@ export default function DatabaseManagement() {
                 </AlertDescription>
             </Alert>
 
-            {/* Token Manager - Multi-Tenant Support */}
-            <TokenManager />
+            {/* Server Token Manager - Multi-Tenant Support */}
+            <ServerTokenManager />
 
             <div className="grid md:grid-cols-2 gap-6">
-                {/* DB Access Token - Legacy section for manual token */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Key className="w-5 h-5" /> Manuelles Token
-                        </CardTitle>
-                        <CardDescription>Token direkt eingeben oder aus Secrets generieren</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        {/* Token Status & Controls */}
-                        {currentToken && (
-                            <div className="p-4 bg-slate-50 rounded-lg border space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <Badge variant={tokenEnabled ? "default" : "secondary"}>
-                                            {tokenEnabled ? "Aktiv" : "Inaktiv"}
-                                        </Badge>
-                                        <span className="text-sm text-slate-600">Token gespeichert</span>
-                                    </div>
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={handleDeleteToken}
-                                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </Button>
-                                </div>
-                                
-                                <Button
-                                    className="w-full"
-                                    variant={tokenEnabled ? "destructive" : "default"}
-                                    onClick={handleToggleToken}
-                                >
-                                    {tokenEnabled ? (
-                                        <>
-                                            <PowerOff className="w-4 h-4 mr-2" />
-                                            Token deaktivieren (zurück zur Standard-DB)
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Power className="w-4 h-4 mr-2" />
-                                            Token aktivieren (Alternative DB nutzen)
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-                        )}
-
-                        <div className="space-y-2">
-                            <Button 
-                                variant="outline" 
-                                className="w-full"
-                                onClick={() => generateTokenFromSecretsMutation.mutate()}
-                                disabled={generateTokenFromSecretsMutation.isPending}
-                            >
-                                {generateTokenFromSecretsMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Server className="w-4 h-4 mr-2" />}
-                                Aus gespeicherten Secrets erzeugen
-                            </Button>
-                            
-                            <div className="text-center text-xs text-slate-400">- oder -</div>
-                            
-                            <Button 
-                                variant="ghost" 
-                                className="w-full text-sm"
-                                onClick={() => setShowManualTokenInput(!showManualTokenInput)}
-                            >
-                                {showManualTokenInput ? "Manuelle Eingabe verbergen" : "Manuell eingeben"}
-                            </Button>
-                        </div>
-
-                        {showManualTokenInput && (
-                            <div className="space-y-2 p-4 bg-slate-50 rounded-md border">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <Label className="text-xs">Host</Label>
-                                        <Input value={manualCreds.host} onChange={e => setManualCreds({...manualCreds, host: e.target.value})} className="h-8" />
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs">Port</Label>
-                                        <Input value={manualCreds.port} onChange={e => setManualCreds({...manualCreds, port: e.target.value})} className="h-8" />
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs">User</Label>
-                                        <Input value={manualCreds.user} onChange={e => setManualCreds({...manualCreds, user: e.target.value})} className="h-8" />
-                                    </div>
-                                    <div>
-                                        <Label className="text-xs">Database</Label>
-                                        <Input value={manualCreds.database} onChange={e => setManualCreds({...manualCreds, database: e.target.value})} className="h-8" />
-                                    </div>
-                                    <div className="col-span-2">
-                                        <Label className="text-xs">Password</Label>
-                                        <Input type="password" value={manualCreds.password} onChange={e => setManualCreds({...manualCreds, password: e.target.value})} className="h-8" />
-                                    </div>
-                                    <div className="col-span-2 flex items-center space-x-2 pt-2">
-                                        <Checkbox 
-                                            id="ssl-mode" 
-                                            checked={manualCreds.ssl} 
-                                            onCheckedChange={(checked) => setManualCreds({...manualCreds, ssl: checked})} 
-                                        />
-                                        <Label htmlFor="ssl-mode" className="text-xs cursor-pointer">SSL Verbindung erzwingen (für Cloud DBs)</Label>
-                                    </div>
-                                </div>
-                                <Button size="sm" className="w-full mt-2" onClick={generateTokenManually}>Token generieren</Button>
-                            </div>
-                        )}
-
-                        {generatedToken && (
-                            <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-md space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <Label className="text-indigo-900 font-semibold">Token</Label>
-                                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => copyToClipboard(generatedToken)}>
-                                        <Copy className="h-3 w-3" />
-                                    </Button>
-                                </div>
-                                <div className="bg-white p-2 rounded border text-xs break-all font-mono max-h-20 overflow-y-auto">
-                                    {generatedToken}
-                                </div>
-                                
-                                <div className="pt-2 border-t border-indigo-200">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <Label className="text-indigo-900 text-xs">Link mit Token</Label>
-                                        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => {
-                                            const url = `${window.location.origin}${window.location.pathname}?db_token=${generatedToken}`;
-                                            copyToClipboard(url);
-                                        }}>
-                                            <Copy className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                    <div className="text-[10px] text-slate-500 truncate">
-                                        ?db_token=...
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
