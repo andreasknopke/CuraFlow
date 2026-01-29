@@ -200,8 +200,14 @@ export class ShiftValidator {
         // Check if this position allows consecutive days (from workplace config)
         const workplace = this.workplaces.find(w => w.name === newPosition);
         
+        // Only apply consecutive days check for "Dienste" category
+        // Rotations, Demos, and other categories should not have this restriction
+        if (!workplace || workplace.category !== 'Dienste') {
+            return {};
+        }
+        
         // Default: allow consecutive days unless explicitly set to false
-        if (!workplace || workplace.allows_consecutive_days !== false) {
+        if (workplace.allows_consecutive_days !== false) {
             return {};
         }
 
