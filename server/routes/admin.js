@@ -610,9 +610,30 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
       }
     }
 
+    // Migration 6: Create TimeslotTemplate table for custom templates
+    try {
+      await dbPool.execute(`
+        CREATE TABLE IF NOT EXISTS TimeslotTemplate (
+          id VARCHAR(255) PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          slots_json TEXT NOT NULL,
+          created_date DATETIME(3),
+          updated_date DATETIME(3),
+          created_by VARCHAR(255)
+        )
+      `);
+      results.push({ migration: 'create_timeslot_template_table', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
+        results.push({ migration: 'create_timeslot_template_table', status: 'skipped', reason: 'Table already exists' });
+      } else {
+        results.push({ migration: 'create_timeslot_template_table', status: 'error', error: err.message });
+      }
+    }
+
     // Clear column cache for affected tables so new columns are recognized
     const cacheKey = req.headers['x-db-token'] || 'default';
-    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry'], cacheKey);
+    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate'], cacheKey);
 
     console.log(`[Timeslot Migrations] Executed by ${req.user?.email}:`, results);
 

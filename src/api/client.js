@@ -384,6 +384,7 @@ export const db = {
   WishRequest: new EntityClient('WishRequest'),
   Workplace: new EntityClient('Workplace'),
   WorkplaceTimeslot: new EntityClient('WorkplaceTimeslot'),
+  TimeslotTemplate: new EntityClient('TimeslotTemplate'),
   ShiftNotification: new EntityClient('ShiftNotification'),
   DemoSetting: new EntityClient('DemoSetting'),
   TrainingRotation: new EntityClient('TrainingRotation'),

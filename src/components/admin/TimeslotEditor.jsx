@@ -4,7 +4,7 @@ import { db } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Plus, Trash2, GripVertical, Clock, AlertCircle, Copy } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Clock, AlertCircle, Copy, Save, Star } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
@@ -25,8 +25,8 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-// Vordefinierte Templates
-const TIMESLOT_TEMPLATES = {
+// Vordefinierte Standard-Templates
+const DEFAULT_TEMPLATES = {
     EARLY_LATE: {
         name: "Früh / Spät",
         slots: [
@@ -89,6 +89,8 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
         end_time: '15:00',
         overlap_tolerance_minutes: defaultTolerance
     });
+    const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+    const [templateName, setTemplateName] = useState('');
 
     // Fetch existing timeslots for this workplace
     const { data: timeslots = [], isLoading } = useQuery({
@@ -98,6 +100,12 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
             return result.sort((a, b) => (a.order || 0) - (b.order || 0));
         },
         enabled: !!workplaceId
+    });
+
+    // Fetch custom templates from database
+    const { data: customTemplates = [] } = useQuery({
+        queryKey: ['timeslotTemplates'],
+        queryFn: () => db.TimeslotTemplate.list()
     });
 
     const createMutation = useMutation({
@@ -142,9 +150,21 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
         });
     };
 
-    // Apply a template
+    // Apply a template (default or custom)
     const applyTemplate = async (templateKey) => {
-        const template = TIMESLOT_TEMPLATES[templateKey];
+        // Check if it's a default template or a custom one
+        let template;
+        if (templateKey.startsWith('custom_')) {
+            const customId = templateKey.replace('custom_', '');
+            const customTemplate = customTemplates.find(t => t.id === customId);
+            if (!customTemplate) return;
+            template = {
+                name: customTemplate.name,
+                slots: JSON.parse(customTemplate.slots_json || '[]')
+            };
+        } else {
+            template = DEFAULT_TEMPLATES[templateKey];
+        }
         if (!template) return;
 
         // Delete existing slots first (optional - could also append)
@@ -166,13 +186,55 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                 start_time: slot.start_time,
                 end_time: slot.end_time,
                 order: i,
-                overlap_tolerance_minutes: defaultTolerance,
+                overlap_tolerance_minutes: slot.overlap_tolerance_minutes || defaultTolerance,
                 spans_midnight: spansMidnight(slot.start_time, slot.end_time)
             });
         }
 
         toast.success(`Template "${template.name}" angewendet`);
     };
+
+    // Save current timeslots as a reusable template
+    const saveAsTemplateMutation = useMutation({
+        mutationFn: async (name) => {
+            const slotsData = timeslots.map(s => ({
+                label: s.label,
+                start_time: s.start_time?.substring(0, 5),
+                end_time: s.end_time?.substring(0, 5),
+                overlap_tolerance_minutes: s.overlap_tolerance_minutes
+            }));
+            return db.TimeslotTemplate.create({
+                name: name,
+                slots_json: JSON.stringify(slotsData)
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['timeslotTemplates']);
+            toast.success("Template gespeichert!");
+            setShowSaveTemplateDialog(false);
+            setTemplateName('');
+        },
+        onError: (err) => {
+            toast.error("Fehler beim Speichern: " + err.message);
+        }
+    });
+
+    const handleSaveAsTemplate = () => {
+        if (!templateName.trim()) {
+            toast.error("Bitte einen Namen eingeben");
+            return;
+        }
+        saveAsTemplateMutation.mutate(templateName.trim());
+    };
+
+    // Delete a custom template
+    const deleteTemplateMutation = useMutation({
+        mutationFn: (id) => db.TimeslotTemplate.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries(['timeslotTemplates']);
+            toast.success("Template gelöscht");
+        }
+    });
 
     // Add new custom timeslot
     const handleAddNew = () => {
@@ -241,7 +303,9 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                             <SelectValue placeholder="Template wählen" />
                         </SelectTrigger>
                         <SelectContent>
-                            {Object.entries(TIMESLOT_TEMPLATES).map(([key, template]) => (
+                            {/* Standard-Templates */}
+                            <div className="px-2 py-1 text-xs text-slate-500 font-medium">Standard</div>
+                            {Object.entries(DEFAULT_TEMPLATES).map(([key, template]) => (
                                 <SelectItem key={key} value={key}>
                                     <div className="flex items-center gap-2">
                                         <Copy className="w-3 h-3" />
@@ -249,13 +313,82 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                     </div>
                                 </SelectItem>
                             ))}
+                            {/* Benutzerdefinierte Templates */}
+                            {customTemplates.length > 0 && (
+                                <>
+                                    <div className="px-2 py-1 text-xs text-slate-500 font-medium mt-2 border-t">Eigene</div>
+                                    {customTemplates.map((template) => (
+                                        <SelectItem key={template.id} value={`custom_${template.id}`}>
+                                            <div className="flex items-center gap-2">
+                                                <Star className="w-3 h-3 text-amber-500" />
+                                                {template.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </>
+                            )}
                         </SelectContent>
                     </Select>
+                    {timeslots.length > 0 && (
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button 
+                                        onClick={() => setShowSaveTemplateDialog(true)} 
+                                        size="sm" 
+                                        variant="outline"
+                                        className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                                    >
+                                        <Save className="w-4 h-4" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>Aktuelle Zeitfenster als Template speichern</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    )}
                     <Button onClick={handleAddNew} size="sm" variant="outline">
                         <Plus className="w-4 h-4 mr-1" /> Neu
                     </Button>
                 </div>
             </div>
+
+            {/* Save as Template Dialog */}
+            {showSaveTemplateDialog && (
+                <div className="border rounded-lg p-4 bg-amber-50 border-amber-200 space-y-3">
+                    <div className="flex items-center gap-2 text-amber-800">
+                        <Save className="w-4 h-4" />
+                        <span className="font-medium">Als Template speichern</span>
+                    </div>
+                    <div className="flex gap-2">
+                        <Input
+                            placeholder="Template-Name"
+                            value={templateName}
+                            onChange={(e) => setTemplateName(e.target.value)}
+                            className="flex-1 h-8"
+                            onKeyDown={(e) => e.key === 'Enter' && handleSaveAsTemplate()}
+                        />
+                        <Button 
+                            size="sm" 
+                            onClick={handleSaveAsTemplate}
+                            disabled={saveAsTemplateMutation.isPending}
+                        >
+                            Speichern
+                        </Button>
+                        <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            onClick={() => { setShowSaveTemplateDialog(false); setTemplateName(''); }}
+                        >
+                            Abbrechen
+                        </Button>
+                    </div>
+                    <p className="text-xs text-amber-700">
+                        Das Template wird mit {timeslots.length} Zeitfenster(n) gespeichert und kann später wiederverwendet werden.
+                    </p>
+                </div>
+            )}
 
             {/* Timeslot List with Drag & Drop */}
             {timeslots.length === 0 ? (
