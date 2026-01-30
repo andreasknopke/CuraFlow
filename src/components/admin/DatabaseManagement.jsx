@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
+import { getActiveDbToken } from '@/components/dbTokenStorage';
 import { Button } from '@/components/ui/button';
 import { toast } from "sonner";
 import { Badge } from '@/components/ui/badge';
@@ -30,13 +31,18 @@ export default function DatabaseManagement() {
 
     // Fetch timeslot migration status
     const { data: timeslotMigrationStatus, refetch: refetchTimeslotStatus } = useQuery({
-        queryKey: ['timeslotMigrationStatus'],
+        queryKey: ['timeslotMigrationStatus', getActiveDbToken()],
         queryFn: async () => {
             const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const dbToken = getActiveDbToken();
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+            if (dbToken) {
+                headers['X-DB-Token'] = dbToken;
+            }
             const response = await fetch(`${apiBaseUrl}/api/admin/timeslot-migration-status`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                headers
             });
             if (!response.ok) {
                 throw new Error('Failed to fetch migration status');
@@ -123,18 +129,24 @@ export default function DatabaseManagement() {
         }
     };
 
-    // Helper to call backend with JWT token
+    // Helper to call backend with JWT token and DB token
     const invokeWithAuth = async (action, data = {}, method = 'POST', customPath = null) => {
         try {
             const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
             const url = customPath ? `${apiBaseUrl}${customPath}` : `${apiBaseUrl}/api/admin/tools`;
+            const dbToken = getActiveDbToken();
+            
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            };
+            if (dbToken) {
+                headers['X-DB-Token'] = dbToken;
+            }
             
             const response = await fetch(url, {
                 method,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
+                headers,
                 body: JSON.stringify(customPath ? data : { action, ...data })
             });
             
