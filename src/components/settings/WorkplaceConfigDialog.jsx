@@ -391,38 +391,6 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                     onCheckedChange={(checked) => setEditForm({...editForm, allows_consecutive_days: checked})}
                                                                                 />
                                                                                 </div>
-                                                                                
-                                                                                {/* Zeitfenster-Sektion */}
-                                                                                <div className="pt-4 border-t space-y-4">
-                                                                                    <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
-                                                                                        <div className="space-y-0.5">
-                                                                                            <Label className="text-base flex items-center gap-2">
-                                                                                                <Clock className="w-4 h-4" />
-                                                                                                Zeitfenster aktivieren
-                                                                                            </Label>
-                                                                                            <div className="text-xs text-slate-500">
-                                                                                                Ermöglicht die Besetzung mit wechselnden Teams über den Tag (z.B. Früh-/Spätdienst)
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        <Switch
-                                                                                            checked={editForm.timeslots_enabled || false}
-                                                                                            onCheckedChange={(checked) => setEditForm({...editForm, timeslots_enabled: checked})}
-                                                                                        />
-                                                                                    </div>
-                                                                                    
-                                                                                    {editForm.timeslots_enabled && editForm.id && (
-                                                                                        <TimeslotEditor 
-                                                                                            workplaceId={editForm.id}
-                                                                                            defaultTolerance={editForm.default_overlap_tolerance_minutes || 15}
-                                                                                        />
-                                                                                    )}
-                                                                                    
-                                                                                    {editForm.timeslots_enabled && !editForm.id && (
-                                                                                        <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                                                                                            Speichern Sie zuerst, um Zeitfenster hinzuzufügen.
-                                                                                        </div>
-                                                                                    )}
-                                                                                </div>
 
                                                                                 <div className="space-y-2">
                                                                                     <Label>Aktive Tage</Label>
@@ -524,6 +492,38 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 </div>
                                                                             </div>
                                                                         )}
+
+                                                                        {/* Zeitfenster-Sektion - für ALLE Kategorien verfügbar */}
+                                                                        <div className="pt-4 border-t space-y-4">
+                                                                            <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
+                                                                                <div className="space-y-0.5">
+                                                                                    <Label className="text-base flex items-center gap-2">
+                                                                                        <Clock className="w-4 h-4" />
+                                                                                        Zeitfenster aktivieren
+                                                                                    </Label>
+                                                                                    <div className="text-xs text-slate-500">
+                                                                                        Ermöglicht die Besetzung mit wechselnden Teams über den Tag (z.B. Früh-/Spätdienst)
+                                                                                    </div>
+                                                                                </div>
+                                                                                <Switch
+                                                                                    checked={editForm.timeslots_enabled || false}
+                                                                                    onCheckedChange={(checked) => setEditForm({...editForm, timeslots_enabled: checked})}
+                                                                                />
+                                                                            </div>
+                                                                            
+                                                                            {editForm.timeslots_enabled && editForm.id && (
+                                                                                <TimeslotEditor 
+                                                                                    workplaceId={editForm.id}
+                                                                                    defaultTolerance={editForm.default_overlap_tolerance_minutes || 15}
+                                                                                />
+                                                                            )}
+                                                                            
+                                                                            {editForm.timeslots_enabled && !editForm.id && (
+                                                                                <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                                                                                    Speichern Sie zuerst, um Zeitfenster hinzuzufügen.
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
 
                                                                         <div className="flex justify-end gap-2 pt-2">
                                                                             <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Abbrechen</Button>
