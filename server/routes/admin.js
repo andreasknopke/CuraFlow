@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
+import { clearColumnsCache } from './dbProxy.js';
 
 const router = express.Router();
 
@@ -608,6 +609,10 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
         results.push({ migration: 'add_shiftentry_timeslot_index', status: 'error', error: err.message });
       }
     }
+
+    // Clear column cache for affected tables so new columns are recognized
+    const cacheKey = req.headers['x-db-token'] || 'default';
+    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry'], cacheKey);
 
     console.log(`[Timeslot Migrations] Executed by ${req.user?.email}:`, results);
 

@@ -18,6 +18,28 @@ const PUBLIC_READ_TABLES = [
 // Key format: "dbToken:tableName" to support multi-tenant
 const COLUMNS_CACHE = {};
 
+// Clear cache for specific tables (used after migrations)
+export const clearColumnsCache = (tableNames = null, cacheKey = null) => {
+  if (!tableNames) {
+    // Clear entire cache
+    for (const key in COLUMNS_CACHE) {
+      delete COLUMNS_CACHE[key];
+    }
+    console.log('[dbProxy] Cleared entire columns cache');
+    return;
+  }
+  
+  // Clear specific tables
+  for (const key in COLUMNS_CACHE) {
+    const matchesTable = tableNames.some(t => key.endsWith(`:${t}`));
+    const matchesCacheKey = !cacheKey || key.startsWith(`${cacheKey}:`);
+    if (matchesTable && matchesCacheKey) {
+      delete COLUMNS_CACHE[key];
+      console.log(`[dbProxy] Cleared cache for: ${key}`);
+    }
+  }
+};
+
 // HELPER: Convert JS value to MySQL value
 const toSqlValue = (val) => {
   if (val === undefined) return null;
