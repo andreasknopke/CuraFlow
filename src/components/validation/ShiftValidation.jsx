@@ -431,8 +431,13 @@ export class ShiftValidator {
 
         const nextDay = addDays(parseISO(dateStr), 1);
         
-        // Kein Auto-Frei an Feiertagen (Wochenende ist jetzt erlaubt)
+        // Kein Auto-Frei an Feiertagen
         if (isPublicHoliday && isPublicHoliday(nextDay)) return null;
+        
+        // Kein Auto-Frei an Wochenenden (Samstag = 6, Sonntag = 0)
+        // Freizeitausgleich gilt nur für Werktage (Montag-Freitag)
+        const dayOfWeek = nextDay.getDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) return null;
 
         return format(nextDay, 'yyyy-MM-dd');
     }
