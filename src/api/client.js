@@ -200,20 +200,11 @@ class APIClient {
     });
   }
 
-  async exportScheduleToExcel(year, month) {
-    const token = this.getToken();
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    
-    const response = await fetch(
-      `${this.baseURL}/api/schedule/${year}/${month}/export`,
-      { headers }
-    );
-
-    if (!response.ok) {
-      throw new Error('Export failed');
-    }
-
-    return response.blob();
+  async exportScheduleToExcel(startDate, endDate, hiddenRows = []) {
+    return this.request('/api/schedule/export', {
+      method: 'POST',
+      body: JSON.stringify({ startDate, endDate, hiddenRows }),
+    });
   }
 
   // ==================== Holidays ====================
@@ -425,7 +416,7 @@ export const base44 = {
           return { data: await api.processVoiceCommand(params.text) };
         
         case 'exportScheduleToExcel':
-          return { data: await api.exportScheduleToExcel(params.year, params.month) };
+          return { data: await api.exportScheduleToExcel(params.startDate, params.endDate, params.hiddenRows) };
         
         case 'sendShiftEmails':
         case 'sendScheduleNotifications':
