@@ -8,6 +8,10 @@ import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AlertTriangle, Info, Trash2, Plus } from 'lucide-react';
 import DoctorYearView from '@/components/vacation/DoctorYearView';
 import VacationOverview from '@/components/vacation/VacationOverview';
 import AppSettingsDialog from '@/components/settings/AppSettingsDialog';
@@ -23,6 +27,8 @@ export default function VacationPage() {
   const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview'
+  const [simulationData, setSimulationData] = useState(null); // { newShifts, shiftsToDelete, shiftsToDeleteIds }
+  const [showSimulationDialog, setShowSimulationDialog] = useState(false);
   
   const queryClient = useQueryClient();
 
@@ -89,10 +95,10 @@ export default function VacationPage() {
 
   const getPriority = (position) => ABSENCE_PRIORITY[position] || 0;
 
+  // SIMULATION MODE: Berechnet Änderungen, führt sie aber NICHT aus
   const handleSyncAbsences = () => {
-      if (!confirm(`Möchten Sie die Abwesenheiten für das gesamte Jahr ${selectedYear} basierend auf dem Stellenplan aktualisieren? (Vertragsende, 0.0 FTE, KO, EZ)\n\nDies setzt "Nicht verfügbar" für entsprechende Tage und überschreibt dabei Einträge niedrigerer Priorität (z.B. Urlaub).`)) return;
-
       const newShifts = [];
+      const shiftsToDelete = [];
       const shiftsToDeleteIds = [];
 
       const startOfYearDate = startOfYear(new Date(selectedYear, 0, 1));
@@ -118,17 +124,49 @@ export default function VacationPage() {
                    const existing = existingShiftsMap.get(`${doc.id}_${dateStr}`);
                    const newPriority = getPriority("Nicht verfügbar");
                    
+                   // Ermittle den Grund für die Nichtverfügbarkeit
+                   let reason = "Unbekannt";
+                   if (doc.contract_end_date) {
+                       const endDate = new Date(doc.contract_end_date);
+                       endDate.setHours(0,0,0,0);
+                       const checkDate = new Date(day);
+                       checkDate.setHours(0,0,0,0);
+                       if (checkDate > endDate) {
+                           reason = `Vertragsende (${format(endDate, 'dd.MM.yyyy')})`;
+                       }
+                   }
+                   if (reason === "Unbekannt") {
+                       const year = day.getFullYear();
+                       const month = day.getMonth() + 1;
+                       const entry = staffingPlanEntries.find(e => e.doctor_id === doc.id && e.year === year && e.month === month);
+                       const val = entry ? String(entry.value).trim() : (doc.fte !== undefined ? String(doc.fte) : "1.0");
+                       if (val === "KO") reason = "Status: KO (Krank ohne Lohn)";
+                       else if (val === "EZ") reason = "Status: EZ (Elternzeit)";
+                       else {
+                           const num = parseFloat(val.replace(',', '.'));
+                           if (!isNaN(num) && num <= 0.0001) reason = `FTE: ${val} (0.0)`;
+                       }
+                   }
+                   
                    if (existing) {
                        // Check priority
                        const existingPriority = getPriority(existing.position);
                        if (newPriority > existingPriority) {
                            // Overwrite
                            shiftsToDeleteIds.push(existing.id);
+                           shiftsToDelete.push({
+                               ...existing,
+                               doctorName: doc.name,
+                               reason
+                           });
                            newShifts.push({
                                date: dateStr,
                                position: "Nicht verfügbar",
                                doctor_id: doc.id,
-                               note: "Aus Stellenplan"
+                               doctorName: doc.name,
+                               note: "Aus Stellenplan",
+                               reason,
+                               replacesExisting: existing.position
                            });
                        }
                    } else {
@@ -137,29 +175,19 @@ export default function VacationPage() {
                            date: dateStr,
                            position: "Nicht verfügbar",
                            doctor_id: doc.id,
-                           note: "Aus Stellenplan"
+                           doctorName: doc.name,
+                           note: "Aus Stellenplan",
+                           reason,
+                           replacesExisting: null
                        });
                    }
                }
            });
       });
 
-      if (newShifts.length > 0) {
-           const msg = `${newShifts.length} "Nicht verfügbar"-Einträge werden erstellt/aktualisiert.` + 
-                       (shiftsToDeleteIds.length > 0 ? ` ${shiftsToDeleteIds.length} existierende Einträge werden überschrieben.` : '');
-           
-           if (confirm(msg + "\nFortfahren?")) {
-               if (shiftsToDeleteIds.length > 0) {
-                   bulkDeleteShiftMutation.mutate(shiftsToDeleteIds, {
-                       onSuccess: () => bulkCreateShiftMutation.mutate(newShifts)
-                   });
-               } else {
-                   bulkCreateShiftMutation.mutate(newShifts);
-               }
-           }
-      } else {
-          alert("Keine Änderungen erforderlich.");
-      }
+      // Zeige Simulationsdialog
+      setSimulationData({ newShifts, shiftsToDelete, shiftsToDeleteIds });
+      setShowSimulationDialog(true);
   };
 
   // Prepare Props for Overview
@@ -499,10 +527,11 @@ export default function VacationPage() {
                     <Button 
                         variant="outline" 
                         onClick={handleSyncAbsences}
-                        title="Abwesenheiten aus Stellenplan übernehmen (KO, EZ, 0.0 FTE, Vertragsende)"
+                        title="Simulation: Zeigt geplante Änderungen aus dem Stellenplan (KO, EZ, 0.0 FTE, Vertragsende)"
+                        className="border-amber-300 bg-amber-50 hover:bg-amber-100"
                     >
                         <Wand2 className="w-4 h-4 mr-2" />
-                        Stellenplan-Sync
+                        Stellenplan-Sync (Simulation)
                     </Button>
                     <AppSettingsDialog />
                 </>
@@ -617,6 +646,141 @@ export default function VacationPage() {
           onConfirm={handleConflictConfirm}
           onCancel={() => setConflictDialog({ open: false, conflicts: [], doctorName: '', pendingAction: null })}
       />
+
+      {/* Stellenplan-Sync Simulation Dialog */}
+      <Dialog open={showSimulationDialog} onOpenChange={setShowSimulationDialog}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Stellenplan-Sync Simulation ({selectedYear})
+            </DialogTitle>
+            <DialogDescription>
+              <span className="flex items-center gap-2 text-amber-600 font-medium">
+                <Info className="w-4 h-4" />
+                SIMULATIONSMODUS - Es werden KEINE Änderungen vorgenommen!
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          
+          {simulationData && (
+            <div className="flex-1 overflow-hidden flex flex-col gap-4">
+              {/* Zusammenfassung */}
+              <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{simulationData.newShifts.filter(s => !s.replacesExisting).length}</div>
+                  <div className="text-sm text-slate-600">Neue Einträge</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-amber-600">{simulationData.shiftsToDelete.length}</div>
+                  <div className="text-sm text-slate-600">Überschreibungen</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{simulationData.newShifts.length}</div>
+                  <div className="text-sm text-slate-600">Gesamt-Änderungen</div>
+                </div>
+              </div>
+
+              {simulationData.newShifts.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-slate-500">
+                  <div className="text-center">
+                    <Info className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+                    <p className="text-lg font-medium">Keine Änderungen erforderlich</p>
+                    <p className="text-sm">Alle Abwesenheiten aus dem Stellenplan sind bereits eingetragen.</p>
+                  </div>
+                </div>
+              ) : (
+                <ScrollArea className="flex-1 border rounded-lg">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-white z-10">
+                      <TableRow>
+                        <TableHead className="w-[100px]">Aktion</TableHead>
+                        <TableHead>Mitarbeiter</TableHead>
+                        <TableHead>Datum</TableHead>
+                        <TableHead>Grund</TableHead>
+                        <TableHead>Bisheriger Status</TableHead>
+                        <TableHead>Neuer Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {simulationData.newShifts.slice(0, 500).map((shift, idx) => (
+                        <TableRow key={idx} className={shift.replacesExisting ? "bg-amber-50" : "bg-green-50"}>
+                          <TableCell>
+                            {shift.replacesExisting ? (
+                              <span className="flex items-center gap-1 text-amber-600">
+                                <Trash2 className="w-3 h-3" />
+                                Überschreiben
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-green-600">
+                                <Plus className="w-3 h-3" />
+                                Neu
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="font-medium">{shift.doctorName}</TableCell>
+                          <TableCell>{format(new Date(shift.date), 'dd.MM.yyyy (EEEEEE)', { locale: undefined })}</TableCell>
+                          <TableCell>
+                            <span className="text-xs px-2 py-1 bg-slate-100 rounded">
+                              {shift.reason}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            {shift.replacesExisting ? (
+                              <span className="text-amber-700">{shift.replacesExisting}</span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <span className="font-medium text-red-600">Nicht verfügbar</span>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {simulationData.newShifts.length > 500 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-slate-500 py-4">
+                            ... und {simulationData.newShifts.length - 500} weitere Einträge
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+
+              {/* Gruppierte Zusammenfassung nach Mitarbeiter */}
+              {simulationData.newShifts.length > 0 && (
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-medium mb-2 text-blue-800">Zusammenfassung pro Mitarbeiter:</h4>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(
+                      simulationData.newShifts.reduce((acc, shift) => {
+                        acc[shift.doctorName] = (acc[shift.doctorName] || 0) + 1;
+                        return acc;
+                      }, {})
+                    ).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
+                      <span key={name} className="px-2 py-1 bg-white rounded text-sm border border-blue-200">
+                        {name}: <strong>{count}</strong> Tage
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="border-t pt-4">
+            <div className="flex items-center gap-2 text-sm text-slate-500 mr-auto">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              Simulation - Aktivieren Sie die echte Sync-Funktion erst nach Überprüfung
+            </div>
+            <Button variant="outline" onClick={() => setShowSimulationDialog(false)}>
+              Schließen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
