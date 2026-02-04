@@ -192,28 +192,24 @@ export default function VacationPage() {
   // Führt die tatsächlichen Änderungen aus
   const executeSyncAbsences = () => {
       if (!simulationData || simulationData.newShifts.length === 0) return;
+      if (bulkCreateShiftMutation.isPending || bulkDeleteShiftMutation.isPending) return; // Prevent double execution
+      
+      // Schließe Dialog sofort um Doppelklick zu verhindern
+      const dataToProcess = { ...simulationData };
+      setShowSimulationDialog(false);
+      setSimulationData(null);
       
       // Bereite die Daten für die DB vor (ohne die UI-spezifischen Felder)
-      const shiftsToCreate = simulationData.newShifts.map(({ doctorName, reason, replacesExisting, ...shift }) => shift);
+      const shiftsToCreate = dataToProcess.newShifts.map(({ doctorName, reason, replacesExisting, ...shift }) => shift);
       
-      if (simulationData.shiftsToDeleteIds.length > 0) {
-          bulkDeleteShiftMutation.mutate(simulationData.shiftsToDeleteIds, {
+      if (dataToProcess.shiftsToDeleteIds.length > 0) {
+          bulkDeleteShiftMutation.mutate(dataToProcess.shiftsToDeleteIds, {
               onSuccess: () => {
-                  bulkCreateShiftMutation.mutate(shiftsToCreate, {
-                      onSuccess: () => {
-                          setShowSimulationDialog(false);
-                          setSimulationData(null);
-                      }
-                  });
+                  bulkCreateShiftMutation.mutate(shiftsToCreate);
               }
           });
       } else {
-          bulkCreateShiftMutation.mutate(shiftsToCreate, {
-              onSuccess: () => {
-                  setShowSimulationDialog(false);
-                  setSimulationData(null);
-              }
-          });
+          bulkCreateShiftMutation.mutate(shiftsToCreate);
       }
   };
 
@@ -808,9 +804,9 @@ export default function VacationPage() {
               <Button 
                 onClick={executeSyncAbsences}
                 className="bg-green-600 hover:bg-green-700"
-                disabled={bulkCreateShiftMutation.isLoading || bulkDeleteShiftMutation.isLoading}
+                disabled={bulkCreateShiftMutation.isPending || bulkDeleteShiftMutation.isPending}
               >
-                {(bulkCreateShiftMutation.isLoading || bulkDeleteShiftMutation.isLoading) 
+                {(bulkCreateShiftMutation.isPending || bulkDeleteShiftMutation.isPending) 
                   ? "Wird ausgeführt..." 
                   : `${simulationData.newShifts.length} Änderungen ausführen`
                 }

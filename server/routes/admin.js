@@ -122,19 +122,141 @@ router.post('/tools', async (req, res, next) => {
       }
 
       case 'check': {
-        // Database integrity check placeholder
-        return res.json({ 
-          issues: [],
-          message: 'No issues found'
-        });
+        // Database integrity check - runs on tenant database if X-DB-Token is provided
+        const dbPool = req.db || db; // req.db is set by tenantDbMiddleware
+        const issues = [];
+
+        try {
+          // Load all data from the correct database
+          const [doctors] = await dbPool.execute('SELECT id, name FROM Doctor');
+          const [shifts] = await dbPool.execute('SELECT id, doctor_id, date, position, note, created_date FROM ShiftEntry');
+          const [staffing] = await dbPool.execute('SELECT id, doctor_id, year, month FROM StaffingPlanEntry');
+          const [workplaces] = await dbPool.execute('SELECT id, name FROM Workplace');
+
+          const doctorIds = new Set(doctors.map(d => d.id));
+          const validPositions = new Set([
+            "Verfügbar", "Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar", "Sonstiges",
+            ...workplaces.map(w => w.name)
+          ]);
+
+          // Check for orphaned shifts (doctor doesn't exist)
+          shifts.forEach(s => {
+            if (!doctorIds.has(s.doctor_id)) {
+              issues.push({ 
+                type: 'orphaned_shift', 
+                id: s.id, 
+                description: `Schicht am ${s.date} referenziert nicht existierenden Arzt (${s.doctor_id})`
+              });
+            }
+            if (!validPositions.has(s.position)) {
+              issues.push({ 
+                type: 'orphaned_position', 
+                id: s.id, 
+                description: `Schicht am ${s.date} hat unbekannte Position "${s.position}"`
+              });
+            }
+          });
+
+          // Check for orphaned staffing entries
+          staffing.forEach(s => {
+            if (!doctorIds.has(s.doctor_id)) {
+              issues.push({ 
+                type: 'orphaned_staffing', 
+                id: s.id, 
+                description: `Stellenplan ${s.month}/${s.year} referenziert nicht existierenden Arzt (${s.doctor_id})`
+              });
+            }
+          });
+
+          // Check for duplicates
+          const checkDuplicates = (entityName, items, keyFields, tableName) => {
+            const map = new Map();
+            items.forEach(item => {
+              const key = keyFields.map(f => item[f]).join('|');
+              if (!map.has(key)) map.set(key, []);
+              map.get(key).push(item);
+            });
+
+            for (const [key, group] of map.entries()) {
+              if (group.length > 1) {
+                // Sort by created_date if available, keep the oldest
+                group.sort((a, b) => new Date(a.created_date || 0) - new Date(b.created_date || 0));
+                const toDelete = group.slice(1); // All except first (oldest)
+                issues.push({
+                  type: `duplicate_${entityName.toLowerCase()}`,
+                  ids: toDelete.map(i => i.id),
+                  table: tableName,
+                  count: group.length,
+                  description: `${group.length} doppelte ${entityName} Einträge (${key})`
+                });
+              }
+            }
+          };
+
+          checkDuplicates('ShiftEntry', shifts, ['doctor_id', 'date', 'position'], 'ShiftEntry');
+          checkDuplicates('Doctor', doctors, ['name'], 'Doctor');
+          checkDuplicates('Workplace', workplaces, ['name'], 'Workplace');
+          checkDuplicates('StaffingPlanEntry', staffing, ['doctor_id', 'year', 'month'], 'StaffingPlanEntry');
+
+          console.log(`[check] Found ${issues.length} issues in ${req.db ? 'tenant' : 'master'} database`);
+
+          return res.json({ 
+            issues,
+            dataSource: req.db ? 'tenant' : 'master',
+            stats: {
+              doctors: doctors.length,
+              shifts: shifts.length,
+              staffing: staffing.length,
+              workplaces: workplaces.length
+            }
+          });
+        } catch (err) {
+          console.error('[check] Error:', err.message);
+          return res.status(500).json({ error: 'Fehler bei Integritätsprüfung: ' + err.message });
+        }
       }
 
       case 'repair': {
-        // Database repair placeholder
+        // Database repair - delete orphaned entries and duplicates
+        const dbPool = req.db || db;
         const { issuesToFix } = data || {};
+        const results = [];
+
+        if (!issuesToFix || issuesToFix.length === 0) {
+          return res.json({ 
+            message: 'Keine Probleme ausgewählt',
+            results: []
+          });
+        }
+
+        for (const issue of issuesToFix) {
+          try {
+            if (issue.type === 'orphaned_shift' || issue.type === 'orphaned_position') {
+              await dbPool.execute('DELETE FROM ShiftEntry WHERE id = ?', [issue.id]);
+              results.push(`✓ Gelöscht: ShiftEntry ${issue.id}`);
+            } else if (issue.type === 'orphaned_staffing') {
+              await dbPool.execute('DELETE FROM StaffingPlanEntry WHERE id = ?', [issue.id]);
+              results.push(`✓ Gelöscht: StaffingPlanEntry ${issue.id}`);
+            } else if (issue.type.startsWith('duplicate_')) {
+              // Delete all duplicate IDs (keeping the first/oldest one)
+              const table = issue.table || 'ShiftEntry';
+              if (issue.ids && issue.ids.length > 0) {
+                for (const id of issue.ids) {
+                  await dbPool.execute(`DELETE FROM \`${table}\` WHERE id = ?`, [id]);
+                }
+                results.push(`✓ ${issue.ids.length} Duplikate gelöscht aus ${table}`);
+              }
+            }
+          } catch (err) {
+            results.push(`✗ Fehler: ${err.message}`);
+          }
+        }
+
+        console.log(`[repair] Processed ${issuesToFix.length} issues, results:`, results);
+
         return res.json({ 
-          message: 'Repair completed',
-          results: [`Fixed ${issuesToFix?.length || 0} issues`]
+          message: `${results.filter(r => r.startsWith('✓')).length} Probleme behoben`,
+          results
         });
       }
 
