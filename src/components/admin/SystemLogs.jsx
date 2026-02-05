@@ -72,6 +72,7 @@ export default function SystemLogs() {
             case 'warning': return <AlertTriangle className="w-4 h-4 text-amber-500" />;
             case 'success': return <CheckCircle className="w-4 h-4 text-green-500" />;
             case 'wish_request': return <FileText className="w-4 h-4 text-purple-500" />;
+            case 'override': return <AlertTriangle className="w-4 h-4 text-orange-500" />;
             default: return <Info className="w-4 h-4 text-blue-500" />;
         }
     };
@@ -82,6 +83,7 @@ export default function SystemLogs() {
             case 'warning': return 'bg-amber-100 text-amber-700 border-amber-200';
             case 'success': return 'bg-green-100 text-green-700 border-green-200';
             case 'wish_request': return 'bg-purple-100 text-purple-700 border-purple-200';
+            case 'override': return 'bg-orange-100 text-orange-700 border-orange-200';
             default: return 'bg-blue-100 text-blue-700 border-blue-200';
         }
     };
@@ -101,6 +103,7 @@ export default function SystemLogs() {
         if (filterLevel === 'wish_request') return log.level === 'wish_request';
         if (filterLevel === 'error') return log.level === 'error';
         if (filterLevel === 'info') return log.level === 'info';
+        if (filterLevel === 'override') return log.level === 'override';
         
         return true;
     });
@@ -140,6 +143,7 @@ export default function SystemLogs() {
                                 <SelectItem value="error">Nur Fehler</SelectItem>
                                 <SelectItem value="info">Nur Infos</SelectItem>
                                 <SelectItem value="wish_request">Dienstwünsche</SelectItem>
+                                <SelectItem value="override">Overrides</SelectItem>
                             </SelectContent>
                         </Select>
 

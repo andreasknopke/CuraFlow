@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useHolidays } from '@/components/useHolidays';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
+import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
+import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 import { trackDbChange } from '@/components/utils/dbTracker';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
@@ -17,7 +19,7 @@ import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 const STATIC_SERVICE_TYPES = [];
 
 export default function ServiceStaffingPage() {
-    const { isReadOnly } = useAuth();
+    const { isReadOnly, user } = useAuth();
     const { isPublicHoliday } = useHolidays();
     const [currentDate, setCurrentDate] = useState(new Date());
     const queryClient = useQueryClient();
@@ -63,7 +65,16 @@ export default function ServiceStaffingPage() {
         queryFn: () => db.Workplace.list(null, 1000),
     });
 
-    const { validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup } = useShiftValidation(allShifts, { workplaces });
+    const { validateWithUI, validate, shouldCreateAutoFrei, findAutoFreiToCleanup } = useShiftValidation(allShifts, { workplaces });
+
+    // Override-Validierung mit Dialog
+    const {
+        overrideDialog,
+        requestOverride,
+        confirmOverride,
+        cancelOverride,
+        setOverrideDialogOpen
+    } = useOverrideValidation({ user, doctors });
 
     const serviceTypes = useMemo(() => {
         const dynamicServices = workplaces
@@ -232,22 +243,50 @@ export default function ServiceStaffingPage() {
         },
     });
 
-    const handleAssignment = (date, position, doctorId) => {
+    const handleAssignment = async (date, position, doctorId) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         const existingShift = allShifts.find(s => 
             s.date === dateStr && 
             s.position === position
         );
 
-        // Zentrale Validierung
+        // Zentrale Validierung mit Override-Möglichkeit
         if (doctorId !== 'DELETE') {
-            const canProceed = validateWithUI(doctorId, dateStr, position, {
+            const validationResult = validate(doctorId, dateStr, position, {
                 excludeShiftId: existingShift?.id
             });
-            if (!canProceed) return;
+
+            // Bei Blockern: Override-Dialog anzeigen
+            if (validationResult.blockers.length > 0) {
+                const doctor = doctors.find(d => d.id === doctorId);
+                const { confirmed } = await requestOverride({
+                    blockers: validationResult.blockers,
+                    warnings: validationResult.warnings,
+                    doctorId,
+                    doctorName: doctor?.name,
+                    date: format(date, 'dd.MM.yyyy', { locale: de }),
+                    position,
+                    onConfirm: () => executeAssignment(dateStr, position, doctorId, existingShift)
+                });
+                
+                if (!confirmed) return;
+                // If confirmed, the onConfirm callback already executed the action
+                return;
+            }
+
+            // Warnungen anzeigen aber erlauben
+            if (validationResult.warnings.length > 0) {
+                const msg = validationResult.warnings.join('\n');
+                alert(`Hinweis:\n${msg}`);
+            }
         }
 
-        // Helper to remove auto-generated Frei (zentrale Logik)
+        // Keine Blocker - direkt ausführen
+        executeAssignment(dateStr, position, doctorId, existingShift);
+    };
+
+    // Hilfsfunktion für die eigentliche Zuweisung (nach Validierung/Override)
+    const executeAssignment = (dateStr, position, doctorId, existingShift) => {        // Helper to remove auto-generated Frei (zentrale Logik)
         const cleanupAutoFrei = (docId) => {
             const autoFreiShift = findAutoFreiToCleanup(docId, dateStr, position);
             if (autoFreiShift) {
@@ -509,6 +548,17 @@ export default function ServiceStaffingPage() {
             <div className="hidden print:block mt-8 text-xs text-slate-400 text-center">
                 Erstellt am {format(new Date(), 'dd.MM.yyyy HH:mm', { locale: de })}
             </div>
+
+            {/* Override Confirm Dialog */}
+            <OverrideConfirmDialog
+                open={overrideDialog.open}
+                onOpenChange={setOverrideDialogOpen}
+                blockers={overrideDialog.blockers}
+                warnings={overrideDialog.warnings}
+                context={overrideDialog.context}
+                onConfirm={confirmOverride}
+                onCancel={cancelOverride}
+            />
 
             <style>{`
                 @media print {

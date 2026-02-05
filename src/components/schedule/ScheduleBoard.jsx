@@ -28,6 +28,8 @@ import AIRulesDialog from './AIRulesDialog';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
+import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
+import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
@@ -580,6 +582,15 @@ export default function ScheduleBoard() {
 
   const { validate, validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
 
+  // Override-Validierung mit Dialog
+  const {
+      overrideDialog,
+      requestOverride,
+      confirmOverride,
+      cancelOverride,
+      setOverrideDialogOpen
+  } = useOverrideValidation({ user, doctors });
+
   // Hilfsfunktion: Timeslots für einen Arbeitsplatz
   const getTimeslotsForWorkplace = useMemo(() => (workplaceName) => {
       const workplace = workplaces.find(w => w.name === workplaceName);
@@ -1066,6 +1077,7 @@ export default function ScheduleBoard() {
 
   const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
+  // Synchrone Konfliktprüfung (für Voice-Commands und einfache Checks)
   const checkConflicts = (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       
@@ -1089,6 +1101,37 @@ export default function ScheduleBoard() {
       }
       
       return false;
+  };
+
+  // Asynchrone Konfliktprüfung mit Override-Möglichkeit
+  // Gibt { blocked: boolean, overrideRequested: boolean } zurück
+  // Bei Override wird die onProceed Callback ausgeführt
+  const checkConflictsWithOverride = async (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
+      const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
+      const doctor = doctors.find(d => d.id === doctorId);
+      
+      // Blockers: Override-Dialog anzeigen
+      if (result.blockers.length > 0) {
+          const { confirmed } = await requestOverride({
+              blockers: result.blockers,
+              warnings: result.warnings,
+              doctorId,
+              doctorName: doctor?.name,
+              date: dateStr,
+              position: newPosition,
+              onConfirm: onProceed
+          });
+          
+          return { blocked: !confirmed, overrideRequested: confirmed };
+      }
+
+      // Warnungen anzeigen (Limits sind jetzt nur Warnungen)
+      if (result.warnings.length > 0) {
+          const msg = result.warnings.join('\n');
+          alert(`Hinweis:\n${msg}`);
+      }
+      
+      return { blocked: false, overrideRequested: false };
   };
 
   // Wrapper für Abwesenheits-spezifische Staffing-Prüfung
@@ -3085,6 +3128,17 @@ export default function ScheduleBoard() {
           </div>
         </div>
       </DragDropContext>
+      
+      {/* Override Confirm Dialog */}
+      <OverrideConfirmDialog
+          open={overrideDialog.open}
+          onOpenChange={setOverrideDialogOpen}
+          blockers={overrideDialog.blockers}
+          warnings={overrideDialog.warnings}
+          context={overrideDialog.context}
+          onConfirm={confirmOverride}
+          onCancel={cancelOverride}
+      />
     </div>
   );
 }
