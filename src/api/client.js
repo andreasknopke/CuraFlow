@@ -124,9 +124,9 @@ class APIClient {
     return this.request('/api/auth/my-tenants');
   }
 
-  // Activate a specific tenant/db-token
+  // Activate a specific tenant/db-token (uses auth route for non-admin users)
   async activateTenant(tokenId) {
-    return this.request(`/api/admin/db-tokens/${tokenId}/activate`, {
+    return this.request(`/api/auth/activate-tenant/${tokenId}`, {
       method: 'POST'
     });
   }

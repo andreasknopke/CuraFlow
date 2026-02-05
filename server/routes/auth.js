@@ -541,6 +541,65 @@ router.get('/my-tenants', authMiddleware, async (req, res, next) => {
   }
 });
 
+// ============ ACTIVATE TENANT (for non-admin users) ============
+// Allows users to activate a tenant they have access to
+router.post('/activate-tenant/:id', authMiddleware, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Get user's allowed_tenants
+    const [userRows] = await db.execute(
+      'SELECT allowed_tenants, role FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+    
+    if (userRows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+    
+    const allowedTenants = userRows[0].allowed_tenants;
+    const userRole = userRows[0].role;
+    let allowedTenantList = null;
+    
+    // Parse allowed_tenants (could be JSON string, array, or null)
+    if (allowedTenants) {
+      allowedTenantList = typeof allowedTenants === 'string' 
+        ? JSON.parse(allowedTenants) 
+        : allowedTenants;
+    }
+    
+    // Check if user has access to this tenant
+    // Admin users OR users with no restrictions (null/empty allowed_tenants) have full access
+    const hasFullAccess = userRole === 'admin' || !allowedTenantList || allowedTenantList.length === 0;
+    
+    if (!hasFullAccess && !allowedTenantList.includes(id)) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+    
+    // Get the token
+    const [tokenRows] = await db.execute(
+      'SELECT * FROM db_tokens WHERE id = ?',
+      [id]
+    );
+    
+    if (tokenRows.length === 0) {
+      return res.status(404).json({ error: 'Mandant nicht gefunden' });
+    }
+    
+    console.log(`[Auth] User ${req.user.email} activated tenant "${tokenRows[0].name}"`);
+    
+    res.json({
+      success: true,
+      token: tokenRows[0].token,
+      name: tokenRows[0].name,
+      host: tokenRows[0].host,
+      db_name: tokenRows[0].db_name
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============ VERIFY TOKEN ============
 router.get('/verify', (req, res) => {
   const authHeader = req.headers.authorization;
