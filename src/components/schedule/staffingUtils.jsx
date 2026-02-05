@@ -26,7 +26,7 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     // Normalize
     val = String(val).trim();
     
-    if (val === "KO" || val === "EZ") return false;
+    if (val === "KO" || val === "EZ" || val === "MS") return false;
     
     // Check 0.00
     // Replace , with .

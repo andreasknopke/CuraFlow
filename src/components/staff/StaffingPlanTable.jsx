@@ -5,10 +5,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const FTE_CODES = ["EZ", "KO"];
+const FTE_CODES = ["EZ", "KO", "MS"];
+const FTE_CODE_LABELS = {
+    "EZ": "Elternzeit",
+    "MS": "Mutterschutz", 
+    "KO": "Krank ohne Entgelt"
+};
 
 // --- Sub-Components ---
 
@@ -66,6 +74,19 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
 export default function StaffingPlanTable({ doctors, isReadOnly }) {
     const queryClient = useQueryClient();
     const [year, setYear] = useState(new Date().getFullYear());
+    
+    // Dialog state for cell editing
+    const [editDialog, setEditDialog] = useState({
+        open: false,
+        doctorId: null,
+        doctorName: "",
+        month: null,
+        currentValue: ""
+    });
+    const [dialogInputType, setDialogInputType] = useState("number"); // "number" or "code"
+    const [dialogValue, setDialogValue] = useState("");
+    const [dialogCode, setDialogCode] = useState("EZ");
+    const [dialogApplyMode, setDialogApplyMode] = useState("single"); // "single" or "following"
 
     // --- Data Fetching ---
     const { data: entries = [], isLoading: isLoadingEntries } = useQuery({
@@ -192,6 +213,52 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         updateEntryMutation.mutate({ doctor_id: doctorId, month, value: newValue, oldValue });
     };
 
+    const openEditDialog = (doctorId, doctorName, month, currentValue) => {
+        if (isReadOnly) return;
+        
+        // Determine if current value is a code or number
+        const isCode = FTE_CODES.includes(currentValue);
+        
+        setEditDialog({
+            open: true,
+            doctorId,
+            doctorName,
+            month,
+            currentValue
+        });
+        setDialogInputType(isCode ? "code" : "number");
+        setDialogValue(isCode ? "" : currentValue);
+        setDialogCode(isCode ? currentValue : "EZ");
+        setDialogApplyMode("single");
+    };
+
+    const handleDialogSave = async () => {
+        const { doctorId, month } = editDialog;
+        const valueToSave = dialogInputType === "code" ? dialogCode : dialogValue;
+        
+        // Format number value
+        let formattedValue = valueToSave;
+        if (dialogInputType === "number" && valueToSave) {
+            const normalized = String(valueToSave).replace(',', '.');
+            if (!isNaN(parseFloat(normalized))) {
+                const num = parseFloat(normalized);
+                formattedValue = num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            }
+        }
+        
+        if (dialogApplyMode === "single") {
+            // Apply only to this cell
+            handleValueChange(doctorId, month, formattedValue);
+        } else {
+            // Apply to this month and all following months until December
+            for (let m = month; m <= 12; m++) {
+                handleValueChange(doctorId, m, formattedValue);
+            }
+        }
+        
+        setEditDialog({ ...editDialog, open: false });
+    };
+
     // "Ges." column per doctor
     const getDoctorAverage = (doctorId) => {
         let sum = 0;
@@ -222,7 +289,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                 </div>
                 <div className="flex items-center gap-4">
                      <div className="text-sm text-slate-500">
-                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt
+                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-pink-600">MS</span> = Mutterschutz, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt
                      </div>
                 </div>
             </div>
@@ -264,6 +331,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             let cellBg = "";
                                             let textColor = "";
                                             if (val === "EZ") { cellBg = "bg-orange-50"; textColor = "text-orange-700"; }
+                                            if (val === "MS") { cellBg = "bg-pink-50"; textColor = "text-pink-700"; }
                                             if (val === "KO") { cellBg = "bg-red-50"; textColor = "text-red-700"; }
                                             
                                             // Determine text color for numbers
@@ -276,17 +344,22 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             const isDefault = !entryExists && val !== "";
 
                                             return (
-                                                <TableCell key={month} className={cn("p-0 border-r last:border-r-0", cellBg)}>
-                                                    <StaffingPlanInput 
-                                                        className={cn(
-                                                            "h-8 w-full border-0 bg-transparent text-center text-xs focus-visible:ring-1 px-0 shadow-none", 
-                                                            textColor,
-                                                            isDefault && "text-slate-400 italic"
-                                                        )}
-                                                        value={val}
-                                                        onChange={(newValue) => handleValueChange(doc.id, month, newValue)}
-                                                        disabled={isReadOnly}
-                                                    />
+                                                <TableCell 
+                                                    key={month} 
+                                                    className={cn(
+                                                        "p-0 border-r last:border-r-0 cursor-pointer hover:bg-slate-100 transition-colors", 
+                                                        cellBg,
+                                                        isReadOnly && "cursor-default hover:bg-transparent"
+                                                    )}
+                                                    onClick={() => openEditDialog(doc.id, doc.name, month, val)}
+                                                >
+                                                    <div className={cn(
+                                                        "h-8 w-full flex items-center justify-center text-xs",
+                                                        textColor,
+                                                        isDefault && "text-slate-400 italic"
+                                                    )}>
+                                                        {val || "-"}
+                                                    </div>
                                                 </TableCell>
                                             );
                                         })}
@@ -343,6 +416,108 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                     </Table>
                 </div>
             )}
+
+            {/* Edit Dialog */}
+            <Dialog open={editDialog.open} onOpenChange={(open) => setEditDialog({ ...editDialog, open })}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            Stellenplan bearbeiten
+                        </DialogTitle>
+                        <p className="text-sm text-slate-500">
+                            {editDialog.doctorName} - Monat {editDialog.month}/{year}
+                        </p>
+                    </DialogHeader>
+                    
+                    <div className="space-y-6 py-4">
+                        {/* Input Type Selection */}
+                        <div className="space-y-3">
+                            <Label className="text-sm font-medium">Eingabeart</Label>
+                            <RadioGroup value={dialogInputType} onValueChange={setDialogInputType} className="flex gap-4">
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="number" id="input-number" />
+                                    <Label htmlFor="input-number" className="cursor-pointer">Zahlenwert (FTE)</Label>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <RadioGroupItem value="code" id="input-code" />
+                                    <Label htmlFor="input-code" className="cursor-pointer">Statuscode</Label>
+                                </div>
+                            </RadioGroup>
+                        </div>
+
+                        {/* Value Input */}
+                        {dialogInputType === "number" ? (
+                            <div className="space-y-2">
+                                <Label htmlFor="fte-value">FTE-Wert (0.00 - 1.00)</Label>
+                                <Input
+                                    id="fte-value"
+                                    value={dialogValue}
+                                    onChange={(e) => setDialogValue(e.target.value)}
+                                    placeholder="z.B. 1,00 oder 0,50"
+                                    className="text-center"
+                                />
+                                <p className="text-xs text-slate-500">
+                                    Hinweis: 0,00 wird als "nicht verfügbar" gewertet
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <Label>Statuscode auswählen</Label>
+                                <RadioGroup value={dialogCode} onValueChange={setDialogCode} className="grid gap-2">
+                                    {FTE_CODES.map(code => (
+                                        <div key={code} className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-slate-50">
+                                            <RadioGroupItem value={code} id={`code-${code}`} />
+                                            <Label htmlFor={`code-${code}`} className="cursor-pointer flex-1">
+                                                <span className={cn(
+                                                    "font-bold",
+                                                    code === "EZ" && "text-orange-600",
+                                                    code === "MS" && "text-pink-600",
+                                                    code === "KO" && "text-red-600"
+                                                )}>{code}</span>
+                                                <span className="text-slate-500 ml-2">– {FTE_CODE_LABELS[code]}</span>
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </RadioGroup>
+                                <p className="text-xs text-slate-500">
+                                    Alle Statuscodes werden als "nicht verfügbar" gewertet
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Apply Mode Selection */}
+                        <div className="space-y-3 border-t pt-4">
+                            <Label className="text-sm font-medium">Anwenden auf</Label>
+                            <RadioGroup value={dialogApplyMode} onValueChange={setDialogApplyMode} className="grid gap-2">
+                                <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-slate-50">
+                                    <RadioGroupItem value="single" id="apply-single" />
+                                    <Label htmlFor="apply-single" className="cursor-pointer flex-1">
+                                        <span className="font-medium">Nur diesen Monat</span>
+                                        <span className="text-slate-500 ml-2">({editDialog.month}/{year})</span>
+                                    </Label>
+                                </div>
+                                <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-slate-50">
+                                    <RadioGroupItem value="following" id="apply-following" />
+                                    <Label htmlFor="apply-following" className="cursor-pointer flex-1">
+                                        <span className="font-medium">Alle folgenden Monate</span>
+                                        <span className="text-slate-500 ml-2">({editDialog.month} - 12/{year})</span>
+                                    </Label>
+                                </div>
+                            </RadioGroup>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                        <Button variant="outline" onClick={() => setEditDialog({ ...editDialog, open: false })}>
+                            Abbrechen
+                        </Button>
+                        <Button onClick={handleDialogSave} disabled={updateEntryMutation.isPending}>
+                            {updateEntryMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                            Speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

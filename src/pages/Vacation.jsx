@@ -139,8 +139,9 @@ export default function VacationPage() {
                        const month = day.getMonth() + 1;
                        const entry = staffingPlanEntries.find(e => e.doctor_id === doc.id && e.year === year && e.month === month);
                        const val = entry ? String(entry.value).trim() : (doc.fte !== undefined ? String(doc.fte) : "1.0");
-                       if (val === "KO") reason = "Status: KO (Krank ohne Lohn)";
+                       if (val === "KO") reason = "Status: KO (Krank ohne Entgelt)";
                        else if (val === "EZ") reason = "Status: EZ (Elternzeit)";
+                       else if (val === "MS") reason = "Status: MS (Mutterschutz)";
                        else {
                            const num = parseFloat(val.replace(',', '.'));
                            if (!isNaN(num) && num <= 0.0001) reason = `FTE: ${val} (0.0)`;

@@ -531,22 +531,26 @@ export default function HelpPage() {
                             <p className="text-sm text-slate-600">
                                 Der Stellenplan zeigt das <strong>FTE (Vollzeitäquivalent)</strong> pro Mitarbeiter und Monat. Hier können Sie dokumentieren:
                             </p>
-                            <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-4 md:grid-cols-4">
                                 <div className="p-3 border rounded-lg">
                                     <Badge variant="outline" className="mb-2">FTE</Badge>
                                     <p className="text-xs text-slate-600">Arbeitsumfang (0-100%)</p>
                                 </div>
                                 <div className="p-3 border rounded-lg">
-                                    <Badge variant="secondary" className="mb-2 bg-pink-100 text-pink-700">EZ</Badge>
+                                    <Badge variant="secondary" className="mb-2 bg-orange-100 text-orange-700">EZ</Badge>
                                     <p className="text-xs text-slate-600">Elternzeit</p>
                                 </div>
                                 <div className="p-3 border rounded-lg">
-                                    <Badge variant="secondary" className="mb-2 bg-slate-100 text-slate-700">KO</Badge>
-                                    <p className="text-xs text-slate-600">Außer Dienst</p>
+                                    <Badge variant="secondary" className="mb-2 bg-pink-100 text-pink-700">MS</Badge>
+                                    <p className="text-xs text-slate-600">Mutterschutz</p>
+                                </div>
+                                <div className="p-3 border rounded-lg">
+                                    <Badge variant="secondary" className="mb-2 bg-red-100 text-red-700">KO</Badge>
+                                    <p className="text-xs text-slate-600">Krank ohne Entgelt</p>
                                 </div>
                             </div>
                             <div className="p-3 bg-blue-50 text-blue-900 text-sm rounded-lg border border-blue-100">
-                                <strong>Automatik:</strong> Bei EZ oder KO wird der Mitarbeiter im Abwesenheitsplaner automatisch als "Nicht verfügbar" markiert.
+                                <strong>Automatik:</strong> Bei EZ, MS, KO oder 0,00 wird der Mitarbeiter im Abwesenheitsplaner automatisch als "Nicht verfügbar" markiert.
                             </div>
                         </CardContent>
                     </Card>
