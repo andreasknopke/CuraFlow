@@ -1077,42 +1077,32 @@ export default function ScheduleBoard() {
 
   const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
-  // Synchrone Konfliktprüfung (für Voice-Commands und einfache Checks)
-  const checkConflicts = (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
+  // Synchrone Konfliktprüfung (nur für Voice-Commands)
+  const checkConflictsVoice = (doctorId, dateStr, newPosition, excludeShiftId = null) => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       
-      // Blockers verhindern die Aktion
       if (result.blockers.length > 0) {
-          const msg = result.blockers.join('\n');
-          if (isVoice) toast.error(msg);
-          else alert(msg);
+          toast.error(result.blockers.join('\n'));
           return true;
       }
 
-      // Warnungen anzeigen (Limits sind jetzt nur Warnungen)
       if (result.warnings.length > 0) {
-          const msg = result.warnings.join('\n');
-          if (isVoice) {
-              toast.warning(msg);
-              // Voice: Bei Warnungen trotzdem erlauben (außer bei expliziten Blockern)
-          } else {
-              alert(`Hinweis:\n${msg}`);
-          }
+          toast.warning(result.warnings.join('\n'));
       }
       
       return false;
   };
 
-  // Asynchrone Konfliktprüfung mit Override-Möglichkeit
-  // Gibt { blocked: boolean, overrideRequested: boolean } zurück
-  // Bei Override wird die onProceed Callback ausgeführt
-  const checkConflictsWithOverride = async (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
+  // Konfliktprüfung mit Override-Dialog
+  // Gibt true zurück wenn blockiert (Aktion abbrechen)
+  // Wenn Override möglich: zeigt Dialog und führt onProceed bei Bestätigung aus
+  const checkConflictsWithOverride = (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       const doctor = doctors.find(d => d.id === doctorId);
       
-      // Blockers: Override-Dialog anzeigen
+      // Bei Blockern: Override-Dialog anzeigen
       if (result.blockers.length > 0) {
-          const { confirmed } = await requestOverride({
+          requestOverride({
               blockers: result.blockers,
               warnings: result.warnings,
               doctorId,
@@ -1121,17 +1111,24 @@ export default function ScheduleBoard() {
               position: newPosition,
               onConfirm: onProceed
           });
-          
-          return { blocked: !confirmed, overrideRequested: confirmed };
+          return true; // Blockiert - warte auf Override-Bestätigung
       }
 
-      // Warnungen anzeigen (Limits sind jetzt nur Warnungen)
+      // Warnungen anzeigen (kein Blocker)
       if (result.warnings.length > 0) {
-          const msg = result.warnings.join('\n');
-          alert(`Hinweis:\n${msg}`);
+          toast.warning(result.warnings.join('\n'));
       }
       
-      return { blocked: false, overrideRequested: false };
+      return false; // Nicht blockiert
+  };
+
+  // Legacy-Wrapper für Stellen die noch nicht umgestellt sind
+  const checkConflicts = (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
+      if (isVoice) {
+          return checkConflictsVoice(doctorId, dateStr, newPosition, excludeShiftId);
+      }
+      // Für non-voice: verwende Override-Dialog ohne Callback
+      return checkConflictsWithOverride(doctorId, dateStr, newPosition, excludeShiftId, null);
   };
 
   // Wrapper für Abwesenheits-spezifische Staffing-Prüfung
@@ -1917,94 +1914,104 @@ export default function ScheduleBoard() {
              if (occupyingShift) {
                  deleteShiftWithCleanup(occupyingShift);
              }
-             if (checkConflicts(doctorId, dateStr, position)) {
-                 console.log('Conflict detected, aborting drop');
+
+             // Hilfsfunktion für das Erstellen der Shifts
+             const executeShiftCreation = () => {
+                 // Shift erstellen (exists-Prüfung ist jetzt bereits weiter oben erfolgt)
+                 // Bei Timeslot-Rows: Filter auch nach timeslot_id
+                 // '__unassigned__' = Zeile für Shifts ohne Timeslot
+                 const shiftsToCreate = [];
+                 
+                 // Bei allTimeslots: Für jeden Timeslot eine Schicht erstellen
+                 const slotsToProcess = timeslotsToAssign || [timeslotId];
+                 
+                 for (const tsId of slotsToProcess) {
+                     const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
+                     
+                     // Duplikat-Prüfung pro Timeslot
+                     const existsForSlot = currentWeekShifts.some(s => {
+                         if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
+                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
+                         return !s.timeslot_id;
+                     });
+                     if (existsForSlot) {
+                         console.log('DEBUG: Skipping - Shift already exists for timeslot:', effectiveTsId);
+                         continue;
+                     }
+                     
+                     const existingInCell = currentWeekShifts.filter(s => {
+                         if (s.date !== dateStr || s.position !== position) return false;
+                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
+                         return !s.timeslot_id;
+                     });
+                     const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                     const newOrder = maxOrder + 1;
+
+                     const newShiftData = { date: dateStr, position, doctor_id: doctorId, order: newOrder };
+                     if (effectiveTsId) newShiftData.timeslot_id = effectiveTsId;
+                     shiftsToCreate.push(newShiftData);
+                 }
+                 
+                 // Check Auto-Frei immediately to bundle operations
+                 const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
+                 let updateAutoFreiNeeded = false;
+                 let existingAutoFreiShift = null;
+
+                 if (autoFreiDateStr) {
+                     const warning = checkStaffing(autoFreiDateStr, doctorId);
+                     if (warning) {
+                         toast.warning(`${warning}\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
+                     }
+
+                     existingAutoFreiShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+                     
+                     if (!existingAutoFreiShift) {
+                         shiftsToCreate.push({
+                             date: autoFreiDateStr,
+                             position: 'Frei',
+                             doctor_id: doctorId,
+                             note: 'Autom. Freizeitausgleich'
+                         });
+                     } else if (existingAutoFreiShift.position !== 'Frei') {
+                         updateAutoFreiNeeded = true;
+                     }
+                 }
+
+                 console.log('DEBUG: Creating shifts (Bulk)', shiftsToCreate);
+
+                 if (shiftsToCreate.length > 0) {
+                     bulkCreateShiftsMutation.mutate(shiftsToCreate, {
+                         onSuccess: () => {
+                             console.log('DEBUG: Bulk Create Success');
+                             // Handle update case if needed (rare case)
+                             if (updateAutoFreiNeeded && existingAutoFreiShift) {
+                                  if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
+                                      updateAutoFreiMutation.mutate({
+                                          id: existingAutoFreiShift.id,
+                                          data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
+                                      });
+                                  }
+                             }
+                         },
+                         onError: (err) => {
+                             console.error('DEBUG: Error creating shifts:', err);
+                             toast.error('Fehler beim Erstellen: ' + err.message);
+                         }
+                     });
+                 }
+             };
+
+             // Konfliktprüfung mit Override-Möglichkeit
+             const hasConflict = checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
+             if (hasConflict) {
+                 console.log('Conflict detected - waiting for override decision');
                  return;
              }
+
+             // Kein Konflikt - direkt ausführen
+             executeShiftCreation();
         }
 
-        // Shift erstellen (exists-Prüfung ist jetzt bereits weiter oben erfolgt)
-        // Bei Timeslot-Rows: Filter auch nach timeslot_id
-        // '__unassigned__' = Zeile für Shifts ohne Timeslot
-        const shiftsToCreate = [];
-        
-        // Bei allTimeslots: Für jeden Timeslot eine Schicht erstellen
-        const slotsToProcess = timeslotsToAssign || [timeslotId];
-        
-        for (const tsId of slotsToProcess) {
-            const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
-            
-            // Duplikat-Prüfung pro Timeslot
-            const existsForSlot = currentWeekShifts.some(s => {
-                if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
-                if (effectiveTsId) return s.timeslot_id === effectiveTsId;
-                return !s.timeslot_id;
-            });
-            if (existsForSlot) {
-                console.log('DEBUG: Skipping - Shift already exists for timeslot:', effectiveTsId);
-                continue;
-            }
-            
-            const existingInCell = currentWeekShifts.filter(s => {
-                if (s.date !== dateStr || s.position !== position) return false;
-                if (effectiveTsId) return s.timeslot_id === effectiveTsId;
-                return !s.timeslot_id;
-            });
-            const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-            const newOrder = maxOrder + 1;
-
-            const newShiftData = { date: dateStr, position, doctor_id: doctorId, order: newOrder };
-            if (effectiveTsId) newShiftData.timeslot_id = effectiveTsId;
-            shiftsToCreate.push(newShiftData);
-        }
-        
-        // Check Auto-Frei immediately to bundle operations
-        const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
-        let updateAutoFreiNeeded = false;
-        let existingAutoFreiShift = null;
-
-        if (autoFreiDateStr) {
-            const warning = checkStaffing(autoFreiDateStr, doctorId);
-            if (warning) {
-                alert(`${warning}\n\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
-            }
-
-            existingAutoFreiShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
-            
-            if (!existingAutoFreiShift) {
-                shiftsToCreate.push({
-                    date: autoFreiDateStr,
-                    position: 'Frei',
-                    doctor_id: doctorId,
-                    note: 'Autom. Freizeitausgleich'
-                });
-            } else if (existingAutoFreiShift.position !== 'Frei') {
-                updateAutoFreiNeeded = true;
-            }
-            }
-
-            console.log('DEBUG: Creating shifts (Bulk)', shiftsToCreate);
-
-            if (shiftsToCreate.length > 0) {
-                bulkCreateShiftsMutation.mutate(shiftsToCreate, {
-                    onSuccess: () => {
-                        console.log('DEBUG: Bulk Create Success');
-                        // Handle update case if needed (rare case)
-                        if (updateAutoFreiNeeded && existingAutoFreiShift) {
-                             if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
-                                 updateAutoFreiMutation.mutate({
-                                     id: existingAutoFreiShift.id,
-                                     data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
-                                 });
-                             }
-                        }
-                    },
-                    onError: (err) => {
-                        console.error('DEBUG: Error creating shifts:', err);
-                        alert('Fehler beim Erstellen: ' + err.message);
-                    }
-                });
-            }
         return;
     }
 
@@ -2082,13 +2089,13 @@ export default function ScheduleBoard() {
 
              if (absencePositions.includes(newPosition)) {
                  const warning = checkStaffing(newDateStr, shift.doctor_id);
-                 if (warning) alert(warning);
+                 if (warning) toast.warning(warning);
 
                  cleanupOtherShifts(shift.doctor_id, newDateStr);
              } else {
                  // Check limits for services
                  const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
-                 if (limitWarning) alert(limitWarning);
+                 if (limitWarning) toast.warning(limitWarning);
 
                  const occupyingShift = findOccupyingShift(newDateStr, newPosition);
                  if (occupyingShift) {
@@ -2097,27 +2104,35 @@ export default function ScheduleBoard() {
                      }
                      deleteShiftMutation.mutate(occupyingShift.id);
                  }
-                 if (checkConflicts(shift.doctor_id, newDateStr, newPosition)) return;
+                 
+                 // Hilfsfunktion für die Kopie-Erstellung
+                 const executeCopy = () => {
+                     const existingInNewCell = currentWeekShifts.filter(s => {
+                         if (s.date !== newDateStr || s.position !== newPosition) return false;
+                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                         return !s.timeslot_id;
+                     });
+                     const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                     const newOrder = maxOrder + 1;
+
+                     const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
+                     if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
+
+                     createShiftMutation.mutate(copyData, {
+                         onSuccess: () => {
+                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                         }
+                     });
+                 };
+
+                 // Konfliktprüfung mit Override-Möglichkeit
+                 const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeCopy);
+                 if (hasConflict) return;
+                 
+                 // Kein Konflikt - direkt ausführen
+                 executeCopy();
              }
 
-             // Bei Kopie: existingInNewCell mit Timeslot-Filter
-             const existingInNewCell = currentWeekShifts.filter(s => {
-                 if (s.date !== newDateStr || s.position !== newPosition) return false;
-                 if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                 return !s.timeslot_id;
-             });
-             const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-             const newOrder = maxOrder + 1;
-
-             const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
-             if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
-
-             createShiftMutation.mutate(copyData, {
-                     onSuccess: () => {
-                         handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
-                     }
-                 }
-             );
              return;
         }
 
@@ -2145,7 +2160,7 @@ export default function ScheduleBoard() {
         if (absencePositions.includes(newPosition)) {
              // Moving TO absence -> cleanup others on new date
              const warning = checkStaffing(newDateStr, shift.doctor_id);
-             if (warning) alert(warning);
+             if (warning) toast.warning(warning);
 
              cleanupOtherShifts(shift.doctor_id, newDateStr, shiftId);
         } else {
@@ -2153,15 +2168,48 @@ export default function ScheduleBoard() {
              
              // Check limits for services
              const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
-             if (limitWarning) alert(limitWarning);
+             if (limitWarning) toast.warning(limitWarning);
 
              const occupyingShift = findOccupyingShift(newDateStr, newPosition, shiftId);
              if (occupyingShift) {
                  deleteShiftWithCleanup(occupyingShift);
              }
-             if (checkConflicts(shift.doctor_id, newDateStr, newPosition)) return;
+
+             // Hilfsfunktion für das Update
+             const executeMove = () => {
+                 const existingInNewCell = currentWeekShifts.filter(s => {
+                     if (s.date !== newDateStr || s.position !== newPosition) return false;
+                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                     return !s.timeslot_id;
+                 });
+                 const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                 const newOrder = maxOrder + 1;
+
+                 const updateData = { date: newDateStr, position: newPosition, order: newOrder };
+                 if (newTimeslotId !== undefined) {
+                     updateData.timeslot_id = newTimeslotId;
+                 }
+
+                 updateShiftMutation.mutate(
+                     { id: shiftId, data: updateData },
+                     {
+                         onSuccess: () => {
+                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                         }
+                     }
+                 );
+             };
+
+             // Konfliktprüfung mit Override-Möglichkeit
+             const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeMove);
+             if (hasConflict) return;
+             
+             // Kein Konflikt - direkt ausführen
+             executeMove();
+             return;
         }
 
+        // Für Abwesenheiten: direkt ausführen (keine Konfliktprüfung für Abwesenheiten)
         // Calculate order for new cell (mit Timeslot-Filter)
         const existingInNewCell = currentWeekShifts.filter(s => {
             if (s.date !== newDateStr || s.position !== newPosition) return false;
