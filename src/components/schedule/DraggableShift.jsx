@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
-import { GripVertical } from 'lucide-react';
 
 export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, ...props }) {
   const isPreview = shift.isPreview;
@@ -186,13 +185,14 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 <>
                     <div 
                         {...provided.dragHandleProps}
-                        className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-2.5 h-full hover:bg-black/10 transition-colors"
+                        className="flex-shrink-0 font-bold text-xs flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-2 h-full bg-white/50 hover:bg-black/10 transition-colors"
+                        style={{ minWidth: `${Math.max(28, boxSize * 0.6)}px` }}
                         title="Ziehen zum Verschieben"
                     >
-                        <GripVertical size={Math.max(14, fontSize)} className="text-current opacity-40" />
+                        {doctor.initials || doctor.name.substring(0, 3)}
                     </div>
                     <span 
-                        className="truncate px-0.5 leading-tight text-center flex-1" 
+                        className="truncate px-1 leading-tight text-center flex-1" 
                         style={{ fontSize: `${displayFontSize}px` }}
                     >
                         {displayText}
