@@ -2834,7 +2834,42 @@ export default function ScheduleBoard() {
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{doctors.length}</span>
                     Verfügbares Personal
                 </h3>
-                <Droppable droppableId="sidebar" isDropDisabled={isReadOnly}>
+                <Droppable 
+                    droppableId="sidebar" 
+                    isDropDisabled={isReadOnly}
+                    renderClone={(provided, snapshot, rubric) => {
+                        const doctor = doctors[rubric.source.index];
+                        const roleStyle = getRoleColor(doctor?.role);
+                        return (
+                            <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                className="flex items-center justify-center"
+                                style={{
+                                    ...provided.draggableProps.style,
+                                    backgroundColor: 'transparent',
+                                    border: 'none',
+                                    boxShadow: 'none',
+                                    width: '60px',
+                                    height: '32px',
+                                }}
+                            >
+                                <div 
+                                    className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+                                    style={{
+                                        backgroundColor: roleStyle?.backgroundColor || '#ffffff',
+                                        color: roleStyle?.color || '#000000',
+                                        minWidth: '40px',
+                                        zIndex: 9999,
+                                    }}
+                                >
+                                    <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+                                </div>
+                            </div>
+                        );
+                    }}
+                >
                     {(provided) => (
                         <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-1">
                             {doctors.map((doctor, index) => (

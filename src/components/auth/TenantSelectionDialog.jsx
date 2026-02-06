@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '@/api/client';
-import { saveDbToken, enableDbToken, disableDbToken } from '@/components/dbTokenStorage';
+import { saveDbToken, enableDbToken, disableDbToken, getActiveTokenId } from '@/components/dbTokenStorage';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,6 +20,23 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
     const [isActivating, setIsActivating] = useState(false);
     const [selectedId, setSelectedId] = useState(null);
     const [error, setError] = useState('');
+
+    // Sortierte Tenants: zuletzt aktiver Token zuerst
+    const sortedTenants = useMemo(() => {
+        const lastActiveTokenId = getActiveTokenId();
+        return [...tenants].sort((a, b) => {
+            // Zuletzt aktiver Token zuerst (aus localStorage)
+            const aWasActive = a.id === lastActiveTokenId;
+            const bWasActive = b.id === lastActiveTokenId;
+            if (aWasActive && !bWasActive) return -1;
+            if (!aWasActive && bWasActive) return 1;
+            // Dann is_active vom Server
+            if (a.is_active && !b.is_active) return -1;
+            if (!a.is_active && b.is_active) return 1;
+            // Dann alphabetisch nach Name
+            return (a.name || '').localeCompare(b.name || '');
+        });
+    }, [tenants]);
 
     // Automatisch aktivieren wenn nur ein Tenant erlaubt ist
     useEffect(() => {
@@ -143,13 +160,16 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                         </Card>
                     )}
 
-                    {/* Tenant Liste */}
-                    {tenants.map((tenant) => (
+                    {/* Tenant Liste - zuletzt aktiver Token zuerst */}
+                    {sortedTenants.map((tenant) => {
+                        const lastActiveTokenId = getActiveTokenId();
+                        const wasLastActive = tenant.id === lastActiveTokenId;
+                        return (
                         <Card 
                             key={tenant.id}
                             className={`p-4 cursor-pointer transition-all hover:border-indigo-300 hover:shadow-sm ${
                                 selectedId === tenant.id ? 'border-indigo-500 bg-indigo-50' : ''
-                            }`}
+                            } ${wasLastActive ? 'border-indigo-300' : ''}`}
                             onClick={() => !isActivating && handleActivateTenant(tenant.id)}
                         >
                             <div className="flex items-center justify-between">
@@ -167,12 +187,15 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                                 </div>
                                 {isActivating && selectedId === tenant.id ? (
                                     <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+                                ) : wasLastActive ? (
+                                    <Badge className="bg-green-100 text-green-800">Zuletzt aktiv</Badge>
                                 ) : tenant.is_active ? (
-                                    <Badge className="bg-green-100 text-green-800">Aktiv</Badge>
+                                    <Badge className="bg-blue-100 text-blue-800">Aktiv</Badge>
                                 ) : null}
                             </div>
                         </Card>
-                    ))}
+                    );
+                    })}
 
                     {tenants.length === 0 && !hasFullAccess && (
                         <div className="text-center py-8 text-slate-500">

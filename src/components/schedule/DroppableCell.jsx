@@ -39,7 +39,7 @@ export default function DroppableCell({
           )}
           {children}
           {hidePlaceholder ? (
-            <div className="hidden">{provided.placeholder}</div>
+            <div style={{ display: 'none', width: 0, height: 0 }}>{provided.placeholder}</div>
           ) : (
             provided.placeholder
           )}
