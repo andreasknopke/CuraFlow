@@ -24,13 +24,13 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
 
         const containerClass = isCompact 
           ? 'flex items-center justify-center mb-2'
-          : 'flex items-center space-x-2 p-2 rounded-md shadow-sm border border-slate-200 hover:opacity-90 transition-colors select-none mb-2 cursor-grab active:cursor-grabbing';
+          : 'flex items-center rounded-md shadow-sm border border-slate-200 hover:opacity-90 transition-colors select-none mb-2';
 
         return (
           <div
             ref={provided.innerRef}
             {...provided.draggableProps}
-            {...provided.dragHandleProps}
+            {...(isCompact ? provided.dragHandleProps : {})}
             className={containerClass}
             style={containerStyle}
           >
@@ -46,10 +46,14 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
               </div>
             ) : (
               <>
-                <div className="flex-shrink-0 font-bold text-xs w-6 h-6 bg-white/50 rounded-full flex items-center justify-center">
+                <div 
+                  {...provided.dragHandleProps}
+                  className="flex-shrink-0 font-bold text-xs w-10 h-full py-2 bg-white/50 rounded-l-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-black/10 transition-colors"
+                  title="Ziehen zum Verschieben"
+                >
                   {doctor.initials || <User size={12} />}
                 </div>
-                <span className="text-sm font-medium truncate">{doctor.name}</span>
+                <span className="text-sm font-medium truncate px-2 py-2">{doctor.name}</span>
               </>
             )}
           </div>

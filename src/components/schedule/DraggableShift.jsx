@@ -186,10 +186,10 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 <>
                     <div 
                         {...provided.dragHandleProps}
-                        className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-1 h-full hover:bg-black/5 transition-colors"
+                        className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-2.5 h-full hover:bg-black/10 transition-colors"
                         title="Ziehen zum Verschieben"
                     >
-                        <GripVertical size={Math.max(12, fontSize - 2)} className="text-current opacity-40" />
+                        <GripVertical size={Math.max(14, fontSize)} className="text-current opacity-40" />
                     </div>
                     <span 
                         className="truncate px-0.5 leading-tight text-center flex-1" 
