@@ -153,7 +153,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
 
         const containerClass = isDragging 
             ? `flex items-center justify-center cursor-none` // Center the badge
-            : `flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm ${isFullWidth ? '' : 'hover:bg-black/10'} transition-colors ${isPreview ? 'ring-2 ring-indigo-500 ring-offset-1 opacity-90' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
+            : `relative flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'ring-2 ring-indigo-500 ring-offset-1 opacity-90' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
 
         return (
           <div
@@ -199,6 +199,9 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                     </span>
                 </>
             ) : (
+                <div className="absolute inset-0 rounded-md hover:bg-black/10 transition-colors z-10" />
+            )}
+            {!isDragging && !isFullWidth && (
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full" 
                     style={{ fontSize: `${displayFontSize}px` }}
