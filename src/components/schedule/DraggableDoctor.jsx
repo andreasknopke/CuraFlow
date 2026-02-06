@@ -17,9 +17,9 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
           border: isCompact ? 'none' : undefined,
           boxShadow: isCompact ? 'none' : undefined,
           zIndex: isDragging ? 9999 : 'auto',
-          // When compact (dragging), use small dimensions
-          width: isCompact ? '60px' : undefined,
-          height: isCompact ? '32px' : undefined,
+          // When compact (dragging), match grid chip size
+          width: isCompact ? '49px' : undefined,
+          height: isCompact ? '49px' : undefined,
         };
 
         const containerClass = isCompact 
@@ -36,13 +36,14 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
           >
             {isCompact ? (
               <div 
-                className="flex items-center justify-center rounded-md font-bold border shadow-lg ring-2 ring-indigo-400 px-2 py-1 w-full h-full"
+                className="flex items-center justify-center rounded-md font-bold border shadow-lg ring-2 ring-indigo-400 w-full h-full"
                 style={{
                   backgroundColor: style?.backgroundColor || '#ffffff',
                   color: style?.color || '#000000',
+                  fontSize: '14px',
                 }}
               >
-                <span className="text-xs">{doctor.initials || doctor.name.substring(0, 3)}</span>
+                <span>{doctor.initials || doctor.name.substring(0, 3)}</span>
               </div>
             ) : (
               <>

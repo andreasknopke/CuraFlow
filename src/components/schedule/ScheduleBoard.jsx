@@ -2674,6 +2674,7 @@ export default function ScheduleBoard() {
     if (!doctor) return null;
     
     const roleColor = getRoleColor(doctor.role);
+    const cloneSize = gridFontSize * 3.5;
     
     return (
       <div
@@ -2686,24 +2687,26 @@ export default function ScheduleBoard() {
           backgroundColor: 'transparent',
           border: 'none',
           boxShadow: 'none',
-          width: '60px',
-          height: '32px',
+          width: `${cloneSize}px`,
+          height: `${cloneSize}px`,
         }}
       >
         <div 
-          className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+          className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
           style={{
             backgroundColor: roleColor?.backgroundColor || '#f1f5f9',
             color: roleColor?.color || '#0f172a',
-            minWidth: '40px',
+            width: `${cloneSize}px`,
+            height: `${cloneSize}px`,
+            fontSize: `${gridFontSize}px`,
             zIndex: 9999,
           }}
         >
-          <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+          <span>{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
         </div>
       </div>
     );
-  }, [currentWeekShifts, doctors, getRoleColor]);
+  }, [currentWeekShifts, doctors, getRoleColor, gridFontSize]);
 
   // Mobile View
   if (isMobile) {
@@ -2914,6 +2917,7 @@ export default function ScheduleBoard() {
                     renderClone={(provided, snapshot, rubric) => {
                         const doctor = doctors[rubric.source.index];
                         const roleStyle = getRoleColor(doctor?.role);
+                        const cloneSize = gridFontSize * 3.5;
                         return (
                             <div
                                 ref={provided.innerRef}
@@ -2925,20 +2929,22 @@ export default function ScheduleBoard() {
                                     backgroundColor: 'transparent',
                                     border: 'none',
                                     boxShadow: 'none',
-                                    width: '60px',
-                                    height: '32px',
+                                    width: `${cloneSize}px`,
+                                    height: `${cloneSize}px`,
                                 }}
                             >
                                 <div 
-                                    className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+                                    className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
                                     style={{
                                         backgroundColor: roleStyle?.backgroundColor || '#ffffff',
                                         color: roleStyle?.color || '#000000',
-                                        minWidth: '40px',
+                                        width: `${cloneSize}px`,
+                                        height: `${cloneSize}px`,
+                                        fontSize: `${gridFontSize}px`,
                                         zIndex: 9999,
                                     }}
                                 >
-                                    <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+                                    <span>{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
                                 </div>
                             </div>
                         );

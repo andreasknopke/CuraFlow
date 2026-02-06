@@ -102,20 +102,22 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
               backgroundColor: 'transparent',
               border: 'none',
               boxShadow: 'none',
-              width: '60px',
-              height: '32px',
+              width: `${boxSize}px`,
+              height: `${boxSize}px`,
               zIndex: 9999,
             }}
           >
             <div 
-              className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+              className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
               style={{
                 backgroundColor: props.style?.backgroundColor || '#f1f5f9',
                 color: props.style?.color || '#0f172a',
-                minWidth: '40px',
+                width: `${boxSize}px`,
+                height: `${boxSize}px`,
+                fontSize: `${fontSize}px`,
               }}
             >
-              <span className="text-xs">{doctor.initials || doctor.name.substring(0, 3)}</span>
+              <span>{doctor.initials || doctor.name.substring(0, 3)}</span>
             </div>
           </div>
         )}
@@ -141,8 +143,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
              boxShadow: 'none',
              zIndex: 9999,
              cursor: 'none',
-             width: '60px',  // Compact width for better cursor alignment
-             height: '32px',
+             width: `${boxSize}px`,
+             height: `${boxSize}px`,
         } : {
              ...provided.draggableProps.style,
              ...dynamicStyle, // Apply normal layout dimensions
@@ -167,17 +169,19 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
             style={containerStyle}
           >
             {isDragging ? (
-                // The visual badge
+                // The visual badge - square like small chips
                 <div className={`
-                    flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1 z-[9999]
+                    flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 z-[9999]
                 `}
                 style={{
                     backgroundColor: props.style?.backgroundColor || '#f1f5f9',
                     color: props.style?.color || '#0f172a',
-                    minWidth: '40px',
+                    width: `${boxSize}px`,
+                    height: `${boxSize}px`,
+                    fontSize: `${fontSize}px`,
                 }}
                 >
-                    <span className="truncate" style={{ fontSize: `${fontSize}px` }}>
+                    <span className="truncate">
                        {doctor.initials || doctor.name.substring(0,3)}
                     </span>
                 </div>
