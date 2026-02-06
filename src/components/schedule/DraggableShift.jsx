@@ -89,23 +89,23 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
   return (
     <Draggable draggableId={`shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
       {(provided, snapshot) => {
-        // When dragging, we want to keep the layout size (provided by dnd snapshot) 
-        // but visually render a small compact badge centered in that space.
-        // This prevents offset issues while giving the "small ghost" look.
+        // When dragging, use compact dimensions to fix cursor offset issue.
+        // The drag clone should be small so its center aligns with cursor.
 
         const isDragging = snapshot.isDragging;
 
         // Style for the outer container (the "Ghost")
-        // If dragging: transparent, no border, keep dimensions from dnd (provided.style)
+        // If dragging: compact size for better cursor alignment
         // If not dragging: use dynamicStyle and normal colors
         const containerStyle = isDragging ? {
-             ...provided.draggableProps.style, // Keep drag transform & dimensions
+             ...provided.draggableProps.style,
              backgroundColor: 'transparent',
              border: 'none',
              boxShadow: 'none',
              zIndex: 9999,
              cursor: 'none',
-             // We explicitly DO NOT override width/height here to respect dnd snapshot
+             width: '60px',  // Compact width for better cursor alignment
+             height: '32px',
         } : {
              ...provided.draggableProps.style,
              ...dynamicStyle, // Apply normal layout dimensions

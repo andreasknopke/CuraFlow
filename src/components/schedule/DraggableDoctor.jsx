@@ -8,13 +8,16 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled }
       {(provided, snapshot) => {
         const isDragging = snapshot.isDragging;
 
-        // When dragging: transparent container, badge inside (like DraggableShift)
+        // When dragging: use compact dimensions to fix cursor offset issue
+        // The drag clone should be small so its center aligns with cursor
         const containerStyle = isDragging ? {
           ...provided.draggableProps.style,
           backgroundColor: 'transparent',
           border: 'none',
           boxShadow: 'none',
           zIndex: 9999,
+          width: '60px',  // Compact width for better cursor alignment
+          height: '32px',
         } : {
           ...provided.draggableProps.style,
           backgroundColor: style?.backgroundColor || '#ffffff',

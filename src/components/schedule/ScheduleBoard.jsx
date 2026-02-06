@@ -2824,7 +2824,7 @@ export default function ScheduleBoard() {
 
                   {/* Sidebar */}
                 {showSidebar && (
-                <div className="w-full lg:w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 lg:sticky lg:top-4 max-h-[calc(100vh-200px)] overflow-y-auto flex flex-col gap-4 z-50">
+                <div className={`w-full lg:w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 lg:sticky lg:top-4 max-h-[calc(100vh-200px)] flex flex-col gap-4 z-50 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                 <div>
                 <h3 className="font-semibold text-slate-700 mb-3 flex items-center">
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{doctors.length}</span>
@@ -2853,7 +2853,7 @@ export default function ScheduleBoard() {
                             )}
 
                             {/* Matrix */}
-                            <div className="flex-1 overflow-auto bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0">
+                            <div className={`flex-1 bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-auto'}`}>
                             <div className="min-w-[800px]">
                               <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
