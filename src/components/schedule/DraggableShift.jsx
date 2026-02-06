@@ -203,7 +203,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                     </span>
                 </>
             ) : (
-                <div className="absolute inset-0 rounded-md hover:bg-black/10 transition-colors z-10" />
+                <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-10" />
             )}
             {!isDragging && !isFullWidth && (
                 <span 
