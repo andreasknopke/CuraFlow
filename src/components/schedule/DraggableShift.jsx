@@ -203,11 +203,11 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                     </span>
                 </>
             ) : (
-                <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-10" />
+                <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
             )}
             {!isDragging && !isFullWidth && (
                 <span 
-                    className="truncate px-0.5 leading-tight text-center w-full" 
+                    className="truncate px-0.5 leading-tight text-center w-full relative z-10" 
                     style={{ fontSize: `${displayFontSize}px` }}
                 >
                     {displayText}
