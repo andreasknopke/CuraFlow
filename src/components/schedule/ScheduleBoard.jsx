@@ -287,7 +287,22 @@ export default function ScheduleBoard() {
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
 
+  // Track mouse position for drag cursor-offset correction
+  const lastMousePosRef = useRef({ x: 0, y: 0 });
+  const dragClickOffsetRef = useRef({ x: 30, y: 16 });
+
   const queryClient = useQueryClient();
+
+  // Track mouse position globally for drag offset calculation
+  useEffect(() => {
+    const track = (e) => { lastMousePosRef.current = { x: e.clientX, y: e.clientY }; };
+    window.addEventListener('pointermove', track, { passive: true });
+    window.addEventListener('pointerdown', track, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', track);
+      window.removeEventListener('pointerdown', track);
+    };
+  }, []);
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
@@ -1592,6 +1607,18 @@ export default function ScheduleBoard() {
     const { draggableId } = before;
     if (!draggableId) return;
 
+    // Calculate cursor offset from element BEFORE it shrinks
+    const el = document.querySelector(`[data-rbd-draggable-id="${draggableId}"]`);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      dragClickOffsetRef.current = {
+        x: lastMousePosRef.current.x - rect.left,
+        y: lastMousePosRef.current.y - rect.top,
+      };
+    } else {
+      dragClickOffsetRef.current = { x: 30, y: 16 };
+    }
+
     let docId = null;
     let shiftId = null;
     
@@ -2674,6 +2701,8 @@ export default function ScheduleBoard() {
     if (!doctor) return null;
     
     const roleColor = getRoleColor(doctor.role);
+    // Shift inner badge so its center aligns with the cursor
+    const shiftX = dragClickOffsetRef.current.x - 30;
     
     return (
       <div
@@ -2697,6 +2726,7 @@ export default function ScheduleBoard() {
             color: roleColor?.color || '#0f172a',
             minWidth: '40px',
             zIndex: 9999,
+            transform: `translateX(${shiftX}px)`,
           }}
         >
           <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
@@ -2914,6 +2944,7 @@ export default function ScheduleBoard() {
                     renderClone={(provided, snapshot, rubric) => {
                         const doctor = doctors[rubric.source.index];
                         const roleStyle = getRoleColor(doctor?.role);
+                        const shiftX = dragClickOffsetRef.current.x - 30;
                         return (
                             <div
                                 ref={provided.innerRef}
@@ -2936,6 +2967,7 @@ export default function ScheduleBoard() {
                                         color: roleStyle?.color || '#000000',
                                         minWidth: '40px',
                                         zIndex: 9999,
+                                        transform: `translateX(${shiftX}px)`,
                                     }}
                                 >
                                     <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
