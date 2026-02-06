@@ -802,8 +802,21 @@ export default function ScheduleBoard() {
         return shift;
     },
     onMutate: async ({ id, data }) => {
-        const oldShift = allShifts.find(s => s.id === id);
-        return { oldShift, newData: data };
+        // Cancel any outgoing refetches to avoid overwriting our optimistic update
+        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        
+        // Snapshot the previous value for rollback
+        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
+        const oldShift = previousShifts?.find(s => s.id === id);
+        
+        // Optimistically update to the new value immediately
+        if (previousShifts) {
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => 
+                old.map(s => s.id === id ? { ...s, ...data } : s)
+            );
+        }
+        
+        return { previousShifts, oldShift, newData: data };
     },
     onSuccess: (data, { id, data: inputData }, context) => {
         // trackDbChange(); // Disabled - MySQL mode
@@ -860,8 +873,12 @@ export default function ScheduleBoard() {
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
         }, 100);
     },
-    onError: (error) => {
+    onError: (error, variables, context) => {
         console.error('DEBUG: Update Mutation Failed', error);
+        // Rollback to the previous value on error
+        if (context?.previousShifts) {
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
+        }
         alert(`Fehler beim Aktualisieren: ${error.message}`);
     }
     });
