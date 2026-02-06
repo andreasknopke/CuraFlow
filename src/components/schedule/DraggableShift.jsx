@@ -185,8 +185,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 <>
                     <div 
                         {...provided.dragHandleProps}
-                        className="flex-shrink-0 font-bold text-xs flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-2 h-full bg-white/50 hover:bg-black/10 transition-colors"
-                        style={{ minWidth: `${Math.max(28, boxSize * 0.6)}px` }}
+                        className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
+                        style={{ width: `${boxSize}px`, fontSize: `${fontSize}px` }}
                         title="Ziehen zum Verschieben"
                     >
                         {doctor.initials || doctor.name.substring(0, 3)}
