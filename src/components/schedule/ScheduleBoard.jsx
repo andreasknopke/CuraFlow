@@ -290,6 +290,7 @@ export default function ScheduleBoard() {
   // Track mouse position for drag cursor-offset correction
   const lastMousePosRef = useRef({ x: 0, y: 0 });
   const dragClickOffsetRef = useRef({ x: 30, y: 16 });
+  const dragOriginalWidthRef = useRef(200);
 
   const queryClient = useQueryClient();
 
@@ -1615,8 +1616,10 @@ export default function ScheduleBoard() {
         x: lastMousePosRef.current.x - rect.left,
         y: lastMousePosRef.current.y - rect.top,
       };
+      dragOriginalWidthRef.current = rect.width;
     } else {
       dragClickOffsetRef.current = { x: 30, y: 16 };
+      dragOriginalWidthRef.current = 200;
     }
 
     let docId = null;
@@ -2701,32 +2704,38 @@ export default function ScheduleBoard() {
     if (!doctor) return null;
     
     const roleColor = getRoleColor(doctor.role);
-    // Shift inner badge so its center aligns with the cursor
-    const shiftX = dragClickOffsetRef.current.x - 30;
+    // Position badge at cursor location within full-width transparent container
+    const badgeLeft = Math.max(0, dragClickOffsetRef.current.x - 30);
+    const origWidth = dragOriginalWidthRef.current;
     
     return (
       <div
         ref={provided.innerRef}
         {...provided.draggableProps}
         {...provided.dragHandleProps}
-        className="flex items-center justify-center"
         style={{
           ...provided.draggableProps.style,
           backgroundColor: 'transparent',
           border: 'none',
           boxShadow: 'none',
-          width: '60px',
+          width: `${origWidth}px`,
           height: '32px',
+          position: provided.draggableProps.style?.position || 'fixed',
+          overflow: 'visible',
+          pointerEvents: 'none',
         }}
       >
         <div 
           className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
           style={{
+            position: 'absolute',
+            left: `${badgeLeft}px`,
+            top: '0px',
             backgroundColor: roleColor?.backgroundColor || '#f1f5f9',
             color: roleColor?.color || '#0f172a',
             minWidth: '40px',
             zIndex: 9999,
-            transform: `translateX(${shiftX}px)`,
+            pointerEvents: 'auto',
           }}
         >
           <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
@@ -2944,30 +2953,36 @@ export default function ScheduleBoard() {
                     renderClone={(provided, snapshot, rubric) => {
                         const doctor = doctors[rubric.source.index];
                         const roleStyle = getRoleColor(doctor?.role);
-                        const shiftX = dragClickOffsetRef.current.x - 30;
+                        const badgeLeft = Math.max(0, dragClickOffsetRef.current.x - 30);
+                        const origWidth = dragOriginalWidthRef.current;
                         return (
                             <div
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
                                 {...provided.dragHandleProps}
-                                className="flex items-center justify-center"
                                 style={{
                                     ...provided.draggableProps.style,
                                     backgroundColor: 'transparent',
                                     border: 'none',
                                     boxShadow: 'none',
-                                    width: '60px',
+                                    width: `${origWidth}px`,
                                     height: '32px',
+                                    position: provided.draggableProps.style?.position || 'fixed',
+                                    overflow: 'visible',
+                                    pointerEvents: 'none',
                                 }}
                             >
                                 <div 
                                     className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
                                     style={{
+                                        position: 'absolute',
+                                        left: `${badgeLeft}px`,
+                                        top: '0px',
                                         backgroundColor: roleStyle?.backgroundColor || '#ffffff',
                                         color: roleStyle?.color || '#000000',
                                         minWidth: '40px',
                                         zIndex: 9999,
-                                        transform: `translateX(${shiftX}px)`,
+                                        pointerEvents: 'auto',
                                     }}
                                 >
                                     <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
