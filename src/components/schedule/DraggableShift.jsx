@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
+import { GripVertical } from 'lucide-react';
 
 export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, ...props }) {
   const isPreview = shift.isPreview;
@@ -153,7 +154,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
 
         const containerClass = isDragging 
             ? `flex items-center justify-center cursor-none` // Center the badge
-            : `flex items-center justify-center rounded-md font-bold border shadow-sm hover:opacity-80 ${isPreview ? 'ring-2 ring-indigo-500 ring-offset-1 opacity-90' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} cursor-grab active:cursor-grabbing`;
+            : `flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm hover:opacity-80 ${isPreview ? 'ring-2 ring-indigo-500 ring-offset-1 opacity-90' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
 
         return (
           <div
@@ -162,7 +163,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
               containerRef.current = el;
             }}
             {...provided.draggableProps}
-            {...provided.dragHandleProps}
+            {...(isFullWidth ? {} : provided.dragHandleProps)}
             className={containerClass}
             style={containerStyle}
           >
@@ -181,6 +182,22 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                        {doctor.initials || doctor.name.substring(0,3)}
                     </span>
                 </div>
+            ) : isFullWidth ? (
+                <>
+                    <div 
+                        {...provided.dragHandleProps}
+                        className="flex-shrink-0 flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md px-1 h-full hover:bg-black/5 transition-colors"
+                        title="Ziehen zum Verschieben"
+                    >
+                        <GripVertical size={Math.max(12, fontSize - 2)} className="text-current opacity-40" />
+                    </div>
+                    <span 
+                        className="truncate px-0.5 leading-tight text-center flex-1" 
+                        style={{ fontSize: `${displayFontSize}px` }}
+                    >
+                        {displayText}
+                    </span>
+                </>
             ) : (
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full" 
