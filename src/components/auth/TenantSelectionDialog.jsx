@@ -24,10 +24,13 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
     // Sortierte Tenants: zuletzt aktiver Token zuerst
     const sortedTenants = useMemo(() => {
         const lastActiveTokenId = getActiveTokenId();
+        console.log('[TenantSort] lastActiveTokenId from localStorage:', lastActiveTokenId, typeof lastActiveTokenId);
+        console.log('[TenantSort] tenants:', tenants.map(t => ({ id: t.id, type: typeof t.id, is_active: t.is_active, name: t.name })));
+        
         return [...tenants].sort((a, b) => {
-            // Zuletzt aktiver Token zuerst (aus localStorage)
-            const aWasActive = a.id === lastActiveTokenId;
-            const bWasActive = b.id === lastActiveTokenId;
+            // Zuletzt aktiver Token zuerst (aus localStorage) - compare as strings
+            const aWasActive = String(a.id) === String(lastActiveTokenId);
+            const bWasActive = String(b.id) === String(lastActiveTokenId);
             if (aWasActive && !bWasActive) return -1;
             if (!aWasActive && bWasActive) return 1;
             // Dann is_active vom Server
