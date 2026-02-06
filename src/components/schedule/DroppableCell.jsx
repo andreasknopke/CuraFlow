@@ -3,10 +3,15 @@ import { Droppable } from '@hello-pangea/dnd';
 
 export default function DroppableCell({ 
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
-    isAlternate, baseClassName, baseStyle, isTrainingHighlight
+    isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone
 }) {
   return (
-    <Droppable droppableId={id} isDropDisabled={isDisabled || isReadOnly} direction="horizontal">
+    <Droppable 
+      droppableId={id} 
+      isDropDisabled={isDisabled || isReadOnly} 
+      direction="horizontal"
+      renderClone={renderClone}
+    >
       {(provided, snapshot) => (
         <div
           ref={provided.innerRef}

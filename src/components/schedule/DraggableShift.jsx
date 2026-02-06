@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const containerRef = useRef(null);
@@ -85,6 +85,43 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
           : { width: `${boxSize}px`, height: `${boxSize}px` }
       )
   };
+
+  // When isBeingDragged (from central state) - compact dimensions for correct measurement
+  // This runs BEFORE react-beautiful-dnd measures the element
+  if (isBeingDragged) {
+    return (
+      <Draggable draggableId={`shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
+        {(provided) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            {...provided.dragHandleProps}
+            className="flex items-center justify-center"
+            style={{
+              ...provided.draggableProps.style,
+              backgroundColor: 'transparent',
+              border: 'none',
+              boxShadow: 'none',
+              width: '60px',
+              height: '32px',
+              zIndex: 9999,
+            }}
+          >
+            <div 
+              className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+              style={{
+                backgroundColor: props.style?.backgroundColor || '#f1f5f9',
+                color: props.style?.color || '#0f172a',
+                minWidth: '40px',
+              }}
+            >
+              <span className="text-xs">{doctor.initials || doctor.name.substring(0, 3)}</span>
+            </div>
+          </div>
+        )}
+      </Draggable>
+    );
+  }
 
   return (
     <Draggable draggableId={`shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>

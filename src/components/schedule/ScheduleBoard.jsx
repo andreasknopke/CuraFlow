@@ -1593,23 +1593,25 @@ export default function ScheduleBoard() {
     if (!draggableId) return;
 
     let docId = null;
+    let shiftId = null;
+    
     if (draggableId.startsWith('sidebar-doc-')) {
         docId = draggableId.replace('sidebar-doc-', '');
     } else if (draggableId.startsWith('available-doc-')) {
         docId = draggableId.substring(14, draggableId.length - 11);
     } else if (draggableId.startsWith('shift-')) {
-        const shiftId = draggableId.replace('shift-', '');
+        shiftId = draggableId.replace('shift-', '');
         const shift = currentWeekShifts.find(s => s.id === shiftId);
         if (shift) {
             docId = shift.doctor_id;
         }
     }
     // Use flushSync to ensure DOM updates before measurement
-    if (docId) {
-      flushSync(() => {
-        setDraggingDoctorId(docId);
-      });
-    }
+    // This is critical for correct drag clone dimensions
+    flushSync(() => {
+      if (docId) setDraggingDoctorId(docId);
+      if (shiftId) setDraggingShiftId(shiftId);
+    });
   };
 
   const handleDragStart = (start) => {
@@ -2652,11 +2654,101 @@ export default function ScheduleBoard() {
                     boxSize={gridFontSize * 3.5}
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
+                    isBeingDragged={isDraggingThis}
                 />
             </div>
         );
     });
   }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces]);
+
+  // Render clone for shift drags from cells - matches sidebar behavior
+  const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
+    const draggableId = rubric.draggableId;
+    if (!draggableId.startsWith('shift-')) return null;
+    
+    const shiftId = draggableId.replace('shift-', '');
+    const shift = currentWeekShifts.find(s => s.id === shiftId);
+    if (!shift) return null;
+    
+    const doctor = doctors.find(d => d.id === shift.doctor_id);
+    if (!doctor) return null;
+    
+    const roleColor = getRoleColor(doctor.role);
+    
+    return (
+      <div
+        ref={provided.innerRef}
+        {...provided.draggableProps}
+        {...provided.dragHandleProps}
+        className="flex items-center justify-center"
+        style={{
+          ...provided.draggableProps.style,
+          backgroundColor: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          width: '60px',
+          height: '32px',
+        }}
+      >
+        <div 
+          className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+          style={{
+            backgroundColor: roleColor?.backgroundColor || '#f1f5f9',
+            color: roleColor?.color || '#0f172a',
+            minWidth: '40px',
+            zIndex: 9999,
+          }}
+        >
+          <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+        </div>
+      </div>
+    );
+  }, [currentWeekShifts, doctors, getRoleColor]);
+
+  // Render clone for available doctor drags - matches sidebar and shift behavior
+  const renderAvailableClone = useMemo(() => (provided, snapshot, rubric) => {
+    const draggableId = rubric.draggableId;
+    if (!draggableId.startsWith('available-doc-')) return null;
+    
+    // Parse doctor ID from "available-doc-{docId}-{dateStr}"
+    const parts = draggableId.replace('available-doc-', '');
+    const lastDash = parts.lastIndexOf('-');
+    const docId = parts.substring(0, lastDash);
+    
+    const doctor = doctors.find(d => d.id === docId);
+    if (!doctor) return null;
+    
+    const roleColor = getRoleColor(doctor.role);
+    
+    return (
+      <div
+        ref={provided.innerRef}
+        {...provided.draggableProps}
+        {...provided.dragHandleProps}
+        className="flex items-center justify-center"
+        style={{
+          ...provided.draggableProps.style,
+          backgroundColor: 'transparent',
+          border: 'none',
+          boxShadow: 'none',
+          width: '60px',
+          height: '32px',
+        }}
+      >
+        <div 
+          className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 px-2 py-1"
+          style={{
+            backgroundColor: roleColor?.backgroundColor || '#f1f5f9',
+            color: roleColor?.color || '#0f172a',
+            minWidth: '40px',
+            zIndex: 9999,
+          }}
+        >
+          <span className="text-xs">{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+        </div>
+      </div>
+    );
+  }, [doctors, getRoleColor]);
 
   // Mobile View
   if (isMobile) {
@@ -3206,7 +3298,11 @@ export default function ScheduleBoard() {
                                 return (
                                     <div key={dIdx} className={`border-r border-slate-100 last:border-r-0`}>
                                         {rowName === 'Verfügbar' ? (
-                                            <Droppable droppableId={`available__${dateStr}`} isDropDisabled={isReadOnly}>
+                                            <Droppable 
+                                                droppableId={`available__${dateStr}`} 
+                                                isDropDisabled={isReadOnly}
+                                                renderClone={renderAvailableClone}
+                                            >
                                                 {(provided, snapshot) => {
                                                     // Calculate available doctors
                                                     // Filter out doctors who are already assigned to a BLOCKING position
@@ -3319,6 +3415,7 @@ export default function ScheduleBoard() {
                                                 isTrainingHighlight={isTrainingHighlight}
                                                 baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                 baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
+                                                renderClone={renderShiftClone}
                                             >
                                                 {renderCellShifts(
                                                     day, 
