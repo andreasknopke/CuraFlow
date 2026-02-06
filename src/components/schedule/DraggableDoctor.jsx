@@ -1,16 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { User } from 'lucide-react';
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled }) {
-  const [isPressed, setIsPressed] = useState(false);
-
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged }) {
   return (
     <Draggable draggableId={`sidebar-doc-${doctor.id}`} index={index} isDragDisabled={isDragDisabled}>
       {(provided, snapshot) => {
         const isDragging = snapshot.isDragging;
-        // Show compact version when pressed OR dragging
-        const isCompact = isPressed || isDragging;
+        // Show compact version when being dragged (from central state) or snapshot says dragging
+        const isCompact = isBeingDragged || isDragging;
 
         const containerStyle = {
           ...provided.draggableProps.style,
@@ -19,7 +17,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled }
           border: isCompact ? 'none' : undefined,
           boxShadow: isCompact ? 'none' : undefined,
           zIndex: isDragging ? 9999 : 'auto',
-          // When compact (pressed or dragging), use small dimensions
+          // When compact (dragging), use small dimensions
           width: isCompact ? '60px' : undefined,
           height: isCompact ? '32px' : undefined,
         };
@@ -35,9 +33,6 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled }
             {...provided.dragHandleProps}
             className={containerClass}
             style={containerStyle}
-            onMouseDown={() => setIsPressed(true)}
-            onMouseUp={() => setIsPressed(false)}
-            onMouseLeave={() => !isDragging && setIsPressed(false)}
           >
             {isCompact ? (
               <div 

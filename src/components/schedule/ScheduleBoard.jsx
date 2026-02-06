@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -1586,6 +1587,31 @@ export default function ScheduleBoard() {
       }
   };
 
+  // Called BEFORE dimension capture - must be synchronous to affect measurements
+  const handleBeforeCapture = (before) => {
+    const { draggableId } = before;
+    if (!draggableId) return;
+
+    let docId = null;
+    if (draggableId.startsWith('sidebar-doc-')) {
+        docId = draggableId.replace('sidebar-doc-', '');
+    } else if (draggableId.startsWith('available-doc-')) {
+        docId = draggableId.substring(14, draggableId.length - 11);
+    } else if (draggableId.startsWith('shift-')) {
+        const shiftId = draggableId.replace('shift-', '');
+        const shift = currentWeekShifts.find(s => s.id === shiftId);
+        if (shift) {
+            docId = shift.doctor_id;
+        }
+    }
+    // Use flushSync to ensure DOM updates before measurement
+    if (docId) {
+      flushSync(() => {
+        setDraggingDoctorId(docId);
+      });
+    }
+  };
+
   const handleDragStart = (start) => {
     console.log('Drag Start:', start);
     const { draggableId } = start;
@@ -2819,6 +2845,7 @@ export default function ScheduleBoard() {
                 </div>
 
                 <DragDropContext 
+                  onBeforeCapture={handleBeforeCapture}
                   onDragStart={handleDragStart} 
                   onDragEnd={handleDragEnd}
                   autoScrollerOptions={{ disabled: true }}
@@ -2879,6 +2906,7 @@ export default function ScheduleBoard() {
                                     index={index} 
                                     style={getRoleColor(doctor.role)}
                                     isDragDisabled={isReadOnly}
+                                    isBeingDragged={draggingDoctorId === doctor.id}
                                 />
                             ))}
                             {provided.placeholder}
