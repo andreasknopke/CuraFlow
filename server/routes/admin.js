@@ -231,20 +231,29 @@ router.post('/tools', async (req, res, next) => {
           });
         }
 
+        const userEmail = req.user?.email || 'unknown';
+        const timestamp = new Date().toISOString();
+
         for (const issue of issuesToFix) {
           try {
             if (issue.type === 'orphaned_shift' || issue.type === 'orphaned_position') {
+              const [rows] = await dbPool.execute('SELECT * FROM ShiftEntry WHERE id = ?', [issue.id]);
               await dbPool.execute('DELETE FROM ShiftEntry WHERE id = ?', [issue.id]);
+              console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: ShiftEntry | ID: ${issue.id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
               results.push(`✓ Gelöscht: ShiftEntry ${issue.id}`);
             } else if (issue.type === 'orphaned_staffing') {
+              const [rows] = await dbPool.execute('SELECT * FROM StaffingPlanEntry WHERE id = ?', [issue.id]);
               await dbPool.execute('DELETE FROM StaffingPlanEntry WHERE id = ?', [issue.id]);
+              console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: StaffingPlanEntry | ID: ${issue.id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
               results.push(`✓ Gelöscht: StaffingPlanEntry ${issue.id}`);
             } else if (issue.type.startsWith('duplicate_')) {
               // Delete all duplicate IDs (keeping the first/oldest one)
               const table = issue.table || 'ShiftEntry';
               if (issue.ids && issue.ids.length > 0) {
                 for (const id of issue.ids) {
+                  const [rows] = await dbPool.execute(`SELECT * FROM \`${table}\` WHERE id = ?`, [id]);
                   await dbPool.execute(`DELETE FROM \`${table}\` WHERE id = ?`, [id]);
+                  console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: ${table} | ID: ${id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
                 }
                 results.push(`✓ ${issue.ids.length} Duplikate gelöscht aus ${table}`);
               }
@@ -254,7 +263,7 @@ router.post('/tools', async (req, res, next) => {
           }
         }
 
-        console.log(`[repair] Processed ${issuesToFix.length} issues, results:`, results);
+        console.log(`[AUDIT][REPAIR] ${timestamp} | User: ${userEmail} | Processed ${issuesToFix.length} issues, results:`, results);
 
         return res.json({ 
           message: `${results.filter(r => r.startsWith('✓')).length} Probleme behoben`,
@@ -267,14 +276,20 @@ router.post('/tools', async (req, res, next) => {
         const dbPool = req.db || db;
         const [tables] = await dbPool.execute('SHOW TABLES');
         
+        const wipedTables = [];
         for (const table of tables) {
           const tableName = Object.values(table)[0];
           // Skip user tables to keep admin access
           if (tableName === 'User' || tableName === 'app_users' || tableName === 'db_tokens') continue;
+          const [countRows] = await dbPool.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``);
+          const rowCount = countRows[0]?.cnt || 0;
           await dbPool.execute(`DELETE FROM \`${tableName}\``);
+          if (rowCount > 0) wipedTables.push({ table: tableName, deletedRows: rowCount });
         }
 
-        console.log(`[wipe] Wiped ${req.db ? 'tenant' : 'master'} database`);
+        const wipeTimestamp = new Date().toISOString();
+        const wipeUser = req.user?.email || 'unknown';
+        console.log(`[AUDIT][DELETE][WIPE] ${wipeTimestamp} | User: ${wipeUser} | Target: ${req.db ? 'tenant' : 'master'} | Tables: ${JSON.stringify(wipedTables)}`);
         return res.json({ 
           message: 'Database wiped successfully',
           warning: 'User/Token tables preserved',
@@ -1186,7 +1201,8 @@ router.delete('/db-tokens/:id', async (req, res, next) => {
     
     await db.execute('DELETE FROM db_tokens WHERE id = ?', [id]);
     
-    console.log(`[DB-Tokens] Deleted token "${existing[0].name}" by ${req.user.email}`);
+    const tokenTimestamp = new Date().toISOString();
+    console.log(`[AUDIT][DELETE][DB-TOKEN] ${tokenTimestamp} | User: ${req.user.email} | Token: "${existing[0].name}" | ID: ${id}`);
     
     res.json({ success: true });
   } catch (error) {

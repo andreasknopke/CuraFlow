@@ -110,7 +110,15 @@ Deno.serve(async (req) => {
         
         const mysqlDelete = async (entityName, recordId) => {
             if (!connection) connection = await getMysqlConnection();
+            // Fetch record before deletion for audit log
+            const [existingRows] = await connection.execute(`SELECT * FROM \`${entityName}\` WHERE id = ?`, [recordId]);
+            const deletedRecord = (existingRows as any[])[0] || null;
+            
             await connection.execute(`DELETE FROM \`${entityName}\` WHERE id = ?`, [recordId]);
+            
+            const timestamp = new Date().toISOString();
+            console.log(`[AUDIT][DELETE] ${timestamp} | User: ${body?.userEmail || 'system'} | Table: ${entityName} | ID: ${recordId} | Data: ${JSON.stringify(deletedRecord)}`);
+            
             return { success: true };
         };
 

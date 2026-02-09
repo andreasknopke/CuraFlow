@@ -137,13 +137,14 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
     }
     
-    // Check if user exists
+    // Check if user exists (only active users count as conflict)
     const [existing] = await db.execute(
-      'SELECT id FROM app_users WHERE email = ?',
+      'SELECT id, is_active FROM app_users WHERE email = ?',
       [email.toLowerCase().trim()]
     );
     
-    if (existing.length > 0) {
+    const activeUser = existing.find(u => u.is_active === 1);
+    if (activeUser) {
       return res.status(409).json({ error: 'Benutzer existiert bereits' });
     }
     
@@ -153,6 +154,27 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
     
     // Hash password
     const password_hash = await bcrypt.hash(password, 12);
+    
+    // Check if there's a soft-deleted user with this email - reactivate instead of insert
+    const deletedUser = existing.find(u => u.is_active === 0);
+    
+    if (deletedUser) {
+      // Reactivate and update the soft-deleted user
+      await db.execute(
+        `UPDATE app_users SET password_hash = ?, full_name = ?, role = ?, doctor_id = ?, 
+         is_active = 1, allowed_tenants = ?, must_change_password = 0, updated_date = NOW() 
+         WHERE id = ?`,
+        [password_hash, full_name || '', role, doctor_id || null, adminTenants || null, deletedUser.id]
+      );
+      
+      const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [deletedUser.id]);
+      
+      console.log(`[Auth] Soft-deleted user reactivated by ${req.user.email}: ${email}, inherited tenants: ${adminTenants}`);
+      
+      return res.status(201).json({ user: sanitizeUser(newUser[0]) });
+    }
+    
+    // Create brand new user
     const id = crypto.randomUUID();
     
     await db.execute(
@@ -476,10 +498,17 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
   try {
     const { userId } = req.params;
     
+    // Fetch user data before soft-delete for audit log
+    const [userRows] = await db.execute('SELECT id, email, full_name, role, doctor_id FROM app_users WHERE id = ?', [userId]);
+    const deletedUser = userRows[0] || null;
+    
     await db.execute(
       'UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?',
       [userId]
     );
+    
+    const timestamp = new Date().toISOString();
+    console.log(`[AUDIT][DELETE][USER] ${timestamp} | Admin: ${req.user.email} | Deactivated User: ${deletedUser?.email || userId} | Name: ${deletedUser?.full_name || 'unknown'} | Role: ${deletedUser?.role || 'unknown'} | DoctorID: ${deletedUser?.doctor_id || 'none'}`);
     
     res.json({ success: true });
   } catch (error) {

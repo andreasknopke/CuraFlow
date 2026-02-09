@@ -68,7 +68,10 @@ Deno.serve(async (req) => {
                     await connection.execute(`UPDATE \`${entity}\` SET ${sets} WHERE id = ?`, values);
                 } else if (operation === 'delete') {
                     if (!id) return;
+                    const [delRows] = await connection.execute(`SELECT * FROM \`${entity}\` WHERE id = ?`, [id]);
                     await connection.execute(`DELETE FROM \`${entity}\` WHERE id = ?`, [id]);
+                    const delTimestamp = new Date().toISOString();
+                    console.log(`[AUDIT][DELETE] ${delTimestamp} | Table: ${entity} | ID: ${id} | Data: ${JSON.stringify((delRows as any[])[0] || null)}`);
                 }
             } catch (e) {
                 console.error(`MySQL Sync Failed (${operation} ${entity}):`, e);

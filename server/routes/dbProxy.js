@@ -355,10 +355,10 @@ router.post('/', async (req, res, next) => {
       
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
       
-      // Log deletion
+      // Audit log deletion
       const userEmail = req.user?.email || 'unknown';
       const timestamp = new Date().toISOString();
-      console.log(`[DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${id} | Data: ${JSON.stringify(deletedRecord)}`);
+      console.log(`[AUDIT][DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${id} | Data: ${JSON.stringify(deletedRecord)}`);
       
       return res.json({ success: true });
     }

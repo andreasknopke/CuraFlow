@@ -203,18 +203,38 @@ Deno.serve(async (req) => {
                 return Response.json({ error: 'Email und Passwort erforderlich' }, { status: 400, headers });
             }
             
-            // Check if user exists
+            // Check if user exists (only active users count as conflict)
             const [existing] = await connection.execute(
-                'SELECT id FROM app_users WHERE email = ?',
+                'SELECT id, is_active FROM app_users WHERE email = ?',
                 [email.toLowerCase().trim()]
             );
             
-            if (existing.length > 0) {
+            const activeUser = (existing as any[]).find((u: any) => u.is_active === 1);
+            if (activeUser) {
                 return Response.json({ error: 'Benutzer existiert bereits' }, { status: 409, headers });
             }
             
             // Hash password
             const password_hash = await bcrypt.hash(password, 12);
+            
+            // Check if there's a soft-deleted user with this email - reactivate instead of insert
+            const deletedUser = (existing as any[]).find((u: any) => u.is_active === 0);
+            
+            if (deletedUser) {
+                // Reactivate and update the soft-deleted user
+                await connection.execute(
+                    `UPDATE app_users SET password_hash = ?, full_name = ?, role = ?, doctor_id = ?, 
+                     is_active = 1, must_change_password = 0, updated_date = NOW() 
+                     WHERE id = ?`,
+                    [password_hash, full_name || '', role, doctor_id || null, deletedUser.id]
+                );
+                
+                const [newUser] = await connection.execute('SELECT * FROM app_users WHERE id = ?', [deletedUser.id]);
+                
+                return Response.json({ user: sanitizeUser((newUser as any[])[0]) }, { status: 201, headers });
+            }
+            
+            // Create brand new user
             const id = crypto.randomUUID();
             
             await connection.execute(
@@ -225,7 +245,7 @@ Deno.serve(async (req) => {
             
             const [newUser] = await connection.execute('SELECT * FROM app_users WHERE id = ?', [id]);
             
-            return Response.json({ user: sanitizeUser(newUser[0]) }, { status: 201, headers });
+            return Response.json({ user: sanitizeUser((newUser as any[])[0]) }, { status: 201, headers });
         }
         
         // ============ ME (Get current user) ============
@@ -443,11 +463,20 @@ Deno.serve(async (req) => {
                 return Response.json({ error: 'userId erforderlich' }, { status: 400, headers });
             }
             
+            // Fetch user data before soft-delete for audit log
+            const [userRows] = await connection.execute(
+                'SELECT id, email, full_name, role, doctor_id FROM app_users WHERE id = ?', [userId]
+            );
+            const deletedUser = (userRows as any[])[0] || null;
+            
             // Soft delete
             await connection.execute(
                 'UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?',
                 [userId]
             );
+            
+            const timestamp = new Date().toISOString();
+            console.log(`[AUDIT][DELETE][USER] ${timestamp} | Admin: ${payload.email} | Deactivated User: ${deletedUser?.email || userId} | Name: ${deletedUser?.full_name || 'unknown'} | Role: ${deletedUser?.role || 'unknown'} | DoctorID: ${deletedUser?.doctor_id || 'none'}`);
             
             return Response.json({ success: true }, { headers });
         }

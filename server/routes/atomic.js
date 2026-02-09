@@ -103,7 +103,15 @@ router.post('/', async (req, res, next) => {
 
     // Helper: Delete record
     const deleteRecord = async (tableName, recordId) => {
+      // Fetch record before deletion for audit log
+      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [recordId]);
+      const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
+      
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [recordId]);
+      
+      const timestamp = new Date().toISOString();
+      console.log(`[AUDIT][DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${recordId} | Data: ${JSON.stringify(deletedRecord)}`);
+      
       return { success: true };
     };
 
