@@ -276,15 +276,7 @@ Deno.serve(async (req) => {
         if (action === 'delete') {
             if (!id) return Response.json({ error: "ID required for delete" }, { status: 400 });
             try {
-                // Fetch record before deletion for audit log
-                const [existingRows] = await pool.execute(`SELECT * FROM \`${entity}\` WHERE id = ?`, [id]);
-                const deletedRecord = existingRows[0] || null;
-                
                 await pool.execute(`DELETE FROM \`${entity}\` WHERE id = ?`, [id]);
-                
-                const timestamp = new Date().toISOString();
-                const userEmail = user?.email || 'unknown';
-                console.log(`[AUDIT][DELETE] ${timestamp} | User: ${userEmail} | Table: ${entity} | ID: ${id} | Data: ${JSON.stringify(deletedRecord)}`);
             } catch (err) {
                 return Response.json({ error: err.message }, { status: 500 });
             }

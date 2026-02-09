@@ -508,7 +508,18 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
     );
     
     const timestamp = new Date().toISOString();
-    console.log(`[AUDIT][DELETE][USER] ${timestamp} | Admin: ${req.user.email} | Deactivated User: ${deletedUser?.email || userId} | Name: ${deletedUser?.full_name || 'unknown'} | Role: ${deletedUser?.role || 'unknown'} | DoctorID: ${deletedUser?.doctor_id || 'none'}`);
+    
+    // Write to SystemLog table for UI visibility (use master db since this is an auth operation)
+    try {
+      const auditId = (await import('crypto')).randomUUID();
+      const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      await db.execute(
+        `INSERT INTO SystemLog (id, level, source, message, details, created_date, updated_date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [auditId, 'audit', 'Benutzerverwaltung', `Benutzer deaktiviert: ${deletedUser?.email || userId} (${deletedUser?.full_name || 'unknown'})`, JSON.stringify({ admin: req.user.email, user_id: userId, user_email: deletedUser?.email, user_name: deletedUser?.full_name, role: deletedUser?.role, doctor_id: deletedUser?.doctor_id, timestamp }), now, now, req.user.email]
+      );
+    } catch (logErr) {
+      console.error('[AUDIT] Failed to write user deletion audit log:', logErr.message);
+    }
     
     res.json({ success: true });
   } catch (error) {

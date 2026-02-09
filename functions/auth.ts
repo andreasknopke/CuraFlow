@@ -476,7 +476,7 @@ Deno.serve(async (req) => {
             );
             
             const timestamp = new Date().toISOString();
-            console.log(`[AUDIT][DELETE][USER] ${timestamp} | Admin: ${payload.email} | Deactivated User: ${deletedUser?.email || userId} | Name: ${deletedUser?.full_name || 'unknown'} | Role: ${deletedUser?.role || 'unknown'} | DoctorID: ${deletedUser?.doctor_id || 'none'}`);
+            console.log(`[AUDIT][DELETE][USER] ${timestamp} | Admin: ${payload.email} | Deactivated User: ${deletedUser?.email || userId} | Name: ${deletedUser?.full_name || 'unknown'} | Role: ${deletedUser?.role || 'unknown'}`);
             
             return Response.json({ success: true }, { headers });
         }

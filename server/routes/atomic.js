@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { authMiddleware } from './auth.js';
+import { writeAuditLog } from './dbProxy.js';
 
 const router = express.Router();
 
@@ -109,8 +110,15 @@ router.post('/', async (req, res, next) => {
       
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [recordId]);
       
+      // Write audit to SystemLog table
       const timestamp = new Date().toISOString();
-      console.log(`[AUDIT][DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${recordId} | Data: ${JSON.stringify(deletedRecord)}`);
+      await writeAuditLog(dbPool, {
+        level: 'audit',
+        source: 'Löschung',
+        message: `${tableName} gelöscht von ${userEmail} (ID: ${recordId})`,
+        details: { table: tableName, record_id: recordId, deleted_data: deletedRecord, timestamp },
+        userEmail
+      });
       
       return { success: true };
     };

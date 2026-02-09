@@ -166,6 +166,22 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
   }
 };
 
+// ============ AUDIT LOG HELPER ============
+// Writes an audit entry to the SystemLog table for UI visibility
+export const writeAuditLog = async (dbPool, { level = 'audit', source, message, details, userEmail }) => {
+  try {
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+    await dbPool.execute(
+      `INSERT INTO SystemLog (id, level, source, message, details, created_date, updated_date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, level, source, message, typeof details === 'string' ? details : JSON.stringify(details), now, now, userEmail || 'system']
+    );
+  } catch (err) {
+    // Don't let audit logging failures break the main operation
+    console.error('[AUDIT] Failed to write audit log to SystemLog table:', err.message);
+  }
+};
+
 // ============ UNIFIED DB PROXY ENDPOINT ============
 router.post('/', async (req, res, next) => {
   try {
@@ -355,10 +371,16 @@ router.post('/', async (req, res, next) => {
       
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
       
-      // Audit log deletion
+      // Write audit to SystemLog table
       const userEmail = req.user?.email || 'unknown';
       const timestamp = new Date().toISOString();
-      console.log(`[AUDIT][DELETE] ${timestamp} | User: ${userEmail} | Table: ${tableName} | ID: ${id} | Data: ${JSON.stringify(deletedRecord)}`);
+      await writeAuditLog(dbPool, {
+        level: 'audit',
+        source: 'Löschung',
+        message: `${tableName} gelöscht von ${userEmail} (ID: ${id})`,
+        details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp },
+        userEmail
+      });
       
       return res.json({ success: true });
     }

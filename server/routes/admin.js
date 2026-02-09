@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
-import { clearColumnsCache } from './dbProxy.js';
+import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
 
 const router = express.Router();
 
@@ -265,6 +265,16 @@ router.post('/tools', async (req, res, next) => {
 
         console.log(`[AUDIT][REPAIR] ${timestamp} | User: ${userEmail} | Processed ${issuesToFix.length} issues, results:`, results);
 
+        // Write summary to SystemLog table
+        const dbPoolForLog = req.db || db;
+        await writeAuditLog(dbPoolForLog, {
+          level: 'audit',
+          source: 'DB-Reparatur',
+          message: `${results.filter(r => r.startsWith('\u2713')).length} Einträge repariert/gelöscht von ${userEmail}`,
+          details: { issues: issuesToFix.length, results, timestamp },
+          userEmail
+        });
+
         return res.json({ 
           message: `${results.filter(r => r.startsWith('✓')).length} Probleme behoben`,
           results
@@ -290,6 +300,31 @@ router.post('/tools', async (req, res, next) => {
         const wipeTimestamp = new Date().toISOString();
         const wipeUser = req.user?.email || 'unknown';
         console.log(`[AUDIT][DELETE][WIPE] ${wipeTimestamp} | User: ${wipeUser} | Target: ${req.db ? 'tenant' : 'master'} | Tables: ${JSON.stringify(wipedTables)}`);
+
+        // Write to SystemLog (re-create since we may have wiped it)
+        try {
+          await dbPool.execute(`
+            CREATE TABLE IF NOT EXISTS SystemLog (
+              id VARCHAR(36) PRIMARY KEY,
+              level VARCHAR(50),
+              source VARCHAR(255),
+              message TEXT,
+              details TEXT,
+              created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              created_by VARCHAR(255)
+            )
+          `);
+          await writeAuditLog(dbPool, {
+            level: 'audit',
+            source: 'Datenbankbereinigung',
+            message: `Datenbank bereinigt von ${wipeUser} (${req.db ? 'Mandant' : 'Master'})`,
+            details: { target: req.db ? 'tenant' : 'master', wiped_tables: wipedTables, timestamp: wipeTimestamp },
+            userEmail: wipeUser
+          });
+        } catch (logErr) {
+          console.error('[AUDIT] Failed to write wipe audit log:', logErr.message);
+        }
         return res.json({ 
           message: 'Database wiped successfully',
           warning: 'User/Token tables preserved',
@@ -1203,6 +1238,15 @@ router.delete('/db-tokens/:id', async (req, res, next) => {
     
     const tokenTimestamp = new Date().toISOString();
     console.log(`[AUDIT][DELETE][DB-TOKEN] ${tokenTimestamp} | User: ${req.user.email} | Token: "${existing[0].name}" | ID: ${id}`);
+    
+    // Write to SystemLog in master db
+    await writeAuditLog(db, {
+      level: 'audit',
+      source: 'Mandantenverwaltung',
+      message: `DB-Token "${existing[0].name}" gelöscht von ${req.user.email}`,
+      details: { token_name: existing[0].name, token_id: id, timestamp: tokenTimestamp },
+      userEmail: req.user.email
+    });
     
     res.json({ success: true });
   } catch (error) {
