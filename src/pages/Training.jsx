@@ -3,11 +3,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear, addDays, subDays } from 'date-fns';
-import { ChevronLeft, ChevronRight, GraduationCap, Eraser } from 'lucide-react';
+import { ChevronLeft, ChevronRight, GraduationCap, Eraser, ArrowRightToLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DoctorYearView from '@/components/vacation/DoctorYearView';
+import TrainingOverview from '@/components/training/TrainingOverview';
+import TransferToSchedulerDialog from '@/components/training/TransferToSchedulerDialog';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { useHolidays } from '@/components/useHolidays';
+import { useToast } from '@/components/ui/use-toast';
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
@@ -15,8 +19,11 @@ export default function TrainingPage() {
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [activeModality, setActiveModality] = useState('CT');
   const [rangeStart, setRangeStart] = useState(null);
+  const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview'
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
   
   const queryClient = useQueryClient();
+  const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
@@ -70,6 +77,30 @@ export default function TrainingPage() {
     queryFn: () => db.TrainingRotation.list(),
   });
 
+  // Fetch all shifts for the year (needed for transfer dialog conflict detection)
+  const { data: allShifts = [] } = useQuery({
+    queryKey: ['shifts', selectedYear],
+    queryFn: () => db.ShiftEntry.filter({
+        date: { $gte: `${selectedYear}-01-01`, $lte: `${selectedYear}-12-31` }
+    }, null, 5000),
+    staleTime: 30 * 1000,
+    keepPreviousData: true,
+  });
+
+  // Fetch staffing plan entries for availability checks
+  const { data: staffingPlanEntries = [] } = useQuery({
+    queryKey: ['staffingPlanEntries', selectedYear],
+    queryFn: () => db.StaffingPlanEntry.filter({ year: selectedYear }),
+  });
+
+  // Fetch system settings for months per row setting
+  const { data: systemSettings = [] } = useQuery({
+    queryKey: ['systemSettings'],
+    queryFn: () => db.SystemSetting.list(),
+  });
+
+  const monthsPerRow = parseInt(systemSettings.find(s => s.key === 'vacation_months_per_row')?.value || '3');
+
   // Convert ranges to "daily shifts" format for the view
   const dailyRotations = useMemo(() => {
       const result = [];
@@ -112,6 +143,176 @@ export default function TrainingPage() {
     mutationFn: ({ id, data }) => db.TrainingRotation.update(id, data),
     onSuccess: () => queryClient.invalidateQueries(['trainingRotations']),
   });
+
+  // Bulk operations for transferring training to scheduler
+  const bulkCreateShiftMutation = useMutation({
+    mutationFn: (data) => db.ShiftEntry.bulkCreate(data),
+    onSuccess: () => {
+        queryClient.invalidateQueries(['shifts', selectedYear]);
+    },
+  });
+
+  const bulkDeleteShiftMutation = useMutation({
+    mutationFn: async (ids) => {
+        await Promise.all(ids.map(id => db.ShiftEntry.delete(id)));
+    },
+    onSuccess: () => {
+        queryClient.invalidateQueries(['shifts', selectedYear]);
+    },
+  });
+
+  const isTransferPending = bulkCreateShiftMutation.isPending || bulkDeleteShiftMutation.isPending;
+
+  const handleTransferToScheduler = ({ entries, overwriteExisting }) => {
+      if (entries.length === 0) return;
+      
+      // Collect IDs to delete (overwrite entries)
+      const idsToDelete = [];
+      if (overwriteExisting) {
+          entries.forEach(entry => {
+              if (entry.existingShiftIds && entry.existingShiftIds.length > 0) {
+                  idsToDelete.push(...entry.existingShiftIds);
+              }
+          });
+      }
+      
+      // Prepare new shift entries
+      const newShifts = entries.map(entry => ({
+          date: entry.date,
+          position: entry.position,
+          doctor_id: entry.doctor_id
+      }));
+      
+      if (idsToDelete.length > 0) {
+          bulkDeleteShiftMutation.mutate(idsToDelete, {
+              onSuccess: () => {
+                  bulkCreateShiftMutation.mutate(newShifts, {
+                      onSuccess: () => {
+                          setShowTransferDialog(false);
+                      }
+                  });
+              }
+          });
+      } else {
+          bulkCreateShiftMutation.mutate(newShifts, {
+              onSuccess: () => {
+                  setShowTransferDialog(false);
+              }
+          });
+      }
+  };
+
+  // Handler for overview: toggle rotation for a specific doctor
+  const handleOverviewToggle = (date, currentStatus, doctorId, event) => {
+      if (!doctorId || isReadOnly) return;
+      
+      const dateStr = format(date, 'yyyy-MM-dd');
+      
+      if (activeModality === 'DELETE') {
+          if (currentStatus) {
+              handleOverviewRangeDelete(date, date, doctorId);
+          }
+          return;
+      }
+      
+      // Same type → Delete
+      if (currentStatus === activeModality) {
+          handleOverviewRangeDelete(date, date, doctorId);
+          return;
+      }
+      
+      // Different type → Overwrite
+      if (currentStatus && currentStatus !== activeModality) {
+          handleOverviewRangeDelete(date, date, doctorId);
+          createRotationMutation.mutate({
+              doctor_id: doctorId,
+              modality: activeModality,
+              start_date: dateStr,
+              end_date: dateStr
+          });
+          return;
+      }
+
+      // Empty → Create (use range start/end pattern)
+      if (!rangeStart) {
+          setRangeStart(date);
+          setSelectedDoctorId(doctorId);
+          return;
+      }
+      
+      // Complete range only for same doctor
+      if (selectedDoctorId !== doctorId) {
+          setRangeStart(date);
+          setSelectedDoctorId(doctorId);
+          return;
+      }
+
+      const start = rangeStart < date ? rangeStart : date;
+      const end = rangeStart < date ? date : rangeStart;
+      setRangeStart(null);
+
+      createRotationMutation.mutate({
+          doctor_id: doctorId,
+          modality: activeModality,
+          start_date: format(start, 'yyyy-MM-dd'),
+          end_date: format(end, 'yyyy-MM-dd')
+      });
+  };
+
+  const handleOverviewRangeDelete = (start, end, doctorId) => {
+      const rangeStartStr = format(start, 'yyyy-MM-dd');
+      const rangeEndStr = format(end, 'yyyy-MM-dd');
+
+      const overlapping = rotations.filter(r => {
+          if (r.doctor_id !== doctorId) return false;
+          return r.start_date <= rangeEndStr && r.end_date >= rangeStartStr;
+      });
+
+      overlapping.forEach(rot => {
+          if (rot.start_date >= rangeStartStr && rot.end_date <= rangeEndStr) {
+              deleteRotationMutation.mutate(rot.id);
+          } else if (rot.start_date < rangeStartStr && rot.end_date <= rangeEndStr) {
+              updateRotationMutation.mutate({
+                  id: rot.id,
+                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
+              });
+          } else if (rot.start_date >= rangeStartStr && rot.end_date > rangeEndStr) {
+              updateRotationMutation.mutate({
+                  id: rot.id,
+                  data: { start_date: format(addDays(end, 1), 'yyyy-MM-dd') }
+              });
+          } else if (rot.start_date < rangeStartStr && rot.end_date > rangeEndStr) {
+              updateRotationMutation.mutate({
+                  id: rot.id,
+                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
+              });
+              createRotationMutation.mutate({
+                  doctor_id: rot.doctor_id,
+                  modality: rot.modality,
+                  start_date: format(addDays(end, 1), 'yyyy-MM-dd'),
+                  end_date: rot.end_date
+              });
+          }
+      });
+  };
+
+  const handleOverviewRangeSelect = (start, end, doctorId) => {
+      if (!doctorId || isReadOnly) return;
+      const startDate = start < end ? start : end;
+      const endDate = start < end ? end : start;
+      
+      if (activeModality === 'DELETE') {
+          handleOverviewRangeDelete(startDate, endDate, doctorId);
+          return;
+      }
+      
+      createRotationMutation.mutate({
+          doctor_id: doctorId,
+          modality: activeModality,
+          start_date: format(startDate, 'yyyy-MM-dd'),
+          end_date: format(endDate, 'yyyy-MM-dd')
+      });
+  };
 
   const handleToggle = (date, currentStatus, event) => {
       if (!selectedDoctorId || isReadOnly) return;
@@ -342,40 +543,73 @@ export default function TrainingPage() {
           <p className="text-slate-500 mt-1">Rotationsplanung für das Team</p>
         </div>
 
-        <div className="flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
-           <div className="flex items-center">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y - 1)}>
-                <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="mx-2 font-bold text-lg w-16 text-center">{selectedYear}</span>
-            <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y + 1)}>
-                <ChevronRight className="w-4 h-4" />
-            </Button>
-           </div>
-           
-           <div className="w-px h-8 bg-slate-200 mx-2" />
+        <div className="flex items-center gap-4">
+            {!isReadOnly && user?.role === 'admin' && (
+                <Button 
+                    variant="outline" 
+                    onClick={() => setShowTransferDialog(true)}
+                    className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    title="Ausbildungsrotationen in den Wochenplan übertragen"
+                >
+                    <ArrowRightToLine className="w-4 h-4" />
+                    In Wochenplan übertragen
+                </Button>
+            )}
+            
+            <div className="bg-slate-100 p-1 rounded-lg flex">
+                <button 
+                    onClick={() => setViewMode('single')}
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${viewMode === 'single' ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Einzelansicht
+                </button>
+                <button 
+                    onClick={() => setViewMode('overview')}
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${viewMode === 'overview' ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Jahresübersicht
+                </button>
+            </div>
 
-           {user?.role === 'admin' ? (
-               <Select 
-                value={selectedDoctorId || ''} 
-                onValueChange={setSelectedDoctorId}
-               >
-                <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="Person auswählen" />
-                </SelectTrigger>
-                <SelectContent>
-                    {doctors.map(d => (
-                        <SelectItem key={d.id} value={d.id}>
-                            {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
-                        </SelectItem>
-                    ))}
-                </SelectContent>
-               </Select>
-           ) : (
-               <div className="px-3 font-medium text-slate-700">
-                   {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}
+            <div className="flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+               <div className="flex items-center">
+                <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y - 1)}>
+                    <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <span className="mx-2 font-bold text-lg w-16 text-center">{selectedYear}</span>
+                <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y + 1)}>
+                    <ChevronRight className="w-4 h-4" />
+                </Button>
                </div>
-           )}
+               
+               {viewMode === 'single' && (
+               <>
+                   <div className="w-px h-8 bg-slate-200 mx-2" />
+
+                   {user?.role === 'admin' ? (
+                       <Select 
+                        value={selectedDoctorId || ''} 
+                        onValueChange={setSelectedDoctorId}
+                       >
+                        <SelectTrigger className="w-[200px]">
+                            <SelectValue placeholder="Person auswählen" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {doctors.map(d => (
+                                <SelectItem key={d.id} value={d.id}>
+                                    {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                       </Select>
+                   ) : (
+                       <div className="px-3 font-medium text-slate-700">
+                           {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}
+                       </div>
+                   )}
+               </>
+               )}
+            </div>
         </div>
       </div>
       
@@ -400,31 +634,64 @@ export default function TrainingPage() {
           )}
       </div>
 
-      {selectedDoctor ? (
-        <div className="space-y-4">
-            {rangeStart && (
-                <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-md flex items-center animate-in fade-in slide-in-from-top-2">
-                    <GraduationCap className="w-4 h-4 mr-2" />
-                    <span>Startdatum gewählt: <strong>{format(rangeStart, 'dd.MM.yyyy')}</strong>. Wählen Sie nun das Enddatum für die <strong>{activeModality}</strong>-Rotation.</span>
-                    <Button variant="ghost" size="sm" className="ml-auto hover:bg-indigo-100" onClick={() => setRangeStart(null)}>Abbrechen</Button>
-                </div>
-            )}
-            <DoctorYearView 
-                doctor={selectedDoctor} 
-                year={selectedYear} 
-                shifts={dailyRotations}
-                onToggle={handleInteraction}
-                onRangeSelect={handleRangeSelect}
-                activeType={activeModality}
-                rangeStart={rangeStart}
-                customColors={customColors}
-            />
-        </div>
+      {viewMode === 'single' ? (
+        <>
+          {selectedDoctor ? (
+            <div className="space-y-4">
+                {rangeStart && (
+                    <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-md flex items-center animate-in fade-in slide-in-from-top-2">
+                        <GraduationCap className="w-4 h-4 mr-2" />
+                        <span>Startdatum gewählt: <strong>{format(rangeStart, 'dd.MM.yyyy')}</strong>. Wählen Sie nun das Enddatum für die <strong>{activeModality}</strong>-Rotation.</span>
+                        <Button variant="ghost" size="sm" className="ml-auto hover:bg-indigo-100" onClick={() => setRangeStart(null)}>Abbrechen</Button>
+                    </div>
+                )}
+                <DoctorYearView 
+                    doctor={selectedDoctor} 
+                    year={selectedYear} 
+                    shifts={dailyRotations}
+                    onToggle={handleInteraction}
+                    onRangeSelect={handleRangeSelect}
+                    activeType={activeModality}
+                    rangeStart={rangeStart}
+                    customColors={customColors}
+                    isSchoolHoliday={isSchoolHoliday}
+                    isPublicHoliday={isPublicHoliday}
+                />
+            </div>
+          ) : (
+            <div className="text-center py-12 text-slate-500">
+                Bitte wählen Sie eine Person aus.
+            </div>
+          )}
+        </>
       ) : (
-        <div className="text-center py-12 text-slate-500">
-            Bitte wählen Sie eine Person aus.
-        </div>
+        <TrainingOverview 
+            year={selectedYear} 
+            doctors={doctors} 
+            rotations={rotations}
+            isSchoolHoliday={isSchoolHoliday}
+            isPublicHoliday={isPublicHoliday}
+            customColors={customColors}
+            onToggle={handleOverviewToggle}
+            onRangeSelect={handleOverviewRangeSelect}
+            activeType={activeModality}
+            isReadOnly={isReadOnly}
+            monthsPerRow={monthsPerRow}
+        />
       )}
+
+      {/* Transfer to Scheduler Dialog */}
+      <TransferToSchedulerDialog
+          open={showTransferDialog}
+          onOpenChange={setShowTransferDialog}
+          rotations={rotations}
+          doctors={doctors}
+          allShifts={allShifts}
+          staffingPlanEntries={staffingPlanEntries}
+          workplaces={workplaces}
+          onTransfer={handleTransferToScheduler}
+          isPending={isTransferPending}
+      />
     </div>
   );
 }
