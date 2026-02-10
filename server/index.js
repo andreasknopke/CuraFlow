@@ -336,6 +336,21 @@ async function ensureTablesExist() {
         INDEX idx_doctor_month (doctor_id, target_month),
         INDEX idx_token (token)
       )`
+    },
+    {
+      name: 'EmailVerification',
+      sql: `CREATE TABLE IF NOT EXISTS EmailVerification (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
+        status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        INDEX idx_token (token),
+        INDEX idx_user_id (user_id)
+      )`
     }
   ];
 
@@ -379,6 +394,35 @@ async function ensureTablesExist() {
     } catch (err) {
       console.error(`❌ Failed to ensure ${table.name}:`, err.message);
     }
+  }
+
+  // Add email_verified columns to app_users if they don't exist
+  // Note: This can also be triggered manually via Admin Panel > Migrationen
+  try {
+    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
+    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
+  } catch (err) {
+    // Columns may already exist - that's fine, migration is also available in Admin Panel
+  }
+
+  // Ensure EmailVerification table exists
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS EmailVerification (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
+        status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        INDEX idx_token (token),
+        INDEX idx_user_id (user_id)
+      )
+    `);
+  } catch (err) {
+    // Table may already exist
   }
 }
 

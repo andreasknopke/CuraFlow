@@ -150,6 +150,17 @@ class APIClient {
     });
   }
 
+  async sendPasswordEmail(userId) {
+    return this.request('/api/auth/send-password-email', {
+      method: 'POST',
+      body: JSON.stringify({ userId }),
+    });
+  }
+
+  async getEmailVerificationStatus(userId) {
+    return this.request(`/api/auth/email-verification-status/${userId}`);
+  }
+
   // ==================== Database Operations ====================
 
   async dbAction(action, table, params = {}) {

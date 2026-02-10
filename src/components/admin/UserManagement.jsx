@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Check } from 'lucide-react';
+import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Check, Mail, MailCheck, MailX, Send } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
@@ -20,6 +20,8 @@ export default function UserManagement() {
     const [selectedUser, setSelectedUser] = useState(null);
     const [newUser, setNewUser] = useState({ email: '', full_name: '', password: '', role: 'user' });
     const [createError, setCreateError] = useState('');
+    const [sendPasswordEmail, setSendPasswordEmail] = useState(true);
+    const [passwordEmailSending, setPasswordEmailSending] = useState({});
 
     const { data: users = [], isLoading } = useQuery({
         queryKey: ['users'],
@@ -76,6 +78,7 @@ export default function UserManagement() {
             queryClient.invalidateQueries(['users']);
             setShowCreateDialog(false);
             setNewUser({ email: '', full_name: '', password: '', role: 'user' });
+            setSendPasswordEmail(true);
             setCreateError('');
         },
         onError: (err) => {
@@ -98,7 +101,20 @@ export default function UserManagement() {
             setCreateError('E-Mail und Passwort sind erforderlich');
             return;
         }
-        createUserMutation.mutate(newUser);
+        createUserMutation.mutate({ ...newUser, sendPasswordEmail });
+    };
+
+    const handleSendPasswordEmail = async (userId) => {
+        setPasswordEmailSending(prev => ({ ...prev, [userId]: true }));
+        try {
+            await api.sendPasswordEmail(userId);
+            alert('Passwort-Email wurde erfolgreich gesendet!');
+            queryClient.invalidateQueries(['users']);
+        } catch (err) {
+            alert('Fehler beim Senden der Passwort-Email: ' + err.message);
+        } finally {
+            setPasswordEmailSending(prev => ({ ...prev, [userId]: false }));
+        }
     };
 
     if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
@@ -125,6 +141,7 @@ export default function UserManagement() {
                             <TableHead>Rolle</TableHead>
                             <TableHead>Zugeordnete Person</TableHead>
                             <TableHead>Mandanten</TableHead>
+                            <TableHead>E-Mail Status</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead className="text-right">Aktionen</TableHead>
                         </TableRow>
@@ -193,12 +210,44 @@ export default function UserManagement() {
                                     </Button>
                                 </TableCell>
                                 <TableCell>
+                                    {user.email_verified ? (
+                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 gap-1">
+                                            <MailCheck className="w-3 h-3" />
+                                            Verifiziert
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 gap-1">
+                                            <MailX className="w-3 h-3" />
+                                            Offen
+                                        </Badge>
+                                    )}
+                                </TableCell>
+                                <TableCell>
                                     <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                                         Aktiv
                                     </Badge>
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <div className="flex items-center justify-end gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="gap-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                                            disabled={passwordEmailSending[user.id]}
+                                            onClick={() => {
+                                                if (confirm(`Neues Passwort generieren und an "${user.email}" senden?`)) {
+                                                    handleSendPasswordEmail(user.id);
+                                                }
+                                            }}
+                                            title="Passwort per E-Mail senden"
+                                        >
+                                            {passwordEmailSending[user.id] ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                            ) : (
+                                                <Send className="w-3 h-3" />
+                                            )}
+                                            Passwort senden
+                                        </Button>
                                         <Select 
                                             defaultValue={user.role} 
                                             onValueChange={(val) => updateUserMutation.mutate({ id: user.id, data: { role: val } })}
@@ -284,6 +333,25 @@ export default function UserManagement() {
                                 </SelectContent>
                             </Select>
                         </div>
+                        <div className="flex items-center space-x-2 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+                            <Checkbox 
+                                id="sendPasswordEmail"
+                                checked={sendPasswordEmail}
+                                onCheckedChange={(checked) => setSendPasswordEmail(!!checked)}
+                            />
+                            <label 
+                                htmlFor="sendPasswordEmail" 
+                                className="text-sm font-medium leading-none cursor-pointer flex items-center gap-2"
+                            >
+                                <Mail className="w-4 h-4 text-indigo-600" />
+                                Zugangsdaten per E-Mail senden
+                            </label>
+                        </div>
+                        {sendPasswordEmail && (
+                            <p className="text-xs text-slate-500 pl-1">
+                                Ein neues Passwort wird generiert und zusammen mit einem E-Mail-Verifizierungslink an die angegebene Adresse gesendet.
+                            </p>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button variant="outline" onClick={() => setShowCreateDialog(false)}>

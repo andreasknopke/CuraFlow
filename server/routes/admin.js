@@ -657,6 +657,44 @@ router.post('/run-migrations', async (req, res, next) => {
         results.push({ migration: 'add_must_change_password', status: 'error', error: err.message });
       }
     }
+
+    // Migration 3: Add email_verified columns to app_users
+    try {
+      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
+      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
+      results.push({ migration: 'add_email_verified', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_email_verified', status: 'skipped', reason: 'Columns already exist' });
+      } else {
+        results.push({ migration: 'add_email_verified', status: 'error', error: err.message });
+      }
+    }
+
+    // Migration 4: Create EmailVerification table
+    try {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS EmailVerification (
+          id VARCHAR(36) PRIMARY KEY,
+          user_id VARCHAR(36) NOT NULL,
+          token VARCHAR(64) NOT NULL UNIQUE,
+          type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
+          status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
+          created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          verified_date TIMESTAMP NULL,
+          expires_date TIMESTAMP NULL,
+          INDEX idx_token (token),
+          INDEX idx_user_id (user_id)
+        )
+      `);
+      results.push({ migration: 'create_email_verification_table', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
+        results.push({ migration: 'create_email_verification_table', status: 'skipped', reason: 'Table already exists' });
+      } else {
+        results.push({ migration: 'create_email_verification_table', status: 'error', error: err.message });
+      }
+    }
     
     console.log(`[Migrations] Executed by ${req.user?.email}:`, results);
     
@@ -686,8 +724,27 @@ router.get('/migration-status', async (req, res, next) => {
         name: 'add_must_change_password', 
         description: 'Passwort-Änderung erzwingen',
         applied: columnNames.includes('must_change_password')
+      },
+      { 
+        name: 'add_email_verified', 
+        description: 'E-Mail-Verifizierung für Benutzer',
+        applied: columnNames.includes('email_verified') && columnNames.includes('email_verified_date')
       }
     ];
+
+    // Check EmailVerification table
+    let emailVerificationTableExists = false;
+    try {
+      const [tables] = await db.execute(`SHOW TABLES LIKE 'EmailVerification'`);
+      emailVerificationTableExists = tables.length > 0;
+    } catch (err) {
+      // ignore
+    }
+    migrations.push({
+      name: 'create_email_verification_table',
+      description: 'E-Mail-Verifizierung & Passwort-Versand Tabelle',
+      applied: emailVerificationTableExists
+    });
     
     res.json({
       migrations,
