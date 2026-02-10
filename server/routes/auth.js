@@ -822,40 +822,45 @@ router.post('/send-password-email', authMiddleware, adminMiddleware, async (req,
   }
 });
 
-// ============ SMTP TEST (Admin only) ============
+// ============ EMAIL TEST (Admin only) ============
 router.post('/test-smtp', authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const { getTransporter } = await import('../utils/email.js');
-    const transport = getTransporter();
-    if (!transport) {
+    const { sendEmail, getEmailProviderInfo } = await import('../utils/email.js');
+    const providerInfo = getEmailProviderInfo();
+    
+    if (!providerInfo.configured) {
       return res.status(500).json({ 
-        error: 'SMTP nicht konfiguriert', 
-        detail: 'SMTP_HOST, SMTP_USER und SMTP_PASS müssen als Umgebungsvariablen gesetzt sein.',
+        error: 'E-Mail nicht konfiguriert', 
+        detail: 'Entweder RESEND_API_KEY (empfohlen für Railway) oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
+        provider: providerInfo,
         env: { 
+          RESEND_API_KEY: process.env.RESEND_API_KEY ? '✓' : '✗',
           SMTP_HOST: process.env.SMTP_HOST ? '✓' : '✗',
           SMTP_PORT: process.env.SMTP_PORT || '(default)',
           SMTP_USER: process.env.SMTP_USER ? '✓' : '✗',
           SMTP_PASS: process.env.SMTP_PASS ? '✓' : '✗',
-          SMTP_FROM: process.env.SMTP_FROM || '(default: SMTP_USER)',
+          SMTP_FROM: process.env.SMTP_FROM || '(not set)',
         }
       });
     }
     
-    await transport.verify();
-    
-    // Send a test email to the admin
-    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
-    await transport.sendMail({
-      from,
+    // Send a test email via the configured provider
+    const result = await sendEmail({
       to: req.user.email,
-      subject: '[CuraFlow] SMTP Test erfolgreich',
-      text: `SMTP-Konfiguration funktioniert!\n\nHost: ${process.env.SMTP_HOST}\nPort: ${process.env.SMTP_PORT}\nUser: ${process.env.SMTP_USER}\nFrom: ${from}\n\nZeitstempel: ${new Date().toISOString()}`,
+      subject: '[CuraFlow] E-Mail Test erfolgreich',
+      text: `E-Mail-Konfiguration funktioniert!\n\nProvider: ${providerInfo.provider}\nFrom: ${providerInfo.from}\n\nZeitstempel: ${new Date().toISOString()}`,
+      html: `<div style="font-family:sans-serif;max-width:500px;margin:0 auto;padding:20px">
+        <h2 style="color:#16a34a">✅ E-Mail Test erfolgreich!</h2>
+        <p>Provider: <strong>${providerInfo.provider}</strong></p>
+        <p>From: ${providerInfo.from}</p>
+        <p style="color:#64748b;font-size:13px">Zeitstempel: ${new Date().toISOString()}</p>
+      </div>`,
     });
     
-    res.json({ success: true, message: `Test-Email an ${req.user.email} gesendet`, smtp: { host: process.env.SMTP_HOST, port: process.env.SMTP_PORT } });
+    res.json({ success: true, message: `Test-Email an ${req.user.email} gesendet`, provider: providerInfo, result });
   } catch (error) {
-    console.error('[Auth] SMTP test failed:', error.message, error.code);
-    res.status(500).json({ error: `SMTP-Test fehlgeschlagen: ${error.message}`, code: error.code });
+    console.error('[Auth] Email test failed:', error.message, error.code);
+    res.status(500).json({ error: `E-Mail-Test fehlgeschlagen: ${error.message}`, code: error.code, provider: (await import('../utils/email.js')).getEmailProviderInfo() });
   }
 });
 
