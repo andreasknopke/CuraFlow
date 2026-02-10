@@ -51,7 +51,7 @@ export default function SystemLogs() {
 
     const { data: logs = [], isLoading, refetch } = useQuery({
         queryKey: ['systemLogs'],
-        queryFn: () => db.SystemLog.list('-created_date', 500),
+        queryFn: () => db.SystemLog.list({ sort: '-created_date', limit: 500 }),
         staleTime: 2 * 60 * 1000, // 2 Minuten
         cacheTime: 5 * 60 * 1000, // 5 Minuten
         refetchOnWindowFocus: false,
