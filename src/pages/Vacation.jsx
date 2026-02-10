@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, getYear, startOfYear, endOfYear, eachDayOfInterval, isSameDay } from 'date-fns';
@@ -261,7 +262,7 @@ export default function VacationPage() {
         queryClient.invalidateQueries(['shifts', selectedYear]);
     },
     onError: (err) => {
-        alert("Konflikt: " + (err.response?.data?.message || err.message));
+        toast.error("Konflikt: " + (err.response?.data?.message || err.message));
         queryClient.invalidateQueries(['shifts', selectedYear]);
     }
   });
@@ -429,6 +430,18 @@ export default function VacationPage() {
       
       if (type === 'range') {
           executeRangeAction(data.days, data.targetDoctorId, deleteIds, overwriteIds, keepOptionalServices);
+      } else if (type === 'single') {
+          // Single click: delete existing + create new
+          const idsToDelete = data.existingShifts.map(s => s.id);
+          bulkDeleteShiftMutation.mutate(idsToDelete, {
+              onSuccess: () => {
+                  createShiftMutation.mutate({
+                      date: data.dateStr,
+                      position: data.activeType,
+                      doctor_id: data.targetDoctorId
+                  });
+              }
+          });
       }
       
       setConflictDialog({ open: false, conflicts: [], doctorName: '', pendingAction: null });
@@ -511,20 +524,23 @@ export default function VacationPage() {
              queryClient.invalidateQueries(['shifts']);
          });
     } else {
-         // Work shift exists. Priority Check? 
-         // Usually Absence overwrites Work.
-         if (confirm(`Mitarbeiter ist bereits eingeteilt als "${existingShift.position}". Überschreiben?`)) {
-             const idsToDelete = existingShifts.map(s => s.id);
-             bulkDeleteShiftMutation.mutate(idsToDelete, {
-                 onSuccess: () => {
-                     createShiftMutation.mutate({
-                        date: dateStr,
-                        position: activeType,
-                        doctor_id: targetDoctorId
-                    });
-                 }
-             });
-         }
+         // Work shift exists - show ConflictDialog
+         const conflict = {
+             date: dateStr,
+             existingShift,
+             newPosition: activeType,
+             conflictType: categorizeConflict(activeType, existingShift.position)
+         };
+         const doctor = doctors.find(d => d.id === targetDoctorId);
+         setConflictDialog({
+             open: true,
+             conflicts: [conflict],
+             doctorName: doctor?.name || 'Unbekannt',
+             pendingAction: {
+                 type: 'single',
+                 data: { dateStr, activeType, targetDoctorId, existingShifts }
+             }
+         });
     }
   };
 

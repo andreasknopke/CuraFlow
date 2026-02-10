@@ -1189,6 +1189,46 @@ export default function ScheduleBoard() {
       return limitWarnings.length > 0 ? limitWarnings.join('\n') : null;
   };
 
+  // Prüfung beim Drag in Abwesenheit: Warnung falls bestehende Einträge gelöscht werden
+  // Kombiniert Dienst-Lösch-Warnung + Staffing-Check in einem Dialog
+  const checkAbsenceDropConflicts = (doctorId, dateStr, position, onProceed, excludeShiftId = null) => {
+      const doctor = doctors.find(d => d.id === doctorId);
+      const shiftsToDelete = currentWeekShifts.filter(s =>
+          s.doctor_id === doctorId &&
+          s.date === dateStr &&
+          s.id !== excludeShiftId &&
+          !absencePositions.includes(s.position)
+      );
+
+      // Staffing-Warnungen prüfen
+      const result = validate(doctorId, dateStr, position, {});
+      const staffingWarnings = result.warnings.filter(w =>
+          w.includes('Mindestbesetzung') || w.includes('anwesend')
+      );
+
+      if (shiftsToDelete.length === 0 && staffingWarnings.length === 0) {
+          return false; // Kein Konflikt
+      }
+
+      const messages = [];
+      if (shiftsToDelete.length > 0) {
+          const entries = shiftsToDelete.map(s => `"${s.position}"`).join(', ');
+          messages.push(`Bestehende Einträge werden gelöscht: ${entries}`);
+      }
+      messages.push(...staffingWarnings);
+
+      requestOverride({
+          blockers: messages,
+          warnings: [],
+          doctorId,
+          doctorName: doctor?.name,
+          date: dateStr,
+          position,
+          onConfirm: onProceed
+      });
+      return true; // Blockiert - warte auf Override
+  };
+
   const handleVoiceCommand = async (command) => {
       console.log("Received Voice Command:", command);
 
@@ -1974,10 +2014,10 @@ export default function ScheduleBoard() {
                  createShiftMutation.mutate({ date: dateStr, position, doctor_id: doctorId, order: newOrder });
              };
 
-             // Staffing-Prüfung mit Override-Möglichkeit
-             const hasStaffingWarning = checkStaffingWithOverride(doctorId, dateStr, position, executeAbsenceCreation);
-             if (hasStaffingWarning) {
-                 console.log('Staffing warning - waiting for override decision');
+             // Staffing- und Konfliktprüfung mit Override-Möglichkeit
+             const hasConflicts = checkAbsenceDropConflicts(doctorId, dateStr, position, executeAbsenceCreation);
+             if (hasConflicts) {
+                 console.log('Absence drop conflicts - waiting for override decision');
                  return;
              }
 
@@ -2208,9 +2248,9 @@ export default function ScheduleBoard() {
                      });
                  };
 
-                 // Staffing-Prüfung mit Override-Möglichkeit
-                 const hasStaffingWarning = checkStaffingWithOverride(shift.doctor_id, newDateStr, newPosition, executeCopyAbsence);
-                 if (hasStaffingWarning) return;
+                 // Staffing- und Konfliktprüfung mit Override-Möglichkeit
+                 const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeCopyAbsence);
+                 if (hasConflicts) return;
                  
                  // Keine Warnung - direkt ausführen
                  executeCopyAbsence();
@@ -2310,9 +2350,9 @@ export default function ScheduleBoard() {
                  );
              };
 
-             // Staffing-Prüfung mit Override-Möglichkeit
-             const hasStaffingWarning = checkStaffingWithOverride(shift.doctor_id, newDateStr, newPosition, executeMoveToAbsence);
-             if (hasStaffingWarning) return;
+             // Staffing- und Konfliktprüfung mit Override-Möglichkeit
+             const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeMoveToAbsence, shiftId);
+             if (hasConflicts) return;
              
              // Keine Warnung - direkt ausführen
              executeMoveToAbsence();
@@ -2355,7 +2395,9 @@ export default function ScheduleBoard() {
              };
 
              // Konfliktprüfung mit Override-Möglichkeit
-             const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeMove);
+             // shiftId als excludeShiftId übergeben: Wenn der Shift selbst eine Abwesenheit ist
+             // und verschoben wird, soll diese nicht als Konflikt gewertet werden
+             const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, shiftId, executeMove);
              if (hasConflict) return;
              
              // Kein Konflikt - direkt ausführen
