@@ -507,14 +507,14 @@ export default function MyDashboardPage() {
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
                     {/* Email Notification Switch in Header */}
                     {selectedDoctor && (
-                        <div className="flex items-center justify-between gap-3 bg-white p-2 rounded-lg border shadow-sm" title={(!selectedDoctor.email && !selectedDoctor.google_email) ? "Keine E-Mail-Adresse in den Mitarbeiter-Stammdaten hinterlegt." : "E-Mail Benachrichtigungen aktivieren"}>
+                        <div className="flex items-center justify-between gap-3 bg-white p-2 rounded-lg border shadow-sm" title={!selectedDoctor.email ? "Keine Benachrichtigungs-E-Mail-Adresse in den Mitarbeiter-Stammdaten hinterlegt." : "E-Mail Benachrichtigungen aktivieren"}>
                             <div className="flex items-center gap-2">
                                 <Mail className={`w-4 h-4 ${selectedDoctor.receive_email_notifications ? 'text-indigo-600' : 'text-slate-400'}`} />
                                 <span className="text-sm font-medium text-slate-700">E-Mail Alerts</span>
                             </div>
                             <Switch 
                                 checked={selectedDoctor.receive_email_notifications || false}
-                                disabled={!selectedDoctor.email && !selectedDoctor.google_email}
+                                disabled={!selectedDoctor.email}
                                 onCheckedChange={(checked) => updateDoctorMutation.mutate({ receive_email_notifications: checked })}
                             />
                         </div>

@@ -492,5 +492,24 @@ export const base44 = {
       // Analytics deaktiviert
       console.log('[Analytics disabled]');
     }
+  },
+  // Integrations-Kompatibilitätsschicht für base44.integrations.Core.*
+  integrations: {
+    Core: {
+      SendEmail: async ({ to, subject, body, html }) => {
+        return api.request('/api/staff/send-email', {
+          method: 'POST',
+          body: JSON.stringify({ to, subject, body, html }),
+        });
+      },
+      UploadFile: async ({ file }) => {
+        console.warn('[Integrations] UploadFile ist im Railway-Backend nicht verfügbar');
+        throw new Error('UploadFile ist im Railway-Backend nicht verfügbar. ICS-Dateien werden stattdessen als E-Mail-Anhang versendet.');
+      },
+      InvokeLLM: async (params) => {
+        console.warn('[Integrations] InvokeLLM ist im Railway-Backend nicht verfügbar');
+        throw new Error('InvokeLLM ist im Railway-Backend nicht verfügbar');
+      }
+    }
   }
 };

@@ -4,7 +4,8 @@ import { db } from '@/api/client';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Settings, ShieldCheck } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Settings, ShieldCheck, Mail } from 'lucide-react';
 
 export default function AdminSettings() {
     const queryClient = useQueryClient();
@@ -38,6 +39,7 @@ export default function AdminSettings() {
     });
 
     const wishDeadlineMonths = settings.find(s => s.key === 'wish_deadline_months')?.value || '';
+    const wishReminderEnabled = settings.find(s => s.key === 'wish_reminder_email_enabled')?.value === 'true';
     
     // Approval Settings
     const approvalSettingRaw = settings.find(s => s.key === 'wish_approval_rules')?.value;
@@ -91,6 +93,30 @@ export default function AdminSettings() {
                             />
                             <span className="text-sm text-slate-600">Monate im Voraus</span>
                         </div>
+
+                        {wishDeadlineMonths && parseInt(wishDeadlineMonths) > 0 && (
+                            <div className="flex items-start gap-3 pt-3 mt-3 border-t border-slate-200">
+                                <Checkbox
+                                    id="wish-reminder-email"
+                                    checked={wishReminderEnabled}
+                                    onCheckedChange={(checked) => updateSettingMutation.mutate({ 
+                                        key: 'wish_reminder_email_enabled', 
+                                        value: checked ? 'true' : 'false' 
+                                    })}
+                                    className="mt-0.5"
+                                />
+                                <div className="space-y-1">
+                                    <Label htmlFor="wish-reminder-email" className="cursor-pointer flex items-center gap-2 text-slate-900">
+                                        <Mail className="w-4 h-4 text-blue-500" />
+                                        Erinnerungsmail 2 Wochen vor Sperrtermin
+                                    </Label>
+                                    <p className="text-xs text-slate-500">
+                                        Alle Mitarbeiter werden automatisch per E-Mail erinnert, ihre Dienstwünsche einzutragen, 
+                                        14 Tage bevor der Eintragungszeitraum abläuft.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

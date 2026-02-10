@@ -75,6 +75,7 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
 
+  // Kalender/Dienstplan-Emails gehen an die Kalender-Adresse
   const doctorEmail = doctor?.google_email || doctor?.email;
 
   const generateAbsenceICS = (absences) => {
@@ -122,37 +123,18 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
               day: '2-digit'
           });
 
-          // Generate and upload ICS file
-          let icsUrl = "";
-          try {
-              const icsContent = generateAbsenceICS(futureAbsences);
-              const icsFile = new File([icsContent], `abwesenheiten_${doctor.initials || doctor.id}.ics`, { type: "text/calendar" });
-              const uploadRes = await base44.integrations.Core.UploadFile({ file: icsFile });
-              icsUrl = uploadRes.file_url;
-          } catch (uploadError) {
-              console.error("Failed to upload ICS", uploadError);
-          }
-
           const dateList = futureAbsences.map(s => {
               const date = new Date(s.date);
               return `- ${formatter.format(date)}: ${s.position}`;
           }).join('\n');
 
           let body = `Hallo ${doctor.name},\n\n`;
-          
-          if (icsUrl) {
-              body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-              body += `📅 KALENDER-DATEI ZUM IMPORTIEREN:\n`;
-              body += `${icsUrl}\n`;
-              body += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-          }
-          
           body += `Hier ist eine Übersicht deiner eingetragenen Abwesenheiten:\n\n${dateList}`;
-          body += `\n\nViele Grüße,\nDein Dienstplaner`;
+          body += `\n\nViele Grüße,\nDein CuraFlow-System`;
 
           await base44.integrations.Core.SendEmail({
               to: doctorEmail.trim(),
-              subject: `[RadioPlan] Deine Abwesenheiten`,
+              subject: `[CuraFlow] Deine Abwesenheiten`,
               body: body
           });
 

@@ -119,13 +119,13 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="google_email">Google Email (für Kalender-Sync)</Label>
+            <Label htmlFor="google_email">E-Mail (für Kalender / Dienstplan)</Label>
             <Input
               id="google_email"
               type="email"
               value={formData.google_email || ''}
               onChange={(e) => setFormData({ ...formData, google_email: e.target.value })}
-              placeholder="arzt@gmail.com"
+              placeholder="name@klinik.de"
             />
           </div>
 

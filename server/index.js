@@ -18,6 +18,7 @@ import calendarRouter from './routes/calendar.js';
 import voiceRouter from './routes/voice.js';
 import adminRouter from './routes/admin.js';
 import atomicRouter from './routes/atomic.js';
+import { checkAndSendWishReminders } from './utils/wishReminder.js';
 
 // Load environment variables
 dotenv.config();
@@ -242,6 +243,24 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('⚠️  Table initialization error:', err.message);
   }
+
+  // Daily wish reminder check (runs every hour, checks internally if today is reminder day)
+  const WISH_REMINDER_INTERVAL = 60 * 60 * 1000; // 1 hour
+  setInterval(async () => {
+    try {
+      // Only trigger between 7:00 and 8:59 UTC to avoid duplicate sends
+      const hour = new Date().getUTCHours();
+      if (hour < 7 || hour > 8) return;
+
+      const result = await checkAndSendWishReminders(db, 'cron-default');
+      if (result.sent) {
+        console.log(`📧 [Cron] Wish reminders sent for ${result.targetMonth}: ${result.sentCount} emails`);
+      }
+    } catch (err) {
+      console.error('❌ [Cron] Wish reminder check failed:', err.message);
+    }
+  }, WISH_REMINDER_INTERVAL);
+  console.log('⏰ Wish reminder cron enabled (hourly check, sends between 7-9 UTC)');
 });
 
 // Auto-create essential tables if missing

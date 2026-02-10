@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
+import { checkAndSendWishReminders } from '../utils/wishReminder.js';
 
 const router = express.Router();
 
@@ -1360,6 +1361,36 @@ router.post('/db-tokens/test', async (req, res, next) => {
         error: 'Verbindung fehlgeschlagen: ' + connErr.message
       });
     }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ===== WISH REMINDER - Manual trigger or cron check =====
+router.post('/wish-reminder/check', async (req, res, next) => {
+  try {
+    // Inline auth check (same pattern as /tools)
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Nicht autorisiert' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    let user;
+    try {
+      user = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: 'Token ungültig' });
+    }
+
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin-Berechtigung erforderlich' });
+    }
+
+    const dbPool = req.db || db;
+    const result = await checkAndSendWishReminders(dbPool, 'manual');
+
+    res.json(result);
   } catch (error) {
     next(error);
   }
