@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
-import { sendEmail, getTransporter } from '../utils/email.js';
+import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -43,10 +43,10 @@ router.post('/send-email', async (req, res, next) => {
       return res.status(400).json({ error: 'Empfänger (to) und Betreff (subject) erforderlich' });
     }
 
-    // Check SMTP configuration
-    if (!getTransporter()) {
+    // Check email configuration (Brevo or SMTP)
+    if (!getEmailProviderInfo().configured) {
       return res.status(503).json({ 
-        error: 'SMTP nicht konfiguriert. Bitte SMTP_HOST, SMTP_USER, SMTP_PASS als Umgebungsvariablen setzen.' 
+        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
       });
     }
 
@@ -70,10 +70,10 @@ router.post('/schedule-notifications', async (req, res, next) => {
     const { year, month } = req.body;
     const dbPool = req.db || db;
 
-    // Check SMTP
-    if (!getTransporter()) {
+    // Check email configuration (Brevo or SMTP)
+    if (!getEmailProviderInfo().configured) {
       return res.status(503).json({ 
-        error: 'SMTP nicht konfiguriert. Bitte SMTP_HOST, SMTP_USER, SMTP_PASS als Umgebungsvariablen setzen.' 
+        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
       });
     }
 
@@ -261,9 +261,9 @@ router.post('/shift-notification', async (req, res, next) => {
       return res.status(400).json({ error: 'doctor_id erforderlich' });
     }
 
-    // Check SMTP
-    if (!getTransporter()) {
-      return res.status(503).json({ error: 'SMTP nicht konfiguriert' });
+    // Check email configuration (Brevo or SMTP)
+    if (!getEmailProviderInfo().configured) {
+      return res.status(503).json({ error: 'E-Mail nicht konfiguriert' });
     }
 
     // Benachrichtigungen gehen an die Benachrichtigungs-E-Mail-Adresse (email)

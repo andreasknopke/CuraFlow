@@ -716,9 +716,8 @@ router.post('/send-password-email', authMiddleware, adminMiddleware, async (req,
       [passwordHash, userId]
     );
 
-    // Build the login URL
-    const appBaseUrl = process.env.APP_URL || process.env.VITE_APP_URL || 
-      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:5173');
+    // Build the login URL (FRONTEND_URL must point to the frontend, not the backend API)
+    const appBaseUrl = process.env.FRONTEND_URL || process.env.APP_URL || process.env.VITE_APP_URL || 'https://curaflow-production.up.railway.app';
 
     // Also create email verification token
     const verifyToken = crypto.randomBytes(32).toString('hex');
@@ -1001,8 +1000,8 @@ export async function sendPasswordEmailForUser(userId, adminEmail) {
     [passwordHash, userId]
   );
 
-  const appBaseUrl = process.env.APP_URL || process.env.VITE_APP_URL || 
-    (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : 'http://localhost:5173');
+  // FRONTEND_URL must point to the frontend, not the backend API
+  const appBaseUrl = process.env.FRONTEND_URL || process.env.APP_URL || process.env.VITE_APP_URL || 'https://curaflow-production.up.railway.app';
 
   // Email verification
   const emailVerifyToken = crypto.randomBytes(32).toString('hex');
