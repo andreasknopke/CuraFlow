@@ -10,6 +10,10 @@ import nodemailer from 'nodemailer';
  */
 let transporter = null;
 
+export function resetTransporter() {
+  transporter = null;
+}
+
 export function getTransporter() {
   if (transporter) return transporter;
 
@@ -32,17 +36,19 @@ export function getTransporter() {
     port,
     secure,
     auth: { user, pass },
+    // Port 587: use STARTTLS upgrade; Port 465: direct TLS
+    ...(!secure && { requireTLS: true }),
     tls: {
-      // Do not fail on invalid/self-signed certs (common with shared hosting)
+      // Do not fail on invalid/self-signed certs (common with shared hosting like ALL-INKL)
       rejectUnauthorized: false,
       minVersion: 'TLSv1.2'
     },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 30000,
   });
 
-  console.log(`[Email] SMTP Transporter konfiguriert: ${host}:${port}`);
+  console.log(`[Email] SMTP Transporter konfiguriert: ${host}:${port} (secure=${secure}, STARTTLS=${!secure})`);
   return transporter;
 }
 
