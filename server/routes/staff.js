@@ -320,4 +320,83 @@ router.get('/email-status', async (req, res) => {
   });
 });
 
+// ===== WISH REMINDER ACK STATUS (Admin) =====
+// Returns per-doctor acknowledgment status for a given target month
+router.get('/wish-reminder-status', async (req, res, next) => {
+  try {
+    const { month } = req.query; // e.g. "2025-03"
+    const dbPool = req.db || db;
+
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      return res.status(400).json({ error: 'Parameter month im Format YYYY-MM erforderlich' });
+    }
+
+    // 1. Get all doctors
+    const [doctors] = await dbPool.execute(
+      "SELECT id, name, initials, email FROM Doctor ORDER BY name"
+    );
+
+    // 2. Get ack records for this target month
+    const [acks] = await dbPool.execute(
+      "SELECT doctor_id, status, acknowledged_date FROM WishReminderAck WHERE target_month = ?",
+      [month]
+    );
+    const ackMap = {};
+    for (const a of acks) {
+      ackMap[a.doctor_id] = { status: a.status, acknowledged_date: a.acknowledged_date };
+    }
+
+    // 3. Get wish requests for this target month (to see who has actual wishes)
+    const monthStart = `${month}-01`;
+    const [y, m] = month.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+    const [wishes] = await dbPool.execute(
+      "SELECT DISTINCT doctor_id FROM WishRequest WHERE date >= ? AND date <= ?",
+      [monthStart, monthEnd]
+    );
+    const hasWishes = new Set(wishes.map(w => w.doctor_id));
+
+    // 4. Build response
+    const result = doctors.map(doc => {
+      const ack = ackMap[doc.id];
+      let reminderStatus;
+      
+      if (hasWishes.has(doc.id)) {
+        reminderStatus = 'has_wishes'; // Has submitted wishes → no ack needed
+      } else if (ack?.status === 'acknowledged') {
+        reminderStatus = 'acknowledged'; // Clicked "no wishes"
+      } else if (ack?.status === 'sent') {
+        reminderStatus = 'sent'; // Reminder sent but no response yet
+      } else {
+        reminderStatus = 'no_reminder'; // No reminder sent (e.g. no email, or not yet due)
+      }
+
+      return {
+        doctor_id: doc.id,
+        name: doc.name,
+        initials: doc.initials,
+        has_email: !!doc.email,
+        reminder_status: reminderStatus,
+        acknowledged_date: ack?.acknowledged_date || null,
+      };
+    });
+
+    // 5. Summary stats
+    const stats = {
+      total: doctors.length,
+      has_wishes: result.filter(r => r.reminder_status === 'has_wishes').length,
+      acknowledged: result.filter(r => r.reminder_status === 'acknowledged').length,
+      sent: result.filter(r => r.reminder_status === 'sent').length,
+      no_reminder: result.filter(r => r.reminder_status === 'no_reminder').length,
+    };
+
+    res.json({ month, doctors: result, stats });
+  } catch (error) {
+    console.error('[wish-reminder-status] Error:', error.message);
+    next(error);
+  }
+});
+
 export default router;

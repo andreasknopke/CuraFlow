@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import WishReminderStatus from '@/components/wishlist/WishReminderStatus';
 import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, XCircle, Loader2, Check, X, ClipboardList, Mail, Trash2, ChevronDown } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -553,7 +554,22 @@ export default function MyDashboardPage() {
                 />
             )}
 
-
+            {/* Wish Reminder Status (Admin, compact) */}
+            {isAdmin && (() => {
+                // Show status for next 3 months
+                const now = new Date();
+                const months = [0, 1, 2].map(i => {
+                    const d = addMonths(now, i + 1);
+                    return format(d, 'yyyy-MM');
+                });
+                return (
+                    <div className="space-y-1">
+                        {months.map(m => (
+                            <WishReminderStatus key={m} targetMonth={m} compact />
+                        ))}
+                    </div>
+                );
+            })()}
 
             {!selectedDoctorId ? (
                 <Card>
