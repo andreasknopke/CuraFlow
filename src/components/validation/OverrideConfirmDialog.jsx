@@ -119,14 +119,13 @@ export default function OverrideConfirmDialog({
                                 variant="outline" 
                                 onClick={handleCancel}
                             >
-                                OK
+                                Abbrechen
                             </Button>
                             <Button 
                                 onClick={handleOverrideClick}
-                                variant="secondary"
-                                className="bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300"
+                                className="bg-amber-600 hover:bg-amber-700"
                             >
-                                Override
+                                Fortfahren
                             </Button>
                         </DialogFooter>
                     </>
