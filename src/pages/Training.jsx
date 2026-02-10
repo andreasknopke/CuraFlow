@@ -582,7 +582,7 @@ export default function TrainingPage() {
                 </Button>
                </div>
                
-               {viewMode === 'single' && (
+               {viewMode === 'single' ? (
                <>
                    <div className="w-px h-8 bg-slate-200 mx-2" />
 
@@ -608,7 +608,7 @@ export default function TrainingPage() {
                        </div>
                    )}
                </>
-               )}
+               ) : null}
             </div>
         </div>
       </div>
