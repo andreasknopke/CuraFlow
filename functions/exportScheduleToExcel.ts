@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
         const start = new Date(startDate);
         const end = new Date(endDate);
 
-        const [weekShifts, doctors, workplaces, weekNotes, colorSettings] = await Promise.all([
+        const [weekShifts, doctors, workplaces, weekNotes, colorSettings, workplaceTimeslots] = await Promise.all([
             queryData(base44, 'ShiftEntry', 'filter', {
                 query: { date: { $gte: startDate, $lte: endDate } },
                 limit: 5000
@@ -86,8 +86,22 @@ Deno.serve(async (req) => {
                 query: { date: { $gte: startDate, $lte: endDate } },
                 limit: 1000
             }),
-            queryData(base44, 'ColorSetting', 'list', { limit: 500 })
+            queryData(base44, 'ColorSetting', 'list', { limit: 500 }),
+            queryData(base44, 'WorkplaceTimeslot', 'list', { limit: 500 })
         ]);
+
+        // Helper: Format timeslot time range (e.g. "08:00-12:00")
+        const formatTimeslotTime = (timeslotId) => {
+            if (!timeslotId) return '';
+            const ts = workplaceTimeslots.find(t => t.id === timeslotId);
+            if (!ts || (!ts.start_time && !ts.end_time)) return '';
+            const start = ts.start_time ? ts.start_time.substring(0, 5) : '';
+            const end = ts.end_time ? ts.end_time.substring(0, 5) : '';
+            if (start && end) return ` (${start}-${end})`;
+            if (start) return ` (ab ${start})`;
+            if (end) return ` (bis ${end})`;
+            return '';
+        };
 
         // Helpers for colors
         const getColor = (name, category) => {
@@ -163,7 +177,9 @@ Deno.serve(async (req) => {
             if (cellShifts.length === 0) return "";
             return cellShifts.map(s => {
                 const doc = doctors.find(d => d.id === s.doctor_id);
-                return doc ? (doc.initials || doc.name) : "?";
+                const name = doc ? (doc.initials || doc.name) : "?";
+                const time = formatTimeslotTime(s.timeslot_id);
+                return name + time;
             }).join(", ");
         };
 

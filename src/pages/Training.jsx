@@ -539,7 +539,7 @@ export default function TrainingPage() {
     <div className="container mx-auto max-w-7xl">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Ausbildungskalender</h1>
+          <h1 className="text-3xl font-bold text-slate-900">Rotationsplaner</h1>
           <p className="text-slate-500 mt-1">Rotationsplanung für das Team</p>
         </div>
 
@@ -549,7 +549,7 @@ export default function TrainingPage() {
                     variant="outline" 
                     onClick={() => setShowTransferDialog(true)}
                     className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    title={viewMode === 'single' && selectedDoctor ? `Rotationen von ${selectedDoctor.name} in den Wochenplan übertragen` : 'Alle Ausbildungsrotationen in den Wochenplan übertragen'}
+                    title={viewMode === 'single' && selectedDoctor ? `Rotationen von ${selectedDoctor.name} in den Wochenplan übertragen` : 'Alle Rotationen in den Wochenplan übertragen'}
                 >
                     <ArrowRightToLine className="w-4 h-4" />
                     {viewMode === 'single' && selectedDoctor ? `${selectedDoctor.name} übertragen` : 'In Wochenplan übertragen'}
