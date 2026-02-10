@@ -608,7 +608,9 @@ export default function TrainingPage() {
                        </div>
                    )}
                </>
-               ) : null}
+               ) : (
+                   <div className="w-[200px]" />
+               )}
             </div>
         </div>
       </div>
