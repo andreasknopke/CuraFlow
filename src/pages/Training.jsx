@@ -549,10 +549,10 @@ export default function TrainingPage() {
                     variant="outline" 
                     onClick={() => setShowTransferDialog(true)}
                     className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    title="Ausbildungsrotationen in den Wochenplan übertragen"
+                    title={viewMode === 'single' && selectedDoctor ? `Rotationen von ${selectedDoctor.name} in den Wochenplan übertragen` : 'Alle Ausbildungsrotationen in den Wochenplan übertragen'}
                 >
                     <ArrowRightToLine className="w-4 h-4" />
-                    In Wochenplan übertragen
+                    {viewMode === 'single' && selectedDoctor ? `${selectedDoctor.name} übertragen` : 'In Wochenplan übertragen'}
                 </Button>
             )}
             
@@ -684,8 +684,8 @@ export default function TrainingPage() {
       <TransferToSchedulerDialog
           open={showTransferDialog}
           onOpenChange={setShowTransferDialog}
-          rotations={rotations}
-          doctors={doctors}
+          rotations={viewMode === 'single' && selectedDoctorId ? rotations.filter(r => r.doctor_id === selectedDoctorId) : rotations}
+          doctors={viewMode === 'single' && selectedDoctor ? [selectedDoctor] : doctors}
           allShifts={allShifts}
           staffingPlanEntries={staffingPlanEntries}
           workplaces={workplaces}
