@@ -397,22 +397,22 @@ export default function TeamRoleSettings() {
                                                                 <div className="flex-1">
                                                                     <div className="flex items-center flex-wrap gap-1">
                                                                         <span className="font-medium">{role.name}</span>
-                                                                        {role.is_specialist && (
+                                                                        {role.is_specialist === true && (
                                                                             <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700">
                                                                                 Facharzt
                                                                             </Badge>
                                                                         )}
-                                                                        {role.can_do_foreground_duty && (
+                                                                        {role.can_do_foreground_duty === true && (
                                                                             <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">
                                                                                 VG
                                                                             </Badge>
                                                                         )}
-                                                                        {role.can_do_background_duty && (
+                                                                        {role.can_do_background_duty === true && (
                                                                             <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700">
                                                                                 HG
                                                                             </Badge>
                                                                         )}
-                                                                        {role.excluded_from_statistics && (
+                                                                        {role.excluded_from_statistics === true && (
                                                                             <Badge variant="secondary" className="text-xs bg-slate-100 text-slate-500">
                                                                                 Kein Stat
                                                                             </Badge>

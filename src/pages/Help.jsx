@@ -74,7 +74,7 @@ export default function HelpPage() {
                         <TabsTrigger value="wishes" className="px-4 py-2 text-sm"><Heart className="w-4 h-4 mr-1" />Wunschkiste</TabsTrigger>
                         <TabsTrigger value="staff" className="px-4 py-2 text-sm"><Users className="w-4 h-4 mr-1" />Team</TabsTrigger>
                         <TabsTrigger value="statistics" className="px-4 py-2 text-sm"><BarChart3 className="w-4 h-4 mr-1" />Statistik</TabsTrigger>
-                        <TabsTrigger value="training" className="px-4 py-2 text-sm"><GraduationCap className="w-4 h-4 mr-1" />Weiterbildung</TabsTrigger>
+                        <TabsTrigger value="training" className="px-4 py-2 text-sm"><GraduationCap className="w-4 h-4 mr-1" />Rotationsplaner</TabsTrigger>
                         <TabsTrigger value="dashboard" className="px-4 py-2 text-sm"><LayoutDashboard className="w-4 h-4 mr-1" />Dashboard</TabsTrigger>
                         <TabsTrigger value="admin" className="px-4 py-2 text-sm"><Settings className="w-4 h-4 mr-1" />Admin</TabsTrigger>
                     </TabsList>
@@ -675,38 +675,50 @@ export default function HelpPage() {
                     </Card>
                 </TabsContent>
 
-                {/* ==================== WEITERBILDUNG ==================== */}
+                {/* ==================== ROTATIONSPLANER ==================== */}
                 <TabsContent value="training" className="space-y-6">
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-xl">
                                 <GraduationCap className="w-6 h-6 text-indigo-600" />
-                                Weiterbildungsplaner
+                                Rotationsplaner
                             </CardTitle>
                             <CardDescription>
-                                Planung und Dokumentation von Weiterbildungsrotationen.
+                                Planung und Dokumentation von Rotationen durch verschiedene Arbeitsplätze.
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <p className="text-sm text-slate-600">
-                                Der Weiterbildungsplaner dient zur langfristigen Planung von Rotationen für Assistenzärzte durch verschiedene Modalitäten (CT, MRT, Angio etc.).
+                                Der Rotationsplaner dient zur langfristigen Planung von Rotationen für Teammitglieder durch verschiedene Modalitäten (CT, MRT, Angio etc.). Es gibt zwei Ansichten: <strong>Einzelansicht</strong> (ein Mitarbeiter) und <strong>Jahresübersicht</strong> (alle auf einen Blick).
                             </p>
                             <div className="grid gap-4 md:grid-cols-2">
                                 <div className="p-4 bg-slate-50 rounded-lg border">
-                                    <h4 className="font-semibold mb-2">Rotation eintragen</h4>
+                                    <h4 className="font-semibold mb-2">Einzelansicht</h4>
                                     <p className="text-sm text-slate-600">
-                                        Wählen Sie eine <strong>Modalität</strong>, klicken Sie auf den <strong>Starttag</strong>, dann auf den <strong>Endtag</strong>. Der Zeitraum wird farblich markiert.
+                                        Wählen Sie einen <strong>Mitarbeiter</strong> und eine <strong>Modalität</strong>. Klicken Sie auf den <strong>Starttag</strong>, dann auf den <strong>Endtag</strong>. Der Zeitraum wird farblich markiert.
+                                    </p>
+                                </div>
+                                <div className="p-4 bg-slate-50 rounded-lg border">
+                                    <h4 className="font-semibold mb-2">Jahresübersicht</h4>
+                                    <p className="text-sm text-slate-600">
+                                        Zeigt alle Mitarbeiter und deren Rotationen im gesamten Jahr. Per <strong>Drag</strong> können Bereiche selektiert oder gelöscht werden.
                                     </p>
                                 </div>
                                 <div className="p-4 bg-slate-50 rounded-lg border">
                                     <h4 className="font-semibold mb-2">Rotationen löschen</h4>
                                     <p className="text-sm text-slate-600">
-                                        Wählen Sie den <strong>Lösch-Modus</strong> und markieren Sie den zu löschenden Bereich.
+                                        Wählen Sie den <strong>Lösch-Modus</strong> und markieren Sie den zu löschenden Bereich. Bestehende Rotationen werden passend zugeschnitten.
+                                    </p>
+                                </div>
+                                <div className="p-4 bg-slate-50 rounded-lg border">
+                                    <h4 className="font-semibold mb-2">Transfer in den Wochenplan</h4>
+                                    <p className="text-sm text-slate-600">
+                                        Über den <strong>Transfer-Button</strong> können geplante Rotationen als Einträge in den Wochenplan übertragen werden. Wählen Sie Zeitraum (Tag/Woche/ab Datum), optional mit Überschreiben bestehender Einträge.
                                     </p>
                                 </div>
                             </div>
                             <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-900">
-                                <strong>Integration:</strong> Die geplanten Rotationen werden im Wochenplan mit einem Marker angezeigt, sodass Sie bei der täglichen Planung sehen, wer aktuell in welcher Rotation ist.
+                                <strong>Integration:</strong> Die geplanten Rotationen werden im Wochenplan mit einem farbigen Marker angezeigt, sodass Sie bei der täglichen Planung sehen, wer aktuell in welcher Rotation ist. Beim Transfer wird automatisch geprüft, ob ein Mitarbeiter abwesend ist oder Konflikte bestehen.
                             </div>
                         </CardContent>
                     </Card>
