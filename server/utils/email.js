@@ -4,13 +4,13 @@ import nodemailer from 'nodemailer';
  * Email sending utility with multiple provider support.
  * 
  * Priority order:
- *   1. RESEND_API_KEY → sends via Resend HTTP API (works on Railway/serverless)
+ *   1. BREVO_API_KEY → sends via Brevo HTTP API (works on Railway/serverless)
  *   2. SMTP_HOST + SMTP_USER + SMTP_PASS → sends via SMTP (works locally / on VPS)
  * 
- * Resend setup (recommended for Railway):
- *   - Sign up at https://resend.com (free: 100 emails/day)
- *   - Add & verify your domain (or use onboarding@resend.dev for testing)
- *   - Set RESEND_API_KEY env var on Railway
+ * Brevo setup (recommended for Railway):
+ *   - Sign up at https://www.brevo.com (free: 300 emails/day)
+ *   - Add & verify your sender domain/email
+ *   - Set BREVO_API_KEY env var on Railway
  *   - Optionally set SMTP_FROM for the sender address
  * 
  * SMTP setup (for local dev or VPS):
@@ -18,35 +18,51 @@ import nodemailer from 'nodemailer';
  *   - Optional: SMTP_FROM, SMTP_SECURE
  */
 
-// ==================== Resend HTTP API ====================
+// ==================== Brevo HTTP API ====================
 
-async function sendViaResend({ to, subject, text, html, attachments }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.SMTP_FROM || process.env.RESEND_FROM || 'CuraFlow <noreply@resend.dev>';
+async function sendViaBrevo({ to, subject, text, html, attachments }) {
+  const apiKey = process.env.BREVO_API_KEY;
+  const fromRaw = process.env.SMTP_FROM || process.env.BREVO_FROM || 'CuraFlow <noreply@curaflow.de>';
 
-  const payload = {
-    from,
-    to: Array.isArray(to) ? to : [to],
-    subject,
-    ...(html && { html }),
-    ...(text && !html && { text }),
-    ...(text && html && { text }),
-  };
-
-  // Resend supports attachments too
-  if (attachments && attachments.length > 0) {
-    payload.attachments = attachments.map(a => ({
-      filename: a.filename,
-      content: a.content ? (typeof a.content === 'string' ? a.content : a.content.toString('base64')) : undefined,
-      path: a.path,
-    })).filter(a => a.content || a.path);
+  // Parse "Name <email>" format
+  let senderName = 'CuraFlow';
+  let senderEmail = 'noreply@curaflow.de';
+  const match = fromRaw.match(/^(.+?)\s*<(.+?)>$/);
+  if (match) {
+    senderName = match[1].trim();
+    senderEmail = match[2].trim();
+  } else if (fromRaw.includes('@')) {
+    senderEmail = fromRaw.trim();
+    senderName = senderEmail.split('@')[0];
   }
 
-  const response = await fetch('https://api.resend.com/emails', {
+  // Build recipients array
+  const recipients = (Array.isArray(to) ? to : [to]).map(email => ({ email: email.trim() }));
+
+  const payload = {
+    sender: { name: senderName, email: senderEmail },
+    to: recipients,
+    subject,
+    ...(html && { htmlContent: html }),
+    ...(text && { textContent: text }),
+  };
+
+  // Brevo supports attachments as base64
+  if (attachments && attachments.length > 0) {
+    payload.attachment = attachments.map(a => ({
+      name: a.filename,
+      content: a.content
+        ? (typeof a.content === 'string' ? a.content : a.content.toString('base64'))
+        : undefined,
+    })).filter(a => a.content);
+  }
+
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${apiKey}`,
+      'api-key': apiKey,
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
     },
     body: JSON.stringify(payload),
   });
@@ -54,13 +70,13 @@ async function sendViaResend({ to, subject, text, html, attachments }) {
   const result = await response.json();
 
   if (!response.ok) {
-    const errMsg = result.message || result.error || JSON.stringify(result);
-    console.error(`[Email/Resend] Fehler ${response.status}:`, errMsg);
-    throw new Error(`Resend API Fehler: ${errMsg}`);
+    const errMsg = result.message || result.code || JSON.stringify(result);
+    console.error(`[Email/Brevo] Fehler ${response.status}:`, errMsg);
+    throw new Error(`Brevo API Fehler: ${errMsg}`);
   }
 
-  console.log(`[Email/Resend] Gesendet an ${to}: ${result.id}`);
-  return { messageId: result.id, provider: 'resend' };
+  console.log(`[Email/Brevo] Gesendet an ${to}: ${result.messageId}`);
+  return { messageId: result.messageId, provider: 'brevo' };
 }
 
 // ==================== SMTP (Nodemailer) ====================
@@ -133,16 +149,16 @@ async function sendViaSMTP({ to, subject, text, html, attachments }) {
 // ==================== Unified sendEmail ====================
 
 /**
- * Send an email. Automatically uses Resend (HTTP) if RESEND_API_KEY is set,
+ * Send an email. Automatically uses Brevo (HTTP) if BREVO_API_KEY is set,
  * otherwise falls back to SMTP.
  * 
  * @param {object} opts - { to, subject, text, html, attachments }
  * @returns {Promise<object>} send result with messageId and provider
  */
 export async function sendEmail({ to, subject, text, html, attachments }) {
-  // Prefer Resend on serverless/Railway (SMTP ports often blocked)
-  if (process.env.RESEND_API_KEY) {
-    return sendViaResend({ to, subject, text, html, attachments });
+  // Prefer Brevo on serverless/Railway (SMTP ports often blocked)
+  if (process.env.BREVO_API_KEY) {
+    return sendViaBrevo({ to, subject, text, html, attachments });
   }
 
   // Fall back to SMTP
@@ -154,11 +170,11 @@ export async function sendEmail({ to, subject, text, html, attachments }) {
  * Useful for diagnostics / admin UI.
  */
 export function getEmailProviderInfo() {
-  if (process.env.RESEND_API_KEY) {
+  if (process.env.BREVO_API_KEY) {
     return {
-      provider: 'resend',
+      provider: 'brevo',
       configured: true,
-      from: process.env.SMTP_FROM || process.env.RESEND_FROM || 'noreply@resend.dev',
+      from: process.env.SMTP_FROM || process.env.BREVO_FROM || 'noreply@curaflow.de',
       note: 'HTTP API – funktioniert auf Railway',
     };
   }
@@ -172,5 +188,5 @@ export function getEmailProviderInfo() {
       note: 'SMTP – funktioniert nicht auf Railway (Ports blockiert)',
     };
   }
-  return { provider: 'none', configured: false, note: 'Weder RESEND_API_KEY noch SMTP konfiguriert' };
+  return { provider: 'none', configured: false, note: 'Weder BREVO_API_KEY noch SMTP konfiguriert' };
 }

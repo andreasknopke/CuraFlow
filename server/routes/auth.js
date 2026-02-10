@@ -831,10 +831,10 @@ router.post('/test-smtp', authMiddleware, adminMiddleware, async (req, res) => {
     if (!providerInfo.configured) {
       return res.status(500).json({ 
         error: 'E-Mail nicht konfiguriert', 
-        detail: 'Entweder RESEND_API_KEY (empfohlen für Railway) oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
+        detail: 'Entweder BREVO_API_KEY (empfohlen für Railway) oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
         provider: providerInfo,
         env: { 
-          RESEND_API_KEY: process.env.RESEND_API_KEY ? '✓' : '✗',
+          BREVO_API_KEY: process.env.BREVO_API_KEY ? '✓' : '✗',
           SMTP_HOST: process.env.SMTP_HOST ? '✓' : '✗',
           SMTP_PORT: process.env.SMTP_PORT || '(default)',
           SMTP_USER: process.env.SMTP_USER ? '✓' : '✗',
