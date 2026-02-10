@@ -32,6 +32,14 @@ export function getTransporter() {
     port,
     secure,
     auth: { user, pass },
+    tls: {
+      // Do not fail on invalid/self-signed certs (common with shared hosting)
+      rejectUnauthorized: false,
+      minVersion: 'TLSv1.2'
+    },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 
   console.log(`[Email] SMTP Transporter konfiguriert: ${host}:${port}`);

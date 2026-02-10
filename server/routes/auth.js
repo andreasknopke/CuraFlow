@@ -736,10 +736,10 @@ router.post('/send-password-email', authMiddleware, adminMiddleware, async (req,
       console.warn('[Auth] EmailVerification table may not exist yet:', tableErr.message);
     }
 
-    const apiBaseUrl = (process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN 
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-      : 'http://localhost:3000').replace(/\/+$/, '');
-    const verifyUrl = `${apiBaseUrl}/api/auth/verify-email?token=${verifyToken}`;
+    const apiBaseUrl = process.env.API_URL 
+      || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+      || 'http://localhost:3000';
+    const verifyUrl = `${apiBaseUrl.replace(/\/+$/, '')}/api/auth/verify-email?token=${verifyToken}`;
 
     // Send email with temp password
     const subject = '[CuraFlow] Ihr Zugang wurde eingerichtet';
@@ -811,7 +811,51 @@ router.post('/send-password-email', authMiddleware, adminMiddleware, async (req,
 
     res.json({ success: true, message: `Passwort-Email an ${user.email} gesendet` });
   } catch (error) {
-    next(error);
+    console.error('[Auth] send-password-email error:', error.message, error.code, error.responseCode);
+    // Return detailed error for admin debugging
+    const detail = error.code === 'ECONNREFUSED' ? 'SMTP-Server nicht erreichbar' 
+      : error.code === 'EAUTH' ? 'SMTP-Authentifizierung fehlgeschlagen (SMTP_USER/SMTP_PASS prüfen)'
+      : error.code === 'ESOCKET' ? 'SMTP-Verbindungsfehler (Port/SSL prüfen)'
+      : error.responseCode ? `SMTP-Fehler ${error.responseCode}: ${error.response}`
+      : error.message;
+    res.status(500).json({ error: `E-Mail-Versand fehlgeschlagen: ${detail}` });
+  }
+});
+
+// ============ SMTP TEST (Admin only) ============
+router.post('/test-smtp', authMiddleware, adminMiddleware, async (req, res) => {
+  try {
+    const { getTransporter } = await import('../utils/email.js');
+    const transport = getTransporter();
+    if (!transport) {
+      return res.status(500).json({ 
+        error: 'SMTP nicht konfiguriert', 
+        detail: 'SMTP_HOST, SMTP_USER und SMTP_PASS müssen als Umgebungsvariablen gesetzt sein.',
+        env: { 
+          SMTP_HOST: process.env.SMTP_HOST ? '✓' : '✗',
+          SMTP_PORT: process.env.SMTP_PORT || '(default)',
+          SMTP_USER: process.env.SMTP_USER ? '✓' : '✗',
+          SMTP_PASS: process.env.SMTP_PASS ? '✓' : '✗',
+          SMTP_FROM: process.env.SMTP_FROM || '(default: SMTP_USER)',
+        }
+      });
+    }
+    
+    await transport.verify();
+    
+    // Send a test email to the admin
+    const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+    await transport.sendMail({
+      from,
+      to: req.user.email,
+      subject: '[CuraFlow] SMTP Test erfolgreich',
+      text: `SMTP-Konfiguration funktioniert!\n\nHost: ${process.env.SMTP_HOST}\nPort: ${process.env.SMTP_PORT}\nUser: ${process.env.SMTP_USER}\nFrom: ${from}\n\nZeitstempel: ${new Date().toISOString()}`,
+    });
+    
+    res.json({ success: true, message: `Test-Email an ${req.user.email} gesendet`, smtp: { host: process.env.SMTP_HOST, port: process.env.SMTP_PORT } });
+  } catch (error) {
+    console.error('[Auth] SMTP test failed:', error.message, error.code);
+    res.status(500).json({ error: `SMTP-Test fehlgeschlagen: ${error.message}`, code: error.code });
   }
 });
 
@@ -970,10 +1014,10 @@ export async function sendPasswordEmailForUser(userId, adminEmail) {
     console.warn('[Auth] Could not write EmailVerification record:', e.message);
   }
 
-  const apiBaseUrl = (process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN 
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-    : 'http://localhost:3000').replace(/\/+$/, '');
-  const verifyUrl = `${apiBaseUrl}/api/auth/verify-email?token=${emailVerifyToken}`;
+  const apiBaseUrl = process.env.API_URL 
+    || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null)
+    || 'http://localhost:3000';
+  const verifyUrl = `${apiBaseUrl.replace(/\/+$/, '')}/api/auth/verify-email?token=${emailVerifyToken}`;
 
   const subject = '[CuraFlow] Ihr Zugang wurde eingerichtet';
   const text = [
