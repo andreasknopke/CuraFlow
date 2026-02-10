@@ -11,7 +11,6 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
   const { toast } = useToast();
   const [isChanging, setIsChanging] = useState(false);
   const [form, setForm] = useState({
-    currentPassword: 'CuraFlow2026!',
     newPassword: '',
     confirmPassword: ''
   });
@@ -37,18 +36,9 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
       return;
     }
 
-    if (form.newPassword === 'CuraFlow2026!') {
-      toast({
-        title: "Fehler",
-        description: "Bitte wählen Sie ein anderes Passwort als das Standardpasswort",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsChanging(true);
     try {
-      await api.changePassword(form.currentPassword, form.newPassword);
+      await api.forceChangePassword(form.newPassword);
       
       toast({
         title: "Erfolg",

@@ -98,6 +98,13 @@ class APIClient {
     });
   }
 
+  async forceChangePassword(newPassword) {
+    return this.request('/api/auth/force-change-password', {
+      method: 'POST',
+      body: JSON.stringify({ newPassword }),
+    });
+  }
+
   async changeEmail(newEmail, password) {
     return this.request('/api/auth/change-email', {
       method: 'POST',

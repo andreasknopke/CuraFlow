@@ -326,6 +326,44 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
   }
 });
 
+// ============ FORCE CHANGE PASSWORD (no current password required) ============
+// Only allowed when the user's must_change_password flag is set
+router.post('/force-change-password', authMiddleware, async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    
+    if (!newPassword) {
+      return res.status(400).json({ error: 'Neues Passwort erforderlich' });
+    }
+    
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+    }
+    
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+    
+    // Only allow this endpoint if must_change_password is set
+    if (!rows[0].must_change_password) {
+      return res.status(403).json({ error: 'Passwortänderung über diesen Weg nicht erlaubt. Bitte nutzen Sie die normale Passwort-Änderung.' });
+    }
+    
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await db.execute(
+      'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
+      [newHash, req.user.sub]
+    );
+    
+    console.log(`[Auth] Force password change completed for user ${req.user.email}`);
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============ CHANGE EMAIL ============
 router.post('/change-email', authMiddleware, async (req, res, next) => {
   try {
