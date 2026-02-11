@@ -448,11 +448,14 @@ export default function ServiceStaffingPage() {
                                         const dateStr = format(day, 'yyyy-MM-dd');
                                         const absentIds = absencesByDate[dateStr] || new Set();
                                         const availableDoctors = doctors.filter(doc => {
+                                            // Always keep the currently assigned doctor in the list
+                                            if (doc.id === assignedDoctorId) return true;
+                                            
                                             // Exclude roles that are excluded from statistics (e.g. Nicht-Radiologe)
                                             if (statisticsExcludedRoles.includes(doc.role)) return false;
                                             
                                             // Check absence (allow if currently assigned to this slot)
-                                            if (absentIds.has(doc.id) && doc.id !== assignedDoctorId) return false;
+                                            if (absentIds.has(doc.id)) return false;
 
                                             // Check role restrictions for specific services
                                             const allowedRoles = ALLOWED_ROLES[type.id];
