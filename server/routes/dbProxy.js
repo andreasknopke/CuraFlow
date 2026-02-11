@@ -140,7 +140,18 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
     } catch (alterErr) {
       // Columns might already exist
     }
-    
+
+    // Fix for existing tenants: ALTER TABLE sets can_do_background_duty=FALSE for all rows.
+    // Update known roles to correct values if they still have the wrong defaults.
+    try {
+      await dbPool.execute(`UPDATE TeamRole SET can_do_background_duty = TRUE WHERE name IN ('Chefarzt', 'Oberarzt', 'Facharzt') AND can_do_background_duty = FALSE`);
+      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE WHERE name IN ('Chefarzt', 'Oberarzt', 'Nicht-Radiologe') AND can_do_foreground_duty = TRUE AND is_specialist = TRUE`);
+      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE WHERE name = 'Nicht-Radiologe' AND can_do_foreground_duty = TRUE`);
+      await dbPool.execute(`UPDATE TeamRole SET excluded_from_statistics = TRUE WHERE name = 'Nicht-Radiologe' AND excluded_from_statistics = FALSE`);
+    } catch (updateErr) {
+      console.warn('TeamRole defaults migration update skipped:', updateErr.message);
+    }
+
     // Seed defaults if empty
     const [existing] = await dbPool.execute('SELECT COUNT(*) as cnt FROM TeamRole');
     if (existing[0].cnt === 0) {
