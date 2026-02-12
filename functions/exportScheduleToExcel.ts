@@ -126,12 +126,14 @@ Deno.serve(async (req) => {
         const staticAbsences = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
         const sortedWorkplaces = workplaces.sort((a, b) => (a.order || 0) - (b.order || 0));
 
+        // Each row is { display: string (shown in Excel), key: string (DB lookup) }
+        const toRow = (name) => ({ display: name, key: name });
         const sections = [
-            { title: "Abwesenheiten", rows: staticAbsences },
-            { title: "Dienste", rows: sortedWorkplaces.filter(w => w.category === "Dienste").map(w => w.name) },
-            { title: "Rotationen", rows: sortedWorkplaces.filter(w => w.category === "Rotationen").map(w => w.name) },
-            { title: "Demonstrationen & Konsile", rows: sortedWorkplaces.filter(w => w.category === "Demonstrationen & Konsile").map(w => w.name) },
-            { title: "Sonstiges", rows: ["Sonstiges"] }
+            { title: "Abwesenheiten", rows: staticAbsences.map(toRow) },
+            { title: "Dienste", rows: sortedWorkplaces.filter(w => w.category === "Dienste").map(w => toRow(w.name)) },
+            { title: "Rotationen", rows: sortedWorkplaces.filter(w => w.category === "Rotationen").map(w => toRow(w.name)) },
+            { title: "Demonstrationen & Konsile", rows: sortedWorkplaces.filter(w => w.category === "Demonstrationen & Konsile").map(w => ({ display: w.time ? `${w.name} ${w.time} Uhr` : w.name, key: w.name })) },
+            { title: "Sonstiges", rows: [toRow("Sonstiges")] }
         ];
 
         // Prepare Days
@@ -207,26 +209,23 @@ Deno.serve(async (req) => {
             });
 
             // Data Rows
-            section.rows.forEach(rowName => {
-                if (hiddenRows.includes(rowName)) return;
+            section.rows.forEach(row => {
+                const rowKey = row.key;      // DB name for lookups
+                const rowDisplay = row.display; // Display name for Excel cell
+                if (hiddenRows.includes(rowKey)) return;
 
-                const rowData = { pos: rowName };
+                const rowData = { pos: rowDisplay };
                 days.forEach((day, i) => {
-                    rowData[`day_${i}`] = findContent(rowName, format(day, 'yyyy-MM-dd'));
+                    rowData[`day_${i}`] = findContent(rowKey, format(day, 'yyyy-MM-dd'));
                 });
                 
                 const r = sheet.addRow(rowData);
-                if (rowName !== "Sonstiges") {
+                if (rowKey !== "Sonstiges") {
                     r.height = 20;
                 }
 
                 // Style first cell (Row Label)
                 const firstCell = r.getCell(1);
-                
-                // Determine color for position
-                // Try position specific color first, else section color (lighter)
-                // Logic matching frontend: Position color if set, else section color with opacity.
-                // Here we just use section color as base if no position color, maybe slightly lighter manually or just same.
                 
                 // For Excel, let's use:
                 // 1. Specific Position Color
@@ -234,11 +233,11 @@ Deno.serve(async (req) => {
                 let posColors = { bg: secColors.bg, text: secColors.text };
                 
                 // Check specific position color settings
-                const posSetting = colorSettings.find(s => s.name === rowName && s.category === 'position');
+                const posSetting = colorSettings.find(s => s.name === rowKey && s.category === 'position');
                 if (posSetting) {
                     posColors = { bg: getArgb(posSetting.bg_color), text: getArgb(posSetting.text_color) };
-                } else if (DEFAULT_COLORS.positions[rowName]) {
-                     const def = DEFAULT_COLORS.positions[rowName];
+                } else if (DEFAULT_COLORS.positions[rowKey]) {
+                     const def = DEFAULT_COLORS.positions[rowKey];
                      posColors = { bg: getArgb(def.bg), text: getArgb(def.text) };
                 }
 
