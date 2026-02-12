@@ -11,6 +11,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Palette, RefreshCcw, Save } from 'lucide-react';
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from './TeamRoleSettings';
 
+// Default color palette for rotations (used when no custom color is set)
+const ROTATION_COLOR_PALETTE = [
+    { bg: "#3b82f6", text: "#ffffff" }, // blue-500
+    { bg: "#6366f1", text: "#ffffff" }, // indigo-500
+    { bg: "#22c55e", text: "#ffffff" }, // green-500
+    { bg: "#ec4899", text: "#ffffff" }, // pink-500
+    { bg: "#ef4444", text: "#ffffff" }, // red-500
+    { bg: "#64748b", text: "#ffffff" }, // slate-500
+    { bg: "#f59e0b", text: "#ffffff" }, // amber-500
+    { bg: "#a855f7", text: "#ffffff" }, // purple-500
+    { bg: "#06b6d4", text: "#ffffff" }, // cyan-500
+    { bg: "#14b8a6", text: "#ffffff" }, // teal-500
+];
+
 // Default configurations matching current hardcoded values
 export const DEFAULT_COLORS = {
     sections: {
@@ -26,6 +40,13 @@ export const DEFAULT_COLORS = {
         "Facharzt": { bg: "#dcfce7", text: "#166534" }, // green-100, green-800
         "Assistenzarzt": { bg: "#fef9c3", text: "#854d0e" }, // yellow-100, yellow-800
         "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" } // gray-200, gray-800
+    },
+    absences: {
+        "Urlaub": { bg: "#22c55e", text: "#ffffff" }, // green-500
+        "Frei": { bg: "#64748b", text: "#ffffff" }, // slate-500
+        "Krank": { bg: "#ef4444", text: "#ffffff" }, // red-500
+        "Dienstreise": { bg: "#3b82f6", text: "#ffffff" }, // blue-500
+        "Nicht verfügbar": { bg: "#f97316", text: "#ffffff" }, // orange-500
     },
     // Keeping positions for fallback compatibility, though not editable in UI anymore
     positions: {
@@ -46,6 +67,14 @@ export const DEFAULT_COLORS = {
         "Röntgen": { bg: "#a7f3d0", text: "#064e3b" },
     }
 };
+
+/**
+ * Get the default rotation color for a given index (used when no custom color is set).
+ * Cycles through the palette.
+ */
+export function getDefaultRotationColor(index) {
+    return ROTATION_COLOR_PALETTE[index % ROTATION_COLOR_PALETTE.length];
+}
 
 export default function ColorSettingsDialog() {
     const queryClient = useQueryClient();
@@ -84,7 +113,7 @@ export default function ColorSettingsDialog() {
         createOrUpdateMutation.mutate(newData);
     };
 
-    const getColor = (name, category) => {
+    const getColor = (name, category, index) => {
         const setting = colorSettings.find(s => s.name === name && s.category === category);
         if (setting) return { bg: setting.bg_color, text: setting.text_color };
         
@@ -92,6 +121,8 @@ export default function ColorSettingsDialog() {
         if (category === 'section') return DEFAULT_COLORS.sections[name] || { bg: "#e2e8f0", text: "#1e293b" };
         if (category === 'role') return DEFAULT_COLORS.roles[name] || { bg: "#f3f4f6", text: "#1f2937" };
         if (category === 'position') return DEFAULT_COLORS.positions[name] || { bg: "#f1f5f9", text: "#1e293b" };
+        if (category === 'rotation') return getDefaultRotationColor(index ?? 0);
+        if (category === 'absence') return DEFAULT_COLORS.absences[name] || { bg: "#64748b", text: "#ffffff" };
         return { bg: "#ffffff", text: "#000000" };
     };
 
@@ -109,6 +140,8 @@ export default function ColorSettingsDialog() {
     const { roleNames: dynamicRoles } = useTeamRoles();
     const rolesList = dynamicRoles.length > 0 ? dynamicRoles : DEFAULT_TEAM_ROLES.map(r => r.name);
     const positionsList = workplaces.map(w => w.name).sort();
+    const rotationsList = workplaces.filter(w => w.category === 'Rotationen').sort((a, b) => (a.order || 0) - (b.order || 0));
+    const absencesList = Object.keys(DEFAULT_COLORS.absences);
 
     return (
         <Dialog>
@@ -123,9 +156,11 @@ export default function ColorSettingsDialog() {
                 </DialogHeader>
                 
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-5">
                         <TabsTrigger value="roles">Funktionen</TabsTrigger>
                         <TabsTrigger value="positions">Arbeitsplätze</TabsTrigger>
+                        <TabsTrigger value="rotations">Rotationen</TabsTrigger>
+                        <TabsTrigger value="absences">Abwesenheiten</TabsTrigger>
                         <TabsTrigger value="sections">Bereiche</TabsTrigger>
                     </TabsList>
 
@@ -162,6 +197,34 @@ export default function ColorSettingsDialog() {
                                 name={name} 
                                 category="position" 
                                 colors={getColor(name, 'position')}
+                                onChange={handleColorChange}
+                                onReset={resetToDefault}
+                            />
+                        ))}
+                    </TabsContent>
+
+                    <TabsContent value="rotations" className="space-y-4 mt-4">
+                        {rotationsList.length === 0 ? (
+                            <p className="text-sm text-slate-500 italic">Keine Rotationen konfiguriert. Bitte fügen Sie unter "Arbeitsplätze" Einträge in der Kategorie "Rotationen" hinzu.</p>
+                        ) : rotationsList.map((wp, index) => (
+                            <ColorRow 
+                                key={wp.name} 
+                                name={wp.name} 
+                                category="rotation" 
+                                colors={getColor(wp.name, 'rotation', index)}
+                                onChange={handleColorChange}
+                                onReset={resetToDefault}
+                            />
+                        ))}
+                    </TabsContent>
+
+                    <TabsContent value="absences" className="space-y-4 mt-4">
+                        {absencesList.map(name => (
+                            <ColorRow 
+                                key={name} 
+                                name={name} 
+                                category="absence" 
+                                colors={getColor(name, 'absence')}
                                 onChange={handleColorChange}
                                 onReset={resetToDefault}
                             />

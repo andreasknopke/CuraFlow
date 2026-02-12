@@ -314,7 +314,15 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
           const dynamicColor = status ? getCustomColor(status) : null;
 
           if (customColors && customColors[status]) {
-              colorClass = `${customColors[status]} text-white hover:opacity-90`;
+              const colorVal = customColors[status];
+              if (typeof colorVal === 'object' && colorVal.backgroundColor) {
+                  // Inline style object (new format from Training & Vacation)
+                  style = colorVal;
+                  colorClass = "hover:opacity-90 font-medium";
+              } else if (typeof colorVal === 'string') {
+                  // Legacy Tailwind class string
+                  colorClass = `${colorVal} text-white hover:opacity-90`;
+              }
           } else if (dynamicColor) {
               style = dynamicColor;
               colorClass = "hover:opacity-90 font-medium";

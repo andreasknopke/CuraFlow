@@ -12,6 +12,7 @@ import TransferToSchedulerDialog from '@/components/training/TransferToScheduler
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useHolidays } from '@/components/useHolidays';
 import { useToast } from '@/components/ui/use-toast';
+import { getDefaultRotationColor } from '@/components/settings/ColorSettingsDialog';
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
@@ -97,6 +98,14 @@ export default function TrainingPage() {
   const { data: systemSettings = [] } = useQuery({
     queryKey: ['systemSettings'],
     queryFn: () => db.SystemSetting.list(),
+  });
+
+  // Fetch color settings from DB for custom rotation colors
+  const { data: colorSettings = [] } = useQuery({
+      queryKey: ['colorSettings'],
+      queryFn: () => db.ColorSetting.list(),
+      staleTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
   });
 
   const monthsPerRow = parseInt(systemSettings.find(s => s.key === 'vacation_months_per_row')?.value || '3');
@@ -487,13 +496,6 @@ export default function TrainingPage() {
   };
 
   const modalities = useMemo(() => {
-      // Default colors palette
-      const colorPalette = [
-          'bg-blue-500', 'bg-indigo-500', 'bg-green-500', 
-          'bg-pink-500', 'bg-red-500', 'bg-slate-500', 
-          'bg-amber-500', 'bg-purple-500', 'bg-cyan-500', 'bg-teal-500'
-      ];
-
       // Filter only Rotations
       const rotationWorkplaces = workplaces
           .filter(w => w.category === 'Rotationen')
@@ -503,22 +505,32 @@ export default function TrainingPage() {
       // Dynamische Modalitäten aus der aktuellen Mandanten-Datenbank
       // Kein Fallback mehr auf hardcodierte Werte
       if (rotationWorkplaces.length > 0) {
-          mods = rotationWorkplaces.map((w, i) => ({
-              id: w.name,
-              label: w.name,
-              color: colorPalette[i % colorPalette.length]
-          }));
+          mods = rotationWorkplaces.map((w, i) => {
+              // Check DB for custom color, fallback to palette
+              const dbColor = colorSettings.find(s => s.name === w.name && s.category === 'rotation');
+              const defaultColor = getDefaultRotationColor(i);
+              const bgColor = dbColor ? dbColor.bg_color : defaultColor.bg;
+              const textColor = dbColor ? dbColor.text_color : defaultColor.text;
+              return {
+                  id: w.name,
+                  label: w.name,
+                  bgColor,
+                  textColor,
+              };
+          });
           
           // Add Delete Option only if we have modalities
           mods.push({ 
               id: 'DELETE', 
               label: 'Löschen', 
-              color: 'bg-slate-100 text-slate-900 border-slate-200 hover:bg-red-50 hover:text-red-600' 
+              bgColor: '#f1f5f9',
+              textColor: '#0f172a',
+              isDelete: true,
           });
       }
       
       return mods;
-  }, [workplaces]);
+  }, [workplaces, colorSettings]);
 
   // If active modality is not in the list (e.g. after rename or initial load), set to first
   React.useEffect(() => {
@@ -530,7 +542,9 @@ export default function TrainingPage() {
   const customColors = useMemo(() => {
     const colors = {};
     modalities.forEach(m => {
-        colors[m.id] = m.color;
+        if (!m.isDelete) {
+            colors[m.id] = { backgroundColor: m.bgColor, color: m.textColor };
+        }
     });
     return colors;
   }, [modalities]);
@@ -622,10 +636,11 @@ export default function TrainingPage() {
                       key={type.id}
                       variant={activeModality === type.id ? "default" : "outline"}
                       onClick={() => !isReadOnly && setActiveModality(type.id)}
-                      className={`gap-2 shrink-0 ${activeModality === type.id ? type.color + ' hover:' + type.color + '/90 border-transparent' : 'hover:bg-slate-50'} ${isReadOnly ? 'cursor-default opacity-100 hover:bg-transparent' : ''}`}
+                      className={`gap-2 shrink-0 ${activeModality === type.id ? 'border-transparent shadow-sm' : 'hover:bg-slate-50'} ${isReadOnly ? 'cursor-default opacity-100 hover:bg-transparent' : ''}`}
+                      style={activeModality === type.id ? { backgroundColor: type.bgColor, color: type.textColor, borderColor: 'transparent' } : {}}
                       disabled={isReadOnly && activeModality !== type.id}
                   >
-                      {type.id === 'DELETE' ? <Eraser className="w-4 h-4" /> : <div className={`w-3 h-3 rounded-full ${type.color}`} />}
+                      {type.id === 'DELETE' ? <Eraser className="w-4 h-4" /> : <div className="w-3 h-3 rounded-full" style={{ backgroundColor: type.bgColor }} />}
                       {type.label}
                   </Button>
               ))

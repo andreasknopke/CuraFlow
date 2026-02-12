@@ -30,9 +30,15 @@ const TrainingOverviewCell = memo(({
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none";
 
     if (status && customColors[status]) {
-        // Use Tailwind bg class
-        const colorClass = customColors[status];
-        cellClass += ` ${colorClass} text-white`;
+        const colorVal = customColors[status];
+        if (typeof colorVal === 'object' && colorVal.backgroundColor) {
+            // Inline style object (new format: { backgroundColor, color })
+            style = colorVal;
+            cellClass += " hover:opacity-90 font-medium";
+        } else if (typeof colorVal === 'string') {
+            // Legacy Tailwind class string
+            cellClass += ` ${colorVal} text-white`;
+        }
     } else if (!status) {
         if (isHoliday) cellClass += " bg-blue-200/70";
         else if (isWknd) cellClass += " bg-slate-200/70";

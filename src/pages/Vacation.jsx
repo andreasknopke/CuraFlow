@@ -225,13 +225,24 @@ export default function VacationPage() {
 
   const customColors = React.useMemo(() => {
       const colors = {};
-      // Fill defaults first
-      Object.entries(DEFAULT_COLORS.positions).forEach(([pos, color]) => {
+      // Fill absence defaults first
+      Object.entries(DEFAULT_COLORS.absences).forEach(([pos, color]) => {
           colors[pos] = { backgroundColor: color.bg, color: color.text };
       });
-      // Override with settings
-      colorSettings.filter(s => s.category === 'position').forEach(s => {
+      // Also include position defaults for backwards compatibility
+      Object.entries(DEFAULT_COLORS.positions).forEach(([pos, color]) => {
+          if (!colors[pos]) {
+              colors[pos] = { backgroundColor: color.bg, color: color.text };
+          }
+      });
+      // Override with DB settings (check 'absence' category first, then 'position' for backwards compat)
+      colorSettings.filter(s => s.category === 'absence').forEach(s => {
           colors[s.name] = { backgroundColor: s.bg_color, color: s.text_color };
+      });
+      colorSettings.filter(s => s.category === 'position').forEach(s => {
+          if (!colors[s.name] || !colorSettings.some(cs => cs.name === s.name && cs.category === 'absence')) {
+              colors[s.name] = { backgroundColor: s.bg_color, color: s.text_color };
+          }
       });
       return colors;
   }, [colorSettings]);
@@ -544,14 +555,22 @@ export default function VacationPage() {
     }
   };
 
-  const absenceTypes = [
-      { id: 'Urlaub', label: 'Urlaub', color: 'bg-green-500' },
-      { id: 'Frei', label: 'Frei', color: 'bg-slate-500' },
-      { id: 'Krank', label: 'Krank', color: 'bg-red-500' },
-      { id: 'Dienstreise', label: 'Dienstreise', color: 'bg-blue-500' },
-      { id: 'Nicht verfügbar', label: 'Nicht verfügbar', color: 'bg-orange-500' },
-      { id: 'DELETE', label: 'Löschen', color: 'bg-slate-100 text-slate-900 border-slate-200 hover:bg-red-50 hover:text-red-600' },
-  ];
+  const absenceTypes = React.useMemo(() => {
+      const types = [
+          'Urlaub', 'Frei', 'Krank', 'Dienstreise', 'Nicht verfügbar'
+      ].map(id => {
+          const color = customColors[id] || { backgroundColor: '#64748b', color: '#ffffff' };
+          return { id, label: id, bgColor: color.backgroundColor, textColor: color.color };
+      });
+      types.push({ 
+          id: 'DELETE', 
+          label: 'Löschen', 
+          bgColor: '#f1f5f9',
+          textColor: '#0f172a',
+          isDelete: true,
+      });
+      return types;
+  }, [customColors]);
 
   return (
     <div className="container mx-auto max-w-7xl">
@@ -628,10 +647,11 @@ export default function VacationPage() {
                   key={type.id}
                   variant={activeType === type.id ? "default" : "outline"}
                   onClick={() => !isReadOnly && setActiveType(type.id)}
-                  className={`gap-2 ${activeType === type.id ? type.color + ' hover:' + type.color + '/90 border-transparent' : 'hover:bg-slate-50'} ${isReadOnly ? 'cursor-default opacity-100 hover:bg-transparent' : ''}`}
+                  className={`gap-2 ${activeType === type.id ? 'border-transparent shadow-sm' : 'hover:bg-slate-50'} ${isReadOnly ? 'cursor-default opacity-100 hover:bg-transparent' : ''}`}
+                  style={activeType === type.id ? { backgroundColor: type.bgColor, color: type.textColor, borderColor: 'transparent' } : {}}
                   disabled={isReadOnly && activeType !== type.id}
               >
-                  {type.id === 'DELETE' ? <Eraser className="w-4 h-4" /> : <div className={`w-3 h-3 rounded-full ${type.color}`} />}
+                  {type.id === 'DELETE' ? <Eraser className="w-4 h-4" /> : <div className="w-3 h-3 rounded-full" style={{ backgroundColor: type.bgColor }} />}
                   {type.label}
               </Button>
           ))}
@@ -648,6 +668,7 @@ export default function VacationPage() {
                 onRangeSelect={(s, e) => handleRangeSelection(s, e, selectedDoctorId)}
                 activeType={activeType}
                 rangeStart={rangeStart}
+                customColors={customColors}
                 isSchoolHoliday={isSchoolHoliday}
                 isPublicHoliday={isPublicHoliday}
             />
