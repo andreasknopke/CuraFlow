@@ -1716,11 +1716,36 @@ export default function ScheduleBoard() {
 
       // Helper to find occupying shift for services or demos (for replacement)
       const findOccupyingShift = (dateStr, position, ignoreShiftId = null) => {
-          // Enforce single slot for 'Dienste' and 'Demonstrationen & Konsile'
+          // Enforce single slot for categories that don't allow multiple assignments
           const targetWorkplace = workplaces.find(w => w.name === position);
-          const isSingleSlot = targetWorkplace && ['Dienste', 'Demonstrationen & Konsile'].includes(targetWorkplace.category);
-
-          if (!isSingleSlot) return null;
+          if (!targetWorkplace) return null;
+          
+          // Default categories with fixed behavior
+          if (targetWorkplace.category === 'Rotationen') return null; // always multi
+          if (targetWorkplace.category === 'Dienste' || targetWorkplace.category === 'Demonstrationen & Konsile') {
+              // Single slot
+              return currentWeekShifts.find(s => 
+                   s.date === dateStr && 
+                   s.position === position && 
+                   s.id !== ignoreShiftId
+              );
+          }
+          
+          // Custom categories: check allows_multiple setting
+          const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
+          let customCats = [];
+          if (catSetting?.value) {
+              try {
+                  const parsed = JSON.parse(catSetting.value);
+                  customCats = Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string'
+                      ? parsed.map(name => ({ name, allows_multiple: true }))
+                      : parsed;
+              } catch {}
+          }
+          const catConfig = customCats.find(c => c.name === targetWorkplace.category);
+          const allowsMultiple = catConfig?.allows_multiple ?? true;
+          
+          if (allowsMultiple) return null;
 
           return currentWeekShifts.find(s => 
                s.date === dateStr && 

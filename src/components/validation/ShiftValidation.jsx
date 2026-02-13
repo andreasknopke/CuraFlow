@@ -36,10 +36,37 @@ export class ShiftValidator {
         this.getDoctorQualIds = getDoctorQualIds || (() => []);
         this.wpQualsByWorkplace = wpQualsByWorkplace || {};
         
+        // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
+        this._customCategories = this._parseCustomCategories();
+        
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
         this.limits = this._parseLimits();
         this.staffingMinimums = this._parseStaffingMinimums();
+    }
+
+    _parseCustomCategories() {
+        const setting = this.systemSettings.find(s => s.key === 'workplace_categories');
+        if (!setting?.value) return [];
+        try {
+            const parsed = JSON.parse(setting.value);
+            if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+                return parsed.map(name => ({ name, allows_multiple: true }));
+            }
+            return parsed;
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Prüft ob eine Kategorie Mehrfachbesetzung erlaubt
+     */
+    _categoryAllowsMultiple(categoryName) {
+        if (categoryName === 'Rotationen') return true;
+        if (categoryName === 'Dienste' || categoryName === 'Demonstrationen & Konsile') return false;
+        const custom = this._customCategories.find(c => c.name === categoryName);
+        return custom?.allows_multiple ?? true;
     }
 
     _parseAbsenceRules() {
@@ -199,10 +226,10 @@ export class ShiftValidator {
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
-        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Diensten/Demos,
+        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot-Kategorien,
         // da dort der neue Eintrag den bestehenden ersetzt)
-        const isSingleSlot = workplace.category === 'Dienste' || workplace.category === 'Demonstrationen & Konsile';
-        if (dateStr && !isSingleSlot) {
+        const allowsMultiple = this._categoryAllowsMultiple(workplace.category);
+        if (dateStr && allowsMultiple) {
             const otherAssignments = this.shifts.filter(s =>
                 s.position === position &&
                 s.date === dateStr &&

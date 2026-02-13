@@ -31,6 +31,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     const [isRenaming, setIsRenaming] = useState(false);
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
+    const [newCategoryAllowsMultiple, setNewCategoryAllowsMultiple] = useState(true);
 
     const { data: workplaces = [], isLoading } = useQuery({
         queryKey: ['workplaces'],
@@ -43,11 +44,17 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     });
 
     // Get custom categories from settings
+    // Supports both legacy format (string[]) and new format (object[] with allows_multiple)
     const customCategories = useMemo(() => {
         const setting = settings.find(s => s.key === 'workplace_categories');
         if (setting?.value) {
             try {
-                return JSON.parse(setting.value);
+                const parsed = JSON.parse(setting.value);
+                // Migrate legacy format: string[] → object[]
+                if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+                    return parsed.map(name => ({ name, allows_multiple: true }));
+                }
+                return parsed;
             } catch {
                 return [];
             }
@@ -55,10 +62,13 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
         return [];
     }, [settings]);
 
+    // Category names for tab display and lookup
+    const customCategoryNames = useMemo(() => customCategories.map(c => c.name), [customCategories]);
+
     // All available categories (defaults + custom)
     const allCategories = useMemo(() => {
-        return [...DEFAULT_CATEGORIES, ...customCategories];
-    }, [customCategories]);
+        return [...DEFAULT_CATEGORIES, ...customCategoryNames];
+    }, [customCategoryNames]);
 
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }) => {
@@ -142,13 +152,14 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
             return;
         }
         
-        const newCategories = [...customCategories, trimmedName];
+        const newCategories = [...customCategories, { name: trimmedName, allows_multiple: newCategoryAllowsMultiple }];
         await updateSettingMutation.mutateAsync({ 
             key: 'workplace_categories', 
             value: JSON.stringify(newCategories) 
         });
         
         setNewCategoryName("");
+        setNewCategoryAllowsMultiple(true);
         setShowAddCategory(false);
         setActiveTab(trimmedName);
         toast.success(`Kategorie "${trimmedName}" wurde erstellt`);
@@ -168,7 +179,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
             }
         }
         
-        const newCategories = customCategories.filter(c => c !== categoryName);
+        const newCategories = customCategories.filter(c => c.name !== categoryName);
         await updateSettingMutation.mutateAsync({ 
             key: 'workplace_categories', 
             value: JSON.stringify(newCategories) 
@@ -224,7 +235,15 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     };
 
     // Check if current tab is a custom category
-    const isCustomCategory = customCategories.includes(activeTab);
+    const isCustomCategory = customCategoryNames.includes(activeTab);
+
+    // Helper: Erlaubt diese Kategorie Mehrfachbesetzung?
+    const categoryAllowsMultiple = (categoryName) => {
+        if (categoryName === 'Rotationen') return true;
+        if (categoryName === 'Dienste' || categoryName === 'Demonstrationen & Konsile') return false;
+        const custom = customCategories.find(c => c.name === categoryName);
+        return custom?.allows_multiple ?? true;
+    };
 
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -248,7 +267,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                 <TabsTrigger value="Dienste" className="text-xs">Dienste</TabsTrigger>
                                 
                                 {/* Custom categories */}
-                                {customCategories.map(cat => (
+                                {customCategoryNames.map(cat => (
                                     <TabsTrigger key={cat} value={cat} className="text-xs group relative">
                                         {cat}
                                     </TabsTrigger>
@@ -272,21 +291,36 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
 
                     {/* Add category input */}
                     {showAddCategory && (
-                        <div className="flex items-center gap-2 py-2 px-1 bg-slate-50 rounded-md mt-2">
-                            <Input
-                                placeholder="Name der neuen Kategorie (z.B. OP Säle)"
-                                value={newCategoryName}
-                                onChange={(e) => setNewCategoryName(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
-                                className="flex-1"
-                                autoFocus
-                            />
-                            <Button size="sm" onClick={handleAddCategory}>
-                                <Plus className="w-4 h-4 mr-1" /> Erstellen
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => { setShowAddCategory(false); setNewCategoryName(""); }}>
-                                <X className="w-4 h-4" />
-                            </Button>
+                        <div className="space-y-2 py-2 px-3 bg-slate-50 rounded-md mt-2">
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    placeholder="Name der neuen Kategorie (z.B. OP Säle)"
+                                    value={newCategoryName}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAddCategory()}
+                                    className="flex-1"
+                                    autoFocus
+                                />
+                                <Button size="sm" onClick={handleAddCategory}>
+                                    <Plus className="w-4 h-4 mr-1" /> Erstellen
+                                </Button>
+                                <Button size="sm" variant="ghost" onClick={() => { setShowAddCategory(false); setNewCategoryName(""); setNewCategoryAllowsMultiple(true); }}>
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
+                            <div className="flex items-center gap-2 pl-1">
+                                <Switch
+                                    checked={newCategoryAllowsMultiple}
+                                    onCheckedChange={setNewCategoryAllowsMultiple}
+                                />
+                                <Label className="text-sm text-slate-600">Mehrfachbesetzung erlauben</Label>
+                                <span className="text-xs text-slate-400">
+                                    {newCategoryAllowsMultiple 
+                                        ? '(Mehrere Mitarbeiter pro Tag/Position)' 
+                                        : '(Nur ein Mitarbeiter pro Tag/Position)'
+                                    }
+                                </span>
+                            </div>
                         </div>
                     )}
 
