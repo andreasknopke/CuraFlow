@@ -1714,6 +1714,14 @@ export default function ScheduleBoard() {
 
       const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
+      // Helper: Check if workplace is active on a given date (active_days check)
+      const isWorkplaceActiveOnDate = (positionName, dateStr) => {
+          const wp = workplaces.find(w => w.name === positionName);
+          if (!wp || !wp.active_days || wp.active_days.length === 0) return true;
+          const dayOfWeek = new Date(dateStr + 'T00:00:00').getDay(); // 0=So, 1=Mo, ..., 6=Sa
+          return wp.active_days.some(d => Number(d) === dayOfWeek);
+      };
+
       // Helper to find occupying shift for services or demos (for replacement)
       const findOccupyingShift = (dateStr, position, ignoreShiftId = null) => {
           const targetWorkplace = workplaces.find(w => w.name === position);
@@ -1831,6 +1839,11 @@ export default function ScheduleBoard() {
 
         for (const day of daysToAssign) {
             const dateStr = format(day, 'yyyy-MM-dd');
+
+            // Check active_days - skip inactive days
+            if (!isWorkplaceActiveOnDate(rowName, dateStr)) {
+                continue;
+            }
 
             // Check conflicts (using isVoice=true for silent/toast mode to prevent 5 alerts)
             // Note: checkConflicts is defined in outer scope (ScheduleBoard)
@@ -2016,6 +2029,12 @@ export default function ScheduleBoard() {
         }
 
         console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
+
+        // Check active_days before processing drop
+        if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, dateStr)) {
+            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+            return;
+        }
 
         if (absencePositions.includes(position)) {
              // Hilfsfunktion für das Erstellen der Abwesenheit
@@ -2210,6 +2229,12 @@ export default function ScheduleBoard() {
         const oldPosition = srcParts[1];
         const rawOldTimeslotId = srcParts[2] || null;
         const oldTimeslotId = rawOldTimeslotId === '__unassigned__' ? null : rawOldTimeslotId;
+
+        // Check active_days for grid-to-grid moves to different position/date
+        if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
+            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+            return;
+        }
 
         if (source.droppableId === destination.droppableId) {
             if (source.index === destination.index) return;
@@ -3294,34 +3319,21 @@ export default function ScheduleBoard() {
                                     }
                                 }
 
-                                // Check if rowName is in the Demo section (using sections state)
-                                // Rows sind jetzt Objekte, daher prüfen wir r.name statt r direkt
-                                const isDemoSection = sections.find(s => s.title === "Demonstrationen & Konsile")?.rows.some(r => 
-                                    (typeof r === 'string' ? r : r.name) === rowName
-                                );
-
-                                if (isDemoSection) {
-                                    const setting = workplaces.find(s => s.name === rowName);
-                                    if (setting) {
-                                        const dayOfWeek = day.getDay(); // 0-6
-                                        const allowed = setting.active_days ? setting.active_days.includes(dayOfWeek) : true;
-                                        if (setting.active_days && !allowed) {
-                                            isDisabled = true;
+                                // Check active_days for ALL non-rotation sections (Dienste, Demos, Custom)
+                                {
+                                    const isRotationSection = sections.find(s => s.title === "Rotationen")?.rows.some(r => 
+                                        (typeof r === 'string' ? r : r.name) === rowName
+                                    );
+                                    if (!isRotationSection && rowName !== 'Verfügbar') {
+                                        const setting = workplaces.find(s => s.name === rowName);
+                                        if (setting && setting.active_days && setting.active_days.length > 0) {
+                                            const dayOfWeek = day.getDay(); // 0=So, 1=Mo, ..., 6=Sa
+                                            const allowed = setting.active_days.some(d => Number(d) === dayOfWeek);
+                                            if (!allowed) {
+                                                isDisabled = true;
+                                            }
                                         }
                                     }
-                                }
-
-                                // Additional logic for Dienste if needed (e.g. specific colors or icons)
-                                // Rows sind jetzt Objekte, daher prüfen wir r.name statt r direkt
-                                const isServiceSection = sections.find(s => s.title === "Dienste")?.rows.some(r => 
-                                    (typeof r === 'string' ? r : r.name) === rowName
-                                );
-                                if (isServiceSection) {
-                                     const setting = workplaces.find(s => s.name === rowName);
-                                     if (setting && setting.auto_off) {
-                                         // Maybe indicate visually that this causes auto-off?
-                                         // Currently no UI request for this, keeping it simple.
-                                     }
                                 }
 
                                 return (
