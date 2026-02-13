@@ -1714,11 +1714,17 @@ export default function ScheduleBoard() {
 
       const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
-      // Helper: Check if workplace is active on a given date (active_days check)
+      // Helper: Check if workplace is active on a given date (active_days + holiday check)
+      // Feiertage verhalten sich wie Sonntag (Index 0)
       const isWorkplaceActiveOnDate = (positionName, dateStr) => {
           const wp = workplaces.find(w => w.name === positionName);
           if (!wp || !wp.active_days || wp.active_days.length === 0) return true;
-          const dayOfWeek = new Date(dateStr + 'T00:00:00').getDay(); // 0=So, 1=Mo, ..., 6=Sa
+          const date = new Date(dateStr + 'T00:00:00');
+          const dayOfWeek = date.getDay(); // 0=So, 1=Mo, ..., 6=Sa
+          // Feiertag = wie Sonntag behandeln: prüfe ob Sonntag (0) aktiv ist
+          if (isPublicHoliday(date) && !wp.active_days.some(d => Number(d) === 0)) {
+              return false;
+          }
           return wp.active_days.some(d => Number(d) === dayOfWeek);
       };
 
@@ -3316,13 +3322,16 @@ export default function ScheduleBoard() {
                                 }
 
                                 // Check active_days for ALL sections (Rotationen, Dienste, Demos, Custom)
+                                // Feiertage verhalten sich wie Sonntag
                                 {
                                     if (rowName !== 'Verfügbar') {
                                         const setting = workplaces.find(s => s.name === rowName);
                                         if (setting && setting.active_days && setting.active_days.length > 0) {
                                             const dayOfWeek = day.getDay(); // 0=So, 1=Mo, ..., 6=Sa
                                             const allowed = setting.active_days.some(d => Number(d) === dayOfWeek);
-                                            if (!allowed) {
+                                            // Feiertag = wie Sonntag: prüfe ob Sonntag (0) aktiv ist
+                                            const holidayBlocked = isPublicHoliday(day) && !setting.active_days.some(d => Number(d) === 0);
+                                            if (!allowed || holidayBlocked) {
                                                 isDisabled = true;
                                             }
                                         }
