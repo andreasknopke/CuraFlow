@@ -13,6 +13,8 @@ import { useOverrideValidation } from '@/components/validation/useOverrideValida
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 import { trackDbChange } from '@/components/utils/dbTracker';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
+import { AlertTriangle } from 'lucide-react';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 
@@ -95,6 +97,7 @@ export default function ServiceStaffingPage() {
                 
                 return {
                     id: w.name,
+                    workplace_id: w.id,
                     label: w.name.replace('Dienst ', ''),
                     color,
                     auto_off: w.auto_off,
@@ -116,12 +119,17 @@ export default function ServiceStaffingPage() {
     // Dynamische Facharzt-Rollen aus DB laden
     const { foregroundDutyRoles, backgroundDutyRoles, statisticsExcludedRoles } = useTeamRoles();
 
-    // ALLOWED_ROLES dynamisch aufbauen basierend auf Rollenberechtigungen
+    // ALLOWED_ROLES dynamisch aufbauen basierend auf Rollenberechtigungen (Legacy-Fallback)
     const ALLOWED_ROLES = useMemo(() => ({
         'Dienst Vordergrund': foregroundDutyRoles,
         'Dienst Hintergrund': backgroundDutyRoles,
         'Onko-Konsil': backgroundDutyRoles
     }), [foregroundDutyRoles, backgroundDutyRoles]);
+
+    // Dynamische Qualifikationen laden
+    const { qualificationMap } = useQualifications();
+    const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
+    const { byWorkplace: wpQualsByWorkplace } = useAllWorkplaceQualifications();
 
     const absencesByDate = useMemo(() => {
         const map = {};
@@ -447,6 +455,12 @@ export default function ServiceStaffingPage() {
                                         // Filter available doctors (exclude absent ones, but keep currently assigned)
                                         const dateStr = format(day, 'yyyy-MM-dd');
                                         const absentIds = absencesByDate[dateStr] || new Set();
+                                        // Qualifikationsanforderungen für diesen Arbeitsplatz/Dienst
+                                        const wpQuals = type.workplace_id ? (wpQualsByWorkplace[type.workplace_id] || []) : [];
+                                        const mandatoryQualIds = wpQuals.filter(wq => wq.is_mandatory).map(wq => wq.qualification_id);
+                                        const optionalQualIds = wpQuals.filter(wq => !wq.is_mandatory).map(wq => wq.qualification_id);
+                                        const hasQualRequirements = mandatoryQualIds.length > 0 || optionalQualIds.length > 0;
+
                                         const availableDoctors = doctors.filter(doc => {
                                             // Always keep the currently assigned doctor in the list
                                             if (doc.id === assignedDoctorId) return true;
@@ -457,13 +471,31 @@ export default function ServiceStaffingPage() {
                                             // Check absence (allow if currently assigned to this slot)
                                             if (absentIds.has(doc.id)) return false;
 
-                                            // Check role restrictions for specific services
-                                            const allowedRoles = ALLOWED_ROLES[type.id];
-                                            // Default: Allow all except excluded roles (already filtered)
-                                            // For dynamic services, we might want config, but for now allow all doctors
-                                            if (allowedRoles && !allowedRoles.includes(doc.role)) return false;
+                                            // If workplace has mandatory qualification requirements, enforce them
+                                            if (mandatoryQualIds.length > 0) {
+                                                const docQualIds = getDoctorQualIds(doc.id);
+                                                const hasMandatory = mandatoryQualIds.every(qid => docQualIds.includes(qid));
+                                                if (!hasMandatory) return false;
+                                            }
+
+                                            // Legacy role-based restrictions (fallback if no qualification requirements set)
+                                            if (!hasQualRequirements) {
+                                                const allowedRoles = ALLOWED_ROLES[type.id];
+                                                if (allowedRoles && !allowedRoles.includes(doc.role)) return false;
+                                            }
 
                                             return true;
+                                        })
+                                        // Sort: qualified doctors first, then unqualified with warning
+                                        .sort((a, b) => {
+                                            if (optionalQualIds.length === 0) return 0;
+                                            const aQuals = getDoctorQualIds(a.id);
+                                            const bQuals = getDoctorQualIds(b.id);
+                                            const aHasOptional = optionalQualIds.every(qid => aQuals.includes(qid));
+                                            const bHasOptional = optionalQualIds.every(qid => bQuals.includes(qid));
+                                            if (aHasOptional && !bHasOptional) return -1;
+                                            if (!aHasOptional && bHasOptional) return 1;
+                                            return 0;
                                         });
 
                                         // Check if active (for Demos/Konsile with restricted days)
@@ -512,15 +544,29 @@ export default function ServiceStaffingPage() {
                                                                 if (wish.type === 'service') className = "text-green-600 font-medium bg-green-50";
                                                                 else if (wish.type === 'no_service') className = "text-red-600 font-medium bg-red-50";
                                                             }
+
+                                                            // Check if doctor is missing optional qualifications
+                                                            const docQualIds = getDoctorQualIds(doc.id);
+                                                            const missingOptional = optionalQualIds.filter(qid => !docQualIds.includes(qid));
+                                                            const hasWarning = missingOptional.length > 0 && doc.id !== assignedDoctorId;
+                                                            const missingNames = missingOptional.map(qid => qualificationMap[qid]?.name || '?').join(', ');
                                                             
                                                             return (
-                                                                <SelectItem key={doc.id} value={doc.id} className={className}>
-                                                                    {doc.name}
-                                                                    {wish && (
-                                                                        <span className="ml-2 text-xs opacity-75">
-                                                                            {wish.type === 'service' ? '(Dienst)' : '(Kein Dienst)'}
-                                                                        </span>
-                                                                    )}
+                                                                <SelectItem key={doc.id} value={doc.id} className={`${className} ${hasWarning ? 'text-amber-700' : ''}`}>
+                                                                    <span className="flex items-center gap-1">
+                                                                        {hasWarning && <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />}
+                                                                        {doc.name}
+                                                                        {wish && (
+                                                                            <span className="ml-1 text-xs opacity-75">
+                                                                                {wish.type === 'service' ? '(Dienst)' : '(Kein Dienst)'}
+                                                                            </span>
+                                                                        )}
+                                                                        {hasWarning && (
+                                                                            <span className="ml-1 text-[10px] text-amber-500">
+                                                                                ({missingNames})
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                 </SelectItem>
                                                             );
                                                         })}
