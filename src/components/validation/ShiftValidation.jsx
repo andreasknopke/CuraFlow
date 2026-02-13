@@ -19,7 +19,7 @@ export const DEFAULT_ASSISTANT_ROLES = ["Assistenzarzt"];
  */
 
 export class ShiftValidator {
-    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots }) {
+    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace }) {
         this.doctors = doctors || [];
         this.shifts = shifts || [];
         this.workplaces = workplaces || [];
@@ -31,6 +31,10 @@ export class ShiftValidator {
         this.assistantRoles = DEFAULT_ASSISTANT_ROLES;
         // Timeslots für Überlappungsprüfung
         this.timeslots = timeslots || [];
+        // Qualifikationsdaten
+        this.qualificationMap = qualificationMap || {};
+        this.getDoctorQualIds = getDoctorQualIds || (() => []);
+        this.wpQualsByWorkplace = wpQualsByWorkplace || {};
         
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
@@ -148,7 +152,16 @@ export class ShiftValidator {
             }
         }
 
-        // 6. Timeslot-Überlappung prüfen (nur wenn Timeslots aktiviert)
+        // 6. Qualifikationsanforderungen prüfen
+        const qualResult = this._checkQualificationRequirements(doctorId, position);
+        if (qualResult.blocker) {
+            result.warnings.push(qualResult.blocker); // Als Warnung (override-fähig), nicht als harter Blocker
+        }
+        if (qualResult.warning) {
+            result.warnings.push(qualResult.warning);
+        }
+
+        // 7. Timeslot-Überlappung prüfen (nur wenn Timeslots aktiviert)
         if (timeslotId || this._workplaceHasTimeslots(position)) {
             const overlapResult = this._checkTimeslotOverlaps(
                 doctorId, dateStr, position, timeslotId, excludeShiftId
@@ -163,6 +176,43 @@ export class ShiftValidator {
         }
 
         return result;
+    }
+
+    /**
+     * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Arzt-Qualifikationen
+     * Pflicht-Qualifikationen → Warnung (override-fähig)
+     * Optionale Qualifikationen → Hinweis
+     */
+    _checkQualificationRequirements(doctorId, position) {
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (!workplace) return {};
+
+        const wpQuals = this.wpQualsByWorkplace[workplace.id] || [];
+        if (wpQuals.length === 0) return {};
+
+        const docQualIds = this.getDoctorQualIds(doctorId);
+        const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
+        const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
+
+        // Pflicht-Qualifikationen prüfen
+        const missingMandatory = mandatoryQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+        if (missingMandatory.length > 0) {
+            const names = missingMandatory
+                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                .join(', ');
+            return { blocker: `Fehlende Pflicht-Qualifikation: ${names}` };
+        }
+
+        // Optionale Qualifikationen prüfen
+        const missingOptional = optionalQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+        if (missingOptional.length > 0) {
+            const names = missingOptional
+                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                .join(', ');
+            return { warning: `Fehlende optionale Qualifikation: ${names}` };
+        }
+
+        return {};
     }
 
     /**

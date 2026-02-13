@@ -3,6 +3,7 @@ import { api, db, base44 } from "@/api/client";
 import { useMemo } from 'react';
 import { ShiftValidator } from './ShiftValidation';
 import { toast } from 'sonner';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
 
 /**
  * Hook für zentrale Shift-Validierung
@@ -40,6 +41,11 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
         staleTime: 1000 * 60 * 5
     });
 
+    // Qualifikationsdaten laden
+    const { qualificationMap } = useQualifications();
+    const { getQualificationIds: getDoctorQualIds, allDoctorQualifications } = useAllDoctorQualifications();
+    const { byWorkplace: wpQualsByWorkplace, allWorkplaceQualifications } = useAllWorkplaceQualifications();
+
     // Merge internal data with custom options (custom options take precedence)
     const doctors = customOptions.doctors || doctorsData;
     const workplaces = customOptions.workplaces || workplacesData;
@@ -55,9 +61,12 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
             systemSettings,
             staffingEntries,
             timeslots,
+            qualificationMap,
+            getDoctorQualIds,
+            wpQualsByWorkplace,
             ...customOptions
         });
-    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, customOptions]);
+    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
 
     /**
      * Validiert eine geplante Shift-Operation
