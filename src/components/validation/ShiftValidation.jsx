@@ -69,6 +69,17 @@ export class ShiftValidator {
         return custom?.allows_multiple ?? true;
     }
 
+    /**
+     * Prüft ob ein Arbeitsplatz Mehrfachbesetzung erlaubt.
+     * Nutzt workplace.allows_multiple wenn gesetzt, sonst Kategorie-Default.
+     */
+    _workplaceAllowsMultiple(workplace) {
+        if (workplace.allows_multiple !== undefined && workplace.allows_multiple !== null) {
+            return workplace.allows_multiple;
+        }
+        return this._categoryAllowsMultiple(workplace.category);
+    }
+
     _parseAbsenceRules() {
         const setting = this.systemSettings.find(s => s.key === 'absence_blocking_rules');
         return setting ? JSON.parse(setting.value) : {
@@ -226,9 +237,9 @@ export class ShiftValidator {
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
-        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot-Kategorien,
+        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot,
         // da dort der neue Eintrag den bestehenden ersetzt)
-        const allowsMultiple = this._categoryAllowsMultiple(workplace.category);
+        const allowsMultiple = this._workplaceAllowsMultiple(workplace);
         if (dateStr && allowsMultiple) {
             const otherAssignments = this.shifts.filter(s =>
                 s.position === position &&

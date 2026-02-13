@@ -136,7 +136,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
             category: activeTab,
             order: localItems.length + 1,
             active_days: [1, 2, 3, 4, 5], // Mo-Fr default
-            time: ""
+            time: "",
+            allows_multiple: categoryAllowsMultiple(activeTab)
         };
         createMutation.mutate(newItem);
     };
@@ -577,6 +578,19 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
 
                                                                         {/* Zeitfenster-Sektion - für ALLE Kategorien verfügbar */}
                                                                         <div className="pt-4 border-t space-y-4">
+                                                                            <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
+                                                                                <div className="space-y-0.5">
+                                                                                    <Label className="text-base">Mehrfachbesetzung</Label>
+                                                                                    <div className="text-xs text-slate-500">
+                                                                                        Mehrere Mitarbeiter können gleichzeitig pro Tag eingeteilt werden (z.B. für Ausbildung).
+                                                                                    </div>
+                                                                                </div>
+                                                                                <Switch
+                                                                                    checked={editForm.allows_multiple ?? categoryAllowsMultiple(activeTab)}
+                                                                                    onCheckedChange={(checked) => setEditForm({...editForm, allows_multiple: checked})}
+                                                                                />
+                                                                            </div>
+
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
                                                                                 <div className="space-y-0.5">
                                                                                     <Label className="text-base flex items-center gap-2">
@@ -631,6 +645,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 {item.time && <Badge variant="outline" className="text-[10px] font-normal">{item.time} Uhr</Badge>}
                                                                                 {item.auto_off && <Badge variant="secondary" className="text-[10px] font-normal bg-blue-100 text-blue-700">Auto-Frei</Badge>}
                                                                                 {item.allows_rotation_concurrently && <Badge variant="secondary" className="text-[10px] font-normal bg-green-100 text-green-700">Rotation OK</Badge>}
+                                                                                {item.allows_multiple && <Badge variant="secondary" className="text-[10px] font-normal bg-teal-100 text-teal-700">Mehrfachbesetzung</Badge>}
                                                                                 {item.show_in_service_plan && <Badge variant="secondary" className="text-[10px] font-normal bg-purple-100 text-purple-700">Dienstplan</Badge>}
                                                                                 {item.affects_availability === false && <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">Nicht verfügbarkeitsrelevant</Badge>}
                                                                             </div>
