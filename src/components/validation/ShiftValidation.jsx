@@ -199,8 +199,10 @@ export class ShiftValidator {
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
-        // Prüfe ob bereits ein qualifizierter Kollege am selben Tag in derselben Position eingeteilt ist
-        if (dateStr) {
+        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Diensten/Demos,
+        // da dort der neue Eintrag den bestehenden ersetzt)
+        const isSingleSlot = workplace.category === 'Dienste' || workplace.category === 'Demonstrationen & Konsile';
+        if (dateStr && !isSingleSlot) {
             const otherAssignments = this.shifts.filter(s =>
                 s.position === position &&
                 s.date === dateStr &&
