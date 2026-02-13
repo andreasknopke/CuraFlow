@@ -175,8 +175,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             }
         }
 
-        // Default to doctor's FTE
-        const defaultFte = doctor.fte !== undefined ? doctor.fte : 1.0;
+        // Default to doctor's FTE (rounded to 2 decimal places)
+        const defaultFte = doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0;
         return formatNumber(defaultFte);
     };
 

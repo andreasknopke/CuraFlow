@@ -38,7 +38,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
 
   useEffect(() => {
     if (doctor) {
-      setFormData(doctor);
+      setFormData({
+        ...doctor,
+        fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
+      });
     } else if (open) {
       // Nur zurücksetzen wenn Dialog geöffnet wird UND kein doctor
       setFormData({
@@ -55,10 +58,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Ensure fte is a number
+    // Ensure fte is a number, rounded to 2 decimal places
     const dataToSubmit = {
         ...formData,
-        fte: parseFloat(formData.fte) || 1.0
+        fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100
     };
     onSubmit(dataToSubmit);
   };
