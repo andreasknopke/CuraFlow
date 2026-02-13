@@ -24,6 +24,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import StaffingPlanTable from "@/components/staff/StaffingPlanTable";
 import { trackDbChange } from '@/components/utils/dbTracker';
 import TeamRoleSettings, { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import QualificationManagement from '@/components/settings/QualificationManagement';
+import { DoctorQualificationBadges } from '@/components/staff/DoctorQualificationEditor';
+import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
+import QualificationOverview from '@/components/staff/QualificationOverview';
 
 export default function StaffPage() {
   const { isReadOnly, user } = useAuth();
@@ -45,6 +49,10 @@ export default function StaffPage() {
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
+
+  // Dynamische Qualifikationen laden
+  const { qualificationMap } = useQualifications();
+  const { byDoctor: doctorQualsByDoctor } = useAllDoctorQualifications();
 
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
@@ -145,6 +153,7 @@ export default function StaffPage() {
           <p className="text-slate-500 mt-2">Verwaltung der Mitarbeiter und Funktionen</p>
         </div>
         <div className="flex gap-2">
+          {!isReadOnly && <QualificationManagement />}
           {!isReadOnly && <TeamRoleSettings />}
           {!isReadOnly && (
           <Button onClick={handleAddNew} className="bg-indigo-600 hover:bg-indigo-700">
@@ -158,6 +167,7 @@ export default function StaffPage() {
       <Tabs defaultValue="list" className="space-y-6">
           <TabsList>
               <TabsTrigger value="list">Mitarbeiterliste</TabsTrigger>
+              <TabsTrigger value="qualifications">Qualifikationen</TabsTrigger>
               <TabsTrigger value="staffing">Stellenplan</TabsTrigger>
           </TabsList>
 
@@ -209,9 +219,16 @@ export default function StaffPage() {
                                                             </div>
                                                             <div className="flex-1">
                                                                 <h3 className="font-semibold text-slate-900">{doctor.name}</h3>
-                                                                <Badge variant="secondary" className="text-xs font-normal">
-                                                                    {doctor.role}
-                                                                </Badge>
+                                                                <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                                                                    <Badge variant="secondary" className="text-xs font-normal">
+                                                                        {doctor.role}
+                                                                    </Badge>
+                                                                    <DoctorQualificationBadges 
+                                                                        doctorId={doctor.id} 
+                                                                        qualificationMap={qualificationMap}
+                                                                        allDoctorQualifications={doctorQualsByDoctor}
+                                                                    />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div className="flex space-x-1">
@@ -256,6 +273,10 @@ export default function StaffPage() {
                     </Droppable>
                 </DragDropContext>
               )}
+          </TabsContent>
+
+          <TabsContent value="qualifications">
+              <QualificationOverview doctors={doctors} />
           </TabsContent>
 
           <TabsContent value="staffing">

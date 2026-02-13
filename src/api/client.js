@@ -408,6 +408,9 @@ export const db = {
   VoiceAlias: new EntityClient('VoiceAlias'),
   User: new EntityClient('User'),
   TeamRole: new EntityClient('TeamRole'),
+  Qualification: new EntityClient('Qualification'),
+  DoctorQualification: new EntityClient('DoctorQualification'),
+  WorkplaceQualification: new EntityClient('WorkplaceQualification'),
   
   collection: (name) => new EntityClient(name)
 };

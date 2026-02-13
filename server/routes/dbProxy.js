@@ -11,7 +11,10 @@ const PUBLIC_READ_TABLES = [
   'ColorSetting',
   'Workplace',
   'DemoSetting',
-  'TeamRole'
+  'TeamRole',
+  'Qualification',
+  'DoctorQualification',
+  'WorkplaceQualification'
 ];
 
 // Cache for table columns to avoid "Unknown column" errors
@@ -74,7 +77,8 @@ const fromSqlRow = (row) => {
       'allows_rotation_concurrently', 'allows_consecutive_days', 
       'acknowledged', 'is_active', 'is_specialist',
       'timeslots_enabled', 'spans_midnight', 'affects_availability',
-      'can_do_foreground_duty', 'can_do_background_duty', 'excluded_from_statistics'
+      'can_do_foreground_duty', 'can_do_background_duty', 'excluded_from_statistics',
+      'is_mandatory'
     ];
     if (boolFields.includes(key)) {
       res[key] = !!res[key];
@@ -178,6 +182,69 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
   }
 };
 
+// Auto-create Qualification tables if they don't exist (for multi-tenant support)
+const ensureQualificationTables = async (dbPool, cacheKey) => {
+  const tableCheckKey = `${cacheKey}:Qualification:checked`;
+  if (COLUMNS_CACHE[tableCheckKey]) return;
+  
+  try {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS Qualification (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        short_label VARCHAR(10) DEFAULT NULL,
+        description VARCHAR(255) DEFAULT NULL,
+        color_bg VARCHAR(20) DEFAULT '#e0e7ff',
+        color_text VARCHAR(20) DEFAULT '#3730a3',
+        category VARCHAR(50) DEFAULT 'Allgemein',
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        \`order\` INT NOT NULL DEFAULT 99,
+        created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT 'system'
+      )
+    `);
+    
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS DoctorQualification (
+        id VARCHAR(255) PRIMARY KEY,
+        doctor_id VARCHAR(255) NOT NULL,
+        qualification_id VARCHAR(255) NOT NULL,
+        granted_date DATE DEFAULT NULL,
+        expiry_date DATE DEFAULT NULL,
+        notes VARCHAR(255) DEFAULT NULL,
+        created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT 'system',
+        UNIQUE KEY uq_doctor_qual (doctor_id, qualification_id),
+        INDEX idx_dq_doctor (doctor_id),
+        INDEX idx_dq_qualification (qualification_id)
+      )
+    `);
+    
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS WorkplaceQualification (
+        id VARCHAR(255) PRIMARY KEY,
+        workplace_id VARCHAR(255) NOT NULL,
+        qualification_id VARCHAR(255) NOT NULL,
+        is_mandatory BOOLEAN NOT NULL DEFAULT TRUE,
+        created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT 'system',
+        UNIQUE KEY uq_workplace_qual (workplace_id, qualification_id),
+        INDEX idx_wq_workplace (workplace_id),
+        INDEX idx_wq_qualification (qualification_id)
+      )
+    `);
+    
+    COLUMNS_CACHE[tableCheckKey] = true;
+    console.log('✅ Qualification tables ensured for tenant');
+  } catch (err) {
+    console.error('Failed to ensure Qualification tables:', err.message);
+    COLUMNS_CACHE[tableCheckKey] = true;
+  }
+};
+
 // ============ AUDIT LOG HELPER ============
 // Writes an audit entry to the SystemLog table for UI visibility
 export const writeAuditLog = async (dbPool, { level = 'audit', source, message, details, userEmail }) => {
@@ -208,6 +275,11 @@ router.post('/', async (req, res, next) => {
     // Auto-create TeamRole table for tenants if needed
     if (tableName === 'TeamRole') {
       await ensureTeamRoleTable(dbPool, cacheKey);
+    }
+    
+    // Auto-create Qualification tables for tenants if needed
+    if (['Qualification', 'DoctorQualification', 'WorkplaceQualification'].includes(tableName)) {
+      await ensureQualificationTables(dbPool, cacheKey);
     }
     
     if (!tableName) {

@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
+import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
 
 // Fallback falls Rollen noch nicht geladen
 const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
@@ -167,6 +168,12 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               />
           </div>
           
+          {/* Qualifikations-Zuordnung - nur bei bestehenden Mitarbeitern */}
+          {doctor?.id && (
+              <div className="border rounded-lg p-3 bg-slate-50">
+                  <DoctorQualificationEditor doctorId={doctor.id} compact />
+              </div>
+          )}
 
 
 

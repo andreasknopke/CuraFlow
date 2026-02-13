@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import TimeslotEditor from '@/components/admin/TimeslotEditor';
+import WorkplaceQualificationEditor from '@/components/settings/WorkplaceQualificationEditor';
 
 // Default categories that always exist
 const DEFAULT_CATEGORIES = ["Rotationen", "Demonstrationen & Konsile", "Dienste"];
@@ -570,6 +571,11 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                     Speichern Sie zuerst, um Zeitfenster hinzuzufügen.
                                                                                 </div>
                                                                             )}
+                                                                        </div>
+
+                                                                        {/* Qualifikationsanforderungen für diesen Arbeitsplatz/Dienst */}
+                                                                        <div className="pt-4 border-t">
+                                                                            <WorkplaceQualificationEditor workplaceId={editForm.id} />
                                                                         </div>
 
                                                                         <div className="flex justify-end gap-2 pt-2">
