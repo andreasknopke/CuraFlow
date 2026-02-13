@@ -2541,6 +2541,7 @@ export default function ScheduleBoard() {
         getWpExcludedQualIds,
         categoriesToFill,
         systemSettings,
+        wishes,
       });
 
       if (result.length > 0) {

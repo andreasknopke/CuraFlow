@@ -1,30 +1,31 @@
 /**
  * Deterministic Auto-Fill Engine for the Schedule Board.
  *
- * Per-day algorithm:
+ * Priority-based per-day algorithm:
  *
- *   Phase 1 – Qualification coverage:
- *       Each workplace with mandatory qualifications gets ≥1 qualified doctor.
- *       Exception: if min_staff=0 the workplace may stay empty.
- *       Prefer qualified doctors that do NOT have a rotation elsewhere,
- *       so rotation docs stay free for their training workplace.
+ *   Phase A – Dienste (Services, highest priority):
+ *       Fills all service positions FIRST, because:
+ *       - Services with auto_off generate "Frei" the next day → affects availability
+ *       - Shift wishes (Dienstwünsche) must be respected
+ *       Rules:
+ *         • Approved "Dienstwunsch" (type='service', status='approved') → priority assignment
+ *         • Approved "kein Dienst" (type='no_service', status='approved') → hard NOT (excluded)
+ *         • Pending "kein Dienst" (type='no_service', status='pending') → soft NOT (only if others available)
+ *         • Qualification + NOT-qualification checks still apply
+ *         • Auto-Frei: if service has auto_off, a "Frei" entry is generated for the next workday
+ *           and that doctor is blocked for the next day immediately
  *
- *   Phase 2 – Fill all workplaces to optimal_staff, round-robin:
- *       Repeatedly pick the workplace with the lowest fill-ratio (current / optimal).
- *       For each slot, pick the best available doctor:
- *         a) Doctors who have this workplace in their rotation plan get priority.
- *         b) Among rotation-prioritised doctors: those who were displaced yesterday
- *            (assigned elsewhere despite having a rotation) rank even higher.
- *         c) Ties broken by weekly assignment count (fairness).
- *       No workplace exceeds optimal until ALL are at optimal.
+ *   Phase B – Verfügbarkeitsrelevante Arbeitsplätze (affects_availability=true, non-service):
+ *       After services are filled and Auto-Frei is applied, we know who is truly available.
+ *       Fill rotation workplaces and other availability-relevant positions.
+ *       Uses qualification coverage, rotation priority, displacement tracking, round-robin.
  *
- *   Phase 3 – Over-fill remaining:
- *       All workplaces at optimal but some doctors still unassigned.
- *       Distribute to allows_multiple workplaces, lowest fill-ratio first.
- *       Prefer positions where the doctor is qualified.
+ *   Phase C – Nicht-verfügbarkeitsrelevante Arbeitsplätze (affects_availability=false):
+ *       Filled last. Doctors assigned in Phase B are STILL available here.
+ *       Only absence and service assignments block.
  *
- *   Phase 4 – Auto-Frei:
- *       Generate a "Frei" entry the next day for auto_off positions.
+ *   Phase D – Auto-Frei for remaining auto_off positions (non-service):
+ *       E.g. if a rotation workplace also has auto_off.
  */
 
 export function generateSuggestions({
@@ -39,12 +40,15 @@ export function generateSuggestions({
     getWpExcludedQualIds,
     categoriesToFill,
     systemSettings,
+    wishes = [],
 }) {
     const suggestions = [];
     const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
     const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5];
 
-    // ---- Helpers ----
+    // ========================================================
+    //  Helper functions
+    // ========================================================
 
     const getActiveDays = (wp) =>
         wp.active_days?.length > 0 ? wp.active_days : DEFAULT_ACTIVE_DAYS;
@@ -70,7 +74,6 @@ export function generateSuggestions({
         if (!excl?.length) return false;
         const doc = getDoctorQualIds(doctorId);
         if (!doc?.length) return false;
-        // Doctor is excluded if they have ANY of the NOT-qualifications
         return excl.some(q => doc.includes(q));
     };
 
@@ -98,13 +101,12 @@ export function generateSuggestions({
         return true;
     };
 
-    /** optimal_staff: target headcount. For single-assignment workplaces: 1 */
+    /** optimal_staff: target headcount */
     const getOptimal = (wp) => {
         if (!allowsMultiple(wp)) return 1;
         return Math.max(wp.optimal_staff ?? 1, wp.min_staff ?? 1);
     };
 
-    /** min_staff: minimum required before considering this workplace "covered" */
     const getMinStaff = (wp) => {
         if (!allowsMultiple(wp)) return 1;
         return wp.min_staff ?? 1;
@@ -120,12 +122,11 @@ export function generateSuggestions({
     const getWeekly = (id) => weeklyCount[id] || 0;
     const incWeekly = (id) => { weeklyCount[id] = (weeklyCount[id] || 0) + 1; };
 
-    // ---- Rotation mapping: doctorId → [workplace names] for this week ----
+    // ---- Rotation mapping ----
     const getActiveRotationTargets = (doctorId, dateStr) => {
         return trainingRotations
             .filter(r => r.doctor_id === doctorId && r.start_date <= dateStr && r.end_date >= dateStr)
             .map(r => {
-                // Map modality to workplace name
                 if (r.modality === 'Röntgen') {
                     const roeWp = workplaces.find(w => w.name === 'DL/konv. Rö' || w.name.includes('Rö'));
                     return roeWp?.name || r.modality;
@@ -135,44 +136,130 @@ export function generateSuggestions({
     };
 
     // ---- Displacement tracking ----
-    // Tracks doctors who had a rotation target but were assigned elsewhere on a given day.
-    // Key: doctorId, Value: number of "displacement days" this week so far.
-    const displacementCount = {}; // doctorId → count
+    const displacementCount = {};
     const getDisplaced = (id) => displacementCount[id] || 0;
     const addDisplacement = (id) => { displacementCount[id] = (displacementCount[id] || 0) + 1; };
 
+    // ---- Auto-Frei tracking across days ----
+    // Doctors who get Auto-Frei on a specific date are blocked that day.
+    const autoFreiByDate = {};
+    const autoFreiSuggestions = [];
+
+    /** Generate an Auto-Frei for a doctor on the next workday after dateStr */
+    const generateAutoFrei = (doctorId, dateStr) => {
+        const curDay = new Date(dateStr + 'T00:00:00');
+        const nextDay = new Date(curDay);
+        nextDay.setDate(nextDay.getDate() + 1);
+
+        // Skip weekends and holidays to find the next workday
+        for (let i = 0; i < 7; i++) {
+            if (nextDay.getDay() !== 0 && nextDay.getDay() !== 6 && !isPublicHoliday(nextDay)) {
+                break;
+            }
+            nextDay.setDate(nextDay.getDate() + 1);
+        }
+
+        const nextStr = formatDate(nextDay);
+
+        // Check if something already exists that day for this doctor
+        const hasExisting =
+            existingShifts.some(x => x.date === nextStr && x.doctor_id === doctorId) ||
+            suggestions.some(x => x.date === nextStr && x.doctor_id === doctorId) ||
+            autoFreiSuggestions.some(x => x.date === nextStr && x.doctor_id === doctorId);
+
+        if (!hasExisting) {
+            autoFreiSuggestions.push({
+                date: nextStr,
+                position: 'Frei',
+                doctor_id: doctorId,
+                note: 'Autom. Freizeitausgleich',
+                isPreview: true,
+            });
+            // Track this doctor as blocked on the Auto-Frei day
+            if (!autoFreiByDate[nextStr]) autoFreiByDate[nextStr] = new Set();
+            autoFreiByDate[nextStr].add(doctorId);
+        }
+    };
+
     // ========================================================
-    // Process each day independently (but days are processed in order,
-    // so displacement from Mon carries over to Tue, etc.)
+    //  Wish helpers
+    // ========================================================
+
+    /** Get approved service wishes for a doctor on a date */
+    const getApprovedServiceWish = (doctorId, dateStr) => {
+        return wishes.find(w =>
+            w.doctor_id === doctorId &&
+            w.date === dateStr &&
+            w.type === 'service' &&
+            w.status === 'approved'
+        );
+    };
+
+    /** Is this doctor hard-blocked from ALL services on this date? (approved "kein Dienst") */
+    const hasApprovedNoService = (doctorId, dateStr) => {
+        return wishes.some(w =>
+            w.doctor_id === doctorId &&
+            w.date === dateStr &&
+            w.type === 'no_service' &&
+            w.status === 'approved'
+        );
+    };
+
+    /** Does this doctor have a pending (unapproved) "kein Dienst" wish? (soft NOT) */
+    const hasPendingNoService = (doctorId, dateStr) => {
+        return wishes.some(w =>
+            w.doctor_id === doctorId &&
+            w.date === dateStr &&
+            w.type === 'no_service' &&
+            w.status === 'pending'
+        );
+    };
+
+    // ========================================================
+    //  Classify workplaces
+    // ========================================================
+    const isServiceWp = (wp) => wp.category === 'Dienste';
+    const isAffectsAvailability = (wp) => wp.affects_availability !== false;
+
+    // ========================================================
+    //  Process each day
     // ========================================================
     for (const day of weekDays) {
         const dateStr = formatDate(day);
 
-        // --- Who is blocked today? ---
-        const blocked = new Set();
-        const posCount = {}; // position name → current headcount today
+        // --- Base blocked set (absences + existing availability-relevant assignments) ---
+        const baseBlocked = new Set();
+        const posCount = {};
+
+        // Include doctors blocked by auto-frei from a previous day's service
+        if (autoFreiByDate[dateStr]) {
+            for (const docId of autoFreiByDate[dateStr]) {
+                baseBlocked.add(docId);
+            }
+        }
 
         for (const s of existingShifts) {
             if (s.date !== dateStr) continue;
             posCount[s.position] = (posCount[s.position] || 0) + 1;
 
-            if (absencePositions.includes(s.position)) { blocked.add(s.doctor_id); continue; }
+            if (absencePositions.includes(s.position)) { baseBlocked.add(s.doctor_id); continue; }
             if (s.position === 'Verfügbar') continue;
 
             const wp = workplaces.find(w => w.name === s.position);
             if (wp?.affects_availability === false) continue;
             if (wp?.allows_rotation_concurrently) continue;
             if (wp?.category === 'Demonstrationen & Konsile') continue;
-            blocked.add(s.doctor_id);
+            baseBlocked.add(s.doctor_id);
         }
 
-        const usedToday = new Set(blocked);
+        // Track who is used today (starts as copy of baseBlocked)
+        const usedToday = new Set(baseBlocked);
 
-        // Active workplaces today (filtered by category + active_days)
-        const todayWps = workplaces
+        // All workplaces active today in the categories we're filling
+        const allTodayWps = workplaces
             .filter(wp => categoriesToFill.includes(wp.category) && isActiveOnDate(wp, day));
 
-        // Helper to record a suggestion
+        // Record a suggestion and update tracking
         const assign = (docId, wpName) => {
             suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
             usedToday.add(docId);
@@ -191,217 +278,367 @@ export function generateSuggestions({
             return false;
         };
 
-        // ========== Phase 1: Qualification coverage ==========
-        // For each workplace with mandatory qualifications: ensure ≥1 qualified doctor.
-        // Exception: min_staff=0 → this workplace can stay empty.
-        const qualWps = todayWps
-            .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
-            .sort((a, b) => {
-                // More constrained first (fewer qualified doctors available)
-                const aPool = doctors.filter(d => !blocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
-                const bPool = doctors.filter(d => !blocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
-                return aPool - bPool;
-            });
+        // ============================================================
+        //  PHASE A: DIENSTE (Services) — highest priority
+        // ============================================================
+        if (categoriesToFill.includes('Dienste')) {
+            const serviceWps = allTodayWps.filter(wp => isServiceWp(wp));
 
-        for (const wp of qualWps) {
-            if (hasQualCoverage(wp)) continue;
+            for (const svc of serviceWps) {
+                const currentCount = posCount[svc.name] || 0;
+                const targetCount = getOptimal(svc);
+                const slotsNeeded = targetCount - currentCount;
+                if (slotsNeeded <= 0) continue;
 
-            // Find qualified doctors. Prefer those WITHOUT a rotation elsewhere
-            // (so we don't steal rotation docs if possible).
-            // Exclude doctors with NOT-qualifications for this workplace.
-            const candidates = doctors
-                .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
-                .sort((a, b) => {
-                    // Does this doctor have a rotation pointing to a DIFFERENT workplace?
-                    const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
-                        .some(t => t !== wp.name) ? 1 : 0;
-                    const bRotElsewhere = getActiveRotationTargets(b.id, dateStr)
-                        .some(t => t !== wp.name) ? 1 : 0;
-                    if (aRotElsewhere !== bRotElsewhere) return aRotElsewhere - bRotElsewhere;
-                    // Then by weekly count (fairness)
-                    return getWeekly(a.id) - getWeekly(b.id);
-                });
+                // Build candidate pool for this service
+                const allCandidates = doctors.filter(d =>
+                    !usedToday.has(d.id) &&
+                    !isExcluded(d.id, svc.id) &&
+                    !hasApprovedNoService(d.id, dateStr) &&
+                    isQualified(d.id, svc.id)
+                );
 
-            if (candidates.length > 0) {
-                assign(candidates[0].id, wp.name);
-            }
-        }
+                // Separate candidates into priority tiers
+                const withServiceWish = [];
+                const withPendingNoService = [];
+                const normal = [];
 
-        // ========== Phase 2: Fill to optimal_staff (round-robin) ==========
-        // Repeatedly pick the workplace with the lowest fill-ratio.
-        // For each slot, choose the best-fitting doctor with rotation priority.
-        let changed = true;
-        while (changed) {
-            changed = false;
-
-            // Find all workplaces still under their optimal
-            const underFilled = todayWps
-                .filter(wp => (posCount[wp.name] || 0) < getOptimal(wp))
-                .sort((a, b) => {
-                    // Lowest fill-ratio first
-                    const aR = (posCount[a.name] || 0) / getOptimal(a);
-                    const bR = (posCount[b.name] || 0) / getOptimal(b);
-                    if (Math.abs(aR - bR) > 0.001) return aR - bR;
-                    // Workplaces with qual requirements first (more constrained)
-                    const aQ = hasQualReq(a) ? 0 : 1;
-                    const bQ = hasQualReq(b) ? 0 : 1;
-                    if (aQ !== bQ) return aQ - bQ;
-                    return (a.order || 0) - (b.order || 0);
-                });
-
-            if (underFilled.length === 0) break;
-
-            const unassigned = doctors.filter(d => !usedToday.has(d.id));
-            if (unassigned.length === 0) break;
-
-            // Target: the most under-filled workplace
-            const targetWp = underFilled[0];
-
-            // Score each candidate — exclude doctors with NOT-qualifications
-            const scored = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id)).map(doc => {
-                const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                const hasRotHere = rotTargets.includes(targetWp.name);
-                const hasRotElsewhere = rotTargets.length > 0 && !hasRotHere;
-
-                // Priority tiers (lower = better):
-                // 0: Has rotation HERE + was displaced before → highest priority
-                // 1: Has rotation HERE
-                // 2: No rotation anywhere (free to assign anywhere)
-                // 3: Has rotation ELSEWHERE (prefer not to steal)
-                let tier;
-                if (hasRotHere && getDisplaced(doc.id) > 0) tier = 0;
-                else if (hasRotHere) tier = 1;
-                else if (!hasRotElsewhere) tier = 2;
-                else tier = 3;
-
-                // Within each tier: prefer qualified, then by weekly count
-                const qualified = isQualified(doc.id, targetWp.id);
-                const needsQualCoverage = hasQualReq(targetWp) && !hasQualCoverage(targetWp);
-
-                return {
-                    doc,
-                    tier,
-                    qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
-                    displaced: getDisplaced(doc.id),
-                    weekly: getWeekly(doc.id),
-                };
-            }).sort((a, b) => {
-                if (a.tier !== b.tier) return a.tier - b.tier;
-                if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
-                // Higher displacement → higher priority (within same tier)
-                if (a.displaced !== b.displaced) return b.displaced - a.displaced;
-                return a.weekly - b.weekly;
-            });
-
-            if (scored.length > 0) {
-                const chosen = scored[0].doc;
-                assign(chosen.id, targetWp.name);
-
-                // Track displacement: if this doctor had a rotation target and wasn't assigned there
-                const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
-                if (rotTargets.length > 0 && !rotTargets.includes(targetWp.name)) {
-                    addDisplacement(chosen.id);
+                for (const doc of allCandidates) {
+                    const wish = getApprovedServiceWish(doc.id, dateStr);
+                    if (wish && (!wish.position || wish.position === svc.name)) {
+                        withServiceWish.push(doc);
+                    } else if (hasPendingNoService(doc.id, dateStr)) {
+                        withPendingNoService.push(doc);
+                    } else {
+                        normal.push(doc);
+                    }
                 }
 
-                changed = true;
+                // Sort each group by weekly count (fairness)
+                const sortByWeekly = (a, b) => getWeekly(a.id) - getWeekly(b.id);
+                withServiceWish.sort(sortByWeekly);
+                normal.sort(sortByWeekly);
+                withPendingNoService.sort(sortByWeekly);
+
+                // Priority order: wish > normal > pending-no-service (soft NOT)
+                const ranked = [...withServiceWish, ...normal, ...withPendingNoService];
+
+                for (let i = 0; i < slotsNeeded && i < ranked.length; i++) {
+                    const chosen = ranked[i];
+                    assign(chosen.id, svc.name);
+
+                    // Auto-Frei: if service has auto_off, block doctor on next workday
+                    if (svc.auto_off) {
+                        generateAutoFrei(chosen.id, dateStr);
+                    }
+                }
             }
         }
 
-        // ========== Phase 3: Over-fill remaining doctors ==========
-        // All workplaces at optimal, but some doctors still unassigned.
-        // Distribute to allows_multiple workplaces.
-        let overChanged = true;
-        while (overChanged) {
-            overChanged = false;
+        // After Phase A: doctors assigned to services + auto-frei are now in usedToday.
+        // Save the service-blocked set for Phase C.
+        const serviceBlocked = new Set(usedToday);
 
-            const remaining = doctors.filter(d => !usedToday.has(d.id));
-            if (remaining.length === 0) break;
+        // ============================================================
+        //  PHASE B: Verfügbarkeitsrelevante Arbeitsplätze (non-service)
+        // ============================================================
+        const availWps = allTodayWps.filter(wp =>
+            !isServiceWp(wp) && isAffectsAvailability(wp)
+        );
 
-            const options = todayWps
-                .filter(wp => allowsMultiple(wp))
-                .map(wp => ({
-                    wp,
-                    fillRatio: (posCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
-                }))
+        if (availWps.length > 0) {
+            // --- B.1: Qualification coverage ---
+            const qualWps = availWps
+                .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
                 .sort((a, b) => {
-                    if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
-                    return (a.wp.order || 0) - (b.wp.order || 0);
+                    const aPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
+                    const bPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
+                    return aPool - bPool;
                 });
 
-            if (options.length === 0) break;
+            for (const wp of qualWps) {
+                if (hasQualCoverage(wp)) continue;
 
-            // Pick doctor with least weekly assignments
-            const doc = remaining.sort((a, b) => {
-                // Prefer assigning to their rotation target if possible
-                const aRotMatch = getActiveRotationTargets(a.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
-                const bRotMatch = getActiveRotationTargets(b.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
-                if (aRotMatch !== bRotMatch) return aRotMatch - bRotMatch;
-                return getWeekly(a.id) - getWeekly(b.id);
-            })[0];
+                const candidates = doctors
+                    .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
+                    .sort((a, b) => {
+                        const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
+                            .some(t => t !== wp.name) ? 1 : 0;
+                        const bRotElsewhere = getActiveRotationTargets(b.id, dateStr)
+                            .some(t => t !== wp.name) ? 1 : 0;
+                        if (aRotElsewhere !== bRotElsewhere) return aRotElsewhere - bRotElsewhere;
+                        return getWeekly(a.id) - getWeekly(b.id);
+                    });
 
-            // Find the best workplace for this doctor (exclude NOT-qualified workplaces)
-            const bestForDoc = options
-                .filter(o => !isExcluded(doc.id, o.wp.id))
-                .map(o => {
+                if (candidates.length > 0) {
+                    assign(candidates[0].id, wp.name);
+                }
+            }
+
+            // --- B.2: Fill to optimal_staff (round-robin) ---
+            let changed = true;
+            while (changed) {
+                changed = false;
+
+                const underFilled = availWps
+                    .filter(wp => (posCount[wp.name] || 0) < getOptimal(wp))
+                    .sort((a, b) => {
+                        const aR = (posCount[a.name] || 0) / getOptimal(a);
+                        const bR = (posCount[b.name] || 0) / getOptimal(b);
+                        if (Math.abs(aR - bR) > 0.001) return aR - bR;
+                        const aQ = hasQualReq(a) ? 0 : 1;
+                        const bQ = hasQualReq(b) ? 0 : 1;
+                        if (aQ !== bQ) return aQ - bQ;
+                        return (a.order || 0) - (b.order || 0);
+                    });
+
+                if (underFilled.length === 0) break;
+
+                const unassigned = doctors.filter(d => !usedToday.has(d.id));
+                if (unassigned.length === 0) break;
+
+                const targetWp = underFilled[0];
+
+                const scored = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id)).map(doc => {
                     const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                    const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
-                    const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
-                    return { ...o, isRotTarget, isQual };
-                })
-                .sort((a, b) => {
-                    // Prefer rotation target
-                    if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
-                    // Prefer qualified positions
-                    if (a.isQual !== b.isQual) return a.isQual - b.isQual;
-                    // Prefer least filled
-                    if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
-                    return (a.wp.order || 0) - (b.wp.order || 0);
+                    const hasRotHere = rotTargets.includes(targetWp.name);
+                    const hasRotElsewhere = rotTargets.length > 0 && !hasRotHere;
+
+                    let tier;
+                    if (hasRotHere && getDisplaced(doc.id) > 0) tier = 0;
+                    else if (hasRotHere) tier = 1;
+                    else if (!hasRotElsewhere) tier = 2;
+                    else tier = 3;
+
+                    const qualified = isQualified(doc.id, targetWp.id);
+                    const needsQualCoverage = hasQualReq(targetWp) && !hasQualCoverage(targetWp);
+
+                    return {
+                        doc, tier,
+                        qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
+                        displaced: getDisplaced(doc.id),
+                        weekly: getWeekly(doc.id),
+                    };
+                }).sort((a, b) => {
+                    if (a.tier !== b.tier) return a.tier - b.tier;
+                    if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
+                    if (a.displaced !== b.displaced) return b.displaced - a.displaced;
+                    return a.weekly - b.weekly;
                 });
 
-            if (bestForDoc.length > 0) {
-                assign(doc.id, bestForDoc[0].wp.name);
-                
-                // Track displacement
-                const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                if (rotTargets.length > 0 && !rotTargets.includes(bestForDoc[0].wp.name)) {
-                    addDisplacement(doc.id);
+                if (scored.length > 0) {
+                    const chosen = scored[0].doc;
+                    assign(chosen.id, targetWp.name);
+
+                    const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
+                    if (rotTargets.length > 0 && !rotTargets.includes(targetWp.name)) {
+                        addDisplacement(chosen.id);
+                    }
+                    changed = true;
                 }
-                
-                overChanged = true;
+            }
+
+            // --- B.3: Over-fill remaining doctors into allows_multiple ---
+            let overChanged = true;
+            while (overChanged) {
+                overChanged = false;
+
+                const remaining = doctors.filter(d => !usedToday.has(d.id));
+                if (remaining.length === 0) break;
+
+                const options = availWps
+                    .filter(wp => allowsMultiple(wp))
+                    .map(wp => ({
+                        wp,
+                        fillRatio: (posCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
+                    }))
+                    .sort((a, b) => {
+                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
+                        return (a.wp.order || 0) - (b.wp.order || 0);
+                    });
+
+                if (options.length === 0) break;
+
+                const doc = remaining.sort((a, b) => {
+                    const aRotMatch = getActiveRotationTargets(a.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
+                    const bRotMatch = getActiveRotationTargets(b.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
+                    if (aRotMatch !== bRotMatch) return aRotMatch - bRotMatch;
+                    return getWeekly(a.id) - getWeekly(b.id);
+                })[0];
+
+                const bestForDoc = options
+                    .filter(o => !isExcluded(doc.id, o.wp.id))
+                    .map(o => {
+                        const rotTargets = getActiveRotationTargets(doc.id, dateStr);
+                        const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
+                        const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
+                        return { ...o, isRotTarget, isQual };
+                    })
+                    .sort((a, b) => {
+                        if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
+                        if (a.isQual !== b.isQual) return a.isQual - b.isQual;
+                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
+                        return (a.wp.order || 0) - (b.wp.order || 0);
+                    });
+
+                if (bestForDoc.length > 0) {
+                    assign(doc.id, bestForDoc[0].wp.name);
+                    const rotTargets = getActiveRotationTargets(doc.id, dateStr);
+                    if (rotTargets.length > 0 && !rotTargets.includes(bestForDoc[0].wp.name)) {
+                        addDisplacement(doc.id);
+                    }
+                    overChanged = true;
+                }
+            }
+        }
+
+        // ============================================================
+        //  PHASE C: Nicht-verfügbarkeitsrelevante Arbeitsplätze
+        //  (affects_availability=false) — Ärzte aus Phase B bleiben verfügbar
+        // ============================================================
+        const nonAvailWps = allTodayWps.filter(wp =>
+            !isServiceWp(wp) && !isAffectsAvailability(wp)
+        );
+
+        if (nonAvailWps.length > 0) {
+            // For Phase C, only service-blocked and absence-blocked doctors are excluded.
+            // Doctors assigned in Phase B (availability-relevant workplaces) ARE available.
+            const phaseC_blocked = new Set(serviceBlocked);
+
+            const phaseCPosCount = { ...posCount };
+
+            const assignC = (docId, wpName) => {
+                suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
+                phaseCPosCount[wpName] = (phaseCPosCount[wpName] || 0) + 1;
+                incWeekly(docId);
+                phaseC_blocked.add(docId); // prevent double-assignment within Phase C
+            };
+
+            // C.1: Qualification coverage
+            const qualWpsC = nonAvailWps
+                .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
+                .sort((a, b) => {
+                    const aPool = doctors.filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
+                    const bPool = doctors.filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
+                    return aPool - bPool;
+                });
+
+            for (const wp of qualWpsC) {
+                const hasCov = [...existingShifts, ...suggestions].some(
+                    s => s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)
+                );
+                if (hasCov) continue;
+
+                const candidates = doctors
+                    .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
+                    .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+
+                if (candidates.length > 0) {
+                    assignC(candidates[0].id, wp.name);
+                }
+            }
+
+            // C.2: Fill to optimal_staff
+            let changedC = true;
+            while (changedC) {
+                changedC = false;
+
+                const underFilledC = nonAvailWps
+                    .filter(wp => (phaseCPosCount[wp.name] || 0) < getOptimal(wp))
+                    .sort((a, b) => {
+                        const aR = (phaseCPosCount[a.name] || 0) / getOptimal(a);
+                        const bR = (phaseCPosCount[b.name] || 0) / getOptimal(b);
+                        if (Math.abs(aR - bR) > 0.001) return aR - bR;
+                        return (a.order || 0) - (b.order || 0);
+                    });
+
+                if (underFilledC.length === 0) break;
+
+                const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
+                if (availableC.length === 0) break;
+
+                const targetWpC = underFilledC[0];
+
+                const scoredC = availableC
+                    .filter(doc => !isExcluded(doc.id, targetWpC.id))
+                    .map(doc => ({
+                        doc,
+                        qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
+                        weekly: getWeekly(doc.id),
+                    }))
+                    .sort((a, b) => {
+                        if (a.qualified !== b.qualified) return a.qualified - b.qualified;
+                        return a.weekly - b.weekly;
+                    });
+
+                if (scoredC.length > 0) {
+                    assignC(scoredC[0].doc.id, targetWpC.name);
+                    changedC = true;
+                }
+            }
+
+            // C.3: Over-fill remaining
+            let overChangedC = true;
+            while (overChangedC) {
+                overChangedC = false;
+
+                const remainingC = doctors.filter(d => !phaseC_blocked.has(d.id));
+                if (remainingC.length === 0) break;
+
+                const optionsC = nonAvailWps
+                    .filter(wp => allowsMultiple(wp))
+                    .map(wp => ({
+                        wp,
+                        fillRatio: (phaseCPosCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
+                    }))
+                    .sort((a, b) => {
+                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
+                        return (a.wp.order || 0) - (b.wp.order || 0);
+                    });
+
+                if (optionsC.length === 0) break;
+
+                const docC = remainingC.sort((a, b) => getWeekly(a.id) - getWeekly(b.id))[0];
+
+                const bestC = optionsC
+                    .filter(o => !isExcluded(docC.id, o.wp.id))
+                    .map(o => ({
+                        ...o,
+                        isQual: isQualified(docC.id, o.wp.id) ? 0 : 1,
+                    }))
+                    .sort((a, b) => {
+                        if (a.isQual !== b.isQual) return a.isQual - b.isQual;
+                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
+                        return (a.wp.order || 0) - (b.wp.order || 0);
+                    });
+
+                if (bestC.length > 0) {
+                    assignC(docC.id, bestC[0].wp.name);
+                    overChangedC = true;
+                }
             }
         }
     }
 
-    // ========== Phase 4: Auto-Frei for auto_off positions ==========
-    const autoFrei = [];
+    // ============================================================
+    //  PHASE D: Auto-Frei for non-service auto_off positions
+    //  (Service auto-frei was already handled in Phase A)
+    // ============================================================
     for (const s of suggestions) {
+        if (s.position === 'Frei') continue;
         const wp = workplaces.find(w => w.name === s.position);
         if (!wp?.auto_off) continue;
+        if (wp.category === 'Dienste') continue; // Already handled in Phase A
 
-        const curDay = new Date(s.date + 'T00:00:00');
-        const nextDay = new Date(curDay);
-        nextDay.setDate(nextDay.getDate() + 1);
-        const nextStr = formatDate(nextDay);
-
-        if ([0, 6].includes(nextDay.getDay()) || isPublicHoliday(nextDay)) continue;
-
-        const hasAny =
-            existingShifts.some(x => x.date === nextStr && x.doctor_id === s.doctor_id) ||
-            suggestions.some(x => x.date === nextStr && x.doctor_id === s.doctor_id) ||
-            autoFrei.some(x => x.date === nextStr && x.doctor_id === s.doctor_id);
-
-        if (!hasAny) {
-            autoFrei.push({
-                date: nextStr,
-                position: 'Frei',
-                doctor_id: s.doctor_id,
-                note: 'Autom. Freizeitausgleich',
-                isPreview: true,
-            });
+        const alreadyGenerated = autoFreiSuggestions.some(
+            af => af.doctor_id === s.doctor_id && af.date > s.date
+        );
+        if (!alreadyGenerated) {
+            generateAutoFrei(s.doctor_id, s.date);
         }
     }
 
-    return [...suggestions, ...autoFrei];
+    return [...suggestions, ...autoFreiSuggestions];
 }
 
 /** Simple date formatter */
