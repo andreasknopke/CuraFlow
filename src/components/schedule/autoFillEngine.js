@@ -44,6 +44,14 @@ export function generateSuggestions({
     systemSettings,
     wishes = [],
 }) {
+    // Shuffle doctors to avoid deterministic bias (e.g. same doctors always getting Monday shifts)
+    const shuffled = [...doctors];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    doctors = shuffled;
+
     const suggestions = [];
     const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
     const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5];
