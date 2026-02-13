@@ -285,14 +285,8 @@ export class ShiftValidator {
             return { blocker: `Fehlende Pflicht-Qualifikation: ${names}` };
         }
 
-        // Optionale Qualifikationen prüfen
-        const missingOptional = optionalQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
-        if (missingOptional.length > 0) {
-            const names = missingOptional
-                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
-                .join(', ');
-            return { warning: `Fehlende optionale Qualifikation: ${names}` };
-        }
+        // Optionale Qualifikationen: Bevorzugung, aber KEINE Warnung bei Fehlen
+        // (wird nur vom AutoFill-Algorithmus für Priorisierung genutzt)
 
         return {};
     }

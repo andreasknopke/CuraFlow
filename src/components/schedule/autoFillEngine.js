@@ -38,6 +38,7 @@ export function generateSuggestions({
     isPublicHoliday,
     getDoctorQualIds,
     getWpRequiredQualIds,
+    getWpOptionalQualIds,
     getWpExcludedQualIds,
     categoriesToFill,
     systemSettings,
@@ -82,6 +83,30 @@ export function generateSuggestions({
     const hasQualReq = (wp) => {
         const rq = getWpRequiredQualIds(wp.id);
         return rq?.length > 0;
+    };
+
+    /** Does the doctor have ALL optional qualifications for this workplace? */
+    const hasOptionalQuals = (doctorId, wpId) => {
+        const opt = getWpOptionalQualIds?.(wpId);
+        if (!opt?.length) return true; // no optional quals = considered "has them"
+        const doc = getDoctorQualIds(doctorId);
+        if (!doc?.length) return false;
+        return opt.every(q => doc.includes(q));
+    };
+
+    /** Does the doctor have ANY optional qualification for this workplace? */
+    const hasAnyOptionalQual = (doctorId, wpId) => {
+        const opt = getWpOptionalQualIds?.(wpId);
+        if (!opt?.length) return true;
+        const doc = getDoctorQualIds(doctorId);
+        if (!doc?.length) return false;
+        return opt.some(q => doc.includes(q));
+    };
+
+    /** Does this workplace have any optional qualification? */
+    const hasOptionalQualReq = (wp) => {
+        const oq = getWpOptionalQualIds?.(wp.id);
+        return oq?.length > 0;
     };
 
     const allowsMultiple = (wp) => {
@@ -541,16 +566,21 @@ export function generateSuggestions({
 
                     const qualified = isQualified(doc.id, targetWp.id);
                     const needsQualCoverage = hasQualReq(targetWp) && !hasQualCoverage(targetWp);
+                    // Optional qualification: prefer doctors who have optional quals
+                    const optQualScore = hasOptionalQuals(doc.id, targetWp.id) ? 0 :
+                                         hasAnyOptionalQual(doc.id, targetWp.id) ? 1 : 2;
 
                     return {
                         doc, tier,
                         qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
+                        optQualScore,
                         displaced: getDisplaced(doc.id),
                         weekly: getWeekly(doc.id),
                     };
                 }).sort((a, b) => {
                     if (a.tier !== b.tier) return a.tier - b.tier;
                     if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
+                    if (a.optQualScore !== b.optQualScore) return a.optQualScore - b.optQualScore;
                     if (a.displaced !== b.displaced) return b.displaced - a.displaced;
                     return a.weekly - b.weekly;
                 });
@@ -601,11 +631,14 @@ export function generateSuggestions({
                         const rotTargets = getActiveRotationTargets(doc.id, dateStr);
                         const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
                         const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
-                        return { ...o, isRotTarget, isQual };
+                        const optQual = hasOptionalQuals(doc.id, o.wp.id) ? 0 :
+                                        hasAnyOptionalQual(doc.id, o.wp.id) ? 1 : 2;
+                        return { ...o, isRotTarget, isQual, optQual };
                     })
                     .sort((a, b) => {
                         if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
                         if (a.isQual !== b.isQual) return a.isQual - b.isQual;
+                        if (a.optQual !== b.optQual) return a.optQual - b.optQual;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
@@ -680,14 +713,25 @@ export function generateSuggestions({
                 let candidates = doctors
                     .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                  isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                    .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                    .sort((a, b) => {
+                        // Prefer doctors with optional qualifications
+                        const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
+                        const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
+                        if (aOpt !== bOpt) return aOpt - bOpt;
+                        return getWeekly(a.id) - getWeekly(b.id);
+                    });
 
                 // If none free, allow already-assigned-in-Phase-C qualified doctors (Mehrfachbesetzung!)
                 if (candidates.length === 0) {
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                      isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                        .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                        .sort((a, b) => {
+                            const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
+                            const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
+                            if (aOpt !== bOpt) return aOpt - bOpt;
+                            return getWeekly(a.id) - getWeekly(b.id);
+                        });
                 }
 
                 if (candidates.length > 0) {
@@ -737,7 +781,7 @@ export function generateSuggestions({
                         changedC = true;
                     }
                 } else {
-                    // Non-Pflicht workplace: any unblocked doctor
+                    // Non-Pflicht workplace: any unblocked doctor, prefer optional-qualified
                     const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
                     if (availableC.length === 0) break;
 
@@ -747,10 +791,13 @@ export function generateSuggestions({
                         .map(doc => ({
                             doc,
                             qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
+                            optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
+                                      hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
                             weekly: getWeekly(doc.id),
                         }))
                         .sort((a, b) => {
                             if (a.qualified !== b.qualified) return a.qualified - b.qualified;
+                            if (a.optQual !== b.optQual) return a.optQual - b.optQual;
                             return a.weekly - b.weekly;
                         });
 

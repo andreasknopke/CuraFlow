@@ -588,7 +588,7 @@ export default function ScheduleBoard() {
 
   // Qualifikationsdaten für visuelle Indikatoren
   const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
-  const { getRequiredQualificationIds: getWpRequiredQualIds, getExcludedQualificationIds: getWpExcludedQualIds } = useAllWorkplaceQualifications();
+  const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds } = useAllWorkplaceQualifications();
 
   // Override-Validierung mit Dialog
   const {
@@ -2539,6 +2539,7 @@ export default function ScheduleBoard() {
         isPublicHoliday,
         getDoctorQualIds,
         getWpRequiredQualIds,
+        getWpOptionalQualIds,
         getWpExcludedQualIds,
         categoriesToFill,
         systemSettings,
