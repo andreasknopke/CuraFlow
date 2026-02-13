@@ -153,7 +153,7 @@ export class ShiftValidator {
         }
 
         // 6. Qualifikationsanforderungen prüfen
-        const qualResult = this._checkQualificationRequirements(doctorId, position);
+        const qualResult = this._checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId);
         if (qualResult.blocker) {
             result.warnings.push(qualResult.blocker); // Als Warnung (override-fähig), nicht als harter Blocker
         }
@@ -182,8 +182,11 @@ export class ShiftValidator {
      * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Arzt-Qualifikationen
      * Pflicht-Qualifikationen → Warnung (override-fähig)
      * Optionale Qualifikationen → Hinweis
+     * 
+     * Ausbildungsmodus: Bei Mehrfachbesetzung werden die Checks ausgesetzt,
+     * wenn bereits mind. 1 qualifizierter Mitarbeiter eingeteilt ist.
      */
-    _checkQualificationRequirements(doctorId, position) {
+    _checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId) {
         const workplace = this.workplaces.find(w => w.name === position);
         if (!workplace) return {};
 
@@ -193,6 +196,31 @@ export class ShiftValidator {
         const docQualIds = this.getDoctorQualIds(doctorId);
         const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
+
+        // Mehrfachbesetzung / Ausbildungsmodus:
+        // Prüfe ob bereits ein qualifizierter Kollege am selben Tag in derselben Position eingeteilt ist
+        if (dateStr) {
+            const otherAssignments = this.shifts.filter(s =>
+                s.position === position &&
+                s.date === dateStr &&
+                s.doctor_id !== doctorId &&
+                s.id !== excludeShiftId
+            );
+
+            if (otherAssignments.length > 0) {
+                // Prüfe ob mindestens ein bereits eingeteilter Kollege alle Pflicht-Qualifikationen hat
+                const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...optionalQuals.map(wq => wq.qualification_id)];
+                const hasQualifiedColleague = otherAssignments.some(s => {
+                    const colleagueQuals = this.getDoctorQualIds(s.doctor_id);
+                    return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
+                });
+
+                if (hasQualifiedColleague) {
+                    // Qualifizierter Kollege vorhanden → Checks aussetzen (Ausbildung)
+                    return {};
+                }
+            }
+        }
 
         // Pflicht-Qualifikationen prüfen
         const missingMandatory = mandatoryQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
