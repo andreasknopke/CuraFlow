@@ -576,6 +576,33 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                             </div>
                                                                         )}
 
+                                                                        {/* Aktive Tage für Rotationen */}
+                                                                        {activeTab === "Rotationen" && (
+                                                                            <div className="space-y-2">
+                                                                                <Label>Aktive Tage</Label>
+                                                                                <div className="text-xs text-slate-500 mb-1">
+                                                                                    An welchen Wochentagen kann diese Rotation besetzt werden?
+                                                                                </div>
+                                                                                <div className="flex gap-1">
+                                                                                    {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, i) => (
+                                                                                        <button
+                                                                                            key={i}
+                                                                                            type="button"
+                                                                                            onClick={() => toggleDay(i)}
+                                                                                            className={cn(
+                                                                                                "w-8 h-8 rounded-full text-xs font-medium transition-colors",
+                                                                                                (editForm.active_days || []).includes(i)
+                                                                                                    ? "bg-indigo-600 text-white"
+                                                                                                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                                                                                            )}
+                                                                                        >
+                                                                                            {day[0]}
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
                                                                         {/* Zeitfenster-Sektion - für ALLE Kategorien verfügbar */}
                                                                         <div className="pt-4 border-t space-y-4">
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
@@ -649,7 +676,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 {item.show_in_service_plan && <Badge variant="secondary" className="text-[10px] font-normal bg-purple-100 text-purple-700">Dienstplan</Badge>}
                                                                                 {item.affects_availability === false && <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">Nicht verfügbarkeitsrelevant</Badge>}
                                                                             </div>
-                                                                            {(activeTab === "Demonstrationen & Konsile" || isCustomCategory) && item.active_days && (
+                                                                            {item.active_days && item.active_days.length > 0 && !(item.active_days.length === 5 && [1,2,3,4,5].every(d => item.active_days.includes(d))) && (
                                                                                 <div className="flex gap-1 mt-1">
                                                                                     {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, i) => (
                                                                                         <div 
