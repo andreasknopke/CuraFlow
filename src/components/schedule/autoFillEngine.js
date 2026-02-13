@@ -524,11 +524,16 @@ export function generateSuggestions({
                 }
 
                 // Sort each group by rotation impact (low = preferred) then fairness score
+                // Skip rotation impact for services with allows_rotation_concurrently
+                // (e.g. Hintergrunddienst) since those don't reduce the rotation pool
+                const svcBlocksRotation = !svc.allows_rotation_concurrently;
                 const sortByImpactAndFairness = (a, b) => {
-                    // First: prefer doctors with LOW rotation impact (not critical for rotations)
-                    const impA = getRotationImpact(a.id);
-                    const impB = getRotationImpact(b.id);
-                    if (impA !== impB) return impA - impB;
+                    if (svcBlocksRotation) {
+                        // First: prefer doctors with LOW rotation impact (not critical for rotations)
+                        const impA = getRotationImpact(a.id);
+                        const impB = getRotationImpact(b.id);
+                        if (impA !== impB) return impA - impB;
+                    }
                     // Then: fairness score (4-week history, FTE-adjusted)
                     const fa = getFairnessScore(a.id, svc.name);
                     const fb = getFairnessScore(b.id, svc.name);
