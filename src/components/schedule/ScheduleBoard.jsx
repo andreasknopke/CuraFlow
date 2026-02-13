@@ -2722,16 +2722,28 @@ export default function ScheduleBoard() {
     const wpRequiredQuals = workplace ? getWpRequiredQualIds(workplace.id) : [];
     const hasQualRequirements = wpRequiredQuals.length > 0;
 
+    // Bei Mehrfachbesetzung: Warnung nur wenn KEINER der Eingetragenen qualifiziert ist
+    let anyoneQualified = false;
+    if (hasQualRequirements && shifts.length > 1) {
+        anyoneQualified = shifts.some(s => {
+            const docQuals = getDoctorQualIds(s.doctor_id);
+            return wpRequiredQuals.every(qId => docQuals.includes(qId));
+        });
+    }
+
     return shifts.map((shift, index) => {
         const doctor = doctors.find(d => d.id === shift.doctor_id);
         if (!doctor) return null;
         
-        // Qualifikations-Indikator: 'qualified' | 'unqualified' | null (keine Anforderung)
+        // Qualifikations-Indikator: 'unqualified' nur wenn der Arzt selbst nicht qualifiziert ist
+        // UND bei Mehrfachbesetzung auch kein anderer Kollege qualifiziert ist
         let qualificationStatus = null;
         if (hasQualRequirements) {
             const docQuals = getDoctorQualIds(doctor.id);
             const hasAll = wpRequiredQuals.every(qId => docQuals.includes(qId));
-            qualificationStatus = hasAll ? 'qualified' : 'unqualified';
+            if (!hasAll && (shifts.length === 1 || !anyoneQualified)) {
+                qualificationStatus = 'unqualified';
+            }
         }
 
         const roleColor = getRoleColor(doctor.role);
