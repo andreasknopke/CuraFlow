@@ -2049,12 +2049,14 @@ export default function ScheduleBoard() {
              }
 
              const occupyingShift = findOccupyingShift(dateStr, position);
-             if (occupyingShift) {
-                 deleteShiftWithCleanup(occupyingShift);
-             }
 
              // Hilfsfunktion für das Erstellen der Shifts
              const executeShiftCreation = () => {
+                 // Bestehenden Eintrag erst hier löschen (nach Konfliktprüfung/Override-Bestätigung)
+                 if (occupyingShift) {
+                     deleteShiftWithCleanup(occupyingShift);
+                 }
+
                  // Shift erstellen (exists-Prüfung ist jetzt bereits weiter oben erfolgt)
                  // Bei Timeslot-Rows: Filter auch nach timeslot_id
                  // '__unassigned__' = Zeile für Shifts ohne Timeslot
