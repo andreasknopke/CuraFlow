@@ -435,44 +435,75 @@ export function generateSuggestions({
         //  workplaces that require mandatory qualifications.
         //  This prevents sending ALL qualified Fachärzte into services
         //  when they are the only ones who can fill rotation positions.
+        //
+        //  ALSO: For services with auto_off, consider the NEXT working
+        //  day's impact. If a doctor gets Auto-Frei tomorrow, they can't
+        //  fill rotation positions there either.
         // ============================================================
         const rotationImpactScore = {}; // doctorId -> number (higher = more critical for rotations)
         {
-            // All rotation/availability-relevant workplaces active today that need qualifications
-            const criticalWps = workplaces.filter(wp =>
-                !isServiceWp(wp) &&
-                isAffectsAvailability(wp) &&
-                isActiveOnDate(wp, day) &&
-                hasQualReq(wp) &&
-                getMinStaff(wp) > 0
-            );
-
-            // For each critical workplace, find the pool of available qualified doctors
-            const wpQualPools = criticalWps.map(wp => {
-                const qualifiedPool = doctors.filter(d =>
-                    !baseBlocked.has(d.id) &&
-                    !isExcluded(d.id, wp.id) &&
-                    isQualified(d.id, wp.id)
+            /** Compute impact scores for a given day/date, considering who is blocked */
+            const computeImpactForDay = (targetDay, blockedSet, multiplier) => {
+                const critWps = workplaces.filter(wp =>
+                    !isServiceWp(wp) &&
+                    isAffectsAvailability(wp) &&
+                    isActiveOnDate(wp, targetDay) &&
+                    hasQualReq(wp) &&
+                    getMinStaff(wp) > 0
                 );
-                return { wp, qualifiedPool, poolSize: qualifiedPool.length };
-            });
 
-            // For each doctor, count how many critical workplaces they are the
-            // sole or near-sole qualified candidate for
-            for (const { wp, qualifiedPool, poolSize } of wpQualPools) {
-                if (poolSize === 0) continue;
-                for (const doc of qualifiedPool) {
-                    if (!rotationImpactScore[doc.id]) rotationImpactScore[doc.id] = 0;
-                    // The scarcer the qualified pool, the more critical this doctor is
-                    // poolSize=1 → impact +10 (sole candidate, must not lose them)
-                    // poolSize=2 → impact +5 (losing one leaves only 1)
-                    // poolSize=3 → impact +2
-                    // poolSize>=4 → impact +1
-                    if (poolSize <= 1) rotationImpactScore[doc.id] += 10;
-                    else if (poolSize <= 2) rotationImpactScore[doc.id] += 5;
-                    else if (poolSize <= 3) rotationImpactScore[doc.id] += 2;
-                    else rotationImpactScore[doc.id] += 1;
+                for (const wp of critWps) {
+                    const qualifiedPool = doctors.filter(d =>
+                        !blockedSet.has(d.id) &&
+                        !isExcluded(d.id, wp.id) &&
+                        isQualified(d.id, wp.id)
+                    );
+                    const poolSize = qualifiedPool.length;
+                    if (poolSize === 0) continue;
+                    for (const doc of qualifiedPool) {
+                        if (!rotationImpactScore[doc.id]) rotationImpactScore[doc.id] = 0;
+                        if (poolSize <= 1) rotationImpactScore[doc.id] += 10 * multiplier;
+                        else if (poolSize <= 2) rotationImpactScore[doc.id] += 5 * multiplier;
+                        else if (poolSize <= 3) rotationImpactScore[doc.id] += 2 * multiplier;
+                        else rotationImpactScore[doc.id] += 1 * multiplier;
+                    }
                 }
+            };
+
+            // Impact for TODAY (weight 1x)
+            computeImpactForDay(day, baseBlocked, 1);
+
+            // Impact for NEXT WORKING DAY (weight 1x) — relevant for auto_off services
+            // If any active service today has auto_off, the chosen doctor will be
+            // blocked tomorrow. We must account for that.
+            const hasAutoOffService = allTodayWps.some(wp => isServiceWp(wp) && wp.auto_off);
+            if (hasAutoOffService) {
+                // Find next working day (same logic as generateAutoFrei)
+                const nextDay = new Date(day);
+                nextDay.setDate(nextDay.getDate() + 1);
+                for (let i = 0; i < 7; i++) {
+                    if (nextDay.getDay() !== 0 && nextDay.getDay() !== 6 && !isPublicHoliday(nextDay)) break;
+                    nextDay.setDate(nextDay.getDate() + 1);
+                }
+                const nextDateStr = formatDate(nextDay);
+
+                // Build blocked set for next day: absences + existing assignments + auto-frei
+                const nextDayBlocked = new Set();
+                if (autoFreiByDate[nextDateStr]) {
+                    for (const docId of autoFreiByDate[nextDateStr]) nextDayBlocked.add(docId);
+                }
+                for (const s of existingShifts) {
+                    if (s.date !== nextDateStr) continue;
+                    if (absencePositions.includes(s.position)) { nextDayBlocked.add(s.doctor_id); continue; }
+                    if (s.position === 'Verfügbar') continue;
+                    const xwp = workplaces.find(w => w.name === s.position);
+                    if (xwp?.affects_availability === false) continue;
+                    if (xwp?.allows_rotation_concurrently) continue;
+                    if (xwp?.category === 'Demonstrationen & Konsile') continue;
+                    nextDayBlocked.add(s.doctor_id);
+                }
+
+                computeImpactForDay(nextDay, nextDayBlocked, 1);
             }
         }
 
