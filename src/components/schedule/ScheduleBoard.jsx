@@ -3319,12 +3319,9 @@ export default function ScheduleBoard() {
                                     }
                                 }
 
-                                // Check active_days for ALL non-rotation sections (Dienste, Demos, Custom)
+                                // Check active_days for ALL sections (Rotationen, Dienste, Demos, Custom)
                                 {
-                                    const isRotationSection = sections.find(s => s.title === "Rotationen")?.rows.some(r => 
-                                        (typeof r === 'string' ? r : r.name) === rowName
-                                    );
-                                    if (!isRotationSection && rowName !== 'Verfügbar') {
+                                    if (rowName !== 'Verfügbar') {
                                         const setting = workplaces.find(s => s.name === rowName);
                                         if (setting && setting.active_days && setting.active_days.length > 0) {
                                             const dayOfWeek = day.getDay(); // 0=So, 1=Mo, ..., 6=Sa
