@@ -618,6 +618,36 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 />
                                                                             </div>
 
+                                                                            {/* Besetzungszahlen für Auto-Fill */}
+                                                                            {(editForm.allows_multiple ?? categoryAllowsMultiple(activeTab)) && (
+                                                                                <div className="grid grid-cols-2 gap-3 p-3 border rounded bg-amber-50">
+                                                                                    <div className="space-y-1">
+                                                                                        <Label className="text-sm">Min. Besetzung</Label>
+                                                                                        <div className="text-xs text-slate-500">0 = kann leer bleiben</div>
+                                                                                        <Input
+                                                                                            type="number"
+                                                                                            min="0"
+                                                                                            max="20"
+                                                                                            value={editForm.min_staff ?? 1}
+                                                                                            onChange={(e) => setEditForm({...editForm, min_staff: parseInt(e.target.value) || 0})}
+                                                                                            className="h-8 w-20"
+                                                                                        />
+                                                                                    </div>
+                                                                                    <div className="space-y-1">
+                                                                                        <Label className="text-sm">Opt. Besetzung</Label>
+                                                                                        <div className="text-xs text-slate-500">Zielanzahl für Auto-Fill</div>
+                                                                                        <Input
+                                                                                            type="number"
+                                                                                            min="0"
+                                                                                            max="20"
+                                                                                            value={editForm.optimal_staff ?? 1}
+                                                                                            onChange={(e) => setEditForm({...editForm, optimal_staff: parseInt(e.target.value) || 1})}
+                                                                                            className="h-8 w-20"
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
                                                                                 <div className="space-y-0.5">
                                                                                     <Label className="text-base flex items-center gap-2">
@@ -673,6 +703,11 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 {item.auto_off && <Badge variant="secondary" className="text-[10px] font-normal bg-blue-100 text-blue-700">Auto-Frei</Badge>}
                                                                                 {item.allows_rotation_concurrently && <Badge variant="secondary" className="text-[10px] font-normal bg-green-100 text-green-700">Rotation OK</Badge>}
                                                                                 {item.allows_multiple && <Badge variant="secondary" className="text-[10px] font-normal bg-teal-100 text-teal-700">Mehrfachbesetzung</Badge>}
+                                                                                {item.allows_multiple && (item.min_staff > 0 || item.optimal_staff > 1) && (
+                                                                                    <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">
+                                                                                        {item.min_staff ?? 1}–{item.optimal_staff ?? 1}
+                                                                                    </Badge>
+                                                                                )}
                                                                                 {item.show_in_service_plan && <Badge variant="secondary" className="text-[10px] font-normal bg-purple-100 text-purple-700">Dienstplan</Badge>}
                                                                                 {item.affects_availability === false && <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">Nicht verfügbarkeitsrelevant</Badge>}
                                                                             </div>

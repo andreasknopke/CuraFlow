@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, onAcceptPreview, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const containerRef = useRef(null);
@@ -167,7 +167,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
 
         const containerClass = isDragging 
             ? `flex items-center justify-center cursor-none` // Center the badge
-            : `relative flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'ring-2 ring-indigo-500 ring-offset-1 opacity-90' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
+            : `relative flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'opacity-50 border-dashed border-indigo-400 cursor-pointer hover:opacity-80 hover:border-indigo-600' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
 
         return (
           <div
@@ -179,6 +179,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
             {...(isFullWidth ? {} : provided.dragHandleProps)}
             className={containerClass}
             style={containerStyle}
+            onClick={isPreview && onAcceptPreview ? (e) => { e.stopPropagation(); onAcceptPreview(shift); } : undefined}
+            title={isPreview ? 'Klicken zum Übernehmen' : undefined}
           >
             {isDragging ? (
                 // The visual badge - square like small chips

@@ -26,6 +26,7 @@ import DraggableShift from './DraggableShift';
 import DroppableCell from './DroppableCell';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import AIRulesDialog from './AIRulesDialog';
+import { generateSuggestions } from './autoFillEngine';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
@@ -284,6 +285,7 @@ export default function ScheduleBoard() {
       localStorage.setItem('radioplan_gridFontSize', JSON.stringify(gridFontSize));
   }, [gridFontSize]);
   const [previewShifts, setPreviewShifts] = useState(null);
+  const [previewCategories, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
@@ -2470,189 +2472,85 @@ export default function ScheduleBoard() {
   
   const applyPreview = async () => {
       if (!previewShifts) return;
-      await db.ShiftEntry.bulkCreate(previewShifts);
+      // Remove isPreview flag before saving
+      const shiftsToCreate = previewShifts.map(({ isPreview, id, ...rest }) => rest);
+      await db.ShiftEntry.bulkCreate(shiftsToCreate);
       queryClient.invalidateQueries(['shifts']);
       setPreviewShifts(null);
+      setPreviewCategories(null);
+      toast.success(`${shiftsToCreate.length} Eintr\u00e4ge \u00fcbernommen`);
   };
 
   const cancelPreview = () => {
       setPreviewShifts(null);
+      setPreviewCategories(null);
   };
 
-  const handleAutoFill = async () => {
+  // Accept a single preview shift by clicking on it
+  const acceptSinglePreview = async (previewShift) => {
+      if (!previewShifts) return;
+      const { isPreview, id, ...shiftData } = previewShift;
+      try {
+          await db.ShiftEntry.create(shiftData);
+          queryClient.invalidateQueries(['shifts']);
+          // Remove this shift from preview list
+          const remaining = previewShifts.filter(s => 
+              !(s.date === previewShift.date && s.position === previewShift.position && s.doctor_id === previewShift.doctor_id)
+          );
+          if (remaining.length === 0) {
+              setPreviewShifts(null);
+              setPreviewCategories(null);
+          } else {
+              setPreviewShifts(remaining);
+          }
+          toast.success('Vorschlag \u00fcbernommen');
+      } catch (err) {
+          toast.error('Fehler: ' + err.message);
+      }
+  };
+
+  const handleAutoFill = (categories = null) => {
     setIsGenerating(true);
     try {
-      const weekDates = weekDays.map(d => format(d, 'yyyy-MM-dd'));
-      const weekStart = weekDates[0];
-      const weekEnd = weekDates[6];
-      
-      // 1. Prepare Rotations Map for better context
-      const relevantRotations = trainingRotations.filter(rot => {
-         return (rot.start_date <= weekEnd && rot.end_date >= weekStart);
-      }).map(rot => {
-          const doc = doctors.find(d => d.id === rot.doctor_id);
-          return {
-              doctor_id: rot.doctor_id,
-              doctor_name: doc ? doc.name : 'Unknown',
-              modality: rot.modality,
-              start: rot.start_date,
-              end: rot.end_date
-          };
+      // Determine which categories to fill
+      const allCategories = [
+        'Rotationen', 
+        'Dienste', 
+        'Demonstrationen & Konsile',
+        ...(() => {
+          const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
+          if (!catSetting?.value) return [];
+          try {
+            const parsed = JSON.parse(catSetting.value);
+            return Array.isArray(parsed) ? parsed.map(c => typeof c === 'string' ? c : c.name) : [];
+          } catch { return []; }
+        })()
+      ];
+      const categoriesToFill = categories || allCategories;
+      setPreviewCategories(categoriesToFill);
+
+      const result = generateSuggestions({
+        weekDays,
+        doctors,
+        workplaces,
+        existingShifts: currentWeekShifts.filter(s => !s.isPreview),
+        trainingRotations,
+        isPublicHoliday,
+        getDoctorQualIds,
+        getWpRequiredQualIds,
+        categoriesToFill,
+        systemSettings,
       });
 
-      // 2. Existing Shifts (Absences & Services)
-      const existingShiftsData = currentWeekShifts.map(s => ({
-          date: s.date,
-          doctor_id: s.doctor_id,
-          position: s.position
-      }));
-
-      const holidays = weekDays.filter(d => isPublicHoliday(d)).map(d => format(d, 'yyyy-MM-dd'));
-
-      const prompt = `
-        Du bist ein strikter Dienstplaner für eine Radiologie.
-        Deine Aufgabe ist es, JEDEN offenen Arbeitsplatz für die Woche ${weekStart} bis ${weekEnd} zu besetzen.
-        
-        --- INPUT DATEN ---
-        
-        1. VERFÜGBARE ÄRZTE:
-        ${JSON.stringify(doctors.map(d => ({ id: d.id, name: d.name, role: d.role })), null, 2)}
-        
-        2. BEREITS BLOCKIERTE ÄRZTE (Abwesenheiten & Manuelle Dienste):
-        Diesen Ärzten darfst du an den jeweiligen Tagen KEINEN neuen Arbeitsplatz zuweisen!
-        ${JSON.stringify(existingShiftsData, null, 2)}
-        
-        3. PFLICHT-ROTATIONEN (Höchste Priorität!):
-        Wenn ein Arzt hier gelistet ist und verfügbar ist, MUSS er zwingend in diese Funktion eingeteilt werden.
-        ${JSON.stringify(relevantRotations, null, 2)}
-        
-        4. ZUSÄTZLICHE REGELN:
-        ${scheduleRules.filter(r => r.is_active).map((r, i) => `${i+1}. ${r.content}`).join('\n')}
-        
-        --- ZU BESETZENDE ARBEITSPLÄTZE ---
-        
-        FÜR JEDEN WERKTAG (Mo-Fr), der KEIN Feiertag ist (Feiertage: ${holidays.join(', ')}),
-        MUSST du folgende Positionen besetzen:
-        
-        - 1x "DL/konv. Rö" (Prio: Assistenzarzt)
-        - 1x "Sonographie" (Prio: Assistenzarzt)
-        - 3x "CT" (mind. 1 Facharzt/Oberarzt, Rest Assistenten)
-        - 2x "Mammographie" (1 Erfahrener + 1 Assistent wenn möglich)
-        - 2x "Angiographie" (Prio: Erfahrene)
-        - 2x "MRT" (1 Erfahrener + 1 Assistent wenn möglich)
-        
-        --- ALGORITHMUS ---
-        
-        Für jeden Werktag (Tag X):
-        1. Filtere Ärzte, die an Tag X "Frei", "Krank", "Urlaub", "Dienstreise" oder "Dienst..." haben. Diese sind RAUS.
-        2. Nimm alle verbleibenden Ärzte.
-        3. SCHRITT A (Rotationen): Weise zuerst alle Ärzte zu, die eine aktive Rotation haben.
-           - Bsp: Arzt A hat "Angio"-Rotation -> Setze ihn auf "Angiographie".
-        4. SCHRITT B (Auffüllen): Fülle die verbleibenden offenen Positionen (siehe Liste oben) mit den restlichen verfügbaren Ärzten auf.
-           - Achte auf Qualifikation (CT braucht mind 1 erfahrenen Arzt).
-           - Versuche eine faire Verteilung.
-           - Wenn mehr Plätze als Ärzte da sind: Besetze so viele wie möglich (Prio: CT, MRT, Angio).
-           - Wenn mehr Ärzte als Plätze da sind: Weise übrigen Ärzten sinnvolle Positionen zu (z.B. doppelte Besetzung oder "Sonstiges").
-        
-        WICHTIG:
-        - Generiere NUR Zuweisungen für Werktage (Mo-Fr), die keine Feiertage sind.
-        - KEINE Zuweisungen am Wochenende (Sa/So).
-        - Ignoriere Positionen "Dienst Vordergrund/Hintergrund/Spätdienst" (diese sind manuell).
-        
-        OUTPUT FORMAT:
-        { "assignments": [{ "date": "YYYY-MM-DD", "position": "PositionName", "doctor_id": "ID" }] }
-      `;
-      
-      const response = await base44.integrations.Core.InvokeLLM({
-        prompt: prompt,
-        response_json_schema: {
-            type: "object",
-            properties: {
-                assignments: {
-                    type: "array",
-                    items: {
-                        type: "object",
-                        properties: {
-                            date: { type: "string" },
-                            position: { type: "string" },
-                            doctor_id: { type: "string" }
-                        },
-                        required: ["date", "position", "doctor_id"]
-                    }
-                }
-            }
-        }
-      });
-
-      if (response && response.assignments) {
-         // Post-processing filter to enforce rules strictly
-         // All Rotations + Spätdienst (or all Services) are forbidden on weekends for AI generation
-         const rotationRows = workplaces.filter(w => w.category === 'Rotationen').map(w => w.name);
-         const serviceRows = workplaces.filter(w => w.category === 'Dienste').map(w => w.name);
-         
-         const forbiddenWeekendPositions = [...rotationRows, ...serviceRows];
-         const forbiddenServicePositions = serviceRows;
-
-         const validAssignments = response.assignments.filter(assignment => {
-            const date = new Date(assignment.date);
-            const dateStr = assignment.date;
-            const isWeekendDay = isWeekend(date);
-            const isHoliday = isPublicHoliday(date);
-            
-            // Rule 0: No services generated by AI (User Request)
-            if (forbiddenServicePositions.includes(assignment.position)) {
-                return false;
-            }
-
-            // Rule 1: Strict Weekend/Holiday check for functional areas
-            if ((isWeekendDay || isHoliday) && forbiddenWeekendPositions.includes(assignment.position)) {
-                return false;
-            }
-
-            // Rule 2: No double booking (check against existing DB shifts)
-            const isBlocked = existingShiftsData.some(s => 
-                s.date === dateStr && s.doctor_id === assignment.doctor_id
-            );
-            
-            if (isBlocked) return false;
-
-            return true;
-         });
-
-         // Rule 3: Auto-generate "Frei" after Auto-Off positions
-         const additionalFreiShifts = [];
-         validAssignments.forEach(assignment => {
-             const wp = workplaces.find(w => w.name === assignment.position);
-             if (wp && wp.auto_off) {
-                 const currentDay = new Date(assignment.date);
-                 const nextDay = addDays(currentDay, 1);
-                 
-                 // Skip if next day is weekend or holiday
-                 if (isWeekend(nextDay) || isPublicHoliday(nextDay)) return;
-                 
-                 const nextDayStr = format(nextDay, 'yyyy-MM-dd');
-                 const doctorId = assignment.doctor_id;
-                 
-                 // Check for conflicts on next day (existing DB, newly generated, or already added Frei)
-                 const hasExisting = existingShiftsData.some(s => s.date === nextDayStr && s.doctor_id === doctorId);
-                 const hasNew = validAssignments.some(s => s.date === nextDayStr && s.doctor_id === doctorId);
-                 const hasPendingFrei = additionalFreiShifts.some(s => s.date === nextDayStr && s.doctor_id === doctorId);
-
-                 if (!hasExisting && !hasNew && !hasPendingFrei) {
-                     additionalFreiShifts.push({
-                         date: nextDayStr,
-                         position: 'Frei',
-                         doctor_id: doctorId,
-                         note: 'Autom. Freizeitausgleich (KI)'
-                     });
-                 }
-             }
-         });
-
-         setPreviewShifts([...validAssignments, ...additionalFreiShifts]);
+      if (result.length > 0) {
+        setPreviewShifts(result);
+        toast.success(`${result.length} Vorschläge generiert`);
+      } else {
+        toast.info('Keine offenen Positionen gefunden');
       }
     } catch (error) {
-      console.error("AI Error:", error);
+      console.error('AutoFill Error:', error);
+      toast.error('Fehler beim Generieren: ' + error.message);
     } finally {
       setIsGenerating(false);
     }
@@ -2776,18 +2674,19 @@ export default function ScheduleBoard() {
                     index={index}
                     style={roleColor}
                     isFullWidth={isFullWidth}
-                    isDragDisabled={isReadOnly}
+                    isDragDisabled={isReadOnly || shift.isPreview}
                     fontSize={gridFontSize}
                     boxSize={gridFontSize * 3.5}
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
                     qualificationStatus={qualificationStatus}
+                    onAcceptPreview={shift.isPreview ? acceptSinglePreview : undefined}
                 />
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds]);
+  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, acceptSinglePreview]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -2913,14 +2812,67 @@ export default function ScheduleBoard() {
           </div>
           {previewShifts && (
              <div className="flex items-center bg-indigo-50 text-indigo-700 px-3 py-1 rounded-md border border-indigo-200">
-                 <span className="text-sm font-medium mr-3">KI: {previewShifts.length}</span>
-                 <Button size="sm" onClick={applyPreview} className="bg-indigo-600 hover:bg-indigo-700 text-white h-7 mr-2">OK</Button>
-                 <Button size="sm" variant="ghost" onClick={cancelPreview} className="h-7 hover:bg-indigo-100 hover:text-indigo-800">X</Button>
+                 <Wand2 className="w-4 h-4 mr-2" />
+                 <span className="text-sm font-medium mr-3">{previewShifts.length} Vorschläge</span>
+                 <Button size="sm" onClick={applyPreview} className="bg-indigo-600 hover:bg-indigo-700 text-white h-7 mr-2">
+                     Alle übernehmen
+                 </Button>
+                 <Button size="sm" variant="ghost" onClick={cancelPreview} className="h-7 hover:bg-indigo-100 hover:text-indigo-800">
+                     Verwerfen
+                 </Button>
              </div>
           )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
+             {!isReadOnly && !previewShifts && (
+                 <DropdownMenu>
+                     <DropdownMenuTrigger asChild>
+                         <Button 
+                             variant="outline" 
+                             size="sm" 
+                             className="h-9 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                             disabled={isGenerating}
+                         >
+                             {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                             <span className="hidden sm:inline ml-1">Auto-Fill</span>
+                         </Button>
+                     </DropdownMenuTrigger>
+                     <DropdownMenuContent align="end" className="w-56">
+                         <DropdownMenuLabel>Vorschläge generieren</DropdownMenuLabel>
+                         <DropdownMenuSeparator />
+                         <DropdownMenuItem onClick={() => handleAutoFill()}>
+                             Alle Kategorien
+                         </DropdownMenuItem>
+                         <DropdownMenuSeparator />
+                         <DropdownMenuItem onClick={() => handleAutoFill(['Rotationen'])}>
+                             Nur Rotationen
+                         </DropdownMenuItem>
+                         <DropdownMenuItem onClick={() => handleAutoFill(['Dienste'])}>
+                             Nur Dienste
+                         </DropdownMenuItem>
+                         <DropdownMenuItem onClick={() => handleAutoFill(['Demonstrationen & Konsile'])}>
+                             Nur Demos & Konsile
+                         </DropdownMenuItem>
+                         {(() => {
+                             const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');
+                             if (!catSetting?.value) return null;
+                             try {
+                                 const parsed = JSON.parse(catSetting.value);
+                                 if (!Array.isArray(parsed) || parsed.length === 0) return null;
+                                 return parsed.map(c => {
+                                     const name = typeof c === 'string' ? c : c.name;
+                                     return (
+                                         <DropdownMenuItem key={name} onClick={() => handleAutoFill([name])}>
+                                             Nur {name}
+                                         </DropdownMenuItem>
+                                     );
+                                 });
+                             } catch { return null; }
+                         })()}
+                     </DropdownMenuContent>
+                 </DropdownMenu>
+             )}
              <Button 
                 variant="outline"
                 size="sm"
