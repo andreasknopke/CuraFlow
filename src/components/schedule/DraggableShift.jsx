@@ -79,17 +79,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
     return () => observer.disconnect();
   }, [measureAndAdjust]);
   
-  // Qualification indicator dot
-  const QualDot = qualificationStatus ? (
+  // Qualification warning: only show when mandatory qualification is missing (override was used)
+  const QualWarning = qualificationStatus === 'unqualified' ? (
     <div 
-      className={`absolute top-0 right-0 rounded-full border border-white/80 z-20 ${
-        qualificationStatus === 'qualified' 
-          ? 'bg-emerald-500' 
-          : 'bg-amber-500'
-      }`}
-      style={{ width: Math.max(fontSize * 0.45, 5), height: Math.max(fontSize * 0.45, 5) }}
-      title={qualificationStatus === 'qualified' ? 'Qualifiziert' : 'Fehlende Pflicht-Qualifikation'}
-    />
+      className="absolute -top-0.5 -right-0.5 z-20 text-amber-600"
+      style={{ fontSize: Math.max(fontSize * 0.7, 8) }}
+      title="Fehlende Pflicht-Qualifikation (Override)"
+    >
+      ⚠
+    </div>
   ) : null;
 
   const dynamicStyle = {
@@ -201,7 +199,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 </div>
             ) : isFullWidth ? (
                 <>
-                    {QualDot}
+                    {QualWarning}
                     <div 
                         {...provided.dragHandleProps}
                         className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
@@ -222,7 +220,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
             )}
             {!isDragging && !isFullWidth && (
                 <>
-                {QualDot}
+                {QualWarning}
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full relative z-10" 
                     style={{ fontSize: `${displayFontSize}px` }}
