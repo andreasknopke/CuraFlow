@@ -334,6 +334,17 @@ export function generateSuggestions({
         );
     };
 
+    /** Does this doctor have a specific service wish for a named position on this date? */
+    const hasSpecificServiceWish = (doctorId, dateStr, positionName) => {
+        return wishes.some(w =>
+            w.doctor_id === doctorId &&
+            w.date === dateStr &&
+            w.type === 'service' &&
+            (w.status === 'approved' || w.status === 'pending') &&
+            w.position === positionName
+        );
+    };
+
     // ========================================================
     //  Classify workplaces
     // ========================================================
@@ -425,14 +436,19 @@ export function generateSuggestions({
                 // Build candidate pool for this service
                 // Exclude doctors who would exceed their 4-week limit
                 // Also exclude doctors already assigned to a service today
-                const allCandidates = doctors.filter(d =>
-                    !usedToday.has(d.id) &&
-                    !serviceAssignedToday.has(d.id) &&
-                    !isExcluded(d.id, svc.id) &&
-                    !hasApprovedNoService(d.id, dateStr) &&
-                    isQualified(d.id, svc.id) &&
-                    !wouldExceedLimit(d.id, svc.name, dateStr)
-                );
+                // EXCEPTION: Allow dual-service if doctor has a specific wish for THIS service
+                // (e.g. wishes for both Spätdienst and Hintergrunddienst on the same day)
+                const allCandidates = doctors.filter(d => {
+                    const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
+                    return (
+                        (!usedToday.has(d.id) || hasWishForThis) &&
+                        (!serviceAssignedToday.has(d.id) || hasWishForThis) &&
+                        !isExcluded(d.id, svc.id) &&
+                        !hasApprovedNoService(d.id, dateStr) &&
+                        isQualified(d.id, svc.id) &&
+                        !wouldExceedLimit(d.id, svc.name, dateStr)
+                    );
+                });
 
                 // Separate candidates into priority tiers
                 const withServiceWish = [];
@@ -466,13 +482,16 @@ export function generateSuggestions({
 
                 // If no candidates within limits, fall back to all qualified (limit exceeded = last resort)
                 if (ranked.length === 0) {
-                    const fallback = doctors.filter(d =>
-                        !usedToday.has(d.id) &&
-                        !serviceAssignedToday.has(d.id) &&
-                        !isExcluded(d.id, svc.id) &&
-                        !hasApprovedNoService(d.id, dateStr) &&
-                        isQualified(d.id, svc.id)
-                    ).sort((a, b) => getFairnessScore(a.id, svc.name) - getFairnessScore(b.id, svc.name));
+                    const fallback = doctors.filter(d => {
+                        const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
+                        return (
+                            (!usedToday.has(d.id) || hasWishForThis) &&
+                            (!serviceAssignedToday.has(d.id) || hasWishForThis) &&
+                            !isExcluded(d.id, svc.id) &&
+                            !hasApprovedNoService(d.id, dateStr) &&
+                            isQualified(d.id, svc.id)
+                        );
+                    }).sort((a, b) => getFairnessScore(a.id, svc.name) - getFairnessScore(b.id, svc.name));
                     ranked.push(...fallback);
                 }
 
@@ -655,6 +674,39 @@ export function generateSuggestions({
         }
 
         // ============================================================
+        //  Sole-occupant detection: doctors who are the only person at
+        //  an availability-relevant workplace should be deprioritized
+        //  for Demo assignments (only assigned if no one else available)
+        // ============================================================
+        const soleOccupantDoctors = new Set();
+        {
+            const wpStaffing = {}; // wpName -> Set of doctorIds
+            for (const s of existingShifts) {
+                if (s.date !== dateStr) continue;
+                if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
+                const wp = workplaces.find(w => w.name === s.position);
+                if (!wp || wp.category === 'Dienste' || wp.category === 'Demonstrationen & Konsile') continue;
+                if (wp.affects_availability === false) continue;
+                if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
+                wpStaffing[wp.name].add(s.doctor_id);
+            }
+            for (const s of suggestions) {
+                if (s.date !== dateStr) continue;
+                if (s.position === 'Frei') continue;
+                const wp = workplaces.find(w => w.name === s.position);
+                if (!wp || wp.category === 'Dienste' || wp.category === 'Demonstrationen & Konsile') continue;
+                if (wp.affects_availability === false) continue;
+                if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
+                wpStaffing[wp.name].add(s.doctor_id);
+            }
+            for (const [, docIds] of Object.entries(wpStaffing)) {
+                if (docIds.size === 1) {
+                    for (const docId of docIds) soleOccupantDoctors.add(docId);
+                }
+            }
+        }
+
+        // ============================================================
         //  PHASE C: Nicht-verfügbarkeitsrelevante Arbeitsplätze
         //  (affects_availability=false) — Ärzte aus Phase B bleiben verfügbar
         // ============================================================
@@ -710,10 +762,17 @@ export function generateSuggestions({
                 if (hasCov) continue;
 
                 // First try unblocked qualified doctors
+                const isDemoC1 = wp.category === 'Demonstrationen & Konsile';
                 let candidates = doctors
                     .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                  isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
                     .sort((a, b) => {
+                        // For Demo workplaces, deprioritize sole occupants of other workplaces
+                        if (isDemoC1) {
+                            const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                            const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                            if (aSole !== bSole) return aSole - bSole;
+                        }
                         // Prefer doctors with optional qualifications
                         const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
                         const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
@@ -727,6 +786,11 @@ export function generateSuggestions({
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                      isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
                         .sort((a, b) => {
+                            if (isDemoC1) {
+                                const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                                const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                                if (aSole !== bSole) return aSole - bSole;
+                            }
                             const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
                             const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
                             if (aOpt !== bOpt) return aOpt - bOpt;
@@ -757,6 +821,7 @@ export function generateSuggestions({
 
                 const targetWpC = underFilledC[0];
                 const targetHasQualReq = hasQualReq(targetWpC);
+                const isDemoC2 = targetWpC.category === 'Demonstrationen & Konsile';
 
                 if (targetHasQualReq) {
                     // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
@@ -765,7 +830,14 @@ export function generateSuggestions({
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
                                      !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
                                      !isAlreadyAssignedToWp(d.id, targetWpC.name))
-                        .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                        .sort((a, b) => {
+                            if (isDemoC2) {
+                                const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                                const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                                if (aSole !== bSole) return aSole - bSole;
+                            }
+                            return getWeekly(a.id) - getWeekly(b.id);
+                        });
 
                     // If none free, allow already-assigned qualified (Mehrfachbesetzung)
                     if (scoredC.length === 0) {
@@ -773,7 +845,14 @@ export function generateSuggestions({
                             .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
                                          isQualified(d.id, targetWpC.id) &&
                                          !isAlreadyAssignedToWp(d.id, targetWpC.name))
-                            .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                            .sort((a, b) => {
+                                if (isDemoC2) {
+                                    const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                                    const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                                    if (aSole !== bSole) return aSole - bSole;
+                                }
+                                return getWeekly(a.id) - getWeekly(b.id);
+                            });
                     }
 
                     if (scoredC.length > 0) {
@@ -790,12 +869,14 @@ export function generateSuggestions({
                                        !isAlreadyAssignedToWp(doc.id, targetWpC.name))
                         .map(doc => ({
                             doc,
+                            soleOccupant: isDemoC2 && soleOccupantDoctors.has(doc.id) ? 1 : 0,
                             qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
                             optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
                                       hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
                             weekly: getWeekly(doc.id),
                         }))
                         .sort((a, b) => {
+                            if (a.soleOccupant !== b.soleOccupant) return a.soleOccupant - b.soleOccupant;
                             if (a.qualified !== b.qualified) return a.qualified - b.qualified;
                             if (a.optQual !== b.optQual) return a.optQual - b.optQual;
                             return a.weekly - b.weekly;
@@ -836,6 +917,12 @@ export function generateSuggestions({
                     .filter(o => !isExcluded(docC.id, o.wp.id) &&
                                  !isAlreadyAssignedToWp(docC.id, o.wp.name))
                     .sort((a, b) => {
+                        // For sole occupants, deprioritize Demo workplaces
+                        if (soleOccupantDoctors.has(docC.id)) {
+                            const aDemo = a.wp.category === 'Demonstrationen & Konsile' ? 1 : 0;
+                            const bDemo = b.wp.category === 'Demonstrationen & Konsile' ? 1 : 0;
+                            if (aDemo !== bDemo) return aDemo - bDemo;
+                        }
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
