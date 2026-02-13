@@ -188,10 +188,18 @@ export class ShiftValidator {
      */
     _checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId) {
         const workplace = this.workplaces.find(w => w.name === position);
+        console.log('[QUAL-CHECK] Position:', position, '| Workplace found:', !!workplace, '| WP-ID:', workplace?.id);
         if (!workplace) return {};
 
+        const wpQualKeys = Object.keys(this.wpQualsByWorkplace);
         const wpQuals = this.wpQualsByWorkplace[workplace.id] || [];
-        if (wpQuals.length === 0) return {};
+        console.log('[QUAL-CHECK] wpQualsByWorkplace keys:', wpQualKeys, '| workplace.id:', workplace.id, '| typeof:', typeof workplace.id, '| wpQuals found:', wpQuals.length);
+        if (wpQuals.length === 0) {
+            // Versuch mit String-Konvertierung (Typ-Mismatch-Fallback)
+            const wpQualsStr = this.wpQualsByWorkplace[String(workplace.id)] || [];
+            console.log('[QUAL-CHECK] Fallback String-Key lookup:', wpQualsStr.length);
+            if (wpQualsStr.length === 0) return {};
+        }
 
         const docQualIds = this.getDoctorQualIds(doctorId);
         const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
