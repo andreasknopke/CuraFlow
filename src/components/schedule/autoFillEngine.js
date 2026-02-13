@@ -622,6 +622,9 @@ export function generateSuggestions({
             }
 
             // --- B.2: Fill to optimal_staff (round-robin) ---
+            // Priority: 1) Workplaces below min_staff first (critical)
+            //           2) Then workplaces below optimal but above min_staff
+            //           3) min_staff=0 workplaces are filled last
             let changed = true;
             while (changed) {
                 changed = false;
@@ -629,9 +632,28 @@ export function generateSuggestions({
                 const underFilled = availWps
                     .filter(wp => (posCount[wp.name] || 0) < getOptimal(wp))
                     .sort((a, b) => {
-                        const aR = (posCount[a.name] || 0) / getOptimal(a);
-                        const bR = (posCount[b.name] || 0) / getOptimal(b);
+                        const aCur = posCount[a.name] || 0;
+                        const bCur = posCount[b.name] || 0;
+                        const aMin = getMinStaff(a);
+                        const bMin = getMinStaff(b);
+                        const aOpt = getOptimal(a);
+                        const bOpt = getOptimal(b);
+
+                        // Tier 0: below min_staff (critical shortage)
+                        // Tier 1: at/above min_staff but below optimal (min_staff > 0)
+                        // Tier 2: min_staff=0, still below optimal (nice to fill, lowest priority)
+                        const aTier = aCur < aMin ? 0 : (aMin > 0 ? 1 : 2);
+                        const bTier = bCur < bMin ? 0 : (bMin > 0 ? 1 : 2);
+                        if (aTier !== bTier) return aTier - bTier;
+
+                        // Within same tier, sort by fill ratio (least filled first)
+                        const aR = aCur / aOpt;
+                        const bR = bCur / bOpt;
                         if (Math.abs(aR - bR) > 0.001) return aR - bR;
+
+                        // Prefer workplaces with higher optimal (more staff needed = more important)
+                        if (aOpt !== bOpt) return bOpt - aOpt;
+
                         const aQ = hasQualReq(a) ? 0 : 1;
                         const bQ = hasQualReq(b) ? 0 : 1;
                         if (aQ !== bQ) return aQ - bQ;
