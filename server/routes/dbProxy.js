@@ -228,6 +228,7 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         workplace_id VARCHAR(255) NOT NULL,
         qualification_id VARCHAR(255) NOT NULL,
         is_mandatory BOOLEAN NOT NULL DEFAULT TRUE,
+        is_excluded BOOLEAN NOT NULL DEFAULT FALSE,
         created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
         updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
         created_by VARCHAR(255) DEFAULT 'system',
@@ -236,6 +237,16 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         INDEX idx_wq_qualification (qualification_id)
       )
     `);
+
+    // Add is_excluded column if table already existed without it
+    try {
+      await dbPool.execute(`ALTER TABLE WorkplaceQualification ADD COLUMN IF NOT EXISTS is_excluded BOOLEAN NOT NULL DEFAULT FALSE`);
+      // Clear cache so new column is recognized
+      const wqCacheKey = `${cacheKey}:WorkplaceQualification`;
+      delete COLUMNS_CACHE[wqCacheKey];
+    } catch (alterErr) {
+      // Column might already exist
+    }
     
     COLUMNS_CACHE[tableCheckKey] = true;
     console.log('✅ Qualification tables ensured for tenant');

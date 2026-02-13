@@ -4,7 +4,7 @@ import { db } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Shield, AlertTriangle } from 'lucide-react';
+import { Shield, AlertTriangle, Ban } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
 
 /**
@@ -65,12 +65,34 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
         if (existingAssignment) {
             removeMutation.mutate(existingAssignment.id);
         } else {
-            assignMutation.mutate({ qualification_id: qualId, is_mandatory: true });
+            assignMutation.mutate({ qualification_id: qualId, is_mandatory: true, is_excluded: false });
         }
     };
 
-    const toggleMandatory = (wqId, currentMandatory) => {
-        updateMutation.mutate({ id: wqId, data: { is_mandatory: !currentMandatory } });
+    /** Cycle through modes: Pflicht → Optional → NOT → Pflicht */
+    const cycleMode = (wqEntry) => {
+        if (wqEntry.is_excluded) {
+            // NOT → Pflicht
+            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: true, is_excluded: false } });
+        } else if (wqEntry.is_mandatory) {
+            // Pflicht → Optional
+            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: false } });
+        } else {
+            // Optional → NOT
+            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: true } });
+        }
+    };
+
+    const getModeLabel = (wqEntry) => {
+        if (wqEntry.is_excluded) return 'NOT';
+        if (wqEntry.is_mandatory) return 'Pflicht';
+        return 'Optional';
+    };
+
+    const getModeStyle = (wqEntry) => {
+        if (wqEntry.is_excluded) return 'bg-slate-800 text-white hover:bg-slate-700';
+        if (wqEntry.is_mandatory) return 'bg-red-100 text-red-700 hover:bg-red-200';
+        return 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200';
     };
 
     if (isLoading) {
@@ -93,7 +115,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                 Benötigte Qualifikationen
             </Label>
             <div className="text-xs text-slate-500 mb-1">
-                Nur Mitarbeiter mit diesen Qualifikationen können hier eingeteilt werden.
+                Pflicht = Arzt muss Qualifikation besitzen. Optional = Hinweis. NOT = Arzt mit dieser Qualifikation darf hier nicht eingeteilt werden.
             </div>
             <div className="space-y-1">
                 {activeQuals.map(qual => {
@@ -123,15 +145,11 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        toggleMandatory(wqEntry.id, wqEntry.is_mandatory);
+                                        cycleMode(wqEntry);
                                     }}
-                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${
-                                        wqEntry.is_mandatory 
-                                            ? 'bg-red-100 text-red-700 hover:bg-red-200' 
-                                            : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
-                                    }`}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${getModeStyle(wqEntry)}`}
                                 >
-                                    {wqEntry.is_mandatory ? 'Pflicht' : 'Optional'}
+                                    {getModeLabel(wqEntry)}
                                 </button>
                             )}
                         </div>
@@ -154,17 +172,20 @@ export function WorkplaceQualificationBadges({ workplaceId, qualificationMap, al
             {wqEntries.map(wq => {
                 const qual = qualificationMap?.[wq.qualification_id];
                 if (!qual) return null;
+                const isExcluded = wq.is_excluded;
+                const prefix = isExcluded ? '⊘' : wq.is_mandatory ? '★' : '○';
+                const modeLabel = isExcluded ? 'NOT' : wq.is_mandatory ? 'Pflicht' : 'Optional';
                 return (
                     <Badge
                         key={wq.id}
-                        style={{ 
-                            backgroundColor: qual.color_bg || '#e0e7ff', 
-                            color: qual.color_text || '#3730a3' 
-                        }}
-                        className={`border-0 text-[10px] px-1.5 py-0 ${!wq.is_mandatory ? 'opacity-60' : ''}`}
-                        title={`${wq.is_mandatory ? 'Pflicht' : 'Optional'}: ${qual.name}`}
+                        style={isExcluded 
+                            ? { backgroundColor: '#1e293b', color: '#fff' }
+                            : { backgroundColor: qual.color_bg || '#e0e7ff', color: qual.color_text || '#3730a3' }
+                        }
+                        className={`border-0 text-[10px] px-1.5 py-0 ${!wq.is_mandatory && !isExcluded ? 'opacity-60' : ''}`}
+                        title={`${modeLabel}: ${qual.name}`}
                     >
-                        {wq.is_mandatory ? '★' : '○'} {qual.short_label || qual.name.substring(0, 3).toUpperCase()}
+                        {prefix} {qual.short_label || qual.name.substring(0, 3).toUpperCase()}
                     </Badge>
                 );
             })}

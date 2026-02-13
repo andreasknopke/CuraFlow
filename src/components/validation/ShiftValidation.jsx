@@ -233,8 +233,22 @@ export class ShiftValidator {
         if (wpQuals.length === 0) return {};
 
         const docQualIds = this.getDoctorQualIds(doctorId);
-        const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
-        const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
+
+        // NOT-Qualifikationen: Arzt darf KEINE der ausgeschlossenen Qualifikationen haben
+        // Dies ist ein harter Blocker (kein Override möglich)
+        const excludedQuals = wpQuals.filter(wq => wq.is_excluded);
+        if (excludedQuals.length > 0) {
+            const violatedExclusions = excludedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
+            if (violatedExclusions.length > 0) {
+                const names = violatedExclusions
+                    .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                    .join(', ');
+                return { blocker: `Ausgeschlossen: Arzt hat NOT-Qualifikation „${names}" – darf hier nicht eingeteilt werden.` };
+            }
+        }
+
+        const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory && !wq.is_excluded);
+        const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
         // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot,

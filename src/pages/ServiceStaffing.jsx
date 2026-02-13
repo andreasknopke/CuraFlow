@@ -457,9 +457,10 @@ export default function ServiceStaffingPage() {
                                         const absentIds = absencesByDate[dateStr] || new Set();
                                         // Qualifikationsanforderungen für diesen Arbeitsplatz/Dienst
                                         const wpQuals = type.workplace_id ? (wpQualsByWorkplace[type.workplace_id] || []) : [];
-                                        const mandatoryQualIds = wpQuals.filter(wq => wq.is_mandatory).map(wq => wq.qualification_id);
-                                        const optionalQualIds = wpQuals.filter(wq => !wq.is_mandatory).map(wq => wq.qualification_id);
-                                        const hasQualRequirements = mandatoryQualIds.length > 0 || optionalQualIds.length > 0;
+                                        const mandatoryQualIds = wpQuals.filter(wq => wq.is_mandatory && !wq.is_excluded).map(wq => wq.qualification_id);
+                                        const optionalQualIds = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded).map(wq => wq.qualification_id);
+                                        const excludedQualIds = wpQuals.filter(wq => wq.is_excluded).map(wq => wq.qualification_id);
+                                        const hasQualRequirements = mandatoryQualIds.length > 0 || optionalQualIds.length > 0 || excludedQualIds.length > 0;
 
                                         const availableDoctors = doctors.filter(doc => {
                                             // Always keep the currently assigned doctor in the list
@@ -470,6 +471,12 @@ export default function ServiceStaffingPage() {
                                             
                                             // Check absence (allow if currently assigned to this slot)
                                             if (absentIds.has(doc.id)) return false;
+
+                                            // NOT-qualifications: exclude doctors who have any excluded qualification
+                                            if (excludedQualIds.length > 0) {
+                                                const docQualIds = getDoctorQualIds(doc.id);
+                                                if (excludedQualIds.some(qid => docQualIds.includes(qid))) return false;
+                                            }
 
                                             // If workplace has mandatory qualification requirements, enforce them
                                             if (mandatoryQualIds.length > 0) {

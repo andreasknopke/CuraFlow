@@ -264,13 +264,19 @@ export function useAllWorkplaceQualifications() {
 
     const getRequiredQualificationIds = (workplaceId) => {
         return (byWorkplace[workplaceId] || [])
-            .filter(wq => wq.is_mandatory)
+            .filter(wq => wq.is_mandatory && !wq.is_excluded)
             .map(wq => wq.qualification_id);
     };
 
     const getOptionalQualificationIds = (workplaceId) => {
         return (byWorkplace[workplaceId] || [])
-            .filter(wq => !wq.is_mandatory)
+            .filter(wq => !wq.is_mandatory && !wq.is_excluded)
+            .map(wq => wq.qualification_id);
+    };
+
+    const getExcludedQualificationIds = (workplaceId) => {
+        return (byWorkplace[workplaceId] || [])
+            .filter(wq => wq.is_excluded)
             .map(wq => wq.qualification_id);
     };
 
@@ -279,6 +285,7 @@ export function useAllWorkplaceQualifications() {
         byWorkplace,
         getRequiredQualificationIds,
         getOptionalQualificationIds,
+        getExcludedQualificationIds,
         isLoading,
     };
 }

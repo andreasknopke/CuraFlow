@@ -588,7 +588,7 @@ export default function ScheduleBoard() {
 
   // Qualifikationsdaten für visuelle Indikatoren
   const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
-  const { getRequiredQualificationIds: getWpRequiredQualIds } = useAllWorkplaceQualifications();
+  const { getRequiredQualificationIds: getWpRequiredQualIds, getExcludedQualificationIds: getWpExcludedQualIds } = useAllWorkplaceQualifications();
 
   // Override-Validierung mit Dialog
   const {
@@ -2538,6 +2538,7 @@ export default function ScheduleBoard() {
         isPublicHoliday,
         getDoctorQualIds,
         getWpRequiredQualIds,
+        getWpExcludedQualIds,
         categoriesToFill,
         systemSettings,
       });
@@ -2618,6 +2619,7 @@ export default function ScheduleBoard() {
     // Qualifikations-Status für diese Position ermitteln
     const workplace = workplaces.find(w => w.name === rowName);
     const wpRequiredQuals = workplace ? getWpRequiredQualIds(workplace.id) : [];
+    const wpExcludedQuals = workplace ? getWpExcludedQualIds(workplace.id) : [];
     const hasQualRequirements = wpRequiredQuals.length > 0;
 
     // Bei Mehrfachbesetzung: Warnung nur wenn KEINER der Eingetragenen qualifiziert ist
@@ -2633,11 +2635,14 @@ export default function ScheduleBoard() {
         const doctor = doctors.find(d => d.id === shift.doctor_id);
         if (!doctor) return null;
         
-        // Qualifikations-Indikator: 'unqualified' nur wenn der Arzt selbst nicht qualifiziert ist
-        // UND bei Mehrfachbesetzung auch kein anderer Kollege qualifiziert ist
+        // Qualifikations-Indikator
+        // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
+        // 'unqualified' wenn Pflicht-Qualifikation fehlt und kein qualifizierter Kollege da ist
         let qualificationStatus = null;
-        if (hasQualRequirements) {
-            const docQuals = getDoctorQualIds(doctor.id);
+        const docQuals = getDoctorQualIds(doctor.id);
+        if (wpExcludedQuals.length > 0 && wpExcludedQuals.some(qId => docQuals.includes(qId))) {
+            qualificationStatus = 'excluded';
+        } else if (hasQualRequirements) {
             const hasAll = wpRequiredQuals.every(qId => docQuals.includes(qId));
             if (!hasAll && (shifts.length === 1 || !anyoneQualified)) {
                 qualificationStatus = 'unqualified';
@@ -2686,7 +2691,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, acceptSinglePreview]);
+  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, acceptSinglePreview]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {

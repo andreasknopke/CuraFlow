@@ -964,9 +964,24 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
       }
     }
 
+    // Migration 11: Add is_excluded to WorkplaceQualification (for NOT-qualifications)
+    try {
+      await dbPool.execute(`
+        ALTER TABLE WorkplaceQualification 
+        ADD COLUMN is_excluded BOOLEAN NOT NULL DEFAULT FALSE
+      `);
+      results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'error', error: err.message });
+      }
+    }
+
     // Clear column cache for affected tables so new columns are recognized
     const cacheKey = req.headers['x-db-token'] || 'default';
-    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate', 'TeamRole'], cacheKey);
+    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate', 'TeamRole', 'WorkplaceQualification'], cacheKey);
 
     console.log(`[Timeslot Migrations] Executed by ${req.user?.email}:`, results);
 

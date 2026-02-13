@@ -79,8 +79,16 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
     return () => observer.disconnect();
   }, [measureAndAdjust]);
   
-  // Qualification warning: only show when mandatory qualification is missing (override was used)
-  const QualWarning = qualificationStatus === 'unqualified' ? (
+  // Qualification warning/error indicator
+  const QualWarning = qualificationStatus === 'excluded' ? (
+    <div 
+      className="absolute -top-0.5 -right-0.5 z-20 text-red-600"
+      style={{ fontSize: Math.max(fontSize * 0.7, 8) }}
+      title="NOT-Qualifikation: Arzt darf hier nicht eingeteilt werden!"
+    >
+      ⊘
+    </div>
+  ) : qualificationStatus === 'unqualified' ? (
     <div 
       className="absolute -top-0.5 -right-0.5 z-20 text-amber-600"
       style={{ fontSize: Math.max(fontSize * 0.7, 8) }}

@@ -36,6 +36,7 @@ export function generateSuggestions({
     isPublicHoliday,
     getDoctorQualIds,
     getWpRequiredQualIds,
+    getWpExcludedQualIds,
     categoriesToFill,
     systemSettings,
 }) {
@@ -61,6 +62,16 @@ export function generateSuggestions({
         const doc = getDoctorQualIds(doctorId);
         if (!doc) return false;
         return req.every(q => doc.includes(q));
+    };
+
+    /** Is the doctor EXCLUDED from this workplace via a NOT-qualification? */
+    const isExcluded = (doctorId, wpId) => {
+        const excl = getWpExcludedQualIds?.(wpId);
+        if (!excl?.length) return false;
+        const doc = getDoctorQualIds(doctorId);
+        if (!doc?.length) return false;
+        // Doctor is excluded if they have ANY of the NOT-qualifications
+        return excl.some(q => doc.includes(q));
     };
 
     /** Does this workplace have any mandatory qualification requirement? */
@@ -187,8 +198,8 @@ export function generateSuggestions({
             .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
             .sort((a, b) => {
                 // More constrained first (fewer qualified doctors available)
-                const aPool = doctors.filter(d => !blocked.has(d.id) && isQualified(d.id, a.id)).length;
-                const bPool = doctors.filter(d => !blocked.has(d.id) && isQualified(d.id, b.id)).length;
+                const aPool = doctors.filter(d => !blocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
+                const bPool = doctors.filter(d => !blocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
                 return aPool - bPool;
             });
 
@@ -197,8 +208,9 @@ export function generateSuggestions({
 
             // Find qualified doctors. Prefer those WITHOUT a rotation elsewhere
             // (so we don't steal rotation docs if possible).
+            // Exclude doctors with NOT-qualifications for this workplace.
             const candidates = doctors
-                .filter(d => !usedToday.has(d.id) && isQualified(d.id, wp.id))
+                .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
                 .sort((a, b) => {
                     // Does this doctor have a rotation pointing to a DIFFERENT workplace?
                     const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
@@ -245,8 +257,8 @@ export function generateSuggestions({
             // Target: the most under-filled workplace
             const targetWp = underFilled[0];
 
-            // Score each candidate for this workplace
-            const scored = unassigned.map(doc => {
+            // Score each candidate — exclude doctors with NOT-qualifications
+            const scored = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id)).map(doc => {
                 const rotTargets = getActiveRotationTargets(doc.id, dateStr);
                 const hasRotHere = rotTargets.includes(targetWp.name);
                 const hasRotElsewhere = rotTargets.length > 0 && !hasRotHere;
@@ -327,8 +339,9 @@ export function generateSuggestions({
                 return getWeekly(a.id) - getWeekly(b.id);
             })[0];
 
-            // Find the best workplace for this doctor
+            // Find the best workplace for this doctor (exclude NOT-qualified workplaces)
             const bestForDoc = options
+                .filter(o => !isExcluded(doc.id, o.wp.id))
                 .map(o => {
                     const rotTargets = getActiveRotationTargets(doc.id, dateStr);
                     const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
