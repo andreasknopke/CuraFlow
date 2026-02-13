@@ -503,23 +503,41 @@ export function generateSuggestions({
         if (nonAvailWps.length > 0) {
             // For Phase C, only service-blocked and absence-blocked doctors are excluded.
             // Doctors assigned in Phase B (availability-relevant workplaces) ARE available.
+            // KEY RULE: For workplaces with Pflichtqualifikation (mandatory qualifications),
+            // a qualified doctor may be assigned to MULTIPLE such workplaces.
+            // An unqualified doctor must NEVER be assigned alone to a Pflicht-workplace.
             const phaseC_blocked = new Set(serviceBlocked);
 
             const phaseCPosCount = { ...posCount };
 
-            const assignC = (docId, wpName) => {
+            // Track which doctor is assigned to which Phase C workplaces (to prevent same-wp duplicates)
+            const phaseCAssignments = {}; // doctor_id -> Set<wpName>
+
+            const isAlreadyAssignedToWp = (docId, wpName) => {
+                if (phaseCAssignments[docId]?.has(wpName)) return true;
+                return existingShifts.some(s => s.date === dateStr && s.position === wpName && s.doctor_id === docId) ||
+                       suggestions.some(s => s.date === dateStr && s.position === wpName && s.doctor_id === docId);
+            };
+
+            const assignC = (docId, wpName, wpHasQualReq) => {
                 suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
                 phaseCPosCount[wpName] = (phaseCPosCount[wpName] || 0) + 1;
                 incWeekly(docId);
-                phaseC_blocked.add(docId); // prevent double-assignment within Phase C
+                if (!phaseCAssignments[docId]) phaseCAssignments[docId] = new Set();
+                phaseCAssignments[docId].add(wpName);
+                // Only block for non-Pflicht workplaces; qualified doctors on Pflicht workplaces stay available
+                if (!wpHasQualReq) {
+                    phaseC_blocked.add(docId);
+                }
             };
 
-            // C.1: Qualification coverage
+            // C.1: Qualification coverage — assign qualified doctors first (prefer unblocked ones)
             const qualWpsC = nonAvailWps
                 .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
                 .sort((a, b) => {
-                    const aPool = doctors.filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
-                    const bPool = doctors.filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
+                    // Sort by smallest available qualified pool first (most constrained first)
+                    const aPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
+                    const bPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
                     return aPool - bPool;
                 });
 
@@ -529,12 +547,22 @@ export function generateSuggestions({
                 );
                 if (hasCov) continue;
 
-                const candidates = doctors
-                    .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
+                // First try unblocked qualified doctors
+                let candidates = doctors
+                    .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                 isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
                     .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
 
+                // If none free, allow already-assigned-in-Phase-C qualified doctors (Mehrfachbesetzung!)
+                if (candidates.length === 0) {
+                    candidates = doctors
+                        .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
+                        .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                }
+
                 if (candidates.length > 0) {
-                    assignC(candidates[0].id, wp.name);
+                    assignC(candidates[0].id, wp.name, true);
                 }
             }
 
@@ -554,30 +582,57 @@ export function generateSuggestions({
 
                 if (underFilledC.length === 0) break;
 
-                const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
-                if (availableC.length === 0) break;
-
                 const targetWpC = underFilledC[0];
+                const targetHasQualReq = hasQualReq(targetWpC);
 
-                const scoredC = availableC
-                    .filter(doc => !isExcluded(doc.id, targetWpC.id))
-                    .map(doc => ({
-                        doc,
-                        qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
-                        weekly: getWeekly(doc.id),
-                    }))
-                    .sort((a, b) => {
-                        if (a.qualified !== b.qualified) return a.qualified - b.qualified;
-                        return a.weekly - b.weekly;
-                    });
+                if (targetHasQualReq) {
+                    // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
+                    // First try unblocked qualified
+                    let scoredC = doctors
+                        .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
+                                     !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
+                                     !isAlreadyAssignedToWp(d.id, targetWpC.name))
+                        .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
 
-                if (scoredC.length > 0) {
-                    assignC(scoredC[0].doc.id, targetWpC.name);
-                    changedC = true;
+                    // If none free, allow already-assigned qualified (Mehrfachbesetzung)
+                    if (scoredC.length === 0) {
+                        scoredC = doctors
+                            .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
+                                         isQualified(d.id, targetWpC.id) &&
+                                         !isAlreadyAssignedToWp(d.id, targetWpC.name))
+                            .sort((a, b) => getWeekly(a.id) - getWeekly(b.id));
+                    }
+
+                    if (scoredC.length > 0) {
+                        assignC(scoredC[0].id, targetWpC.name, true);
+                        changedC = true;
+                    }
+                } else {
+                    // Non-Pflicht workplace: any unblocked doctor
+                    const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
+                    if (availableC.length === 0) break;
+
+                    const scoredC = availableC
+                        .filter(doc => !isExcluded(doc.id, targetWpC.id) &&
+                                       !isAlreadyAssignedToWp(doc.id, targetWpC.name))
+                        .map(doc => ({
+                            doc,
+                            qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
+                            weekly: getWeekly(doc.id),
+                        }))
+                        .sort((a, b) => {
+                            if (a.qualified !== b.qualified) return a.qualified - b.qualified;
+                            return a.weekly - b.weekly;
+                        });
+
+                    if (scoredC.length > 0) {
+                        assignC(scoredC[0].doc.id, targetWpC.name, false);
+                        changedC = true;
+                    }
                 }
             }
 
-            // C.3: Over-fill remaining
+            // C.3: Over-fill remaining into non-Pflicht workplaces
             let overChangedC = true;
             while (overChangedC) {
                 overChangedC = false;
@@ -585,8 +640,9 @@ export function generateSuggestions({
                 const remainingC = doctors.filter(d => !phaseC_blocked.has(d.id));
                 if (remainingC.length === 0) break;
 
+                // Only over-fill into allows_multiple workplaces without Pflichtbesetzung
                 const optionsC = nonAvailWps
-                    .filter(wp => allowsMultiple(wp))
+                    .filter(wp => allowsMultiple(wp) && !hasQualReq(wp))
                     .map(wp => ({
                         wp,
                         fillRatio: (phaseCPosCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
@@ -601,19 +657,15 @@ export function generateSuggestions({
                 const docC = remainingC.sort((a, b) => getWeekly(a.id) - getWeekly(b.id))[0];
 
                 const bestC = optionsC
-                    .filter(o => !isExcluded(docC.id, o.wp.id))
-                    .map(o => ({
-                        ...o,
-                        isQual: isQualified(docC.id, o.wp.id) ? 0 : 1,
-                    }))
+                    .filter(o => !isExcluded(docC.id, o.wp.id) &&
+                                 !isAlreadyAssignedToWp(docC.id, o.wp.name))
                     .sort((a, b) => {
-                        if (a.isQual !== b.isQual) return a.isQual - b.isQual;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
 
                 if (bestC.length > 0) {
-                    assignC(docC.id, bestC[0].wp.name);
+                    assignC(docC.id, bestC[0].wp.name, false);
                     overChangedC = true;
                 }
             }
