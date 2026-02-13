@@ -188,22 +188,19 @@ export class ShiftValidator {
      */
     _checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId) {
         const workplace = this.workplaces.find(w => w.name === position);
-        console.log('[QUAL-CHECK] Position:', position, '| Workplace found:', !!workplace, '| WP-ID:', workplace?.id);
         if (!workplace) return {};
 
-        const wpQualKeys = Object.keys(this.wpQualsByWorkplace);
         const wpQuals = this.wpQualsByWorkplace[workplace.id] || [];
-        console.log('[QUAL-CHECK] wpQualsByWorkplace keys:', wpQualKeys, '| workplace.id:', workplace.id, '| typeof:', typeof workplace.id, '| wpQuals found:', wpQuals.length);
-        if (wpQuals.length === 0) {
-            // Versuch mit String-Konvertierung (Typ-Mismatch-Fallback)
-            const wpQualsStr = this.wpQualsByWorkplace[String(workplace.id)] || [];
-            console.log('[QUAL-CHECK] Fallback String-Key lookup:', wpQualsStr.length);
-            if (wpQualsStr.length === 0) return {};
-        }
+        console.log('[QUAL-CHECK] Position:', position, '| WP-ID:', workplace.id, '| wpQuals:', wpQuals.length);
+        if (wpQuals.length === 0) return {};
 
         const docQualIds = this.getDoctorQualIds(doctorId);
         const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
+        
+        console.log('[QUAL-CHECK] Doctor:', doctorId, '| docQualIds:', docQualIds);
+        console.log('[QUAL-CHECK] wpQuals raw:', JSON.stringify(wpQuals));
+        console.log('[QUAL-CHECK] mandatory:', mandatoryQuals.length, '| optional:', optionalQuals.length);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
         // Prüfe ob bereits ein qualifizierter Kollege am selben Tag in derselben Position eingeteilt ist
@@ -214,17 +211,19 @@ export class ShiftValidator {
                 s.doctor_id !== doctorId &&
                 s.id !== excludeShiftId
             );
+            console.log('[QUAL-CHECK] Ausbildungsmodus: otherAssignments am', dateStr, ':', otherAssignments.length);
 
             if (otherAssignments.length > 0) {
                 // Prüfe ob mindestens ein bereits eingeteilter Kollege alle Pflicht-Qualifikationen hat
                 const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...optionalQuals.map(wq => wq.qualification_id)];
                 const hasQualifiedColleague = otherAssignments.some(s => {
                     const colleagueQuals = this.getDoctorQualIds(s.doctor_id);
+                    console.log('[QUAL-CHECK] Kollege', s.doctor_id, 'Quals:', colleagueQuals, '| Required:', allRequiredQualIds);
                     return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
                 });
 
                 if (hasQualifiedColleague) {
-                    // Qualifizierter Kollege vorhanden → Checks aussetzen (Ausbildung)
+                    console.log('[QUAL-CHECK] → Ausbildungsmodus aktiv, Check ausgesetzt');
                     return {};
                 }
             }
@@ -232,6 +231,7 @@ export class ShiftValidator {
 
         // Pflicht-Qualifikationen prüfen
         const missingMandatory = mandatoryQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+        console.log('[QUAL-CHECK] missingMandatory:', missingMandatory.length, '| IDs:', missingMandatory.map(wq => wq.qualification_id));
         if (missingMandatory.length > 0) {
             const names = missingMandatory
                 .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
@@ -241,6 +241,7 @@ export class ShiftValidator {
 
         // Optionale Qualifikationen prüfen
         const missingOptional = optionalQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+        console.log('[QUAL-CHECK] missingOptional:', missingOptional.length, '| IDs:', missingOptional.map(wq => wq.qualification_id));
         if (missingOptional.length > 0) {
             const names = missingOptional
                 .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
