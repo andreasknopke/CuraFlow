@@ -353,10 +353,23 @@ export function generateSuggestions({
         const allTodayWps = workplaces
             .filter(wp => categoriesToFill.includes(wp.category) && isActiveOnDate(wp, day));
 
+        // Track doctors assigned to a service today (even if rotation-OK)
+        const serviceAssignedToday = new Set();
+        for (const s of existingShifts) {
+            if (s.date !== dateStr) continue;
+            const wp = workplaces.find(w => w.name === s.position);
+            if (wp?.category === 'Dienste') serviceAssignedToday.add(s.doctor_id);
+        }
+
         // Record a suggestion and update tracking
         const assign = (docId, wpName) => {
             suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
-            usedToday.add(docId);
+            // Only block the doctor if the workplace actually reduces availability
+            const wp = workplaces.find(w => w.name === wpName);
+            if (wp?.category === 'Dienste') serviceAssignedToday.add(docId);
+            if (!wp?.allows_rotation_concurrently) {
+                usedToday.add(docId);
+            }
             posCount[wpName] = (posCount[wpName] || 0) + 1;
             incWeekly(docId);
         };
@@ -386,8 +399,10 @@ export function generateSuggestions({
 
                 // Build candidate pool for this service
                 // Exclude doctors who would exceed their 4-week limit
+                // Also exclude doctors already assigned to a service today
                 const allCandidates = doctors.filter(d =>
                     !usedToday.has(d.id) &&
+                    !serviceAssignedToday.has(d.id) &&
                     !isExcluded(d.id, svc.id) &&
                     !hasApprovedNoService(d.id, dateStr) &&
                     isQualified(d.id, svc.id) &&
@@ -428,6 +443,7 @@ export function generateSuggestions({
                 if (ranked.length === 0) {
                     const fallback = doctors.filter(d =>
                         !usedToday.has(d.id) &&
+                        !serviceAssignedToday.has(d.id) &&
                         !isExcluded(d.id, svc.id) &&
                         !hasApprovedNoService(d.id, dateStr) &&
                         isQualified(d.id, svc.id)
