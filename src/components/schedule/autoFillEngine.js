@@ -430,6 +430,55 @@ export function generateSuggestions({
         };
 
         // ============================================================
+        //  Pre-Phase A: Rotation qualification impact analysis
+        //  Compute how critical each available doctor is for rotation
+        //  workplaces that require mandatory qualifications.
+        //  This prevents sending ALL qualified Fachärzte into services
+        //  when they are the only ones who can fill rotation positions.
+        // ============================================================
+        const rotationImpactScore = {}; // doctorId -> number (higher = more critical for rotations)
+        {
+            // All rotation/availability-relevant workplaces active today that need qualifications
+            const criticalWps = workplaces.filter(wp =>
+                !isServiceWp(wp) &&
+                isAffectsAvailability(wp) &&
+                isActiveOnDate(wp, day) &&
+                hasQualReq(wp) &&
+                getMinStaff(wp) > 0
+            );
+
+            // For each critical workplace, find the pool of available qualified doctors
+            const wpQualPools = criticalWps.map(wp => {
+                const qualifiedPool = doctors.filter(d =>
+                    !baseBlocked.has(d.id) &&
+                    !isExcluded(d.id, wp.id) &&
+                    isQualified(d.id, wp.id)
+                );
+                return { wp, qualifiedPool, poolSize: qualifiedPool.length };
+            });
+
+            // For each doctor, count how many critical workplaces they are the
+            // sole or near-sole qualified candidate for
+            for (const { wp, qualifiedPool, poolSize } of wpQualPools) {
+                if (poolSize === 0) continue;
+                for (const doc of qualifiedPool) {
+                    if (!rotationImpactScore[doc.id]) rotationImpactScore[doc.id] = 0;
+                    // The scarcer the qualified pool, the more critical this doctor is
+                    // poolSize=1 → impact +10 (sole candidate, must not lose them)
+                    // poolSize=2 → impact +5 (losing one leaves only 1)
+                    // poolSize=3 → impact +2
+                    // poolSize>=4 → impact +1
+                    if (poolSize <= 1) rotationImpactScore[doc.id] += 10;
+                    else if (poolSize <= 2) rotationImpactScore[doc.id] += 5;
+                    else if (poolSize <= 3) rotationImpactScore[doc.id] += 2;
+                    else rotationImpactScore[doc.id] += 1;
+                }
+            }
+        }
+
+        const getRotationImpact = (docId) => rotationImpactScore[docId] || 0;
+
+        // ============================================================
         //  PHASE A: DIENSTE (Services) — highest priority
         // ============================================================
         if (categoriesToFill.includes('Dienste')) {
@@ -474,16 +523,27 @@ export function generateSuggestions({
                     }
                 }
 
-                // Sort each group by fairness score (4-week history, FTE-adjusted)
-                const sortByFairness = (a, b) => {
+                // Sort each group by rotation impact (low = preferred) then fairness score
+                const sortByImpactAndFairness = (a, b) => {
+                    // First: prefer doctors with LOW rotation impact (not critical for rotations)
+                    const impA = getRotationImpact(a.id);
+                    const impB = getRotationImpact(b.id);
+                    if (impA !== impB) return impA - impB;
+                    // Then: fairness score (4-week history, FTE-adjusted)
                     const fa = getFairnessScore(a.id, svc.name);
                     const fb = getFairnessScore(b.id, svc.name);
                     if (Math.abs(fa - fb) > 0.001) return fa - fb;
                     return getWeekly(a.id) - getWeekly(b.id);
                 };
-                withServiceWish.sort(sortByFairness);
-                normal.sort(sortByFairness);
-                withPendingNoService.sort(sortByFairness);
+                // Service wishes are NOT sorted by impact - explicit wishes always take priority
+                withServiceWish.sort((a, b) => {
+                    const fa = getFairnessScore(a.id, svc.name);
+                    const fb = getFairnessScore(b.id, svc.name);
+                    if (Math.abs(fa - fb) > 0.001) return fa - fb;
+                    return getWeekly(a.id) - getWeekly(b.id);
+                });
+                normal.sort(sortByImpactAndFairness);
+                withPendingNoService.sort(sortByImpactAndFairness);
 
                 // Priority order: wish > normal > pending-no-service (soft NOT)
                 const ranked = [...withServiceWish, ...normal, ...withPendingNoService];
