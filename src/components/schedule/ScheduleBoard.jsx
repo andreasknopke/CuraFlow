@@ -1716,16 +1716,18 @@ export default function ScheduleBoard() {
 
       // Helper: Check if workplace is active on a given date (active_days + holiday check)
       // Feiertage verhalten sich wie Sonntag (Index 0)
+      // Default active_days (wenn nicht gesetzt): Mo-Fr [1,2,3,4,5]
       const isWorkplaceActiveOnDate = (positionName, dateStr) => {
           const wp = workplaces.find(w => w.name === positionName);
-          if (!wp || !wp.active_days || wp.active_days.length === 0) return true;
+          if (!wp) return true;
+          const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
           const date = new Date(dateStr + 'T00:00:00');
           const dayOfWeek = date.getDay(); // 0=So, 1=Mo, ..., 6=Sa
           // Feiertag = wie Sonntag behandeln: prüfe ob Sonntag (0) aktiv ist
-          if (isPublicHoliday(date) && !wp.active_days.some(d => Number(d) === 0)) {
+          if (isPublicHoliday(date) && !activeDays.some(d => Number(d) === 0)) {
               return false;
           }
-          return wp.active_days.some(d => Number(d) === dayOfWeek);
+          return activeDays.some(d => Number(d) === dayOfWeek);
       };
 
       // Helper to find occupying shift for services or demos (for replacement)
@@ -3323,14 +3325,16 @@ export default function ScheduleBoard() {
 
                                 // Check active_days for ALL sections (Rotationen, Dienste, Demos, Custom)
                                 // Feiertage verhalten sich wie Sonntag
+                                // Default active_days (wenn nicht gesetzt): Mo-Fr [1,2,3,4,5]
                                 {
                                     if (rowName !== 'Verfügbar') {
                                         const setting = workplaces.find(s => s.name === rowName);
-                                        if (setting && setting.active_days && setting.active_days.length > 0) {
+                                        if (setting) {
+                                            const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
                                             const dayOfWeek = day.getDay(); // 0=So, 1=Mo, ..., 6=Sa
-                                            const allowed = setting.active_days.some(d => Number(d) === dayOfWeek);
+                                            const allowed = activeDays.some(d => Number(d) === dayOfWeek);
                                             // Feiertag = wie Sonntag: prüfe ob Sonntag (0) aktiv ist
-                                            const holidayBlocked = isPublicHoliday(day) && !setting.active_days.some(d => Number(d) === 0);
+                                            const holidayBlocked = isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0);
                                             if (!allowed || holidayBlocked) {
                                                 isDisabled = true;
                                             }

@@ -499,16 +499,16 @@ export default function ServiceStaffingPage() {
                                         });
 
                                         // Check if active (for Demos/Konsile with restricted days)
+                                        // Default active_days: Mo-Fr [1,2,3,4,5]
                                         let isActive = true;
+                                        const activeDays = (type.active_days && type.active_days.length > 0) ? type.active_days : [1, 2, 3, 4, 5];
                                         
-                                        if (type.active_days && type.active_days.length > 0) {
-                                            // Robust check handling potential string/number mismatch
-                                            isActive = type.active_days.some(d => Number(d) === day.getDay());
-                                            // Feiertage verhalten sich wie Sonntag (Index 0)
-                                            if (isActive && isPublicHoliday(day) && !type.active_days.some(d => Number(d) === 0)) {
-                                                isActive = false;
-                                            }
-                                        } 
+                                        // Robust check handling potential string/number mismatch
+                                        isActive = activeDays.some(d => Number(d) === day.getDay());
+                                        // Feiertage verhalten sich wie Sonntag (Index 0)
+                                        if (isActive && isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0)) {
+                                            isActive = false;
+                                        }
                                         // Fallback for legacy/static
                                         else if (type.id === 'Onko-Konsil') {
                                             const setting = demoSettings.find(s => s.name === 'Onko-Konsil');
