@@ -35,6 +35,7 @@ import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hoo
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
+import { isDoctorAvailable } from './staffingUtils';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -364,6 +365,15 @@ export default function ScheduleBoard() {
     queryKey: ['systemSettings'],
     queryFn: () => db.SystemSetting.list(),
     staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Stellenplan-Einträge für die Sidebar-Filterung laden
+  const staffingYear = useMemo(() => currentDate ? new Date(currentDate).getFullYear() : new Date().getFullYear(), [currentDate]);
+  const { data: staffingPlanEntries = [] } = useQuery({
+    queryKey: ['staffingPlanEntries', staffingYear],
+    queryFn: () => db.StaffingPlanEntry.filter({ year: staffingYear }),
+    staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -1566,6 +1576,14 @@ export default function ScheduleBoard() {
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }, [currentDate, viewMode]);
 
+  // Sidebar-Ärzte filtern: Ausgeschiedene, KO, MS, 0.0 FTE ausblenden
+  const sidebarDoctors = useMemo(() => {
+    if (!weekDays.length || !doctors.length) return doctors;
+    // Prüfe Verfügbarkeit anhand des Montags der aktuellen Woche
+    const checkDate = weekDays[0];
+    return doctors.filter(doc => isDoctorAvailable(doc, checkDate, staffingPlanEntries));
+  }, [doctors, weekDays, staffingPlanEntries]);
+
   const currentWeekShifts = useMemo(() => {
     // Use weekDays to determine range, ensuring we catch shifts for visible days
     if (weekDays.length === 0) return [];
@@ -1956,7 +1974,7 @@ export default function ScheduleBoard() {
     if (source.droppableId === 'sidebar' && destination.droppableId === 'sidebar') {
         if (source.index === destination.index) return;
 
-        const newDoctors = Array.from(doctors);
+        const newDoctors = Array.from(sidebarDoctors);
         const [movedDoctor] = newDoctors.splice(source.index, 1);
         newDoctors.splice(destination.index, 0, movedDoctor);
 
@@ -2996,14 +3014,14 @@ export default function ScheduleBoard() {
                 <div className={`w-full lg:w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 lg:sticky lg:top-4 max-h-[calc(100vh-200px)] flex flex-col gap-4 z-50 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                 <div>
                 <h3 className="font-semibold text-slate-700 mb-3 flex items-center">
-                    <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{doctors.length}</span>
+                    <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{sidebarDoctors.length}</span>
                     Verfügbares Personal
                 </h3>
                 <Droppable 
                     droppableId="sidebar" 
                     isDropDisabled={isReadOnly}
                     renderClone={(provided, snapshot, rubric) => {
-                        const doctor = doctors[rubric.source.index];
+                        const doctor = sidebarDoctors[rubric.source.index];
                         const roleStyle = getRoleColor(doctor?.role);
                         const cloneSize = gridFontSize * 3.5;
                         return (
@@ -3040,7 +3058,7 @@ export default function ScheduleBoard() {
                 >
                     {(provided) => (
                         <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-1">
-                            {doctors.map((doctor, index) => (
+                            {sidebarDoctors.map((doctor, index) => (
                                 <DraggableDoctor 
                                     key={doctor.id} 
                                     doctor={doctor} 
