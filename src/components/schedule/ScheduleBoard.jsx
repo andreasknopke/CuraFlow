@@ -30,6 +30,7 @@ import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/Color
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
@@ -582,6 +583,10 @@ export default function ScheduleBoard() {
   });
 
   const { validate, validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
+
+  // Qualifikationsdaten für visuelle Indikatoren
+  const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
+  const { getRequiredQualificationIds: getWpRequiredQualIds } = useAllWorkplaceQualifications();
 
   // Override-Validierung mit Dialog
   const {
@@ -2712,10 +2717,23 @@ export default function ScheduleBoard() {
     const isSingleShift = shifts.length === 1;
     const isFullWidth = isSectionFullWidth || isSingleShift;
 
+    // Qualifikations-Status für diese Position ermitteln
+    const workplace = workplaces.find(w => w.name === rowName);
+    const wpRequiredQuals = workplace ? getWpRequiredQualIds(workplace.id) : [];
+    const hasQualRequirements = wpRequiredQuals.length > 0;
+
     return shifts.map((shift, index) => {
         const doctor = doctors.find(d => d.id === shift.doctor_id);
         if (!doctor) return null;
         
+        // Qualifikations-Indikator: 'qualified' | 'unqualified' | null (keine Anforderung)
+        let qualificationStatus = null;
+        if (hasQualRequirements) {
+            const docQuals = getDoctorQualIds(doctor.id);
+            const hasAll = wpRequiredQuals.every(qId => docQuals.includes(qId));
+            qualificationStatus = hasAll ? 'qualified' : 'unqualified';
+        }
+
         const roleColor = getRoleColor(doctor.role);
         const isDraggingThis = draggingShiftId === shift.id;
         const showCopyGhost = isCtrlPressed && isDraggingThis;
@@ -2752,11 +2770,12 @@ export default function ScheduleBoard() {
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
+                    qualificationStatus={qualificationStatus}
                 />
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces]);
+  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {

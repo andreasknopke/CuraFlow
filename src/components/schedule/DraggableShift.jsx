@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const containerRef = useRef(null);
@@ -79,6 +79,19 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
     return () => observer.disconnect();
   }, [measureAndAdjust]);
   
+  // Qualification indicator dot
+  const QualDot = qualificationStatus ? (
+    <div 
+      className={`absolute top-0 right-0 rounded-full border border-white/80 z-20 ${
+        qualificationStatus === 'qualified' 
+          ? 'bg-emerald-500' 
+          : 'bg-amber-500'
+      }`}
+      style={{ width: Math.max(fontSize * 0.45, 5), height: Math.max(fontSize * 0.45, 5) }}
+      title={qualificationStatus === 'qualified' ? 'Qualifiziert' : 'Fehlende Pflicht-Qualifikation'}
+    />
+  ) : null;
+
   const dynamicStyle = {
       fontSize: `${fontSize}px`,
       ...(isFullWidth 
@@ -188,6 +201,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 </div>
             ) : isFullWidth ? (
                 <>
+                    {QualDot}
                     <div 
                         {...provided.dragHandleProps}
                         className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
@@ -207,12 +221,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
             )}
             {!isDragging && !isFullWidth && (
+                <>
+                {QualDot}
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full relative z-10" 
                     style={{ fontSize: `${displayFontSize}px` }}
                 >
                     {displayText}
                 </span>
+                </>
             )}
           </div>
         );
