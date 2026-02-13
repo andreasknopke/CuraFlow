@@ -2534,6 +2534,7 @@ export default function ScheduleBoard() {
         doctors,
         workplaces,
         existingShifts: currentWeekShifts.filter(s => !s.isPreview),
+        allShifts,
         trainingRotations,
         isPublicHoliday,
         getDoctorQualIds,

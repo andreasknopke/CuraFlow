@@ -33,6 +33,7 @@ export function generateSuggestions({
     doctors,
     workplaces,
     existingShifts,
+    allShifts = [],
     trainingRotations,
     isPublicHoliday,
     getDoctorQualIds,
@@ -121,6 +122,99 @@ export function generateSuggestions({
     }
     const getWeekly = (id) => weeklyCount[id] || 0;
     const incWeekly = (id) => { weeklyCount[id] = (weeklyCount[id] || 0) + 1; };
+
+    // ========================================================
+    //  4-week service limits & fair VG/HG distribution
+    // ========================================================
+
+    // Read limit settings
+    const getSetting = (key, def) => {
+        const s = systemSettings?.find(x => x.key === key);
+        return parseInt(s?.value || def);
+    };
+    const limitFG = getSetting('limit_fore_services', '4');
+    const limitBG = getSetting('limit_back_services', '12');
+    const limitWeekend = getSetting('limit_weekend_services', '1');
+
+    // Identify foreground/background service positions dynamically
+    const serviceWorkplaces = workplaces.filter(w => w.category === 'Dienste');
+    const sortedServices = [...serviceWorkplaces].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const foregroundPosition = sortedServices[0]?.name;
+    const backgroundPosition = sortedServices[1]?.name;
+
+    // Compute 4-week window: 3 weeks before the first planning day through the last planning day
+    const firstPlanDate = weekDays[0];
+    const fourWeekStart = new Date(firstPlanDate);
+    fourWeekStart.setDate(fourWeekStart.getDate() - 21); // 3 weeks back
+    const fourWeekStartStr = formatDate(fourWeekStart);
+    const lastPlanStr = formatDate(weekDays[weekDays.length - 1]);
+
+    // Use allShifts (broader range) for historical counting, fallback to existingShifts
+    const historyShifts = allShifts.length > 0 ? allShifts : existingShifts;
+
+    // Count each doctor's services in the 4-week window (existing only, pre-suggestions)
+    const serviceHistory = {}; // doctorId -> { fg: n, bg: n, weekend: n }
+    const getServiceHist = (docId) => {
+        if (!serviceHistory[docId]) serviceHistory[docId] = { fg: 0, bg: 0, weekend: 0 };
+        return serviceHistory[docId];
+    };
+
+    for (const s of historyShifts) {
+        if (s.date < fourWeekStartStr || s.date > lastPlanStr) continue;
+        if (s.isPreview) continue;
+        const h = getServiceHist(s.doctor_id);
+        if (s.position === foregroundPosition) {
+            h.fg++;
+            const sDay = new Date(s.date + 'T00:00:00').getDay();
+            if (sDay === 0 || sDay === 6) h.weekend++;
+        }
+        if (s.position === backgroundPosition) h.bg++;
+    }
+
+    /** Get doctor FTE (from doctor.fte field) */
+    const getDoctorFte = (docId) => {
+        const doc = doctors.find(d => d.id === docId);
+        return doc?.fte ?? 1.0;
+    };
+
+    /** Would assigning this service to this doctor exceed the 4-week limit? */
+    const wouldExceedLimit = (docId, serviceName, dateStr) => {
+        const h = getServiceHist(docId);
+        const fte = getDoctorFte(docId);
+        const isFG = serviceName === foregroundPosition;
+        const isBG = serviceName === backgroundPosition;
+        const d = new Date(dateStr + 'T00:00:00');
+        const isWknd = (d.getDay() === 0 || d.getDay() === 6) && isFG;
+
+        if (isFG && (h.fg + 1) > Math.round(limitFG * fte)) return true;
+        if (isBG && (h.bg + 1) > Math.round(limitBG * fte)) return true;
+        if (isWknd && (h.weekend + 1) > limitWeekend) return true;
+        return false;
+    };
+
+    /** Track a new service assignment in the 4-week history */
+    const recordServiceAssignment = (docId, serviceName, dateStr) => {
+        const h = getServiceHist(docId);
+        if (serviceName === foregroundPosition) {
+            h.fg++;
+            const d = new Date(dateStr + 'T00:00:00').getDay();
+            if (d === 0 || d === 6) h.weekend++;
+        }
+        if (serviceName === backgroundPosition) h.bg++;
+    };
+
+    /**
+     * Fair distribution score: lower = should get the next service.
+     * Considers total services in 4-week window relative to FTE.
+     * Separate scoring for FG and BG to balance both independently.
+     */
+    const getFairnessScore = (docId, serviceName) => {
+        const h = getServiceHist(docId);
+        const fte = getDoctorFte(docId) || 1;
+        if (serviceName === foregroundPosition) return h.fg / fte;
+        if (serviceName === backgroundPosition) return h.bg / fte;
+        return (h.fg + h.bg) / fte;
+    };
 
     // ---- Rotation mapping ----
     const getActiveRotationTargets = (doctorId, dateStr) => {
@@ -291,11 +385,13 @@ export function generateSuggestions({
                 if (slotsNeeded <= 0) continue;
 
                 // Build candidate pool for this service
+                // Exclude doctors who would exceed their 4-week limit
                 const allCandidates = doctors.filter(d =>
                     !usedToday.has(d.id) &&
                     !isExcluded(d.id, svc.id) &&
                     !hasApprovedNoService(d.id, dateStr) &&
-                    isQualified(d.id, svc.id)
+                    isQualified(d.id, svc.id) &&
+                    !wouldExceedLimit(d.id, svc.name, dateStr)
                 );
 
                 // Separate candidates into priority tiers
@@ -314,18 +410,35 @@ export function generateSuggestions({
                     }
                 }
 
-                // Sort each group by weekly count (fairness)
-                const sortByWeekly = (a, b) => getWeekly(a.id) - getWeekly(b.id);
-                withServiceWish.sort(sortByWeekly);
-                normal.sort(sortByWeekly);
-                withPendingNoService.sort(sortByWeekly);
+                // Sort each group by fairness score (4-week history, FTE-adjusted)
+                const sortByFairness = (a, b) => {
+                    const fa = getFairnessScore(a.id, svc.name);
+                    const fb = getFairnessScore(b.id, svc.name);
+                    if (Math.abs(fa - fb) > 0.001) return fa - fb;
+                    return getWeekly(a.id) - getWeekly(b.id);
+                };
+                withServiceWish.sort(sortByFairness);
+                normal.sort(sortByFairness);
+                withPendingNoService.sort(sortByFairness);
 
                 // Priority order: wish > normal > pending-no-service (soft NOT)
                 const ranked = [...withServiceWish, ...normal, ...withPendingNoService];
 
+                // If no candidates within limits, fall back to all qualified (limit exceeded = last resort)
+                if (ranked.length === 0) {
+                    const fallback = doctors.filter(d =>
+                        !usedToday.has(d.id) &&
+                        !isExcluded(d.id, svc.id) &&
+                        !hasApprovedNoService(d.id, dateStr) &&
+                        isQualified(d.id, svc.id)
+                    ).sort((a, b) => getFairnessScore(a.id, svc.name) - getFairnessScore(b.id, svc.name));
+                    ranked.push(...fallback);
+                }
+
                 for (let i = 0; i < slotsNeeded && i < ranked.length; i++) {
                     const chosen = ranked[i];
                     assign(chosen.id, svc.name);
+                    recordServiceAssignment(chosen.id, svc.name, dateStr);
 
                     // Auto-Frei: if service has auto_off, block doctor on next workday
                     if (svc.auto_off) {
