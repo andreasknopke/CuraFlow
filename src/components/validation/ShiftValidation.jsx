@@ -155,7 +155,8 @@ export class ShiftValidator {
         // 6. Qualifikationsanforderungen prüfen
         const qualResult = this._checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId);
         if (qualResult.blocker) {
-            result.warnings.push(qualResult.blocker); // Als Warnung (override-fähig), nicht als harter Blocker
+            result.blockers.push(qualResult.blocker);
+            result.canProceed = false;
         }
         if (qualResult.warning) {
             result.warnings.push(qualResult.warning);
@@ -191,16 +192,11 @@ export class ShiftValidator {
         if (!workplace) return {};
 
         const wpQuals = this.wpQualsByWorkplace[workplace.id] || [];
-        console.log('[QUAL-CHECK] Position:', position, '| WP-ID:', workplace.id, '| wpQuals:', wpQuals.length);
         if (wpQuals.length === 0) return {};
 
         const docQualIds = this.getDoctorQualIds(doctorId);
         const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory);
         const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory);
-        
-        console.log('[QUAL-CHECK] Doctor:', doctorId, '| docQualIds:', docQualIds);
-        console.log('[QUAL-CHECK] wpQuals raw:', JSON.stringify(wpQuals));
-        console.log('[QUAL-CHECK] mandatory:', mandatoryQuals.length, '| optional:', optionalQuals.length);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
         // Prüfe ob bereits ein qualifizierter Kollege am selben Tag in derselben Position eingeteilt ist
@@ -211,19 +207,16 @@ export class ShiftValidator {
                 s.doctor_id !== doctorId &&
                 s.id !== excludeShiftId
             );
-            console.log('[QUAL-CHECK] Ausbildungsmodus: otherAssignments am', dateStr, ':', otherAssignments.length);
 
             if (otherAssignments.length > 0) {
                 // Prüfe ob mindestens ein bereits eingeteilter Kollege alle Pflicht-Qualifikationen hat
                 const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...optionalQuals.map(wq => wq.qualification_id)];
                 const hasQualifiedColleague = otherAssignments.some(s => {
                     const colleagueQuals = this.getDoctorQualIds(s.doctor_id);
-                    console.log('[QUAL-CHECK] Kollege', s.doctor_id, 'Quals:', colleagueQuals, '| Required:', allRequiredQualIds);
                     return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
                 });
 
                 if (hasQualifiedColleague) {
-                    console.log('[QUAL-CHECK] → Ausbildungsmodus aktiv, Check ausgesetzt');
                     return {};
                 }
             }
@@ -231,7 +224,6 @@ export class ShiftValidator {
 
         // Pflicht-Qualifikationen prüfen
         const missingMandatory = mandatoryQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
-        console.log('[QUAL-CHECK] missingMandatory:', missingMandatory.length, '| IDs:', missingMandatory.map(wq => wq.qualification_id));
         if (missingMandatory.length > 0) {
             const names = missingMandatory
                 .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
@@ -241,7 +233,6 @@ export class ShiftValidator {
 
         // Optionale Qualifikationen prüfen
         const missingOptional = optionalQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
-        console.log('[QUAL-CHECK] missingOptional:', missingOptional.length, '| IDs:', missingOptional.map(wq => wq.qualification_id));
         if (missingOptional.length > 0) {
             const names = missingOptional
                 .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
