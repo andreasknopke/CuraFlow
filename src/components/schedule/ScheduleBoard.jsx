@@ -1827,9 +1827,10 @@ export default function ScheduleBoard() {
 
         if (!doctorId) return;
 
-        // Get Current Week Monday
+        // Get all days of the current week (Mo-So) and filter by active_days
         const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
-        const daysToAssign = [0, 1, 2, 3, 4].map(offset => addDays(monday, offset)); // Mo-Fr
+        const allWeekDays = [0, 1, 2, 3, 4, 5, 6].map(offset => addDays(monday, offset)); // Mo-So
+        const daysToAssign = allWeekDays.filter(day => isWorkplaceActiveOnDate(rowName, format(day, 'yyyy-MM-dd')));
 
         const toCreate = [];
         const toDelete = [];
@@ -1839,11 +1840,6 @@ export default function ScheduleBoard() {
 
         for (const day of daysToAssign) {
             const dateStr = format(day, 'yyyy-MM-dd');
-
-            // Check active_days - skip inactive days
-            if (!isWorkplaceActiveOnDate(rowName, dateStr)) {
-                continue;
-            }
 
             // Check conflicts (using isVoice=true for silent/toast mode to prevent 5 alerts)
             // Note: checkConflicts is defined in outer scope (ScheduleBoard)
