@@ -276,7 +276,7 @@ export default function StaffPage() {
           </TabsContent>
 
           <TabsContent value="qualifications">
-              <QualificationOverview doctors={doctors} />
+              <QualificationOverview doctors={doctors} isReadOnly={isReadOnly} />
           </TabsContent>
 
           <TabsContent value="staffing">

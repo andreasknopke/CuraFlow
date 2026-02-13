@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useMemo, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,12 +7,40 @@ import { Award, User, Check, X, Shield } from 'lucide-react';
 import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
 
 /**
- * Übersichts-Matrix: Welcher Mitarbeiter hat welche Qualifikation.
- * Wird als Tab im Team-Modul angezeigt.
+ * Interaktive Übersichts-Matrix: Welcher Mitarbeiter hat welche Qualifikation.
+ * Qualifikationen können direkt per Klick gesetzt/entfernt werden.
  */
-export default function QualificationOverview({ doctors = [] }) {
+export default function QualificationOverview({ doctors = [], isReadOnly = false }) {
+    const queryClient = useQueryClient();
     const { qualifications, qualificationMap, isLoading: qualsLoading } = useQualifications();
     const { allDoctorQualifications, byDoctor, isLoading: dqLoading } = useAllDoctorQualifications();
+
+    const assignMutation = useMutation({
+        mutationFn: (data) => db.DoctorQualification.create(data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['allDoctorQualifications'] });
+            queryClient.invalidateQueries({ queryKey: ['doctorQualifications'] });
+        },
+    });
+
+    const removeMutation = useMutation({
+        mutationFn: (id) => db.DoctorQualification.delete(id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['allDoctorQualifications'] });
+            queryClient.invalidateQueries({ queryKey: ['doctorQualifications'] });
+        },
+    });
+
+    const handleToggle = useCallback((doctorId, qualId) => {
+        if (isReadOnly) return;
+        const doctorEntries = byDoctor[doctorId] || [];
+        const existing = doctorEntries.find(dq => dq.qualification_id === qualId);
+        if (existing) {
+            removeMutation.mutate(existing.id);
+        } else {
+            assignMutation.mutate({ doctor_id: doctorId, qualification_id: qualId });
+        }
+    }, [byDoctor, isReadOnly, assignMutation, removeMutation]);
 
     const activeQuals = qualifications.filter(q => q.is_active !== false);
     const isLoading = qualsLoading || dqLoading;
@@ -48,6 +76,7 @@ export default function QualificationOverview({ doctors = [] }) {
                 </CardTitle>
                 <p className="text-sm text-slate-500">
                     Übersicht aller Qualifikationen und ihrer Zuordnung zu Teammitgliedern.
+                    {!isReadOnly && " Klicken Sie auf eine Zelle, um eine Qualifikation zuzuweisen oder zu entfernen."}
                 </p>
             </CardHeader>
             <CardContent>
@@ -96,12 +125,24 @@ export default function QualificationOverview({ doctors = [] }) {
                                         </td>
                                         {activeQuals.map(qual => {
                                             const hasQual = doctorQualIds.includes(qual.id);
+                                            const isPending = assignMutation.isPending || removeMutation.isPending;
                                             return (
-                                                <td key={qual.id} className="text-center py-2 px-2">
+                                                <td 
+                                                    key={qual.id} 
+                                                    className={`text-center py-2 px-2 ${
+                                                        !isReadOnly ? 'cursor-pointer hover:bg-slate-100 transition-colors' : ''
+                                                    }`}
+                                                    onClick={() => !isPending && handleToggle(doctor.id, qual.id)}
+                                                    title={!isReadOnly ? (hasQual ? `${qual.name} entfernen` : `${qual.name} zuweisen`) : ''}
+                                                >
                                                     {hasQual ? (
                                                         <Check className="w-4 h-4 text-green-600 mx-auto" />
                                                     ) : (
-                                                        <X className="w-4 h-4 text-slate-200 mx-auto" />
+                                                        <span className={`inline-block w-4 h-4 mx-auto rounded border ${
+                                                            !isReadOnly ? 'border-slate-300 hover:border-indigo-400' : 'border-transparent'
+                                                        }`}>
+                                                            {isReadOnly && <X className="w-4 h-4 text-slate-200" />}
+                                                        </span>
                                                     )}
                                                 </td>
                                             );
