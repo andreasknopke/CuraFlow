@@ -935,6 +935,35 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
       }
     }
 
+    // Migration 10: Add min_staff and optimal_staff to Workplace (for auto-fill engine)
+    try {
+      await dbPool.execute(`
+        ALTER TABLE Workplace 
+        ADD COLUMN min_staff INT DEFAULT 1
+      `);
+      results.push({ migration: 'add_workplace_min_staff', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_workplace_min_staff', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_workplace_min_staff', status: 'error', error: err.message });
+      }
+    }
+
+    try {
+      await dbPool.execute(`
+        ALTER TABLE Workplace 
+        ADD COLUMN optimal_staff INT DEFAULT 1
+      `);
+      results.push({ migration: 'add_workplace_optimal_staff', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_workplace_optimal_staff', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_workplace_optimal_staff', status: 'error', error: err.message });
+      }
+    }
+
     // Clear column cache for affected tables so new columns are recognized
     const cacheKey = req.headers['x-db-token'] || 'default';
     clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate', 'TeamRole'], cacheKey);

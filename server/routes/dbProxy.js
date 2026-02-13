@@ -245,6 +245,26 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
   }
 };
 
+// Auto-add min_staff and optimal_staff columns to Workplace if missing (for auto-fill engine)
+const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
+  const checkKey = `${cacheKey}:Workplace:staff_cols_checked`;
+  if (COLUMNS_CACHE[checkKey]) return;
+
+  try {
+    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS min_staff INT DEFAULT 1`);
+    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS optimal_staff INT DEFAULT 1`);
+    // Clear cached columns so the new columns are recognized
+    const colCacheKey = `${cacheKey}:Workplace`;
+    delete COLUMNS_CACHE[colCacheKey];
+  } catch (err) {
+    // Columns might already exist or table might not exist yet — both are fine
+    if (err.code !== 'ER_DUP_FIELDNAME') {
+      console.warn('[dbProxy] ensureWorkplaceStaffColumns:', err.message);
+    }
+  }
+  COLUMNS_CACHE[checkKey] = true;
+};
+
 // ============ AUDIT LOG HELPER ============
 // Writes an audit entry to the SystemLog table for UI visibility
 export const writeAuditLog = async (dbPool, { level = 'audit', source, message, details, userEmail }) => {
@@ -280,6 +300,11 @@ router.post('/', async (req, res, next) => {
     // Auto-create Qualification tables for tenants if needed
     if (['Qualification', 'DoctorQualification', 'WorkplaceQualification'].includes(tableName)) {
       await ensureQualificationTables(dbPool, cacheKey);
+    }
+    
+    // Auto-add min_staff/optimal_staff columns to Workplace if needed
+    if (tableName === 'Workplace') {
+      await ensureWorkplaceStaffColumns(dbPool, cacheKey);
     }
     
     if (!tableName) {
