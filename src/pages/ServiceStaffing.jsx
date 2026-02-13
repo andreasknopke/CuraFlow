@@ -504,6 +504,10 @@ export default function ServiceStaffingPage() {
                                         if (type.active_days && type.active_days.length > 0) {
                                             // Robust check handling potential string/number mismatch
                                             isActive = type.active_days.some(d => Number(d) === day.getDay());
+                                            // Feiertage verhalten sich wie Sonntag (Index 0)
+                                            if (isActive && isPublicHoliday(day) && !type.active_days.some(d => Number(d) === 0)) {
+                                                isActive = false;
+                                            }
                                         } 
                                         // Fallback for legacy/static
                                         else if (type.id === 'Onko-Konsil') {
