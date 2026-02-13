@@ -185,13 +185,13 @@ export function generateSuggestions({
     //  Wish helpers
     // ========================================================
 
-    /** Get approved service wishes for a doctor on a date */
-    const getApprovedServiceWish = (doctorId, dateStr) => {
+    /** Get service wish for a doctor on a date (approved OR pending) */
+    const getServiceWish = (doctorId, dateStr) => {
         return wishes.find(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
             w.type === 'service' &&
-            w.status === 'approved'
+            (w.status === 'approved' || w.status === 'pending')
         );
     };
 
@@ -304,7 +304,7 @@ export function generateSuggestions({
                 const normal = [];
 
                 for (const doc of allCandidates) {
-                    const wish = getApprovedServiceWish(doc.id, dateStr);
+                    const wish = getServiceWish(doc.id, dateStr);
                     if (wish && (!wish.position || wish.position === svc.name)) {
                         withServiceWish.push(doc);
                     } else if (hasPendingNoService(doc.id, dateStr)) {
