@@ -1723,6 +1723,83 @@ export default function ScheduleBoard() {
     setDraggingShiftId(null);
     const { source, destination, draggableId } = result;
 
+    // ============================================================
+    //  PREVIEW SHIFT DRAG HANDLING
+    //  Preview shifts are modified in-memory (no DB operations)
+    // ============================================================
+    if (draggableId.startsWith('shift-preview-')) {
+        const shiftId = draggableId.replace('shift-', '');
+        const previewShift = previewShifts?.find(s => s.id === shiftId);
+        if (!previewShift || !previewShifts) return;
+
+        // Dropped outside or to trash/sidebar → remove from preview
+        if (!destination || destination.droppableId === 'sidebar' || destination.droppableId === 'trash' || destination.droppableId === 'trash-overlay' || destination.droppableId.startsWith('available__') || destination.droppableId.endsWith('__Verfügbar')) {
+            const remaining = previewShifts.filter(s => s.id !== shiftId);
+            if (remaining.length === 0) {
+                setPreviewShifts(null);
+                setPreviewCategories(null);
+            } else {
+                setPreviewShifts(remaining);
+            }
+            toast.info('Vorschlag entfernt');
+            return;
+        }
+
+        // Dropped on row header → assign Mo-Fr (skip for preview)
+        if (destination.droppableId.startsWith('rowHeader__')) {
+            return;
+        }
+
+        // Dropped to same position → no change
+        if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+        // Dropped to a grid cell → move preview entry
+        const destParts = destination.droppableId.split('__');
+        const newDateStr = destParts[0];
+        const newPosition = destParts[1];
+        if (!newDateStr || !newPosition) return;
+
+        // Validate: workplace active on that date?
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+        if (!absencePositions.includes(newPosition)) {
+            const wp = workplaces.find(w => w.name === newPosition);
+            if (wp) {
+                const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
+                const date = new Date(newDateStr + 'T00:00:00');
+                const dayOfWeek = date.getDay();
+                if (isPublicHoliday(date) && !activeDays.some(d => Number(d) === 0)) {
+                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                    return;
+                }
+                if (!activeDays.some(d => Number(d) === dayOfWeek)) {
+                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                    return;
+                }
+            }
+        }
+
+        // Check duplicate: is this doctor already on this position+date in preview or DB?
+        const allMerged = [...(currentWeekShifts || [])];
+        const duplicate = allMerged.find(s => 
+            s.id !== shiftId &&
+            s.date === newDateStr && 
+            s.position === newPosition && 
+            s.doctor_id === previewShift.doctor_id
+        );
+        if (duplicate) {
+            toast.error('Arzt ist dort bereits eingeteilt.');
+            return;
+        }
+
+        // Apply the move in previewShifts state
+        const updated = previewShifts.map(s => {
+            if (s.id !== shiftId) return s;
+            return { ...s, date: newDateStr, position: newPosition };
+        });
+        setPreviewShifts(updated);
+        return;
+    }
+
     // If dropped outside any droppable and was from grid -> delete
     if (!destination) {
         if (isDraggingFromGrid && draggableId.startsWith('shift-')) {
@@ -1995,6 +2072,20 @@ export default function ScheduleBoard() {
 
     if (isSourceFromGrid && (isDestAvailable || destination.droppableId === 'sidebar')) {
          const shiftId = draggableId.replace('shift-', '');
+
+         // Preview shift → remove from preview state (not DB)
+         if (shiftId.startsWith('preview-') && previewShifts) {
+             const remaining = previewShifts.filter(s => s.id !== shiftId);
+             if (remaining.length === 0) {
+                 setPreviewShifts(null);
+                 setPreviewCategories(null);
+             } else {
+                 setPreviewShifts(remaining);
+             }
+             toast.info('Vorschlag entfernt');
+             return;
+         }
+
          const shift = currentWeekShifts.find(s => s.id === shiftId);
 
          console.log(`[DEBUG-LOG] Drop to Trash/Sidebar. ShiftID: ${shiftId}, Found: ${!!shift}`);
@@ -2023,6 +2114,27 @@ export default function ScheduleBoard() {
             doctorId = draggableId.replace('sidebar-doc-', '');
         } else {
             doctorId = draggableId.substring(14, draggableId.length - 11);
+        }
+
+        // PREVIEW MODE: Add to previewShifts instead of creating DB entry
+        if (previewShifts) {
+            const dropParts = destination.droppableId.split('__');
+            const dateStr = dropParts[0];
+            const position = dropParts[1];
+            if (!dateStr || !position) return;
+
+            // Check duplicate
+            const allMerged = [...(currentWeekShifts || [])];
+            const duplicate = allMerged.find(s => s.date === dateStr && s.position === position && s.doctor_id === doctorId);
+            if (duplicate) {
+                toast.error('Arzt ist dort bereits eingeteilt.');
+                return;
+            }
+
+            const newId = `preview-add-${Date.now()}`;
+            setPreviewShifts([...previewShifts, { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true }]);
+            toast.info('Vorschlag hinzugefügt');
+            return;
         }
 
         // Format: date__position oder date__position__timeslotId oder date__position__allTimeslots__
@@ -2506,29 +2618,6 @@ export default function ScheduleBoard() {
       setPreviewCategories(null);
   };
 
-  // Accept a single preview shift by clicking on it
-  const acceptSinglePreview = async (previewShift) => {
-      if (!previewShifts) return;
-      const { isPreview, id, ...shiftData } = previewShift;
-      try {
-          await db.ShiftEntry.create(shiftData);
-          queryClient.invalidateQueries(['shifts']);
-          // Remove this shift from preview list
-          const remaining = previewShifts.filter(s => 
-              !(s.date === previewShift.date && s.position === previewShift.position && s.doctor_id === previewShift.doctor_id)
-          );
-          if (remaining.length === 0) {
-              setPreviewShifts(null);
-              setPreviewCategories(null);
-          } else {
-              setPreviewShifts(remaining);
-          }
-          toast.success('Vorschlag \u00fcbernommen');
-      } catch (err) {
-          toast.error('Fehler: ' + err.message);
-      }
-  };
-
   const handleAutoFill = (categories = null) => {
     setIsGenerating(true);
     try {
@@ -2776,19 +2865,18 @@ export default function ScheduleBoard() {
                     index={index}
                     style={roleColor}
                     isFullWidth={isFullWidth}
-                    isDragDisabled={isReadOnly || shift.isPreview}
+                    isDragDisabled={isReadOnly}
                     fontSize={gridFontSize}
                     boxSize={gridFontSize * 3.5}
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
                     qualificationStatus={qualificationStatus}
-                    onAcceptPreview={shift.isPreview ? acceptSinglePreview : undefined}
                 />
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, acceptSinglePreview]);
+  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -2972,6 +3060,7 @@ export default function ScheduleBoard() {
                                  });
                              } catch { return null; }
                          })()}
+                         {/* KI-Optimierung temporarily hidden
                          <DropdownMenuSeparator />
                          <DropdownMenuLabel className="flex items-center gap-1">
                              <Sparkles className="w-3 h-3 text-amber-500" />
@@ -2981,6 +3070,7 @@ export default function ScheduleBoard() {
                              <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
                              KI-AutoFill (alle Kategorien)
                          </DropdownMenuItem>
+                         */}
                      </DropdownMenuContent>
                  </DropdownMenu>
              )}
