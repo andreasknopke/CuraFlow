@@ -299,8 +299,17 @@ export class ShiftValidator {
             return { warning: `Sollte nicht: Arzt hat Qualifikation „${names}“ – nur zuweisen wenn kein anderer verfügbar.` };
         }
 
-        // Sollte-Qualifikationen: Bevorzugung, aber KEINE Warnung bei Fehlen
-        // (wird nur vom AutoFill-Algorithmus für Priorisierung genutzt)
+        // Sollte-Qualifikationen: Warnung wenn Arzt die bevorzugte Qualifikation NICHT hat
+        // (Fallback: nur zuweisen wenn kein qualifizierter Arzt verfügbar)
+        if (preferredQuals.length > 0) {
+            const missingPreferred = preferredQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+            if (missingPreferred.length > 0) {
+                const names = missingPreferred
+                    .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                    .join(', ');
+                return { warning: `Fehlende Sollte-Qualifikation: ${names} – nur zuweisen wenn kein qualifizierter Arzt verfügbar.` };
+            }
+        }
 
         return {};
     }

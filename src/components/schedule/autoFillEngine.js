@@ -708,7 +708,7 @@ export function generateSuggestions({
 
                 const targetWp = underFilled[0];
 
-                const scored = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id)).map(doc => {
+                const scoreCandidate = (doc) => {
                     const rotTargets = getActiveRotationTargets(doc.id, dateStr);
                     const hasRotHere = rotTargets.includes(targetWp.name);
                     const hasRotElsewhere = rotTargets.length > 0 && !hasRotHere;
@@ -721,28 +721,41 @@ export function generateSuggestions({
 
                     const qualified = isQualified(doc.id, targetWp.id);
                     const needsQualCoverage = hasQualReq(targetWp) && !hasQualCoverage(targetWp);
-                    // Optional qualification: prefer doctors who have optional quals
                     const optQualScore = hasOptionalQuals(doc.id, targetWp.id) ? 0 :
                                          hasAnyOptionalQual(doc.id, targetWp.id) ? 1 : 2;
-                    // Discouraged: penalize doctors who have discouraged qualifications
-                    const discouragedScore = isDiscouraged(doc.id, targetWp.id) ? 1 : 0;
 
                     return {
                         doc, tier,
                         qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
                         optQualScore,
-                        discouragedScore,
                         displaced: getDisplaced(doc.id),
                         weekly: getWeekly(doc.id),
                     };
-                }).sort((a, b) => {
+                };
+                const sortCandidates = (a, b) => {
                     if (a.tier !== b.tier) return a.tier - b.tier;
                     if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
                     if (a.optQualScore !== b.optQualScore) return a.optQualScore - b.optQualScore;
-                    if (a.discouragedScore !== b.discouragedScore) return a.discouragedScore - b.discouragedScore;
                     if (a.displaced !== b.displaced) return b.displaced - a.displaced;
                     return a.weekly - b.weekly;
-                });
+                };
+
+                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                let eligible = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id));
+
+                // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
+                {
+                    const nonDiscouraged = eligible.filter(doc => !isDiscouraged(doc.id, targetWp.id));
+                    if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
+                }
+
+                // "Sollte": filter to doctors with preferred quals (fallback if none remain)
+                if (hasOptionalQualReq(targetWp)) {
+                    const withPreferred = eligible.filter(doc => hasOptionalQuals(doc.id, targetWp.id));
+                    if (withPreferred.length > 0) eligible = withPreferred;
+                }
+
+                let scored = eligible.map(scoreCandidate).sort(sortCandidates);
 
                 if (scored.length > 0) {
                     const chosen = scored[0].doc;
@@ -784,25 +797,40 @@ export function generateSuggestions({
                     return getWeekly(a.id) - getWeekly(b.id);
                 })[0];
 
-                const bestForDoc = options
-                    .filter(o => !isExcluded(doc.id, o.wp.id))
-                    .map(o => {
-                        const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                        const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
-                        const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
-                        const optQual = hasOptionalQuals(doc.id, o.wp.id) ? 0 :
-                                        hasAnyOptionalQual(doc.id, o.wp.id) ? 1 : 2;
-                        const discScore = isDiscouraged(doc.id, o.wp.id) ? 1 : 0;
-                        return { ...o, isRotTarget, isQual, optQual, discScore };
-                    })
-                    .sort((a, b) => {
-                        if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
-                        if (a.isQual !== b.isQual) return a.isQual - b.isQual;
-                        if (a.optQual !== b.optQual) return a.optQual - b.optQual;
-                        if (a.discScore !== b.discScore) return a.discScore - b.discScore;
-                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
-                        return (a.wp.order || 0) - (b.wp.order || 0);
-                    });
+                const scoreBestWp = (o) => {
+                    const rotTargets = getActiveRotationTargets(doc.id, dateStr);
+                    const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
+                    const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
+                    const optQual = hasOptionalQuals(doc.id, o.wp.id) ? 0 :
+                                    hasAnyOptionalQual(doc.id, o.wp.id) ? 1 : 2;
+                    return { ...o, isRotTarget, isQual, optQual };
+                };
+                const sortBestWp = (a, b) => {
+                    if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
+                    if (a.isQual !== b.isQual) return a.isQual - b.isQual;
+                    if (a.optQual !== b.optQual) return a.optQual - b.optQual;
+                    if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
+                    return (a.wp.order || 0) - (b.wp.order || 0);
+                };
+
+                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+
+                // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
+                {
+                    const nonDiscouraged = eligibleWps.filter(o => !isDiscouraged(doc.id, o.wp.id));
+                    if (nonDiscouraged.length > 0) eligibleWps = nonDiscouraged;
+                }
+
+                // "Sollte": prefer workplaces where doctor has preferred quals (fallback)
+                {
+                    const withPreferred = eligibleWps.filter(o =>
+                        !hasOptionalQualReq(o.wp) || hasOptionalQuals(doc.id, o.wp.id)
+                    );
+                    if (withPreferred.length > 0) eligibleWps = withPreferred;
+                }
+
+                let bestForDoc = eligibleWps.map(scoreBestWp).sort(sortBestWp);
 
                 if (bestForDoc.length > 0) {
                     assign(doc.id, bestForDoc[0].wp.name);
@@ -903,47 +931,67 @@ export function generateSuggestions({
                 );
                 if (hasCov) continue;
 
-                // First try unblocked qualified doctors
+                // First try unblocked qualified doctors (excluding discouraged)
                 const isDemoC1 = wp.category === 'Demonstrationen & Konsile';
+                const sortC1 = (a, b) => {
+                    if (isDemoC1) {
+                        const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                        const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                        if (aSole !== bSole) return aSole - bSole;
+                    }
+                    const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
+                    const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
+                    if (aOpt !== bOpt) return aOpt - bOpt;
+                    return getWeekly(a.id) - getWeekly(b.id);
+                };
+
+                // "Sollte nicht" + "Sollte": Progressive fallback
+                // Stage 1: unblocked, not discouraged, qualified
                 let candidates = doctors
                     .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                 !isDiscouraged(d.id, wp.id) &&
                                  isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                    .sort((a, b) => {
-                        // For Demo workplaces, deprioritize sole occupants of other workplaces
-                        if (isDemoC1) {
-                            const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                            const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                            if (aSole !== bSole) return aSole - bSole;
-                        }
-                        // Prefer doctors with optional qualifications, deprioritize discouraged
-                        const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
-                        const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
-                        if (aOpt !== bOpt) return aOpt - bOpt;
-                        const aDisc = isDiscouraged(a.id, wp.id) ? 1 : 0;
-                        const bDisc = isDiscouraged(b.id, wp.id) ? 1 : 0;
-                        if (aDisc !== bDisc) return aDisc - bDisc;
-                        return getWeekly(a.id) - getWeekly(b.id);
-                    });
+                    .sort(sortC1);
+                // "Sollte": prefer doctors with preferred quals (fallback within pool)
+                if (hasOptionalQualReq(wp) && candidates.length > 0) {
+                    const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
+                    if (withPref.length > 0) candidates = withPref;
+                }
+
+                if (candidates.length === 0) {
+                    // Fallback: include discouraged doctors
+                    candidates = doctors
+                        .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
+                        .sort(sortC1);
+                    if (hasOptionalQualReq(wp) && candidates.length > 0) {
+                        const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
+                        if (withPref.length > 0) candidates = withPref;
+                    }
+                }
 
                 // If none free, allow already-assigned-in-Phase-C qualified doctors (Mehrfachbesetzung!)
                 if (candidates.length === 0) {
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                     !isDiscouraged(d.id, wp.id) &&
                                      isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                        .sort((a, b) => {
-                            if (isDemoC1) {
-                                const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                                const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                                if (aSole !== bSole) return aSole - bSole;
-                            }
-                            const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
-                            const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
-                            if (aOpt !== bOpt) return aOpt - bOpt;
-                            const aDisc = isDiscouraged(a.id, wp.id) ? 1 : 0;
-                            const bDisc = isDiscouraged(b.id, wp.id) ? 1 : 0;
-                            if (aDisc !== bDisc) return aDisc - bDisc;
-                            return getWeekly(a.id) - getWeekly(b.id);
-                        });
+                        .sort(sortC1);
+                    if (hasOptionalQualReq(wp) && candidates.length > 0) {
+                        const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
+                        if (withPref.length > 0) candidates = withPref;
+                    }
+                }
+                if (candidates.length === 0) {
+                    // Fallback: include discouraged doctors in Mehrfachbesetzung
+                    candidates = doctors
+                        .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
+                        .sort(sortC1);
+                    if (hasOptionalQualReq(wp) && candidates.length > 0) {
+                        const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
+                        if (withPref.length > 0) candidates = withPref;
+                    }
                 }
 
                 if (candidates.length > 0) {
@@ -973,34 +1021,47 @@ export function generateSuggestions({
 
                 if (targetHasQualReq) {
                     // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
-                    // First try unblocked qualified
-                    let scoredC = doctors
+                    const sortPflichtC2 = (a, b) => {
+                        if (isDemoC2) {
+                            const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
+                            const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
+                            if (aSole !== bSole) return aSole - bSole;
+                        }
+                        return getWeekly(a.id) - getWeekly(b.id);
+                    };
+
+                    // First try unblocked qualified with progressive filtering
+                    let eligiblePflicht = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
                                      !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
-                                     !isAlreadyAssignedToWp(d.id, targetWpC.name))
-                        .sort((a, b) => {
-                            if (isDemoC2) {
-                                const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                                const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                                if (aSole !== bSole) return aSole - bSole;
-                            }
-                            return getWeekly(a.id) - getWeekly(b.id);
-                        });
+                                     !isAlreadyAssignedToWp(d.id, targetWpC.name));
+                    // "Sollte nicht": filter out discouraged (fallback)
+                    {
+                        const nonDisc = eligiblePflicht.filter(d => !isDiscouraged(d.id, targetWpC.id));
+                        if (nonDisc.length > 0) eligiblePflicht = nonDisc;
+                    }
+                    // "Sollte": filter to doctors with preferred quals (fallback)
+                    if (hasOptionalQualReq(targetWpC)) {
+                        const withPref = eligiblePflicht.filter(d => hasOptionalQuals(d.id, targetWpC.id));
+                        if (withPref.length > 0) eligiblePflicht = withPref;
+                    }
+                    let scoredC = eligiblePflicht.sort(sortPflichtC2);
 
                     // If none free, allow already-assigned qualified (Mehrfachbesetzung)
                     if (scoredC.length === 0) {
-                        scoredC = doctors
+                        let eligibleMehr = doctors
                             .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
                                          isQualified(d.id, targetWpC.id) &&
-                                         !isAlreadyAssignedToWp(d.id, targetWpC.name))
-                            .sort((a, b) => {
-                                if (isDemoC2) {
-                                    const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                                    const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                                    if (aSole !== bSole) return aSole - bSole;
-                                }
-                                return getWeekly(a.id) - getWeekly(b.id);
-                            });
+                                         !isAlreadyAssignedToWp(d.id, targetWpC.name));
+                        {
+                            const nonDisc = eligibleMehr.filter(d => !isDiscouraged(d.id, targetWpC.id));
+                            if (nonDisc.length > 0) eligibleMehr = nonDisc;
+                        }
+                        if (hasOptionalQualReq(targetWpC)) {
+                            const withPref = eligibleMehr.filter(d => hasOptionalQuals(d.id, targetWpC.id));
+                            if (withPref.length > 0) eligibleMehr = withPref;
+                        }
+                        scoredC = eligibleMehr.sort(sortPflichtC2);
                     }
 
                     if (scoredC.length > 0) {
@@ -1012,25 +1073,38 @@ export function generateSuggestions({
                     const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
                     if (availableC.length === 0) break;
 
-                    const scoredC = availableC
-                        .filter(doc => !isExcluded(doc.id, targetWpC.id) &&
-                                       !isAlreadyAssignedToWp(doc.id, targetWpC.name))
-                        .map(doc => ({
-                            doc,
-                            soleOccupant: isDemoC2 && soleOccupantDoctors.has(doc.id) ? 1 : 0,
-                            qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
-                            optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
-                                      hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
-                            discScore: isDiscouraged(doc.id, targetWpC.id) ? 1 : 0,
-                            weekly: getWeekly(doc.id),
-                        }))
-                        .sort((a, b) => {
-                            if (a.soleOccupant !== b.soleOccupant) return a.soleOccupant - b.soleOccupant;
-                            if (a.qualified !== b.qualified) return a.qualified - b.qualified;
-                            if (a.optQual !== b.optQual) return a.optQual - b.optQual;
-                            if (a.discScore !== b.discScore) return a.discScore - b.discScore;
-                            return a.weekly - b.weekly;
-                        });
+                    const scoreC2 = (doc) => ({
+                        doc,
+                        soleOccupant: isDemoC2 && soleOccupantDoctors.has(doc.id) ? 1 : 0,
+                        qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
+                        optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
+                                  hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
+                        weekly: getWeekly(doc.id),
+                    });
+                    const sortC2 = (a, b) => {
+                        if (a.soleOccupant !== b.soleOccupant) return a.soleOccupant - b.soleOccupant;
+                        if (a.qualified !== b.qualified) return a.qualified - b.qualified;
+                        if (a.optQual !== b.optQual) return a.optQual - b.optQual;
+                        return a.weekly - b.weekly;
+                    };
+
+                    // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                    let eligibleC = availableC.filter(doc => !isExcluded(doc.id, targetWpC.id) &&
+                                                             !isAlreadyAssignedToWp(doc.id, targetWpC.name));
+
+                    // "Sollte nicht": filter out discouraged (fallback)
+                    {
+                        const nonDiscouraged = eligibleC.filter(doc => !isDiscouraged(doc.id, targetWpC.id));
+                        if (nonDiscouraged.length > 0) eligibleC = nonDiscouraged;
+                    }
+
+                    // "Sollte": filter to doctors with preferred quals (fallback)
+                    if (hasOptionalQualReq(targetWpC)) {
+                        const withPreferred = eligibleC.filter(doc => hasOptionalQuals(doc.id, targetWpC.id));
+                        if (withPreferred.length > 0) eligibleC = withPreferred;
+                    }
+
+                    let scoredC = eligibleC.map(scoreC2).sort(sortC2);
 
                     if (scoredC.length > 0) {
                         assignC(scoredC[0].doc.id, targetWpC.name, false);

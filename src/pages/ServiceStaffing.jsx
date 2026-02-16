@@ -463,7 +463,8 @@ export default function ServiceStaffingPage() {
                                         const excludedQualIds = wpQuals.filter(wq => !wq.is_mandatory && wq.is_excluded).map(wq => wq.qualification_id);
                                         const hasQualRequirements = mandatoryQualIds.length > 0 || preferredQualIds.length > 0 || discouragedQualIds.length > 0 || excludedQualIds.length > 0;
 
-                                        const availableDoctors = doctors.filter(doc => {
+                                        // Base filter: all eligible doctors (without discouraged filter)
+                                        const baseDoctors = doctors.filter(doc => {
                                             // Always keep the currently assigned doctor in the list
                                             if (doc.id === assignedDoctorId) return true;
                                             
@@ -493,9 +494,42 @@ export default function ServiceStaffingPage() {
                                             }
 
                                             return true;
-                                        })
+                                        });
+
+                                        // "Sollte nicht": Filter out doctors with discouraged qualifications,
+                                        // but keep them as fallback if no other doctors are available
+                                        let afterDiscouragedFilter;
+                                        if (discouragedQualIds.length > 0) {
+                                            const nonDiscouraged = baseDoctors.filter(doc => {
+                                                if (doc.id === assignedDoctorId) return true;
+                                                const docQualIds = getDoctorQualIds(doc.id);
+                                                return !discouragedQualIds.some(qid => docQualIds.includes(qid));
+                                            });
+                                            // Use non-discouraged list if it has at least one selectable doctor,
+                                            // otherwise fall back to full list (with warnings)
+                                            const hasNonDiscouragedChoices = nonDiscouraged.some(d => d.id !== assignedDoctorId);
+                                            afterDiscouragedFilter = hasNonDiscouragedChoices ? nonDiscouraged : baseDoctors;
+                                        } else {
+                                            afterDiscouragedFilter = baseDoctors;
+                                        }
+
+                                        // "Sollte": Filter to only doctors with preferred qualifications,
+                                        // but keep unqualified as fallback if no qualified are available
+                                        let availableDoctors;
+                                        if (preferredQualIds.length > 0) {
+                                            const withPreferred = afterDiscouragedFilter.filter(doc => {
+                                                if (doc.id === assignedDoctorId) return true;
+                                                const docQualIds = getDoctorQualIds(doc.id);
+                                                return preferredQualIds.every(qid => docQualIds.includes(qid));
+                                            });
+                                            const hasPreferredChoices = withPreferred.some(d => d.id !== assignedDoctorId);
+                                            availableDoctors = hasPreferredChoices ? withPreferred : afterDiscouragedFilter;
+                                        } else {
+                                            availableDoctors = afterDiscouragedFilter;
+                                        }
+
                                         // Sort: preferred ("Sollte") doctors first, discouraged ("Sollte nicht") doctors last
-                                        .sort((a, b) => {
+                                        availableDoctors = availableDoctors.sort((a, b) => {
                                             const aQuals = getDoctorQualIds(a.id);
                                             const bQuals = getDoctorQualIds(b.id);
 
