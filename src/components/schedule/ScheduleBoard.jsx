@@ -2627,11 +2627,14 @@ export default function ScheduleBoard() {
 
       if (result.suggestions.length > 0) {
         setPreviewShifts(result.suggestions);
-        const statsMsg = `${result.suggestions.length} KI-Vorschläge (${result.provider}, ${result.stats.elapsed}ms)`;
-        const detailMsg = result.stats.errors > 0 
-          ? `${statsMsg} — ${result.stats.errors} Constraint-Verletzungen korrigiert`
-          : statsMsg;
-        toast.success(detailMsg, { duration: 6000 });
+        const swapInfo = result.stats.swapsApplied > 0
+          ? ` — ${result.stats.swapsApplied} KI-Tausche angewendet`
+          : '';
+        const variantInfo = result.stats.variantsGenerated
+          ? ` (${result.stats.variantsGenerated} Varianten getestet)`
+          : '';
+        const statsMsg = `${result.suggestions.length} Vorschläge${swapInfo}${variantInfo}`;
+        toast.success(statsMsg, { duration: 6000 });
         
         if (result.reasoning) {
           console.log(`🤖 KI-Reasoning: ${result.reasoning}`);
