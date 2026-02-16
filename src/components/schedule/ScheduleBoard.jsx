@@ -2657,7 +2657,9 @@ export default function ScheduleBoard() {
       });
 
       if (result.length > 0) {
-        setPreviewShifts(result);
+        // Assign stable IDs immediately so drag-drop can find them in state
+        const withIds = result.map((s, i) => ({ ...s, id: `preview-${i}` }));
+        setPreviewShifts(withIds);
         toast.success(`${result.length} Vorschläge generiert`);
       } else {
         toast.info('Keine offenen Positionen gefunden');
@@ -2715,7 +2717,9 @@ export default function ScheduleBoard() {
       toast.dismiss('ai-autofill');
 
       if (result.suggestions.length > 0) {
-        setPreviewShifts(result.suggestions);
+        // Assign stable IDs immediately so drag-drop can find them in state
+        const withIds = result.suggestions.map((s, i) => ({ ...s, id: `preview-${i}` }));
+        setPreviewShifts(withIds);
         const swapInfo = result.stats.swapsApplied > 0
           ? ` — ${result.stats.swapsApplied} KI-Tausche angewendet`
           : '';
