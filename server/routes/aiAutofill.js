@@ -214,15 +214,20 @@ ${Object.entries(byDate).map(([date, assignments]) =>
   }
 
   prompt += `\n### AUFGABE
-Erstelle eine BESSERE Zuweisung als die Baseline. Optimiere insbesondere:
+Erstelle eine vollständige Zuweisung für die gesamte Woche. Optimiere insbesondere:
 1. Globale Fairness über die gesamte Woche
 2. Respektiere Rotations-Ziele bestmöglich
 3. Minimiere Alleinbesetzungen bei Demos
 4. Optimale Nutzung von Qualifikationen
 5. Beachte die Auswirkungen von auto_off auf den Folgetag
 
-Gib NUR Zuweisungen für OFFENE Positionen zurück (nicht für bereits bestehende Einträge).
-Jeder verfügbare Arzt muss pro Tag genau einem Arbeitsplatz zugewiesen werden.`;
+WICHTIG:
+- Erstelle für JEDEN verfügbaren Arzt an JEDEM Werktag GENAU EINE Zuweisung zu einem Arbeitsplatz.
+- Überspringe Ärzte, die an einem Tag bereits einen bestehenden Eintrag haben (siehe "Bestehende Einträge").
+- Die "assignments" Liste MUSS alle Zuweisungen enthalten. Bei ${docsSummary.length} Ärzten und ${weekDays.length} Tagen erwarte ich ca. ${docsSummary.length * weekDays.length} Einträge (minus Abwesenheiten und bestehende Einträge).
+- Verwende die EXAKTEN doctor_id UUIDs und Arbeitsplatz-Namen aus den Daten oben.
+- Jeder Arzt braucht pro Tag GENAU EINEN verfügbarkeitsrelevanten Arbeitsplatz (affects_availability=true) PLUS ggf. nicht-verfügbarkeitsrelevante (affects_availability=false).
+- Antworte mit dem VOLLSTÄNDIGEN JSON. Kürze NICHTS ab.`;
 
   return prompt;
 }
@@ -458,7 +463,7 @@ router.post('/ai-autofill', async (req, res) => {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.3, // Low temperature for consistent, logical results
-      max_completion_tokens: 16000,
+      max_completion_tokens: 65000,
       ...(provider === 'Mistral' ? {} : { response_format: { type: 'json_object' } }),
     });
 
@@ -468,6 +473,8 @@ router.post('/ai-autofill', async (req, res) => {
     }
 
     console.log(`[AI AutoFill] Response received: ${responseContent.length} chars, ${completion.usage?.total_tokens || '?'} tokens`);
+    console.log(`[AI AutoFill] Raw response (first 2000 chars): ${responseContent.substring(0, 2000)}`);
+    console.log(`[AI AutoFill] Finish reason: ${completion.choices?.[0]?.finish_reason}`);
 
     // Parse the response
     const parsed = parseResponse(responseContent);
@@ -476,7 +483,11 @@ router.post('/ai-autofill', async (req, res) => {
       throw new Error('LLM response missing "assignments" array');
     }
 
-    console.log(`[AI AutoFill] Parsed ${parsed.assignments.length} assignments`);
+    console.log(`[AI AutoFill] Parsed ${parsed.assignments.length} assignments, reasoning: ${(parsed.reasoning || '').substring(0, 200)}`);
+    if (parsed.assignments.length === 0) {
+      console.warn('[AI AutoFill] WARNING: LLM returned 0 assignments!');
+      console.log('[AI AutoFill] Full response:', responseContent);
+    }
 
     // Validate against hard constraints
     const { validated, errors } = validateAssignments(parsed.assignments, data);
