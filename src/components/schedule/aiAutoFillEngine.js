@@ -24,9 +24,16 @@ const NUM_VARIANTS = 8; // Number of deterministic runs to try
 //  Scoring: evaluate a plan variant on multiple dimensions
 // ============================================================
 
-function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs) {
+function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData) {
   const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
   let score = 0;
+
+  // Build workplace lookup by name
+  const wpByName = {};
+  for (const wp of workplaces) wpByName[wp.name] = wp;
+
+  // Qualification helpers
+  const { getDoctorQualIds, getWpRequiredQualIds, getWpOptionalQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
   // 1. Fairness: std deviation of assignments per doctor (FTE-adjusted)
   const counts = {};
@@ -54,8 +61,45 @@ function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayS
     }
   }
 
-  // 3. Coverage: +1 for each filled slot
+  // 3. Coverage: +0.1 for each filled slot
   score += suggestions.filter(s => !absencePositions.includes(s.position) && s.position !== 'Verfügbar').length * 0.1;
+
+  // 4. QUALIFICATION QUALITY — heavy penalties for unqualified assignments
+  if (getDoctorQualIds && getWpRequiredQualIds) {
+    for (const s of suggestions) {
+      if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
+      const wp = wpByName[s.position];
+      if (!wp) continue;
+
+      // Excluded ("Nicht"): doctor must NOT be on this workplace → -25
+      const excl = getWpExcludedQualIds?.(wp.id) || [];
+      const docQuals = getDoctorQualIds(s.doctor_id) || [];
+      if (excl.length > 0 && excl.some(q => docQuals.includes(q))) {
+        score -= 25;
+        continue;
+      }
+
+      // Discouraged ("Sollte-nicht"): doctor should avoid this workplace → -8
+      const disc = getWpDiscouragedQualIds?.(wp.id) || [];
+      if (disc.length > 0 && disc.some(q => docQuals.includes(q))) {
+        score -= 8;
+        continue;
+      }
+
+      // Missing mandatory qualification ("Pflicht"): → -15
+      const req = getWpRequiredQualIds(wp.id) || [];
+      if (req.length > 0 && !req.every(q => docQuals.includes(q))) {
+        score -= 15;
+        continue;
+      }
+
+      // Has optional qualifications ("Sollte"): → +1
+      const opt = getWpOptionalQualIds?.(wp.id) || [];
+      if (opt.length > 0 && opt.every(q => docQuals.includes(q))) {
+        score += 1;
+      }
+    }
+  }
 
   return Math.round(score * 100) / 100;
 }
@@ -64,15 +108,42 @@ function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayS
 //  Convert plan to readable name-based format for LLM
 // ============================================================
 
-function planToReadable(suggestions, doctors, weekDayStrs) {
+function planToReadable(suggestions, doctors, weekDayStrs, qualData, workplaces) {
   const nameMap = {};
   for (const d of doctors) nameMap[d.id] = d.name;
+
+  // Build workplace lookup by name for qualification checks
+  const wpByName = {};
+  for (const wp of (workplaces || [])) wpByName[wp.name] = wp;
+  const { getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
   const byDate = {};
   for (const s of suggestions) {
     if (!byDate[s.date]) byDate[s.date] = {};
     if (!byDate[s.date][s.position]) byDate[s.date][s.position] = [];
-    byDate[s.date][s.position].push(nameMap[s.doctor_id] || s.doctor_id);
+
+    let label = nameMap[s.doctor_id] || s.doctor_id;
+
+    // Annotate unqualified/discouraged assignments so LLM can see quality issues
+    if (getDoctorQualIds && getWpRequiredQualIds) {
+      const wp = wpByName[s.position];
+      if (wp) {
+        const docQuals = getDoctorQualIds(s.doctor_id) || [];
+        const excl = getWpExcludedQualIds?.(wp.id) || [];
+        const disc = getWpDiscouragedQualIds?.(wp.id) || [];
+        const req = getWpRequiredQualIds(wp.id) || [];
+
+        if (excl.length > 0 && excl.some(q => docQuals.includes(q))) {
+          label += ' (NICHT-QUALIFIZIERT!)';
+        } else if (disc.length > 0 && disc.some(q => docQuals.includes(q))) {
+          label += ' (sollte-nicht)';
+        } else if (req.length > 0 && !req.every(q => docQuals.includes(q))) {
+          label += ' (UNQUALIFIZIERT!)';
+        }
+      }
+    }
+
+    byDate[s.date][s.position].push(label);
   }
 
   // Sort dates
@@ -110,12 +181,18 @@ export async function generateAISuggestions(params) {
     categoriesToFill, systemSettings, wishes,
   };
 
+  // Qualification data for scoring
+  const qualData = {
+    getDoctorQualIds, getWpRequiredQualIds, getWpOptionalQualIds,
+    getWpExcludedQualIds, getWpDiscouragedQualIds,
+  };
+
   // 1. Run deterministic engine N times (each run shuffles doctors differently)
   console.log(`[AI AutoFill v3] Running ${NUM_VARIANTS} deterministic variants...`);
   const variants = [];
   for (let i = 0; i < NUM_VARIANTS; i++) {
     const suggestions = generateSuggestions(detParams);
-    const score = scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs);
+    const score = scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData);
     variants.push({ suggestions, score, index: i });
   }
 
@@ -129,7 +206,7 @@ export async function generateAISuggestions(params) {
   const readableVariants = topVariants.map((v, idx) => ({
     id: idx,
     score: v.score,
-    plan: planToReadable(v.suggestions, doctors, weekDayStrs),
+    plan: planToReadable(v.suggestions, doctors, weekDayStrs, qualData, workplaces),
   }));
 
   // 4. Build qualification data for server validation

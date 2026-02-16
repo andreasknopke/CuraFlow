@@ -192,11 +192,19 @@ Deine Aufgabe:
 1. WÄHLE die beste Variante (basierend auf Fairness, Rotations-Erfüllung, Dienstwünsche)
 2. SCHLAGE bis zu 10 gezielte TAUSCHE vor, die den Plan VERBESSERN
 
-## Was einen guten Plan ausmacht:
-- Faire Verteilung: Jeder Arzt hat ähnlich viele Einsätze (FTE-bereinigt)
-- Rotationen respektiert: Ärzte in Rotation sollten ihren Rotations-Arbeitsplatz bekommen
-- Dienst-Verteilung: Dienste fair über die Ärzte verteilt
-- auto_off bedenken: Nach auto_off-Diensten fehlt der Arzt am Folgetag
+## Was einen guten Plan ausmacht (Prioritäten von HOCH nach NIEDRIG):
+1. KEINE unqualifizierten Zuweisungen! Einträge mit "(UNQUALIFIZIERT!)" oder "(NICHT-QUALIFIZIERT!)" sind SCHWERE FEHLER
+2. Einträge mit "(sollte-nicht)" möglichst vermeiden — das sind suboptimale Zuweisungen
+3. Faire Verteilung: Jeder Arzt hat ähnlich viele Einsätze (FTE-bereinigt)
+4. Rotationen respektiert: Ärzte in Rotation sollten ihren Rotations-Arbeitsplatz bekommen
+5. Dienst-Verteilung: Dienste fair über die Ärzte verteilt
+6. auto_off bedenken: Nach auto_off-Diensten fehlt der Arzt am Folgetag
+
+## QUALIFIKATIONS-MARKIERUNGEN in den Varianten:
+- "(UNQUALIFIZIERT!)" = Arzt fehlt Pflicht-Qualifikation → VERMEIDE diese Variante!
+- "(NICHT-QUALIFIZIERT!)" = Arzt ist explizit ausgeschlossen → ABSOLUT VERBOTEN!  
+- "(sollte-nicht)" = Arzt ist ungünstig für diese Position → wenn möglich vermeiden
+- Keine Markierung = Arzt ist qualifiziert → OK
 
 ## TAUSCH-Format:
 Ein Tausch bedeutet: Arzt A (aktuell auf Position X) und Arzt B (aktuell auf Position Y) tauschen am selben Tag.
