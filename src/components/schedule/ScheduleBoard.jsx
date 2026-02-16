@@ -337,19 +337,23 @@ export default function ScheduleBoard() {
     staleTime: 30 * 1000, // 30 seconds cache
   });
 
-  // Query to fetch shifts from last 28 days for fairness calculation
-  // This ensures we have the data even if the main view is showing a future month
+  // Query to fetch shifts for the 4-week fairness window relative to the planning period.
+  // The autoFill engine uses 3 weeks before firstPlanDate → lastPlanDate.
+  // We mirror that: 21 days before fetchRange.start through fetchRange.end.
+  const fairnessRange = useMemo(() => {
+    const s = new Date(fetchRange.start + 'T00:00:00');
+    const histStart = subDays(s, 21); // 3 weeks before the earliest fetched month
+    return {
+      start: format(histStart, 'yyyy-MM-dd'),
+      end: fetchRange.end,
+    };
+  }, [fetchRange]);
+
   const { data: fairnessShifts = [] } = useQuery({
-    queryKey: ['shifts-history', format(new Date(), 'yyyy-MM-dd')], // Key depends on today
-    queryFn: () => {
-      const today = new Date();
-      const daysAgo28 = subDays(today, 28);
-      const startStr = format(daysAgo28, 'yyyy-MM-dd');
-      const endStr = format(today, 'yyyy-MM-dd');
-      return db.ShiftEntry.filter({
-        date: { $gte: startStr, $lte: endStr }
-      });
-    },
+    queryKey: ['shifts-history', fairnessRange.start, fairnessRange.end],
+    queryFn: () => db.ShiftEntry.filter({
+      date: { $gte: fairnessRange.start, $lte: fairnessRange.end }
+    }),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -2875,20 +2879,22 @@ export default function ScheduleBoard() {
 
     const doctorIds = new Set(previewServiceShifts.map(s => s.doctor_id));
 
-    // 4-week window: 28 days back from today
-    const today = new Date();
-    const fourWeeksAgo = new Date(today);
-    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
-    const fourWeeksAgoStr = format(fourWeeksAgo, 'yyyy-MM-dd');
-    const todayStr = format(today, 'yyyy-MM-dd');
+    // 4-week window relative to planning dates (mirrors autoFillEngine logic):
+    //   3 weeks before first preview date → last preview date
+    const previewDates = previewServiceShifts.map(s => s.date).sort();
+    const firstPlanStr = previewDates[0];
+    const lastPlanStr = previewDates[previewDates.length - 1];
+    const fourWeekStart = new Date(firstPlanStr + 'T00:00:00');
+    fourWeekStart.setDate(fourWeekStart.getDate() - 21); // 3 weeks back
+    const fourWeekStartStr = format(fourWeekStart, 'yyyy-MM-dd');
 
     // Count services per doctor from DB shifts (fairnessShifts)
     const result = {};
     for (const docId of doctorIds) {
       const docShifts = fairnessShifts.filter(s =>
         s.doctor_id === docId &&
-        s.date >= fourWeeksAgoStr &&
-        s.date <= todayStr &&
+        s.date >= fourWeekStartStr &&
+        s.date <= lastPlanStr &&
         serviceNames.has(s.position) &&
         !s.isPreview
       );
