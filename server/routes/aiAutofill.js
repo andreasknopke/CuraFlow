@@ -424,15 +424,15 @@ router.post('/ai-autofill', async (req, res) => {
       return res.status(400).json({ error: 'Missing required data: weekDays, doctors, workplaces' });
     }
 
-    // Try Mistral first, then OpenAI
-    let client = getMistralClient();
-    let model = 'mistral-large-latest';
-    let provider = 'Mistral';
+    // Try OpenAI first (GPT-5.2), then Mistral as fallback
+    let client = getOpenAIClient();
+    let model = 'gpt-5.2';
+    let provider = 'OpenAI';
     
     if (!client) {
-      client = getOpenAIClient();
-      model = 'gpt-4o';
-      provider = 'OpenAI';
+      client = getMistralClient();
+      model = 'mistral-large-latest';
+      provider = 'Mistral';
     }
     
     if (!client) {
