@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles } from 'lucide-react';
 import { toast } from "sonner";
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -27,11 +27,12 @@ import DroppableCell from './DroppableCell';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import AIRulesDialog from './AIRulesDialog';
 import { generateSuggestions } from './autoFillEngine';
+import { generateAISuggestions } from './aiAutoFillEngine';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
-import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
+import { useQualifications, useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
@@ -597,8 +598,9 @@ export default function ScheduleBoard() {
   const { validate, validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
 
   // Qualifikationsdaten für visuelle Indikatoren
-  const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
-  const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds, getDiscouragedQualificationIds: getWpDiscouragedQualIds } = useAllWorkplaceQualifications();
+  const { qualifications: allQualifications } = useQualifications();
+  const { getQualificationIds: getDoctorQualIds, allDoctorQualifications } = useAllDoctorQualifications();
+  const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds, getDiscouragedQualificationIds: getWpDiscouragedQualIds, allWorkplaceQualifications } = useAllWorkplaceQualifications();
 
   // Override-Validierung mit Dialog
   const {
@@ -2579,6 +2581,76 @@ export default function ScheduleBoard() {
     }
   };
 
+  const handleAIAutoFill = async () => {
+    setIsGenerating(true);
+    try {
+      const allCategories = [
+        'Rotationen', 
+        'Dienste', 
+        'Demonstrationen & Konsile',
+        ...(() => {
+          const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
+          if (!catSetting?.value) return [];
+          try {
+            const parsed = JSON.parse(catSetting.value);
+            return Array.isArray(parsed) ? parsed.map(c => typeof c === 'string' ? c : c.name) : [];
+          } catch { return []; }
+        })()
+      ];
+      setPreviewCategories(allCategories);
+
+      toast.info('KI-Optimierung läuft…', { duration: 10000, id: 'ai-autofill' });
+
+      const result = await generateAISuggestions({
+        weekDays,
+        doctors,
+        workplaces,
+        existingShifts: currentWeekShifts.filter(s => !s.isPreview),
+        allShifts,
+        trainingRotations,
+        isPublicHoliday,
+        getDoctorQualIds,
+        getWpRequiredQualIds,
+        getWpOptionalQualIds,
+        getWpExcludedQualIds,
+        getWpDiscouragedQualIds,
+        categoriesToFill: allCategories,
+        systemSettings,
+        wishes,
+        allQualifications,
+        allDoctorQualifications,
+        allWorkplaceQualifications,
+        scheduleRules,
+      });
+
+      toast.dismiss('ai-autofill');
+
+      if (result.suggestions.length > 0) {
+        setPreviewShifts(result.suggestions);
+        const statsMsg = `${result.suggestions.length} KI-Vorschläge (${result.provider}, ${result.stats.elapsed}ms)`;
+        const detailMsg = result.stats.errors > 0 
+          ? `${statsMsg} — ${result.stats.errors} Constraint-Verletzungen korrigiert`
+          : statsMsg;
+        toast.success(detailMsg, { duration: 6000 });
+        
+        if (result.reasoning) {
+          console.log(`🤖 KI-Reasoning: ${result.reasoning}`);
+          toast.info(`🤖 ${result.reasoning}`, { duration: 8000 });
+        }
+        
+        console.log(`📊 Deterministic baseline: ${result.deterministicCount} | AI: ${result.suggestions.length}`, result.stats);
+      } else {
+        toast.info('KI hat keine Vorschläge generiert');
+      }
+    } catch (error) {
+      toast.dismiss('ai-autofill');
+      console.error('AI AutoFill Error:', error);
+      toast.error('KI-Fehler: ' + error.message, { duration: 8000 });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null) => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
@@ -2897,6 +2969,15 @@ export default function ScheduleBoard() {
                                  });
                              } catch { return null; }
                          })()}
+                         <DropdownMenuSeparator />
+                         <DropdownMenuLabel className="flex items-center gap-1">
+                             <Sparkles className="w-3 h-3 text-amber-500" />
+                             KI-Optimierung
+                         </DropdownMenuLabel>
+                         <DropdownMenuItem onClick={handleAIAutoFill} className="text-amber-700 font-medium">
+                             <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
+                             KI-AutoFill (alle Kategorien)
+                         </DropdownMenuItem>
                      </DropdownMenuContent>
                  </DropdownMenu>
              )}
