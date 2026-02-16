@@ -219,8 +219,10 @@ export class ShiftValidator {
 
     /**
      * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Arzt-Qualifikationen
-     * Pflicht-Qualifikationen → Warnung (override-fähig)
-     * Optionale Qualifikationen → Hinweis
+     * Pflicht-Qualifikationen → Blocker (override-fähig)
+     * Sollte-Qualifikationen → Bevorzugung (nur für Priorisierung)
+     * Sollte-nicht-Qualifikationen → Warnung (override-fähig)
+     * Nicht-Qualifikationen → harter Blocker
      * 
      * Ausbildungsmodus: Bei Mehrfachbesetzung werden die Checks ausgesetzt,
      * wenn bereits mind. 1 qualifizierter Mitarbeiter eingeteilt ist.
@@ -234,21 +236,25 @@ export class ShiftValidator {
 
         const docQualIds = this.getDoctorQualIds(doctorId);
 
-        // NOT-Qualifikationen: Arzt darf KEINE der ausgeschlossenen Qualifikationen haben
+        // Nicht-Qualifikationen: Arzt darf KEINE der ausgeschlossenen Qualifikationen haben
         // Dies ist ein harter Blocker (kein Override möglich)
-        const excludedQuals = wpQuals.filter(wq => wq.is_excluded);
+        const excludedQuals = wpQuals.filter(wq => !wq.is_mandatory && wq.is_excluded);
         if (excludedQuals.length > 0) {
             const violatedExclusions = excludedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
             if (violatedExclusions.length > 0) {
                 const names = violatedExclusions
                     .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
                     .join(', ');
-                return { blocker: `Ausgeschlossen: Arzt hat NOT-Qualifikation „${names}" – darf hier nicht eingeteilt werden.` };
+                return { blocker: `Ausgeschlossen: Arzt hat Nicht-Qualifikation „${names}" – darf hier nicht eingeteilt werden.` };
             }
         }
 
+        // Sollte-nicht-Qualifikationen: Arzt hat eine Qualifikation, die hier unerwünscht ist
+        const discouragedQuals = wpQuals.filter(wq => wq.is_mandatory && wq.is_excluded);
+        const violatedDiscouraged = discouragedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
+
         const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory && !wq.is_excluded);
-        const optionalQuals = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded);
+        const preferredQuals = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded);
 
         // Mehrfachbesetzung / Ausbildungsmodus:
         // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot,
@@ -264,7 +270,7 @@ export class ShiftValidator {
 
             if (otherAssignments.length > 0) {
                 // Prüfe ob mindestens ein bereits eingeteilter Kollege alle Pflicht-Qualifikationen hat
-                const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...optionalQuals.map(wq => wq.qualification_id)];
+                const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...preferredQuals.map(wq => wq.qualification_id)];
                 const hasQualifiedColleague = otherAssignments.some(s => {
                     const colleagueQuals = this.getDoctorQualIds(s.doctor_id);
                     return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
@@ -285,7 +291,15 @@ export class ShiftValidator {
             return { blocker: `Fehlende Pflicht-Qualifikation: ${names}` };
         }
 
-        // Optionale Qualifikationen: Bevorzugung, aber KEINE Warnung bei Fehlen
+        // Sollte-nicht-Qualifikationen: Warnung wenn Arzt unerwünschte Qualifikation hat
+        if (violatedDiscouraged.length > 0) {
+            const names = violatedDiscouraged
+                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                .join(', ');
+            return { warning: `Sollte nicht: Arzt hat Qualifikation „${names}“ – nur zuweisen wenn kein anderer verfügbar.` };
+        }
+
+        // Sollte-Qualifikationen: Bevorzugung, aber KEINE Warnung bei Fehlen
         // (wird nur vom AutoFill-Algorithmus für Priorisierung genutzt)
 
         return {};

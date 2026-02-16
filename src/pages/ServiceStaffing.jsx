@@ -458,9 +458,10 @@ export default function ServiceStaffingPage() {
                                         // Qualifikationsanforderungen für diesen Arbeitsplatz/Dienst
                                         const wpQuals = type.workplace_id ? (wpQualsByWorkplace[type.workplace_id] || []) : [];
                                         const mandatoryQualIds = wpQuals.filter(wq => wq.is_mandatory && !wq.is_excluded).map(wq => wq.qualification_id);
-                                        const optionalQualIds = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded).map(wq => wq.qualification_id);
-                                        const excludedQualIds = wpQuals.filter(wq => wq.is_excluded).map(wq => wq.qualification_id);
-                                        const hasQualRequirements = mandatoryQualIds.length > 0 || optionalQualIds.length > 0 || excludedQualIds.length > 0;
+                                        const preferredQualIds = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded).map(wq => wq.qualification_id);
+                                        const discouragedQualIds = wpQuals.filter(wq => wq.is_mandatory && wq.is_excluded).map(wq => wq.qualification_id);
+                                        const excludedQualIds = wpQuals.filter(wq => !wq.is_mandatory && wq.is_excluded).map(wq => wq.qualification_id);
+                                        const hasQualRequirements = mandatoryQualIds.length > 0 || preferredQualIds.length > 0 || discouragedQualIds.length > 0 || excludedQualIds.length > 0;
 
                                         const availableDoctors = doctors.filter(doc => {
                                             // Always keep the currently assigned doctor in the list
@@ -472,7 +473,7 @@ export default function ServiceStaffingPage() {
                                             // Check absence (allow if currently assigned to this slot)
                                             if (absentIds.has(doc.id)) return false;
 
-                                            // NOT-qualifications: exclude doctors who have any excluded qualification
+                                            // NOT-qualifications: exclude doctors who have any excluded qualification ("Nicht")
                                             if (excludedQualIds.length > 0) {
                                                 const docQualIds = getDoctorQualIds(doc.id);
                                                 if (excludedQualIds.some(qid => docQualIds.includes(qid))) return false;
@@ -493,15 +494,25 @@ export default function ServiceStaffingPage() {
 
                                             return true;
                                         })
-                                        // Sort: qualified doctors first, then unqualified with warning
+                                        // Sort: preferred ("Sollte") doctors first, discouraged ("Sollte nicht") doctors last
                                         .sort((a, b) => {
-                                            if (optionalQualIds.length === 0) return 0;
                                             const aQuals = getDoctorQualIds(a.id);
                                             const bQuals = getDoctorQualIds(b.id);
-                                            const aHasOptional = optionalQualIds.every(qid => aQuals.includes(qid));
-                                            const bHasOptional = optionalQualIds.every(qid => bQuals.includes(qid));
-                                            if (aHasOptional && !bHasOptional) return -1;
-                                            if (!aHasOptional && bHasOptional) return 1;
+
+                                            // "Sollte nicht" – doctors WITH discouraged qualifications sort to the bottom
+                                            if (discouragedQualIds.length > 0) {
+                                                const aHasDiscouraged = discouragedQualIds.some(qid => aQuals.includes(qid));
+                                                const bHasDiscouraged = discouragedQualIds.some(qid => bQuals.includes(qid));
+                                                if (aHasDiscouraged && !bHasDiscouraged) return 1;
+                                                if (!aHasDiscouraged && bHasDiscouraged) return -1;
+                                            }
+
+                                            // "Sollte" – doctors WITH preferred qualifications sort to the top
+                                            if (preferredQualIds.length === 0) return 0;
+                                            const aHasPreferred = preferredQualIds.every(qid => aQuals.includes(qid));
+                                            const bHasPreferred = preferredQualIds.every(qid => bQuals.includes(qid));
+                                            if (aHasPreferred && !bHasPreferred) return -1;
+                                            if (!aHasPreferred && bHasPreferred) return 1;
                                             return 0;
                                         });
 
@@ -556,11 +567,19 @@ export default function ServiceStaffingPage() {
                                                                 else if (wish.type === 'no_service') className = "text-red-600 font-medium bg-red-50";
                                                             }
 
-                                                            // Check if doctor is missing optional qualifications
+                                                            // Check if doctor is missing preferred qualifications ("Sollte")
                                                             const docQualIds = getDoctorQualIds(doc.id);
-                                                            const missingOptional = optionalQualIds.filter(qid => !docQualIds.includes(qid));
-                                                            const hasWarning = missingOptional.length > 0 && doc.id !== assignedDoctorId;
-                                                            const missingNames = missingOptional.map(qid => qualificationMap[qid]?.name || '?').join(', ');
+                                                            const missingPreferred = preferredQualIds.filter(qid => !docQualIds.includes(qid));
+                                                            const hasPreferredWarning = missingPreferred.length > 0 && doc.id !== assignedDoctorId;
+                                                            const missingPreferredNames = missingPreferred.map(qid => qualificationMap[qid]?.name || '?').join(', ');
+
+                                                            // Check if doctor has discouraged qualifications ("Sollte nicht")
+                                                            const hasDiscouragedQual = discouragedQualIds.some(qid => docQualIds.includes(qid));
+                                                            const hasDiscouragedWarning = hasDiscouragedQual && doc.id !== assignedDoctorId;
+                                                            const discouragedNames = discouragedQualIds.filter(qid => docQualIds.includes(qid)).map(qid => qualificationMap[qid]?.name || '?').join(', ');
+
+                                                            const hasWarning = hasPreferredWarning || hasDiscouragedWarning;
+                                                            const warningText = [hasPreferredWarning ? missingPreferredNames : '', hasDiscouragedWarning ? `⚠ ${discouragedNames}` : ''].filter(Boolean).join(', ');
                                                             
                                                             return (
                                                                 <SelectItem key={doc.id} value={doc.id} className={`${className} ${hasWarning ? 'text-amber-700' : ''}`}>
@@ -574,7 +593,7 @@ export default function ServiceStaffingPage() {
                                                                         )}
                                                                         {hasWarning && (
                                                                             <span className="ml-1 text-[10px] text-amber-500">
-                                                                                ({missingNames})
+                                                                                ({warningText})
                                                                             </span>
                                                                         )}
                                                                     </span>

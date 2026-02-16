@@ -69,28 +69,33 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
         }
     };
 
-    /** Cycle through modes: Pflicht → Optional → NOT → Pflicht */
+    /** Cycle through modes: Pflicht → Sollte → Sollte nicht → Nicht → Pflicht */
     const cycleMode = (wqEntry) => {
-        if (wqEntry.is_excluded) {
-            // NOT → Pflicht
+        if (!wqEntry.is_mandatory && wqEntry.is_excluded) {
+            // Nicht → Pflicht
             updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: true, is_excluded: false } });
-        } else if (wqEntry.is_mandatory) {
-            // Pflicht → Optional
+        } else if (wqEntry.is_mandatory && wqEntry.is_excluded) {
+            // Sollte nicht → Nicht
+            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: true } });
+        } else if (wqEntry.is_mandatory && !wqEntry.is_excluded) {
+            // Pflicht → Sollte
             updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: false } });
         } else {
-            // Optional → NOT
-            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: true } });
+            // Sollte → Sollte nicht
+            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: true, is_excluded: true } });
         }
     };
 
     const getModeLabel = (wqEntry) => {
-        if (wqEntry.is_excluded) return 'NOT';
+        if (wqEntry.is_mandatory && wqEntry.is_excluded) return 'Sollte nicht';
+        if (!wqEntry.is_mandatory && wqEntry.is_excluded) return 'Nicht';
         if (wqEntry.is_mandatory) return 'Pflicht';
-        return 'Optional';
+        return 'Sollte';
     };
 
     const getModeStyle = (wqEntry) => {
-        if (wqEntry.is_excluded) return 'bg-slate-800 text-white hover:bg-slate-700';
+        if (wqEntry.is_mandatory && wqEntry.is_excluded) return 'bg-orange-100 text-orange-700 hover:bg-orange-200';
+        if (!wqEntry.is_mandatory && wqEntry.is_excluded) return 'bg-slate-800 text-white hover:bg-slate-700';
         if (wqEntry.is_mandatory) return 'bg-red-100 text-red-700 hover:bg-red-200';
         return 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200';
     };
@@ -115,7 +120,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                 Benötigte Qualifikationen
             </Label>
             <div className="text-xs text-slate-500 mb-1">
-                Pflicht = Arzt muss Qualifikation besitzen. Optional = Hinweis. NOT = Arzt mit dieser Qualifikation darf hier nicht eingeteilt werden.
+                Pflicht = Arzt muss Qualifikation besitzen. Sollte = Bevorzugt qualifiziert, aber Unqualifizierte erlaubt. Sollte nicht = Qualifizierte nur wenn kein anderer verfügbar. Nicht = Arzt mit dieser Qualifikation darf hier nicht eingeteilt werden.
             </div>
             <div className="space-y-1">
                 {activeQuals.map(qual => {
@@ -172,14 +177,17 @@ export function WorkplaceQualificationBadges({ workplaceId, qualificationMap, al
             {wqEntries.map(wq => {
                 const qual = qualificationMap?.[wq.qualification_id];
                 if (!qual) return null;
-                const isExcluded = wq.is_excluded;
-                const prefix = isExcluded ? '⊘' : wq.is_mandatory ? '★' : '○';
-                const modeLabel = isExcluded ? 'NOT' : wq.is_mandatory ? 'Pflicht' : 'Optional';
+                const isExcluded = !wq.is_mandatory && wq.is_excluded;
+                const isDiscouraged = wq.is_mandatory && wq.is_excluded;
+                const prefix = isExcluded ? '⊘' : isDiscouraged ? '◇' : wq.is_mandatory ? '★' : '○';
+                const modeLabel = isExcluded ? 'Nicht' : isDiscouraged ? 'Sollte nicht' : wq.is_mandatory ? 'Pflicht' : 'Sollte';
                 return (
                     <Badge
                         key={wq.id}
                         style={isExcluded 
                             ? { backgroundColor: '#1e293b', color: '#fff' }
+                            : isDiscouraged
+                            ? { backgroundColor: '#fff7ed', color: '#c2410c' }
                             : { backgroundColor: qual.color_bg || '#e0e7ff', color: qual.color_text || '#3730a3' }
                         }
                         className={`border-0 text-[10px] px-1.5 py-0 ${!wq.is_mandatory && !isExcluded ? 'opacity-60' : ''}`}

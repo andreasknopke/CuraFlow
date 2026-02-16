@@ -40,6 +40,7 @@ export function generateSuggestions({
     getWpRequiredQualIds,
     getWpOptionalQualIds,
     getWpExcludedQualIds,
+    getWpDiscouragedQualIds,
     categoriesToFill,
     systemSettings,
     wishes = [],
@@ -115,6 +116,15 @@ export function generateSuggestions({
     const hasOptionalQualReq = (wp) => {
         const oq = getWpOptionalQualIds?.(wp.id);
         return oq?.length > 0;
+    };
+
+    /** Is the doctor DISCOURAGED from this workplace via a 'Sollte nicht'-qualification? */
+    const isDiscouraged = (doctorId, wpId) => {
+        const disc = getWpDiscouragedQualIds?.(wpId);
+        if (!disc?.length) return false;
+        const doc = getDoctorQualIds(doctorId);
+        if (!doc?.length) return false;
+        return disc.some(q => doc.includes(q));
     };
 
     const allowsMultiple = (wp) => {
@@ -714,11 +724,14 @@ export function generateSuggestions({
                     // Optional qualification: prefer doctors who have optional quals
                     const optQualScore = hasOptionalQuals(doc.id, targetWp.id) ? 0 :
                                          hasAnyOptionalQual(doc.id, targetWp.id) ? 1 : 2;
+                    // Discouraged: penalize doctors who have discouraged qualifications
+                    const discouragedScore = isDiscouraged(doc.id, targetWp.id) ? 1 : 0;
 
                     return {
                         doc, tier,
                         qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
                         optQualScore,
+                        discouragedScore,
                         displaced: getDisplaced(doc.id),
                         weekly: getWeekly(doc.id),
                     };
@@ -726,6 +739,7 @@ export function generateSuggestions({
                     if (a.tier !== b.tier) return a.tier - b.tier;
                     if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
                     if (a.optQualScore !== b.optQualScore) return a.optQualScore - b.optQualScore;
+                    if (a.discouragedScore !== b.discouragedScore) return a.discouragedScore - b.discouragedScore;
                     if (a.displaced !== b.displaced) return b.displaced - a.displaced;
                     return a.weekly - b.weekly;
                 });
@@ -778,12 +792,14 @@ export function generateSuggestions({
                         const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
                         const optQual = hasOptionalQuals(doc.id, o.wp.id) ? 0 :
                                         hasAnyOptionalQual(doc.id, o.wp.id) ? 1 : 2;
-                        return { ...o, isRotTarget, isQual, optQual };
+                        const discScore = isDiscouraged(doc.id, o.wp.id) ? 1 : 0;
+                        return { ...o, isRotTarget, isQual, optQual, discScore };
                     })
                     .sort((a, b) => {
                         if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
                         if (a.isQual !== b.isQual) return a.isQual - b.isQual;
                         if (a.optQual !== b.optQual) return a.optQual - b.optQual;
+                        if (a.discScore !== b.discScore) return a.discScore - b.discScore;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
@@ -899,10 +915,13 @@ export function generateSuggestions({
                             const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
                             if (aSole !== bSole) return aSole - bSole;
                         }
-                        // Prefer doctors with optional qualifications
+                        // Prefer doctors with optional qualifications, deprioritize discouraged
                         const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
                         const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
                         if (aOpt !== bOpt) return aOpt - bOpt;
+                        const aDisc = isDiscouraged(a.id, wp.id) ? 1 : 0;
+                        const bDisc = isDiscouraged(b.id, wp.id) ? 1 : 0;
+                        if (aDisc !== bDisc) return aDisc - bDisc;
                         return getWeekly(a.id) - getWeekly(b.id);
                     });
 
@@ -920,6 +939,9 @@ export function generateSuggestions({
                             const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
                             const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
                             if (aOpt !== bOpt) return aOpt - bOpt;
+                            const aDisc = isDiscouraged(a.id, wp.id) ? 1 : 0;
+                            const bDisc = isDiscouraged(b.id, wp.id) ? 1 : 0;
+                            if (aDisc !== bDisc) return aDisc - bDisc;
                             return getWeekly(a.id) - getWeekly(b.id);
                         });
                 }
@@ -999,12 +1021,14 @@ export function generateSuggestions({
                             qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
                             optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
                                       hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
+                            discScore: isDiscouraged(doc.id, targetWpC.id) ? 1 : 0,
                             weekly: getWeekly(doc.id),
                         }))
                         .sort((a, b) => {
                             if (a.soleOccupant !== b.soleOccupant) return a.soleOccupant - b.soleOccupant;
                             if (a.qualified !== b.qualified) return a.qualified - b.qualified;
                             if (a.optQual !== b.optQual) return a.optQual - b.optQual;
+                            if (a.discScore !== b.discScore) return a.discScore - b.discScore;
                             return a.weekly - b.weekly;
                         });
 
