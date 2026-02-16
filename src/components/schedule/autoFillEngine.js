@@ -57,6 +57,11 @@ export function generateSuggestions({
     const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
     const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5];
 
+    // Debug logging
+    const LOG = [];
+    const log = (...args) => LOG.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+    const docName = (id) => doctors.find(d => d.id === id)?.name || id;
+
     // ========================================================
     //  Helper functions
     // ========================================================
@@ -632,6 +637,7 @@ export function generateSuggestions({
         const availWps = allTodayWps.filter(wp =>
             !isServiceWp(wp) && isAffectsAvailability(wp)
         );
+        log(`\n=== ${dateStr} PHASE B: ${availWps.length} verfügbarkeitsrelevante WPs:`, availWps.map(w => w.name));
 
         if (availWps.length > 0) {
             // --- B.1: Qualification coverage ---
@@ -645,6 +651,11 @@ export function generateSuggestions({
 
             for (const wp of qualWps) {
                 if (hasQualCoverage(wp)) continue;
+                log(`\n--- B.1: ${wp.name} (id=${wp.id}, cat=${wp.category}) ---`);
+                log(`  Pflicht-QualIds: ${JSON.stringify(getWpRequiredQualIds(wp.id))}`);
+                log(`  Sollte-QualIds: ${JSON.stringify(getWpOptionalQualIds?.(wp.id))}`);
+                log(`  Sollte-nicht-QualIds: ${JSON.stringify(getWpDiscouragedQualIds?.(wp.id))}`);
+                log(`  Nicht-QualIds: ${JSON.stringify(getWpExcludedQualIds?.(wp.id))}`);
 
                 const sortB1 = (a, b) => {
                     const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
@@ -658,23 +669,41 @@ export function generateSuggestions({
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                 let eligible = doctors
                     .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
+                log(`  Alle qualifizierten & verfügbaren: [${eligible.map(d => docName(d.id)).join(', ')}]`);
+                eligible.forEach(d => {
+                    log(`    ${docName(d.id)}: quals=${JSON.stringify(getDoctorQualIds(d.id))}, discouraged=${isDiscouraged(d.id, wp.id)}, hasOptQuals=${hasOptionalQuals(d.id, wp.id)}`);
+                });
 
                 // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
                 {
                     const nonDiscouraged = eligible.filter(d => !isDiscouraged(d.id, wp.id));
-                    if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
+                    log(`  Nach Sollte-nicht-Filter: [${nonDiscouraged.map(d => docName(d.id)).join(', ')}] (${eligible.length - nonDiscouraged.length} entfernt)`);
+                    if (nonDiscouraged.length > 0) {
+                        eligible = nonDiscouraged;
+                    } else {
+                        log(`  ⚠ FALLBACK: Keine nicht-discouraged Ärzte, behalte alle`);
+                    }
                 }
 
                 // "Sollte": filter to doctors with preferred quals (fallback if none remain)
                 if (hasOptionalQualReq(wp)) {
                     const withPreferred = eligible.filter(d => hasOptionalQuals(d.id, wp.id));
-                    if (withPreferred.length > 0) eligible = withPreferred;
+                    log(`  Nach Sollte-Filter: [${withPreferred.map(d => docName(d.id)).join(', ')}] (${eligible.length - withPreferred.length} entfernt)`);
+                    if (withPreferred.length > 0) {
+                        eligible = withPreferred;
+                    } else {
+                        log(`  ⚠ FALLBACK: Keine mit Sollte-Quals, behalte alle`);
+                    }
                 }
 
                 const candidates = eligible.sort(sortB1);
+                log(`  → Kandidaten (sortiert): [${candidates.map(d => docName(d.id)).join(', ')}]`);
 
                 if (candidates.length > 0) {
+                    log(`  ★ ZUGEWIESEN: ${docName(candidates[0].id)} → ${wp.name}`);
                     assign(candidates[0].id, wp.name);
+                } else {
+                    log(`  ✗ Kein Kandidat gefunden für ${wp.name}`);
                 }
             }
 
@@ -723,6 +752,7 @@ export function generateSuggestions({
                 if (unassigned.length === 0) break;
 
                 const targetWp = underFilled[0];
+                log(`\n--- B.2: ${targetWp.name} (fill=${posCount[targetWp.name]||0}/${getOptimal(targetWp)}) ---`);
 
                 const scoreCandidate = (doc) => {
                     const rotTargets = getActiveRotationTargets(doc.id, dateStr);
@@ -758,23 +788,32 @@ export function generateSuggestions({
 
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                 let eligible = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id));
+                log(`  Unassigned (nicht-excluded): [${eligible.map(d => docName(d.id)).join(', ')}]`);
 
                 // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
                 {
                     const nonDiscouraged = eligible.filter(doc => !isDiscouraged(doc.id, targetWp.id));
+                    log(`  Nach Sollte-nicht: [${nonDiscouraged.map(d => docName(d.id)).join(', ')}] (${eligible.length - nonDiscouraged.length} discouraged)`);
                     if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
+                    else log(`  ⚠ FALLBACK Sollte-nicht`);
                 }
 
                 // "Sollte": filter to doctors with preferred quals (fallback if none remain)
                 if (hasOptionalQualReq(targetWp)) {
                     const withPreferred = eligible.filter(doc => hasOptionalQuals(doc.id, targetWp.id));
+                    log(`  Nach Sollte: [${withPreferred.map(d => docName(d.id)).join(', ')}]`);
                     if (withPreferred.length > 0) eligible = withPreferred;
+                    else log(`  ⚠ FALLBACK Sollte`);
                 }
 
                 let scored = eligible.map(scoreCandidate).sort(sortCandidates);
+                if (scored.length > 0) {
+                    log(`  → Top-3: ${scored.slice(0, 3).map(s => `${docName(s.doc.id)}(tier=${s.tier},q=${s.qualScore},opt=${s.optQualScore},w=${s.weekly})`).join(', ')}`);
+                }
 
                 if (scored.length > 0) {
                     const chosen = scored[0].doc;
+                    log(`  ★ ZUGEWIESEN: ${docName(chosen.id)} → ${targetWp.name}`);
                     assign(chosen.id, targetWp.name);
 
                     const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
@@ -849,6 +888,7 @@ export function generateSuggestions({
                 let bestForDoc = eligibleWps.map(scoreBestWp).sort(sortBestWp);
 
                 if (bestForDoc.length > 0) {
+                    log(`  B.3: ${docName(doc.id)} → ${bestForDoc[0].wp.name} (disc-filter: ${options.length - eligibleWps.length} WPs entfernt)`);
                     assign(doc.id, bestForDoc[0].wp.name);
                     const rotTargets = getActiveRotationTargets(doc.id, dateStr);
                     if (rotTargets.length > 0 && !rotTargets.includes(bestForDoc[0].wp.name)) {
@@ -899,6 +939,7 @@ export function generateSuggestions({
         const nonAvailWps = allTodayWps.filter(wp =>
             !isServiceWp(wp) && !isAffectsAvailability(wp)
         );
+        log(`\n=== ${dateStr} PHASE C: ${nonAvailWps.length} nicht-verfügbarkeitsrelevante WPs:`, nonAvailWps.map(w => `${w.name}(cat=${w.category})`));
 
         if (nonAvailWps.length > 0) {
             // For Phase C, only service-blocked and absence-blocked doctors are excluded.
@@ -945,7 +986,11 @@ export function generateSuggestions({
                 const hasCov = [...existingShifts, ...suggestions].some(
                     s => s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)
                 );
-                if (hasCov) continue;
+                if (hasCov) { log(`  C.1: ${wp.name} hat bereits Qualifikationsabdeckung, skip`); continue; }
+                log(`\n--- C.1: ${wp.name} (id=${wp.id}, cat=${wp.category}) ---`);
+                log(`  Pflicht-QualIds: ${JSON.stringify(getWpRequiredQualIds(wp.id))}`);
+                log(`  Sollte-nicht-QualIds: ${JSON.stringify(getWpDiscouragedQualIds?.(wp.id))}`);
+                log(`  phaseC_blocked: [${[...phaseC_blocked].map(id => docName(id)).join(', ')}]`);
 
                 // First try unblocked qualified doctors (excluding discouraged)
                 const isDemoC1 = wp.category === 'Demonstrationen & Konsile';
@@ -968,9 +1013,11 @@ export function generateSuggestions({
                                  !isDiscouraged(d.id, wp.id) &&
                                  isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
                     .sort(sortC1);
+                log(`  Stage1 (unblocked, not-disc, qual): [${candidates.map(d => docName(d.id)).join(', ')}]`);
                 // "Sollte": prefer doctors with preferred quals (fallback within pool)
                 if (hasOptionalQualReq(wp) && candidates.length > 0) {
                     const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
+                    log(`  Stage1+Sollte: [${withPref.map(d => docName(d.id)).join(', ')}]`);
                     if (withPref.length > 0) candidates = withPref;
                 }
 
@@ -1011,7 +1058,10 @@ export function generateSuggestions({
                 }
 
                 if (candidates.length > 0) {
+                    log(`  ★ C.1 ZUGEWIESEN: ${docName(candidates[0].id)} → ${wp.name}`);
                     assignC(candidates[0].id, wp.name, true);
+                } else {
+                    log(`  ✗ C.1: Kein Kandidat für ${wp.name}`);
                 }
             }
 
@@ -1034,6 +1084,7 @@ export function generateSuggestions({
                 const targetWpC = underFilledC[0];
                 const targetHasQualReq = hasQualReq(targetWpC);
                 const isDemoC2 = targetWpC.category === 'Demonstrationen & Konsile';
+                log(`\n--- C.2: ${targetWpC.name} (fill=${phaseCPosCount[targetWpC.name]||0}/${getOptimal(targetWpC)}, pflicht=${targetHasQualReq}, cat=${targetWpC.category}) ---`);
 
                 if (targetHasQualReq) {
                     // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
@@ -1051,10 +1102,16 @@ export function generateSuggestions({
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
                                      !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
                                      !isAlreadyAssignedToWp(d.id, targetWpC.name));
+                    log(`  Pflicht-Pool (unblocked, qual): [${eligiblePflicht.map(d => docName(d.id)).join(', ')}]`);
+                    eligiblePflicht.forEach(d => {
+                        log(`    ${docName(d.id)}: disc=${isDiscouraged(d.id, targetWpC.id)}, optQual=${hasOptionalQuals(d.id, targetWpC.id)}`);
+                    });
                     // "Sollte nicht": filter out discouraged (fallback)
                     {
                         const nonDisc = eligiblePflicht.filter(d => !isDiscouraged(d.id, targetWpC.id));
+                        log(`  Nach Sollte-nicht: [${nonDisc.map(d => docName(d.id)).join(', ')}]`);
                         if (nonDisc.length > 0) eligiblePflicht = nonDisc;
+                        else log(`  ⚠ FALLBACK Sollte-nicht`);
                     }
                     // "Sollte": filter to doctors with preferred quals (fallback)
                     if (hasOptionalQualReq(targetWpC)) {
@@ -1081,8 +1138,11 @@ export function generateSuggestions({
                     }
 
                     if (scoredC.length > 0) {
+                        log(`  ★ C.2-Pflicht ZUGEWIESEN: ${docName(scoredC[0].id)} → ${targetWpC.name}`);
                         assignC(scoredC[0].id, targetWpC.name, true);
                         changedC = true;
+                    } else {
+                        log(`  ✗ C.2: Kein Kandidat für ${targetWpC.name}`);
                     }
                 } else {
                     // Non-Pflicht workplace: any unblocked doctor, prefer optional-qualified
@@ -1123,6 +1183,7 @@ export function generateSuggestions({
                     let scoredC = eligibleC.map(scoreC2).sort(sortC2);
 
                     if (scoredC.length > 0) {
+                        log(`  ★ C.2-NonPflicht ZUGEWIESEN: ${docName(scoredC[0].doc.id)} → ${targetWpC.name}`);
                         assignC(scoredC[0].doc.id, targetWpC.name, false);
                         changedC = true;
                     }
@@ -1205,6 +1266,15 @@ export function generateSuggestions({
         if (!alreadyGenerated) {
             generateAutoFrei(s.doctor_id, s.date);
         }
+    }
+
+    // Output debug log
+    if (LOG.length > 0) {
+        console.group('🔍 AutoFill Debug Log');
+        for (const line of LOG) {
+            console.log(line);
+        }
+        console.groupEnd();
     }
 
     return [...suggestions, ...autoFreiSuggestions];
