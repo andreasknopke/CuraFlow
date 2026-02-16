@@ -1,12 +1,26 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const containerRef = useRef(null);
   const [displayText, setDisplayText] = useState(isFullWidth ? doctor.name : doctor.initials);
   const [displayFontSize, setDisplayFontSize] = useState(fontSize);
+
+  // Build fairness tooltip text for preview service shifts
+  const fairnessTooltip = React.useMemo(() => {
+    if (!fairnessInfo) return null;
+    const lines = [`Dienste (4 Wo.): ${fairnessInfo.total}`];
+    if (fairnessInfo.fg > 0 || fairnessInfo.bg > 0) {
+      lines.push(`  VG: ${fairnessInfo.fg} | HG: ${fairnessInfo.bg}`);
+    }
+    lines.push(`Wochenende: ${fairnessInfo.weekend}`);
+    if (fairnessInfo.wishText) {
+      lines.push(fairnessInfo.wishText);
+    }
+    return lines.join('\n');
+  }, [fairnessInfo]);
   
   // Measure and adjust text to fit container
   const measureAndAdjust = React.useCallback(() => {
@@ -187,7 +201,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
             {...(isFullWidth ? {} : provided.dragHandleProps)}
             className={containerClass}
             style={containerStyle}
-            title={isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined}
+            title={fairnessTooltip || (isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined)}
           >
             {isDragging ? (
                 // The visual badge - square like small chips
@@ -213,7 +227,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                         {...provided.dragHandleProps}
                         className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
                         style={{ width: `${boxSize}px`, fontSize: `${fontSize}px` }}
-                        title="Ziehen zum Verschieben"
+                        title={fairnessTooltip || "Ziehen zum Verschieben"}
                     >
                         {doctor.initials || doctor.name.substring(0, 3)}
                     </div>
@@ -223,6 +237,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                     >
                         {displayText}
                     </span>
+                    {fairnessInfo && (
+                        <span
+                            className="flex-shrink-0 rounded px-1 text-white font-semibold mr-1"
+                            style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, backgroundColor: fairnessInfo.total >= 4 ? '#ef4444' : fairnessInfo.total >= 2 ? '#f59e0b' : '#22c55e', lineHeight: '1.4' }}
+                            title={fairnessTooltip}
+                        >
+                            {fairnessInfo.total}D{fairnessInfo.weekend > 0 ? ` ${fairnessInfo.weekend}W` : ''}{fairnessInfo.wishText ? ' ★' : ''}
+                        </span>
+                    )}
                 </>
             ) : (
                 <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
@@ -236,6 +259,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 >
                     {displayText}
                 </span>
+                {fairnessInfo && (
+                    <div
+                        className="absolute -bottom-1 -right-1 z-20 rounded-full px-1 text-white font-bold leading-none"
+                        style={{ fontSize: `${Math.max(fontSize * 0.55, 7)}px`, backgroundColor: fairnessInfo.total >= 4 ? '#ef4444' : fairnessInfo.total >= 2 ? '#f59e0b' : '#22c55e', padding: '1px 3px' }}
+                        title={fairnessTooltip}
+                    >
+                        {fairnessInfo.total}
+                    </div>
+                )}
                 </>
             )}
           </div>

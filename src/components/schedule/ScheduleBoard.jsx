@@ -2838,6 +2838,99 @@ export default function ScheduleBoard() {
     }
   };
 
+  // ============================================================
+  //  FAIRNESS-DATEN für Preview-Dienste
+  //  Berechnet für jeden Arzt: Dienste letzte 4 Wochen, Wochenenden, Wünsche
+  // ============================================================
+  const previewFairnessData = useMemo(() => {
+    if (!previewShifts || previewShifts.length === 0) return {};
+
+    const serviceWps = workplaces.filter(w => w.category === 'Dienste');
+    if (serviceWps.length === 0) return {};
+    const serviceNames = new Set(serviceWps.map(w => w.name));
+    const sorted = [...serviceWps].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const fgName = sorted[0]?.name;
+    const bgName = sorted[1]?.name;
+
+    // Collect all doctor IDs that have a service in preview
+    const previewServiceShifts = previewShifts.filter(s => serviceNames.has(s.position));
+    if (previewServiceShifts.length === 0) return {};
+
+    const doctorIds = new Set(previewServiceShifts.map(s => s.doctor_id));
+
+    // 4-week window: 28 days back from today
+    const today = new Date();
+    const fourWeeksAgo = new Date(today);
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+    const fourWeeksAgoStr = format(fourWeeksAgo, 'yyyy-MM-dd');
+    const todayStr = format(today, 'yyyy-MM-dd');
+
+    // Count services per doctor from DB shifts (allShifts)
+    const result = {};
+    for (const docId of doctorIds) {
+      const docShifts = allShifts.filter(s =>
+        s.doctor_id === docId &&
+        s.date >= fourWeeksAgoStr &&
+        s.date <= todayStr &&
+        serviceNames.has(s.position) &&
+        !s.isPreview
+      );
+
+      let fg = 0, bg = 0, weekendCount = 0;
+      for (const s of docShifts) {
+        if (s.position === fgName) {
+          fg++;
+          const d = new Date(s.date + 'T00:00:00').getDay();
+          if (d === 0 || d === 6) weekendCount++;
+        }
+        if (s.position === bgName) {
+          bg++;
+          const d = new Date(s.date + 'T00:00:00').getDay();
+          if (d === 0 || d === 6) weekendCount++;
+        }
+      }
+
+      result[docId] = { fg, bg, total: fg + bg, weekend: weekendCount };
+    }
+
+    return result;
+  }, [previewShifts, allShifts, workplaces]);
+
+  /**
+   * Get fairness info for a specific preview service shift.
+   * Returns { fg, bg, total, weekend, wishText } or null.
+   */
+  const getFairnessInfo = useMemo(() => (shift) => {
+    if (!shift.isPreview || !previewFairnessData[shift.doctor_id]) return null;
+
+    const serviceWps = workplaces.filter(w => w.category === 'Dienste');
+    const serviceNames = new Set(serviceWps.map(w => w.name));
+    if (!serviceNames.has(shift.position)) return null;
+
+    const info = { ...previewFairnessData[shift.doctor_id] };
+
+    // Check wishes for this date+doctor
+    const shiftWishes = wishes.filter(w =>
+      w.doctor_id === shift.doctor_id &&
+      w.date === shift.date
+    );
+
+    const wishTexts = [];
+    for (const w of shiftWishes) {
+      if (w.type === 'service') {
+        const statusLabel = w.status === 'approved' ? '✓' : w.status === 'pending' ? '?' : '✗';
+        const posLabel = w.position ? ` (${w.position})` : '';
+        wishTexts.push(`Wunsch: Dienst${posLabel} ${statusLabel}`);
+      } else if (w.type === 'no_service') {
+        const statusLabel = w.status === 'approved' ? '✓' : w.status === 'pending' ? '?' : '✗';
+        wishTexts.push(`Wunsch: kein Dienst ${statusLabel}`);
+      }
+    }
+    info.wishText = wishTexts.length > 0 ? wishTexts.join(', ') : null;
+
+    return info;
+  }, [previewFairnessData, workplaces, wishes]);
+
   const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null) => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
@@ -2967,11 +3060,12 @@ export default function ScheduleBoard() {
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
                     qualificationStatus={qualificationStatus}
+                    fairnessInfo={shift.isPreview ? getFairnessInfo(shift) : null}
                 />
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds]);
+  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
