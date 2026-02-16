@@ -1654,6 +1654,73 @@ export default function ScheduleBoard() {
       }
   };
 
+  // ============================================================
+  //  PREVIEW AUTO-FREI HELPERS
+  //  Mirror the DB-based auto-frei logic for in-memory preview shifts
+  // ============================================================
+
+  /**
+   * Adds an Auto-Frei preview entry for the next workday if the position has auto_off.
+   * Returns the updated preview array (or unchanged array if no auto-frei needed).
+   */
+  const addPreviewAutoFrei = (doctorId, dateStr, positionName, currentPreviews) => {
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
+      if (!autoFreiDateStr) return currentPreviews;
+
+      // Check if doctor already has something on that date (in preview or DB)
+      const allMerged = [...(currentWeekShifts || [])];
+      // Also include the current previews being modified
+      const previewMerged = [...currentPreviews];
+      const hasExisting = allMerged.some(s => s.date === autoFreiDateStr && s.doctor_id === doctorId && !s.isPreview) ||
+                          previewMerged.some(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+      if (hasExisting) return currentPreviews;
+
+      const newAutoFrei = {
+          id: `preview-autofrei-${Date.now()}`,
+          date: autoFreiDateStr,
+          position: 'Frei',
+          doctor_id: doctorId,
+          note: 'Autom. Freizeitausgleich',
+          isPreview: true,
+      };
+      console.log('[PREVIEW] Auto-Frei hinzugefügt:', newAutoFrei);
+      toast.info(`Auto-Frei für ${autoFreiDateStr} hinzugefügt`);
+      return [...currentPreviews, newAutoFrei];
+  };
+
+  /**
+   * Removes any Auto-Frei preview entry that was generated for a shift at the given position/date.
+   * Also checks DB-based auto-frei entries (they remain in DB but user is warned).
+   * Returns the updated preview array.
+   */
+  const removePreviewAutoFrei = (doctorId, dateStr, positionName, currentPreviews) => {
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
+      if (!autoFreiDateStr) return currentPreviews;
+
+      // Remove from preview
+      const filtered = currentPreviews.filter(s => {
+          if (s.date !== autoFreiDateStr || s.doctor_id !== doctorId) return true;
+          if (s.position !== 'Frei') return true;
+          // Match auto-frei entries (either by note or by preview-autofrei ID)
+          if (s.id?.startsWith('preview-autofrei-')) return false;
+          if (s.note?.includes('Autom.') || s.note?.includes('Freizeitausgleich')) return false;
+          return true;
+      });
+
+      if (filtered.length < currentPreviews.length) {
+          console.log('[PREVIEW] Auto-Frei entfernt für', doctorId, 'am', autoFreiDateStr);
+          toast.info(`Auto-Frei für ${autoFreiDateStr} entfernt`);
+      }
+
+      // Check if there's a DB-based auto-frei that should also be cleaned up
+      const dbAutoFrei = findAutoFreiToCleanup(doctorId, dateStr, positionName);
+      if (dbAutoFrei) {
+          console.log('[PREVIEW] Hinweis: DB-basiertes Auto-Frei gefunden, wird beim Übernehmen bereinigt:', dbAutoFrei.id);
+      }
+
+      return filtered;
+  };
+
   // Called BEFORE dimension capture - must be synchronous to affect measurements
   const handleBeforeCapture = (before) => {
     const { draggableId } = before;
@@ -1734,7 +1801,11 @@ export default function ScheduleBoard() {
 
         // Dropped outside or to trash/sidebar → remove from preview
         if (!destination || destination.droppableId === 'sidebar' || destination.droppableId === 'trash' || destination.droppableId === 'trash-overlay' || destination.droppableId.startsWith('available__') || destination.droppableId.endsWith('__Verfügbar')) {
-            const remaining = previewShifts.filter(s => s.id !== shiftId);
+            let remaining = previewShifts.filter(s => s.id !== shiftId);
+            // Auto-Frei cleanup: if removed shift was on an auto-off position, remove its auto-frei too
+            if (isAutoOffPosition(previewShift.position)) {
+                remaining = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, remaining);
+            }
             if (remaining.length === 0) {
                 setPreviewShifts(null);
                 setPreviewCategories(null);
@@ -1792,10 +1863,20 @@ export default function ScheduleBoard() {
         }
 
         // Apply the move in previewShifts state
-        const updated = previewShifts.map(s => {
+        let updated = previewShifts.map(s => {
             if (s.id !== shiftId) return s;
             return { ...s, date: newDateStr, position: newPosition };
         });
+
+        // Auto-Frei: if old position was auto-off → remove old auto-frei
+        if (isAutoOffPosition(previewShift.position)) {
+            updated = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, updated);
+        }
+        // Auto-Frei: if new position is auto-off → add new auto-frei
+        if (isAutoOffPosition(newPosition)) {
+            updated = addPreviewAutoFrei(previewShift.doctor_id, newDateStr, newPosition, updated);
+        }
+
         setPreviewShifts(updated);
         return;
     }
@@ -2075,7 +2156,12 @@ export default function ScheduleBoard() {
 
          // Preview shift → remove from preview state (not DB)
          if (shiftId.startsWith('preview-') && previewShifts) {
-             const remaining = previewShifts.filter(s => s.id !== shiftId);
+             const removedShift = previewShifts.find(s => s.id === shiftId);
+             let remaining = previewShifts.filter(s => s.id !== shiftId);
+             // Auto-Frei cleanup: if removed shift was on an auto-off position, remove its auto-frei too
+             if (removedShift && isAutoOffPosition(removedShift.position)) {
+                 remaining = removePreviewAutoFrei(removedShift.doctor_id, removedShift.date, removedShift.position, remaining);
+             }
              if (remaining.length === 0) {
                  setPreviewShifts(null);
                  setPreviewCategories(null);
@@ -2132,7 +2218,12 @@ export default function ScheduleBoard() {
             }
 
             const newId = `preview-add-${Date.now()}`;
-            setPreviewShifts([...previewShifts, { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true }]);
+            let updatedPreviews = [...previewShifts, { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true }];
+            // Auto-Frei: if added to an auto-off position → add auto-frei for next workday
+            if (isAutoOffPosition(position)) {
+                updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews);
+            }
+            setPreviewShifts(updatedPreviews);
             toast.info('Vorschlag hinzugefügt');
             return;
         }
