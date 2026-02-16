@@ -11,7 +11,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
   // Build fairness tooltip text for preview service shifts
   const fairnessTooltip = React.useMemo(() => {
     if (!fairnessInfo) return null;
-    const lines = [`Dienste (4 Wo.): ${fairnessInfo.total}`];
+    const lines = [`Dienste (4 Wo. + Vorschläge): ${fairnessInfo.total}`];
     if (fairnessInfo.fg > 0 || fairnessInfo.bg > 0) {
       lines.push(`  VG: ${fairnessInfo.fg} | HG: ${fairnessInfo.bg}`);
     }

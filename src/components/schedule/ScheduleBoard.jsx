@@ -2892,9 +2892,10 @@ export default function ScheduleBoard() {
     fourWeekStart.setDate(fourWeekStart.getDate() - 21); // 3 weeks back
     const fourWeekStartStr = format(fourWeekStart, 'yyyy-MM-dd');
 
-    // Count services per doctor from DB shifts (fairnessShifts)
+    // Count services per doctor from DB shifts (fairnessShifts) + preview shifts
     const result = {};
     for (const docId of doctorIds) {
+      // 1) Historical DB shifts (non-preview)
       const docShifts = fairnessShifts.filter(s =>
         s.doctor_id === docId &&
         s.date >= fourWeekStartStr &&
@@ -2908,8 +2909,21 @@ export default function ScheduleBoard() {
         if (s.position === fgName) {
           fg++;
           const d = new Date(s.date + 'T00:00:00').getDay();
-          // Adjust for correct parsing if needed (assuming yyyy-mm-dd works with T00:00:00 or direct Date parse)
-          // Simple check for day 0 (Sun) or 6 (Sat)
+          if (d === 0 || d === 6) weekendCount++;
+        }
+        if (s.position === bgName) {
+          bg++;
+          const d = new Date(s.date + 'T00:00:00').getDay();
+          if (d === 0 || d === 6) weekendCount++;
+        }
+      }
+
+      // 2) Preview shifts for this doctor also count towards duty total
+      const docPreviewShifts = previewServiceShifts.filter(s => s.doctor_id === docId);
+      for (const s of docPreviewShifts) {
+        if (s.position === fgName) {
+          fg++;
+          const d = new Date(s.date + 'T00:00:00').getDay();
           if (d === 0 || d === 6) weekendCount++;
         }
         if (s.position === bgName) {
