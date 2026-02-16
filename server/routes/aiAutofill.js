@@ -458,7 +458,7 @@ router.post('/ai-autofill', async (req, res) => {
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.3, // Low temperature for consistent, logical results
-      max_tokens: 16000,
+      max_completion_tokens: 16000,
       ...(provider === 'Mistral' ? {} : { response_format: { type: 'json_object' } }),
     });
 
