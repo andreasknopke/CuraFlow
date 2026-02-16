@@ -646,16 +646,32 @@ export function generateSuggestions({
             for (const wp of qualWps) {
                 if (hasQualCoverage(wp)) continue;
 
-                const candidates = doctors
-                    .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id))
-                    .sort((a, b) => {
-                        const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
-                            .some(t => t !== wp.name) ? 1 : 0;
-                        const bRotElsewhere = getActiveRotationTargets(b.id, dateStr)
-                            .some(t => t !== wp.name) ? 1 : 0;
-                        if (aRotElsewhere !== bRotElsewhere) return aRotElsewhere - bRotElsewhere;
-                        return getWeekly(a.id) - getWeekly(b.id);
-                    });
+                const sortB1 = (a, b) => {
+                    const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
+                        .some(t => t !== wp.name) ? 1 : 0;
+                    const bRotElsewhere = getActiveRotationTargets(b.id, dateStr)
+                        .some(t => t !== wp.name) ? 1 : 0;
+                    if (aRotElsewhere !== bRotElsewhere) return aRotElsewhere - bRotElsewhere;
+                    return getWeekly(a.id) - getWeekly(b.id);
+                };
+
+                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                let eligible = doctors
+                    .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
+
+                // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
+                {
+                    const nonDiscouraged = eligible.filter(d => !isDiscouraged(d.id, wp.id));
+                    if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
+                }
+
+                // "Sollte": filter to doctors with preferred quals (fallback if none remain)
+                if (hasOptionalQualReq(wp)) {
+                    const withPreferred = eligible.filter(d => hasOptionalQuals(d.id, wp.id));
+                    if (withPreferred.length > 0) eligible = withPreferred;
+                }
+
+                const candidates = eligible.sort(sortB1);
 
                 if (candidates.length > 0) {
                     assign(candidates[0].id, wp.name);
@@ -1137,9 +1153,23 @@ export function generateSuggestions({
 
                 const docC = remainingC.sort((a, b) => getWeekly(a.id) - getWeekly(b.id))[0];
 
-                const bestC = optionsC
-                    .filter(o => !isExcluded(docC.id, o.wp.id) &&
-                                 !isAlreadyAssignedToWp(docC.id, o.wp.name))
+                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                let eligibleC3 = optionsC.filter(o => !isExcluded(docC.id, o.wp.id) &&
+                                                       !isAlreadyAssignedToWp(docC.id, o.wp.name));
+                // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
+                {
+                    const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
+                    if (nonDisc.length > 0) eligibleC3 = nonDisc;
+                }
+                // "Sollte": prefer workplaces where doctor has preferred quals (fallback)
+                {
+                    const withPref = eligibleC3.filter(o =>
+                        !hasOptionalQualReq(o.wp) || hasOptionalQuals(docC.id, o.wp.id)
+                    );
+                    if (withPref.length > 0) eligibleC3 = withPref;
+                }
+
+                const bestC = eligibleC3
                     .sort((a, b) => {
                         // For sole occupants, deprioritize Demo workplaces
                         if (soleOccupantDoctors.has(docC.id)) {
