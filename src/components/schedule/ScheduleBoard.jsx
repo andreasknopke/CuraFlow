@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, addDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles } from 'lucide-react';
 import { toast } from "sonner";
@@ -335,6 +335,23 @@ export default function ScheduleBoard() {
     }, null, 5000),
     keepPreviousData: true,
     staleTime: 30 * 1000, // 30 seconds cache
+  });
+
+  // Query to fetch shifts from last 28 days for fairness calculation
+  // This ensures we have the data even if the main view is showing a future month
+  const { data: fairnessShifts = [] } = useQuery({
+    queryKey: ['shifts-history', format(new Date(), 'yyyy-MM-dd')], // Key depends on today
+    queryFn: () => {
+      const today = new Date();
+      const daysAgo28 = subDays(today, 28);
+      const startStr = format(daysAgo28, 'yyyy-MM-dd');
+      const endStr = format(today, 'yyyy-MM-dd');
+      return db.ShiftEntry.filter({
+        date: { $gte: startStr, $lte: endStr }
+      });
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: wishes = [] } = useQuery({
@@ -2865,10 +2882,10 @@ export default function ScheduleBoard() {
     const fourWeeksAgoStr = format(fourWeeksAgo, 'yyyy-MM-dd');
     const todayStr = format(today, 'yyyy-MM-dd');
 
-    // Count services per doctor from DB shifts (allShifts)
+    // Count services per doctor from DB shifts (fairnessShifts)
     const result = {};
     for (const docId of doctorIds) {
-      const docShifts = allShifts.filter(s =>
+      const docShifts = fairnessShifts.filter(s =>
         s.doctor_id === docId &&
         s.date >= fourWeeksAgoStr &&
         s.date <= todayStr &&
@@ -2881,6 +2898,8 @@ export default function ScheduleBoard() {
         if (s.position === fgName) {
           fg++;
           const d = new Date(s.date + 'T00:00:00').getDay();
+          // Adjust for correct parsing if needed (assuming yyyy-mm-dd works with T00:00:00 or direct Date parse)
+          // Simple check for day 0 (Sun) or 6 (Sat)
           if (d === 0 || d === 6) weekendCount++;
         }
         if (s.position === bgName) {
@@ -2894,7 +2913,7 @@ export default function ScheduleBoard() {
     }
 
     return result;
-  }, [previewShifts, allShifts, workplaces]);
+  }, [previewShifts, fairnessShifts, workplaces]);
 
   /**
    * Get fairness info for a specific preview service shift.
