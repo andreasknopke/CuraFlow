@@ -76,9 +76,21 @@ Eine herausragende Funktion zur freihändigen Bedienung.
   - *"Lösche alle Einträge von Dr. Weber."*
 - **Training:** Über das Kontextmenü kann man "Voice Alias Training" aufrufen, um der KI beizubringen, wie man bestimmte Ärztenamen ausspricht (z.B. Spitznamen).
 
-### KI-Vorschlag (Auto-Fill)
-- **Funktion:** Ein Algorithmus (unterstützt durch LLM) versucht, den leeren Wochenplan intelligent zu füllen.
-- **Berücksichtigung:** Rotationen, Qualifikationen (Facharzt für Hintergrunddienst), Abwesenheiten.
+### Automatische Planfüllung (AutoFill)
+Die AutoFill-Funktion füllt einen offenen Wochenplan intelligent in vier Phasen:
+- **Phase A – Dienste:** Vordergrund-, Hintergrund- und Spätdienste werden zuerst besetzt (inkl. Dienstwünsche und Auto-Frei am Folgetag).
+- **Phase B – Verfügbarkeitsrelevante Arbeitsplätze:** Rotationen und andere Plätze, die die Verfügbarkeit beeinflussen.
+- **Phase C – Weitere Arbeitsplätze:** Nicht-verfügbarkeitsrelevante Positionen (Mitarbeiter aus Phase B bleiben parallel verfügbar).
+- **Phase D – Auto-Frei:** Verbleibende freie Tage werden automatisch erzeugt.
+- **Berücksichtigung:** Qualifikationen (4-stufig), Rotationen, Abwesenheiten, Dienstwünsche, FTE-gewichtete Fairness, Wochenbalance und Dienstlimits.
+- **Kostenfunktion:** Alle Kandidaten werden über eine additive Kostenfunktion bewertet, die 10 Dimensionen (u.a. Qualifikation, Fairness, Rotation, Dienstwünsche, Unterbesetzungsfolgen) zu einem einzigen numerischen Score zusammenfasst.
+
+### Preview-Modus (Vorschau)
+Nach dem AutoFill werden die Vorschläge nicht sofort übernommen, sondern als **Preview-Einträge** angezeigt:
+- **Darstellung:** Halbtransparent mit gestricheltem Rahmen, klar erkennbar als Vorschläge.
+- **Drag & Drop:** Preview-Einträge können im Plan frei per Drag & Drop verschoben werden, bevor sie endgültig übernommen werden.
+- **Fairness-Badge:** Ein farbkodiertes Badge zeigt pro Mitarbeiter die Dienstanzahl der letzten 4 Wochen, Wochenenddienste und Dienstwunsch-Erfüllung.
+- **Übernehmen/Verwerfen:** Über die Toolbar können alle Vorschläge mit einem Klick übernommen oder verworfen werden.
 
 ### Konfiguration (Settings)
 - **Arbeitsplätze:** Der User kann definieren, welche Zeilen im Plan erscheinen (z.B. "Neues MRT Gerät").
@@ -118,10 +130,11 @@ A: Gehe zu "Administration". Dort gibt es den Bereich "Server Backup", wo du man
   - **Zoom/Schriftgröße:** Über das "Auge"-Menü kann die Schriftgröße des gesamten Plans stufenlos angepasst werden, um mehr Übersicht auf kleinen Bildschirmen zu schaffen.
 - **Toolbar-Funktionen:**
   - **Excel-Export:** Generiert eine .xlsx Datei des aktuellen Zeitraums. Beachtet dabei ausgeblendete Zeilen.
+  - **AutoFill (Zauberstab-Icon):** Startet die automatische Planfüllung. Ergebnisse erscheinen als Preview-Einträge (halbtransparent, gestrichelt), die vor der Übernahme verschoben werden können.
   - **Woche leeren (Mülleimer):** Löscht mit einer Bestätigung alle Dienste der angezeigten Woche. **Achtung:** Abwesenheiten (Urlaub/Krank) bleiben zum Schutz meist erhalten.
   - **Zeilen-Filter (Auge-Icon):** Hier können ganze Zeilen (z.B. "Sonstiges" oder selten genutzte Geräte) ausgeblendet werden, um den Plan übersichtlicher zu gestalten.
 - **Interaktions-Details:**
-  - **Drag & Drop:** Das Standard-Werkzeug. Ein Dienst kann von einem Tag auf einen anderen, oder von einem Arzt auf einen anderen gezogen werden.
+  - **Drag & Drop:** Das Standard-Werkzeug. Ein Dienst kann von einem Tag auf einen anderen, oder von einem Arzt auf einen anderen gezogen werden. Auch Preview-Einträge (AutoFill-Vorschläge) können per Drag & Drop verschoben werden, bevor sie übernommen werden.
   - **Kopieren (Strg-Taste):** Hält man während des Ziehens die `Strg`-Taste (oder `Alt` auf Mac) gedrückt, wird der Dienst kopiert statt verschoben. Ein Plus-Symbol signalisiert dies.
   - **Rechtsklick auf Mikrofon:** Öffnet das Experten-Menü für die Sprachsteuerung (Modus-Wahl, Debugging, Alias-Training).
 
