@@ -9,7 +9,7 @@ import { Award, Check, X } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
 
 /**
- * Editor-Komponente zum Zuweisen/Entfernen von Qualifikationen für einen einzelnen Arzt.
+ * Editor-Komponente zum Zuweisen/Entfernen von Qualifikationen für einen einzelnen Mitarbeiter.
  * Wird im DoctorForm oder als eigenständige Komponente verwendet.
  */
 export default function DoctorQualificationEditor({ doctorId, compact = false }) {
@@ -169,7 +169,7 @@ export default function DoctorQualificationEditor({ doctorId, compact = false })
 }
 
 /**
- * Readonly Badge-Anzeige der Qualifikationen eines Arztes.
+ * Readonly Badge-Anzeige der Qualifikationen eines Mitarbeiters.
  * Für die Team-Liste und den Dienstplan.
  */
 export function DoctorQualificationBadges({ doctorId, qualificationMap, allDoctorQualifications }) {

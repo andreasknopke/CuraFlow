@@ -146,7 +146,7 @@ export function useQualifications() {
 }
 
 /**
- * Hook: Qualifikationen eines bestimmten Arztes laden
+ * Hook: Qualifikationen eines bestimmten Mitarbeiters laden
  */
 export function useDoctorQualifications(doctorId) {
     const queryClient = useQueryClient();
@@ -299,7 +299,7 @@ export function useAllWorkplaceQualifications() {
 }
 
 /**
- * Helper: Prüft ob ein Arzt alle benötigten Qualifikationen für einen Arbeitsplatz hat
+ * Helper: Prüft ob ein Mitarbeiter alle benötigten Qualifikationen für einen Arbeitsplatz hat
  */
 export function checkDoctorQualifications(doctorQualIds, requiredQualIds) {
     if (!requiredQualIds || requiredQualIds.length === 0) return { qualified: true, missing: [] };

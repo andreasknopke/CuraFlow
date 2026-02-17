@@ -120,7 +120,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                 Benötigte Qualifikationen
             </Label>
             <div className="text-xs text-slate-500 mb-1">
-                Pflicht = Arzt muss Qualifikation besitzen. Sollte = Bevorzugt qualifiziert, aber Unqualifizierte erlaubt. Sollte nicht = Qualifizierte nur wenn kein anderer verfügbar. Nicht = Arzt mit dieser Qualifikation darf hier nicht eingeteilt werden.
+                Pflicht = Mitarbeiter muss Qualifikation besitzen. Sollte = Bevorzugt qualifiziert, aber Unqualifizierte erlaubt. Sollte nicht = Qualifizierte nur wenn kein anderer verfügbar. Nicht = Mitarbeiter mit dieser Qualifikation darf hier nicht eingeteilt werden.
             </div>
             <div className="space-y-1">
                 {activeQuals.map(qual => {

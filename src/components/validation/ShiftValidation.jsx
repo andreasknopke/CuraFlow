@@ -218,7 +218,7 @@ export class ShiftValidator {
     }
 
     /**
-     * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Arzt-Qualifikationen
+     * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Mitarbeiter-Qualifikationen
      * Pflicht-Qualifikationen → Blocker (override-fähig)
      * Sollte-Qualifikationen → Bevorzugung (nur für Priorisierung)
      * Sollte-nicht-Qualifikationen → Warnung (override-fähig)
@@ -236,7 +236,7 @@ export class ShiftValidator {
 
         const docQualIds = this.getDoctorQualIds(doctorId);
 
-        // Nicht-Qualifikationen: Arzt darf KEINE der ausgeschlossenen Qualifikationen haben
+        // Nicht-Qualifikationen: Mitarbeiter darf KEINE der ausgeschlossenen Qualifikationen haben
         // Dies ist ein harter Blocker (kein Override möglich)
         const excludedQuals = wpQuals.filter(wq => !wq.is_mandatory && wq.is_excluded);
         if (excludedQuals.length > 0) {
@@ -245,11 +245,11 @@ export class ShiftValidator {
                 const names = violatedExclusions
                     .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
                     .join(', ');
-                return { blocker: `Ausgeschlossen: Arzt hat Nicht-Qualifikation „${names}" – darf hier nicht eingeteilt werden.` };
+                return { blocker: `Ausgeschlossen: Mitarbeiter hat Ausschlusskriterium „${names}" – darf hier nicht eingeteilt werden.` };
             }
         }
 
-        // Sollte-nicht-Qualifikationen: Arzt hat eine Qualifikation, die hier unerwünscht ist
+        // Sollte-nicht-Qualifikationen: Mitarbeiter hat eine Qualifikation, die hier unerwünscht ist
         const discouragedQuals = wpQuals.filter(wq => wq.is_mandatory && wq.is_excluded);
         const violatedDiscouraged = discouragedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
 
@@ -291,12 +291,12 @@ export class ShiftValidator {
             return { blocker: `Fehlende Pflicht-Qualifikation: ${names}` };
         }
 
-        // Sollte-nicht-Qualifikationen: Warnung wenn Arzt unerwünschte Qualifikation hat
+        // Sollte-nicht-Qualifikationen: Warnung wenn Mitarbeiter unerwünschte Qualifikation hat
         if (violatedDiscouraged.length > 0) {
             const names = violatedDiscouraged
                 .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
                 .join(', ');
-            return { warning: `Sollte nicht: Arzt hat Qualifikation „${names}“ – nur zuweisen wenn kein anderer verfügbar.` };
+            return { warning: `Sollte nicht: Mitarbeiter hat Qualifikation „${names}" – nur zuweisen wenn kein anderer verfügbar.` };
         }
 
         // Sollte-Qualifikationen: Warnung wenn Arzt die bevorzugte Qualifikation NICHT hat
