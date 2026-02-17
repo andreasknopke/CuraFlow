@@ -38,23 +38,53 @@ Client-Anforderungen:
 Dienstplanverwaltung (Schedule):
 Die zentrale Funktion der Anwendung ermöglicht die visuelle Planung von Diensten in einer Wochen- oder Tagesansicht. Ärzte und Mitarbeiter können per Drag-and-Drop verschiedenen Arbeitsbereichen zugeordnet werden. Das System unterscheidet zwischen Anwesenheiten, Abwesenheiten (Urlaub, Krank, Frei, Dienstreise), Diensten (Vordergrund, Hintergrund, Spätdienst) sowie Rotationen und Spezialbereichen (CT, MRT, Sonographie, Angiographie, Mammographie etc.). Die Konfiguration der Arbeitsbereiche ist vollständig anpassbar.
 
+Automatische Dienstplanfüllung (AutoFill):
+Die deterministische AutoFill-Engine füllt den Dienstplan prioritätsbasiert in vier Phasen: Phase A besetzt Dienste zuerst (inkl. Dienstwünsche und Auto-Frei am Folgetag), Phase B füllt verfügbarkeitsrelevante Arbeitsplätze (Rotationen etc.), Phase C besetzt nicht-verfügbarkeitsrelevante Arbeitsplätze (Mitarbeiter aus Phase B bleiben verfügbar), und Phase D generiert verbleibende Auto-Frei-Einträge. Die Kandidatenauswahl erfolgt über eine einheitliche additive Kostenfunktion.
+
+Kostenfunktion:
+Eine einheitliche additive Kostenfunktion (inspiriert vom ChordMatcher-Pattern) bewertet alle Planungsdimensionen als numerischen Score. Optimiert werden 10 Dimensionen: Qualifikations-Match, Rotations-Passung, FTE-gewichtete Fairness, Auswirkung auf andere Arbeitsplätze (Unterbesetzungsfolgen), Dienstwünsche, Wochenbalance, Displacement-Bonus für verdrängte Rotationsärzte, Sollte-nicht-Penalty, Alleinbesetzer-Strafe und Dienstlimits. Alle Gewichte sind als zentrale Konstanten konfigurierbar.
+
+KI-gestütztes AutoFill:
+Das KI-gestützte AutoFill führt zunächst 8 deterministische Planvarianten mit verschiedenen Zufalls-Shuffles durch und bewertet jede lokal über die Kostenfunktion. Die besten 3 Varianten werden als lesbarer Plan an den Server gesendet, wo ein LLM (OpenAI/Mistral) die beste Variante auswählt und gezielte Tauschvorschläge macht. Jeder Tausch wird serverseitig gegen Hard-Constraints validiert, sodass 0 Constraint-Verletzungen garantiert sind. Optional können benutzerdefinierte Planungsregeln in natürlicher Sprache hinterlegt werden, die das LLM bei der Optimierung berücksichtigt.
+
+Preview-Modus:
+Bei der automatischen Planfüllung werden Vorschläge als Preview-Einträge halbtransparent mit gestricheltem Rahmen angezeigt. Im Preview-Modus können Vorschläge per Drag & Drop zwischen Positionen verschoben werden, bevor sie übernommen oder verworfen werden. Ein farbkodiertes Fairness-Badge zeigt die Dienstanzahl der letzten 4 Wochen, Wochenenddienste und Dienstwünsche an.
+
+Qualifikationssystem:
+CuraFlow bietet ein 4-stufiges Qualifikationssystem für Arbeitsplätze und Mitarbeiter. Pro Arbeitsplatz können Qualifikationen als Pflicht (Mitarbeiter muss die Qualifikation besitzen), Sollte (bevorzugt qualifiziert, aber Unqualifizierte erlaubt), Sollte nicht (Qualifizierte nur wenn kein anderer verfügbar) oder Nicht/Ausschlusskriterium (Mitarbeiter mit dieser Qualifikation darf nie eingeteilt werden) konfiguriert werden. Mitarbeitern werden Qualifikationen über einen eigenen Editor zugewiesen. Sowohl die AutoFill-Engine als auch die manuelle Einteilung prüfen alle vier Stufen und zeigen entsprechende Warnungen oder Blocker an.
+
 Mitarbeiterverwaltung (Staff):
 Verwaltung aller Ärzte und Mitarbeiter mit ihren Stammdaten. Jeder Mitarbeiter kann einer Rolle zugeordnet werden (Chefarzt, Oberarzt, Facharzt, Assistenzarzt, Nicht-Radiologe). Die Reihenfolge der Anzeige ist konfigurierbar. Es können Qualifikationen und Einschränkungen hinterlegt werden.
 
+Team-Rollen und Berechtigungen:
+Rollen sind vollständig konfigurierbar mit Priorität und Drag-and-Drop-Sortierung. Granulare Berechtigungen steuern, ob eine Rolle Vordergrunddienste oder Hintergrunddienste übernehmen darf, ob sie aus Statistiken ausgeschlossen wird und ob sie als Facharzt-Rolle gilt. Standardrollen werden automatisch angelegt, können aber beliebig erweitert oder angepasst werden.
+
+Verfügbarkeitsrelevanz (Affects Availability):
+Pro Arbeitsplatz kann konfiguriert werden, ob eine Einteilung die Verfügbarkeit beeinflusst. Bei deaktivierter Verfügbarkeitsrelevanz bleibt ein Mitarbeiter trotz Einteilung weiterhin für andere Positionen verfügbar. Dies ist nützlich für Konsile, Demonstrationen oder ähnliche Arbeitsplätze, bei denen mindestens eine Pflichtqualifikation erforderlich ist, die Zuweisung aber die restliche Tagesplanung nicht blockiert.
+
 Stellenplan (Staffing Plan):
-Erfassung des Beschäftigungsumfangs (VK-Anteil) je Mitarbeiter und Monat. Berücksichtigung von Kündigungsfristen, Mutterschutz, Elternzeit und anderen Abwesenheitsgründen. Diese Informationen fließen in die automatische Berechnung der Verfügbarkeit ein.
+Erfassung des Beschäftigungsumfangs (VK-Anteil) je Mitarbeiter und Monat. Berücksichtigung von Kündigungsfristen, Mutterschutz, Elternzeit und anderen Abwesenheitsgründen. Diese Informationen fließen in die automatische Berechnung der Verfügbarkeit ein. Mitarbeiter mit abgelaufenem Vertrag, Mutterschutz, Elternzeit oder 0.0 FTE werden automatisch aus der Seitenleiste gefiltert.
+
+Rotations- und Trainingsplanung:
+Die Trainingsseite bietet eine Jahresübersicht zur Planung von Ausbildungsrotationen (z.B. CT, MRT, Sonographie) für Assistenzärzte. Rotationen können als Zeiträume eingetragen und per Transfer-Dialog in den aktiven Dienstplan übernommen werden, mit automatischer Konflikterkennung gegen bestehende Einträge. Die AutoFill-Engine priorisiert Mitarbeiter mit aktiver Rotation für den entsprechenden Arbeitsplatz.
 
 Urlaubsplanung (Vacation):
 Jahresübersicht für jeden Mitarbeiter mit Anzeige von Urlaubstagen, Schulferien und Feiertagen. Automatische Berücksichtigung von Konflikten bei der Urlaubsplanung. Synchronisation mit dem Dienstplan.
 
-Wunschliste (WishList):
-Mitarbeiter können Wünsche für bestimmte Dienste oder dienstfreie Tage eintragen. Administratoren sehen eine Übersicht aller Wünsche und können diese bei der Dienstplanung berücksichtigen. Das System protokolliert die Erfüllungsquote der Wünsche.
+Dienstwunsch-System (WishList):
+Mitarbeiter können Wünsche für bestimmte Dienste oder dienstfreie Tage eintragen. Genehmigte Kein-Dienst-Wünsche sind harte Ausschlüsse, ausstehende Kein-Dienst-Wünsche werden als weiche Präferenz berücksichtigt. Die WishList-Seite bietet eine Jahresübersicht nach Diensttyp mit Erinnerungsfunktion und Admin-Genehmigungsworkflow. Das System protokolliert die Erfüllungsquote der Wünsche.
+
+Arbeitszeit-Prozentsatz:
+Pro Arbeitsplatz kann ein Arbeitszeit-Prozentsatz konfiguriert werden (z.B. 70% für Rufbereitschaft). Dieser Wert fließt in die FTE-gewichtete Fairness-Berechnung der Kostenfunktion ein und sorgt dafür, dass Dienste unterschiedlicher Wertigkeit fair verteilt werden.
+
+Zeitfenster-System (Timeslots):
+Pro Arbeitsplatz können Zeitfenster definiert werden, um zeitliche Teilbesetzungen zu ermöglichen (z.B. OP-Säle mit Früh- und Spätteam, Schichtwechsel). Das System ist als Opt-in konzipiert mit strikter Rückwärtskompatibilität. Bestehende Einträge ohne Timeslot gelten als ganztägig.
 
 Statistiken (Statistics):
 Auswertungen über die Verteilung von Diensten, Rotationen und Abwesenheiten. Grafische Darstellung als Balkendiagramme und Tabellen. Export-Möglichkeit der Daten. Wunscherfüllungsberichte und Compliance-Reports.
 
 Administration (Admin):
-Zentrale Verwaltungsoberfläche für Systemadministratoren. Benutzerverwaltung mit Rollen und Berechtigungen. Datenbank-Wartungsfunktionen. Systemprotokollierung. Einstellungen für Farbschemata, Abschnittskonfiguration und weitere Anpassungen.
+Zentrale Verwaltungsoberfläche für Systemadministratoren. Benutzerverwaltung mit Rollen und Berechtigungen inklusive E-Mail-Verifizierung. Datenbank-Wartungsfunktionen. Systemprotokollierung. Einstellungen für Farbschemata, Abschnittskonfiguration und weitere Anpassungen.
 
 
 ## Sicherheit und Datenschutz
@@ -110,22 +140,31 @@ PORT: Port für den Express-Server (Standard: 3000)
 Optionale Variablen für erweiterte Funktionen:
 ENCRYPTION_KEY: Schlüssel für die Verschlüsselung von Mandanten-Datenbankzugangsdaten
 GOOGLE_CALENDAR_CREDENTIALS: Zugangsdaten für Google Calendar Integration
-OPENAI_API_KEY: API-Schlüssel für KI-gestützte Funktionen
+OPENAI_API_KEY: API-Schlüssel für KI-gestütztes AutoFill und Planungsoptimierung
+MISTRAL_API_KEY: Alternativer API-Schlüssel für Mistral-basierte KI-Funktionen
+SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS: Konfiguration für E-Mail-Versand (Verifizierung, Benachrichtigungen)
 
 
 ## Datenmodell
 
 Die Anwendung verwendet folgende Haupttabellen:
 
-app_users: Benutzerkonten mit Authentifizierungsdaten und Einstellungen
+app_users: Benutzerkonten mit Authentifizierungsdaten und Einstellungen (inkl. E-Mail-Verifizierung und must_change_password)
 doctors: Mitarbeiterstammdaten (Ärzte und sonstiges Personal)
-shift_entries: Einzelne Dienstplaneinträge mit Datum, Person und Position
-workplaces: Konfigurierbare Arbeitsbereiche und Dienste
-wish_requests: Dienstwünsche der Mitarbeiter
+shift_entries: Einzelne Dienstplaneinträge mit Datum, Person, Position und optionalem Timeslot
+workplaces: Konfigurierbare Arbeitsbereiche und Dienste (mit affects_availability, work_time_percentage und Timeslot-Konfiguration)
+wish_requests: Dienstwünsche der Mitarbeiter mit Status-Workflow (approved/pending/declined)
 color_settings: Anpassbare Farbschemata für Rollen und Abwesenheiten
 system_settings: Globale Systemeinstellungen
 staffing_plan_entries: Stellenplaneinträge pro Mitarbeiter und Zeitraum
-team_roles: Konfigurierbare Rollen und deren Hierarchie
+team_roles: Konfigurierbare Rollen mit Priorität und granularen Berechtigungen (can_do_vd, can_do_hd, excluded_from_stats, is_fachArzt)
+qualifications: Verfügbare Qualifikationen (z.B. CT, MRT, Sono)
+workplace_qualifications: Zuordnung von Qualifikationen zu Arbeitsplätzen mit 4-stufigem Level (Pflicht/Sollte/Sollte-nicht/Nicht)
+doctor_qualifications: Zuordnung von Qualifikationen zu Mitarbeitern
+training_rotations: Ausbildungsrotationen mit Zeitraum, Mitarbeiter und Arbeitsplatz
+workplace_timeslots: Zeitfenster-Definitionen pro Arbeitsplatz
+email_verification: E-Mail-Verifizierungstokens
+schedule_rules: Benutzerdefinierte KI-Planungsregeln in natürlicher Sprache
 
 Die Tabellenstruktur kann über die SQL-Migrationen im Verzeichnis server/migrations angepasst werden.
 
