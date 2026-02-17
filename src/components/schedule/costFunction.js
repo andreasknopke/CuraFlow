@@ -88,6 +88,9 @@ export class CostFunction {
         weeklyCount,
         foregroundPosition,
         backgroundPosition,
+        foregroundPositions,
+        backgroundPositions,
+        getServiceType,
         limitFG,
         limitBG,
         limitWeekend,
@@ -110,6 +113,14 @@ export class CostFunction {
         this.weeklyCount = weeklyCount || {};
         this.foregroundPosition = foregroundPosition;
         this.backgroundPosition = backgroundPosition;
+        this.foregroundPositions = foregroundPositions || new Set(foregroundPosition ? [foregroundPosition] : []);
+        this.backgroundPositions = backgroundPositions || new Set(backgroundPosition ? [backgroundPosition] : []);
+        // Use provided getServiceType or build a fallback from position sets
+        this.getServiceType = getServiceType || ((name) => {
+            if (this.foregroundPositions.has(name)) return 'fg';
+            if (this.backgroundPositions.has(name)) return 'bg';
+            return 'other';
+        });
         this.limitFG = limitFG;
         this.limitBG = limitBG;
         this.limitWeekend = limitWeekend;
@@ -302,9 +313,10 @@ export class CostFunction {
         const fte = this._doctorById[doctorId]?.fte ?? 1.0;
 
         let serviceCount;
-        if (serviceName === this.foregroundPosition) {
+        const svcType = this.getServiceType(serviceName);
+        if (svcType === 'fg') {
             serviceCount = hist.fg;
-        } else if (serviceName === this.backgroundPosition) {
+        } else if (svcType === 'bg') {
             serviceCount = hist.bg;
         } else {
             serviceCount = (hist.fg || 0) + (hist.bg || 0);
@@ -363,8 +375,9 @@ export class CostFunction {
         const hist = this.serviceHistory[doctorId] || { fg: 0, bg: 0, weekend: 0 };
         const fte = this._doctorById[doctorId]?.fte ?? 1.0;
 
-        const isFG = serviceName === this.foregroundPosition;
-        const isBG = serviceName === this.backgroundPosition;
+        const svcType = this.getServiceType(serviceName);
+        const isFG = svcType === 'fg';
+        const isBG = svcType === 'bg';
         const d = new Date(dateStr + 'T00:00:00');
         const isWknd = (d.getDay() === 0 || d.getDay() === 6) && isFG;
 

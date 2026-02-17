@@ -979,6 +979,48 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
       }
     }
 
+    // Migration 12: Add service_type to Workplace (Bereitschaftsdienst/Rufbereitschaft/Schichtdienst/Andere)
+    // service_type: 1=Bereitschaftsdienst (Vordergrund), 2=Rufbereitschaftsdienst (Hintergrund), 3=Schichtdienst, 4=Andere
+    try {
+      await dbPool.execute(`
+        ALTER TABLE Workplace 
+        ADD COLUMN service_type INT DEFAULT NULL
+      `);
+      results.push({ migration: 'add_workplace_service_type', status: 'success' });
+      
+      // Auto-migrate existing data: first service (by order) gets type 1, all others get type 2
+      try {
+        const [serviceWps] = await dbPool.execute(
+          `SELECT id, \`order\` FROM Workplace WHERE category = 'Dienste' ORDER BY COALESCE(\`order\`, 0) ASC`
+        );
+        if (serviceWps.length > 0) {
+          // First service = Bereitschaftsdienst (1)
+          await dbPool.execute(
+            `UPDATE Workplace SET service_type = 1 WHERE id = ?`,
+            [serviceWps[0].id]
+          );
+          // All others = Rufbereitschaftsdienst (2)
+          if (serviceWps.length > 1) {
+            const otherIds = serviceWps.slice(1).map(w => w.id);
+            const placeholders = otherIds.map(() => '?').join(',');
+            await dbPool.execute(
+              `UPDATE Workplace SET service_type = 2 WHERE id IN (${placeholders})`,
+              otherIds
+            );
+          }
+          results.push({ migration: 'migrate_service_types_data', status: 'success', message: `${serviceWps.length} services migrated` });
+        }
+      } catch (dataErr) {
+        results.push({ migration: 'migrate_service_types_data', status: 'error', error: dataErr.message });
+      }
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_workplace_service_type', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_workplace_service_type', status: 'error', error: err.message });
+      }
+    }
+
     // Clear column cache for affected tables so new columns are recognized
     const cacheKey = req.headers['x-db-token'] || 'default';
     clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate', 'TeamRole', 'WorkplaceQualification'], cacheKey);
@@ -1091,6 +1133,23 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
       migrations.push({
         name: 'teamrole_columns',
         description: 'TeamRole-Spalten prüfen',
+        applied: false,
+        error: err.message
+      });
+    }
+
+    // Check service_type column in Workplace
+    try {
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Workplace WHERE Field = 'service_type'`);
+      migrations.push({
+        name: 'add_workplace_service_type',
+        description: 'Diensttyp pro Dienst (Bereitschaftsdienst/Rufbereitschaft/Schichtdienst/Andere)',
+        applied: columns.length > 0
+      });
+    } catch (err) {
+      migrations.push({
+        name: 'add_workplace_service_type',
+        description: 'Diensttyp pro Dienst',
         applied: false,
         error: err.message
       });

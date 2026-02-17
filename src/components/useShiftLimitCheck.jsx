@@ -53,14 +53,25 @@ export function useShiftLimitCheck(shifts, workplaces) {
         
         // Only check if newPosition is a "Dienst"
         const workplace = workplaces.find(w => w.name === newPosition);
-        // User implicitly refers to "Dienste" limits. If it's not a service, we assume limits don't apply?
-        // But "Wochenenddienst" implies services.
         if (!workplace || workplace.category !== 'Dienste') return null;
 
+        // Build foreground/background position sets from service_type
+        const serviceWorkplaces = workplaces.filter(w => w.category === 'Dienste');
+        const sortedServices = [...serviceWorkplaces].sort((a, b) => (a.order || 0) - (b.order || 0));
+        
+        const foregroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 1).map(w => w.name));
+        const backgroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 2).map(w => w.name));
+        
+        // Legacy fallback: if no service_type set, use old convention
+        if (foregroundPositions.size === 0 && backgroundPositions.size === 0 && sortedServices.length > 0) {
+            foregroundPositions.add(sortedServices[0].name);
+            sortedServices.slice(1).forEach(w => backgroundPositions.add(w.name));
+        }
+
         // Determine what this new shift counts as
-        const isFG = newPosition === 'Dienst Vordergrund';
-        const isBG = newPosition === 'Dienst Hintergrund';
-        const isWknd = isWeekend(date) && newPosition === 'Dienst Vordergrund';
+        const isFG = foregroundPositions.has(newPosition);
+        const isBG = backgroundPositions.has(newPosition);
+        const isWknd = isWeekend(date) && isFG;
 
         // Count existing shifts for this doctor in this month
         let countFG = 0;
@@ -73,11 +84,11 @@ export function useShiftLimitCheck(shifts, workplaces) {
             if (s.doctor_id !== doctorId) return;
             if (!s.date.startsWith(currentMonthStr)) return;
 
-            if (s.position === 'Dienst Vordergrund') countFG++;
-            if (s.position === 'Dienst Hintergrund') countBG++;
+            if (foregroundPositions.has(s.position)) countFG++;
+            if (backgroundPositions.has(s.position)) countBG++;
             
-            // Only count 'Dienst Vordergrund' towards weekend limit
-            if (s.position === 'Dienst Vordergrund') {
+            // Count foreground towards weekend limit
+            if (foregroundPositions.has(s.position)) {
                 const sDate = parseISO(s.date);
                 if (isWeekend(sDate)) {
                     countWknd++;
@@ -95,8 +106,8 @@ export function useShiftLimitCheck(shifts, workplaces) {
         const adjustedLimitBG = Math.round(limitBG * fte);
 
         const warnings = [];
-        if (isFG && countFG > adjustedLimitFG) warnings.push(`- ${countFG}. Vordergrunddienst (Limit: ${adjustedLimitFG}, FTE: ${fte})`);
-        if (isBG && countBG > adjustedLimitBG) warnings.push(`- ${countBG}. Hintergrunddienst (Limit: ${adjustedLimitBG}, FTE: ${fte})`);
+        if (isFG && countFG > adjustedLimitFG) warnings.push(`- ${countFG}. Bereitschaftsdienst (Limit: ${adjustedLimitFG}, FTE: ${fte})`);
+        if (isBG && countBG > adjustedLimitBG) warnings.push(`- ${countBG}. Rufbereitschaftsdienst (Limit: ${adjustedLimitBG}, FTE: ${fte})`);
         if (isWknd && countWknd > limitWeekend) warnings.push(`- ${countWknd}. Wochenenddienst (Limit: ${limitWeekend})`);
 
         if (warnings.length > 0) {

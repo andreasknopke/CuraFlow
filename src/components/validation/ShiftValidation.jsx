@@ -494,16 +494,23 @@ export class ShiftValidator {
         const workplace = this.workplaces.find(w => w.name === newPosition);
         if (!workplace || workplace.category !== 'Dienste') return {};
 
-        // Get all service workplaces to identify foreground/background dynamically
+        // Get all service workplaces to identify foreground/background by service_type
         const serviceWorkplaces = this.workplaces.filter(w => w.category === 'Dienste');
-        // Convention: First service in order is "foreground", second is "background"
         const sortedServices = [...serviceWorkplaces].sort((a, b) => (a.order || 0) - (b.order || 0));
-        const foregroundPosition = sortedServices[0]?.name;
-        const backgroundPosition = sortedServices[1]?.name;
+        
+        // Build sets of position names by service_type
+        const foregroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 1).map(w => w.name));
+        const backgroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 2).map(w => w.name));
+        
+        // Legacy fallback: if no service_type set, use old convention
+        if (foregroundPositions.size === 0 && backgroundPositions.size === 0 && sortedServices.length > 0) {
+            foregroundPositions.add(sortedServices[0].name);
+            sortedServices.slice(1).forEach(w => backgroundPositions.add(w.name));
+        }
 
         const date = new Date(dateStr);
-        const isFG = newPosition === foregroundPosition;
-        const isBG = newPosition === backgroundPosition;
+        const isFG = foregroundPositions.has(newPosition);
+        const isBG = backgroundPositions.has(newPosition);
         const isWknd = isWeekend(date) && isFG;
 
         let countFG = 0, countBG = 0, countWknd = 0;
@@ -514,12 +521,12 @@ export class ShiftValidator {
             if (!s.date.startsWith(monthStr)) return;
             if (s.id === excludeShiftId) return;
 
-            if (s.position === foregroundPosition) {
+            if (foregroundPositions.has(s.position)) {
                 countFG++;
                 const sDate = parseISO(s.date);
                 if (isWeekend(sDate)) countWknd++;
             }
-            if (s.position === backgroundPosition) countBG++;
+            if (backgroundPositions.has(s.position)) countBG++;
         });
 
         if (isFG) countFG++;
@@ -531,8 +538,8 @@ export class ShiftValidator {
         const adjBG = Math.round(this.limits.background * fte);
 
         const warnings = [];
-        if (isFG && countFG > adjFG) warnings.push(`${countFG}. ${foregroundPosition} (Limit: ${adjFG})`);
-        if (isBG && countBG > adjBG) warnings.push(`${countBG}. ${backgroundPosition} (Limit: ${adjBG})`);
+        if (isFG && countFG > adjFG) warnings.push(`${countFG}. Bereitschaftsdienst (Limit: ${adjFG})`);
+        if (isBG && countBG > adjBG) warnings.push(`${countBG}. Rufbereitschaftsdienst (Limit: ${adjBG})`);
         if (isWknd && countWknd > this.limits.weekend) warnings.push(`${countWknd}. Wochenenddienst (Limit: ${this.limits.weekend})`);
 
         if (warnings.length > 0) {

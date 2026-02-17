@@ -254,6 +254,21 @@ export default function MyDashboardPage() {
         enabled: !!selectedDoctorId
     });
 
+    // Workplaces for identifying service positions dynamically
+    const { data: dashboardWorkplaces = [] } = useQuery({
+        queryKey: ['workplaces'],
+        queryFn: () => db.Workplace.list(null, 1000),
+        staleTime: 1000 * 60 * 5
+    });
+
+    // Dynamic set of service position names
+    const servicePositionNames = React.useMemo(() => {
+        const names = dashboardWorkplaces
+            .filter(w => w.category === 'Dienste')
+            .map(w => w.name);
+        return names.length > 0 ? names : ['Dienst Vordergrund', 'Dienst Hintergrund', 'Spätdienst'];
+    }, [dashboardWorkplaces]);
+
     // User: Fetch Shift Notifications
     const { data: notifications = [], isLoading: isLoadingNotifications } = useQuery({
         queryKey: ['shiftNotifications', selectedDoctorId],
@@ -473,7 +488,7 @@ export default function MyDashboardPage() {
         if (!s || !s.position || !s.date) return false;
         const d = safeParseISO(s.date);
         if (!d) return false;
-        return ["Dienst Vordergrund", "Dienst Hintergrund", "Spätdienst"].includes(s.position) &&
+        return servicePositionNames.includes(s.position) &&
             (isAfter(d, today) || isSameDay(d, today));
     });
 

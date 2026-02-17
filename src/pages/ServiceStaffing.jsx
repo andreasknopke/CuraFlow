@@ -91,8 +91,9 @@ export default function ServiceStaffingPage() {
             .map(w => {
                 let color = 'bg-slate-100 text-slate-900';
                 if (w.category === 'Demonstrationen & Konsile') color = 'bg-purple-50 text-purple-900 border-purple-100';
-                else if (w.name.includes('Vordergrund')) color = 'bg-blue-100 text-blue-900';
-                else if (w.name.includes('Hintergrund')) color = 'bg-indigo-100 text-indigo-900';
+                else if (w.service_type === 1) color = 'bg-blue-100 text-blue-900'; // Bereitschaftsdienst
+                else if (w.service_type === 2) color = 'bg-indigo-100 text-indigo-900'; // Rufbereitschaftsdienst
+                else if (w.service_type === 3) color = 'bg-amber-100 text-amber-900'; // Schichtdienst
                 else if (w.name.includes('Spät')) color = 'bg-amber-100 text-amber-900';
                 
                 return {
@@ -119,12 +120,24 @@ export default function ServiceStaffingPage() {
     // Dynamische Facharzt-Rollen aus DB laden
     const { foregroundDutyRoles, backgroundDutyRoles, statisticsExcludedRoles } = useTeamRoles();
 
-    // ALLOWED_ROLES dynamisch aufbauen basierend auf Rollenberechtigungen (Legacy-Fallback)
-    const ALLOWED_ROLES = useMemo(() => ({
-        'Dienst Vordergrund': foregroundDutyRoles,
-        'Dienst Hintergrund': backgroundDutyRoles,
-        'Onko-Konsil': backgroundDutyRoles
-    }), [foregroundDutyRoles, backgroundDutyRoles]);
+    // ALLOWED_ROLES dynamisch aufbauen basierend auf service_type der Arbeitsplätze
+    const ALLOWED_ROLES = useMemo(() => {
+        const roles = {};
+        workplaces.filter(w => w.category === 'Dienste').forEach(w => {
+            // service_type 1 = Bereitschaftsdienst (Vordergrund) -> foreground roles
+            // service_type 2 = Rufbereitschaftsdienst (Hintergrund) -> background roles
+            if (w.service_type === 1) {
+                roles[w.name] = foregroundDutyRoles;
+            } else {
+                roles[w.name] = backgroundDutyRoles;
+            }
+        });
+        // Demos get background roles
+        workplaces.filter(w => w.category === 'Demonstrationen & Konsile' && w.show_in_service_plan).forEach(w => {
+            roles[w.name] = backgroundDutyRoles;
+        });
+        return roles;
+    }, [workplaces, foregroundDutyRoles, backgroundDutyRoles]);
 
     // Dynamische Qualifikationen laden
     const { qualificationMap } = useQualifications();

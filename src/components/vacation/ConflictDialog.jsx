@@ -7,17 +7,29 @@ import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 
 // Defines which positions can optionally co-exist
-// Dienstreise is compatible with services (Vordergrund, Hintergrund, Spätdienst)
-const OPTIONAL_COEXIST = {
+// Dienstreise is compatible with all service positions (category-based)
+// Legacy fallback: hardcoded position names (only used if workplace data not available)
+const OPTIONAL_COEXIST_LEGACY = {
     "Dienstreise": ["Dienst Vordergrund", "Dienst Hintergrund", "Spätdienst"],
 };
 
 // Categorizes conflict types
-export const categorizeConflict = (newPosition, existingPosition) => {
-    // Check if optional co-existence is allowed
-    const optionalWith = OPTIONAL_COEXIST[newPosition] || [];
-    if (optionalWith.includes(existingPosition)) {
-        return 'optional'; // Can keep both or delete
+// Pass workplaces array optionally for dynamic lookup
+export const categorizeConflict = (newPosition, existingPosition, workplaces = []) => {
+    // Dynamic: Dienstreise can co-exist with any service (category='Dienste')
+    if (newPosition === 'Dienstreise' && workplaces.length > 0) {
+        const existingWp = workplaces.find(w => w.name === existingPosition);
+        if (existingWp?.category === 'Dienste') {
+            return 'optional';
+        }
+    }
+
+    // Legacy fallback: Check hardcoded co-existence
+    if (workplaces.length === 0) {
+        const optionalWith = OPTIONAL_COEXIST_LEGACY[newPosition] || [];
+        if (optionalWith.includes(existingPosition)) {
+            return 'optional'; // Can keep both or delete
+        }
     }
     
     // Absences always conflict with each other

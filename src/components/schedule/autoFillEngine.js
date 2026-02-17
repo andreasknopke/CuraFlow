@@ -186,11 +186,31 @@ export function generateSuggestions({
     const limitBG = getSetting('limit_back_services', '12');
     const limitWeekend = getSetting('limit_weekend_services', '1');
 
-    // Identify foreground/background service positions dynamically
+    // Identify foreground/background service positions by service_type field
+    // service_type: 1=Bereitschaftsdienst (Vordergrund), 2=Rufbereitschaftsdienst (Hintergrund), 3=Schichtdienst, 4=Andere
     const serviceWorkplaces = workplaces.filter(w => w.category === 'Dienste');
     const sortedServices = [...serviceWorkplaces].sort((a, b) => (a.order || 0) - (b.order || 0));
-    const foregroundPosition = sortedServices[0]?.name;
-    const backgroundPosition = sortedServices[1]?.name;
+    
+    // Build sets of position names by service_type
+    const foregroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 1).map(w => w.name));
+    const backgroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 2).map(w => w.name));
+    
+    // Legacy fallback: if no service_type is set, use old convention (first = FG, rest = BG)
+    if (foregroundPositions.size === 0 && backgroundPositions.size === 0 && sortedServices.length > 0) {
+        foregroundPositions.add(sortedServices[0].name);
+        sortedServices.slice(1).forEach(w => backgroundPositions.add(w.name));
+    }
+    
+    // Helper to get service type of a position
+    const getServiceType = (positionName) => {
+        if (foregroundPositions.has(positionName)) return 'fg';
+        if (backgroundPositions.has(positionName)) return 'bg';
+        return 'other';
+    };
+    
+    // For backward compatibility, keep single position names (first of each set)
+    const foregroundPosition = [...foregroundPositions][0] || null;
+    const backgroundPosition = [...backgroundPositions][0] || null;
 
     // Compute 4-week window: 3 weeks before the first planning day through the last planning day
     const firstPlanDate = weekDays[0];
@@ -213,12 +233,13 @@ export function generateSuggestions({
         if (s.date < fourWeekStartStr || s.date > lastPlanStr) continue;
         if (s.isPreview) continue;
         const h = getServiceHist(s.doctor_id);
-        if (s.position === foregroundPosition) {
+        const svcType = getServiceType(s.position);
+        if (svcType === 'fg') {
             h.fg++;
             const sDay = new Date(s.date + 'T00:00:00').getDay();
             if (sDay === 0 || sDay === 6) h.weekend++;
         }
-        if (s.position === backgroundPosition) h.bg++;
+        if (svcType === 'bg') h.bg++;
     }
 
     /** Get doctor FTE (from doctor.fte field) */
@@ -231,8 +252,9 @@ export function generateSuggestions({
     const wouldExceedLimit = (docId, serviceName, dateStr) => {
         const h = getServiceHist(docId);
         const fte = getDoctorFte(docId);
-        const isFG = serviceName === foregroundPosition;
-        const isBG = serviceName === backgroundPosition;
+        const svcType = getServiceType(serviceName);
+        const isFG = svcType === 'fg';
+        const isBG = svcType === 'bg';
         const d = new Date(dateStr + 'T00:00:00');
         const isWknd = (d.getDay() === 0 || d.getDay() === 6) && isFG;
 
@@ -245,12 +267,13 @@ export function generateSuggestions({
     /** Track a new service assignment in the 4-week history */
     const recordServiceAssignment = (docId, serviceName, dateStr) => {
         const h = getServiceHist(docId);
-        if (serviceName === foregroundPosition) {
+        const svcType = getServiceType(serviceName);
+        if (svcType === 'fg') {
             h.fg++;
             const d = new Date(dateStr + 'T00:00:00').getDay();
             if (d === 0 || d === 6) h.weekend++;
         }
-        if (serviceName === backgroundPosition) h.bg++;
+        if (svcType === 'bg') h.bg++;
     };
 
     /**
@@ -261,8 +284,9 @@ export function generateSuggestions({
     const getFairnessScore = (docId, serviceName) => {
         const h = getServiceHist(docId);
         const fte = getDoctorFte(docId) || 1;
-        if (serviceName === foregroundPosition) return h.fg / fte;
-        if (serviceName === backgroundPosition) return h.bg / fte;
+        const svcType = getServiceType(serviceName);
+        if (svcType === 'fg') return h.fg / fte;
+        if (svcType === 'bg') return h.bg / fte;
         return (h.fg + h.bg) / fte;
     };
 
@@ -308,6 +332,9 @@ export function generateSuggestions({
         weeklyCount,
         foregroundPosition,
         backgroundPosition,
+        foregroundPositions,
+        backgroundPositions,
+        getServiceType,
         limitFG,
         limitBG,
         limitWeekend,

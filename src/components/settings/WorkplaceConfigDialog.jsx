@@ -13,9 +13,20 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import TimeslotEditor from '@/components/admin/TimeslotEditor';
+
+// Service type constants
+const SERVICE_TYPES = [
+    { value: 1, label: 'Bereitschaftsdienst', short: 'BD', description: 'Vordergrunddienst – Anwesenheitsdienst', color: 'bg-red-100 text-red-700' },
+    { value: 2, label: 'Rufbereitschaftsdienst', short: 'RB', description: 'Hintergrunddienst – Rufbereitschaft', color: 'bg-orange-100 text-orange-700' },
+    { value: 3, label: 'Schichtdienst', short: 'SD', description: 'Regulärer Schichtdienst', color: 'bg-blue-100 text-blue-700' },
+    { value: 4, label: 'Andere Kategorie', short: 'AK', description: 'Sonstige Dienstform', color: 'bg-slate-100 text-slate-700' },
+];
+
+export { SERVICE_TYPES };
 import WorkplaceQualificationEditor from '@/components/settings/WorkplaceQualificationEditor';
 
 // Default categories that always exist
@@ -391,6 +402,30 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
 
                                                                         {activeTab === "Dienste" && (
                                                                             <>
+                                                                            <div className="p-3 border rounded bg-indigo-50 space-y-2">
+                                                                                <div className="space-y-0.5">
+                                                                                    <Label className="text-base">Diensttyp</Label>
+                                                                                    <div className="text-xs text-slate-500">
+                                                                                        Bestimmt die Limit-Prüfung und Autofill-Verteilung.
+                                                                                    </div>
+                                                                                </div>
+                                                                                <Select
+                                                                                    value={String(editForm.service_type || '')}
+                                                                                    onValueChange={(val) => setEditForm({...editForm, service_type: parseInt(val)})}
+                                                                                >
+                                                                                    <SelectTrigger className="bg-white">
+                                                                                        <SelectValue placeholder="Diensttyp wählen..." />
+                                                                                    </SelectTrigger>
+                                                                                    <SelectContent>
+                                                                                        {SERVICE_TYPES.map(t => (
+                                                                                            <SelectItem key={t.value} value={String(t.value)}>
+                                                                                                <span className="font-medium">{t.label}</span>
+                                                                                                <span className="text-xs text-slate-500 ml-2">({t.description})</span>
+                                                                                            </SelectItem>
+                                                                                        ))}
+                                                                                    </SelectContent>
+                                                                                </Select>
+                                                                            </div>
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
                                                                                 <div className="space-y-0.5">
                                                                                     <Label className="text-base">Autom. Freistellen</Label>
@@ -700,6 +735,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                             <div className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
                                                                                 {item.name}
                                                                                 {item.time && <Badge variant="outline" className="text-[10px] font-normal">{item.time} Uhr</Badge>}
+                                                                                {item.service_type && (() => { const st = SERVICE_TYPES.find(t => t.value === item.service_type); return st ? <Badge variant="secondary" className={`text-[10px] font-normal ${st.color}`}>{st.label}</Badge> : null; })()}
                                                                                 {item.auto_off && <Badge variant="secondary" className="text-[10px] font-normal bg-blue-100 text-blue-700">Auto-Frei</Badge>}
                                                                                 {item.allows_rotation_concurrently && <Badge variant="secondary" className="text-[10px] font-normal bg-green-100 text-green-700">Rotation OK</Badge>}
                                                                                 {item.allows_multiple && <Badge variant="secondary" className="text-[10px] font-normal bg-teal-100 text-teal-700">Mehrfachbesetzung</Badge>}
@@ -758,11 +794,12 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                 <div className="border p-3 rounded-lg bg-slate-50 space-y-3">
                                     <div className="space-y-0.5">
                                         <Label>Grenzwerte für Dienste (Warnung pro Person/Monat)</Label>
-                                        <p className="text-xs text-slate-500">Maximale Anzahl an Diensten bevor eine Warnung erscheint.</p>
+                                        <p className="text-xs text-slate-500">Maximale Anzahl an Diensten bevor eine Warnung erscheint. Gilt anhand des Diensttyps der jeweiligen Arbeitsplätze.</p>
                                     </div>
                                     <div className="grid grid-cols-1 gap-4">
                                         <div className="space-y-2">
-                                            <Label className="text-sm">Max. Vordergrunddienste</Label>
+                                            <Label className="text-sm">Max. Bereitschaftsdienste (Vordergrund)</Label>
+                                            <p className="text-xs text-slate-400">Gilt für alle Dienste mit Typ "Bereitschaftsdienst"</p>
                                             <Input 
                                                 type="number" 
                                                 min="0"
@@ -772,7 +809,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label className="text-sm">Max. Wochenenddienste (Vordergrund)</Label>
+                                            <Label className="text-sm">Max. Wochenenddienste (Bereitschaftsdienst)</Label>
                                             <Input 
                                                 type="number" 
                                                 min="0"
@@ -782,7 +819,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <Label className="text-sm">Max. Hintergrunddienste</Label>
+                                            <Label className="text-sm">Max. Rufbereitschaftsdienste (Hintergrund)</Label>
+                                            <p className="text-xs text-slate-400">Gilt für alle Dienste mit Typ "Rufbereitschaftsdienst"</p>
                                             <Input 
                                                 type="number" 
                                                 min="0"

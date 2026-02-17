@@ -18,15 +18,21 @@ import ComplianceReport from "@/components/statistics/ComplianceReport";
 import WorkingTimeReport from "@/components/statistics/WorkingTimeReport";
 
 const COLORS = {
-    "Dienst Vordergrund": "#3b82f6", // blue-500
-    "Dienst Hintergrund": "#6366f1", // indigo-500
-    "Spätdienst": "#f59e0b", // amber-500
+    // Default colors - used as fallback. Actual colors come from workplace data.
     "CT": "#10b981", // emerald-500
     "MRT": "#06b6d4", // cyan-500
     "Angiographie": "#ef4444", // red-500
     "Sonographie": "#8b5cf6", // violet-500
     "DL/konv. Rö": "#64748b", // slate-500
     "Mammographie": "#ec4899", // pink-500
+};
+
+// Colors assigned by service_type
+const SERVICE_TYPE_COLORS = {
+    1: "#3b82f6", // blue-500 - Bereitschaftsdienst
+    2: "#6366f1", // indigo-500 - Rufbereitschaftsdienst
+    3: "#f59e0b", // amber-500 - Schichtdienst
+    4: "#64748b", // slate-500 - Andere
 };
 
 const MONTHS = [
@@ -312,9 +318,11 @@ export default function StatisticsPage() {
                                         cursor={{fill: 'transparent'}}
                                     />
                                     <Legend />
-                                    <Bar dataKey="breakdown.Dienst Vordergrund" name="Vordergrund" stackId="a" fill={COLORS["Dienst Vordergrund"]} />
-                                    <Bar dataKey="breakdown.Dienst Hintergrund" name="Hintergrund" stackId="a" fill={COLORS["Dienst Hintergrund"]} />
-                                    <Bar dataKey="breakdown.Spätdienst" name="Spätdienst" stackId="a" fill={COLORS["Spätdienst"]} />
+                                    {stats.serviceItems.map((item, index) => {
+                                        const wp = workplaces.find(w => w.name === item);
+                                        const color = (wp?.service_type && SERVICE_TYPE_COLORS[wp.service_type]) || COLORS[item] || `hsl(${index * 60}, 70%, 50%)`;
+                                        return <Bar key={item} dataKey={`breakdown.${item}`} name={item} stackId="a" fill={color} />;
+                                    })}
                                 </BarChart>
                             </ResponsiveContainer>
                         </ChartCard>
