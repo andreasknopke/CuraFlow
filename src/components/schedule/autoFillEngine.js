@@ -26,7 +26,14 @@
  *
  *   Phase D – Auto-Frei for remaining auto_off positions (non-service):
  *       E.g. if a rotation workplace also has auto_off.
+ *
+ * Cost Function (v2):
+ *   All candidate sorting now uses a unified additive cost function (CostFunction class)
+ *   inspired by the ChordMatcher pattern. Lower cost = better candidate.
+ *   See costFunction.js for dimension details and tuneable weights.
  */
+
+import { CostFunction } from './costFunction';
 
 export function generateSuggestions({
     weekDays,
@@ -281,6 +288,33 @@ export function generateSuggestions({
     // Doctors who get Auto-Frei on a specific date are blocked that day.
     const autoFreiByDate = {};
     const autoFreiSuggestions = [];
+
+    // ========================================================
+    //  Cost Function instance (shared across all phases)
+    // ========================================================
+    const costFn = new CostFunction({
+        doctors,
+        workplaces,
+        existingShifts,
+        suggestions,
+        trainingRotations,
+        getDoctorQualIds,
+        getWpRequiredQualIds,
+        getWpOptionalQualIds,
+        getWpExcludedQualIds,
+        getWpDiscouragedQualIds,
+        wishes,
+        serviceHistory,
+        weeklyCount,
+        foregroundPosition,
+        backgroundPosition,
+        limitFG,
+        limitBG,
+        limitWeekend,
+        isPublicHoliday,
+        autoFreiByDate,
+        systemSettings,
+    });
 
     /** Generate an Auto-Frei for a doctor on the next workday after dateStr */
     const generateAutoFrei = (doctorId, dateStr) => {
@@ -549,53 +583,32 @@ export function generateSuggestions({
                 });
 
                 // Separate candidates into priority tiers
-                const withServiceWish = [];
-                const withPendingNoService = [];
-                const normal = [];
-
-                for (const doc of allCandidates) {
-                    const wish = getServiceWish(doc.id, dateStr);
-                    if (wish && (!wish.position || wish.position === svc.name)) {
-                        withServiceWish.push(doc);
-                    } else if (hasPendingNoService(doc.id, dateStr)) {
-                        withPendingNoService.push(doc);
-                    } else {
-                        normal.push(doc);
-                    }
-                }
-
-                // Sort each group by rotation impact (low = preferred) then fairness score
-                // Skip rotation impact for services with allows_rotation_concurrently
-                // (e.g. Hintergrunddienst) since those don't reduce the rotation pool
-                const svcBlocksRotation = !svc.allows_rotation_concurrently;
-                const sortByImpactAndFairness = (a, b) => {
-                    if (svcBlocksRotation) {
-                        // First: prefer doctors with LOW rotation impact (not critical for rotations)
-                        const impA = getRotationImpact(a.id);
-                        const impB = getRotationImpact(b.id);
-                        if (impA !== impB) return impA - impB;
-                    }
-                    // Then: fairness score (4-week history, FTE-adjusted)
-                    const fa = getFairnessScore(a.id, svc.name);
-                    const fb = getFairnessScore(b.id, svc.name);
-                    if (Math.abs(fa - fb) > 0.001) return fa - fb;
-                    return getWeekly(a.id) - getWeekly(b.id);
+                // → NOW: Use unified cost function instead of manual tier separation
+                const costContext = {
+                    usedToday,
+                    posCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    phase: 'A',
                 };
-                // Service wishes are NOT sorted by impact - explicit wishes always take priority
-                withServiceWish.sort((a, b) => {
-                    const fa = getFairnessScore(a.id, svc.name);
-                    const fb = getFairnessScore(b.id, svc.name);
-                    if (Math.abs(fa - fb) > 0.001) return fa - fb;
-                    return getWeekly(a.id) - getWeekly(b.id);
-                });
-                normal.sort(sortByImpactAndFairness);
-                withPendingNoService.sort(sortByImpactAndFairness);
 
-                // Priority order: wish > normal > pending-no-service (soft NOT)
-                const ranked = [...withServiceWish, ...normal, ...withPendingNoService];
+                // Sort ALL candidates by cost (ascending = best first)
+                // The cost function handles wishes, fairness, impact, limits, etc.
+                allCandidates.sort((a, b) => {
+                    const costA = costFn.assignmentCost(a.id, svc, dateStr, costContext);
+                    const costB = costFn.assignmentCost(b.id, svc, dateStr, costContext);
+                    return costA - costB;
+                });
+
+                const ranked = allCandidates.filter(d => {
+                    const cost = costFn.assignmentCost(d.id, svc, dateStr, costContext);
+                    return cost < Infinity;
+                });
 
                 // If no candidates within limits, fall back to all qualified (limit exceeded = last resort)
                 if (ranked.length === 0) {
+                    const fallbackContext = { ...costContext };
                     const fallback = doctors.filter(d => {
                         const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
                         return (
@@ -605,7 +618,12 @@ export function generateSuggestions({
                             !hasApprovedNoService(d.id, dateStr) &&
                             isQualified(d.id, svc.id)
                         );
-                    }).sort((a, b) => getFairnessScore(a.id, svc.name) - getFairnessScore(b.id, svc.name));
+                    }).sort((a, b) => {
+                        const costA = costFn.assignmentCost(a.id, svc, dateStr, fallbackContext);
+                        const costB = costFn.assignmentCost(b.id, svc, dateStr, fallbackContext);
+                        // Filter out Infinity costs but allow LIMIT_EXCEEDED costs
+                        return costA - costB;
+                    });
                     ranked.push(...fallback);
                 }
 
@@ -724,36 +742,14 @@ export function generateSuggestions({
 
                 const targetWp = underFilled[0];
 
-                const scoreCandidate = (doc) => {
-                    const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                    const hasRotHere = rotTargets.includes(targetWp.name);
-                    const hasRotElsewhere = rotTargets.length > 0 && !hasRotHere;
-
-                    let tier;
-                    if (hasRotHere && getDisplaced(doc.id) > 0) tier = 0;
-                    else if (hasRotHere) tier = 1;
-                    else if (!hasRotElsewhere) tier = 2;
-                    else tier = 3;
-
-                    const qualified = isQualified(doc.id, targetWp.id);
-                    const needsQualCoverage = hasQualReq(targetWp) && !hasQualCoverage(targetWp);
-                    const optQualScore = hasOptionalQuals(doc.id, targetWp.id) ? 0 :
-                                         hasAnyOptionalQual(doc.id, targetWp.id) ? 1 : 2;
-
-                    return {
-                        doc, tier,
-                        qualScore: needsQualCoverage && qualified ? 0 : (needsQualCoverage && !qualified ? 2 : 1),
-                        optQualScore,
-                        displaced: getDisplaced(doc.id),
-                        weekly: getWeekly(doc.id),
-                    };
-                };
-                const sortCandidates = (a, b) => {
-                    if (a.tier !== b.tier) return a.tier - b.tier;
-                    if (a.qualScore !== b.qualScore) return a.qualScore - b.qualScore;
-                    if (a.optQualScore !== b.optQualScore) return a.optQualScore - b.optQualScore;
-                    if (a.displaced !== b.displaced) return b.displaced - a.displaced;
-                    return a.weekly - b.weekly;
+                // Cost-based candidate sorting (replaces tier-based scoreCandidate/sortCandidates)
+                const costContextB = {
+                    usedToday,
+                    posCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    phase: 'B',
                 };
 
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
@@ -771,10 +767,15 @@ export function generateSuggestions({
                     if (withPreferred.length > 0) eligible = withPreferred;
                 }
 
-                let scored = eligible.map(scoreCandidate).sort(sortCandidates);
+                // Sort by cost function (ascending = best first)
+                eligible.sort((a, b) => {
+                    const costA = costFn.assignmentCost(a.id, targetWp, dateStr, costContextB);
+                    const costB = costFn.assignmentCost(b.id, targetWp, dateStr, costContextB);
+                    return costA - costB;
+                });
 
-                if (scored.length > 0) {
-                    const chosen = scored[0].doc;
+                if (eligible.length > 0 && costFn.assignmentCost(eligible[0].id, targetWp, dateStr, costContextB) < Infinity) {
+                    const chosen = eligible[0];
                     assign(chosen.id, targetWp.name);
 
                     const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
@@ -806,53 +807,54 @@ export function generateSuggestions({
 
                 if (options.length === 0) break;
 
-                const doc = remaining.sort((a, b) => {
-                    const aRotMatch = getActiveRotationTargets(a.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
-                    const bRotMatch = getActiveRotationTargets(b.id, dateStr).includes(options[0].wp.name) ? 0 : 1;
-                    if (aRotMatch !== bRotMatch) return aRotMatch - bRotMatch;
-                    return getWeekly(a.id) - getWeekly(b.id);
-                })[0];
-
-                const scoreBestWp = (o) => {
-                    const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                    const isRotTarget = rotTargets.includes(o.wp.name) ? 0 : 1;
-                    const isQual = isQualified(doc.id, o.wp.id) ? 0 : 1;
-                    const optQual = hasOptionalQuals(doc.id, o.wp.id) ? 0 :
-                                    hasAnyOptionalQual(doc.id, o.wp.id) ? 1 : 2;
-                    return { ...o, isRotTarget, isQual, optQual };
-                };
-                const sortBestWp = (a, b) => {
-                    if (a.isRotTarget !== b.isRotTarget) return a.isRotTarget - b.isRotTarget;
-                    if (a.isQual !== b.isQual) return a.isQual - b.isQual;
-                    if (a.optQual !== b.optQual) return a.optQual - b.optQual;
-                    if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
-                    return (a.wp.order || 0) - (b.wp.order || 0);
+                // Cost-based: pick doctor with lowest cost for best available workplace
+                const costContextB3 = {
+                    usedToday,
+                    posCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    phase: 'B',
                 };
 
-                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
-                let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+                // For each remaining doctor, find their best workplace by cost
+                let bestAssignment = null;
+                let bestCost = Infinity;
 
-                // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
-                {
-                    const nonDiscouraged = eligibleWps.filter(o => !isDiscouraged(doc.id, o.wp.id));
-                    if (nonDiscouraged.length > 0) eligibleWps = nonDiscouraged;
+                for (const doc of remaining) {
+                    // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                    let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+
+                    // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
+                    {
+                        const nonDiscouraged = eligibleWps.filter(o => !isDiscouraged(doc.id, o.wp.id));
+                        if (nonDiscouraged.length > 0) eligibleWps = nonDiscouraged;
+                    }
+
+                    // "Sollte": prefer workplaces where doctor has preferred quals (fallback)
+                    {
+                        const withPreferred = eligibleWps.filter(o =>
+                            !hasOptionalQualReq(o.wp) || hasOptionalQuals(doc.id, o.wp.id)
+                        );
+                        if (withPreferred.length > 0) eligibleWps = withPreferred;
+                    }
+
+                    for (const o of eligibleWps) {
+                        const cost = costFn.assignmentCost(doc.id, o.wp, dateStr, costContextB3);
+                        // Add fill ratio as a tiebreaker to spread assignments
+                        const adjustedCost = cost + o.fillRatio * 2;
+                        if (adjustedCost < bestCost) {
+                            bestCost = adjustedCost;
+                            bestAssignment = { doc, wp: o.wp };
+                        }
+                    }
                 }
 
-                // "Sollte": prefer workplaces where doctor has preferred quals (fallback)
-                {
-                    const withPreferred = eligibleWps.filter(o =>
-                        !hasOptionalQualReq(o.wp) || hasOptionalQuals(doc.id, o.wp.id)
-                    );
-                    if (withPreferred.length > 0) eligibleWps = withPreferred;
-                }
-
-                let bestForDoc = eligibleWps.map(scoreBestWp).sort(sortBestWp);
-
-                if (bestForDoc.length > 0) {
-                    assign(doc.id, bestForDoc[0].wp.name);
-                    const rotTargets = getActiveRotationTargets(doc.id, dateStr);
-                    if (rotTargets.length > 0 && !rotTargets.includes(bestForDoc[0].wp.name)) {
-                        addDisplacement(doc.id);
+                if (bestAssignment && bestCost < Infinity) {
+                    assign(bestAssignment.doc.id, bestAssignment.wp.name);
+                    const rotTargets = getActiveRotationTargets(bestAssignment.doc.id, dateStr);
+                    if (rotTargets.length > 0 && !rotTargets.includes(bestAssignment.wp.name)) {
+                        addDisplacement(bestAssignment.doc.id);
                     }
                     overChanged = true;
                 }
@@ -947,28 +949,22 @@ export function generateSuggestions({
                 );
                 if (hasCov) continue;
 
-                // First try unblocked qualified doctors (excluding discouraged)
-                const isDemoC1 = wp.category === 'Demonstrationen & Konsile';
-                const sortC1 = (a, b) => {
-                    if (isDemoC1) {
-                        const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                        const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                        if (aSole !== bSole) return aSole - bSole;
-                    }
-                    const aOpt = hasOptionalQuals(a.id, wp.id) ? 0 : 1;
-                    const bOpt = hasOptionalQuals(b.id, wp.id) ? 0 : 1;
-                    if (aOpt !== bOpt) return aOpt - bOpt;
-                    return getWeekly(a.id) - getWeekly(b.id);
+                const costContextC1 = {
+                    usedToday: phaseC_blocked,
+                    posCount: phaseCPosCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    soleOccupantDoctors,
+                    phase: 'C',
                 };
 
-                // "Sollte nicht" + "Sollte": Progressive fallback
+                // Cost-based sorting for C.1 with progressive fallback stages
                 // Stage 1: unblocked, not discouraged, qualified
                 let candidates = doctors
                     .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                  !isDiscouraged(d.id, wp.id) &&
-                                 isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                    .sort(sortC1);
-                // "Sollte": prefer doctors with preferred quals (fallback within pool)
+                                 isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
                 if (hasOptionalQualReq(wp) && candidates.length > 0) {
                     const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                     if (withPref.length > 0) candidates = withPref;
@@ -978,8 +974,7 @@ export function generateSuggestions({
                     // Fallback: include discouraged doctors
                     candidates = doctors
                         .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                        .sort(sortC1);
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
@@ -991,8 +986,7 @@ export function generateSuggestions({
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                      !isDiscouraged(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                        .sort(sortC1);
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
@@ -1002,13 +996,19 @@ export function generateSuggestions({
                     // Fallback: include discouraged doctors in Mehrfachbesetzung
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name))
-                        .sort(sortC1);
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
                     }
                 }
+
+                // Sort by cost function
+                candidates.sort((a, b) => {
+                    const costA = costFn.assignmentCost(a.id, wp, dateStr, costContextC1);
+                    const costB = costFn.assignmentCost(b.id, wp, dateStr, costContextC1);
+                    return costA - costB;
+                });
 
                 if (candidates.length > 0) {
                     assignC(candidates[0].id, wp.name, true);
@@ -1033,18 +1033,19 @@ export function generateSuggestions({
 
                 const targetWpC = underFilledC[0];
                 const targetHasQualReq = hasQualReq(targetWpC);
-                const isDemoC2 = targetWpC.category === 'Demonstrationen & Konsile';
+
+                const costContextC2 = {
+                    usedToday: phaseC_blocked,
+                    posCount: phaseCPosCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    soleOccupantDoctors,
+                    phase: 'C',
+                };
+
                 if (targetHasQualReq) {
                     // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
-                    const sortPflichtC2 = (a, b) => {
-                        if (isDemoC2) {
-                            const aSole = soleOccupantDoctors.has(a.id) ? 1 : 0;
-                            const bSole = soleOccupantDoctors.has(b.id) ? 1 : 0;
-                            if (aSole !== bSole) return aSole - bSole;
-                        }
-                        return getWeekly(a.id) - getWeekly(b.id);
-                    };
-
                     // First try unblocked qualified with progressive filtering
                     let eligiblePflicht = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
@@ -1060,10 +1061,16 @@ export function generateSuggestions({
                         const withPref = eligiblePflicht.filter(d => hasOptionalQuals(d.id, targetWpC.id));
                         if (withPref.length > 0) eligiblePflicht = withPref;
                     }
-                    let scoredC = eligiblePflicht.sort(sortPflichtC2);
+
+                    // Sort by cost function
+                    eligiblePflicht.sort((a, b) => {
+                        const costA = costFn.assignmentCost(a.id, targetWpC, dateStr, costContextC2);
+                        const costB = costFn.assignmentCost(b.id, targetWpC, dateStr, costContextC2);
+                        return costA - costB;
+                    });
 
                     // If none free, allow already-assigned qualified (Mehrfachbesetzung)
-                    if (scoredC.length === 0) {
+                    if (eligiblePflicht.length === 0) {
                         let eligibleMehr = doctors
                             .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
                                          isQualified(d.id, targetWpC.id) &&
@@ -1076,32 +1083,22 @@ export function generateSuggestions({
                             const withPref = eligibleMehr.filter(d => hasOptionalQuals(d.id, targetWpC.id));
                             if (withPref.length > 0) eligibleMehr = withPref;
                         }
-                        scoredC = eligibleMehr.sort(sortPflichtC2);
+                        eligibleMehr.sort((a, b) => {
+                            const costA = costFn.assignmentCost(a.id, targetWpC, dateStr, costContextC2);
+                            const costB = costFn.assignmentCost(b.id, targetWpC, dateStr, costContextC2);
+                            return costA - costB;
+                        });
+                        eligiblePflicht = eligibleMehr;
                     }
 
-                    if (scoredC.length > 0) {
-                        assignC(scoredC[0].id, targetWpC.name, true);
+                    if (eligiblePflicht.length > 0) {
+                        assignC(eligiblePflicht[0].id, targetWpC.name, true);
                         changedC = true;
                     }
                 } else {
-                    // Non-Pflicht workplace: any unblocked doctor, prefer optional-qualified
+                    // Non-Pflicht workplace: any unblocked doctor
                     const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
                     if (availableC.length === 0) break;
-
-                    const scoreC2 = (doc) => ({
-                        doc,
-                        soleOccupant: isDemoC2 && soleOccupantDoctors.has(doc.id) ? 1 : 0,
-                        qualified: isQualified(doc.id, targetWpC.id) ? 0 : 1,
-                        optQual: hasOptionalQuals(doc.id, targetWpC.id) ? 0 :
-                                  hasAnyOptionalQual(doc.id, targetWpC.id) ? 1 : 2,
-                        weekly: getWeekly(doc.id),
-                    });
-                    const sortC2 = (a, b) => {
-                        if (a.soleOccupant !== b.soleOccupant) return a.soleOccupant - b.soleOccupant;
-                        if (a.qualified !== b.qualified) return a.qualified - b.qualified;
-                        if (a.optQual !== b.optQual) return a.optQual - b.optQual;
-                        return a.weekly - b.weekly;
-                    };
 
                     // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                     let eligibleC = availableC.filter(doc => !isExcluded(doc.id, targetWpC.id) &&
@@ -1119,10 +1116,15 @@ export function generateSuggestions({
                         if (withPreferred.length > 0) eligibleC = withPreferred;
                     }
 
-                    let scoredC = eligibleC.map(scoreC2).sort(sortC2);
+                    // Sort by cost function
+                    eligibleC.sort((a, b) => {
+                        const costA = costFn.assignmentCost(a.id, targetWpC, dateStr, costContextC2);
+                        const costB = costFn.assignmentCost(b.id, targetWpC, dateStr, costContextC2);
+                        return costA - costB;
+                    });
 
-                    if (scoredC.length > 0) {
-                        assignC(scoredC[0].doc.id, targetWpC.name, false);
+                    if (eligibleC.length > 0 && costFn.assignmentCost(eligibleC[0].id, targetWpC, dateStr, costContextC2) < Infinity) {
+                        assignC(eligibleC[0].id, targetWpC.name, false);
                         changedC = true;
                     }
                 }
@@ -1150,38 +1152,47 @@ export function generateSuggestions({
 
                 if (optionsC.length === 0) break;
 
-                const docC = remainingC.sort((a, b) => getWeekly(a.id) - getWeekly(b.id))[0];
+                const costContextC3 = {
+                    usedToday: phaseC_blocked,
+                    posCount: phaseCPosCount,
+                    displacementCount,
+                    rotationImpactScore,
+                    serviceAssignedToday,
+                    soleOccupantDoctors,
+                    phase: 'C',
+                };
 
-                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
-                let eligibleC3 = optionsC.filter(o => !isExcluded(docC.id, o.wp.id) &&
-                                                       !isAlreadyAssignedToWp(docC.id, o.wp.name));
-                // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
-                {
-                    const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
-                    if (nonDisc.length > 0) eligibleC3 = nonDisc;
-                }
-                // "Sollte": prefer workplaces where doctor has preferred quals (fallback)
-                {
-                    const withPref = eligibleC3.filter(o =>
-                        !hasOptionalQualReq(o.wp) || hasOptionalQuals(docC.id, o.wp.id)
-                    );
-                    if (withPref.length > 0) eligibleC3 = withPref;
-                }
+                // Find best (doctor, workplace) pair by cost
+                let bestAssignmentC = null;
+                let bestCostC = Infinity;
 
-                const bestC = eligibleC3
-                    .sort((a, b) => {
-                        // For sole occupants, deprioritize Demo workplaces
-                        if (soleOccupantDoctors.has(docC.id)) {
-                            const aDemo = a.wp.category === 'Demonstrationen & Konsile' ? 1 : 0;
-                            const bDemo = b.wp.category === 'Demonstrationen & Konsile' ? 1 : 0;
-                            if (aDemo !== bDemo) return aDemo - bDemo;
+                for (const docC of remainingC) {
+                    // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                    let eligibleC3 = optionsC.filter(o => !isExcluded(docC.id, o.wp.id) &&
+                                                           !isAlreadyAssignedToWp(docC.id, o.wp.name));
+                    {
+                        const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
+                        if (nonDisc.length > 0) eligibleC3 = nonDisc;
+                    }
+                    {
+                        const withPref = eligibleC3.filter(o =>
+                            !hasOptionalQualReq(o.wp) || hasOptionalQuals(docC.id, o.wp.id)
+                        );
+                        if (withPref.length > 0) eligibleC3 = withPref;
+                    }
+
+                    for (const o of eligibleC3) {
+                        const cost = costFn.assignmentCost(docC.id, o.wp, dateStr, costContextC3);
+                        const adjustedCost = cost + o.fillRatio * 2;
+                        if (adjustedCost < bestCostC) {
+                            bestCostC = adjustedCost;
+                            bestAssignmentC = { doc: docC, wp: o.wp };
                         }
-                        if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
-                        return (a.wp.order || 0) - (b.wp.order || 0);
-                    });
+                    }
+                }
 
-                if (bestC.length > 0) {
-                    assignC(docC.id, bestC[0].wp.name, false);
+                if (bestAssignmentC && bestCostC < Infinity) {
+                    assignC(bestAssignmentC.doc.id, bestAssignmentC.wp.name, false);
                     overChangedC = true;
                 }
             }

@@ -17,91 +17,43 @@
 
 import { api } from '@/api/client';
 import { generateSuggestions } from './autoFillEngine';
+import { CostFunction } from './costFunction';
 
 const NUM_VARIANTS = 8; // Number of deterministic runs to try
 
 // ============================================================
-//  Scoring: evaluate a plan variant on multiple dimensions
+//  Scoring: evaluate a plan variant using the unified CostFunction
+//  (replaces the old inline scorePlan with all dimensions)
 // ============================================================
 
-function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData) {
-  const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
-  let score = 0;
-
-  // Build workplace lookup by name
-  const wpByName = {};
-  for (const wp of workplaces) wpByName[wp.name] = wp;
-
-  // Qualification helpers
+function scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData, existingShifts) {
   const { getDoctorQualIds, getWpRequiredQualIds, getWpOptionalQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
-  // 1. Fairness: std deviation of assignments per doctor (FTE-adjusted)
-  const counts = {};
-  for (const d of doctors) counts[d.id] = 0;
-  for (const s of suggestions) {
-    if (!absencePositions.includes(s.position) && s.position !== 'Verfügbar') {
-      counts[s.doctor_id] = (counts[s.doctor_id] || 0) + 1;
-    }
-  }
-  const fteAdjusted = doctors.map(d => (counts[d.id] || 0) / (d.fte || 1));
-  const mean = fteAdjusted.reduce((a, b) => a + b, 0) / (fteAdjusted.length || 1);
-  const variance = fteAdjusted.reduce((a, v) => a + (v - mean) ** 2, 0) / (fteAdjusted.length || 1);
-  const fairnessScore = -Math.sqrt(variance) * 10; // Lower deviation = better
-  score += fairnessScore;
+  const cf = new CostFunction({
+    doctors,
+    workplaces,
+    existingShifts: existingShifts || [],
+    suggestions,
+    trainingRotations: trainingRotations || [],
+    getDoctorQualIds,
+    getWpRequiredQualIds,
+    getWpOptionalQualIds,
+    getWpExcludedQualIds,
+    getWpDiscouragedQualIds,
+    wishes: [],
+    serviceHistory: {},
+    weeklyCount: {},
+    foregroundPosition: null,
+    backgroundPosition: null,
+    limitFG: 4,
+    limitBG: 12,
+    limitWeekend: 1,
+    isPublicHoliday: () => false,
+    autoFreiByDate: {},
+    systemSettings: [],
+  });
 
-  // 2. Rotation fulfillment: +2 for each rotation target met
-  for (const rot of (trainingRotations || [])) {
-    for (const dateStr of weekDayStrs) {
-      if (rot.start_date <= dateStr && rot.end_date >= dateStr) {
-        const assigned = suggestions.find(s =>
-          s.date === dateStr && s.doctor_id === rot.doctor_id && s.position === rot.modality
-        );
-        if (assigned) score += 2;
-      }
-    }
-  }
-
-  // 3. Coverage: +0.1 for each filled slot
-  score += suggestions.filter(s => !absencePositions.includes(s.position) && s.position !== 'Verfügbar').length * 0.1;
-
-  // 4. QUALIFICATION QUALITY — heavy penalties for unqualified assignments
-  if (getDoctorQualIds && getWpRequiredQualIds) {
-    for (const s of suggestions) {
-      if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
-      const wp = wpByName[s.position];
-      if (!wp) continue;
-
-      // Excluded ("Nicht"): doctor must NOT be on this workplace → -25
-      const excl = getWpExcludedQualIds?.(wp.id) || [];
-      const docQuals = getDoctorQualIds(s.doctor_id) || [];
-      if (excl.length > 0 && excl.some(q => docQuals.includes(q))) {
-        score -= 25;
-        continue;
-      }
-
-      // Discouraged ("Sollte-nicht"): doctor should avoid this workplace → -8
-      const disc = getWpDiscouragedQualIds?.(wp.id) || [];
-      if (disc.length > 0 && disc.some(q => docQuals.includes(q))) {
-        score -= 8;
-        continue;
-      }
-
-      // Missing mandatory qualification ("Pflicht"): → -15
-      const req = getWpRequiredQualIds(wp.id) || [];
-      if (req.length > 0 && !req.every(q => docQuals.includes(q))) {
-        score -= 15;
-        continue;
-      }
-
-      // Has optional qualifications ("Sollte"): → +1
-      const opt = getWpOptionalQualIds?.(wp.id) || [];
-      if (opt.length > 0 && opt.every(q => docQuals.includes(q))) {
-        score += 1;
-      }
-    }
-  }
-
-  return Math.round(score * 100) / 100;
+  return cf.scorePlan(suggestions, weekDayStrs);
 }
 
 // ============================================================
@@ -188,11 +140,11 @@ export async function generateAISuggestions(params) {
   };
 
   // 1. Run deterministic engine N times (each run shuffles doctors differently)
-  console.log(`[AI AutoFill v3] Running ${NUM_VARIANTS} deterministic variants...`);
+  console.log(`[AI AutoFill v3] Running ${NUM_VARIANTS} deterministic variants (cost-function scoring)...`);
   const variants = [];
   for (let i = 0; i < NUM_VARIANTS; i++) {
     const suggestions = generateSuggestions(detParams);
-    const score = scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData);
+    const score = scorePlan(suggestions, doctors, workplaces, trainingRotations, weekDayStrs, qualData, existingShifts);
     variants.push({ suggestions, score, index: i });
   }
 
