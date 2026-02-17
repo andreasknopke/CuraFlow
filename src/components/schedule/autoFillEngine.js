@@ -51,6 +51,7 @@ export function generateSuggestions({
     categoriesToFill,
     systemSettings,
     wishes = [],
+    workplaceTimeslots = [],
 }) {
     // Shuffle doctors to avoid deterministic bias (e.g. same doctors always getting Monday shifts)
     const shuffled = [...doctors];
@@ -161,6 +162,68 @@ export function generateSuggestions({
     const getMinStaff = (wp) => {
         if (!allowsMultiple(wp)) return 1;
         return wp.min_staff ?? 1;
+    };
+
+    // ========================================================
+    //  Timeslot helpers
+    // ========================================================
+
+    /** Get timeslots for a workplace (sorted by order) */
+    const getTimeslots = (wp) => {
+        if (!wp.timeslots_enabled) return [];
+        return workplaceTimeslots
+            .filter(t => t.workplace_id === wp.id)
+            .sort((a, b) => (a.order || 0) - (b.order || 0));
+    };
+
+    /** Build a composite key for position counting: position + optional timeslot_id */
+    const slotKey = (posName, timeslotId) => timeslotId ? `${posName}::${timeslotId}` : posName;
+
+    /** Count existing shifts for a position+timeslot combo on a date */
+    const countShiftsForSlot = (dateStr, posName, timeslotId, existingArr, suggestionsArr) => {
+        let count = 0;
+        for (const s of existingArr) {
+            if (s.date !== dateStr || s.position !== posName) continue;
+            if (timeslotId) {
+                if (s.timeslot_id === timeslotId) count++;
+            } else {
+                if (!s.timeslot_id) count++;
+            }
+        }
+        for (const s of suggestionsArr) {
+            if (s.date !== dateStr || s.position !== posName) continue;
+            if (timeslotId) {
+                if (s.timeslot_id === timeslotId) count++;
+            } else {
+                if (!s.timeslot_id) count++;
+            }
+        }
+        return count;
+    };
+
+    /**
+     * Expand workplaces into "fill slots" — each workplace becomes one or more slots.
+     * A slot has: { wp, timeslotId, timeslotLabel }
+     * For workplaces with N timeslots, N slots are created, each with the same
+     * optimal/min staff and qualification requirements as the parent workplace.
+     */
+    const expandToSlots = (wps) => {
+        const slots = [];
+        for (const wp of wps) {
+            const ts = getTimeslots(wp);
+            if (ts.length > 1) {
+                // Multiple timeslots: each timeslot is an independent slot
+                for (const t of ts) {
+                    slots.push({ wp, timeslotId: t.id, timeslotLabel: t.label });
+                }
+            } else {
+                // No timeslots or exactly 1 timeslot: treat as single slot
+                // If single timeslot, include its ID for proper tracking
+                const singleTsId = ts.length === 1 ? ts[0].id : null;
+                slots.push({ wp, timeslotId: singleTsId, timeslotLabel: ts[0]?.label || null });
+            }
+        }
+        return slots;
     };
 
     // ---- Weekly tracking for fair distribution ----
@@ -438,7 +501,8 @@ export function generateSuggestions({
 
         // --- Base blocked set (absences + existing availability-relevant assignments) ---
         const baseBlocked = new Set();
-        const posCount = {};
+        const posCount = {};      // position-level count (for backward-compat)
+        const slotCount = {};     // slot-level count: slotKey(pos, tsId) -> count
 
         // Include doctors blocked by auto-frei from a previous day's service
         if (autoFreiByDate[dateStr]) {
@@ -450,6 +514,9 @@ export function generateSuggestions({
         for (const s of existingShifts) {
             if (s.date !== dateStr) continue;
             posCount[s.position] = (posCount[s.position] || 0) + 1;
+            // Also count per slot (position + timeslot_id)
+            const sk = slotKey(s.position, s.timeslot_id);
+            slotCount[sk] = (slotCount[sk] || 0) + 1;
 
             if (absencePositions.includes(s.position)) { baseBlocked.add(s.doctor_id); continue; }
             if (s.position === 'Verfügbar') continue;
@@ -477,8 +544,10 @@ export function generateSuggestions({
         }
 
         // Record a suggestion and update tracking
-        const assign = (docId, wpName) => {
-            suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
+        const assign = (docId, wpName, timeslotId = null) => {
+            const suggestion = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
+            if (timeslotId) suggestion.timeslot_id = timeslotId;
+            suggestions.push(suggestion);
             // Only block the doctor if the workplace actually reduces availability
             const wp = workplaces.find(w => w.name === wpName);
             if (wp?.category === 'Dienste') serviceAssignedToday.add(docId);
@@ -486,6 +555,8 @@ export function generateSuggestions({
                 usedToday.add(docId);
             }
             posCount[wpName] = (posCount[wpName] || 0) + 1;
+            const sk = slotKey(wpName, timeslotId);
+            slotCount[sk] = (slotCount[sk] || 0) + 1;
             incWeekly(docId);
         };
 
@@ -585,9 +656,14 @@ export function generateSuggestions({
         // ============================================================
         if (categoriesToFill.includes('Dienste')) {
             const serviceWps = allTodayWps.filter(wp => isServiceWp(wp));
+            // Expand services into timeslot-aware slots
+            const serviceSlots = expandToSlots(serviceWps);
 
-            for (const svc of serviceWps) {
-                const currentCount = posCount[svc.name] || 0;
+            for (const slot of serviceSlots) {
+                const svc = slot.wp;
+                const tsId = slot.timeslotId;
+                const sk = slotKey(svc.name, tsId);
+                const currentCount = slotCount[sk] || 0;
                 const targetCount = getOptimal(svc);
                 const slotsNeeded = targetCount - currentCount;
                 if (slotsNeeded <= 0) continue;
@@ -656,7 +732,7 @@ export function generateSuggestions({
 
                 for (let i = 0; i < slotsNeeded && i < ranked.length; i++) {
                     const chosen = ranked[i];
-                    assign(chosen.id, svc.name);
+                    assign(chosen.id, svc.name, tsId);
                     recordServiceAssignment(chosen.id, svc.name, dateStr);
 
                     // Auto-Frei: if service has auto_off, block doctor on next workday
@@ -679,17 +755,41 @@ export function generateSuggestions({
         );
 
         if (availWps.length > 0) {
+            // Expand into timeslot-aware slots
+            const availSlots = expandToSlots(availWps);
+
             // --- B.1: Qualification coverage ---
-            const qualWps = availWps
-                .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
+            // For timeslot workplaces: each timeslot needs coverage independently
+            const qualSlots = availSlots
+                .filter(slot => hasQualReq(slot.wp) && getMinStaff(slot.wp) > 0)
                 .sort((a, b) => {
-                    const aPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
-                    const bPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
+                    const aPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, a.wp.id) && isQualified(d.id, a.wp.id)).length;
+                    const bPool = doctors.filter(d => !usedToday.has(d.id) && !isExcluded(d.id, b.wp.id) && isQualified(d.id, b.wp.id)).length;
                     return aPool - bPool;
                 });
 
-            for (const wp of qualWps) {
-                if (hasQualCoverage(wp)) continue;
+            for (const slot of qualSlots) {
+                const wp = slot.wp;
+                const tsId = slot.timeslotId;
+                
+                // Check coverage for this specific slot
+                const hasSlotCoverage = () => {
+                    for (const s of existingShifts) {
+                        if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) {
+                            if (tsId) { if (s.timeslot_id === tsId) return true; }
+                            else { if (!s.timeslot_id) return true; }
+                        }
+                    }
+                    for (const s of suggestions) {
+                        if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) {
+                            if (tsId) { if (s.timeslot_id === tsId) return true; }
+                            else { if (!s.timeslot_id) return true; }
+                        }
+                    }
+                    return false;
+                };
+                
+                if (hasSlotCoverage()) continue;
 
                 const sortB1 = (a, b) => {
                     const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
@@ -700,17 +800,15 @@ export function generateSuggestions({
                     return getWeekly(a.id) - getWeekly(b.id);
                 };
 
-                // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
+                // Progressive filtering
                 let eligible = doctors
                     .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
 
-                // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
                 {
                     const nonDiscouraged = eligible.filter(d => !isDiscouraged(d.id, wp.id));
                     if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
                 }
 
-                // "Sollte": filter to doctors with preferred quals (fallback if none remain)
                 if (hasOptionalQualReq(wp)) {
                     const withPreferred = eligible.filter(d => hasOptionalQuals(d.id, wp.id));
                     if (withPreferred.length > 0) eligible = withPreferred;
@@ -719,27 +817,32 @@ export function generateSuggestions({
                 const candidates = eligible.sort(sortB1);
 
                 if (candidates.length > 0) {
-                    assign(candidates[0].id, wp.name);
+                    assign(candidates[0].id, wp.name, tsId);
                 }
             }
 
             // --- B.2: Fill to optimal_staff (round-robin) ---
-            // Priority: 1) Workplaces below min_staff first (critical)
-            //           2) Then workplaces below optimal but above min_staff
-            //           3) min_staff=0 workplaces are filled last
+            // Priority: 1) Slots below min_staff first (critical)
+            //           2) Then slots below optimal but above min_staff
+            //           3) min_staff=0 slots are filled last
             let changed = true;
             while (changed) {
                 changed = false;
 
-                const underFilled = availWps
-                    .filter(wp => (posCount[wp.name] || 0) < getOptimal(wp))
+                const underFilled = availSlots
+                    .filter(slot => {
+                        const sk = slotKey(slot.wp.name, slot.timeslotId);
+                        return (slotCount[sk] || 0) < getOptimal(slot.wp);
+                    })
                     .sort((a, b) => {
-                        const aCur = posCount[a.name] || 0;
-                        const bCur = posCount[b.name] || 0;
-                        const aMin = getMinStaff(a);
-                        const bMin = getMinStaff(b);
-                        const aOpt = getOptimal(a);
-                        const bOpt = getOptimal(b);
+                        const aSk = slotKey(a.wp.name, a.timeslotId);
+                        const bSk = slotKey(b.wp.name, b.timeslotId);
+                        const aCur = slotCount[aSk] || 0;
+                        const bCur = slotCount[bSk] || 0;
+                        const aMin = getMinStaff(a.wp);
+                        const bMin = getMinStaff(b.wp);
+                        const aOpt = getOptimal(a.wp);
+                        const bOpt = getOptimal(b.wp);
 
                         // Tier 0: below min_staff (critical shortage)
                         // Tier 1: at/above min_staff but below optimal (min_staff > 0)
@@ -753,13 +856,13 @@ export function generateSuggestions({
                         const bR = bCur / bOpt;
                         if (Math.abs(aR - bR) > 0.001) return aR - bR;
 
-                        // Prefer workplaces with higher optimal (more staff needed = more important)
+                        // Prefer slots with higher optimal (more staff needed = more important)
                         if (aOpt !== bOpt) return bOpt - aOpt;
 
-                        const aQ = hasQualReq(a) ? 0 : 1;
-                        const bQ = hasQualReq(b) ? 0 : 1;
+                        const aQ = hasQualReq(a.wp) ? 0 : 1;
+                        const bQ = hasQualReq(b.wp) ? 0 : 1;
                         if (aQ !== bQ) return aQ - bQ;
-                        return (a.order || 0) - (b.order || 0);
+                        return (a.wp.order || 0) - (b.wp.order || 0);
                     });
 
                 if (underFilled.length === 0) break;
@@ -767,7 +870,9 @@ export function generateSuggestions({
                 const unassigned = doctors.filter(d => !usedToday.has(d.id));
                 if (unassigned.length === 0) break;
 
-                const targetWp = underFilled[0];
+                const targetSlot = underFilled[0];
+                const targetWp = targetSlot.wp;
+                const targetTsId = targetSlot.timeslotId;
 
                 // Cost-based candidate sorting (replaces tier-based scoreCandidate/sortCandidates)
                 const costContextB = {
@@ -803,7 +908,7 @@ export function generateSuggestions({
 
                 if (eligible.length > 0 && costFn.assignmentCost(eligible[0].id, targetWp, dateStr, costContextB) < Infinity) {
                     const chosen = eligible[0];
-                    assign(chosen.id, targetWp.name);
+                    assign(chosen.id, targetWp.name, targetTsId);
 
                     const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
                     if (rotTargets.length > 0 && !rotTargets.includes(targetWp.name)) {
@@ -821,12 +926,16 @@ export function generateSuggestions({
                 const remaining = doctors.filter(d => !usedToday.has(d.id));
                 if (remaining.length === 0) break;
 
-                const options = availWps
-                    .filter(wp => allowsMultiple(wp))
-                    .map(wp => ({
-                        wp,
-                        fillRatio: (posCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
-                    }))
+                // Build slot-level options for overfill
+                const overSlots = expandToSlots(availWps.filter(wp => allowsMultiple(wp)));
+                const options = overSlots
+                    .map(slot => {
+                        const sk = slotKey(slot.wp.name, slot.timeslotId);
+                        return {
+                            ...slot,
+                            fillRatio: (slotCount[sk] || 0) / Math.max(getOptimal(slot.wp), 1),
+                        };
+                    })
                     .sort((a, b) => {
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
@@ -872,13 +981,13 @@ export function generateSuggestions({
                         const adjustedCost = cost + o.fillRatio * 2;
                         if (adjustedCost < bestCost) {
                             bestCost = adjustedCost;
-                            bestAssignment = { doc, wp: o.wp };
+                            bestAssignment = { doc, wp: o.wp, timeslotId: o.timeslotId };
                         }
                     }
                 }
 
                 if (bestAssignment && bestCost < Infinity) {
-                    assign(bestAssignment.doc.id, bestAssignment.wp.name);
+                    assign(bestAssignment.doc.id, bestAssignment.wp.name, bestAssignment.timeslotId);
                     const rotTargets = getActiveRotationTargets(bestAssignment.doc.id, dateStr);
                     if (rotTargets.length > 0 && !rotTargets.includes(bestAssignment.wp.name)) {
                         addDisplacement(bestAssignment.doc.id);
@@ -937,48 +1046,68 @@ export function generateSuggestions({
             // An unqualified doctor must NEVER be assigned alone to a Pflicht-workplace.
             const phaseC_blocked = new Set(serviceBlocked);
 
-            const phaseCPosCount = { ...posCount };
+            const phaseCSlotCount = { ...slotCount };
 
-            // Track which doctor is assigned to which Phase C workplaces (to prevent same-wp duplicates)
-            const phaseCAssignments = {}; // doctor_id -> Set<wpName>
+            // Track which doctor is assigned to which Phase C slots (to prevent same-slot duplicates)
+            const phaseCAssignments = {}; // doctor_id -> Set<slotKey>
 
-            const isAlreadyAssignedToWp = (docId, wpName) => {
-                if (phaseCAssignments[docId]?.has(wpName)) return true;
-                return existingShifts.some(s => s.date === dateStr && s.position === wpName && s.doctor_id === docId) ||
-                       suggestions.some(s => s.date === dateStr && s.position === wpName && s.doctor_id === docId);
+            const isAlreadyAssignedToSlot = (docId, wpName, tsId) => {
+                const sk = slotKey(wpName, tsId);
+                if (phaseCAssignments[docId]?.has(sk)) return true;
+                return existingShifts.some(s => {
+                    if (s.date !== dateStr || s.position !== wpName || s.doctor_id !== docId) return false;
+                    if (tsId) return s.timeslot_id === tsId;
+                    return !s.timeslot_id;
+                }) || suggestions.some(s => {
+                    if (s.date !== dateStr || s.position !== wpName || s.doctor_id !== docId) return false;
+                    if (tsId) return s.timeslot_id === tsId;
+                    return !s.timeslot_id;
+                });
             };
 
-            const assignC = (docId, wpName, wpHasQualReq) => {
-                suggestions.push({ date: dateStr, position: wpName, doctor_id: docId, isPreview: true });
-                phaseCPosCount[wpName] = (phaseCPosCount[wpName] || 0) + 1;
+            const assignC = (docId, wpName, wpHasQualReq, tsId = null) => {
+                const suggestion = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
+                if (tsId) suggestion.timeslot_id = tsId;
+                suggestions.push(suggestion);
+                const sk = slotKey(wpName, tsId);
+                phaseCSlotCount[sk] = (phaseCSlotCount[sk] || 0) + 1;
                 incWeekly(docId);
                 if (!phaseCAssignments[docId]) phaseCAssignments[docId] = new Set();
-                phaseCAssignments[docId].add(wpName);
+                phaseCAssignments[docId].add(sk);
                 // Only block for non-Pflicht workplaces; qualified doctors on Pflicht workplaces stay available
                 if (!wpHasQualReq) {
                     phaseC_blocked.add(docId);
                 }
             };
 
+            // Expand non-availability workplaces into timeslot-aware slots
+            const nonAvailSlots = expandToSlots(nonAvailWps);
+
             // C.1: Qualification coverage — assign qualified doctors first (prefer unblocked ones)
-            const qualWpsC = nonAvailWps
-                .filter(wp => hasQualReq(wp) && getMinStaff(wp) > 0)
+            const qualSlotsC = nonAvailSlots
+                .filter(slot => hasQualReq(slot.wp) && getMinStaff(slot.wp) > 0)
                 .sort((a, b) => {
                     // Sort by smallest available qualified pool first (most constrained first)
-                    const aPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, a.id) && isQualified(d.id, a.id)).length;
-                    const bPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, b.id) && isQualified(d.id, b.id)).length;
+                    const aPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, a.wp.id) && isQualified(d.id, a.wp.id)).length;
+                    const bPool = doctors.filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, b.wp.id) && isQualified(d.id, b.wp.id)).length;
                     return aPool - bPool;
                 });
 
-            for (const wp of qualWpsC) {
-                const hasCov = [...existingShifts, ...suggestions].some(
-                    s => s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)
-                );
+            for (const slot of qualSlotsC) {
+                const wp = slot.wp;
+                const tsId = slot.timeslotId;
+                
+                // Check coverage for this specific slot
+                const hasCov = [...existingShifts, ...suggestions].some(s => {
+                    if (s.date !== dateStr || s.position !== wp.name || !isQualified(s.doctor_id, wp.id)) return false;
+                    if (tsId) return s.timeslot_id === tsId;
+                    return !s.timeslot_id;
+                });
                 if (hasCov) continue;
 
                 const costContextC1 = {
                     usedToday: phaseC_blocked,
-                    posCount: phaseCPosCount,
+                    posCount: phaseCSlotCount,
                     displacementCount,
                     rotationImpactScore,
                     serviceAssignedToday,
@@ -991,7 +1120,7 @@ export function generateSuggestions({
                 let candidates = doctors
                     .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                  !isDiscouraged(d.id, wp.id) &&
-                                 isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
+                                 isQualified(d.id, wp.id) && !isAlreadyAssignedToSlot(d.id, wp.name, tsId));
                 if (hasOptionalQualReq(wp) && candidates.length > 0) {
                     const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                     if (withPref.length > 0) candidates = withPref;
@@ -1001,7 +1130,7 @@ export function generateSuggestions({
                     // Fallback: include discouraged doctors
                     candidates = doctors
                         .filter(d => !phaseC_blocked.has(d.id) && !isExcluded(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToSlot(d.id, wp.name, tsId));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
@@ -1013,7 +1142,7 @@ export function generateSuggestions({
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
                                      !isDiscouraged(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToSlot(d.id, wp.name, tsId));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
@@ -1023,7 +1152,7 @@ export function generateSuggestions({
                     // Fallback: include discouraged doctors in Mehrfachbesetzung
                     candidates = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, wp.id) &&
-                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToWp(d.id, wp.name));
+                                     isQualified(d.id, wp.id) && !isAlreadyAssignedToSlot(d.id, wp.name, tsId));
                     if (hasOptionalQualReq(wp) && candidates.length > 0) {
                         const withPref = candidates.filter(d => hasOptionalQuals(d.id, wp.id));
                         if (withPref.length > 0) candidates = withPref;
@@ -1038,32 +1167,37 @@ export function generateSuggestions({
                 });
 
                 if (candidates.length > 0) {
-                    assignC(candidates[0].id, wp.name, true);
+                    assignC(candidates[0].id, wp.name, true, tsId);
                 }
             }
 
-            // C.2: Fill to optimal_staff
+            // C.2: Fill to optimal_staff (slot-level)
             let changedC = true;
             while (changedC) {
                 changedC = false;
 
-                const underFilledC = nonAvailWps
-                    .filter(wp => (phaseCPosCount[wp.name] || 0) < getOptimal(wp))
+                const underFilledC = nonAvailSlots
+                    .filter(slot => {
+                        const sk = slotKey(slot.wp.name, slot.timeslotId);
+                        return (phaseCSlotCount[sk] || 0) < getOptimal(slot.wp);
+                    })
                     .sort((a, b) => {
-                        const aR = (phaseCPosCount[a.name] || 0) / getOptimal(a);
-                        const bR = (phaseCPosCount[b.name] || 0) / getOptimal(b);
+                        const aR = (phaseCSlotCount[slotKey(a.wp.name, a.timeslotId)] || 0) / getOptimal(a.wp);
+                        const bR = (phaseCSlotCount[slotKey(b.wp.name, b.timeslotId)] || 0) / getOptimal(b.wp);
                         if (Math.abs(aR - bR) > 0.001) return aR - bR;
-                        return (a.order || 0) - (b.order || 0);
+                        return (a.wp.order || 0) - (b.wp.order || 0);
                     });
 
                 if (underFilledC.length === 0) break;
 
-                const targetWpC = underFilledC[0];
+                const targetSlotC = underFilledC[0];
+                const targetWpC = targetSlotC.wp;
+                const targetTsIdC = targetSlotC.timeslotId;
                 const targetHasQualReq = hasQualReq(targetWpC);
 
                 const costContextC2 = {
                     usedToday: phaseC_blocked,
-                    posCount: phaseCPosCount,
+                    posCount: phaseCSlotCount,
                     displacementCount,
                     rotationImpactScore,
                     serviceAssignedToday,
@@ -1073,23 +1207,19 @@ export function generateSuggestions({
 
                 if (targetHasQualReq) {
                     // Pflicht-workplace: ONLY qualified doctors allowed, and they can be reused
-                    // First try unblocked qualified with progressive filtering
                     let eligiblePflicht = doctors
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
                                      !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
-                                     !isAlreadyAssignedToWp(d.id, targetWpC.name));
-                    // "Sollte nicht": filter out discouraged (fallback)
+                                     !isAlreadyAssignedToSlot(d.id, targetWpC.name, targetTsIdC));
                     {
                         const nonDisc = eligiblePflicht.filter(d => !isDiscouraged(d.id, targetWpC.id));
                         if (nonDisc.length > 0) eligiblePflicht = nonDisc;
                     }
-                    // "Sollte": filter to doctors with preferred quals (fallback)
                     if (hasOptionalQualReq(targetWpC)) {
                         const withPref = eligiblePflicht.filter(d => hasOptionalQuals(d.id, targetWpC.id));
                         if (withPref.length > 0) eligiblePflicht = withPref;
                     }
 
-                    // Sort by cost function
                     eligiblePflicht.sort((a, b) => {
                         const costA = costFn.assignmentCost(a.id, targetWpC, dateStr, costContextC2);
                         const costB = costFn.assignmentCost(b.id, targetWpC, dateStr, costContextC2);
@@ -1101,7 +1231,7 @@ export function generateSuggestions({
                         let eligibleMehr = doctors
                             .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
                                          isQualified(d.id, targetWpC.id) &&
-                                         !isAlreadyAssignedToWp(d.id, targetWpC.name));
+                                         !isAlreadyAssignedToSlot(d.id, targetWpC.name, targetTsIdC));
                         {
                             const nonDisc = eligibleMehr.filter(d => !isDiscouraged(d.id, targetWpC.id));
                             if (nonDisc.length > 0) eligibleMehr = nonDisc;
@@ -1119,7 +1249,7 @@ export function generateSuggestions({
                     }
 
                     if (eligiblePflicht.length > 0) {
-                        assignC(eligiblePflicht[0].id, targetWpC.name, true);
+                        assignC(eligiblePflicht[0].id, targetWpC.name, true, targetTsIdC);
                         changedC = true;
                     }
                 } else {
@@ -1127,23 +1257,19 @@ export function generateSuggestions({
                     const availableC = doctors.filter(d => !phaseC_blocked.has(d.id));
                     if (availableC.length === 0) break;
 
-                    // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                     let eligibleC = availableC.filter(doc => !isExcluded(doc.id, targetWpC.id) &&
-                                                             !isAlreadyAssignedToWp(doc.id, targetWpC.name));
+                                                             !isAlreadyAssignedToSlot(doc.id, targetWpC.name, targetTsIdC));
 
-                    // "Sollte nicht": filter out discouraged (fallback)
                     {
                         const nonDiscouraged = eligibleC.filter(doc => !isDiscouraged(doc.id, targetWpC.id));
                         if (nonDiscouraged.length > 0) eligibleC = nonDiscouraged;
                     }
 
-                    // "Sollte": filter to doctors with preferred quals (fallback)
                     if (hasOptionalQualReq(targetWpC)) {
                         const withPreferred = eligibleC.filter(doc => hasOptionalQuals(doc.id, targetWpC.id));
                         if (withPreferred.length > 0) eligibleC = withPreferred;
                     }
 
-                    // Sort by cost function
                     eligibleC.sort((a, b) => {
                         const costA = costFn.assignmentCost(a.id, targetWpC, dateStr, costContextC2);
                         const costB = costFn.assignmentCost(b.id, targetWpC, dateStr, costContextC2);
@@ -1151,13 +1277,13 @@ export function generateSuggestions({
                     });
 
                     if (eligibleC.length > 0 && costFn.assignmentCost(eligibleC[0].id, targetWpC, dateStr, costContextC2) < Infinity) {
-                        assignC(eligibleC[0].id, targetWpC.name, false);
+                        assignC(eligibleC[0].id, targetWpC.name, false, targetTsIdC);
                         changedC = true;
                     }
                 }
             }
 
-            // C.3: Over-fill remaining into non-Pflicht workplaces
+            // C.3: Over-fill remaining into non-Pflicht workplaces (slot-level)
             let overChangedC = true;
             while (overChangedC) {
                 overChangedC = false;
@@ -1166,11 +1292,12 @@ export function generateSuggestions({
                 if (remainingC.length === 0) break;
 
                 // Only over-fill into allows_multiple workplaces without Pflichtbesetzung
-                const optionsC = nonAvailWps
-                    .filter(wp => allowsMultiple(wp) && !hasQualReq(wp))
-                    .map(wp => ({
-                        wp,
-                        fillRatio: (phaseCPosCount[wp.name] || 0) / Math.max(getOptimal(wp), 1),
+                const optionsC = nonAvailSlots
+                    .filter(slot => allowsMultiple(slot.wp) && !hasQualReq(slot.wp))
+                    .map(slot => ({
+                        wp: slot.wp,
+                        timeslotId: slot.timeslotId,
+                        fillRatio: (phaseCSlotCount[slotKey(slot.wp.name, slot.timeslotId)] || 0) / Math.max(getOptimal(slot.wp), 1),
                     }))
                     .sort((a, b) => {
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
@@ -1181,7 +1308,7 @@ export function generateSuggestions({
 
                 const costContextC3 = {
                     usedToday: phaseC_blocked,
-                    posCount: phaseCPosCount,
+                    posCount: phaseCSlotCount,
                     displacementCount,
                     rotationImpactScore,
                     serviceAssignedToday,
@@ -1189,14 +1316,13 @@ export function generateSuggestions({
                     phase: 'C',
                 };
 
-                // Find best (doctor, workplace) pair by cost
+                // Find best (doctor, workplace, timeslot) triple by cost
                 let bestAssignmentC = null;
                 let bestCostC = Infinity;
 
                 for (const docC of remainingC) {
-                    // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                     let eligibleC3 = optionsC.filter(o => !isExcluded(docC.id, o.wp.id) &&
-                                                           !isAlreadyAssignedToWp(docC.id, o.wp.name));
+                                                           !isAlreadyAssignedToSlot(docC.id, o.wp.name, o.timeslotId));
                     {
                         const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
                         if (nonDisc.length > 0) eligibleC3 = nonDisc;
@@ -1213,13 +1339,13 @@ export function generateSuggestions({
                         const adjustedCost = cost + o.fillRatio * 2;
                         if (adjustedCost < bestCostC) {
                             bestCostC = adjustedCost;
-                            bestAssignmentC = { doc: docC, wp: o.wp };
+                            bestAssignmentC = { doc: docC, wp: o.wp, timeslotId: o.timeslotId };
                         }
                     }
                 }
 
                 if (bestAssignmentC && bestCostC < Infinity) {
-                    assignC(bestAssignmentC.doc.id, bestAssignmentC.wp.name, false);
+                    assignC(bestAssignmentC.doc.id, bestAssignmentC.wp.name, false, bestAssignmentC.timeslotId);
                     overChangedC = true;
                 }
             }

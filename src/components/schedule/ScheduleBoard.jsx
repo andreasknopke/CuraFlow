@@ -2773,6 +2773,7 @@ export default function ScheduleBoard() {
         categoriesToFill: allCategories,  // always compute ALL
         systemSettings,
         wishes,
+        workplaceTimeslots,
       });
 
       // Filter results to only the selected categories (if not "all")
