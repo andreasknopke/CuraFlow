@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { db } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
 import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
+import { toast } from "sonner";
 
 // Fallback falls Rollen noch nicht geladen
 const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
@@ -26,6 +29,12 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   
   // Default-Rolle (letzte in der Liste, typischerweise niedrigste Priorität)
   const defaultRole = availableRoles[availableRoles.length - 1] || "Assistenzarzt";
+
+  // Liste aller existierenden Ärzte für Kürzel-Validierung
+  const { data: allDoctors = [] } = useQuery({
+    queryKey: ["doctors"],
+    queryFn: () => db.Doctor.list(),
+  });
 
   const [formData, setFormData] = useState(
     doctor || {
@@ -58,9 +67,28 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    
+    // Kürzel-Validierung: Prüfen ob bereits vergeben
+    const trimmedInitials = formData.initials?.trim();
+    if (!trimmedInitials) {
+      toast.error("Bitte geben Sie ein Kürzel ein");
+      return;
+    }
+    
+    // Prüfen ob Kürzel bereits existiert (außer beim aktuellen Arzt bei Bearbeitung)
+    const existingDoctor = allDoctors.find(
+      d => d.initials?.toLowerCase() === trimmedInitials.toLowerCase() && d.id !== doctor?.id
+    );
+    
+    if (existingDoctor) {
+      toast.error(`Das Kürzel "${trimmedInitials}" wird bereits von ${existingDoctor.name} verwendet. Bitte wählen Sie ein anderes Kürzel.`);
+      return;
+    }
+    
     // Ensure fte is a number, rounded to 2 decimal places
     const dataToSubmit = {
         ...formData,
+        initials: trimmedInitials,
         fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100
     };
     onSubmit(dataToSubmit);
