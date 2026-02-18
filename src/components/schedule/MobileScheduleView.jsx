@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { format, addDays, startOfWeek, isSameDay, isWeekend, isValid } from 'date-fns';
+import { useEffect, useState, useMemo } from 'react';
+import { format, addDays, startOfWeek, isSameDay, isSameWeek, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Calendar, User, Clock, MapPin } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -18,8 +18,22 @@ export default function MobileScheduleView({
     isPublicHoliday,
     isSchoolHoliday 
 }) {
-    const [selectedDay, setSelectedDay] = useState(currentDate);
+    const [selectedDay, setSelectedDay] = useState(() => {
+        const today = new Date();
+        return isSameWeek(today, currentDate, { weekStartsOn: 1 }) ? today : currentDate;
+    });
     const [viewTab, setViewTab] = useState('day'); // 'day' | 'week'
+
+    useEffect(() => {
+        setSelectedDay(prev => {
+            if (isSameWeek(prev, currentDate, { weekStartsOn: 1 })) {
+                return prev;
+            }
+
+            const today = new Date();
+            return isSameWeek(today, currentDate, { weekStartsOn: 1 }) ? today : currentDate;
+        });
+    }, [currentDate]);
 
     const weekDays = useMemo(() => {
         const start = startOfWeek(currentDate, { weekStartsOn: 1 });
