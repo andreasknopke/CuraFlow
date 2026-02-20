@@ -6,14 +6,14 @@
 
 - Mitarbeiter können **Dienstwünsche** für bestimmte Tage eintragen
 - Wünsche können sein: bestimmter Dienst gewünscht, frei gewünscht, Urlaub gewünscht
-- **Jahresübersicht** je Arzt (Kalenderansicht)
-- **Monatsübersicht** aller Ärzte
+- **Jahresübersicht** je Mitarbeiter (Kalenderansicht)
+- **Monatsübersicht** aller Mitarbeitenden
 - **Genehmigung/Ablehnung** durch Administratoren
 - **E-Mail-Erinnerungen** vor Deadline automatisch versandt
 - **Wunscherfüllungs-Statistik** (in Statistics-Feature auswertbar)
 - **Feiertags- und Schulferienanzeige** im Kalender
 - **Tabs je Dienst-Kategorie** (Dienste, Sonstiges etc.)
-- **Per-Arzt-Filter**: Nicht-Admins sehen nur eigene Wünsche
+- **Per-Mitarbeiter-Filter**: Nicht-Admins sehen nur eigene Wünsche
 
 ---
 
@@ -25,7 +25,7 @@
 |---|---|
 | `src/pages/WishList.jsx` | Hauptseite: State, Datenabfragen, Layout |
 | `src/components/wishlist/WishYearView.jsx` | Jahreskalender-Darstellung |
-| `src/components/wishlist/WishMonthOverview.jsx` | Monatsübersicht aller Ärzte |
+| `src/components/wishlist/WishMonthOverview.jsx` | Monatsübersicht aller Mitarbeitenden |
 | `src/components/wishlist/WishRequestDialog.jsx` | Dialog zum Eintragen/Bearbeiten eines Wunsches |
 | `src/components/wishlist/WishReminderStatus.jsx` | Anzeige Erinnerungs-Status |
 | `src/components/useHolidays.jsx` | Feiertags-Hook (shared mit Vacation, Schedule) |
@@ -38,7 +38,7 @@
 | Tabelle | Verwendung |
 |---|---|
 | `wish_requests` | Alle Wünsche (doctor_id, date, wish_type, status) |
-| `doctors` | Arztliste für Auswahl und Sortierung |
+| `doctors` | Mitarbeiterliste für Auswahl und Sortierung |
 | `workplaces` | Dienst-Kategorien für Tabs |
 | `system_settings` | Konfiguration (z.B. Wish-Deadline) |
 
@@ -51,7 +51,7 @@ WishList.jsx (State-Container)
 │   │   └── Kalender-Grid (12 Monate × 31 Tage)
 │   │       └── Klick → WishRequestDialog
 │   └── WishMonthOverview ← viewMode='month'
-│       └── Tabelle (Ärzte × Tage)
+│       └── Tabelle (Mitarbeitende × Tage)
 └── WishRequestDialog (Popup)
     ├── Wunsch-Typ auswählen
     ├── Dienst wählen (optional)
@@ -79,7 +79,7 @@ WishList.jsx (State-Container)
 setInterval(() => checkAndSendWishReminders(), 24 * 60 * 60 * 1000); // täglich
 ```
 
-Die Funktion prüft, ob Wunsch-Deadlines bald ablaufen, und versendet über Nodemailer E-Mails an Ärzte ohne eingetragene Wünsche.
+Die Funktion prüft, ob Wunsch-Deadlines bald ablaufen, und versendet über Nodemailer E-Mails an Mitarbeitende ohne eingetragene Wünsche.
 
 ---
 
@@ -109,7 +109,7 @@ Die `wish_requests`-Tabelle um ein `priority`-Feld erweitern (Migration), dann i
 ### T-WISH-01: Wunsch eintragen (Benutzer)
 
 ```
-Voraussetzung: Login als normaler Benutzer mit verknüpftem Arzt
+Voraussetzung: Login als normaler Benutzer mit verknüpftem Mitarbeiter
 Aktion: Auf ein Datum in der Jahresansicht klicken
 Erwartet:
   - WishRequestDialog öffnet sich
@@ -133,8 +133,8 @@ Erwartet:
 Voraussetzung: User A und User B haben Wünsche eingetragen
 Aktion: Login als User A
 Erwartet:
-  - Nur Wünsche von User As verknüpftem Arzt sichtbar
-  - Kein Dropdown zur Arzt-Auswahl vorhanden (oder deaktiviert)
+  - Nur Wünsche von User As verknüpftem Mitarbeiter sichtbar
+  - Kein Dropdown zur Mitarbeiter-Auswahl vorhanden (oder deaktiviert)
 ```
 
 ### T-WISH-04: Monatsübersicht
@@ -142,7 +142,7 @@ Erwartet:
 ```
 Aktion: Ansicht auf "Monat" umschalten
 Erwartet:
-  - Tabelle zeigt alle Ärzte × Tage des Monats
+  - Tabelle zeigt alle Mitarbeitenden × Tage des Monats
   - Wünsche farblich markiert (pending=gelb, approved=grün, rejected=rot)
 ```
 
@@ -159,7 +159,7 @@ Erwartet:
 ### T-WISH-06: Erinnerungs-E-Mail
 
 ```
-Voraussetzung: SMTP konfiguriert, Arzt ohne Wünsche für Deadline-Monat
+Voraussetzung: SMTP konfiguriert, Mitarbeiter ohne Wünsche für Deadline-Monat
 Aktion: checkAndSendWishReminders() manuell aufrufen
 Erwartet:
   - E-Mail an SMTP-Server gesendet

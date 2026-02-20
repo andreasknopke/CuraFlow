@@ -1,0 +1,415 @@
+{
+  "info": {
+    "_postman_id": "9f0f147e-7cf9-4af7-9d6e-c0f5a83f9f45",
+    "name": "CuraFlow API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Collection basierend auf docs/API.md"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwtToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "jwtToken", "value": "" },
+    { "key": "dbToken", "value": "" },
+    { "key": "tenantId", "value": "1" },
+    { "key": "userId", "value": "1" },
+    { "key": "doctorId", "value": "1" },
+    { "key": "entity", "value": "Doctor" },
+    { "key": "entityId", "value": "1" },
+    { "key": "year", "value": "2024" },
+    { "key": "month", "value": "3" },
+    { "key": "state", "value": "MV" },
+    { "key": "tokenId", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@test.de\",\n  \"password\": \"Test1234!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        },
+        {
+          "name": "Register",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"new.user@test.de\",\n  \"password\": \"Test1234!\",\n  \"full_name\": \"New User\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/register"
+          }
+        },
+        { "name": "Me", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me" } },
+        {
+          "name": "Update Me",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"full_name\": \"Max Mustermann\"\n}" },
+            "url": "{{baseUrl}}/api/auth/me"
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Test1234!\",\n  \"newPassword\": \"NeuTest1234!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/change-password"
+          }
+        },
+        {
+          "name": "Force Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"NeuTest1234!\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/force-change-password"
+          }
+        },
+        {
+          "name": "Change Email",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"max.new@test.de\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/change-email"
+          }
+        },
+        { "name": "My Tenants", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/my-tenants" } },
+        {
+          "name": "Activate Tenant",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/activate-tenant/{{tenantId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth Admin",
+      "item": [
+        { "name": "List Users", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/users" } },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"user\",\n  \"is_active\": true\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Deactivate User",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/auth/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Reset User Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"password\": \"Temp1234!\"\n}" },
+            "url": "{{baseUrl}}/api/auth/users/{{userId}}/reset-password"
+          }
+        }
+      ]
+    },
+    {
+      "name": "DB Proxy",
+      "item": [
+        {
+          "name": "List Entity",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }],
+            "url": "{{baseUrl}}/api/db/{{entity}}"
+          }
+        },
+        {
+          "name": "Get Entity by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }],
+            "url": "{{baseUrl}}/api/db/{{entity}}/{{entityId}}"
+          }
+        },
+        {
+          "name": "Create Entity",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Beispiel\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/{{entity}}"
+          }
+        },
+        {
+          "name": "Update Entity",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aktualisiert\"\n}"
+            },
+            "url": "{{baseUrl}}/api/db/{{entity}}/{{entityId}}"
+          }
+        },
+        {
+          "name": "Delete Entity",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }],
+            "url": "{{baseUrl}}/api/db/{{entity}}/{{entityId}}"
+          }
+        },
+        {
+          "name": "Filter Entity",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-DB-Token", "value": "{{dbToken}}", "disabled": true }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"filter\": {\n    \"date\": { \"$gte\": \"2024-01-01\", \"$lte\": \"2024-01-31\" }\n  },\n  \"orderBy\": \"date\",\n  \"limit\": 500\n}"
+            },
+            "url": "{{baseUrl}}/api/db/{{entity}}/filter"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Schedule",
+      "item": [
+        {
+          "name": "Generate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"year\": {{year}},\n  \"month\": {{month}},\n  \"rules\": {\n    \"maxShiftsPerDoctor\": 8,\n    \"respectWishes\": true,\n    \"respectVacations\": true\n  }\n}"
+            },
+            "url": "{{baseUrl}}/api/schedule/generate"
+          }
+        },
+        {
+          "name": "Export Excel",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"year\": {{year}},\n  \"month\": {{month}}\n}" },
+            "url": "{{baseUrl}}/api/schedule/export-excel"
+          }
+        },
+        {
+          "name": "Send Emails",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"year\": {{year}},\n  \"month\": {{month}}\n}" },
+            "url": "{{baseUrl}}/api/schedule/send-emails"
+          }
+        },
+        {
+          "name": "Export PDF",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"year\": {{year}},\n  \"month\": {{month}}\n}" },
+            "url": "{{baseUrl}}/api/schedule/export-pdf"
+          }
+        },
+        {
+          "name": "Get Month",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/schedule/{{year}}/{{month}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff",
+      "item": [
+        { "name": "Get Doctors", "request": { "method": "GET", "url": "{{baseUrl}}/api/staff/doctors" } },
+        { "name": "Get Staffing Plan", "request": { "method": "GET", "url": "{{baseUrl}}/api/staff/staffing-plan" } },
+        {
+          "name": "Create Staffing Plan Entry",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctor_id\": {{doctorId}},\n  \"year\": {{year}},\n  \"month\": {{month}},\n  \"vk_amount\": 1.0\n}"
+            },
+            "url": "{{baseUrl}}/api/staff/staffing-plan"
+          }
+        },
+        {
+          "name": "Get Availability",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/staff/availability/{{doctorId}}/{{year}}/{{month}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Holidays",
+      "item": [
+        {
+          "name": "Get Holidays",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "url": "{{baseUrl}}/api/holidays/{{state}}/{{year}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Calendar",
+      "item": [
+        {
+          "name": "Sync Calendar",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctorId\": {{doctorId}}\n}"
+            },
+            "url": "{{baseUrl}}/api/calendar/sync"
+          }
+        },
+        {
+          "name": "Export ICS",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/calendar/export/{{doctorId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Voice",
+      "item": [
+        {
+          "name": "Transcribe",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audioBase64\": \"<BASE64_AUDIO>\"\n}"
+            },
+            "url": "{{baseUrl}}/api/voice/transcribe"
+          }
+        },
+        {
+          "name": "Command",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Plane CT für Montag\"\n}"
+            },
+            "url": "{{baseUrl}}/api/voice/command"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        { "name": "Logs", "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/logs" } },
+        { "name": "DB Backup", "request": { "method": "POST", "url": "{{baseUrl}}/api/admin/db/backup" } },
+        { "name": "DB Migrate", "request": { "method": "POST", "url": "{{baseUrl}}/api/admin/db/migrate" } },
+        { "name": "List Tokens", "request": { "method": "GET", "url": "{{baseUrl}}/api/admin/tokens" } },
+        {
+          "name": "Create Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tenant A\",\n  \"host\": \"localhost\",\n  \"port\": 3306,\n  \"database\": \"curaflow_dev\",\n  \"user\": \"curaflow\",\n  \"password\": \"secret\"\n}"
+            },
+            "url": "{{baseUrl}}/api/admin/tokens"
+          }
+        },
+        {
+          "name": "Delete Token",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/api/admin/tokens/{{tokenId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Atomic",
+      "item": [
+        {
+          "name": "Batch",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"operations\": [\n    { \"type\": \"create\", \"entity\": \"ShiftEntry\", \"data\": { \"doctor_id\": {{doctorId}}, \"date\": \"2024-03-11\", \"workplace\": \"CT\", \"section\": \"Dienste\" } },\n    { \"type\": \"update\", \"entity\": \"ShiftEntry\", \"id\": 43, \"data\": { \"workplace\": \"MRT\" } },\n    { \"type\": \"delete\", \"entity\": \"ShiftEntry\", \"id\": 42 }\n  ]\n}"
+            },
+            "url": "{{baseUrl}}/api/atomic/batch"
+          }
+        }
+      ]
+    }
+  ]
+}

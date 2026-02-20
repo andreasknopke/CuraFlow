@@ -9,7 +9,7 @@ CuraFlow verwendet **MySQL 8** als einzigen Datenspeicher. Alle Tabellen liegen 
 | Tabelle | Beschreibung |
 |---|---|
 | `app_users` | Systembenutzer (Login, Rollen, Einstellungen) |
-| `doctors` | Ärzte/Mitarbeiter (Stammdaten) |
+| `doctors` | Mitarbeitende (Stammdaten) |
 | `workplaces` | Arbeitsbereiche (CT, MRT, Dienste etc.) |
 | `shift_entries` | Dienstplan-Einträge |
 | `wish_requests` | Dienstwünsche der Mitarbeiter |
@@ -65,13 +65,13 @@ CREATE TABLE app_users (
 
 ### `doctors`
 
-Ärzte und Mitarbeiter. Zentrale Entität, auf die sich `shift_entries`, `wish_requests` etc. beziehen.
+Mitarbeitende. Zentrale Entität, auf die sich `shift_entries`, `wish_requests` etc. beziehen.
 
 ```sql
 CREATE TABLE doctors (
   id              INT AUTO_INCREMENT PRIMARY KEY,
   name            VARCHAR(255) NOT NULL,
-  role            VARCHAR(100),     -- z.B. 'Chefarzt', 'Oberarzt', 'Assistenzarzt'
+  role            VARCHAR(100),     -- z.B. 'Teamleitung', 'Senior', 'Junior'
   color           VARCHAR(50),      -- Hex-Farbe für Dienstplan-Darstellung
   `order`         INT DEFAULT 0,    -- Anzeigereihenfolge
   is_active       TINYINT(1) DEFAULT 1,
@@ -122,7 +122,7 @@ CREATE TABLE shift_entries (
   end_time        TIME,               -- Optional: Zeitfenster-Ende
   timeslot_id     INT,                -- FK → workplace_timeslots.id
   note            TEXT,               -- Freitext-Notiz
-  is_free_text    TINYINT(1) DEFAULT 0, -- Freitext-Zelle statt Arztname
+  is_free_text    TINYINT(1) DEFAULT 0, -- Freitext-Zelle statt Mitarbeitername
   free_text_value VARCHAR(500),
   created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_date (date),
@@ -137,7 +137,7 @@ CREATE TABLE shift_entries (
 
 ### `wish_requests`
 
-Dienstwünsche von Ärzten (Wunschliste-Feature).
+Dienstwünsche von Mitarbeitenden (Wunschliste-Feature).
 
 ```sql
 CREATE TABLE wish_requests (
@@ -160,7 +160,7 @@ CREATE TABLE wish_requests (
 
 ### `staffing_plan_entries`
 
-Stellenplan: VK-Anteile (Vollkraft) je Arzt und Monat.
+Stellenplan: VK-Anteile (Vollkraft) je Mitarbeiter und Monat.
 
 ```sql
 CREATE TABLE staffing_plan_entries (
@@ -191,7 +191,7 @@ CREATE TABLE system_settings (
 ```
 
 Wichtige Keys in `system_settings`:
-- `max_doctors_per_shift` – Maximale Ärzte pro Dienst
+- `max_doctors_per_shift` – Maximale Mitarbeitende pro Dienst
 - `default_shift_hours` – Standard-Schichtdauer
 - `wish_reminder_days` – Tage vor Deadline für Wunsch-Erinnerung
 

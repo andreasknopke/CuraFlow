@@ -161,7 +161,7 @@ Nach dem Start:
 
 1. Browser öffnen: `http://localhost:5173`
 2. Login mit dem angelegten Admin-Account
-3. Im Admin-Bereich (`/Admin`) weitere Benutzer und Ärzte anlegen
+3. Im Admin-Bereich (`/Admin`) weitere Benutzer und Mitarbeitende anlegen
 
 ---
 

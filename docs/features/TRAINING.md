@@ -9,7 +9,7 @@
 | Datei | Funktion |
 |---|---|
 | `src/pages/Training.jsx` | Seiten-Einstiegspunkt (~699 Zeilen) |
-| `src/components/training/TrainingOverview.jsx` | Übersicht aller Ärzte × Modalitäten |
+| `src/components/training/TrainingOverview.jsx` | Übersicht aller Mitarbeitenden × Modalitäten |
 | `src/components/training/TransferToSchedulerDialog.jsx` | Übernahme in den Dienstplan |
 | `src/components/vacation/DoctorYearView.jsx` | Jahresansicht (geteilt mit Vacation) |
 
@@ -23,14 +23,14 @@
 
 Vollständige Szenarien: [VACATION.md – Weiterbildung](./VACATION.md#test-szenarien--weiterbildung)
 
-### T-TRG-03: Übersicht aller Ärzte
+### T-TRG-03: Übersicht aller Mitarbeitenden
 
 ```
 Aktion: Ansicht auf "Übersicht" umschalten
 Erwartet:
-  - Tabelle: Ärzte × Monate
+  - Tabelle: Mitarbeitende × Monate
   - Weiterbildungstage (CT, MRT etc.) farblich markiert
-  - Summen je Arzt und je Modalität sichtbar
+  - Summen je Mitarbeiter und je Modalität sichtbar
 ```
 
 ### T-TRG-04: Modalitäten dynamisch erweitern

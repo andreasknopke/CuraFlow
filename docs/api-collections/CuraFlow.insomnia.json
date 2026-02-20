@@ -1,0 +1,518 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-02-20T00:00:00.000Z",
+  "__export_source": "github-copilot-gpt-5.3-codex",
+  "resources": [
+    {
+      "_id": "wrk_curaflow_api",
+      "_type": "workspace",
+      "name": "CuraFlow API",
+      "description": "Insomnia Export basierend auf docs/API.md"
+    },
+    {
+      "_id": "env_curaflow_base",
+      "_type": "environment",
+      "parentId": "wrk_curaflow_api",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:3000",
+        "jwt_token": "",
+        "db_token": "",
+        "tenant_id": "1",
+        "user_id": "1",
+        "doctor_id": "1",
+        "entity": "Doctor",
+        "entity_id": "1",
+        "year": "2024",
+        "month": "3",
+        "state": "MV",
+        "token_id": "1"
+      }
+    },
+
+    { "_id": "fld_auth", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Auth" },
+    {
+      "_id": "req_login",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/login",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": { "mimeType": "application/json", "text": "{\n  \"email\": \"admin@test.de\",\n  \"password\": \"Test1234!\"\n}" }
+    },
+    {
+      "_id": "req_register",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Register",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/register",
+      "headers": [{ "name": "Content-Type", "value": "application/json" }],
+      "body": { "mimeType": "application/json", "text": "{\n  \"email\": \"new.user@test.de\",\n  \"password\": \"Test1234!\",\n  \"full_name\": \"New User\"\n}" }
+    },
+    {
+      "_id": "req_me",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Me",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/auth/me",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_update_me",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Update Me",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/api/auth/me",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"full_name\": \"Max Mustermann\"\n}" }
+    },
+    {
+      "_id": "req_change_pw",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Change Password",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/change-password",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"currentPassword\": \"Test1234!\",\n  \"newPassword\": \"NeuTest1234!\"\n}" }
+    },
+    {
+      "_id": "req_force_pw",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Force Change Password",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/force-change-password",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"password\": \"NeuTest1234!\"\n}" }
+    },
+    {
+      "_id": "req_change_email",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Change Email",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/change-email",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"email\": \"max.new@test.de\"\n}" }
+    },
+    {
+      "_id": "req_my_tenants",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "My Tenants",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/auth/my-tenants",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_activate_tenant",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Activate Tenant",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/activate-tenant/{{ _.tenant_id }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+
+    { "_id": "fld_auth_admin", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Auth Admin" },
+    {
+      "_id": "req_users",
+      "_type": "request",
+      "parentId": "fld_auth_admin",
+      "name": "List Users",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/auth/users",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_update_user",
+      "_type": "request",
+      "parentId": "fld_auth_admin",
+      "name": "Update User",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/api/auth/users/{{ _.user_id }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"role\": \"user\",\n  \"is_active\": true\n}" }
+    },
+    {
+      "_id": "req_delete_user",
+      "_type": "request",
+      "parentId": "fld_auth_admin",
+      "name": "Deactivate User",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/api/auth/users/{{ _.user_id }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_reset_user_pw",
+      "_type": "request",
+      "parentId": "fld_auth_admin",
+      "name": "Reset User Password",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/auth/users/{{ _.user_id }}/reset-password",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"password\": \"Temp1234!\"\n}" }
+    },
+
+    { "_id": "fld_db", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "DB Proxy" },
+    {
+      "_id": "req_db_list",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "List Entity",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" }
+      ]
+    },
+    {
+      "_id": "req_db_get",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "Get Entity by ID",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}/{{ _.entity_id }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" }
+      ]
+    },
+    {
+      "_id": "req_db_create",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "Create Entity",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"name\": \"Beispiel\"\n}" }
+    },
+    {
+      "_id": "req_db_update",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "Update Entity",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}/{{ _.entity_id }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"name\": \"Aktualisiert\"\n}" }
+    },
+    {
+      "_id": "req_db_delete",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "Delete Entity",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}/{{ _.entity_id }}",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" }
+      ]
+    },
+    {
+      "_id": "req_db_filter",
+      "_type": "request",
+      "parentId": "fld_db",
+      "name": "Filter Entity",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/db/{{ _.entity }}/filter",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "X-DB-Token", "value": "{{ _.db_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"filter\": {\n    \"date\": { \"$gte\": \"2024-01-01\", \"$lte\": \"2024-01-31\" }\n  },\n  \"orderBy\": \"date\",\n  \"limit\": 500\n}"
+      }
+    },
+
+    { "_id": "fld_schedule", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Schedule" },
+    {
+      "_id": "req_schedule_generate",
+      "_type": "request",
+      "parentId": "fld_schedule",
+      "name": "Generate",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/schedule/generate",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"year\": {{ _.year }},\n  \"month\": {{ _.month }},\n  \"rules\": {\n    \"maxShiftsPerDoctor\": 8,\n    \"respectWishes\": true,\n    \"respectVacations\": true\n  }\n}"
+      }
+    },
+    {
+      "_id": "req_schedule_excel",
+      "_type": "request",
+      "parentId": "fld_schedule",
+      "name": "Export Excel",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/schedule/export-excel",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"year\": {{ _.year }},\n  \"month\": {{ _.month }}\n}" }
+    },
+    {
+      "_id": "req_schedule_mails",
+      "_type": "request",
+      "parentId": "fld_schedule",
+      "name": "Send Emails",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/schedule/send-emails",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"year\": {{ _.year }},\n  \"month\": {{ _.month }}\n}" }
+    },
+    {
+      "_id": "req_schedule_pdf",
+      "_type": "request",
+      "parentId": "fld_schedule",
+      "name": "Export PDF",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/schedule/export-pdf",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"year\": {{ _.year }},\n  \"month\": {{ _.month }}\n}" }
+    },
+    {
+      "_id": "req_schedule_get",
+      "_type": "request",
+      "parentId": "fld_schedule",
+      "name": "Get Month",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/schedule/{{ _.year }}/{{ _.month }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+
+    { "_id": "fld_staff", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Staff" },
+    {
+      "_id": "req_staff_doctors",
+      "_type": "request",
+      "parentId": "fld_staff",
+      "name": "Get Doctors",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/staff/doctors",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_staff_plan_get",
+      "_type": "request",
+      "parentId": "fld_staff",
+      "name": "Get Staffing Plan",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/staff/staffing-plan",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_staff_plan_post",
+      "_type": "request",
+      "parentId": "fld_staff",
+      "name": "Create Staffing Plan Entry",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/staff/staffing-plan",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"doctor_id\": {{ _.doctor_id }},\n  \"year\": {{ _.year }},\n  \"month\": {{ _.month }},\n  \"vk_amount\": 1.0\n}"
+      }
+    },
+    {
+      "_id": "req_staff_availability",
+      "_type": "request",
+      "parentId": "fld_staff",
+      "name": "Get Availability",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/staff/availability/{{ _.doctor_id }}/{{ _.year }}/{{ _.month }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+
+    { "_id": "fld_holidays", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Holidays" },
+    {
+      "_id": "req_holidays",
+      "_type": "request",
+      "parentId": "fld_holidays",
+      "name": "Get Holidays",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/holidays/{{ _.state }}/{{ _.year }}"
+    },
+
+    { "_id": "fld_calendar", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Calendar" },
+    {
+      "_id": "req_calendar_sync",
+      "_type": "request",
+      "parentId": "fld_calendar",
+      "name": "Sync Calendar",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/calendar/sync",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"doctorId\": {{ _.doctor_id }}\n}" }
+    },
+    {
+      "_id": "req_calendar_export",
+      "_type": "request",
+      "parentId": "fld_calendar",
+      "name": "Export ICS",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/calendar/export/{{ _.doctor_id }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+
+    { "_id": "fld_voice", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Voice" },
+    {
+      "_id": "req_voice_transcribe",
+      "_type": "request",
+      "parentId": "fld_voice",
+      "name": "Transcribe",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/voice/transcribe",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"audioBase64\": \"<BASE64_AUDIO>\"\n}" }
+    },
+    {
+      "_id": "req_voice_command",
+      "_type": "request",
+      "parentId": "fld_voice",
+      "name": "Command",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/voice/command",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": { "mimeType": "application/json", "text": "{\n  \"text\": \"Plane CT für Montag\"\n}" }
+    },
+
+    { "_id": "fld_admin", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Admin" },
+    {
+      "_id": "req_admin_logs",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Logs",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/admin/logs",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_admin_backup",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "DB Backup",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/admin/db/backup",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_admin_migrate",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "DB Migrate",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/admin/db/migrate",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_admin_tokens_get",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "List Tokens",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/admin/tokens",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+    {
+      "_id": "req_admin_tokens_post",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Create Token",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/admin/tokens",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Tenant A\",\n  \"host\": \"localhost\",\n  \"port\": 3306,\n  \"database\": \"curaflow_dev\",\n  \"user\": \"curaflow\",\n  \"password\": \"secret\"\n}"
+      }
+    },
+    {
+      "_id": "req_admin_tokens_delete",
+      "_type": "request",
+      "parentId": "fld_admin",
+      "name": "Delete Token",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/api/admin/tokens/{{ _.token_id }}",
+      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
+    },
+
+    { "_id": "fld_atomic", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Atomic" },
+    {
+      "_id": "req_atomic_batch",
+      "_type": "request",
+      "parentId": "fld_atomic",
+      "name": "Batch",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/atomic/batch",
+      "headers": [
+        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
+        { "name": "Content-Type", "value": "application/json" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"operations\": [\n    { \"type\": \"create\", \"entity\": \"ShiftEntry\", \"data\": { \"doctor_id\": {{ _.doctor_id }}, \"date\": \"2024-03-11\", \"workplace\": \"CT\", \"section\": \"Dienste\" } },\n    { \"type\": \"update\", \"entity\": \"ShiftEntry\", \"id\": 43, \"data\": { \"workplace\": \"MRT\" } },\n    { \"type\": \"delete\", \"entity\": \"ShiftEntry\", \"id\": 42 }\n  ]\n}"
+      }
+    }
+  ]
+}

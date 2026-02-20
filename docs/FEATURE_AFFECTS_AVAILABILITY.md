@@ -82,7 +82,7 @@ Das Feature ist vollständig abwärtskompatibel:
 
 **Datei:** `src/components/schedule/ScheduleBoard.jsx`
 
-Die Berechnung der "verfügbaren" Ärzte berücksichtigt das neue Feld:
+Die Berechnung der "verfügbaren" Mitarbeitenden berücksichtigt das neue Feld:
 
 ```javascript
 const blockingShifts = currentWeekShifts.filter(s => {

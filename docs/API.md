@@ -134,7 +134,7 @@ Content-Type: application/json
 
 | Methode | Endpunkt | Beschreibung |
 |---|---|---|
-| GET | `/api/staff/doctors` | Alle Ärzte abrufen |
+| GET | `/api/staff/doctors` | Alle Mitarbeitenden abrufen |
 | GET | `/api/staff/staffing-plan` | Stellenplan abrufen |
 | POST | `/api/staff/staffing-plan` | Stellenplan-Eintrag speichern |
 | GET | `/api/staff/availability/:doctorId/:year/:month` | Verfügbarkeit berechnen |
@@ -160,7 +160,7 @@ Gibt öffentliche Feiertage u. Schulferien für Mecklenburg-Vorpommern zurück.
 | Methode | Endpunkt | Beschreibung |
 |---|---|---|
 | POST | `/api/calendar/sync` | Mit externem Kalender synchronisieren |
-| GET | `/api/calendar/export/:doctorId` | ICS-Datei für Arzt exportieren |
+| GET | `/api/calendar/export/:doctorId` | ICS-Datei für Mitarbeiter exportieren |
 
 ---
 

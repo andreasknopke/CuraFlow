@@ -4,10 +4,10 @@
 
 ## Funktionsumfang
 
-- **Dashboard-Übersicht**: Dienst-Verteilung pro Arzt als Balkendiagramm
+- **Dashboard-Übersicht**: Dienst-Verteilung pro Mitarbeiter als Balkendiagramm
 - **Monats-/Jahres-Filter**: Auswertung für beliebigen Zeitraum
 - **Arbeitszeit-Report**: Auswertung nach Arbeitszeit-Kategorien
-- **Wunscherfüllungs-Report**: Erfüllungsquote der Dienstwünsche je Arzt
+- **Wunscherfüllungs-Report**: Erfüllungsquote der Dienstwünsche je Mitarbeiter
 - **Compliance-Report**: Einhaltung von Dienst-Limits und -Regeln
 - **Tabellen-Ansicht**: Alle Daten als sortierbare Tabelle
 - **CSV-Export** der Statistikdaten
@@ -38,7 +38,7 @@
 
 ```
 Statistics.jsx
-├── useQuery(['doctors'])        → alle Ärzte
+├── useQuery(['doctors'])        → alle Mitarbeitenden
 ├── useQuery(['workplaces'])     → alle Arbeitsbereiche
 ├── useQuery(['shifts', year])   → alle shift_entries des Jahres (max 5000)
 └── useQuery(['wishes', year])   → alle wish_requests des Jahres
@@ -53,7 +53,7 @@ Statistics.jsx
 ### Aggregierungslogik (Beispiel)
 
 ```javascript
-// Statistics.jsx – Dienste pro Arzt und Monat aggregieren
+// Statistics.jsx – Dienste pro Mitarbeiter und Monat aggregieren
 const aggregated = useMemo(() => {
   const result = {};
   for (const shift of shifts) {
@@ -74,7 +74,7 @@ const aggregated = useMemo(() => {
 Voraussetzung: Dienstplan-Einträge für 2024 vorhanden
 Aktion: Jahr 2024 auswählen
 Erwartet:
-  - Balkendiagramm zeigt Dienst-Verteilung je Arzt
+  - Balkendiagramm zeigt Dienst-Verteilung je Mitarbeiter
   - Alle 12 Monate dargestellt
 ```
 
@@ -93,7 +93,7 @@ Erwartet:
 Voraussetzung: wish_requests mit status='approved'/'rejected' vorhanden
 Aktion: Tab "Wunscherfüllung" auswählen
 Erwartet:
-  - Tabelle zeigt: Arzt, Anzahl Wünsche, Erfüllungsquote (%)
+  - Tabelle zeigt: Mitarbeiter, Anzahl Wünsche, Erfüllungsquote (%)
 ```
 
 ### T-STAT-04: Zugriff ohne Admin-Rolle
@@ -131,7 +131,7 @@ Erwartet:
 - Passworte zurücksetzen
 - Benutzerrollen ändern
 - Benutzer (de-)aktivieren
-- Arzt-Verknüpfung setzen
+- Mitarbeiter-Verknüpfung setzen
 
 **Tab: Einstellungen**
 - Systemweite Einstellungen (Key-Value)
@@ -180,13 +180,13 @@ Erwartet:
   - Neuer Benutzer kann sich einloggen
 ```
 
-### T-ADM-02: Arzt-Verknüpfung setzen
+### T-ADM-02: Mitarbeiter-Verknüpfung setzen
 
 ```
-Aktion: Benutzer bearbeiten → Doctor-Dropdown → Arzt auswählen
+Aktion: Benutzer bearbeiten → Doctor-Dropdown → Mitarbeiter auswählen
 Erwartet:
   - app_users.doctor_id gesetzt
-  - Benutzer sieht in WishList/Vacation nur eigenen Arzt
+  - Benutzer sieht in WishList/Vacation nur eigenen Mitarbeiter
 ```
 
 ### T-ADM-03: Teamrolle konfigurieren
@@ -195,7 +195,7 @@ Erwartet:
 Aktion: Einstellungen → Teamrollen → Neue Rolle "Stipendiat" mit Priorität 50
 Erwartet:
   - team_roles Eintrag erstellt
-  - Ärzte können dieser Rolle zugeordnet werden
+  - Mitarbeitende können dieser Rolle zugeordnet werden
   - Sortierung im Dienstplan entsprechend Priorität
 ```
 

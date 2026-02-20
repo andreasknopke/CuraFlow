@@ -7,15 +7,15 @@
 ## Funktionsumfang
 
 - **Wochen- und Tagesansicht** des Dienstplans
-- **Drag-and-Drop**: Ärzte auf Dienste ziehen, Einträge verschieben
+- **Drag-and-Drop**: Mitarbeitende auf Dienste ziehen, Einträge verschieben
 - **Abschnitte**: Anwesenheiten, Abwesenheiten, Dienste, Rotationen, Sonstiges
 - **Arbeitsbereiche** (Zeilen im Plan): CT, MRT, Angiographie, Vordergrund, Hintergrund etc.
-- **Freitext-Zellen**: Benutzerdefinierte Texte statt Arztname
+- **Freitext-Zellen**: Benutzerdefinierte Texte statt Mitarbeitername
 - **Undo/Redo**: Bis zu 10 Schritte zurücknehmbar
 - **Feiertags-Anzeige**: Feiertage und Schulferien farblich hervorgehoben
 - **Besetzungsvalidierung**: Warnung bei Unter-/Überbesetzung
-- **Schichtlimit-Check**: Warnung bei zu vielen Diensten je Arzt
-- **Seitenleiste**: Arztliste zum Ziehen auf den Plan
+- **Schichtlimit-Check**: Warnung bei zu vielen Diensten je Mitarbeiter
+- **Seitenleiste**: Mitarbeiterliste zum Ziehen auf den Plan
 - **KI-Generierung**: Automatische Planvorschläge (Wand-Icon)
 - **Excel-Export**: Dienstplan als XLSX herunterladen
 - **Mobile Ansicht**: Vereinfachte Darstellung für Smartphones
@@ -31,7 +31,7 @@
 |---|---|
 | `src/pages/Schedule.jsx` | Seiten-Einstiegspunkt, minimal |
 | `src/components/schedule/ScheduleBoard.jsx` | **Hauptkomponente** (~3400 Zeilen), enthält gesamte Logik |
-| `src/components/schedule/DraggableDoctor.jsx` | Drag-Source: Arzt in Seitenleiste |
+| `src/components/schedule/DraggableDoctor.jsx` | Drag-Source: Mitarbeiter in Seitenleiste |
 | `src/components/schedule/DraggableShift.jsx` | Drag-Source: Bereits eingeplanter Dienst |
 | `src/components/schedule/DroppableCell.jsx` | Drop-Target: Zelle im Plan |
 | `src/components/schedule/FreeTextCell.jsx` | Freitext-Zellen Rendering |
@@ -54,7 +54,7 @@
 ### Datenfluss beim Drag-and-Drop
 
 ```
-1. Benutzer zieht Arzt → DroppableCell (onDragEnd-Callback)
+1. Benutzer zieht Mitarbeiter → DroppableCell (onDragEnd-Callback)
 2. ScheduleBoard.handleDragEnd() wertet source/destination aus
 3. Validierung: useShiftValidation() prüft Konflikte
 4. Falls Konflikt: OverrideConfirmDialog anzeigen
@@ -77,7 +77,7 @@ const STATIC_SECTIONS = {
 };
 ```
 
-Ärzte der Kategorie "Rotationen" werden ebenfalls dynamisch aus `workplaces` geladen.
+Mitarbeitende der Kategorie "Rotationen" werden ebenfalls dynamisch aus `workplaces` geladen.
 
 ---
 
@@ -105,7 +105,7 @@ const STATIC_SECTIONS = {
 In `src/components/validation/useShiftValidation.js`:
 
 ```javascript
-// Neue Regel: Arzt nicht an Feiertagen einplanen
+// Neue Regel: Mitarbeiter nicht an Feiertagen einplanen
 if (isHoliday(date) && shift.workplace !== 'Frei') {
   return {
     hasConflict: true,
@@ -122,25 +122,25 @@ Das Backend-Endpoint `POST /api/schedule/generate` nimmt Regeln entgegen und gen
 
 ## Test-Szenarien
 
-### T-SCH-01: Arzt per Drag-and-Drop einplanen
+### T-SCH-01: Mitarbeiter per Drag-and-Drop einplanen
 
 ```
-Voraussetzung: Min. 1 Arzt und 1 Arbeitsbereich existieren
-Aktion: Arzt aus Seitenleiste auf CT-Zelle (Montag) ziehen
+Voraussetzung: Min. 1 Mitarbeiter und 1 Arbeitsbereich existieren
+Aktion: Mitarbeiter aus Seitenleiste auf CT-Zelle (Montag) ziehen
 Erwartet: 
   - Neuer shift_entry in DB (doctor_id, date=Montag, workplace='CT')
-  - Arzt erscheint in CT-Zelle
+  - Mitarbeiter erscheint in CT-Zelle
   - Toast: "Dienst eingetragen"
 ```
 
 ### T-SCH-02: Validierungswarnung bei Doppelbelegung
 
 ```
-Voraussetzung: Arzt A bereits am Montag in CT
-Aktion: Arzt A erneut auf andere Zelle (Montag) ziehen
+Voraussetzung: Mitarbeiter A bereits am Montag in CT
+Aktion: Mitarbeiter A erneut auf andere Zelle (Montag) ziehen
 Erwartet:
   - OverrideConfirmDialog erscheint
-  - Warnung: "Arzt A hat bereits einen Eintrag an diesem Tag"
+  - Warnung: "Mitarbeiter A hat bereits einen Eintrag an diesem Tag"
   - "Trotzdem speichern" → speichert
   - "Abbrechen" → kein Eintrag
 ```
@@ -187,7 +187,7 @@ Erwartet:
 Aktion: Export-Button klicken → "Excel herunterladen"
 Erwartet:
   - XLSX-Datei wird heruntergeladen
-  - Enthält aktuellen Wochenplan mit Arzt-Dienst-Zuordnungen
+  - Enthält aktuellen Wochenplan mit Mitarbeiter-Dienst-Zuordnungen
 ```
 
 ### T-SCH-08: Feiertags-Hervorhebung

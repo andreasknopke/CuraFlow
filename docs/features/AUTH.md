@@ -11,7 +11,7 @@
 - **Multi-Tenant-Betrieb**: Mehrere MySQL-Datenbanken über einen Backend-Server
 - **Mandanten-Auswahl** nach Login (für Multi-Tenant-Benutzer)
 - **"Passwort muss geändert werden"**-Flag für Reset-Flow
-- **Arzt-Verknüpfung**: Jeder Benutzer kann mit einem Arzt-Datensatz verknüpft sein
+- **Mitarbeiter-Verknüpfung**: Jeder Benutzer kann mit einem Mitarbeiter-Datensatz verknüpft sein
 
 ---
 
@@ -49,7 +49,7 @@ Login-Seite                  AuthProvider             Backend
 ```json
 {
   "id": 1,
-  "email": "arzt@klinikum.de",
+  "email": "mitarbeiter@klinikum.de",
   "role": "admin",
   "iat": 1704067200,
   "exp": 1704153600   // 24h Gültigkeit

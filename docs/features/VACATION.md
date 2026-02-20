@@ -6,11 +6,11 @@
 
 ### Funktionsumfang
 
-- **Jahresansicht** je Arzt: alle Urlaubstage auf einen Blick
-- **Übersichtsansicht** aller Ärzte im Vergleich
+- **Jahresansicht** je Mitarbeiter: alle Urlaubstage auf einen Blick
+- **Übersichtsansicht** aller Mitarbeitenden im Vergleich
 - **Urlaubstage eintragen/löschen** direkt im Kalender
 - **Schulferien und Feiertage** integriert (Mecklenburg-Vorpommern)
-- **Konflikt-Erkennung**: Warnung bei gleichzeitigem Urlaub mehrerer Ärzte
+- **Konflikt-Erkennung**: Warnung bei gleichzeitigem Urlaub mehrerer Mitarbeitender
 - **Urlaubs-Simulation**: Auswirkungen einer Urlaubsperiode auf den Dienstplan berechnen
 - **Verfügbarkeits-Check**: Berücksichtigt Stellenplan (VK-Anteil)
 - **Automatische Dienstplan-Synchronisation**: Urlaube erscheinen als Abwesenheit im Dienstplan
@@ -21,7 +21,7 @@
 |---|---|
 | `src/pages/Vacation.jsx` | Hauptseite (~837 Zeilen), gesamte Logik |
 | `src/components/vacation/DoctorYearView.jsx` | Jahreskalender-Darstellung (shared mit Training) |
-| `src/components/vacation/VacationOverview.jsx` | Übersicht aller Ärzte |
+| `src/components/vacation/VacationOverview.jsx` | Übersicht aller Mitarbeitenden |
 | `src/components/vacation/ConflictDialog.jsx` | Konflikt-Erkennungs-Dialog |
 | `src/components/schedule/staffingUtils.jsx` | `isDoctorAvailable()` Hilfsfunktion |
 | `src/components/useHolidays.jsx` | Feiertags-Hook |
@@ -56,7 +56,7 @@ await db.ShiftEntry.create({
 
 ```javascript
 export function categorizeConflict(shift, allShifts, doctors) {
-  // Prüft: Zu viele Ärzte gleichzeitig im Urlaub?
+  // Prüft: Zu viele Mitarbeitende gleichzeitig im Urlaub?
   // Prüft: Dienste werden nicht besetzt?
   // Gibt: { severity: 'warning'|'error', message } zurück
 }
@@ -66,7 +66,7 @@ export function categorizeConflict(shift, allShifts, doctors) {
 
 Bevor Urlaub eingetragen wird, berechnet die Simulation:
 1. Welche Dienste müssten durch Urlaubsvertretung abgedeckt werden?
-2. Welche bestehenden Dienst-Einträge des Arztes werden gelöscht?
+2. Welche bestehenden Dienst-Einträge des Mitarbeiters werden gelöscht?
 
 ```javascript
 // Vacation.jsx
@@ -80,9 +80,9 @@ const [simulationData, setSimulationData] = useState(null);
 
 ### Funktionsumfang
 
-- **Weiterbildungsplan** je Arzt und Jahr (Jahresansicht)
+- **Weiterbildungsplan** je Mitarbeiter und Jahr (Jahresansicht)
 - **Modalitäten**: CT, MRT, Angiographie, Sonographie, Mammographie etc.
-- **Übersichts-Ansicht**: Alle Ärzte, alle Modalitäten
+- **Übersichts-Ansicht**: Alle Mitarbeitenden, alle Modalitäten
 - **Übertragung in Dienstplan**: Weiterbildungstage können direkt in Dienstplan übertragen werden
 - **Feiertags-Integration** (wie Urlaub)
 
@@ -91,7 +91,7 @@ const [simulationData, setSimulationData] = useState(null);
 | Datei | Funktion |
 |---|---|
 | `src/pages/Training.jsx` | Hauptseite |
-| `src/components/training/TrainingOverview.jsx` | Übersicht aller Ärzte |
+| `src/components/training/TrainingOverview.jsx` | Übersicht aller Mitarbeitenden |
 | `src/components/training/TransferToSchedulerDialog.jsx` | Dialog: → Dienstplan übertragen |
 | `src/components/vacation/DoctorYearView.jsx` | Jahreskalender (geteilt mit Vacation) |
 
@@ -118,10 +118,10 @@ Erwartet:
 ### T-VAC-02: Urlaubs-Konflikt erkennen
 
 ```
-Voraussetzung: 3 von 4 Ärzten haben gleichzeitig Urlaub
-Aktion: 4. Arzt für gleichen Zeitraum Urlaub eintragen
+Voraussetzung: 3 von 4 Mitarbeitenden haben gleichzeitig Urlaub
+Aktion: 4. Mitarbeiter für gleichen Zeitraum Urlaub eintragen
 Erwartet:
-  - ConflictDialog zeigt Warnung: "Alle Ärzte gleichzeitig im Urlaub"
+  - ConflictDialog zeigt Warnung: "Alle Mitarbeitenden gleichzeitig im Urlaub"
   - Benutzer kann "Trotzdem speichern" oder "Abbrechen"
 ```
 
@@ -130,7 +130,7 @@ Erwartet:
 ```
 Aktion: Ansicht auf "Übersicht" umschalten
 Erwartet:
-  - Alle Ärzte in Zeilen, Monate/Tage als Spalten
+  - Alle Mitarbeitenden in Zeilen, Monate/Tage als Spalten
   - Urlaube und Schulferien farblich differenziert
 ```
 

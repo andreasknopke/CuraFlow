@@ -35,12 +35,12 @@ VALUES
   ('user@test.de',  '$2a$10$...', 'user',  'Test User',  1),
   ('ro@test.de',    '$2a$10$...', 'readonly', 'Test RO', 1);
 
--- Testärzte
+-- Testmitarbeitende
 INSERT INTO doctors (name, role, `order`, is_active)
 VALUES
-  ('Dr. Müller',  'Oberarzt',     1, 1),
-  ('Dr. Schmidt', 'Assistenzarzt', 2, 1),
-  ('Dr. Weber',   'Facharzt',     3, 1);
+  ('Alex Müller',  'Senior',      1, 1),
+  ('Sam Schmidt',  'Junior',      2, 1),
+  ('Chris Weber',  'Teamleitung', 3, 1);
 
 -- Testarbeitsbereiche
 INSERT INTO workplaces (name, category, `order`, is_active)
@@ -78,7 +78,7 @@ TOKEN=$(curl -s -X POST http://localhost:3000/api/auth/login \
   -d '{"email":"admin@test.de","password":"Test1234!"}' | jq -r .token)
 ```
 
-### Ärzte abrufen
+### Mitarbeitende abrufen
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
