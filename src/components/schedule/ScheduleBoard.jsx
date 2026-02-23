@@ -163,7 +163,7 @@ export default function ScheduleBoard() {
   const currentYear = useMemo(() => new Date(currentDate).getFullYear(), [currentDate]);
   const { isPublicHoliday, isSchoolHoliday } = useHolidays(currentYear);
   
-  // User-specific section configuration
+    // Tenant-specific section configuration
   const { getSectionName, getSectionOrder } = useSectionConfig();
 
   const [collapsedSections, setCollapsedSections] = useState(() => {
@@ -3296,13 +3296,13 @@ export default function ScheduleBoard() {
                          </DropdownMenuItem>
                          <DropdownMenuSeparator />
                          <DropdownMenuItem onClick={() => handleAutoFill(['Rotationen'])}>
-                             Nur Rotationen
+                             Nur {getSectionName('Rotationen')}
                          </DropdownMenuItem>
                          <DropdownMenuItem onClick={() => handleAutoFill(['Dienste'])}>
-                             Nur Dienste
+                             Nur {getSectionName('Dienste')}
                          </DropdownMenuItem>
                          <DropdownMenuItem onClick={() => handleAutoFill(['Demonstrationen & Konsile'])}>
-                             Nur Demos & Konsile
+                             Nur {getSectionName('Demonstrationen & Konsile')}
                          </DropdownMenuItem>
                          {(() => {
                              const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');

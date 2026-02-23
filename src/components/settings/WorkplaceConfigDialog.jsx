@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import TimeslotEditor from '@/components/admin/TimeslotEditor';
+import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 
 // Service type constants
 const SERVICE_TYPES = [
@@ -43,6 +44,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     const [showAddCategory, setShowAddCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState("");
     const [newCategoryAllowsMultiple, setNewCategoryAllowsMultiple] = useState(true);
+    const { getSectionName } = useSectionConfig();
 
     const { data: workplaces = [], isLoading } = useQuery({
         queryKey: ['workplaces'],
@@ -260,7 +262,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
-                <Button variant="outline" size="icon" title="Rotationen & Demos konfigurieren">
+                <Button variant="outline" size="icon" title={`${getSectionName('Rotationen')} & ${getSectionName('Demonstrationen & Konsile')} konfigurieren`}>
                     <Settings className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
@@ -274,9 +276,9 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                         <ScrollArea className="flex-1">
                             <TabsList className="inline-flex h-10 items-center justify-start rounded-md bg-muted p-1 text-muted-foreground w-auto">
                                 {/* Default categories */}
-                                <TabsTrigger value="Rotationen" className="text-xs">Rotationen</TabsTrigger>
-                                <TabsTrigger value="Demonstrationen & Konsile" className="text-xs">Demos</TabsTrigger>
-                                <TabsTrigger value="Dienste" className="text-xs">Dienste</TabsTrigger>
+                                <TabsTrigger value="Rotationen" className="text-xs">{getSectionName('Rotationen')}</TabsTrigger>
+                                <TabsTrigger value="Demonstrationen & Konsile" className="text-xs">{getSectionName('Demonstrationen & Konsile')}</TabsTrigger>
+                                <TabsTrigger value="Dienste" className="text-xs">{getSectionName('Dienste')}</TabsTrigger>
                                 
                                 {/* Custom categories */}
                                 {customCategoryNames.map(cat => (

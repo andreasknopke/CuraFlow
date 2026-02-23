@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Settings, ShieldCheck, Mail } from 'lucide-react';
+import SectionConfigDialog from '@/components/settings/SectionConfigDialog';
 
 export default function AdminSettings() {
     const queryClient = useQueryClient();
@@ -243,6 +244,24 @@ export default function AdminSettings() {
                     <p className="text-xs text-slate-500 italic">
                         Wünsche ohne Genehmigungspflicht werden automatisch mit Status "Genehmigt" erstellt.
                     </p>
+                </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
+                <div className="flex items-center gap-3 mb-3">
+                    <div className="p-2 bg-indigo-100 rounded-lg">
+                        <Settings className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-slate-900">Bereichs-Captions</h3>
+                        <p className="text-sm text-slate-500">Mandantenspezifische Bezeichnungen für Bereiche und Standard-Arbeitsbereiche.</p>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between border rounded-lg p-4 bg-slate-50">
+                    <p className="text-sm text-slate-600">
+                        Passen Sie Begriffe wie Abwesenheiten, Anwesenheiten, Dienste, Rotationen oder Demos für den aktiven Mandanten an.
+                    </p>
+                    <SectionConfigDialog />
                 </div>
             </div>
         </div>

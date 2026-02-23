@@ -17,14 +17,18 @@ import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifica
 import { AlertTriangle } from 'lucide-react';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
+import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 
 const STATIC_SERVICE_TYPES = [];
 
 export default function ServiceStaffingPage() {
     const { isReadOnly, user } = useAuth();
+    const { getSectionName } = useSectionConfig();
     const { isPublicHoliday } = useHolidays();
     const [currentDate, setCurrentDate] = useState(new Date());
     const queryClient = useQueryClient();
+    const servicesCaption = getSectionName('Dienste');
+    const servicesPageTitle = servicesCaption === 'Dienste' ? 'Dienstbesetzung' : servicesCaption;
 
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],
@@ -180,7 +184,7 @@ export default function ServiceStaffingPage() {
             }
             
             if (!message) {
-                message = "Keine Emails versendet. (Keine Dienste im gewählten Zeitraum gefunden?)";
+                message = `Keine Emails versendet. (Keine ${servicesCaption} im gewählten Zeitraum gefunden?)`;
             }
             
             alert(message);
@@ -380,7 +384,7 @@ export default function ServiceStaffingPage() {
         <div className="container mx-auto max-w-5xl p-2 sm:p-4 print:p-0 print:max-w-none">
             {/* Header - Hidden on Print */}
             <div className="flex flex-col gap-4 mb-4 sm:mb-6 print:hidden">
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">Dienstbesetzung</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">{servicesPageTitle}</h1>
                 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
                      <div className="flex items-center justify-center bg-white p-1 rounded-lg shadow-sm border border-slate-200">
@@ -404,7 +408,7 @@ export default function ServiceStaffingPage() {
                                 <WorkplaceConfigDialog defaultTab="Dienste" />
                                 <Button 
                                     onClick={() => {
-                                        if (window.confirm(`Möchten Sie wirklich an alle Mitarbeiter ihre Dienste für ${format(currentDate, 'MMMM yyyy', { locale: de })} per Email senden?`)) {
+                                        if (window.confirm(`Möchten Sie wirklich an alle Mitarbeiter ihre ${servicesCaption} für ${format(currentDate, 'MMMM yyyy', { locale: de })} per Email senden?`)) {
                                             sendNotificationsMutation.mutate();
                                         }
                                     }} 
@@ -413,7 +417,7 @@ export default function ServiceStaffingPage() {
                                     size="sm"
                                 >
                                     <Send className="w-4 h-4" />
-                                    <span className="hidden sm:inline">{sendNotificationsMutation.isPending ? "Sende..." : "Dienste senden"}</span>
+                                    <span className="hidden sm:inline">{sendNotificationsMutation.isPending ? "Sende..." : `${servicesCaption} senden`}</span>
                                     <span className="sm:hidden">{sendNotificationsMutation.isPending ? "..." : "Senden"}</span>
                                 </Button>
                             </>
@@ -425,7 +429,7 @@ export default function ServiceStaffingPage() {
             {/* Print Header */}
             <div className="hidden print:block mb-4">
                 <h1 className="text-2xl font-bold text-center">
-                    Dienstbesetzung - {format(currentDate, 'MMMM yyyy', { locale: de })}
+                    {servicesPageTitle} - {format(currentDate, 'MMMM yyyy', { locale: de })}
                 </h1>
             </div>
 

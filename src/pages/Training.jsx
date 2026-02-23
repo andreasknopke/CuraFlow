@@ -13,15 +13,22 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useHolidays } from '@/components/useHolidays';
 import { useToast } from '@/components/ui/use-toast';
 import { getDefaultRotationColor } from '@/components/settings/ColorSettingsDialog';
+import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
+    const { getSectionName } = useSectionConfig();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [activeModality, setActiveModality] = useState('CT');
   const [rangeStart, setRangeStart] = useState(null);
   const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview'
   const [showTransferDialog, setShowTransferDialog] = useState(false);
+    const rotationsCaption = getSectionName('Rotationen');
+    const rotationsPageTitle = rotationsCaption === 'Rotationen' ? 'Rotationsplaner' : rotationsCaption;
+    const rotationsSubtitle = rotationsCaption === 'Rotationen'
+            ? 'Rotationsplanung für das Team'
+            : `${rotationsCaption} für das Team`;
   
   const queryClient = useQueryClient();
   const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
@@ -553,8 +560,8 @@ export default function TrainingPage() {
     <div className="container mx-auto max-w-7xl">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Rotationsplaner</h1>
-          <p className="text-slate-500 mt-1">Rotationsplanung für das Team</p>
+                    <h1 className="text-3xl font-bold text-slate-900">{rotationsPageTitle}</h1>
+                    <p className="text-slate-500 mt-1">{rotationsSubtitle}</p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -563,7 +570,7 @@ export default function TrainingPage() {
                     variant="outline" 
                     onClick={() => setShowTransferDialog(true)}
                     className="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                    title={viewMode === 'single' && selectedDoctor ? `Rotationen von ${selectedDoctor.name} in den Wochenplan übertragen` : 'Alle Rotationen in den Wochenplan übertragen'}
+                    title={viewMode === 'single' && selectedDoctor ? `${rotationsCaption} von ${selectedDoctor.name} in den Wochenplan übertragen` : `Alle ${rotationsCaption} in den Wochenplan übertragen`}
                 >
                     <ArrowRightToLine className="w-4 h-4" />
                     {viewMode === 'single' && selectedDoctor ? `${selectedDoctor.name} übertragen` : 'In Wochenplan übertragen'}
@@ -646,7 +653,7 @@ export default function TrainingPage() {
               ))
           ) : (
               <div className="text-slate-500 italic py-2">
-                  Keine Rotationen konfiguriert. Bitte fügen Sie in den Einstellungen unter "Arbeitsplätze" Einträge in der Kategorie "Rotationen" hinzu.
+                  Keine {rotationsCaption} konfiguriert. Bitte fügen Sie in den Einstellungen unter "Arbeitsplätze" Einträge in der Kategorie "{rotationsCaption}" hinzu.
               </div>
           )}
       </div>

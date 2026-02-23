@@ -5,9 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Settings2, GripVertical, RotateCcw } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { api, db, base44 } from "@/api/client";
-import { useAuth } from '@/components/AuthProvider';
-import { useQuery } from '@tanstack/react-query';
+import { db } from "@/api/client";
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 const DEFAULT_SECTIONS = [
@@ -19,21 +18,32 @@ const DEFAULT_SECTIONS = [
     { id: 'misc', defaultName: 'Sonstiges', order: 5 }
 ];
 
-export function useSectionConfig() {
-    const { user } = useAuth();
-    const [config, setConfig] = useState(null);
+const SECTION_CONFIG_KEY = 'section_config';
 
-    useEffect(() => {
-        if (user?.section_config) {
-            try {
-                setConfig(JSON.parse(user.section_config));
-            } catch {
-                setConfig(null);
-            }
-        } else {
-            setConfig(null);
+const parseSectionConfig = (rawValue) => {
+    if (!rawValue) return null;
+    try {
+        const parsed = JSON.parse(rawValue);
+        if (parsed && Array.isArray(parsed.sections)) {
+            return parsed;
         }
-    }, [user?.section_config]);
+    } catch {
+        return null;
+    }
+    return null;
+};
+
+export function useSectionConfig() {
+    const { data: systemSettings = [] } = useQuery({
+        queryKey: ['systemSettings'],
+        queryFn: () => db.SystemSetting.list(),
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const config = useMemo(() => {
+        const savedSetting = systemSettings.find(s => s.key === SECTION_CONFIG_KEY);
+        return parseSectionConfig(savedSetting?.value);
+    }, [systemSettings]);
 
     const getSectionName = (defaultName) => {
         if (!config) return defaultName;
@@ -43,7 +53,7 @@ export function useSectionConfig() {
 
     const getSectionOrder = () => {
         if (!config || !config.sections) return DEFAULT_SECTIONS.map(s => s.defaultName);
-        return config.sections
+        return [...config.sections]
             .sort((a, b) => a.order - b.order)
             .map(s => s.defaultName);
     };
@@ -52,7 +62,7 @@ export function useSectionConfig() {
 }
 
 export default function SectionConfigDialog() {
-    const { user, refreshUser } = useAuth();
+    const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
     const [sections, setSections] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
@@ -70,6 +80,19 @@ export default function SectionConfigDialog() {
         staleTime: 5 * 60 * 1000,
     });
 
+    const updateSettingMutation = useMutation({
+        mutationFn: async ({ key, value }) => {
+            const existing = systemSettings.find(s => s.key === key);
+            if (existing) {
+                return db.SystemSetting.update(existing.id, { value });
+            }
+            return db.SystemSetting.create({ key, value });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries(['systemSettings']);
+        }
+    });
+
     // Alle verfügbaren Sections berechnen (Default + Custom), leere dynamische ausblenden
     const allAvailableSections = useMemo(() => {
         // Custom-Kategorien aus den SystemSettings laden
@@ -85,7 +108,7 @@ export default function SectionConfigDialog() {
         const categoriesWithWorkplaces = new Set(workplaces.map(w => w.category));
 
         // Dynamische Kategorien (die nur angezeigt werden wenn Workplaces vorhanden)
-        const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategories];
+        const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategories.map(c => c.name || c)];
 
         // Statische Sections die immer angezeigt werden
         const staticSections = DEFAULT_SECTIONS.filter(s => 
@@ -114,36 +137,36 @@ export default function SectionConfigDialog() {
         return [...staticSections, ...dynamicSections];
     }, [systemSettings, workplaces]);
 
+    const savedConfig = useMemo(() => {
+        const savedSetting = systemSettings.find(s => s.key === SECTION_CONFIG_KEY);
+        return parseSectionConfig(savedSetting?.value);
+    }, [systemSettings]);
+
     useEffect(() => {
         if (open) {
-            // Load from user config or build from available sections
-            if (user?.section_config) {
-                try {
-                    const parsed = JSON.parse(user.section_config);
-                    if (parsed.sections) {
-                        // Merge: Behalte gespeicherte Einträge, füge neue hinzu, entferne nicht mehr relevante
-                        const savedSections = parsed.sections;
-                        const merged = [];
-                        
-                        // Zuerst: Gespeicherte Sections in ihrer Reihenfolge, die noch existieren
-                        for (const saved of savedSections) {
-                            const stillExists = allAvailableSections.find(a => a.defaultName === saved.defaultName);
-                            if (stillExists) {
-                                merged.push({ ...stillExists, ...saved, order: merged.length });
-                            }
-                        }
-                        
-                        // Dann: Neue Sections die noch nicht in der Config sind
-                        for (const available of allAvailableSections) {
-                            if (!merged.find(m => m.defaultName === available.defaultName)) {
-                                merged.push({ ...available, customName: '', order: merged.length });
-                            }
-                        }
-                        
-                        setSections(merged);
-                        return;
+            // Load from tenant config or build from available sections
+            if (savedConfig?.sections) {
+                // Merge: Behalte gespeicherte Einträge, füge neue hinzu, entferne nicht mehr relevante
+                const savedSections = savedConfig.sections;
+                const merged = [];
+                
+                // Zuerst: Gespeicherte Sections in ihrer Reihenfolge, die noch existieren
+                for (const saved of savedSections) {
+                    const stillExists = allAvailableSections.find(a => a.defaultName === saved.defaultName);
+                    if (stillExists) {
+                        merged.push({ ...stillExists, ...saved, order: merged.length });
                     }
-                } catch {}
+                }
+                
+                // Dann: Neue Sections die noch nicht in der Config sind
+                for (const available of allAvailableSections) {
+                    if (!merged.find(m => m.defaultName === available.defaultName)) {
+                        merged.push({ ...available, customName: '', order: merged.length });
+                    }
+                }
+                
+                setSections(merged);
+                return;
             }
             // Default
             setSections(allAvailableSections.map((s, idx) => ({
@@ -152,7 +175,7 @@ export default function SectionConfigDialog() {
                 order: idx
             })));
         }
-    }, [open, user, allAvailableSections]);
+    }, [open, savedConfig, allAvailableSections]);
 
     const handleDragEnd = (result) => {
         if (!result.destination) return;
@@ -188,8 +211,7 @@ export default function SectionConfigDialog() {
         setIsSaving(true);
         try {
             const configData = JSON.stringify({ sections });
-            await api.updateMe({ data: { section_config: configData } });
-            if (refreshUser) await refreshUser();
+            await updateSettingMutation.mutateAsync({ key: SECTION_CONFIG_KEY, value: configData });
             toast.success('Konfiguration gespeichert');
             setOpen(false);
         } catch (e) {

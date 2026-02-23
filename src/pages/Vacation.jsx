@@ -20,15 +20,19 @@ import ConflictDialog, { categorizeConflict } from '@/components/vacation/Confli
 import { useHolidays } from '@/components/useHolidays';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
+  const { getSectionName } = useSectionConfig();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview'
   const [simulationData, setSimulationData] = useState(null); // { newShifts, shiftsToDelete, shiftsToDeleteIds }
   const [showSimulationDialog, setShowSimulationDialog] = useState(false);
+  const absencesCaption = getSectionName('Abwesenheiten');
+  const availableCaption = getSectionName('Anwesenheiten');
   
   const queryClient = useQueryClient();
 
@@ -576,8 +580,8 @@ export default function VacationPage() {
     <div className="container mx-auto max-w-7xl">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Abwesenheiten</h1>
-          <p className="text-slate-500 mt-1">Übersicht der Abwesenheiten und Verfügbarkeiten</p>
+          <h1 className="text-3xl font-bold text-slate-900">{absencesCaption}</h1>
+          <p className="text-slate-500 mt-1">Übersicht der {absencesCaption} und {availableCaption}</p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -586,7 +590,7 @@ export default function VacationPage() {
                     <Button 
                         variant="outline" 
                         onClick={handleSyncAbsences}
-                        title="Abwesenheiten aus Stellenplan übernehmen (KO, EZ, 0.0 FTE, Vertragsende)"
+                      title={`${absencesCaption} aus Stellenplan übernehmen (KO, EZ, 0.0 FTE, Vertragsende)`}
                     >
                         <Wand2 className="w-4 h-4 mr-2" />
                         Stellenplan-Sync
@@ -746,7 +750,7 @@ export default function VacationPage() {
                   <div className="text-center">
                     <Info className="w-12 h-12 mx-auto mb-4 text-slate-300" />
                     <p className="text-lg font-medium">Keine Änderungen erforderlich</p>
-                    <p className="text-sm">Alle Abwesenheiten aus dem Stellenplan sind bereits eingetragen.</p>
+                    <p className="text-sm">Alle {absencesCaption} aus dem Stellenplan sind bereits eingetragen.</p>
                   </div>
                 </div>
               ) : (
