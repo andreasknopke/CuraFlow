@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles, ExternalLink, X } from 'lucide-react';
 import { toast } from "sonner";
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -75,6 +75,21 @@ const SECTION_CONFIG = {
         headerColor: "bg-amber-100 text-amber-900",
         rowColor: "bg-amber-50/30",
     }
+};
+
+const SECTION_TABS_KEY = 'schedule_section_tabs';
+
+const parseSectionTabs = (rawValue) => {
+    if (!rawValue) return [];
+    try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed)) {
+            return parsed.filter(t => t?.id && t?.sectionTitle);
+        }
+    } catch {
+        return [];
+    }
+    return [];
 };
 
 export default function ScheduleBoard() {
@@ -291,6 +306,7 @@ export default function ScheduleBoard() {
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
+    const [activeSectionTabId, setActiveSectionTabId] = useState('main');
 
   const queryClient = useQueryClient();
 
@@ -390,6 +406,22 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
+    const updateSystemSettingMutation = useMutation({
+        mutationFn: async ({ key, value }) => {
+            const existing = systemSettings.find(s => s.key === key);
+            if (existing) {
+                return db.SystemSetting.update(existing.id, { value });
+            }
+            return db.SystemSetting.create({ key, value });
+        },
+        onSuccess: () => queryClient.invalidateQueries(['systemSettings'])
+    });
+
+    const sectionTabs = useMemo(() => {
+        const tabSetting = systemSettings.find(s => s.key === SECTION_TABS_KEY);
+        return parseSectionTabs(tabSetting?.value);
+    }, [systemSettings]);
+
   // Stellenplan-Einträge für die Sidebar-Filterung laden
   const staffingYear = useMemo(() => currentDate ? new Date(currentDate).getFullYear() : new Date().getFullYear(), [currentDate]);
   const { data: staffingPlanEntries = [] } = useQuery({
@@ -399,7 +431,7 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
-  const sections = useMemo(() => {
+    const allSections = useMemo(() => {
       // Get custom categories from settings
       const customCategoriesSetting = systemSettings.find(s => s.key === 'workplace_categories');
       let customCategories = [];
@@ -587,6 +619,68 @@ export default function ScheduleBoard() {
 
       return result;
   }, [workplaces, workplaceTimeslots, allShifts, previewShifts, getSectionOrder, systemSettings]);
+
+    const availableSectionTabs = useMemo(() => {
+        const knownTitles = new Set(allSections.map(s => s.title));
+        return sectionTabs.filter(tab => knownTitles.has(tab.sectionTitle));
+    }, [sectionTabs, allSections]);
+
+    useEffect(() => {
+        if (activeSectionTabId === 'main') return;
+        if (!availableSectionTabs.find(t => t.id === activeSectionTabId)) {
+            setActiveSectionTabId('main');
+        }
+    }, [activeSectionTabId, availableSectionTabs]);
+
+    const sections = useMemo(() => {
+        if (activeSectionTabId === 'main') {
+            const assigned = new Set(availableSectionTabs.map(t => t.sectionTitle));
+            return allSections.filter(section => !assigned.has(section.title));
+        }
+        const activeTab = availableSectionTabs.find(t => t.id === activeSectionTabId);
+        if (!activeTab) return allSections;
+        return allSections.filter(section => section.title === activeTab.sectionTitle);
+    }, [activeSectionTabId, availableSectionTabs, allSections]);
+
+    const persistSectionTabs = async (tabs) => {
+        await updateSystemSettingMutation.mutateAsync({
+            key: SECTION_TABS_KEY,
+            value: JSON.stringify(tabs)
+        });
+    };
+
+    const handleMoveSectionToTab = async (sectionTitle) => {
+        const existing = availableSectionTabs.find(t => t.sectionTitle === sectionTitle);
+        if (existing) {
+            setActiveSectionTabId(existing.id);
+            return;
+        }
+        const slug = sectionTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        const newTab = {
+            id: `tab_${Date.now()}_${slug}`,
+            sectionTitle
+        };
+        const nextTabs = [...sectionTabs, newTab];
+        try {
+            await persistSectionTabs(nextTabs);
+            setActiveSectionTabId(newTab.id);
+            toast.success(`"${getSectionName(sectionTitle)}" wurde in einen eigenen Reiter verschoben`);
+        } catch (error) {
+            toast.error('Reiter konnte nicht gespeichert werden');
+        }
+    };
+
+    const handleCloseSectionTab = async (tabId) => {
+        const nextTabs = sectionTabs.filter(t => t.id !== tabId);
+        try {
+            await persistSectionTabs(nextTabs);
+            if (activeSectionTabId === tabId) {
+                setActiveSectionTabId('main');
+            }
+        } catch {
+            toast.error('Reiter konnte nicht entfernt werden');
+        }
+    };
 
   const { data: trainingRotations = [] } = useQuery({
     queryKey: ['trainingRotations'],
@@ -3435,6 +3529,38 @@ export default function ScheduleBoard() {
                 </div>
                 </div>
 
+                <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-200 flex items-center gap-2 overflow-x-auto">
+                    <button
+                        onClick={() => setActiveSectionTabId('main')}
+                        className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeSectionTabId === 'main' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                        Hauptplan
+                    </button>
+                    {availableSectionTabs.map(tab => {
+                        const isActive = activeSectionTabId === tab.id;
+                        return (
+                            <div
+                                key={tab.id}
+                                className={`flex items-center rounded-md border transition-colors ${isActive ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`}
+                            >
+                                <button
+                                    onClick={() => setActiveSectionTabId(tab.id)}
+                                    className={`px-3 py-1.5 text-sm font-medium whitespace-nowrap ${isActive ? 'text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                                >
+                                    {getSectionName(tab.sectionTitle)}
+                                </button>
+                                <button
+                                    onClick={() => handleCloseSectionTab(tab.id)}
+                                    className="px-2 py-1.5 text-slate-400 hover:text-red-500"
+                                    title="Reiter schließen"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+
                 <DragDropContext 
                   onBeforeCapture={handleBeforeCapture}
                   onDragStart={handleDragStart} 
@@ -3645,9 +3771,23 @@ export default function ScheduleBoard() {
                             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                             {getSectionName(section.title)}
                         </div>
-                        <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">
-                            {visibleRows.length}
-                        </span>
+                        <div className="flex items-center gap-2">
+                            {activeSectionTabId === 'main' && section.title !== 'Archiv / Unbekannt' && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleMoveSectionToTab(section.title);
+                                    }}
+                                    className="p-1 rounded hover:bg-white/40"
+                                    title="In eigenen Reiter verschieben"
+                                >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                            <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">
+                                {visibleRows.length}
+                            </span>
+                        </div>
                     </div>
                     
                     {!isCollapsed && visibleRows.map((rowObj, rIdx) => {
