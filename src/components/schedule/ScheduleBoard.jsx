@@ -78,6 +78,7 @@ const SECTION_CONFIG = {
 };
 
 const SECTION_TABS_KEY = 'schedule_section_tabs';
+const PINNED_SECTION_TITLE = 'Anwesenheiten';
 
 const parseSectionTabs = (rawValue) => {
     if (!rawValue) return [];
@@ -92,11 +93,32 @@ const parseSectionTabs = (rawValue) => {
     return [];
 };
 
+const parseDateFromQuery = (rawDate) => {
+        if (!rawDate) return null;
+        const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!match) return null;
+        const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+        return isValid(parsed) ? parsed : null;
+};
+
+const getInitialScheduleState = () => {
+        const params = new URLSearchParams(window.location.search);
+        const initialDate = parseDateFromQuery(params.get('date'));
+        const rawView = params.get('view');
+        const initialViewMode = rawView === 'day' ? 'day' : 'week';
+        return {
+                currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
+                viewMode: initialViewMode,
+                activeSectionTabId: params.get('sectionTab') || 'main'
+        };
+};
+
 export default function ScheduleBoard() {
+    const initialState = useMemo(() => getInitialScheduleState(), []);
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
-  const [currentDate, setCurrentDate] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
-  const [viewMode, setViewMode] = useState('week'); // 'week' | 'day'
+    const [currentDate, setCurrentDate] = useState(initialState.currentDate);
+    const [viewMode, setViewMode] = useState(initialState.viewMode); // 'week' | 'day'
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
@@ -306,7 +328,7 @@ export default function ScheduleBoard() {
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
-    const [activeSectionTabId, setActiveSectionTabId] = useState('main');
+    const [activeSectionTabId, setActiveSectionTabId] = useState(initialState.activeSectionTabId);
 
   const queryClient = useQueryClient();
 
@@ -622,7 +644,7 @@ export default function ScheduleBoard() {
 
     const availableSectionTabs = useMemo(() => {
         const knownTitles = new Set(allSections.map(s => s.title));
-        return sectionTabs.filter(tab => knownTitles.has(tab.sectionTitle));
+        return sectionTabs.filter(tab => knownTitles.has(tab.sectionTitle) && tab.sectionTitle !== PINNED_SECTION_TITLE);
     }, [sectionTabs, allSections]);
 
     useEffect(() => {
@@ -635,11 +657,15 @@ export default function ScheduleBoard() {
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
             const assigned = new Set(availableSectionTabs.map(t => t.sectionTitle));
-            return allSections.filter(section => !assigned.has(section.title));
+            return allSections.filter(section => section.title === PINNED_SECTION_TITLE || !assigned.has(section.title));
         }
         const activeTab = availableSectionTabs.find(t => t.id === activeSectionTabId);
         if (!activeTab) return allSections;
-        return allSections.filter(section => section.title === activeTab.sectionTitle);
+        const activeSection = allSections.find(section => section.title === activeTab.sectionTitle);
+        const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
+        if (!activeSection) return allSections;
+        if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
+        return [activeSection, pinnedSection];
     }, [activeSectionTabId, availableSectionTabs, allSections]);
 
     const persistSectionTabs = async (tabs) => {
@@ -650,6 +676,10 @@ export default function ScheduleBoard() {
     };
 
     const handleMoveSectionToTab = async (sectionTitle) => {
+        if (sectionTitle === PINNED_SECTION_TITLE) {
+            toast.info(`"${getSectionName(PINNED_SECTION_TITLE)}" bleibt immer im Hauptplan enthalten`);
+            return;
+        }
         const existing = availableSectionTabs.find(t => t.sectionTitle === sectionTitle);
         if (existing) {
             setActiveSectionTabId(existing.id);
@@ -679,6 +709,17 @@ export default function ScheduleBoard() {
             }
         } catch {
             toast.error('Reiter konnte nicht entfernt werden');
+        }
+    };
+
+    const handleOpenSectionTabInNewWindow = (tabId) => {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('sectionTab', tabId);
+        nextUrl.searchParams.set('view', viewMode);
+        nextUrl.searchParams.set('date', format(currentDate, 'yyyy-MM-dd'));
+        const openedWindow = window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+        if (!openedWindow) {
+            toast.error('Neues Fenster wurde vom Browser blockiert');
         }
     };
 
@@ -3551,6 +3592,13 @@ export default function ScheduleBoard() {
                                         {getSectionName(tab.sectionTitle)}
                                     </button>
                                     <button
+                                        onClick={() => handleOpenSectionTabInNewWindow(tab.id)}
+                                        className="px-2 py-1.5 text-slate-400 hover:text-indigo-600"
+                                        title="In separatem Fenster öffnen"
+                                    >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
                                         onClick={() => handleCloseSectionTab(tab.id)}
                                         className="px-2 py-1.5 text-slate-400 hover:text-red-500"
                                         title="Reiter schließen"
@@ -3774,7 +3822,7 @@ export default function ScheduleBoard() {
                             {getSectionName(section.title)}
                         </div>
                         <div className="flex items-center gap-2">
-                            {activeSectionTabId === 'main' && section.title !== 'Archiv / Unbekannt' && (
+                            {activeSectionTabId === 'main' && section.title !== 'Archiv / Unbekannt' && section.title !== PINNED_SECTION_TITLE && (
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
