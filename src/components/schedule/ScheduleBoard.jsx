@@ -427,7 +427,7 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
-  const { data: systemSettings = [] } = useQuery({
+    const { data: systemSettings = [], isLoading: isLoadingSystemSettings } = useQuery({
     queryKey: ['systemSettings'],
     queryFn: () => db.SystemSetting.list(),
     staleTime: 10 * 60 * 1000,
@@ -654,11 +654,18 @@ export default function ScheduleBoard() {
     }, [sectionTabs, allSections]);
 
     useEffect(() => {
+        if (isLoadingSystemSettings) return;
         if (activeSectionTabId === 'main') return;
         if (!availableSectionTabs.find(t => t.id === activeSectionTabId)) {
             setActiveSectionTabId('main');
         }
-    }, [activeSectionTabId, availableSectionTabs]);
+    }, [activeSectionTabId, availableSectionTabs, isLoadingSystemSettings]);
+
+    useEffect(() => {
+        if (isSplitViewEnabled && activeSectionTabId !== 'main') {
+            setActiveSectionTabId('main');
+        }
+    }, [isSplitViewEnabled, activeSectionTabId]);
 
     useEffect(() => {
         if (!availableSectionTabs.length) {
@@ -3642,7 +3649,13 @@ export default function ScheduleBoard() {
                                     className={`flex items-center rounded-md border transition-colors ${isActive ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-200'}`}
                                 >
                                     <button
-                                        onClick={() => setActiveSectionTabId(tab.id)}
+                                        onClick={() => {
+                                            if (canUseSplitView && isSplitViewEnabled) {
+                                                handleOpenSectionTabInSplitView(tab.id);
+                                                return;
+                                            }
+                                            setActiveSectionTabId(tab.id);
+                                        }}
                                         className={`px-3 py-1.5 text-sm font-medium whitespace-nowrap ${isActive ? 'text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
                                     >
                                         {getSectionName(tab.sectionTitle)}
@@ -4196,9 +4209,6 @@ export default function ScheduleBoard() {
       </div>
       {canUseSplitView && isSplitViewEnabled && splitViewUrl && (
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
-              <div className="px-3 py-2 border-b border-slate-200 bg-slate-50 text-sm font-medium text-slate-700">
-                  Split-View: {getSectionName(availableSectionTabs.find(t => t.id === effectiveSplitTabId)?.sectionTitle || '')}
-              </div>
               <iframe
                   src={splitViewUrl}
                   title="Split-View"
