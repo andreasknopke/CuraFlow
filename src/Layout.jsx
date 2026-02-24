@@ -89,6 +89,12 @@ function LayoutContent({ children }) {
   }, [isSidebarOpen, isSidebarHovered, location.pathname]);
 
   const isAuthPage = location.pathname === '/AuthLogin';
+  const isEmbeddedSchedule = React.useMemo(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('embeddedSchedule') !== '1') return false;
+    const schedulePath = createPageUrl('Schedule');
+    return location.pathname === schedulePath || location.pathname === '/';
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     // If not authenticated and not on login page, redirect to login
@@ -106,6 +112,16 @@ function LayoutContent({ children }) {
   const handleLogin = () => {
     base44.auth.redirectToLogin();
   };
+
+  if (isEmbeddedSchedule) {
+    return (
+      <div className="min-h-screen bg-slate-50 font-sans text-slate-900 notranslate" translate="no">
+        <main className="p-2 sm:p-4">
+          {children}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900 notranslate" translate="no">

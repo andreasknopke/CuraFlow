@@ -115,6 +115,10 @@ const getInitialScheduleState = () => {
 
 export default function ScheduleBoard() {
     const initialState = useMemo(() => getInitialScheduleState(), []);
+    const isEmbeddedSchedule = useMemo(() => {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('embeddedSchedule') === '1';
+    }, []);
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
     const [currentDate, setCurrentDate] = useState(initialState.currentDate);
@@ -329,6 +333,8 @@ export default function ScheduleBoard() {
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
     const [activeSectionTabId, setActiveSectionTabId] = useState(initialState.activeSectionTabId);
+    const [isSplitViewEnabled, setIsSplitViewEnabled] = useState(false);
+    const [splitSectionTabId, setSplitSectionTabId] = useState('');
 
   const queryClient = useQueryClient();
 
@@ -654,6 +660,39 @@ export default function ScheduleBoard() {
         }
     }, [activeSectionTabId, availableSectionTabs]);
 
+    useEffect(() => {
+        if (!availableSectionTabs.length) {
+            setIsSplitViewEnabled(false);
+            setSplitSectionTabId('');
+            return;
+        }
+
+        if (splitSectionTabId && !availableSectionTabs.some(t => t.id === splitSectionTabId)) {
+            setSplitSectionTabId(availableSectionTabs[0].id);
+        }
+    }, [availableSectionTabs, splitSectionTabId]);
+
+    useEffect(() => {
+        if (isMobile && isSplitViewEnabled) {
+            setIsSplitViewEnabled(false);
+        }
+    }, [isMobile, isSplitViewEnabled]);
+
+    const canUseSplitView = !isEmbeddedSchedule && !isMobile;
+    const effectiveSplitTabId = availableSectionTabs.some(t => t.id === splitSectionTabId)
+        ? splitSectionTabId
+        : (availableSectionTabs[0]?.id || '');
+
+    const splitViewUrl = useMemo(() => {
+        if (!canUseSplitView || !isSplitViewEnabled || !effectiveSplitTabId) return '';
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('sectionTab', effectiveSplitTabId);
+        nextUrl.searchParams.set('view', viewMode);
+        nextUrl.searchParams.set('date', format(currentDate, 'yyyy-MM-dd'));
+        nextUrl.searchParams.set('embeddedSchedule', '1');
+        return nextUrl.toString();
+    }, [canUseSplitView, isSplitViewEnabled, effectiveSplitTabId, viewMode, currentDate]);
+
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
             const assigned = new Set(availableSectionTabs.map(t => t.sectionTitle));
@@ -728,6 +767,13 @@ export default function ScheduleBoard() {
             return;
         }
 
+        setActiveSectionTabId('main');
+    };
+
+    const handleOpenSectionTabInSplitView = (tabId) => {
+        if (!canUseSplitView) return;
+        setSplitSectionTabId(tabId);
+        setIsSplitViewEnabled(true);
         setActiveSectionTabId('main');
     };
 
@@ -3606,6 +3652,15 @@ export default function ScheduleBoard() {
                                     >
                                         <ExternalLink className="w-3.5 h-3.5" />
                                     </button>
+                                    {canUseSplitView && (
+                                        <button
+                                            onClick={() => handleOpenSectionTabInSplitView(tab.id)}
+                                            className="px-2 py-1.5 text-slate-400 hover:text-indigo-600"
+                                            title="Im Split-View öffnen"
+                                        >
+                                            <Layout className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => handleCloseSectionTab(tab.id)}
                                         className="px-2 py-1.5 text-slate-400 hover:text-red-500"
@@ -3616,9 +3671,20 @@ export default function ScheduleBoard() {
                                 </div>
                             );
                         })}
+                        {canUseSplitView && isSplitViewEnabled && (
+                            <button
+                                onClick={() => setIsSplitViewEnabled(false)}
+                                className="px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap text-slate-600 hover:bg-slate-100"
+                                title="Split-View schließen"
+                            >
+                                Split-View beenden
+                            </button>
+                        )}
                     </div>
                 )}
 
+                <div className={canUseSplitView && isSplitViewEnabled && splitViewUrl ? 'grid grid-cols-1 xl:grid-cols-2 gap-4 items-start' : ''}>
+                <div className="min-w-0">
                 <DragDropContext 
                   onBeforeCapture={handleBeforeCapture}
                   onDragStart={handleDragStart} 
@@ -4125,6 +4191,20 @@ export default function ScheduleBoard() {
           </div>
         </div>
       </DragDropContext>
+      </div>
+      {canUseSplitView && isSplitViewEnabled && splitViewUrl && (
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
+              <div className="px-3 py-2 border-b border-slate-200 bg-slate-50 text-sm font-medium text-slate-700">
+                  Split-View: {getSectionName(availableSectionTabs.find(t => t.id === effectiveSplitTabId)?.sectionTitle || '')}
+              </div>
+              <iframe
+                  src={splitViewUrl}
+                  title="Split-View"
+                  className="w-full h-[calc(100vh-220px)] min-h-[500px] border-0"
+              />
+          </div>
+      )}
+      </div>
       
       {/* Override Confirm Dialog */}
       <OverrideConfirmDialog
