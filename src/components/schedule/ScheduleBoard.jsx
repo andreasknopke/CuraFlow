@@ -3251,7 +3251,8 @@ export default function ScheduleBoard() {
     }
 
     const isSingleShift = shifts.length === 1;
-    const isFullWidth = isSectionFullWidth || isSingleShift;
+    const isSplitModeActive = isEmbeddedSchedule || isSplitViewEnabled;
+    const isFullWidth = !isSplitModeActive && (isSectionFullWidth || isSingleShift);
 
     // Qualifikations-Status für diese Position ermitteln
     const workplace = workplaces.find(w => w.name === rowName);
@@ -3328,7 +3329,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-  }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, isEmbeddedSchedule, isSplitViewEnabled]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
