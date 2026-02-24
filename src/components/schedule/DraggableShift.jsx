@@ -1,12 +1,11 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
 export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
-  const containerRef = useRef(null);
-  const [displayText, setDisplayText] = useState(isFullWidth ? doctor.name : doctor.initials);
-  const [displayFontSize, setDisplayFontSize] = useState(fontSize);
+  const displayText = isFullWidth ? doctor.name : (doctor.initials || doctor.name.substring(0, 3));
+  const displayFontSize = fontSize;
 
   // Build fairness tooltip text for preview service shifts
   const fairnessTooltip = React.useMemo(() => {
@@ -21,77 +20,6 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
     }
     return lines.join('\n');
   }, [fairnessInfo]);
-  
-  // Measure and adjust text to fit container
-  const measureAndAdjust = React.useCallback(() => {
-    if (!isFullWidth) {
-      setDisplayText(doctor.initials || doctor.name.substring(0, 3));
-      setDisplayFontSize(fontSize);
-      return;
-    }
-    
-    if (!containerRef.current) return;
-    
-    const container = containerRef.current;
-    // Subtract drag handle width (boxSize) + padding from available text area
-    const availableWidth = container.offsetWidth - boxSize - 12;
-    
-    if (availableWidth <= 20) return; // Not yet rendered properly
-    
-    // Create temporary span to measure text
-    const measureSpan = document.createElement('span');
-    measureSpan.style.visibility = 'hidden';
-    measureSpan.style.position = 'absolute';
-    measureSpan.style.whiteSpace = 'nowrap';
-    measureSpan.style.fontWeight = 'bold';
-    document.body.appendChild(measureSpan);
-    
-    const name = doctor.name;
-    const initials = doctor.initials || name.substring(0, 3);
-    
-    // Try full name at normal size
-    measureSpan.style.fontSize = `${fontSize}px`;
-    measureSpan.textContent = name;
-    
-    if (measureSpan.offsetWidth <= availableWidth) {
-      setDisplayText(name);
-      setDisplayFontSize(fontSize);
-      document.body.removeChild(measureSpan);
-      return;
-    }
-    
-    // Try full name at smaller size (min 10px)
-    const smallerSize = Math.max(fontSize * 0.8, 10);
-    measureSpan.style.fontSize = `${smallerSize}px`;
-    
-    if (measureSpan.offsetWidth <= availableWidth) {
-      setDisplayText(name);
-      setDisplayFontSize(smallerSize);
-      document.body.removeChild(measureSpan);
-      return;
-    }
-    
-    // Use initials at normal size
-    setDisplayText(initials);
-    setDisplayFontSize(fontSize);
-    
-    document.body.removeChild(measureSpan);
-  }, [isFullWidth, doctor.name, doctor.initials, fontSize]);
-
-  // Use ResizeObserver to detect actual container size changes
-  useEffect(() => {
-    measureAndAdjust();
-    
-    if (!containerRef.current) return;
-    
-    const observer = new ResizeObserver(() => {
-      measureAndAdjust();
-    });
-    
-    observer.observe(containerRef.current);
-    
-    return () => observer.disconnect();
-  }, [measureAndAdjust]);
   
   // Qualification warning/error indicator
   const QualWarning = qualificationStatus === 'excluded' ? (
@@ -193,10 +121,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
 
         return (
           <div
-            ref={(el) => {
-              provided.innerRef(el);
-              containerRef.current = el;
-            }}
+            ref={provided.innerRef}
             {...provided.draggableProps}
             {...(isFullWidth ? {} : provided.dragHandleProps)}
             className={containerClass}
