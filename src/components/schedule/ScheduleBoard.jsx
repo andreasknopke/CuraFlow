@@ -79,6 +79,17 @@ const SECTION_CONFIG = {
 
 const SECTION_TABS_KEY = 'schedule_section_tabs';
 const PINNED_SECTION_TITLE = 'Anwesenheiten';
+const SPLIT_PANEL_PREFIX = 'split::';
+const SPLIT_DRAG_PREFIX = 'split-';
+
+const withPanelPrefix = (id, prefix = '') => `${prefix}${id}`;
+const stripPanelPrefix = (id = '') => (id.startsWith(SPLIT_PANEL_PREFIX) ? id.slice(SPLIT_PANEL_PREFIX.length) : id);
+const normalizeDraggableId = (id = '') => (id.startsWith(SPLIT_DRAG_PREFIX) ? id.slice(SPLIT_DRAG_PREFIX.length) : id);
+const parseAvailableDoctorId = (draggableId = '') => {
+    const normalized = normalizeDraggableId(draggableId);
+    if (!normalized.startsWith('available-doc-')) return null;
+    return normalized.substring(14, normalized.length - 11);
+};
 
 const parseSectionTabs = (rawValue) => {
     if (!rawValue) return [];
@@ -690,15 +701,16 @@ export default function ScheduleBoard() {
         ? splitSectionTabId
         : (availableSectionTabs[0]?.id || '');
 
-    const splitViewUrl = useMemo(() => {
-        if (!canUseSplitView || !isSplitViewEnabled || !effectiveSplitTabId) return '';
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('sectionTab', effectiveSplitTabId);
-        nextUrl.searchParams.set('view', viewMode);
-        nextUrl.searchParams.set('date', format(currentDate, 'yyyy-MM-dd'));
-        nextUrl.searchParams.set('embeddedSchedule', '1');
-        return nextUrl.toString();
-    }, [canUseSplitView, isSplitViewEnabled, effectiveSplitTabId, viewMode, currentDate]);
+    const splitSections = useMemo(() => {
+        if (!isSplitViewEnabled || !effectiveSplitTabId) return [];
+        const activeTab = availableSectionTabs.find(t => t.id === effectiveSplitTabId);
+        if (!activeTab) return [];
+        const activeSection = allSections.find(section => section.title === activeTab.sectionTitle);
+        const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
+        if (!activeSection) return [];
+        if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
+        return [activeSection, pinnedSection];
+    }, [isSplitViewEnabled, effectiveSplitTabId, availableSectionTabs, allSections]);
 
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
@@ -1945,17 +1957,18 @@ export default function ScheduleBoard() {
   // Called BEFORE dimension capture - must be synchronous to affect measurements
   const handleBeforeCapture = (before) => {
     const { draggableId } = before;
-    if (!draggableId) return;
+        const normalizedDraggableId = normalizeDraggableId(draggableId);
+        if (!normalizedDraggableId) return;
 
     let docId = null;
     let shiftId = null;
     
-    if (draggableId.startsWith('sidebar-doc-')) {
-        docId = draggableId.replace('sidebar-doc-', '');
-    } else if (draggableId.startsWith('available-doc-')) {
-        docId = draggableId.substring(14, draggableId.length - 11);
-    } else if (draggableId.startsWith('shift-')) {
-        shiftId = draggableId.replace('shift-', '');
+    if (normalizedDraggableId.startsWith('sidebar-doc-')) {
+        docId = normalizedDraggableId.replace('sidebar-doc-', '');
+    } else if (normalizedDraggableId.startsWith('available-doc-')) {
+        docId = parseAvailableDoctorId(normalizedDraggableId);
+    } else if (normalizedDraggableId.startsWith('shift-')) {
+        shiftId = normalizedDraggableId.replace('shift-', '');
         const shift = currentWeekShifts.find(s => s.id === shiftId);
         if (shift) {
             docId = shift.doctor_id;
@@ -1972,16 +1985,17 @@ export default function ScheduleBoard() {
   const handleDragStart = (start) => {
     console.log('Drag Start:', start);
     const { draggableId } = start;
+    const normalizedDraggableId = normalizeDraggableId(draggableId);
     let docId = null;
     
-    if (!draggableId) return;
+    if (!normalizedDraggableId) return;
 
-    if (draggableId.startsWith('sidebar-doc-')) {
-        docId = draggableId.replace('sidebar-doc-', '');
-    } else if (draggableId.startsWith('available-doc-')) {
-        docId = draggableId.substring(14, draggableId.length - 11);
-    } else if (draggableId.startsWith('shift-')) {
-        const shiftId = draggableId.replace('shift-', '');
+    if (normalizedDraggableId.startsWith('sidebar-doc-')) {
+        docId = normalizedDraggableId.replace('sidebar-doc-', '');
+    } else if (normalizedDraggableId.startsWith('available-doc-')) {
+        docId = parseAvailableDoctorId(normalizedDraggableId);
+    } else if (normalizedDraggableId.startsWith('shift-')) {
+        const shiftId = normalizedDraggableId.replace('shift-', '');
         setDraggingShiftId(shiftId);
         const shift = currentWeekShifts.find(s => s.id === shiftId);
         if (shift) {
@@ -1993,7 +2007,8 @@ export default function ScheduleBoard() {
 
     // Check if dragging from grid
     const { source } = start;
-    if (source.droppableId !== 'sidebar' && !source.droppableId.startsWith('available__')) {
+    const sourceDroppableId = stripPanelPrefix(source.droppableId);
+    if (sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__')) {
         setIsDraggingFromGrid(true);
     }
     };
@@ -2010,18 +2025,21 @@ export default function ScheduleBoard() {
     setDraggingDoctorId(null);
     setDraggingShiftId(null);
     const { source, destination, draggableId } = result;
+    const normalizedDraggableId = normalizeDraggableId(draggableId);
+    const sourceDroppableId = stripPanelPrefix(source.droppableId);
+    const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;
 
     // ============================================================
     //  PREVIEW SHIFT DRAG HANDLING
     //  Preview shifts are modified in-memory (no DB operations)
     // ============================================================
-    if (draggableId.startsWith('shift-preview-')) {
-        const shiftId = draggableId.replace('shift-', '');
+    if (normalizedDraggableId.startsWith('shift-preview-')) {
+        const shiftId = normalizedDraggableId.replace('shift-', '');
         const previewShift = previewShifts?.find(s => s.id === shiftId);
         if (!previewShift || !previewShifts) return;
 
         // Dropped outside or to trash/sidebar → remove from preview
-        if (!destination || destination.droppableId === 'sidebar' || destination.droppableId === 'trash' || destination.droppableId === 'trash-overlay' || destination.droppableId.startsWith('available__') || destination.droppableId.endsWith('__Verfügbar')) {
+        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar')) {
             let remaining = previewShifts.filter(s => s.id !== shiftId);
             // Auto-Frei cleanup: if removed shift was on an auto-off position, remove its auto-frei too
             if (isAutoOffPosition(previewShift.position)) {
@@ -2038,15 +2056,15 @@ export default function ScheduleBoard() {
         }
 
         // Dropped on row header → assign Mo-Fr (skip for preview)
-        if (destination.droppableId.startsWith('rowHeader__')) {
+        if (destinationDroppableId.startsWith('rowHeader__')) {
             return;
         }
 
         // Dropped to same position → no change
-        if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+        if (sourceDroppableId === destinationDroppableId && source.index === destination.index) return;
 
         // Dropped to a grid cell → move preview entry
-        const destParts = destination.droppableId.split('__');
+        const destParts = destinationDroppableId.split('__');
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         if (!newDateStr || !newPosition) return;
@@ -2104,8 +2122,8 @@ export default function ScheduleBoard() {
 
     // If dropped outside any droppable and was from grid -> delete
     if (!destination) {
-        if (isDraggingFromGrid && draggableId.startsWith('shift-')) {
-            const shiftId = draggableId.replace('shift-', '');
+        if (isDraggingFromGrid && normalizedDraggableId.startsWith('shift-')) {
+            const shiftId = normalizedDraggableId.replace('shift-', '');
             // Skip temp IDs (optimistic updates not yet persisted)
             if (shiftId.startsWith('temp-')) {
                 return;
@@ -2220,9 +2238,9 @@ export default function ScheduleBoard() {
     };
 
     // Handle Drop on Row Header (Assign Mo-Fr)
-    if (destination.droppableId.startsWith('rowHeader__')) {
+    if (destinationDroppableId.startsWith('rowHeader__')) {
         // Format: rowHeader__position oder rowHeader__position__timeslotId oder rowHeader__position__allTimeslots__
-        const headerParts = destination.droppableId.replace('rowHeader__', '').split('__');
+        const headerParts = destinationDroppableId.replace('rowHeader__', '').split('__');
         const rowName = headerParts[0];
         const rawHeaderTimeslotId = headerParts[1] || null;
         // Special case: __allTimeslots__ means assign to ALL timeslots of this workplace
@@ -2230,13 +2248,13 @@ export default function ScheduleBoard() {
         const rowHeaderTimeslotId = isAllTimeslots ? null : rawHeaderTimeslotId;
         let doctorId = null;
 
-        if (source.droppableId === 'sidebar') {
-             doctorId = draggableId.replace('sidebar-doc-', '');
-        } else if (draggableId.startsWith('shift-')) {
-             const shift = currentWeekShifts.find(s => s.id === draggableId.replace('shift-', ''));
+           if (sourceDroppableId === 'sidebar') {
+               doctorId = normalizedDraggableId.replace('sidebar-doc-', '');
+           } else if (normalizedDraggableId.startsWith('shift-')) {
+               const shift = currentWeekShifts.find(s => s.id === normalizedDraggableId.replace('shift-', ''));
              doctorId = shift?.doctor_id;
-        } else if (draggableId.startsWith('available-doc-')) {
-             doctorId = draggableId.substring(14, draggableId.length - 11);
+           } else if (normalizedDraggableId.startsWith('available-doc-')) {
+               doctorId = parseAvailableDoctorId(normalizedDraggableId);
         }
 
         if (!doctorId) return;
@@ -2352,7 +2370,7 @@ export default function ScheduleBoard() {
     }
 
     // 1. Reordering in Sidebar
-    if (source.droppableId === 'sidebar' && destination.droppableId === 'sidebar') {
+    if (sourceDroppableId === 'sidebar' && destinationDroppableId === 'sidebar') {
         if (source.index === destination.index) return;
 
         const newDoctors = Array.from(sidebarDoctors);
@@ -2369,11 +2387,11 @@ export default function ScheduleBoard() {
 
     // Dragged from Grid to Available or Sidebar (Delete/Return)
     // Note: Available droppableId format is `available__${dateStr)}
-    const isDestAvailable = destination.droppableId.startsWith('available__') || destination.droppableId.endsWith('__Verfügbar');
-    const isSourceFromGrid = source.droppableId !== 'sidebar' && !source.droppableId.startsWith('available__');
+    const isDestAvailable = destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar');
+    const isSourceFromGrid = sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__');
 
-    if (isSourceFromGrid && (isDestAvailable || destination.droppableId === 'sidebar')) {
-         const shiftId = draggableId.replace('shift-', '');
+    if (isSourceFromGrid && (isDestAvailable || destinationDroppableId === 'sidebar')) {
+         const shiftId = normalizedDraggableId.replace('shift-', '');
 
          // Preview shift → remove from preview state (not DB)
          if (shiftId.startsWith('preview-') && previewShifts) {
@@ -2412,20 +2430,20 @@ export default function ScheduleBoard() {
     }
 
     // 2. Dragged from Sidebar OR Available to Grid (Create)
-    if (source.droppableId === 'sidebar' || source.droppableId.startsWith('available__')) {
+    if (sourceDroppableId === 'sidebar' || sourceDroppableId.startsWith('available__')) {
         // Ignore dragging to trash, unknown destinations, available lists, or back to sidebar
-        if (destination.droppableId === 'trash' || destination.droppableId === 'trash-overlay' || destination.droppableId === 'sidebar' || !destination.droppableId.includes('__') || destination.droppableId.endsWith('__Verfügbar') || destination.droppableId.startsWith('available__')) return;
+        if (destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId === 'sidebar' || !destinationDroppableId.includes('__') || destinationDroppableId.endsWith('__Verfügbar') || destinationDroppableId.startsWith('available__')) return;
 
         let doctorId;
-        if (source.droppableId === 'sidebar') {
-            doctorId = draggableId.replace('sidebar-doc-', '');
+        if (sourceDroppableId === 'sidebar') {
+            doctorId = normalizedDraggableId.replace('sidebar-doc-', '');
         } else {
-            doctorId = draggableId.substring(14, draggableId.length - 11);
+            doctorId = parseAvailableDoctorId(normalizedDraggableId);
         }
 
         // PREVIEW MODE: Add to previewShifts instead of creating DB entry
         if (previewShifts) {
-            const dropParts = destination.droppableId.split('__');
+            const dropParts = destinationDroppableId.split('__');
             const dateStr = dropParts[0];
             const position = dropParts[1];
             if (!dateStr || !position) return;
@@ -2450,7 +2468,7 @@ export default function ScheduleBoard() {
         }
 
         // Format: date__position oder date__position__timeslotId oder date__position__allTimeslots__
-        const dropParts = destination.droppableId.split('__');
+        const dropParts = destinationDroppableId.split('__');
         const dateStr = dropParts[0];
         const position = dropParts[1];
         const rawTimeslotId = dropParts[2] || null;
@@ -2654,10 +2672,10 @@ export default function ScheduleBoard() {
     }
 
     // Dragged from Grid to Grid
-    if (source.droppableId !== 'sidebar' && !source.droppableId.startsWith('available__') && destination.droppableId !== 'sidebar' && destination.droppableId !== 'trash' && destination.droppableId !== 'trash-overlay' && !destination.droppableId.endsWith('__Verfügbar') && !destination.droppableId.startsWith('available__')) {
-        const shiftId = draggableId.replace('shift-', '');
+    if (sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__') && destinationDroppableId !== 'sidebar' && destinationDroppableId !== 'trash' && destinationDroppableId !== 'trash-overlay' && !destinationDroppableId.endsWith('__Verfügbar') && !destinationDroppableId.startsWith('available__')) {
+        const shiftId = normalizedDraggableId.replace('shift-', '');
         // Format: date__position oder date__position__timeslotId
-        const destParts = destination.droppableId.split('__');
+        const destParts = destinationDroppableId.split('__');
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         const rawNewTimeslotId = destParts[2] || null;
@@ -2679,7 +2697,7 @@ export default function ScheduleBoard() {
             }
         }
         
-        const srcParts = source.droppableId.split('__');
+        const srcParts = sourceDroppableId.split('__');
         const oldDateStr = srcParts[0];
         const oldPosition = srcParts[1];
         const rawOldTimeslotId = srcParts[2] || null;
@@ -2691,7 +2709,7 @@ export default function ScheduleBoard() {
             return;
         }
 
-        if (source.droppableId === destination.droppableId) {
+        if (sourceDroppableId === destinationDroppableId) {
             if (source.index === destination.index) return;
 
             // Bei Reordering innerhalb derselben Zelle: auch Timeslot-ID berücksichtigen
@@ -2719,7 +2737,7 @@ export default function ScheduleBoard() {
         if (!shift) return;
 
         // Check for Copy Mode (CTRL pressed)
-        if (isCtrlPressed && source.droppableId !== destination.droppableId) {
+        if (isCtrlPressed && sourceDroppableId !== destinationDroppableId) {
              // Check duplicate in target (mit Timeslot-Berücksichtigung)
              const alreadyInTarget = currentWeekShifts.some(s => {
                  if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id) return false;
@@ -3194,7 +3212,7 @@ export default function ScheduleBoard() {
     return info;
   }, [previewFairnessData, workplaces, wishes]);
 
-  const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null) => {
+    const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '') => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
     if (!isValid(date)) return null;
@@ -3315,6 +3333,7 @@ export default function ScheduleBoard() {
                     shift={shift} 
                     doctor={doctor} 
                     index={index}
+                    draggableIdPrefix={dragIdPrefix}
                     style={roleColor}
                     isFullWidth={isFullWidth}
                     isDragDisabled={isReadOnly}
@@ -3333,8 +3352,8 @@ export default function ScheduleBoard() {
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
-    const draggableId = rubric.draggableId;
-    if (!draggableId.startsWith('shift-')) return null;
+        const draggableId = normalizeDraggableId(rubric.draggableId);
+        if (!draggableId.startsWith('shift-')) return null;
     
     const shiftId = draggableId.replace('shift-', '');
     const shift = currentWeekShifts.find(s => s.id === shiftId);
@@ -3377,6 +3396,251 @@ export default function ScheduleBoard() {
       </div>
     );
   }, [currentWeekShifts, doctors, getRoleColor, gridFontSize]);
+
+  const renderSplitMatrix = () => {
+      if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
+
+      return (
+          <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
+              <div className="min-w-[800px]">
+                  <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
+                      <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
+                          Bereich / Datum
+                      </div>
+                      {weekDays.map(day => {
+                          if (!isValid(day)) return <div key={Math.random()} className="p-2 text-center text-red-500">Invalid Date</div>;
+                          const isToday = isSameDay(day, new Date());
+                          const isHoliday = isPublicHoliday(day);
+                          const isSchoolHol = isSchoolHoliday(day);
+
+                          let bgClass = '';
+                          if (isToday) bgClass = 'bg-yellow-50/30 border-x-2 border-t-2 border-yellow-400 border-b border-slate-200 text-yellow-900';
+                          else if (isHoliday) bgClass = 'bg-blue-100 text-blue-900';
+                          else if (isSchoolHol) bgClass = 'bg-green-100 text-green-900';
+                          else if ([0, 6].includes(day.getDay())) bgClass = 'bg-orange-50/50';
+
+                          return (
+                              <div key={`split-${day.toISOString()}`} className={`group relative p-2 text-center border-r border-slate-200 last:border-r-0 ${bgClass || 'bg-white'}`}>
+                                  <div className={`font-semibold ${isToday ? 'text-blue-700' : 'text-slate-800'}`}>
+                                      {format(day, 'EEEE', { locale: de })}
+                                  </div>
+                                  <div className={`text-xs ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
+                                      {format(day, 'dd.MM.', { locale: de })}
+                                  </div>
+                              </div>
+                          );
+                      })}
+                  </div>
+
+                  {splitSections.map((section, sIdx) => {
+                      const normalizedRows = section.rows.map(r =>
+                          typeof r === 'string' ? { name: r, displayName: r, timeslotId: null, isTimeslotRow: false, isTimeslotGroupHeader: false } : r
+                      );
+
+                      const visibleRows = normalizedRows.filter(r => {
+                          if (hiddenRows.includes(r.name)) return false;
+                          if (r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name)) return false;
+                          if (r.isUnassignedRow) {
+                              const hasUnassignedShifts = currentWeekShifts.some(s =>
+                                  s.position === r.name && !s.timeslot_id
+                              );
+                              if (!hasUnassignedShifts) return false;
+                          }
+                          return true;
+                      });
+                      if (visibleRows.length === 0) return null;
+
+                      const isCollapsed = collapsedSections.includes(section.title);
+                      const customStyle = getSectionStyle(section.title);
+
+                      return (
+                          <div key={`split-section-${sIdx}`}>
+                              <div
+                                  className={`px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-slate-200 flex items-center justify-between cursor-pointer select-none transition-colors ${!customStyle ? section.headerColor : ''}`}
+                                  style={customStyle ? customStyle.header : {}}
+                                  onClick={() => setCollapsedSections(prev => prev.includes(section.title) ? prev.filter(t => t !== section.title) : [...prev, section.title])}
+                              >
+                                  <div className="flex items-center gap-2">
+                                      {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                      {getSectionName(section.title)}
+                                  </div>
+                                  <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">{visibleRows.length}</span>
+                              </div>
+
+                              {!isCollapsed && visibleRows.map((rowObj, rIdx) => {
+                                  const rowName = rowObj.name;
+                                  const rowDisplayName = rowObj.displayName || rowName;
+                                  const rowTimeslotId = rowObj.timeslotId;
+                                  const isGroupHeader = rowObj.isTimeslotGroupHeader;
+                                  const isGroupCollapsed = collapsedTimeslotGroups.includes(rowName);
+                                  const rowStyle = getRowStyle(rowName, customStyle);
+
+                                  const rawHeaderDroppableId = isGroupHeader
+                                      ? `rowHeader__${rowName}__allTimeslots__`
+                                      : `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
+                                  const headerDroppableId = withPanelPrefix(rawHeaderDroppableId, SPLIT_PANEL_PREFIX);
+
+                                  return (
+                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
+                                          <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly}>
+                                              {(provided, snapshot) => (
+                                                  <div
+                                                      ref={provided.innerRef}
+                                                      {...provided.droppableProps}
+                                                      className={`p-2 text-sm font-medium border-r border-slate-200 flex items-center justify-between transition-colors ${!customStyle ? section.headerColor : ''} ${snapshot.isDraggingOver ? 'ring-2 ring-inset ring-indigo-400 bg-indigo-50' : ''} ${isGroupHeader ? 'cursor-pointer' : ''}`}
+                                                      style={customStyle ? customStyle.header : {}}
+                                                      onClick={isGroupHeader ? () => toggleTimeslotGroup(rowName) : undefined}
+                                                  >
+                                                      <div className="flex flex-col min-w-0">
+                                                          <span className="truncate flex items-center gap-1" title={rowDisplayName}>
+                                                              {isGroupHeader && (
+                                                                  <span className="text-slate-500">
+                                                                      {isGroupCollapsed ? <ChevronRight className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />}
+                                                                  </span>
+                                                              )}
+                                                              {rowObj.isTimeslotRow && !rowObj.isUnassignedRow && <span className="text-slate-400 mr-1">↳</span>}
+                                                              {rowObj.isUnassignedRow && <span className="text-amber-500 mr-1">⚠</span>}
+                                                              <span className={rowObj.isUnassignedRow ? 'text-amber-700' : ''}>{rowDisplayName}</span>
+                                                          </span>
+                                                      </div>
+                                                      <div className="hidden">{provided.placeholder}</div>
+                                                  </div>
+                                              )}
+                                          </Droppable>
+
+                                          {weekDays.map((day, dIdx) => {
+                                              const isWeekendDay = [0, 6].includes(day.getDay());
+                                              const isToday = isSameDay(day, new Date());
+                                              const dateStr = format(day, 'yyyy-MM-dd');
+                                              const rawCellId = isGroupHeader
+                                                  ? `${dateStr}__${rowName}__allTimeslots__`
+                                                  : rowTimeslotId
+                                                      ? `${dateStr}__${rowName}__${rowTimeslotId}`
+                                                      : `${dateStr}__${rowName}`;
+                                              const cellId = withPanelPrefix(rawCellId, SPLIT_PANEL_PREFIX);
+
+                                              let isDisabled = false;
+                                              let isTrainingHighlight = false;
+
+                                              if (draggingDoctorId) {
+                                                  const activeRotations = trainingRotations.filter(rot =>
+                                                      rot.doctor_id === draggingDoctorId &&
+                                                      rot.start_date <= dateStr &&
+                                                      rot.end_date >= dateStr
+                                                  );
+                                                  const isTarget = activeRotations.some(rot =>
+                                                      rot.modality === rowName ||
+                                                      (rot.modality === 'Röntgen' && (rowName === 'DL/konv. Rö' || rowName.includes('Rö')))
+                                                  );
+                                                  if (isTarget) isTrainingHighlight = true;
+                                              }
+
+                                              if (rowName !== 'Verfügbar') {
+                                                  const setting = workplaces.find(s => s.name === rowName);
+                                                  if (setting) {
+                                                      const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
+                                                      const dayOfWeek = day.getDay();
+                                                      const allowed = activeDays.some(d => Number(d) === dayOfWeek);
+                                                      const holidayBlocked = isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0);
+                                                      if (!allowed || holidayBlocked) isDisabled = true;
+                                                  }
+                                              }
+
+                                              return (
+                                                  <div key={`split-cell-${dIdx}`} className="border-r border-slate-100 last:border-r-0">
+                                                      {rowName === 'Verfügbar' ? (
+                                                          <Droppable droppableId={withPanelPrefix(`available__${dateStr}`, SPLIT_PANEL_PREFIX)} isDropDisabled={isReadOnly}>
+                                                              {(provided, snapshot) => {
+                                                                  const blockingShifts = currentWeekShifts.filter(s => {
+                                                                      if (s.date !== dateStr) return false;
+                                                                      const wp = workplaces.find(w => w.name === s.position);
+                                                                      if (wp?.affects_availability === false) return false;
+                                                                      if (wp?.allows_rotation_concurrently === true) return false;
+                                                                      if (wp?.allows_rotation_concurrently === false) return true;
+                                                                      if (wp && ['Dienste', 'Demonstrationen & Konsile'].includes(wp.category)) return false;
+                                                                      return true;
+                                                                  });
+                                                                  const assignedDocIds = new Set(blockingShifts.map(s => s.doctor_id));
+                                                                  const availableDocs = doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe');
+
+                                                                  return (
+                                                                      <div
+                                                                          ref={provided.innerRef}
+                                                                          {...provided.droppableProps}
+                                                                          className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50/30'}`}
+                                                                      >
+                                                                          {availableDocs.map((doc, idx) => (
+                                                                              <Draggable key={`split-available-${doc.id}-${dateStr}`} draggableId={`${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
+                                                                                  {(provided, snapshot) => (
+                                                                                      <div
+                                                                                          ref={provided.innerRef}
+                                                                                          {...provided.draggableProps}
+                                                                                          {...provided.dragHandleProps}
+                                                                                          style={{ ...provided.draggableProps.style, ...getRoleColor(doc.role) }}
+                                                                                          className={`text-[10px] px-1.5 py-0.5 rounded border shadow-sm select-none truncate max-w-[100px] ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
+                                                                                      >
+                                                                                          {doc.initials}
+                                                                                      </div>
+                                                                                  )}
+                                                                              </Draggable>
+                                                                          ))}
+                                                                          {provided.placeholder}
+                                                                      </div>
+                                                                  );
+                                                              }}
+                                                          </Droppable>
+                                                      ) : rowName === 'Sonstiges' ? (
+                                                          isReadOnly ? (
+                                                              <div className="p-2 text-base text-slate-500 h-full min-h-[40px] whitespace-pre-wrap">
+                                                                  {scheduleNotes.find(n => n.date === format(day, 'yyyy-MM-dd') && n.position === rowName)?.content || ''}
+                                                              </div>
+                                                          ) : (
+                                                              <FreeTextCell
+                                                                  date={day}
+                                                                  rowName={rowName}
+                                                                  notes={scheduleNotes}
+                                                                  onCreate={createNoteMutation}
+                                                                  onUpdate={updateNoteMutation}
+                                                                  onDelete={deleteNoteMutation}
+                                                              />
+                                                          )
+                                                      ) : (
+                                                          <DroppableCell
+                                                              id={cellId}
+                                                              isToday={isToday}
+                                                              isWeekend={isWeekendDay}
+                                                              isDisabled={isDisabled}
+                                                              isReadOnly={isReadOnly}
+                                                              isAlternate={rIdx % 2 !== 0}
+                                                              isTrainingHighlight={isTrainingHighlight}
+                                                              baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
+                                                              baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
+                                                              renderClone={renderShiftClone}
+                                                          >
+                                                              {renderCellShifts(
+                                                                  day,
+                                                                  rowName,
+                                                                  ['Dienste', 'Demonstrationen & Konsile'].includes(section.title),
+                                                                  rowTimeslotId,
+                                                                  isGroupHeader && isGroupCollapsed ? rowObj.allTimeslotIds : null,
+                                                                  rowObj.singleTimeslotId || null,
+                                                                  SPLIT_DRAG_PREFIX
+                                                              )}
+                                                          </DroppableCell>
+                                                      )}
+                                                  </div>
+                                              );
+                                          })}
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      );
+                  })}
+              </div>
+          </div>
+      );
+  };
 
   // Mobile View
   if (isMobile) {
@@ -3699,8 +3963,6 @@ export default function ScheduleBoard() {
                     </div>
                 )}
 
-                <div className={canUseSplitView && isSplitViewEnabled && splitViewUrl ? 'grid grid-cols-1 xl:grid-cols-2 gap-4 items-start' : ''}>
-                <div className="min-w-0">
                 <DragDropContext 
                   onBeforeCapture={handleBeforeCapture}
                   onDragStart={handleDragStart} 
@@ -3780,7 +4042,7 @@ export default function ScheduleBoard() {
                             )}
 
                             {/* Matrix */}
-                            <div className={`flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
+                            <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
                             <div className="min-w-[800px]">
                               <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
@@ -4205,19 +4467,9 @@ export default function ScheduleBoard() {
             })}
             </div>
           </div>
-        </div>
+                    {renderSplitMatrix()}
+                </div>
       </DragDropContext>
-      </div>
-      {canUseSplitView && isSplitViewEnabled && splitViewUrl && (
-          <div className="min-w-0 min-h-[500px]">
-              <iframe
-                  src={splitViewUrl}
-                  title="Split-View"
-                  className="w-full h-[calc(100vh-180px)] min-h-[500px] border-0 bg-transparent"
-              />
-          </div>
-      )}
-      </div>
       
       {/* Override Confirm Dialog */}
       <OverrideConfirmDialog

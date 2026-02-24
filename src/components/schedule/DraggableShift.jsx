@@ -1,7 +1,7 @@
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, draggableIdPrefix = '', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const displayText = isFullWidth ? doctor.name : (doctor.initials || doctor.name.substring(0, 3));
@@ -52,7 +52,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
   // This runs BEFORE react-beautiful-dnd measures the element
   if (isBeingDragged) {
     return (
-      <Draggable draggableId={`shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
+      <Draggable draggableId={`${draggableIdPrefix}shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
         {(provided) => (
           <div
             ref={provided.innerRef}
@@ -88,7 +88,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
   }
 
   return (
-    <Draggable draggableId={`shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
+    <Draggable draggableId={`${draggableIdPrefix}shift-${shift.id}`} index={index} isDragDisabled={isDragDisabled}>
       {(provided, snapshot) => {
         // When dragging, use compact dimensions to fix cursor offset issue.
         // The drag clone should be small so its center aligns with cursor.
