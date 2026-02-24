@@ -116,7 +116,7 @@ function LayoutContent({ children }) {
   if (isEmbeddedSchedule) {
     return (
       <div className="min-h-screen bg-slate-50 font-sans text-slate-900 notranslate" translate="no">
-        <main className="p-2 sm:p-4">
+        <main className="p-0">
           {children}
         </main>
       </div>
