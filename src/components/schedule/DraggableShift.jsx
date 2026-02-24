@@ -117,7 +117,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
 
         const containerClass = isDragging 
             ? `flex items-center justify-center cursor-none` // Center the badge
-            : `relative flex items-center ${isFullWidth ? 'justify-start' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'opacity-50 border-dashed border-indigo-400 cursor-grab hover:opacity-80 hover:border-indigo-600' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
+          : `relative flex items-center ${isFullWidth ? 'justify-start overflow-hidden' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'opacity-50 border-dashed border-indigo-400 cursor-grab hover:opacity-80 hover:border-indigo-600' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
 
         return (
           <div
@@ -157,7 +157,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                         {doctor.initials || doctor.name.substring(0, 3)}
                     </div>
                     <span 
-                        className="truncate px-1 leading-tight text-center flex-1" 
+                      className="block min-w-0 basis-0 flex-1 truncate px-1 leading-tight text-center" 
                         style={{ fontSize: `${displayFontSize}px` }}
                     >
                         {displayText}
