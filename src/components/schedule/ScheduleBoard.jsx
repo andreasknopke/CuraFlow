@@ -717,10 +717,18 @@ export default function ScheduleBoard() {
         nextUrl.searchParams.set('sectionTab', tabId);
         nextUrl.searchParams.set('view', viewMode);
         nextUrl.searchParams.set('date', format(currentDate, 'yyyy-MM-dd'));
-        const openedWindow = window.open(nextUrl.toString(), '_blank', 'noopener,noreferrer');
+        const popupWidth = Math.min(1400, Math.max(1000, Math.floor(window.screen.availWidth * 0.75)));
+        const popupHeight = Math.min(900, Math.max(700, Math.floor(window.screen.availHeight * 0.8)));
+        const popupLeft = Math.max(0, Math.floor((window.screen.availWidth - popupWidth) / 2));
+        const popupTop = Math.max(0, Math.floor((window.screen.availHeight - popupHeight) / 2));
+        const windowFeatures = `noopener,noreferrer,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=${popupTop}`;
+        const openedWindow = window.open(nextUrl.toString(), `schedule_tab_${tabId}_${Date.now()}`, windowFeatures);
         if (!openedWindow) {
             toast.error('Neues Fenster wurde vom Browser blockiert');
+            return;
         }
+
+        setActiveSectionTabId('main');
     };
 
   const { data: trainingRotations = [] } = useQuery({
