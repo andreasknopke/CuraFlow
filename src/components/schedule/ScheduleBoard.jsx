@@ -3385,10 +3385,11 @@ export default function ScheduleBoard() {
       );
   }
 
-  return (
-    <div className="flex flex-col h-full space-y-4">
+    return (
+        <div className={`flex flex-col h-full ${isEmbeddedSchedule ? '' : 'space-y-4'}`}>
 
-      <div className="flex flex-wrap gap-2 items-center bg-white p-2 sm:p-4 rounded-lg shadow-sm border border-slate-200">
+            {!isEmbeddedSchedule && (
+            <div className="flex flex-wrap gap-2 items-center bg-white p-2 sm:p-4 rounded-lg shadow-sm border border-slate-200">
         <div className="flex flex-wrap items-center gap-2">
         {/* VoiceControl removed - moved to Layout */}
 
@@ -3622,9 +3623,10 @@ export default function ScheduleBoard() {
                    </DropdownMenuContent>
                 </DropdownMenu>
                 </div>
-                </div>
+                  </div>
+                  )}
 
-                {availableSectionTabs.length > 0 && (
+                            {!isEmbeddedSchedule && availableSectionTabs.length > 0 && (
                     <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-200 flex items-center gap-2 overflow-x-auto">
                         <button
                             onClick={() => setActiveSectionTabId('main')}
@@ -3695,7 +3697,7 @@ export default function ScheduleBoard() {
                   <div className="flex flex-col lg:flex-row gap-6 items-start relative min-h-[500px]">
 
                   {/* Sidebar */}
-                {showSidebar && (
+                {showSidebar && !isEmbeddedSchedule && (
                 <div className={`w-full lg:w-64 flex-shrink-0 bg-white p-4 rounded-lg shadow-sm border border-slate-200 lg:sticky lg:top-4 max-h-[calc(100vh-200px)] flex flex-col gap-4 z-50 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-y-auto'}`}>
                 <div>
                 <h3 className="font-semibold text-slate-700 mb-3 flex items-center">
@@ -3764,7 +3766,7 @@ export default function ScheduleBoard() {
                             )}
 
                             {/* Matrix */}
-                            <div className={`flex-1 bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-auto'}`}>
+                            <div className={`flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
                             <div className="min-w-[800px]">
                               <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
