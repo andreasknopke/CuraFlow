@@ -4208,11 +4208,11 @@ export default function ScheduleBoard() {
       </DragDropContext>
       </div>
       {canUseSplitView && isSplitViewEnabled && splitViewUrl && (
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
+          <div className="min-w-0 min-h-[500px]">
               <iframe
                   src={splitViewUrl}
                   title="Split-View"
-                  className="w-full h-[calc(100vh-220px)] min-h-[500px] border-0"
+                  className="w-full h-[calc(100vh-180px)] min-h-[500px] border-0 bg-transparent"
               />
           </div>
       )}
