@@ -36,12 +36,11 @@ export default function CollaborationWidget() {
   const publicLink = `https://meet.jit.si/${roomName}`;
   const displayName = encodeURIComponent(user?.full_name || user?.email || 'Admin');
   const jitsiUrl =
-    `https://meet.jit.si/${roomName}` +
+    `https://meet.jit.si/${roomName}?lang=de` +
     `#config.startWithAudioMuted=true` +
     `&config.startWithVideoMuted=true` +
     `&config.prejoinPageEnabled=false` +
     `&config.disableDeepLinking=true` +
-    `&config.defaultLanguage=de` +
     `&userInfo.displayName=${displayName}`;
 
   const handleCopy = useCallback(() => {
