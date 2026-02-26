@@ -41,6 +41,7 @@ export default function CollaborationWidget() {
     `&config.startWithVideoMuted=true` +
     `&config.prejoinPageEnabled=false` +
     `&config.disableDeepLinking=true` +
+    `&config.defaultLanguage=de` +
     `&userInfo.displayName=${displayName}`;
 
   const handleCopy = useCallback(() => {
