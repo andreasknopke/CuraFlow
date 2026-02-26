@@ -122,6 +122,7 @@ cp .env.example .env.local  # Falls vorhanden
 
 ```env
 VITE_API_URL=http://localhost:3000
+VITE_JITSI_BASE_URL=https://meet.jit.si
 ```
 
 ### Frontend starten
@@ -200,6 +201,7 @@ Nach dem Start:
 | `PORT` | ☐ | Server-Port (Standard: `3000`) |
 | `NODE_ENV` | ☐ | `development` oder `production` |
 | `VITE_API_URL` | ✅ (FE) | URL des Backends (für Frontend-Build) |
+| `VITE_JITSI_BASE_URL` | ☐ (FE) | Basis-URL für CoWork (Jitsi), z.B. `https://meet.jit.si` oder `https://jitsi.eure-domain.tld` |
 | `SMTP_HOST` | ☐ | SMTP-Server für E-Mails |
 | `SMTP_PORT` | ☐ | SMTP-Port |
 | `SMTP_USER` | ☐ | SMTP-Benutzername |
@@ -207,6 +209,27 @@ Nach dem Start:
 | `SMTP_FROM` | ☐ | Absenderadresse für E-Mails |
 | `ELEVENLABS_API_KEY` | ☐ | API-Key für ElevenLabs (Sprachsteuerung) |
 | `ALLOWED_ORIGINS` | ☐ | Kommaseparierte CORS-Origins |
+
+---
+
+## CoWork (Jitsi) – kostenloses MVP
+
+Standardmäßig nutzt CuraFlow `https://meet.jit.si`. Das ist kostenlos, aber ohne SLA/Verfügbarkeitsgarantie.
+
+Für die spätere Produktiv-Installation mit eigener Instanz siehe Runbook: `docs/COWORK_JITSI_RUNBOOK.md`.
+
+Für produktive Nutzung ohne JaaS-Demo-Limits:
+
+1. Eigene Jitsi-Instanz bereitstellen (z.B. auf Ubuntu-VM, eigene Subdomain mit TLS)
+2. Frontend-Variable setzen:
+
+```env
+VITE_JITSI_BASE_URL=https://jitsi.eure-domain.tld
+```
+
+3. Frontend neu bauen/deployen (`npm run build`)
+
+Hinweis: `VITE_JITSI_BASE_URL` ohne Slash am Ende angeben (ein trailing Slash wird zur Laufzeit automatisch entfernt).
 
 ---
 

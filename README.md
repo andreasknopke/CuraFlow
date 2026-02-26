@@ -140,6 +140,10 @@ GOOGLE_CALENDAR_CREDENTIALS: Zugangsdaten für Google Calendar Integration
 OPENAI_API_KEY: API-Schlüssel für KI-gestütztes AutoFill und Planungsoptimierung
 MISTRAL_API_KEY: Alternativer API-Schlüssel für Mistral-basierte KI-Funktionen
 SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS: Konfiguration für E-Mail-Versand (Verifizierung, Benachrichtigungen)
+VITE_JITSI_BASE_URL: Basis-URL für CoWork-Videokonferenzen (Standard: https://meet.jit.si)
+
+Hinweis zu CoWork:
+Die Jitsi-Einbettung kann kostenlos betrieben werden, indem entweder `meet.jit.si` (öffentlich, ohne SLA) genutzt wird oder eine eigene Jitsi-Instanz über `VITE_JITSI_BASE_URL` eingebunden wird (empfohlen für produktive Nutzung).
 
 
 ## Datenmodell

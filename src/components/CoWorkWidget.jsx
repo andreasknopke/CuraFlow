@@ -20,23 +20,27 @@ function parseTenantSlug(allowed_tenants) {
   return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
-export default function CollaborationWidget() {
+export default function CoWorkWidget() {
   const { user, isAuthenticated } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);
+  const hideTimerRef = useRef(null);
 
   const tenantSlug = parseTenantSlug(user?.allowed_tenants);
   const roomName = `curaflow-support-${tenantSlug}`;
-  const publicLink = `https://meet.jit.si/${roomName}`;
+  const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
+  const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
+  const publicLink = `${jitsiBaseUrl}/${roomName}`;
   const displayName = encodeURIComponent(user?.full_name || user?.email || 'Admin');
   const jitsiUrl =
-    `https://meet.jit.si/${roomName}?lang=de` +
+    `${jitsiBaseUrl}/${roomName}?lang=de` +
     `#config.startWithAudioMuted=true` +
     `&config.startWithVideoMuted=true` +
     `&config.prejoinPageEnabled=false` +
@@ -49,6 +53,23 @@ export default function CollaborationWidget() {
       setTimeout(() => setCopied(false), 2000);
     });
   }, [publicLink]);
+
+  const clearHideTimer = useCallback(() => {
+    if (!hideTimerRef.current) return;
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = null;
+  }, []);
+
+  const scheduleHide = useCallback(() => {
+    clearHideTimer();
+    if (isOpen) {
+      setIsTriggerHidden(false);
+      return;
+    }
+    hideTimerRef.current = setTimeout(() => {
+      setIsTriggerHidden(true);
+    }, 8000);
+  }, [clearHideTimer, isOpen]);
 
   // Drag-Logik für das Panel
   const onMouseDown = (e) => {
@@ -76,6 +97,24 @@ export default function CollaborationWidget() {
     };
   }, []);
 
+  useEffect(() => {
+    scheduleHide();
+    return clearHideTimer;
+  }, [scheduleHide, clearHideTimer]);
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      const nearRightEdge = window.innerWidth - e.clientX <= 140;
+      const nearBottomEdge = window.innerHeight - e.clientY <= 140;
+      if (!nearRightEdge || !nearBottomEdge) return;
+      setIsTriggerHidden(false);
+      scheduleHide();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, [scheduleHide]);
+
   // Nur für Admins sichtbar – NACH allen Hooks
   if (!isAuthenticated || !isAdmin) return null;
 
@@ -88,21 +127,25 @@ export default function CollaborationWidget() {
     <>
       {/* Floating-Toggle-Button */}
       <button
-        onClick={() => setIsOpen((v) => !v)}
-        title={isOpen ? 'Kollaboration beenden' : 'Kollaborationssession starten'}
+        onClick={() => {
+          setIsOpen((v) => !v);
+          setIsTriggerHidden(false);
+        }}
+        title={isOpen ? 'CoWork beenden' : 'CoWork-Session starten'}
         className={`
           fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full px-4 py-3
           shadow-lg text-sm font-medium transition-all duration-200
+          ${!isOpen && isTriggerHidden ? 'opacity-0 pointer-events-none translate-y-2' : 'opacity-100'}
           ${isOpen
             ? 'bg-red-500 hover:bg-red-600 text-white'
             : 'bg-indigo-600 hover:bg-indigo-700 text-white'}
         `}
       >
         {isOpen ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
-        <span className="hidden sm:inline">{isOpen ? 'Session beenden' : 'Kollaboration'}</span>
+        <span className="hidden sm:inline">{isOpen ? 'Session beenden' : 'CoWork'}</span>
       </button>
 
-      {/* Kollaborations-Panel */}
+      {/* CoWork-Panel */}
       {isOpen && (
         <div
           ref={panelRef}
@@ -116,7 +159,7 @@ export default function CollaborationWidget() {
           >
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              <span className="font-semibold text-sm">Kollaboration – {tenantSlug}</span>
+              <span className="font-semibold text-sm">CoWork – {tenantSlug}</span>
             </div>
             <button
               onClick={() => setIsOpen(false)}
@@ -155,7 +198,7 @@ export default function CollaborationWidget() {
             src={jitsiUrl}
             allow="camera; microphone; display-capture; fullscreen; autoplay"
             style={{ width: '100%', height: 360, border: 'none', display: 'block' }}
-            title="Kollaborationssession"
+            title="CoWork-Session"
           />
         </div>
       )}

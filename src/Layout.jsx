@@ -13,7 +13,7 @@ import { generateThemeCss } from '@/components/themeConfig';
 import ThemeSelector from '@/components/ThemeSelector';
 import { Palette } from 'lucide-react';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
-import CollaborationWidget from '@/components/CollaborationWidget';
+import CoWorkWidget from '@/components/CoWorkWidget';
 
 function LayoutContent({ children }) {
   const { isAuthenticated, isReadOnly, isLoading, mustChangePassword, setMustChangePassword } = useAuth();
@@ -324,7 +324,7 @@ function LayoutContent({ children }) {
       )}
       
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
-      <CollaborationWidget />
+      <CoWorkWidget />
     </div>
   );
 }
