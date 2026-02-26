@@ -31,11 +31,9 @@ export default function CollaborationWidget() {
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);
 
-  // Nur für Admins sichtbar
-  if (!isAuthenticated || !isAdmin) return null;
-
   const tenantSlug = parseTenantSlug(user?.allowed_tenants);
   const roomName = `curaflow-support-${tenantSlug}`;
+  const publicLink = `https://meet.jit.si/${roomName}`;
   const displayName = encodeURIComponent(user?.full_name || user?.email || 'Admin');
   const jitsiUrl =
     `https://meet.jit.si/${roomName}` +
@@ -44,8 +42,6 @@ export default function CollaborationWidget() {
     `&config.prejoinPageEnabled=false` +
     `&config.disableDeepLinking=true` +
     `&userInfo.displayName=${displayName}`;
-
-  const publicLink = `https://meet.jit.si/${roomName}`;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(publicLink).then(() => {
@@ -79,6 +75,9 @@ export default function CollaborationWidget() {
       window.removeEventListener('mouseup', onUp);
     };
   }, []);
+
+  // Nur für Admins sichtbar – NACH allen Hooks
+  if (!isAuthenticated || !isAdmin) return null;
 
   /** @type {React.CSSProperties} */
   const panelStyle = position.x !== null
