@@ -18,6 +18,7 @@ export default function WishMonthOverview({
     onDateChange,
     onToggle,
     onRangeSelect,
+    minSelectableDate,
     isSchoolHoliday,
     isPublicHoliday,
     activeType
@@ -145,6 +146,7 @@ export default function WishMonthOverview({
 
     const daysInMonth = getDaysInMonth(currentMonth);
     const days = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
+    const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
 
     const visibleDoctors = doctors.filter(d => !hiddenDoctorIds.includes(d.id));
 
@@ -195,10 +197,13 @@ export default function WishMonthOverview({
         const absence = getAbsence(doctor, date);
         const hasOtherWish = showOccupiedDates && hasAnyWish(date);
         const dateStr = format(date, 'yyyy-MM-dd');
+        const isBeforeDeadline = !!minSelectableDateStr && dateStr < minSelectableDateStr;
+        const isBoundaryDate = !!minSelectableDateStr && dateStr === minSelectableDateStr;
         const isDragSelected = dragSelectedKeys.has(`${doctor.id}|${dateStr}`);
 
         const handleCellMouseDown = (event) => {
             if (event.button !== 0) return;
+            if (isBeforeDeadline) return;
             event.preventDefault();
             setIsDragging(true);
             setDragDoctorId(doctor.id);
@@ -207,7 +212,7 @@ export default function WishMonthOverview({
         };
 
         const handleCellMouseEnter = () => {
-            if (!isDragging || dragDoctorId !== doctor.id) return;
+            if (!isDragging || dragDoctorId !== doctor.id || isBeforeDeadline) return;
             setDragCurrentDate(date);
         };
 
@@ -238,7 +243,7 @@ export default function WishMonthOverview({
                     <Tooltip delayDuration={0}>
                         <TooltipTrigger asChild>
                             <div
-                                className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''}`}
+                                className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''} ${isBeforeDeadline ? 'opacity-35' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
                                 onMouseDown={handleCellMouseDown}
                                 onMouseEnter={handleCellMouseEnter}
                                 onMouseUp={handleCellMouseUp}
@@ -262,8 +267,8 @@ export default function WishMonthOverview({
             const borderClass = hasOtherWish ? "ring-2 ring-inset ring-emerald-400/60" : "";
             return (
                 <div 
-                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass} ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100' : ''}`}
-                    onClick={() => onToggle && onToggle(date, doctor.id)}
+                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass} ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100' : ''} ${isBeforeDeadline ? 'opacity-35 cursor-not-allowed hover:bg-transparent' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
+                    onClick={() => !isBeforeDeadline && onToggle && onToggle(date, doctor.id)}
                     onMouseDown={handleCellMouseDown}
                     onMouseEnter={handleCellMouseEnter}
                     onMouseUp={handleCellMouseUp}
@@ -300,8 +305,8 @@ export default function WishMonthOverview({
                 <Tooltip delayDuration={0}>
                     <TooltipTrigger asChild>
                         <div 
-                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5 ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''}`}
-                            onClick={() => onToggle && onToggle(date, doctor.id)}
+                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5 ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''} ${isBeforeDeadline ? 'opacity-35 cursor-not-allowed hover:opacity-35' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
+                            onClick={() => !isBeforeDeadline && onToggle && onToggle(date, doctor.id)}
                             onMouseDown={handleCellMouseDown}
                             onMouseEnter={handleCellMouseEnter}
                             onMouseUp={handleCellMouseUp}
@@ -403,6 +408,9 @@ export default function WishMonthOverview({
                         {days.map(day => {
                             const isToday = isSameDay(day, new Date());
                             const isWknd = isWeekend(day);
+                            const dayStr = format(day, 'yyyy-MM-dd');
+                            const isBeforeDeadline = !!minSelectableDateStr && dayStr < minSelectableDateStr;
+                            const isBoundaryDate = !!minSelectableDateStr && dayStr === minSelectableDateStr;
                             
                             const isHol = isPublicHoliday ? isPublicHoliday(day) : false;
                             const isSchoolHol = isSchoolHoliday ? isSchoolHoliday(day) : false;
@@ -437,12 +445,15 @@ export default function WishMonthOverview({
                                         className={`w-[80px] flex-shrink-0 p-1 border-r border-slate-200 flex flex-col items-center justify-center text-xs sticky left-0 z-10 bg-opacity-95 backdrop-blur-sm shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)] ${bgClass}`}
                                         style={hatchStyle}
                                     >
-                                        <span className={`font-bold ${isWknd || isHol ? 'text-red-500' : (isSchoolHol ? 'text-green-700' : 'text-slate-700')} ${isToday ? 'text-blue-600' : ''}`}>
+                                        <span className={`font-bold ${isWknd || isHol ? 'text-red-500' : (isSchoolHol ? 'text-green-700' : 'text-slate-700')} ${isToday ? 'text-blue-600' : ''} ${isBeforeDeadline ? 'opacity-40' : ''} ${isBoundaryDate ? 'text-cyan-700' : ''}`}>
                                             {format(day, 'dd.MM.')}
                                         </span>
                                         <span className="text-[10px] text-slate-500 uppercase tracking-wider">
                                             {format(day, 'EE', { locale: de })}
                                         </span>
+                                        {isBoundaryDate && (
+                                            <span className="text-[9px] font-semibold text-cyan-700">ab hier</span>
+                                        )}
                                     </div>
                                     
                                     {/* Doctor Columns */}

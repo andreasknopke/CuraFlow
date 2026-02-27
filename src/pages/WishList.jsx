@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, addDays, isAfter, parseISO, isValid } from 'date-fns';
+import { format, addDays, isAfter, parseISO, isValid, addMonths, startOfDay } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -46,6 +46,18 @@ export default function WishListPage() {
   });
 
   const queryClient = useQueryClient();
+
+    // Deadline setting for wishes (non-admin users)
+    const { data: settings = [] } = useQuery({
+        queryKey: ['systemSettings'],
+        queryFn: () => db.SystemSetting.list(),
+    });
+
+    const deadlineMonthsRaw = settings.find(s => s.key === 'wish_deadline_months')?.value;
+    const deadlineMonths = parseInt(deadlineMonthsRaw, 10);
+    const hasDeadline = !isAdmin && !isNaN(deadlineMonths);
+    const minSelectableDate = hasDeadline ? addMonths(startOfDay(new Date()), deadlineMonths) : null;
+    const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
 
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
@@ -200,6 +212,11 @@ export default function WishListPage() {
   const handleDateClick = (date) => {
     if (!selectedDoctorId || !canEdit) return;
     const dateStr = format(date, 'yyyy-MM-dd');
+
+        if (minSelectableDateStr && dateStr < minSelectableDateStr) {
+            alert(`Dienstwünsche können erst ab ${format(minSelectableDate, 'dd.MM.yyyy')} eingetragen werden.`);
+            return;
+        }
     
     // Check overlap with absence
     const existingShift = doctorShifts.find(s => s.date === dateStr);
@@ -234,6 +251,11 @@ export default function WishListPage() {
         const startStr = format(start, 'yyyy-MM-dd');
         const endStr = format(end, 'yyyy-MM-dd');
         const targetDoctor = doctors.find(d => d.id === targetDoctorId);
+
+        if (minSelectableDateStr && startStr < minSelectableDateStr) {
+            alert(`Dienstwünsche können erst ab ${format(minSelectableDate, 'dd.MM.yyyy')} eingetragen werden.`);
+            return;
+        }
 
         const targetDoctorShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
 
@@ -422,6 +444,13 @@ export default function WishListPage() {
           </div>
       </div>
 
+            {hasDeadline && (
+                <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+                    Sperrfrist aktiv: Eingaben sind ab <span className="font-semibold">{format(minSelectableDate, 'dd.MM.yyyy')}</span> möglich.
+                    Der Start in der Kalenderansicht ist markiert; frühere Tage sind nicht auswählbar.
+                </div>
+            )}
+
       {/* Wish Reminder Status (Admin only) */}
       {isAdmin && (() => {
         // Show reminder status for the current month being viewed
@@ -469,6 +498,7 @@ export default function WishListPage() {
                         occupiedWishDates={occupiedWishDates}
                         onToggle={handleDateClick}
                         onRangeSelect={handleRangeSelect}
+                        minSelectableDate={minSelectableDate}
                         isSchoolHoliday={isSchoolHoliday}
                         isPublicHoliday={isPublicHoliday}
                         activeType={activeTab}
@@ -490,6 +520,7 @@ export default function WishListPage() {
                       onDateChange={setViewDate}
                       activeType={activeTab}
                       onRangeSelect={handleRangeSelect}
+                      minSelectableDate={minSelectableDate}
                       onToggle={(date, docId) => {
                           setSelectedDoctorId(docId); // Set context for dialog
                           handleDateClick(date);
@@ -510,6 +541,7 @@ export default function WishListPage() {
                 occupiedWishDates={occupiedWishDates}
                 onToggle={handleDateClick}
                 onRangeSelect={handleRangeSelect}
+                minSelectableDate={minSelectableDate}
                 isSchoolHoliday={isSchoolHoliday}
                 isPublicHoliday={isPublicHoliday}
                 activeType={activeTab}

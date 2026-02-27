@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { api, db, base44 } from "@/api/client";
 import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
-export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, onRangeSelect, activeType, isSchoolHoliday, isPublicHoliday }) {
+export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, onRangeSelect, minSelectableDate, activeType, isSchoolHoliday, isPublicHoliday }) {
   // Wunschmarkierung ist immer ausgeschaltet
   const showOccupiedDates = false;
   const months = eachMonthOfInterval({
@@ -129,6 +129,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
             onDayMouseEnter={handleDayMouseEnter}
             onDayMouseUp={handleDayMouseUp}
             dragSelectedDateKeys={dragSelectedDateKeys}
+            minSelectableDate={minSelectableDate}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             showOccupiedDates={showOccupiedDates}
@@ -139,7 +140,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
   );
 }
 
-function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
+function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, minSelectableDate, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -173,6 +174,9 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
 
           // Green border if ANYONE has a wish here (only if enabled)
           const dateStr = format(date, 'yyyy-MM-dd');
+          const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
+          const isBeforeDeadline = !!minSelectableDateStr && dateStr < minSelectableDateStr;
+          const isBoundaryDate = !!minSelectableDateStr && dateStr === minSelectableDateStr;
           const isOccupied = showOccupiedDates && occupiedWishDates && occupiedWishDates.has(dateStr);
           const borderClass = isOccupied ? "ring-2 ring-emerald-400/60 z-10" : "";
           const isDragSelected = dragSelectedDateKeys?.has(dateStr);
@@ -256,18 +260,25 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           return (
             <button
               key={date.toString()}
-              onMouseDown={(e) => onDayMouseDown?.(date, e)}
-              onMouseEnter={() => onDayMouseEnter?.(date)}
+              onMouseDown={(e) => !isBeforeDeadline && onDayMouseDown?.(date, e)}
+              onMouseEnter={() => !isBeforeDeadline && onDayMouseEnter?.(date)}
               onMouseUp={() => onDayMouseUp?.()}
               onDragStart={(e) => e.preventDefault()}
               className={cn(
                 "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none",
                 colorClass,
                 !status && borderClass,
-                isDragSelected && "ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900"
+                isDragSelected && "ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900",
+                isBeforeDeadline && "opacity-35 cursor-not-allowed hover:bg-transparent",
+                isBoundaryDate && "ring-2 ring-cyan-500"
               )}
               style={finalStyle}
-              title={title + ' ' + format(date, 'dd.MM.yyyy') + (isOccupied ? ' (Wunsch vorhanden)' : '')}
+              title={
+                (isBeforeDeadline ? `Gesperrt bis ${minSelectableDateStr}. ` : '') +
+                title + ' ' + format(date, 'dd.MM.yyyy') +
+                (isBoundaryDate ? ' (ab hier aktiv)' : '') +
+                (isOccupied ? ' (Wunsch vorhanden)' : '')
+              }
             >
               {content}
             </button>
