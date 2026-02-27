@@ -1,4 +1,4 @@
-import { addMonths, subDays, format, startOfMonth, isSameDay } from 'date-fns';
+import { addMonths, subDays, format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import crypto from 'crypto';
 import { sendEmail } from '../utils/email.js';
@@ -7,10 +7,10 @@ import { sendEmail } from '../utils/email.js';
  * Checks if a wish reminder email should be sent today and sends it.
  * 
  * Logic:
- * - wish_deadline_months = N means wishes must be entered N months ahead
- * - For a target month M, the deadline ("Sperrtermin") is the 1st of (M - N months)
- * - The reminder is sent exactly 14 days before that Sperrtermin
- * - We check for the next 12 months of target months to find a matching reminder date
+ * - wish_deadline_months = N means the next N months are already locked/finalized
+ * - In month X, users can submit wishes earliest for month X + (N + 1)
+ * - Reminder is sent exactly 7 days before end of current month
+ * - This gives users one final week in month X to submit for target month X + (N + 1)
  *
  * @param {import('mysql2/promise').Pool} dbPool - MySQL connection pool
  * @param {string} [contextLabel='default'] - Label for logging (e.g. tenant name)
@@ -35,31 +35,20 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
     }
 
     // 2. Determine if today is a reminder day
-    // For each future target month, check if today = Sperrtermin - 14 days
+    // Reminder is sent one week before end of current month
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let targetMonth = null;
-    let sperrtermin = null;
+    const currentMonthEnd = endOfMonth(today);
+    const reminderDay = subDays(currentMonthEnd, 7);
 
-    for (let i = 0; i < 12; i++) {
-      // Target month: i months from now
-      const candidateTarget = startOfMonth(addMonths(today, deadlineMonths + i));
-      // Sperrtermin for this target month: target - deadlineMonths
-      const candidateSperrtermin = startOfMonth(addMonths(candidateTarget, -deadlineMonths));
-      // Reminder day: 14 days before Sperrtermin
-      const reminderDay = subDays(candidateSperrtermin, 14);
-
-      if (isSameDay(today, reminderDay)) {
-        targetMonth = candidateTarget;
-        sperrtermin = candidateSperrtermin;
-        break;
-      }
-    }
-
-    if (!targetMonth) {
+    if (!isSameDay(today, reminderDay)) {
       return { skipped: true, reason: 'Today is not a reminder day' };
     }
+
+    // Target month is first month after locked horizon
+    const targetMonth = startOfMonth(addMonths(today, deadlineMonths + 1));
+    const sperrtermin = currentMonthEnd;
 
     // 3. Check if we already sent for this target month
     const targetKey = format(targetMonth, 'yyyy-MM');
@@ -108,7 +97,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
         const text = [
           `Hallo ${doctor.name},`,
           '',
-          `dies ist eine freundliche Erinnerung, dass der Eintragungszeitraum für Dienstwünsche für ${targetMonthFormatted} in 2 Wochen endet.`,
+          `dies ist eine freundliche Erinnerung, dass der Eintragungszeitraum für Dienstwünsche für ${targetMonthFormatted} in einer Woche endet.`,
           '',
           `📅 Sperrtermin: ${sperrterminFormatted}`,
           '',
@@ -125,7 +114,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
           <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;color:#1e293b">
             <h2 style="color:#4f46e5">Erinnerung: Dienstwünsche eintragen</h2>
             <p>Hallo <strong>${doctor.name}</strong>,</p>
-            <p>dies ist eine freundliche Erinnerung, dass der Eintragungszeitraum für Dienstwünsche für <strong>${targetMonthFormatted}</strong> in 2 Wochen endet.</p>
+            <p>dies ist eine freundliche Erinnerung, dass der Eintragungszeitraum für Dienstwünsche für <strong>${targetMonthFormatted}</strong> in einer Woche endet.</p>
             <div style="background:#f1f5f9;border-radius:8px;padding:16px;margin:20px 0;border-left:4px solid #4f46e5">
               <strong>📅 Sperrtermin: ${sperrterminFormatted}</strong>
             </div>

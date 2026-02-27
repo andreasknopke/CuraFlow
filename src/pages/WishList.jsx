@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, addDays, isAfter, parseISO, isValid, addMonths, startOfDay } from 'date-fns';
+import { format, addDays, isAfter, parseISO, isValid, addMonths, startOfDay, startOfMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -56,7 +56,9 @@ export default function WishListPage() {
     const deadlineMonthsRaw = settings.find(s => s.key === 'wish_deadline_months')?.value;
     const deadlineMonths = parseInt(deadlineMonthsRaw, 10);
     const hasDeadline = !isAdmin && !isNaN(deadlineMonths);
-    const minSelectableDate = hasDeadline ? addMonths(startOfDay(new Date()), deadlineMonths) : null;
+    const minSelectableDate = hasDeadline
+        ? startOfMonth(addMonths(startOfDay(new Date()), deadlineMonths + 1))
+        : null;
     const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
 
   // Fetch Workplaces for Tabs

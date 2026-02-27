@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
-import { format, addMonths, isBefore, startOfDay } from "date-fns";
+import { format, addMonths, isBefore, startOfDay, startOfMonth } from "date-fns";
 import { de } from "date-fns/locale";
 import { CheckCircle2, XCircle, Trash2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -49,7 +49,7 @@ export default function WishRequestDialog({
     let minDate = null;
 
     if (isDeadlineRestricted && date) {
-        minDate = addMonths(startOfDay(new Date()), parseInt(deadlineMonths));
+        minDate = startOfMonth(addMonths(startOfDay(new Date()), parseInt(deadlineMonths) + 1));
         // If date is BEFORE minDate, block.
         if (isBefore(date, minDate)) {
             isBlockedByDeadline = true;
