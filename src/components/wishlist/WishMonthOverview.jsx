@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, db, base44 } from "@/api/client";
+import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
 export default function WishMonthOverview({ 
     year, 
@@ -90,7 +91,7 @@ export default function WishMonthOverview({
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.find(w => 
             w.doctor_id === doctor.id && 
-            w.date === dateStr &&
+            isWishOnDate(w, dateStr) &&
             (w.type === 'no_service' || !activeType || w.position === activeType)
         );
     };
@@ -98,7 +99,7 @@ export default function WishMonthOverview({
     const hasAnyWish = (date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.some(w => 
-            w.date === dateStr &&
+            isWishOnDate(w, dateStr) &&
             w.type === 'service' &&
             w.position === activeType
         );
@@ -231,6 +232,7 @@ export default function WishMonthOverview({
                                 wish.status === 'approved' ? 'Genehmigt' : 'Abgelehnt'
                             }</div>
                             {wish.reason && <div className="mt-1 text-slate-300 italic">"{wish.reason}"</div>}
+                            {hasWishRange(wish) && <div className="mt-1 text-slate-300">Zeitraum: {getWishStartDate(wish)} bis {getWishEndDate(wish)}</div>}
                             {wish.admin_comment && <div className="mt-1 text-amber-300 border-t border-white/10 pt-1">Admin: {wish.admin_comment}</div>}
                         </div>
                     </TooltipContent>

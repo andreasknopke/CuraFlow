@@ -15,6 +15,7 @@ import { trackDbChange } from '@/components/utils/dbTracker';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
 import { AlertTriangle } from 'lucide-react';
+import { isWishOnDate } from '@/utils/wishRange';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
@@ -205,7 +206,7 @@ export default function ServiceStaffingPage() {
              // Auto-approve matching wishes
              const matchingWish = wishes.find(w => 
                 w.doctor_id === fullShift.doctor_id && 
-                w.date === fullShift.date && 
+                     isWishOnDate(w, fullShift.date) && 
                 w.type === 'service' && 
                 w.status === 'pending' &&
                 (!w.position || w.position === fullShift.position)
@@ -235,7 +236,7 @@ export default function ServiceStaffingPage() {
              // Auto-approve matching wishes
              const matchingWish = wishes.find(w => 
                 w.doctor_id === data.doctor_id && 
-                w.date === data.date && 
+                     isWishOnDate(w, data.date) && 
                 w.type === 'service' && 
                 w.status === 'pending' &&
                 (!w.position || w.position === data.position)
@@ -611,7 +612,7 @@ export default function ServiceStaffingPage() {
                                                         <SelectItem value="unassigned">-</SelectItem>
                                                         {availableDoctors.map(doc => {
                                                             const dateStr = format(day, 'yyyy-MM-dd');
-                                                            const wish = wishes.find(w => w.doctor_id === doc.id && w.date === dateStr && w.status !== 'rejected');
+                                                            const wish = wishes.find(w => w.doctor_id === doc.id && isWishOnDate(w, dateStr) && w.status !== 'rejected');
                                                             let className = "";
                                                             if (wish) {
                                                                 if (wish.type === 'service') className = "text-green-600 font-medium bg-green-50";

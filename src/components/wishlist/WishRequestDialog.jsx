@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Input } from "@/components/ui/input";
 import { format, addMonths, isBefore, startOfDay } from "date-fns";
 import { de } from "date-fns/locale";
 import { CheckCircle2, XCircle, Trash2, AlertCircle, AlertTriangle } from "lucide-react";
@@ -29,7 +30,10 @@ export default function WishRequestDialog({
         priority: 'medium',
         reason: '',
         status: 'pending',
-        admin_comment: ''
+        admin_comment: '',
+        range_enabled: false,
+        range_start: '',
+        range_end: ''
     });
 
     const { data: settings = [] } = useQuery({
@@ -60,16 +64,23 @@ export default function WishRequestDialog({
                     priority: wish.priority || 'medium',
                     reason: wish.reason || '',
                     status: wish.status || 'pending',
-                    admin_comment: wish.admin_comment || ''
+                    admin_comment: wish.admin_comment || '',
+                    range_enabled: !!(wish.range_start || wish.range_end),
+                    range_start: wish.range_start || wish.date || '',
+                    range_end: wish.range_end || wish.date || ''
                 });
             } else {
+                const dateStr = date ? format(date, 'yyyy-MM-dd') : '';
                 setFormData({
                     type: 'service',
                     position: activePosition,
                     priority: 'medium',
                     reason: '',
                     status: 'pending',
-                    admin_comment: ''
+                    admin_comment: '',
+                    range_enabled: false,
+                    range_start: dateStr,
+                    range_end: dateStr
                 });
             }
         }
@@ -114,8 +125,24 @@ export default function WishRequestDialog({
     };
 
     const handleSubmit = () => {
+        if (formData.type === 'no_service' && formData.range_enabled) {
+            if (!formData.range_start || !formData.range_end) {
+                alert('Bitte Start- und Enddatum für den Zeitraum auswählen.');
+                return;
+            }
+            if (formData.range_end < formData.range_start) {
+                alert('Das Enddatum darf nicht vor dem Startdatum liegen.');
+                return;
+            }
+        }
+
         const requiresApproval = getRequiresApproval();
         const dataToSave = { ...formData };
+
+        if (formData.type !== 'no_service' || !formData.range_enabled) {
+            dataToSave.range_start = null;
+            dataToSave.range_end = null;
+        }
         
         // Auto-approve if no approval required and it's a new wish (not editing)
         if (!requiresApproval && !wish && !isAdmin) {
@@ -199,6 +226,54 @@ export default function WishRequestDialog({
                             </div>
                         </RadioGroup>
                     </div>
+
+                    {formData.type === 'no_service' && (
+                        <div className="space-y-3 border rounded-lg p-3 bg-slate-50">
+                            <div className="flex items-center justify-between gap-3">
+                                <Label htmlFor="range-enabled" className="cursor-pointer">Zeitraum auswählen</Label>
+                                <input
+                                    id="range-enabled"
+                                    type="checkbox"
+                                    checked={formData.range_enabled}
+                                    onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        const dateStr = date ? format(date, 'yyyy-MM-dd') : '';
+                                        setFormData({
+                                            ...formData,
+                                            range_enabled: checked,
+                                            range_start: checked ? (formData.range_start || dateStr) : dateStr,
+                                            range_end: checked ? (formData.range_end || dateStr) : dateStr
+                                        });
+                                    }}
+                                    disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                    className="h-4 w-4"
+                                />
+                            </div>
+
+                            {formData.range_enabled && (
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label>Von</Label>
+                                        <Input
+                                            type="date"
+                                            value={formData.range_start || ''}
+                                            onChange={(e) => setFormData({ ...formData, range_start: e.target.value })}
+                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label>Bis</Label>
+                                        <Input
+                                            type="date"
+                                            value={formData.range_end || ''}
+                                            onChange={(e) => setFormData({ ...formData, range_end: e.target.value })}
+                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {formData.type === 'service' && activePosition && (
                         <div className="space-y-2 animate-in fade-in slide-in-from-top-2 bg-indigo-50 p-3 rounded border border-indigo-100 text-indigo-900">

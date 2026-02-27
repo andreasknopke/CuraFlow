@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear } from 'date-fns';
+import { format, addDays, isAfter, parseISO, isValid } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { trackDbChange } from '@/components/utils/dbTracker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Table2 } from 'lucide-react';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { isWishOnDate, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
 export default function WishListPage() {
   const { isReadOnly, isAuthenticated, user } = useAuth();
@@ -162,20 +163,28 @@ export default function WishListPage() {
         // Check if wish was approved and delete corresponding shift if exists
         const wishToDelete = allWishes.find(w => w.id === id);
         if (wishToDelete && wishToDelete.status === 'approved' && wishToDelete.type === 'service') {
-            const shifts = await db.ShiftEntry.filter({ 
-                date: wishToDelete.date, 
-                doctor_id: wishToDelete.doctor_id 
-            });
-            
-            // Find shift that matches the wish position (or just the date if user has only one shift usually)
-            // To be safe, only delete if position matches or it's marked as auto-generated
-            const shift = shifts.find(s => 
-                (!wishToDelete.position || s.position === wishToDelete.position) &&
-                (s.note?.includes('Wunsch') || s.note?.includes('genehmigt'))
-            );
+            const start = getWishStartDate(wishToDelete) || wishToDelete.date;
+            const end = getWishEndDate(wishToDelete) || wishToDelete.date;
+            let cursor = parseISO(start);
+            const endDate = parseISO(end);
 
-            if (shift) {
-                await db.ShiftEntry.delete(shift.id);
+            while (isValid(cursor) && isValid(endDate) && !isAfter(cursor, endDate)) {
+                const day = format(cursor, 'yyyy-MM-dd');
+                const shifts = await db.ShiftEntry.filter({ 
+                    date: day,
+                    doctor_id: wishToDelete.doctor_id 
+                });
+
+                const shift = shifts.find(s => 
+                    (!wishToDelete.position || s.position === wishToDelete.position) &&
+                    (s.note?.includes('Wunsch') || s.note?.includes('genehmigt'))
+                );
+
+                if (shift) {
+                    await db.ShiftEntry.delete(shift.id);
+                }
+
+                cursor = addDays(cursor, 1);
             }
         }
         return db.WishRequest.delete(id);
@@ -199,7 +208,7 @@ export default function WishListPage() {
         return;
     }
 
-    const existingWish = doctorWishes.find(w => w.date === dateStr);
+    const existingWish = doctorWishes.find(w => isWishOnDate(w, dateStr));
     
     setDialogState({
         isOpen: true,
@@ -230,19 +239,22 @@ export default function WishListPage() {
   const handleDialogSave = async (formData) => {
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
+      const effectiveDate = (dataToSave.type === 'no_service' && dataToSave.range_enabled && dataToSave.range_start)
+          ? dataToSave.range_start
+          : dateStr;
       
       if (dialogState.wish) {
           // Update
           await db.WishRequest.update(dialogState.wish.id, {
               ...dataToSave,
               doctor_id: selectedDoctorId,
-              date: dateStr,
+              date: effectiveDate,
               user_viewed: false
           });
           
           // Create shift if flagged
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
+              await createShiftFromWish(selectedDoctorId, effectiveDate, dataToSave.position);
           }
           
           trackDbChange();
@@ -254,14 +266,14 @@ export default function WishListPage() {
           // Create
           const wishData = {
               doctor_id: selectedDoctorId,
-              date: dateStr,
+              date: effectiveDate,
               ...dataToSave
           };
           await db.WishRequest.create(wishData);
           
           // Create shift if flagged (auto-approved)
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
+              await createShiftFromWish(selectedDoctorId, effectiveDate, dataToSave.position);
           }
           
           trackDbChange();

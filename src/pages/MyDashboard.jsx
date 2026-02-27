@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, isAfter, parseISO, startOfDay, addMonths, isSameDay, isValid } from 'date-fns';
+import { format, isAfter, parseISO, startOfDay, addMonths, isSameDay, isValid, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, 
 import { Switch } from "@/components/ui/switch";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from "@/components/ui/use-toast";
+import { getWishStartDate, getWishEndDate, hasWishRange } from '@/utils/wishRange';
 
 // Safe parseISO that handles undefined/null
 const safeParseISO = (dateStr) => {
@@ -36,6 +37,28 @@ const safeFormatDate = (dateStr, formatStr, options = {}) => {
     } catch (e) {
         return '-';
     }
+};
+
+const getWishDateRange = (wish) => {
+    const start = getWishStartDate(wish) || wish?.date;
+    const end = getWishEndDate(wish) || wish?.date;
+    return { start, end };
+};
+
+const expandWishDates = (wish) => {
+    const { start, end } = getWishDateRange(wish);
+    if (!start || !end) return [];
+
+    let cursor = safeParseISO(start);
+    const endDate = safeParseISO(end);
+    if (!cursor || !endDate) return [];
+
+    const dates = [];
+    while (!isAfter(cursor, endDate)) {
+        dates.push(format(cursor, 'yyyy-MM-dd'));
+        cursor = addDays(cursor, 1);
+    }
+    return dates;
 };
 
 // Admin Tasks Component with "show more" functionality
@@ -95,7 +118,11 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                             )}
 
                                             <div className="text-sm text-slate-600 mb-2">
-                                                <span className="font-medium">{safeFormatDate(wish.date, 'dd.MM.yyyy') || 'Datum ungültig'}</span>
+                                                <span className="font-medium">
+                                                    {hasWishRange(wish)
+                                                        ? `${safeFormatDate(getWishStartDate(wish), 'dd.MM.yyyy')} - ${safeFormatDate(getWishEndDate(wish), 'dd.MM.yyyy')}`
+                                                        : (safeFormatDate(wish.date, 'dd.MM.yyyy') || 'Datum ungültig')}
+                                                </span>
                                                 <span className="mx-1">•</span>
                                                 <span className={wish.type === 'service' ? "text-green-600" : "text-red-600"}>
                                                     {wish.type === 'service' ? (wish.position ? `Dienst: ${wish.position}` : 'Dienstwunsch') : 'Kein Dienst'}
@@ -245,11 +272,9 @@ export default function MyDashboardPage() {
         queryKey: ['wishes', selectedDoctorId],
         queryFn: async () => {
             if (!selectedDoctorId) return [];
-            const today = format(startOfDay(new Date()), 'yyyy-MM-dd');
             return db.WishRequest.filter({
-                doctor_id: selectedDoctorId,
-                date: { $gte: today }
-            }, 'date', 50);
+                doctor_id: selectedDoctorId
+            }, 'date', 300);
         },
         enabled: !!selectedDoctorId
     });
@@ -400,7 +425,10 @@ export default function MyDashboardPage() {
             
             // If approved and has specific position, create shift
             if (status === 'approved' && wish && wish.type === 'service' && wish.position) {
-                await handleAutoShiftCreation(wish, wish.date);
+                const wishDates = expandWishDates(wish);
+                for (const dateStr of wishDates) {
+                    await handleAutoShiftCreation(wish, dateStr);
+                }
             }
             return updated;
         },
@@ -423,14 +451,16 @@ export default function MyDashboardPage() {
         mutationFn: async (wish) => {
             // If deleting an approved service wish, remove shift
             if (wish.status === 'cancellation_requested' && wish.type === 'service') {
-                 const shifts = await db.ShiftEntry.filter({ 
-                    date: wish.date, 
-                    doctor_id: wish.doctor_id 
-                });
-                const shift = shifts.find(s => !wish.position || s.position === wish.position);
-                if (shift) {
-                    await db.ShiftEntry.delete(shift.id);
-                    // Also notify user? Not strictly needed as they requested it.
+                const wishDates = expandWishDates(wish);
+                for (const dateStr of wishDates) {
+                    const shifts = await db.ShiftEntry.filter({ 
+                        date: dateStr, 
+                        doctor_id: wish.doctor_id 
+                    });
+                    const shift = shifts.find(s => !wish.position || s.position === wish.position);
+                    if (shift) {
+                        await db.ShiftEntry.delete(shift.id);
+                    }
                 }
             }
             return db.WishRequest.delete(wish.id);
@@ -500,8 +530,14 @@ export default function MyDashboardPage() {
             (isAfter(d, today) || isSameDay(d, today));
     });
 
-    const pendingWishes = wishes.filter(w => w.status === 'pending' || w.status === 'cancellation_requested');
-    const recentDecisions = wishes.filter(w => w.status !== 'pending' && w.status !== 'cancellation_requested').slice(0, 5);
+    const todayStr = format(today, 'yyyy-MM-dd');
+    const pendingWishes = wishes.filter(w => {
+        const { end } = getWishDateRange(w);
+        return (w.status === 'pending' || w.status === 'cancellation_requested') && (!end || end >= todayStr);
+    });
+    const recentDecisions = wishes
+        .filter(w => w.status !== 'pending' && w.status !== 'cancellation_requested')
+        .slice(0, 5);
 
     if (!isAuthenticated) return <div className="p-8">Bitte anmelden.</div>;
     if (isLoadingDocs) return <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>;
@@ -737,7 +773,11 @@ export default function MyDashboardPage() {
                                         {pendingWishes.map(w => (
                                             <div key={w.id} className="flex items-center justify-between p-2 bg-slate-50 rounded border border-slate-100">
                                                 <div className="flex flex-col">
-                                                    <span className="text-sm font-medium">{safeFormatDate(w.date, 'dd.MM.yyyy')}</span>
+                                                    <span className="text-sm font-medium">
+                                                        {hasWishRange(w)
+                                                            ? `${safeFormatDate(getWishStartDate(w), 'dd.MM.yyyy')} - ${safeFormatDate(getWishEndDate(w), 'dd.MM.yyyy')}`
+                                                            : safeFormatDate(w.date, 'dd.MM.yyyy')}
+                                                    </span>
                                                     <span className="text-xs text-slate-500">
                                                         {w.type === 'service' ? 'Dienstwunsch' : 'Kein Dienst'}
                                                     </span>
@@ -762,7 +802,11 @@ export default function MyDashboardPage() {
                                         {recentDecisions.map(w => (
                                             <div key={w.id} className="flex flex-col p-2 bg-white rounded border border-slate-100 gap-2">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-sm font-medium">{safeFormatDate(w.date, 'dd.MM.yyyy')}</span>
+                                                    <span className="text-sm font-medium">
+                                                        {hasWishRange(w)
+                                                            ? `${safeFormatDate(getWishStartDate(w), 'dd.MM.yyyy')} - ${safeFormatDate(getWishEndDate(w), 'dd.MM.yyyy')}`
+                                                            : safeFormatDate(w.date, 'dd.MM.yyyy')}
+                                                    </span>
                                                     {w.status === 'approved' ? (
                                                         <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0">
                                                             <CheckCircle2 className="w-3 h-3 mr-1" /> Genehmigt

@@ -426,6 +426,14 @@ async function ensureTablesExist() {
   } catch (err) {
     // Table may already exist
   }
+
+  // Ensure WishRequest supports date ranges for single-request periods
+  try {
+    await db.execute(`ALTER TABLE WishRequest ADD COLUMN IF NOT EXISTS range_start DATE DEFAULT NULL`);
+    await db.execute(`ALTER TABLE WishRequest ADD COLUMN IF NOT EXISTS range_end DATE DEFAULT NULL`);
+  } catch (err) {
+    // WishRequest may not exist yet in some environments
+  }
 }
 
 // Graceful shutdown

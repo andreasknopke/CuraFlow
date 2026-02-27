@@ -3,6 +3,7 @@ import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endO
 import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { api, db, base44 } from "@/api/client";
+import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
 export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, activeType, isSchoolHoliday, isPublicHoliday }) {
   // Wunschmarkierung ist immer ausgeschaltet
@@ -21,7 +22,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
     if (shift) return { type: 'absence', label: shift.position };
 
     // 2. Check Wishes
-    const wish = wishes.find(w => w.date === dateStr);
+    const wish = wishes.find(w => isWishOnDate(w, dateStr));
     if (wish) return { type: 'wish', label: wish.type, data: wish };
 
     return null;
@@ -143,6 +144,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, is
                   }
                   
                   if (wish?.reason) title += `\nGrund: ${wish.reason}`;
+                    if (hasWishRange(wish)) title += `\nZeitraum: ${getWishStartDate(wish)} bis ${getWishEndDate(wish)}`;
                   if (wish?.admin_comment) title += `\nAdmin: ${wish.admin_comment}`;
               }
           } else {
