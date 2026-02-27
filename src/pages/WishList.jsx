@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, addDays, isAfter, parseISO, isValid, addMonths, startOfDay, startOfMonth } from 'date-fns';
+import { format, getYear } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, CheckCircle2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,7 +15,6 @@ import { trackDbChange } from '@/components/utils/dbTracker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Table2 } from 'lucide-react';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
-import { isWishOnDate, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
 export default function WishListPage() {
   const { isReadOnly, isAuthenticated, user } = useAuth();
@@ -41,25 +40,10 @@ export default function WishListPage() {
   const [dialogState, setDialogState] = useState({
     isOpen: false,
     date: null,
-        wish: null,
-        initialDraft: null
+    wish: null
   });
 
   const queryClient = useQueryClient();
-
-    // Deadline setting for wishes (non-admin users)
-    const { data: settings = [] } = useQuery({
-        queryKey: ['systemSettings'],
-        queryFn: () => db.SystemSetting.list(),
-    });
-
-    const deadlineMonthsRaw = settings.find(s => s.key === 'wish_deadline_months')?.value;
-    const deadlineMonths = parseInt(deadlineMonthsRaw, 10);
-    const hasDeadline = !isAdmin && !isNaN(deadlineMonths);
-    const minSelectableDate = hasDeadline
-        ? startOfMonth(addMonths(startOfDay(new Date()), deadlineMonths + 1))
-        : null;
-    const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
 
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
@@ -178,28 +162,20 @@ export default function WishListPage() {
         // Check if wish was approved and delete corresponding shift if exists
         const wishToDelete = allWishes.find(w => w.id === id);
         if (wishToDelete && wishToDelete.status === 'approved' && wishToDelete.type === 'service') {
-            const start = getWishStartDate(wishToDelete) || wishToDelete.date;
-            const end = getWishEndDate(wishToDelete) || wishToDelete.date;
-            let cursor = parseISO(start);
-            const endDate = parseISO(end);
+            const shifts = await db.ShiftEntry.filter({ 
+                date: wishToDelete.date, 
+                doctor_id: wishToDelete.doctor_id 
+            });
+            
+            // Find shift that matches the wish position (or just the date if user has only one shift usually)
+            // To be safe, only delete if position matches or it's marked as auto-generated
+            const shift = shifts.find(s => 
+                (!wishToDelete.position || s.position === wishToDelete.position) &&
+                (s.note?.includes('Wunsch') || s.note?.includes('genehmigt'))
+            );
 
-            while (isValid(cursor) && isValid(endDate) && !isAfter(cursor, endDate)) {
-                const day = format(cursor, 'yyyy-MM-dd');
-                const shifts = await db.ShiftEntry.filter({ 
-                    date: day,
-                    doctor_id: wishToDelete.doctor_id 
-                });
-
-                const shift = shifts.find(s => 
-                    (!wishToDelete.position || s.position === wishToDelete.position) &&
-                    (s.note?.includes('Wunsch') || s.note?.includes('genehmigt'))
-                );
-
-                if (shift) {
-                    await db.ShiftEntry.delete(shift.id);
-                }
-
-                cursor = addDays(cursor, 1);
+            if (shift) {
+                await db.ShiftEntry.delete(shift.id);
             }
         }
         return db.WishRequest.delete(id);
@@ -214,11 +190,6 @@ export default function WishListPage() {
   const handleDateClick = (date) => {
     if (!selectedDoctorId || !canEdit) return;
     const dateStr = format(date, 'yyyy-MM-dd');
-
-        if (minSelectableDateStr && dateStr < minSelectableDateStr) {
-            alert(`Dienstwünsche können erst ab ${format(minSelectableDate, 'dd.MM.yyyy')} eingetragen werden.`);
-            return;
-        }
     
     // Check overlap with absence
     const existingShift = doctorShifts.find(s => s.date === dateStr);
@@ -228,70 +199,14 @@ export default function WishListPage() {
         return;
     }
 
-    const existingWish = doctorWishes.find(w => isWishOnDate(w, dateStr));
+    const existingWish = doctorWishes.find(w => w.date === dateStr);
     
     setDialogState({
         isOpen: true,
         date: date,
-                wish: existingWish || null,
-                initialDraft: null
+        wish: existingWish || null
     });
   };
-
-    const handleRangeSelect = (startDate, endDate, doctorIdOverride = null) => {
-        const targetDoctorId = doctorIdOverride || selectedDoctorId;
-        if (!targetDoctorId || !canEdit) return;
-
-        let start = startDate;
-        let end = endDate;
-        if (isAfter(start, end)) {
-            const temp = start;
-            start = end;
-            end = temp;
-        }
-
-        const startStr = format(start, 'yyyy-MM-dd');
-        const endStr = format(end, 'yyyy-MM-dd');
-        const targetDoctor = doctors.find(d => d.id === targetDoctorId);
-
-        if (minSelectableDateStr && startStr < minSelectableDateStr) {
-            alert(`Dienstwünsche können erst ab ${format(minSelectableDate, 'dd.MM.yyyy')} eingetragen werden.`);
-            return;
-        }
-
-        const targetDoctorShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
-
-        // Block range if any absence already exists in that period
-        let cursor = parseISO(startStr);
-        const endCursor = parseISO(endStr);
-        const absencePositions = ["Urlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"];
-        while (isValid(cursor) && isValid(endCursor) && !isAfter(cursor, endCursor)) {
-            const dayStr = format(cursor, 'yyyy-MM-dd');
-            const existingShift = targetDoctorShifts.find(s => s.date === dayStr && absencePositions.includes(s.position));
-            if (existingShift) {
-                alert(`Im Zeitraum liegt bereits eine Abwesenheit (${existingShift.position}) am ${format(cursor, 'dd.MM.yyyy')}.`);
-                return;
-            }
-            cursor = addDays(cursor, 1);
-        }
-
-        if (selectedDoctorId !== targetDoctorId) {
-            setSelectedDoctorId(targetDoctorId);
-        }
-
-        setDialogState({
-            isOpen: true,
-            date: start,
-            wish: null,
-            initialDraft: {
-                type: 'no_service',
-                range_enabled: true,
-                range_start: startStr,
-                range_end: endStr,
-                doctor_name: targetDoctor?.name || null
-            }
-        });
-    };
 
   // Helper: Create shift from approved wish
   const createShiftFromWish = async (doctorId, date, position) => {
@@ -315,22 +230,19 @@ export default function WishListPage() {
   const handleDialogSave = async (formData) => {
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
-      const effectiveDate = (dataToSave.type === 'no_service' && dataToSave.range_enabled && dataToSave.range_start)
-          ? dataToSave.range_start
-          : dateStr;
       
       if (dialogState.wish) {
           // Update
           await db.WishRequest.update(dialogState.wish.id, {
               ...dataToSave,
               doctor_id: selectedDoctorId,
-              date: effectiveDate,
+              date: dateStr,
               user_viewed: false
           });
           
           // Create shift if flagged
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, effectiveDate, dataToSave.position);
+              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
           }
           
           trackDbChange();
@@ -342,14 +254,14 @@ export default function WishListPage() {
           // Create
           const wishData = {
               doctor_id: selectedDoctorId,
-              date: effectiveDate,
+              date: dateStr,
               ...dataToSave
           };
           await db.WishRequest.create(wishData);
           
           // Create shift if flagged (auto-approved)
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, effectiveDate, dataToSave.position);
+              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
           }
           
           trackDbChange();
@@ -446,13 +358,6 @@ export default function WishListPage() {
           </div>
       </div>
 
-            {hasDeadline && (
-                <div className="mb-6 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-                    Sperrfrist aktiv: Eingaben sind ab <span className="font-semibold">{format(minSelectableDate, 'dd.MM.yyyy')}</span> möglich.
-                    Der Start in der Kalenderansicht ist markiert; frühere Tage sind nicht auswählbar.
-                </div>
-            )}
-
       {/* Wish Reminder Status (Admin only) */}
       {isAdmin && (() => {
         // Show reminder status for the current month being viewed
@@ -499,8 +404,6 @@ export default function WishListPage() {
                         shifts={doctorShifts}
                         occupiedWishDates={occupiedWishDates}
                         onToggle={handleDateClick}
-                        onRangeSelect={handleRangeSelect}
-                        minSelectableDate={minSelectableDate}
                         isSchoolHoliday={isSchoolHoliday}
                         isPublicHoliday={isPublicHoliday}
                         activeType={activeTab}
@@ -521,8 +424,6 @@ export default function WishListPage() {
                       shifts={allShifts}
                       onDateChange={setViewDate}
                       activeType={activeTab}
-                      onRangeSelect={handleRangeSelect}
-                      minSelectableDate={minSelectableDate}
                       onToggle={(date, docId) => {
                           setSelectedDoctorId(docId); // Set context for dialog
                           handleDateClick(date);
@@ -542,8 +443,6 @@ export default function WishListPage() {
                 shifts={doctorShifts}
                 occupiedWishDates={occupiedWishDates}
                 onToggle={handleDateClick}
-                onRangeSelect={handleRangeSelect}
-                minSelectableDate={minSelectableDate}
                 isSchoolHoliday={isSchoolHoliday}
                 isPublicHoliday={isPublicHoliday}
                 activeType={activeTab}
@@ -557,10 +456,9 @@ export default function WishListPage() {
 
       <WishRequestDialog 
           isOpen={dialogState.isOpen}
-          onClose={() => setDialogState({ isOpen: false, date: null, wish: null, initialDraft: null })}
+          onClose={() => setDialogState({ ...dialogState, isOpen: false })}
           date={dialogState.date}
           wish={dialogState.wish}
-          initialDraft={dialogState.initialDraft}
           doctorName={selectedDoctor?.name}
           activePosition={activeTab}
           isReadOnly={!canEdit}

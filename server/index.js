@@ -19,6 +19,7 @@ import voiceRouter from './routes/voice.js';
 import adminRouter from './routes/admin.js';
 import atomicRouter from './routes/atomic.js';
 import aiAutofillRouter from './routes/aiAutofill.js';
+import masterRouter from './routes/master.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 
 // Load environment variables
@@ -252,6 +253,7 @@ app.use('/api/voice', voiceRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/atomic', atomicRouter);
 app.use('/api/schedule', aiAutofillRouter);
+app.use('/api/master', masterRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -425,14 +427,6 @@ async function ensureTablesExist() {
     `);
   } catch (err) {
     // Table may already exist
-  }
-
-  // Ensure WishRequest supports date ranges for single-request periods
-  try {
-    await db.execute(`ALTER TABLE WishRequest ADD COLUMN IF NOT EXISTS range_start DATE DEFAULT NULL`);
-    await db.execute(`ALTER TABLE WishRequest ADD COLUMN IF NOT EXISTS range_end DATE DEFAULT NULL`);
-  } catch (err) {
-    // WishRequest may not exist yet in some environments
   }
 }
 

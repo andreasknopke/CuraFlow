@@ -14,8 +14,12 @@ export default defineConfig({
     },
   },
   build: {
-    // Add hash to filenames for cache busting
+    // Multi-page build: index.html (Mandanten-App) + master.html (Master-App)
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        master: path.resolve(__dirname, 'master.html'),
+      },
       output: {
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',

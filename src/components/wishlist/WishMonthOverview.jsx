@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
+import React, { useState, useEffect } from 'react';
+import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, getYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, XCircle, AlertCircle, Eye, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,6 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, db, base44 } from "@/api/client";
-import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
 export default function WishMonthOverview({ 
     year, 
@@ -17,8 +16,6 @@ export default function WishMonthOverview({
     shifts,
     onDateChange,
     onToggle,
-    onRangeSelect,
-    minSelectableDate,
     isSchoolHoliday,
     isPublicHoliday,
     activeType
@@ -29,66 +26,6 @@ export default function WishMonthOverview({
     // Wunschmarkierung ist immer ausgeschaltet
     const showOccupiedDates = false;
     const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-    const [isDragging, setIsDragging] = useState(false);
-    const [dragDoctorId, setDragDoctorId] = useState(null);
-    const [dragStartDate, setDragStartDate] = useState(null);
-    const [dragCurrentDate, setDragCurrentDate] = useState(null);
-
-    const dragSelectedKeys = useMemo(() => {
-        if (!dragDoctorId || !dragStartDate || !dragCurrentDate) return new Set();
-
-        let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
-        let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
-        if (!start || !end) return new Set();
-
-        if (isAfter(start, end)) {
-            const temp = start;
-            start = end;
-            end = temp;
-        }
-
-        const keys = new Set();
-        let cursor = start;
-        while (!isAfter(cursor, end)) {
-            keys.add(`${dragDoctorId}|${format(cursor, 'yyyy-MM-dd')}`);
-            cursor = addDays(cursor, 1);
-        }
-        return keys;
-    }, [dragDoctorId, dragStartDate, dragCurrentDate]);
-
-    const resetDrag = () => {
-        setIsDragging(false);
-        setDragDoctorId(null);
-        setDragStartDate(null);
-        setDragCurrentDate(null);
-    };
-
-    const finishDragSelection = () => {
-        if (!isDragging || !dragDoctorId || !dragStartDate || !dragCurrentDate) {
-            resetDrag();
-            return;
-        }
-
-        let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
-        let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
-        if (isAfter(start, end)) {
-            const temp = start;
-            start = end;
-            end = temp;
-        }
-
-        onRangeSelect?.(start, end, dragDoctorId);
-        resetDrag();
-    };
-
-    useEffect(() => {
-        const handleWindowMouseUp = () => {
-            finishDragSelection();
-        };
-
-        window.addEventListener('mouseup', handleWindowMouseUp);
-        return () => window.removeEventListener('mouseup', handleWindowMouseUp);
-    });
 
     // Load all user preferences
     useEffect(() => {
@@ -146,7 +83,6 @@ export default function WishMonthOverview({
 
     const daysInMonth = getDaysInMonth(currentMonth);
     const days = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
-    const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
 
     const visibleDoctors = doctors.filter(d => !hiddenDoctorIds.includes(d.id));
 
@@ -154,7 +90,7 @@ export default function WishMonthOverview({
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.find(w => 
             w.doctor_id === doctor.id && 
-            isWishOnDate(w, dateStr) &&
+            w.date === dateStr &&
             (w.type === 'no_service' || !activeType || w.position === activeType)
         );
     };
@@ -162,7 +98,7 @@ export default function WishMonthOverview({
     const hasAnyWish = (date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.some(w => 
-            isWishOnDate(w, dateStr) &&
+            w.date === dateStr &&
             w.type === 'service' &&
             w.position === activeType
         );
@@ -196,29 +132,6 @@ export default function WishMonthOverview({
     const renderCell = (doctor, date) => {
         const absence = getAbsence(doctor, date);
         const hasOtherWish = showOccupiedDates && hasAnyWish(date);
-        const dateStr = format(date, 'yyyy-MM-dd');
-        const isBeforeDeadline = !!minSelectableDateStr && dateStr < minSelectableDateStr;
-        const isBoundaryDate = !!minSelectableDateStr && dateStr === minSelectableDateStr;
-        const isDragSelected = dragSelectedKeys.has(`${doctor.id}|${dateStr}`);
-
-        const handleCellMouseDown = (event) => {
-            if (event.button !== 0) return;
-            if (isBeforeDeadline) return;
-            event.preventDefault();
-            setIsDragging(true);
-            setDragDoctorId(doctor.id);
-            setDragStartDate(date);
-            setDragCurrentDate(date);
-        };
-
-        const handleCellMouseEnter = () => {
-            if (!isDragging || dragDoctorId !== doctor.id || isBeforeDeadline) return;
-            setDragCurrentDate(date);
-        };
-
-        const handleCellMouseUp = () => {
-            finishDragSelection();
-        };
 
         if (absence && showAbsences) {
             let bgColor = 'bg-slate-100';
@@ -242,12 +155,7 @@ export default function WishMonthOverview({
                 <TooltipProvider>
                     <Tooltip delayDuration={0}>
                         <TooltipTrigger asChild>
-                            <div
-                                className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''} ${isBeforeDeadline ? 'opacity-35' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
-                                onMouseDown={handleCellMouseDown}
-                                onMouseEnter={handleCellMouseEnter}
-                                onMouseUp={handleCellMouseUp}
-                            >
+                            <div className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed`}>
                                 {shortLabel}
                             </div>
                         </TooltipTrigger>
@@ -267,11 +175,8 @@ export default function WishMonthOverview({
             const borderClass = hasOtherWish ? "ring-2 ring-inset ring-emerald-400/60" : "";
             return (
                 <div 
-                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass} ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100' : ''} ${isBeforeDeadline ? 'opacity-35 cursor-not-allowed hover:bg-transparent' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
-                    onClick={() => !isBeforeDeadline && onToggle && onToggle(date, doctor.id)}
-                    onMouseDown={handleCellMouseDown}
-                    onMouseEnter={handleCellMouseEnter}
-                    onMouseUp={handleCellMouseUp}
+                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass}`}
+                    onClick={() => onToggle && onToggle(date, doctor.id)}
                 ></div>
             );
         }
@@ -305,11 +210,8 @@ export default function WishMonthOverview({
                 <Tooltip delayDuration={0}>
                     <TooltipTrigger asChild>
                         <div 
-                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5 ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''} ${isBeforeDeadline ? 'opacity-35 cursor-not-allowed hover:opacity-35' : ''} ${isBoundaryDate ? 'ring-2 ring-cyan-500' : ''}`}
-                            onClick={() => !isBeforeDeadline && onToggle && onToggle(date, doctor.id)}
-                            onMouseDown={handleCellMouseDown}
-                            onMouseEnter={handleCellMouseEnter}
-                            onMouseUp={handleCellMouseUp}
+                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5`}
+                            onClick={() => onToggle && onToggle(date, doctor.id)}
                         >
                             {icon}
                             {wish.status === 'pending' && (
@@ -329,7 +231,6 @@ export default function WishMonthOverview({
                                 wish.status === 'approved' ? 'Genehmigt' : 'Abgelehnt'
                             }</div>
                             {wish.reason && <div className="mt-1 text-slate-300 italic">"{wish.reason}"</div>}
-                            {hasWishRange(wish) && <div className="mt-1 text-slate-300">Zeitraum: {getWishStartDate(wish)} bis {getWishEndDate(wish)}</div>}
                             {wish.admin_comment && <div className="mt-1 text-amber-300 border-t border-white/10 pt-1">Admin: {wish.admin_comment}</div>}
                         </div>
                     </TooltipContent>
@@ -408,9 +309,6 @@ export default function WishMonthOverview({
                         {days.map(day => {
                             const isToday = isSameDay(day, new Date());
                             const isWknd = isWeekend(day);
-                            const dayStr = format(day, 'yyyy-MM-dd');
-                            const isBeforeDeadline = !!minSelectableDateStr && dayStr < minSelectableDateStr;
-                            const isBoundaryDate = !!minSelectableDateStr && dayStr === minSelectableDateStr;
                             
                             const isHol = isPublicHoliday ? isPublicHoliday(day) : false;
                             const isSchoolHol = isSchoolHoliday ? isSchoolHoliday(day) : false;
@@ -445,15 +343,12 @@ export default function WishMonthOverview({
                                         className={`w-[80px] flex-shrink-0 p-1 border-r border-slate-200 flex flex-col items-center justify-center text-xs sticky left-0 z-10 bg-opacity-95 backdrop-blur-sm shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)] ${bgClass}`}
                                         style={hatchStyle}
                                     >
-                                        <span className={`font-bold ${isWknd || isHol ? 'text-red-500' : (isSchoolHol ? 'text-green-700' : 'text-slate-700')} ${isToday ? 'text-blue-600' : ''} ${isBeforeDeadline ? 'opacity-40' : ''} ${isBoundaryDate ? 'text-cyan-700' : ''}`}>
+                                        <span className={`font-bold ${isWknd || isHol ? 'text-red-500' : (isSchoolHol ? 'text-green-700' : 'text-slate-700')} ${isToday ? 'text-blue-600' : ''}`}>
                                             {format(day, 'dd.MM.')}
                                         </span>
                                         <span className="text-[10px] text-slate-500 uppercase tracking-wider">
                                             {format(day, 'EE', { locale: de })}
                                         </span>
-                                        {isBoundaryDate && (
-                                            <span className="text-[9px] font-semibold text-cyan-700">ab hier</span>
-                                        )}
                                     </div>
                                     
                                     {/* Doctor Columns */}
