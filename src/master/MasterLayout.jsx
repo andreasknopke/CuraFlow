@@ -2,17 +2,13 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
-  LayoutDashboard, Clock, CalendarX2, Users, LogOut,
+  LayoutDashboard, LogOut,
   Menu, ChevronLeft, Building2, Shield
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/time-tracking', label: 'Zeiterfassung', icon: Clock },
-  { path: '/absences', label: 'Fehlzeiten', icon: CalendarX2 },
-  { path: '/staff', label: 'Mitarbeiter', icon: Users },
+  { path: '/', label: 'In Vorbereitung', icon: LayoutDashboard },
 ];
 
 export default function MasterLayout({ children }) {

@@ -6,9 +6,6 @@ import MasterAuthProvider, { useMasterAuth } from '@/master/MasterAuthProvider';
 import MasterLayout from '@/master/MasterLayout';
 import MasterLogin from '@/master/pages/MasterLogin';
 import MasterDashboard from '@/master/pages/MasterDashboard';
-import MasterTimeTracking from '@/master/pages/MasterTimeTracking';
-import MasterAbsences from '@/master/pages/MasterAbsences';
-import MasterStaff from '@/master/pages/MasterStaff';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,9 +51,7 @@ export default function MasterApp() {
                   <MasterLayout>
                     <Routes>
                       <Route path="/" element={<MasterDashboard />} />
-                      <Route path="/time-tracking" element={<MasterTimeTracking />} />
-                      <Route path="/absences" element={<MasterAbsences />} />
-                      <Route path="/staff" element={<MasterStaff />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MasterLayout>
                 </ProtectedRoute>

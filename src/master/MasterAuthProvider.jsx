@@ -12,6 +12,8 @@ const MasterAuthContext = createContext({
 export const useMasterAuth = () => useContext(MasterAuthContext);
 
 const TOKEN_KEY = 'radioplan_jwt_token';
+const DB_TOKEN_KEY = 'db_credentials';
+const DB_TOKEN_ENABLED_KEY = 'db_token_enabled';
 
 export default function MasterAuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -20,6 +22,9 @@ export default function MasterAuthProvider({ children }) {
 
   useEffect(() => {
     const checkAuth = async () => {
+      localStorage.removeItem(DB_TOKEN_KEY);
+      localStorage.setItem(DB_TOKEN_ENABLED_KEY, 'false');
+
       const token = localStorage.getItem(TOKEN_KEY);
       if (!token) {
         setIsLoading(false);
@@ -53,6 +58,9 @@ export default function MasterAuthProvider({ children }) {
   }, []);
 
   const login = async (email, password) => {
+    localStorage.removeItem(DB_TOKEN_KEY);
+    localStorage.setItem(DB_TOKEN_ENABLED_KEY, 'false');
+
     const data = await api.login(email, password);
     
     if (data.user?.role !== 'admin') {
@@ -67,6 +75,8 @@ export default function MasterAuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(DB_TOKEN_KEY);
+    localStorage.setItem(DB_TOKEN_ENABLED_KEY, 'false');
     api.setToken(null);
     setUser(null);
     setIsAuthenticated(false);
