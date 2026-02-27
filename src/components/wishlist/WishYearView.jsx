@@ -1,17 +1,92 @@
-import React from 'react';
-import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend } from 'date-fns';
+import React, { useEffect, useMemo, useState } from 'react';
+import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { api, db, base44 } from "@/api/client";
 import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 
-export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, activeType, isSchoolHoliday, isPublicHoliday }) {
+export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, onRangeSelect, activeType, isSchoolHoliday, isPublicHoliday }) {
   // Wunschmarkierung ist immer ausgeschaltet
   const showOccupiedDates = false;
   const months = eachMonthOfInterval({
     start: startOfYear(new Date(year, 0, 1)),
     end: endOfYear(new Date(year, 0, 1))
   });
+
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStartDate, setDragStartDate] = useState(null);
+  const [dragCurrentDate, setDragCurrentDate] = useState(null);
+
+  const dragSelectedDateKeys = useMemo(() => {
+    if (!dragStartDate || !dragCurrentDate) return new Set();
+
+    let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
+    let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
+    if (!start || !end) return new Set();
+
+    if (isAfter(start, end)) {
+      const temp = start;
+      start = end;
+      end = temp;
+    }
+
+    const keys = new Set();
+    let cursor = start;
+    while (!isAfter(cursor, end)) {
+      keys.add(format(cursor, 'yyyy-MM-dd'));
+      cursor = addDays(cursor, 1);
+    }
+    return keys;
+  }, [dragStartDate, dragCurrentDate]);
+
+  const finishDragSelection = () => {
+    if (!isDragging || !dragStartDate || !dragCurrentDate) return;
+
+    let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
+    let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
+
+    if (isAfter(start, end)) {
+      const temp = start;
+      start = end;
+      end = temp;
+    }
+
+    if (onRangeSelect) {
+      onRangeSelect(start, end);
+    } else if (onToggle) {
+      onToggle(start);
+    }
+
+    setIsDragging(false);
+    setDragStartDate(null);
+    setDragCurrentDate(null);
+  };
+
+  useEffect(() => {
+    const handleWindowMouseUp = () => {
+      finishDragSelection();
+    };
+
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+  });
+
+  const handleDayMouseDown = (date, event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    setIsDragging(true);
+    setDragStartDate(date);
+    setDragCurrentDate(date);
+  };
+
+  const handleDayMouseEnter = (date) => {
+    if (!isDragging) return;
+    setDragCurrentDate(date);
+  };
+
+  const handleDayMouseUp = () => {
+    finishDragSelection();
+  };
 
   const getDayStatus = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
@@ -50,6 +125,10 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
             getDayStatus={getDayStatus}
             occupiedWishDates={occupiedWishDates}
             onDateClick={onToggle}
+            onDayMouseDown={handleDayMouseDown}
+            onDayMouseEnter={handleDayMouseEnter}
+            onDayMouseUp={handleDayMouseUp}
+            dragSelectedDateKeys={dragSelectedDateKeys}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             showOccupiedDates={showOccupiedDates}
@@ -60,7 +139,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
   );
 }
 
-function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
+function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -96,6 +175,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, is
           const dateStr = format(date, 'yyyy-MM-dd');
           const isOccupied = showOccupiedDates && occupiedWishDates && occupiedWishDates.has(dateStr);
           const borderClass = isOccupied ? "ring-2 ring-emerald-400/60 z-10" : "";
+          const isDragSelected = dragSelectedDateKeys?.has(dateStr);
           
           // Find the actual wish object if status is 'wish'
           // We need to pass the wish object in getDayStatus to access priority/status
@@ -176,11 +256,15 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, is
           return (
             <button
               key={date.toString()}
-              onClick={(e) => onDateClick(date, status, e)}
+              onMouseDown={(e) => onDayMouseDown?.(date, e)}
+              onMouseEnter={() => onDayMouseEnter?.(date)}
+              onMouseUp={() => onDayMouseUp?.()}
+              onDragStart={(e) => e.preventDefault()}
               className={cn(
                 "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none",
                 colorClass,
-                !status && borderClass
+                !status && borderClass,
+                isDragSelected && "ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900"
               )}
               style={finalStyle}
               title={title + ' ' + format(date, 'dd.MM.yyyy') + (isOccupied ? ' (Wunsch vorhanden)' : '')}

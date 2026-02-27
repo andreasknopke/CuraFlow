@@ -22,7 +22,8 @@ export default function WishRequestDialog({
     isAdmin, 
     onSave, 
     onDelete,
-    activePosition
+    activePosition,
+    initialDraft
 }) {
     const [formData, setFormData] = useState({
         type: 'service',
@@ -72,19 +73,19 @@ export default function WishRequestDialog({
             } else {
                 const dateStr = date ? format(date, 'yyyy-MM-dd') : '';
                 setFormData({
-                    type: 'service',
-                    position: activePosition,
-                    priority: 'medium',
-                    reason: '',
-                    status: 'pending',
-                    admin_comment: '',
-                    range_enabled: false,
-                    range_start: dateStr,
-                    range_end: dateStr
+                    type: initialDraft?.type || 'service',
+                    position: initialDraft?.position || activePosition,
+                    priority: initialDraft?.priority || 'medium',
+                    reason: initialDraft?.reason || '',
+                    status: initialDraft?.status || 'pending',
+                    admin_comment: initialDraft?.admin_comment || '',
+                    range_enabled: initialDraft?.range_enabled || false,
+                    range_start: initialDraft?.range_start || dateStr,
+                    range_end: initialDraft?.range_end || dateStr
                 });
             }
         }
-    }, [isOpen, wish, activePosition]);
+    }, [isOpen, wish, activePosition, initialDraft, date]);
 
     // Check if approval is required based on settings
     const getRequiresApproval = () => {

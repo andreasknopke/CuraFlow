@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, getYear } from 'date-fns';
+import React, { useState, useEffect, useMemo } from 'react';
+import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, XCircle, AlertCircle, Eye, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ export default function WishMonthOverview({
     shifts,
     onDateChange,
     onToggle,
+    onRangeSelect,
     isSchoolHoliday,
     isPublicHoliday,
     activeType
@@ -27,6 +28,66 @@ export default function WishMonthOverview({
     // Wunschmarkierung ist immer ausgeschaltet
     const showOccupiedDates = false;
     const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragDoctorId, setDragDoctorId] = useState(null);
+    const [dragStartDate, setDragStartDate] = useState(null);
+    const [dragCurrentDate, setDragCurrentDate] = useState(null);
+
+    const dragSelectedKeys = useMemo(() => {
+        if (!dragDoctorId || !dragStartDate || !dragCurrentDate) return new Set();
+
+        let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
+        let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
+        if (!start || !end) return new Set();
+
+        if (isAfter(start, end)) {
+            const temp = start;
+            start = end;
+            end = temp;
+        }
+
+        const keys = new Set();
+        let cursor = start;
+        while (!isAfter(cursor, end)) {
+            keys.add(`${dragDoctorId}|${format(cursor, 'yyyy-MM-dd')}`);
+            cursor = addDays(cursor, 1);
+        }
+        return keys;
+    }, [dragDoctorId, dragStartDate, dragCurrentDate]);
+
+    const resetDrag = () => {
+        setIsDragging(false);
+        setDragDoctorId(null);
+        setDragStartDate(null);
+        setDragCurrentDate(null);
+    };
+
+    const finishDragSelection = () => {
+        if (!isDragging || !dragDoctorId || !dragStartDate || !dragCurrentDate) {
+            resetDrag();
+            return;
+        }
+
+        let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
+        let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
+        if (isAfter(start, end)) {
+            const temp = start;
+            start = end;
+            end = temp;
+        }
+
+        onRangeSelect?.(start, end, dragDoctorId);
+        resetDrag();
+    };
+
+    useEffect(() => {
+        const handleWindowMouseUp = () => {
+            finishDragSelection();
+        };
+
+        window.addEventListener('mouseup', handleWindowMouseUp);
+        return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+    });
 
     // Load all user preferences
     useEffect(() => {
@@ -133,6 +194,26 @@ export default function WishMonthOverview({
     const renderCell = (doctor, date) => {
         const absence = getAbsence(doctor, date);
         const hasOtherWish = showOccupiedDates && hasAnyWish(date);
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const isDragSelected = dragSelectedKeys.has(`${doctor.id}|${dateStr}`);
+
+        const handleCellMouseDown = (event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            setIsDragging(true);
+            setDragDoctorId(doctor.id);
+            setDragStartDate(date);
+            setDragCurrentDate(date);
+        };
+
+        const handleCellMouseEnter = () => {
+            if (!isDragging || dragDoctorId !== doctor.id) return;
+            setDragCurrentDate(date);
+        };
+
+        const handleCellMouseUp = () => {
+            finishDragSelection();
+        };
 
         if (absence && showAbsences) {
             let bgColor = 'bg-slate-100';
@@ -156,7 +237,12 @@ export default function WishMonthOverview({
                 <TooltipProvider>
                     <Tooltip delayDuration={0}>
                         <TooltipTrigger asChild>
-                            <div className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed`}>
+                            <div
+                                className={`w-full h-full min-h-[40px] flex items-center justify-center border border-transparent rounded-sm ${bgColor} ${textColor} text-[10px] font-bold cursor-not-allowed ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''}`}
+                                onMouseDown={handleCellMouseDown}
+                                onMouseEnter={handleCellMouseEnter}
+                                onMouseUp={handleCellMouseUp}
+                            >
                                 {shortLabel}
                             </div>
                         </TooltipTrigger>
@@ -176,8 +262,11 @@ export default function WishMonthOverview({
             const borderClass = hasOtherWish ? "ring-2 ring-inset ring-emerald-400/60" : "";
             return (
                 <div 
-                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass}`}
+                    className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass} ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100' : ''}`}
                     onClick={() => onToggle && onToggle(date, doctor.id)}
+                    onMouseDown={handleCellMouseDown}
+                    onMouseEnter={handleCellMouseEnter}
+                    onMouseUp={handleCellMouseUp}
                 ></div>
             );
         }
@@ -211,8 +300,11 @@ export default function WishMonthOverview({
                 <Tooltip delayDuration={0}>
                     <TooltipTrigger asChild>
                         <div 
-                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5`}
+                            className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5 ${isDragSelected ? 'ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900' : ''}`}
                             onClick={() => onToggle && onToggle(date, doctor.id)}
+                            onMouseDown={handleCellMouseDown}
+                            onMouseEnter={handleCellMouseEnter}
+                            onMouseUp={handleCellMouseUp}
                         >
                             {icon}
                             {wish.status === 'pending' && (

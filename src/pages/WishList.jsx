@@ -41,7 +41,8 @@ export default function WishListPage() {
   const [dialogState, setDialogState] = useState({
     isOpen: false,
     date: null,
-    wish: null
+        wish: null,
+        initialDraft: null
   });
 
   const queryClient = useQueryClient();
@@ -213,9 +214,60 @@ export default function WishListPage() {
     setDialogState({
         isOpen: true,
         date: date,
-        wish: existingWish || null
+                wish: existingWish || null,
+                initialDraft: null
     });
   };
+
+    const handleRangeSelect = (startDate, endDate, doctorIdOverride = null) => {
+        const targetDoctorId = doctorIdOverride || selectedDoctorId;
+        if (!targetDoctorId || !canEdit) return;
+
+        let start = startDate;
+        let end = endDate;
+        if (isAfter(start, end)) {
+            const temp = start;
+            start = end;
+            end = temp;
+        }
+
+        const startStr = format(start, 'yyyy-MM-dd');
+        const endStr = format(end, 'yyyy-MM-dd');
+        const targetDoctor = doctors.find(d => d.id === targetDoctorId);
+
+        const targetDoctorShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
+
+        // Block range if any absence already exists in that period
+        let cursor = parseISO(startStr);
+        const endCursor = parseISO(endStr);
+        const absencePositions = ["Urlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"];
+        while (isValid(cursor) && isValid(endCursor) && !isAfter(cursor, endCursor)) {
+            const dayStr = format(cursor, 'yyyy-MM-dd');
+            const existingShift = targetDoctorShifts.find(s => s.date === dayStr && absencePositions.includes(s.position));
+            if (existingShift) {
+                alert(`Im Zeitraum liegt bereits eine Abwesenheit (${existingShift.position}) am ${format(cursor, 'dd.MM.yyyy')}.`);
+                return;
+            }
+            cursor = addDays(cursor, 1);
+        }
+
+        if (selectedDoctorId !== targetDoctorId) {
+            setSelectedDoctorId(targetDoctorId);
+        }
+
+        setDialogState({
+            isOpen: true,
+            date: start,
+            wish: null,
+            initialDraft: {
+                type: 'no_service',
+                range_enabled: true,
+                range_start: startStr,
+                range_end: endStr,
+                doctor_name: targetDoctor?.name || null
+            }
+        });
+    };
 
   // Helper: Create shift from approved wish
   const createShiftFromWish = async (doctorId, date, position) => {
@@ -416,6 +468,7 @@ export default function WishListPage() {
                         shifts={doctorShifts}
                         occupiedWishDates={occupiedWishDates}
                         onToggle={handleDateClick}
+                        onRangeSelect={handleRangeSelect}
                         isSchoolHoliday={isSchoolHoliday}
                         isPublicHoliday={isPublicHoliday}
                         activeType={activeTab}
@@ -436,6 +489,7 @@ export default function WishListPage() {
                       shifts={allShifts}
                       onDateChange={setViewDate}
                       activeType={activeTab}
+                      onRangeSelect={handleRangeSelect}
                       onToggle={(date, docId) => {
                           setSelectedDoctorId(docId); // Set context for dialog
                           handleDateClick(date);
@@ -455,6 +509,7 @@ export default function WishListPage() {
                 shifts={doctorShifts}
                 occupiedWishDates={occupiedWishDates}
                 onToggle={handleDateClick}
+                onRangeSelect={handleRangeSelect}
                 isSchoolHoliday={isSchoolHoliday}
                 isPublicHoliday={isPublicHoliday}
                 activeType={activeTab}
@@ -468,9 +523,10 @@ export default function WishListPage() {
 
       <WishRequestDialog 
           isOpen={dialogState.isOpen}
-          onClose={() => setDialogState({ ...dialogState, isOpen: false })}
+          onClose={() => setDialogState({ isOpen: false, date: null, wish: null, initialDraft: null })}
           date={dialogState.date}
           wish={dialogState.wish}
+          initialDraft={dialogState.initialDraft}
           doctorName={selectedDoctor?.name}
           activePosition={activeTab}
           isReadOnly={!canEdit}
