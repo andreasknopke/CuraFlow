@@ -154,10 +154,20 @@ router.get('/stats', async (req, res, next) => {
     for (const token of tokens) {
       await withTenantDb(token, async (pool) => {
         try {
-          // Count active staff
-          const [staffRows] = await pool.execute(
-            'SELECT COUNT(*) as cnt FROM Doctor WHERE is_active = 1'
-          );
+          // Count active staff (handle missing is_active column)
+          let staffQuery;
+          try {
+            const [testCols] = await pool.execute(
+              `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+               WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'is_active' AND TABLE_SCHEMA = DATABASE()`
+            );
+            staffQuery = testCols.length > 0
+              ? 'SELECT COUNT(*) as cnt FROM Doctor WHERE is_active = 1'
+              : 'SELECT COUNT(*) as cnt FROM Doctor';
+          } catch {
+            staffQuery = 'SELECT COUNT(*) as cnt FROM Doctor';
+          }
+          const [staffRows] = await pool.execute(staffQuery);
           totalStaff += staffRows[0]?.cnt || 0;
 
           // Count today's absences
@@ -195,16 +205,33 @@ router.get('/staff', async (req, res, next) => {
 
     const staff = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
-        const [rows] = await pool.execute(
-          'SELECT id, name, role, is_active, qualifications, notes FROM Doctor ORDER BY name'
+        // Discover available columns to handle schema differences across tenants
+        const [cols] = await pool.execute(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Doctor' AND TABLE_SCHEMA = DATABASE()`
         );
-        console.log(`[Master staff] Tenant "${token.name}": found ${rows.length} doctor(s)`);
+        const colNames = new Set(cols.map(c => c.COLUMN_NAME));
+
+        // Build a safe SELECT with only existing columns
+        const selectCols = ['id', 'name'];
+        if (colNames.has('role')) selectCols.push('role');
+        if (colNames.has('is_active')) selectCols.push('is_active');
+        if (colNames.has('qualifications')) selectCols.push('qualifications');
+        if (colNames.has('notes')) selectCols.push('notes');
+        if (colNames.has('color')) selectCols.push('color');
+
+        const [rows] = await pool.execute(
+          `SELECT ${selectCols.join(', ')} FROM Doctor ORDER BY name`
+        );
+        console.log(`[Master staff] Tenant "${token.name}": found ${rows.length} doctor(s) (cols: ${selectCols.join(',')})`);
         return rows.map(r => ({
-          ...r,
-          is_active: !!r.is_active,
+          id: r.id,
+          name: r.name,
+          role: r.role || null,
+          is_active: colNames.has('is_active') ? !!r.is_active : true,
+          qualifications: r.qualifications || null,
+          notes: r.notes || null,
           tenantId: token.id,
           tenantName: token.name,
-          qualifications: r.qualifications || null,
         }));
       } catch (e) {
         console.error(`[Master staff] Tenant "${token.name}" query failed:`, e.message);
@@ -231,12 +258,15 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
 
     const results = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
-        // Basic doctor info
+        // Basic doctor info – use SELECT * to handle varying schemas
         const [rows] = await pool.execute(
           'SELECT * FROM Doctor WHERE id = ?',
           [employeeId]
         );
-        if (rows.length === 0) return [];
+        if (rows.length === 0) {
+          console.log(`[Master staff-detail] Tenant "${token.name}": doctor ${employeeId} not found`);
+          return [];
+        }
 
         const doc = rows[0];
 
