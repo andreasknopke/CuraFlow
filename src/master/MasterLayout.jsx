@@ -3,12 +3,16 @@ import { Link, useLocation } from 'react-router-dom';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
-  Menu, ChevronLeft, Building2, Shield
+  Menu, ChevronLeft, Building2, Shield,
+  Users, CalendarX2, Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'In Vorbereitung', icon: LayoutDashboard },
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/mitarbeiter', label: 'Mitarbeiter', icon: Users },
+  { path: '/fehlzeiten', label: 'Fehlzeiten', icon: CalendarX2 },
+  { path: '/zeiterfassung', label: 'Zeiterfassung', icon: Clock },
 ];
 
 export default function MasterLayout({ children }) {
@@ -47,7 +51,9 @@ export default function MasterLayout({ children }) {
         {/* Navigation */}
         <nav className="flex-1 py-4 space-y-1 px-2">
           {NAV_ITEMS.map((item) => {
-            const isActive = location.pathname === item.path;
+            const isActive = item.path === '/'
+              ? location.pathname === '/'
+              : location.pathname.startsWith(item.path);
             return (
               <Link
                 key={item.path}
