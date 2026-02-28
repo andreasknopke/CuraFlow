@@ -1,14 +1,14 @@
-# Feature: Zeiterfassung (Tisoware.zeit-Ersatz)
+# Feature: Zeiterfassung (Zeiterfassungssoftware-Ersatz)
 
 ## Ziel
 
-CuraFlow soll den (eingeschränkten) Funktionsumfang von **Tisoware.zeit** ersetzen. Beim Kunden erfolgt die Zeiterfassung **manuell** durch HR/Sekretariate – keine Terminals. Es existiert eine Schnittstelle zur Buchhaltungssoftware **P&I Loga**, deren Nutzbarkeit noch geprüft werden muss.
+CuraFlow soll den (eingeschränkten) Funktionsumfang einer **bestehenden Zeiterfassungssoftware** ersetzen. Beim Kunden erfolgt die Zeiterfassung **manuell** durch HR/Sekretariate – keine Terminals. Es existiert eine Schnittstelle zur Buchhaltungssoftware **P&I Loga**, deren Nutzbarkeit noch geprüft werden muss.
 
 Zusätzlich wird ein **Master-Frontend** für Personalabteilung und Geschäftsführung eingerichtet, das Daten aus mehreren Mandanten-Datenbanken aggregiert.
 
 ---
 
-## Tisoware.zeit – Funktionsumfang (Zielzustand)
+## Zeiterfassungssoftware – Funktionsumfang (Zielzustand)
 
 | # | Funktion | Priorität | Beschreibung |
 |---|---|---|---|
