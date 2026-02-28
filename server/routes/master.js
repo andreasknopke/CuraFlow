@@ -294,9 +294,11 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           console.warn(`[Master staff-detail] Absences query failed:`, e.message);
         }
 
-        // Vacation counts
+        // Vacation counts: split by past (taken) vs future (planned)
+        const today = format(new Date(), 'yyyy-MM-dd');
         const vacationDays = absences.filter(a => a.type === 'Urlaub');
-        const vacationTaken = vacationDays.length;
+        const vacationTaken = vacationDays.filter(a => a.from <= today).length;
+        const vacationPlanned = vacationDays.filter(a => a.from > today).length;
 
         return [{
           id: doc.id,
@@ -318,8 +320,8 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           special_status: doc.special_status || null,
           vacation_days_total: doc.vacation_days || 30,
           vacation_days_taken: vacationTaken,
-          vacation_days_planned: 0,
-          remaining_vacation: (doc.vacation_days || 30) - vacationTaken,
+          vacation_days_planned: vacationPlanned,
+          remaining_vacation: (doc.vacation_days || 30) - vacationTaken - vacationPlanned,
           overtime_balance: null,
           current_month_actual: null,
           month_closed: false,
