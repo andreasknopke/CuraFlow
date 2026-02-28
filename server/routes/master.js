@@ -73,7 +73,7 @@ async function withTenantDb(token, callback) {
   try {
     const config = parseDbToken(token.token);
     if (!config || !config.host || !config.database) {
-      console.warn(`[Master API] Invalid token config for tenant "${token.name}"`);
+      console.warn(`[Master API] Invalid token config for tenant "${token.name}" – host: ${config?.host}, db: ${config?.database}`);
       return null;
     }
 
@@ -89,7 +89,7 @@ async function withTenantDb(token, callback) {
       queueLimit: 0,
       dateStrings: true,
       timezone: '+00:00',
-      connectTimeout: 5000,
+      connectTimeout: 10000,
     });
 
     const result = await callback(pool, token);
@@ -113,13 +113,27 @@ async function queryAllTenants(adminUserId, tenantId, queryFn) {
     ? tokens.filter(t => t.id === tenantId)
     : tokens;
 
-  const results = [];
-  for (const token of targetTokens) {
-    const data = await withTenantDb(token, queryFn);
-    if (data) {
-      results.push(...data);
+  console.log(`[Master API] queryAllTenants: ${targetTokens.length} tenant(s) to query${tenantId ? ` (filtered to ${tenantId})` : ' (all)'}`);
+
+  // Run all tenant queries in parallel for better performance
+  const promises = targetTokens.map(async (token) => {
+    try {
+      const data = await withTenantDb(token, queryFn);
+      if (data && data.length > 0) {
+        console.log(`[Master API] Tenant "${token.name}": ${data.length} result(s)`);
+      } else {
+        console.log(`[Master API] Tenant "${token.name}": 0 results (data=${data === null ? 'null' : '[]'})`);
+      }
+      return data || [];
+    } catch (e) {
+      console.error(`[Master API] Tenant "${token.name}" failed:`, e.message);
+      return [];
     }
-  }
+  });
+
+  const resultArrays = await Promise.all(promises);
+  const results = resultArrays.flat();
+  console.log(`[Master API] queryAllTenants total: ${results.length} result(s)`);
   return results;
 }
 
@@ -177,12 +191,14 @@ router.get('/stats', async (req, res, next) => {
 router.get('/staff', async (req, res, next) => {
   try {
     const { tenantId } = req.query;
+    console.log(`[Master staff] Request: tenantId=${tenantId || 'all'}, user=${req.user.sub}`);
 
     const staff = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
         const [rows] = await pool.execute(
           'SELECT id, name, role, is_active, qualifications, notes FROM Doctor ORDER BY name'
         );
+        console.log(`[Master staff] Tenant "${token.name}": found ${rows.length} doctor(s)`);
         return rows.map(r => ({
           ...r,
           is_active: !!r.is_active,
@@ -191,13 +207,110 @@ router.get('/staff', async (req, res, next) => {
           qualifications: r.qualifications || null,
         }));
       } catch (e) {
-        console.warn(`[Master staff] Tenant "${token.name}":`, e.message);
+        console.error(`[Master staff] Tenant "${token.name}" query failed:`, e.message);
         return [];
       }
     });
 
+    console.log(`[Master staff] Returning ${staff.length} staff members`);
     res.json({ staff });
   } catch (error) {
+    console.error('[Master staff] Route error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/staff/:tenantId/:employeeId
+ * Single employee detail from a specific tenant
+ */
+router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
+  try {
+    const { tenantId, employeeId } = req.params;
+    console.log(`[Master staff-detail] Request: tenantId=${tenantId}, employeeId=${employeeId}`);
+
+    const results = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+      try {
+        // Basic doctor info
+        const [rows] = await pool.execute(
+          'SELECT * FROM Doctor WHERE id = ?',
+          [employeeId]
+        );
+        if (rows.length === 0) return [];
+
+        const doc = rows[0];
+
+        // Absences for current year
+        const currentYear = new Date().getFullYear();
+        const absencePositions = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz'];
+        const placeholders = absencePositions.map(() => '?').join(',');
+        let absences = [];
+        try {
+          const [absRows] = await pool.execute(
+            `SELECT date, position, note FROM ShiftEntry 
+             WHERE doctor_id = ? AND YEAR(date) = ? AND position IN (${placeholders})
+             ORDER BY date`,
+            [employeeId, currentYear, ...absencePositions]
+          );
+          // Group consecutive days into ranges
+          absences = absRows.map(r => ({
+            type: r.position,
+            from: typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd'),
+            to: typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd'),
+            days: 1,
+            note: r.note || null,
+          }));
+        } catch (e) {
+          console.warn(`[Master staff-detail] Absences query failed:`, e.message);
+        }
+
+        // Vacation counts
+        const vacationDays = absences.filter(a => a.type === 'Urlaub');
+        const vacationTaken = vacationDays.length;
+
+        return [{
+          id: doc.id,
+          name: doc.name,
+          email: doc.email || null,
+          phone: doc.phone || null,
+          role: doc.role || null,
+          is_active: !!doc.is_active,
+          qualifications: doc.qualifications || null,
+          notes: doc.notes || null,
+          payroll_id: doc.payroll_id || null,
+          address: doc.address || null,
+          contract_start: doc.contract_start || null,
+          contract_end: doc.contract_end || null,
+          probation_end: doc.probation_end || null,
+          target_hours_per_week: doc.target_hours_per_week || null,
+          vk_share: doc.vk_share || null,
+          work_time_percentage: doc.work_time_percentage || null,
+          special_status: doc.special_status || null,
+          vacation_days_total: doc.vacation_days || 30,
+          vacation_days_taken: vacationTaken,
+          vacation_days_planned: 0,
+          remaining_vacation: (doc.vacation_days || 30) - vacationTaken,
+          overtime_balance: null,
+          current_month_actual: null,
+          month_closed: false,
+          absences,
+          time_accounts: [],
+          tenantId: token.id,
+          tenantName: token.name,
+        }];
+      } catch (e) {
+        console.error(`[Master staff-detail] Tenant "${token.name}" query failed:`, e.message);
+        return [];
+      }
+    });
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    res.json(results[0]);
+  } catch (error) {
+    console.error('[Master staff-detail] Route error:', error);
     next(error);
   }
 });
