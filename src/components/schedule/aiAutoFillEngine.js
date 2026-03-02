@@ -124,7 +124,10 @@ export async function generateAISuggestions(params) {
 
   const weekDayStrs = weekDays.map(d => formatDate(d));
   const holidays = weekDays.filter(d => isPublicHoliday(d)).map(d => formatDate(d));
-  const debugEnabled = systemSettings.find(s => s.key === 'ai_autofill_debug_enabled')?.value === 'true';
+  const debugEnabled = (
+    systemSettings.find(s => s.key === 'autofill_debug_enabled')?.value ||
+    systemSettings.find(s => s.key === 'ai_autofill_debug_enabled')?.value
+  ) === 'true';
 
   const detParams = {
     weekDays, doctors, workplaces,

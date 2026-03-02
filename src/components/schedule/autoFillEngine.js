@@ -52,6 +52,7 @@ export function generateSuggestions({
     systemSettings,
     wishes = [],
     workplaceTimeslots = [],
+    debug = null,
 }) {
     // Shuffle doctors to avoid deterministic bias (e.g. same doctors always getting Monday shifts)
     const shuffled = [...doctors];
@@ -64,6 +65,31 @@ export function generateSuggestions({
     const suggestions = [];
     const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
     const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5];
+
+    const debugEnabled = Boolean(debug?.enabled);
+    const debugEntries = debug?.entries || [];
+    const debugRequestId = debug?.requestId || `det-${Date.now().toString(36)}`;
+    const debugMaxEntries = 1200;
+    const debugLog = (stage, message, meta = null) => {
+        if (!debugEnabled) return;
+        debugEntries.push({
+            ts: new Date().toISOString(),
+            stage,
+            message,
+            ...(meta ? { meta } : {}),
+        });
+        if (debugEntries.length > debugMaxEntries) debugEntries.shift();
+    };
+    const doctorNameById = Object.fromEntries(doctors.map(d => [d.id, d.name]));
+
+    debugLog('init', 'Deterministic AutoFill started', {
+        requestId: debugRequestId,
+        days: weekDays.length,
+        doctors: doctors.length,
+        workplaces: workplaces.length,
+        categoriesToFill,
+        existingShifts: existingShifts.length,
+    });
 
     // ========================================================
     //  Helper functions
@@ -498,6 +524,13 @@ export function generateSuggestions({
     // ========================================================
     for (const day of weekDays) {
         const dateStr = formatDate(day);
+        const dayStartSuggestions = suggestions.length;
+        const dayStartAutoFrei = autoFreiSuggestions.length;
+
+        debugLog('day:start', 'Start day planning', {
+            date: dateStr,
+            weekday: day.getDay(),
+        });
 
         // --- Base blocked set (absences + existing availability-relevant assignments) ---
         const baseBlocked = new Set();
@@ -711,6 +744,11 @@ export function generateSuggestions({
 
                 // If no candidates within limits, fall back to all qualified (limit exceeded = last resort)
                 if (ranked.length === 0) {
+                    debugLog('phase:A:fallback', 'No in-limit ranked candidates, using fallback pool', {
+                        date: dateStr,
+                        service: svc.name,
+                        timeslotId: tsId,
+                    });
                     const fallbackContext = { ...costContext };
                     const fallback = doctors.filter(d => {
                         const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
@@ -730,10 +768,29 @@ export function generateSuggestions({
                     ranked.push(...fallback);
                 }
 
+                if (ranked.length < slotsNeeded) {
+                    debugLog('phase:A:underfill', 'Not enough candidates to fill service slot target', {
+                        date: dateStr,
+                        service: svc.name,
+                        timeslotId: tsId,
+                        slotsNeeded,
+                        rankedCandidates: ranked.length,
+                    });
+                }
+
                 for (let i = 0; i < slotsNeeded && i < ranked.length; i++) {
                     const chosen = ranked[i];
+                    const chosenCost = costFn.assignmentCost(chosen.id, svc, dateStr, costContext);
                     assign(chosen.id, svc.name, tsId);
                     recordServiceAssignment(chosen.id, svc.name, dateStr);
+                    debugLog('phase:A:assign', 'Assigned service slot', {
+                        date: dateStr,
+                        service: svc.name,
+                        timeslotId: tsId,
+                        doctorId: chosen.id,
+                        doctorName: doctorNameById[chosen.id] || chosen.id,
+                        cost: Number.isFinite(chosenCost) ? chosenCost : null,
+                    });
 
                     // Auto-Frei: if service has auto_off, block doctor on next workday
                     if (svc.auto_off) {
@@ -818,6 +875,13 @@ export function generateSuggestions({
 
                 if (candidates.length > 0) {
                     assign(candidates[0].id, wp.name, tsId);
+                    debugLog('phase:B:coverage', 'Assigned qualification coverage slot', {
+                        date: dateStr,
+                        workplace: wp.name,
+                        timeslotId: tsId,
+                        doctorId: candidates[0].id,
+                        doctorName: doctorNameById[candidates[0].id] || candidates[0].id,
+                    });
                 }
             }
 
@@ -909,6 +973,13 @@ export function generateSuggestions({
                 if (eligible.length > 0 && costFn.assignmentCost(eligible[0].id, targetWp, dateStr, costContextB) < Infinity) {
                     const chosen = eligible[0];
                     assign(chosen.id, targetWp.name, targetTsId);
+                    debugLog('phase:B:fill', 'Assigned availability-relevant slot', {
+                        date: dateStr,
+                        workplace: targetWp.name,
+                        timeslotId: targetTsId,
+                        doctorId: chosen.id,
+                        doctorName: doctorNameById[chosen.id] || chosen.id,
+                    });
 
                     const rotTargets = getActiveRotationTargets(chosen.id, dateStr);
                     if (rotTargets.length > 0 && !rotTargets.includes(targetWp.name)) {
@@ -988,6 +1059,14 @@ export function generateSuggestions({
 
                 if (bestAssignment && bestCost < Infinity) {
                     assign(bestAssignment.doc.id, bestAssignment.wp.name, bestAssignment.timeslotId);
+                    debugLog('phase:B:overfill', 'Overfill assignment applied', {
+                        date: dateStr,
+                        workplace: bestAssignment.wp.name,
+                        timeslotId: bestAssignment.timeslotId,
+                        doctorId: bestAssignment.doc.id,
+                        doctorName: doctorNameById[bestAssignment.doc.id] || bestAssignment.doc.id,
+                        adjustedCost: bestCost,
+                    });
                     const rotTargets = getActiveRotationTargets(bestAssignment.doc.id, dateStr);
                     if (rotTargets.length > 0 && !rotTargets.includes(bestAssignment.wp.name)) {
                         addDisplacement(bestAssignment.doc.id);
@@ -1168,6 +1247,13 @@ export function generateSuggestions({
 
                 if (candidates.length > 0) {
                     assignC(candidates[0].id, wp.name, true, tsId);
+                    debugLog('phase:C:coverage', 'Assigned non-availability Pflicht coverage slot', {
+                        date: dateStr,
+                        workplace: wp.name,
+                        timeslotId: tsId,
+                        doctorId: candidates[0].id,
+                        doctorName: doctorNameById[candidates[0].id] || candidates[0].id,
+                    });
                 }
             }
 
@@ -1250,6 +1336,13 @@ export function generateSuggestions({
 
                     if (eligiblePflicht.length > 0) {
                         assignC(eligiblePflicht[0].id, targetWpC.name, true, targetTsIdC);
+                        debugLog('phase:C:pflicht-fill', 'Assigned Pflicht workplace slot', {
+                            date: dateStr,
+                            workplace: targetWpC.name,
+                            timeslotId: targetTsIdC,
+                            doctorId: eligiblePflicht[0].id,
+                            doctorName: doctorNameById[eligiblePflicht[0].id] || eligiblePflicht[0].id,
+                        });
                         changedC = true;
                     }
                 } else {
@@ -1278,6 +1371,13 @@ export function generateSuggestions({
 
                     if (eligibleC.length > 0 && costFn.assignmentCost(eligibleC[0].id, targetWpC, dateStr, costContextC2) < Infinity) {
                         assignC(eligibleC[0].id, targetWpC.name, false, targetTsIdC);
+                        debugLog('phase:C:fill', 'Assigned non-availability slot', {
+                            date: dateStr,
+                            workplace: targetWpC.name,
+                            timeslotId: targetTsIdC,
+                            doctorId: eligibleC[0].id,
+                            doctorName: doctorNameById[eligibleC[0].id] || eligibleC[0].id,
+                        });
                         changedC = true;
                     }
                 }
@@ -1346,10 +1446,25 @@ export function generateSuggestions({
 
                 if (bestAssignmentC && bestCostC < Infinity) {
                     assignC(bestAssignmentC.doc.id, bestAssignmentC.wp.name, false, bestAssignmentC.timeslotId);
+                    debugLog('phase:C:overfill', 'Overfill assignment in non-availability workplace', {
+                        date: dateStr,
+                        workplace: bestAssignmentC.wp.name,
+                        timeslotId: bestAssignmentC.timeslotId,
+                        doctorId: bestAssignmentC.doc.id,
+                        doctorName: doctorNameById[bestAssignmentC.doc.id] || bestAssignmentC.doc.id,
+                        adjustedCost: bestCostC,
+                    });
                     overChangedC = true;
                 }
             }
         }
+
+        debugLog('day:summary', 'Finished day planning', {
+            date: dateStr,
+            assignedToday: suggestions.length - dayStartSuggestions,
+            autoFreiAddedToday: autoFreiSuggestions.length - dayStartAutoFrei,
+            blockedDoctorsAtEndOfDay: usedToday.size,
+        });
     }
 
     // ============================================================
@@ -1367,10 +1482,32 @@ export function generateSuggestions({
         );
         if (!alreadyGenerated) {
             generateAutoFrei(s.doctor_id, s.date);
+            debugLog('phase:D:autoFrei', 'Generated non-service auto-frei', {
+                sourceDate: s.date,
+                sourcePosition: s.position,
+                doctorId: s.doctor_id,
+                doctorName: doctorNameById[s.doctor_id] || s.doctor_id,
+            });
         }
     }
 
-    return [...suggestions, ...autoFreiSuggestions];
+    const finalResult = [...suggestions, ...autoFreiSuggestions];
+    debugLog('result', 'Deterministic AutoFill finished', {
+        suggestions: suggestions.length,
+        autoFrei: autoFreiSuggestions.length,
+        total: finalResult.length,
+        debugEntries: debugEntries.length,
+        requestId: debugRequestId,
+    });
+
+    if (debugEnabled) {
+        finalResult.__debug = {
+            requestId: debugRequestId,
+            entries: debugEntries,
+        };
+    }
+
+    return finalResult;
 }
 
 /** Simple date formatter */

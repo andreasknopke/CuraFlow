@@ -41,7 +41,10 @@ export default function AdminSettings() {
 
     const wishDeadlineMonths = settings.find(s => s.key === 'wish_deadline_months')?.value || '';
     const wishReminderEnabled = settings.find(s => s.key === 'wish_reminder_email_enabled')?.value === 'true';
-    const aiAutofillDebugEnabled = settings.find(s => s.key === 'ai_autofill_debug_enabled')?.value === 'true';
+    const autoFillDebugEnabled = (
+        settings.find(s => s.key === 'autofill_debug_enabled')?.value ||
+        settings.find(s => s.key === 'ai_autofill_debug_enabled')?.value
+    ) === 'true';
     
     // Approval Settings
     const approvalSettingRaw = settings.find(s => s.key === 'wish_approval_rules')?.value;
@@ -123,18 +126,18 @@ export default function AdminSettings() {
 
                     <div className="border p-4 rounded-lg bg-slate-50 space-y-3">
                         <div className="space-y-0.5">
-                            <Label htmlFor="ai-autofill-debug">KI-AutoFill Debug-Logs</Label>
+                            <Label htmlFor="autofill-debug">AutoFill Debug-Logs</Label>
                             <p className="text-xs text-slate-500">
-                                Aktiviert ausführliche Entscheidungs- und Prüfprotokolle für KI-AutoFill-Läufe (für Analyse/Fehlersuche).
+                                Aktiviert ausführliche Entscheidungs- und Prüfprotokolle für den deterministischen AutoFill-Lauf (nur Browser-Konsole).
                             </p>
                         </div>
                         <div className="flex items-center justify-between">
                             <span className="text-sm text-slate-700">Debug-Modus aktiv</span>
                             <Switch
-                                id="ai-autofill-debug"
-                                checked={aiAutofillDebugEnabled}
+                                id="autofill-debug"
+                                checked={autoFillDebugEnabled}
                                 onCheckedChange={(checked) => updateSettingMutation.mutate({
-                                    key: 'ai_autofill_debug_enabled',
+                                    key: 'autofill_debug_enabled',
                                     value: checked ? 'true' : 'false'
                                 })}
                             />

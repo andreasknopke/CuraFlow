@@ -2951,6 +2951,13 @@ export default function ScheduleBoard() {
   const handleAutoFill = (categories = null) => {
     setIsGenerating(true);
     try {
+            const autoFillDebugEnabled = (
+                systemSettings.find(s => s.key === 'autofill_debug_enabled')?.value ||
+                systemSettings.find(s => s.key === 'ai_autofill_debug_enabled')?.value
+            ) === 'true';
+            const autoFillDebugEntries = [];
+            const autoFillRequestId = `af-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
       // Determine which categories to fill
       const allCategories = [
         'Rotationen', 
@@ -2988,6 +2995,11 @@ export default function ScheduleBoard() {
         systemSettings,
         wishes,
         workplaceTimeslots,
+                debug: {
+                    enabled: autoFillDebugEnabled,
+                    requestId: autoFillRequestId,
+                    entries: autoFillDebugEntries,
+                },
       });
 
       // Filter results to only the selected categories (if not "all")
@@ -3015,6 +3027,19 @@ export default function ScheduleBoard() {
         const withIds = filtered.map((s, i) => ({ ...s, id: `preview-${i}` }));
         setPreviewShifts(withIds);
         toast.success(`${filtered.length} Vorschläge generiert` + (categories ? ` (${result.length} insgesamt berechnet)` : ''));
+
+                if (autoFillDebugEnabled && result.__debug?.entries?.length) {
+                    console.groupCollapsed(`🧭 AutoFill Debug (${result.__debug.requestId}) — ${result.__debug.entries.length} Events`);
+                    for (const entry of result.__debug.entries) {
+                        const prefix = `[${entry.ts}] [${entry.stage}] ${entry.message}`;
+                        if (entry.meta) {
+                            console.log(prefix, entry.meta);
+                        } else {
+                            console.log(prefix);
+                        }
+                    }
+                    console.groupEnd();
+                }
       } else {
         toast.info('Keine offenen Positionen gefunden');
       }
