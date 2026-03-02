@@ -3087,6 +3087,23 @@ export default function ScheduleBoard() {
           console.log(`🤖 KI-Reasoning: ${result.reasoning}`);
           toast.info(`🤖 ${result.reasoning}`, { duration: 8000 });
         }
+
+                if (result.debug?.entries?.length) {
+                    const reqId = result.debug.requestId || 'n/a';
+                    console.groupCollapsed(`🧭 AI AutoFill Debug (${reqId}) — ${result.debug.entries.length} Events`);
+                    for (const entry of result.debug.entries) {
+                        const prefix = `[${entry.ts}] [${entry.stage}] ${entry.message}`;
+                        if (entry.meta) {
+                            console.log(prefix, entry.meta);
+                        } else {
+                            console.log(prefix);
+                        }
+                    }
+                    if (result.debug.swapDiagnostics?.length) {
+                        console.log('🔍 Swap Diagnostics:', result.debug.swapDiagnostics);
+                    }
+                    console.groupEnd();
+                }
         
         console.log(`📊 Deterministic baseline: ${result.deterministicCount} | AI: ${result.suggestions.length}`, result.stats);
       } else {

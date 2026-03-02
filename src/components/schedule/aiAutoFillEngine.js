@@ -124,6 +124,7 @@ export async function generateAISuggestions(params) {
 
   const weekDayStrs = weekDays.map(d => formatDate(d));
   const holidays = weekDays.filter(d => isPublicHoliday(d)).map(d => formatDate(d));
+  const debugEnabled = systemSettings.find(s => s.key === 'ai_autofill_debug_enabled')?.value === 'true';
 
   const detParams = {
     weekDays, doctors, workplaces,
@@ -220,6 +221,7 @@ export async function generateAISuggestions(params) {
       scheduleRules: (scheduleRules || []).map(r => ({
         content: r.content, is_active: r.is_active,
       })),
+      debug: debugEnabled,
     }),
   });
 
@@ -236,6 +238,7 @@ export async function generateAISuggestions(params) {
       variantsGenerated: NUM_VARIANTS,
       variantScores: variants.map(v => v.score),
     },
+    debug: response.debug || null,
     deterministicCount: topVariants[0].suggestions.length,
   };
 }

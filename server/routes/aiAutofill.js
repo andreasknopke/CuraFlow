@@ -56,6 +56,36 @@ function buildNameMaps(doctors) {
   return { nameById, idByName };
 }
 
+function createDebugCollector(enabled, requestId) {
+  const entries = [];
+  const maxEntries = 1200;
+
+  const push = (stage, message, meta = null) => {
+    if (!enabled) return;
+    const entry = {
+      ts: new Date().toISOString(),
+      requestId,
+      stage,
+      message,
+      ...(meta ? { meta } : {}),
+    };
+    entries.push(entry);
+    if (entries.length > maxEntries) entries.shift();
+
+    if (meta) {
+      console.log(`[AI AutoFill v3][${requestId}][${stage}] ${message}`, meta);
+    } else {
+      console.log(`[AI AutoFill v3][${requestId}][${stage}] ${message}`);
+    }
+  };
+
+  return {
+    push,
+    dump: (limit = 400) => entries.slice(-Math.max(1, limit)),
+    count: () => entries.length,
+  };
+}
+
 // ============================================================
 //  Swap Validator — checks if a swap is safe
 // ============================================================
@@ -64,22 +94,77 @@ function validateSwap(swap, basePlan, data) {
   const { date, doctor1, doctor2, position1, position2 } = swap;
   const { doctors, workplaces, existingShifts, qualifications } = data;
   const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
+  const checks = [];
+
+  const reject = (reason, meta = null) => {
+    checks.push({ check: 'result', ok: false, reason, ...(meta ? { meta } : {}) });
+    return { valid: false, reason, checks };
+  };
 
   // Find doctors
   const doc1 = doctors.find(d => d.name === doctor1);
   const doc2 = doctors.find(d => d.name === doctor2);
-  if (!doc1 || !doc2) return { valid: false, reason: `Unknown doctor name` };
+  checks.push({
+    check: 'doctorLookup',
+    ok: Boolean(doc1 && doc2),
+    meta: {
+      doctor1,
+      doctor2,
+      doctor1Found: Boolean(doc1),
+      doctor2Found: Boolean(doc2),
+    },
+  });
+  if (!doc1 || !doc2) return reject('Unknown doctor name');
 
   const wp1 = workplaces.find(w => w.name === position1);
   const wp2 = workplaces.find(w => w.name === position2);
-  if (!wp1 || !wp2) return { valid: false, reason: `Unknown position` };
+  checks.push({
+    check: 'positionLookup',
+    ok: Boolean(wp1 && wp2),
+    meta: {
+      position1,
+      position2,
+      position1Found: Boolean(wp1),
+      position2Found: Boolean(wp2),
+    },
+  });
+  if (!wp1 || !wp2) return reject('Unknown position');
+
+  // Verify swap source assignments exist in base plan
+  const hasDoc1AtPosition1 = basePlan.some(s => s.date === date && s.doctor_id === doc1.id && s.position === position1);
+  const hasDoc2AtPosition2 = basePlan.some(s => s.date === date && s.doctor_id === doc2.id && s.position === position2);
+  checks.push({
+    check: 'sourceAssignmentsExist',
+    ok: hasDoc1AtPosition1 && hasDoc2AtPosition2,
+    meta: {
+      date,
+      hasDoc1AtPosition1,
+      hasDoc2AtPosition2,
+    },
+  });
+  if (!hasDoc1AtPosition1 || !hasDoc2AtPosition2) {
+    return reject('Swap source assignment missing in base plan', {
+      date,
+      doctor1,
+      position1,
+      doctor2,
+      position2,
+    });
+  }
 
   // Check absences
   const isAbsent = (docId, dateStr) => {
     return existingShifts.some(s => s.date === dateStr && s.doctor_id === docId && absencePositions.includes(s.position));
   };
-  if (isAbsent(doc1.id, date) || isAbsent(doc2.id, date)) {
-    return { valid: false, reason: `Doctor is absent on ${date}` };
+  const doc1Absent = isAbsent(doc1.id, date);
+  const doc2Absent = isAbsent(doc2.id, date);
+  checks.push({
+    check: 'absenceCheck',
+    ok: !doc1Absent && !doc2Absent,
+    meta: { date, doc1Absent, doc2Absent },
+  });
+  if (doc1Absent || doc2Absent) {
+    return reject(`Doctor is absent on ${date}`);
   }
 
   // Check NOT-qualifications: doc1 → pos2, doc2 → pos1
@@ -91,11 +176,23 @@ function validateSwap(swap, basePlan, data) {
     return excl.length > 0 && excl.some(q => docQuals.includes(q));
   };
 
-  if (checkNotQual(doc1.id, wp2.id)) {
-    return { valid: false, reason: `${doctor1} has NOT-qualification for ${position2}` };
+  const doc1NotQual = checkNotQual(doc1.id, wp2.id);
+  checks.push({
+    check: 'notQualificationDoc1ToPos2',
+    ok: !doc1NotQual,
+    meta: { doctor: doctor1, targetPosition: position2 },
+  });
+  if (doc1NotQual) {
+    return reject(`${doctor1} has NOT-qualification for ${position2}`);
   }
-  if (checkNotQual(doc2.id, wp1.id)) {
-    return { valid: false, reason: `${doctor2} has NOT-qualification for ${position1}` };
+  const doc2NotQual = checkNotQual(doc2.id, wp1.id);
+  checks.push({
+    check: 'notQualificationDoc2ToPos1',
+    ok: !doc2NotQual,
+    meta: { doctor: doctor2, targetPosition: position1 },
+  });
+  if (doc2NotQual) {
+    return reject(`${doctor2} has NOT-qualification for ${position1}`);
   }
 
   // Check mandatory qualifications: doc1 must have all Pflicht for pos2, doc2 for pos1
@@ -111,7 +208,18 @@ function validateSwap(swap, basePlan, data) {
   // Only check if the target position has mandatory quals — allow soft fallback
   // (the deterministic engine also falls back, so we should too)
 
-  return { valid: true };
+  checks.push({
+    check: 'mandatoryQualificationSoftFallback',
+    ok: true,
+    meta: {
+      doc1HasMandatoryForPos2: checkMandatory(doc1.id, wp2.id),
+      doc2HasMandatoryForPos1: checkMandatory(doc2.id, wp1.id),
+      note: 'Informational only; does not reject swap by design',
+    },
+  });
+
+  checks.push({ check: 'result', ok: true, reason: 'Swap valid' });
+  return { valid: true, reason: 'Swap valid', checks };
 }
 
 function applySwaps(basePlan, validSwaps, idByName) {
@@ -286,6 +394,9 @@ function parseSwapResponse(content) {
 
 router.post('/ai-autofill', async (req, res) => {
   const startTime = Date.now();
+  const requestId = `aif-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const debugEnabled = req.body?.debug === true || process.env.AI_AUTOFILL_DEBUG === '1';
+  const debug = createDebugCollector(debugEnabled, requestId);
 
   try {
     const {
@@ -295,7 +406,22 @@ router.post('/ai-autofill', async (req, res) => {
       holidays, scheduleRules,
     } = req.body;
 
+    debug.push('request', 'AI AutoFill request received', {
+      hasWeekDays: Boolean(weekDays?.length),
+      hasDoctors: Boolean(doctors?.length),
+      hasWorkplaces: Boolean(workplaces?.length),
+      variants: clientVariants?.length || 0,
+      bestVariantEntries: bestVariantRaw?.length || 0,
+      holidays: holidays?.length || 0,
+      scheduleRules: scheduleRules?.length || 0,
+    });
+
     if (!weekDays?.length || !doctors?.length || !workplaces?.length) {
+      debug.push('validation', 'Missing required request data', {
+        weekDays: weekDays?.length || 0,
+        doctors: doctors?.length || 0,
+        workplaces: workplaces?.length || 0,
+      });
       return res.status(400).json({ error: 'Missing required data' });
     }
 
@@ -305,13 +431,21 @@ router.post('/ai-autofill', async (req, res) => {
     // If no variants sent (legacy call), fall back to bestVariant
     if (!clientVariants?.length) {
       console.log('[AI AutoFill v3] No variants received, returning bestVariant as-is');
+      debug.push('fallback', 'No client variants provided, using bestVariant fallback');
       const suggestions = (bestVariantRaw || []).map(s => ({ ...s, isPreview: true }));
       const autoFrei = generateAutoFreiEntries(suggestions, workplaces, existingShifts, weekDays, holidays || []);
       return res.json({
         suggestions: [...suggestions, ...autoFrei],
         reasoning: 'Fallback: keine Varianten empfangen',
         provider: 'deterministic', model: 'none',
-        stats: { total: suggestions.length + autoFrei.length, validated: suggestions.length, autoFrei: autoFrei.length, errors: 0 },
+        stats: {
+          total: suggestions.length + autoFrei.length,
+          validated: suggestions.length,
+          autoFrei: autoFrei.length,
+          errors: 0,
+          debugEntries: debug.count(),
+        },
+        debug: debugEnabled ? { requestId, entries: debug.dump() } : undefined,
       });
     }
 
@@ -328,23 +462,44 @@ router.post('/ai-autofill', async (req, res) => {
     if (!client) {
       // No LLM available → return best deterministic variant
       console.log('[AI AutoFill v3] No AI provider, returning best deterministic variant');
+      debug.push('provider', 'No AI provider available, deterministic fallback used');
       const suggestions = (bestVariantRaw || []).map(s => ({ ...s, isPreview: true }));
       const autoFrei = generateAutoFreiEntries(suggestions, workplaces, existingShifts, weekDays, holidays || []);
       return res.json({
         suggestions: [...suggestions, ...autoFrei],
         reasoning: 'Kein AI-Provider verfügbar, beste deterministische Variante',
         provider: 'deterministic', model: 'none',
-        stats: { total: suggestions.length + autoFrei.length, validated: suggestions.length, autoFrei: autoFrei.length, errors: 0 },
+        stats: {
+          total: suggestions.length + autoFrei.length,
+          validated: suggestions.length,
+          autoFrei: autoFrei.length,
+          errors: 0,
+          debugEntries: debug.count(),
+        },
+        debug: debugEnabled ? { requestId, entries: debug.dump() } : undefined,
       });
     }
 
     console.log(`[AI AutoFill v3] ${provider} (${model}), ${clientVariants.length} variants, ${doctors.length} docs, ${weekDays.length} days`);
+    debug.push('provider', 'Provider selected', {
+      provider,
+      model,
+      variants: clientVariants.length,
+      doctors: doctors.length,
+      days: weekDays.length,
+    });
 
     // Build prompt
     const systemPrompt = buildSwapSystemPrompt();
     const userPrompt = buildSwapDataPrompt(clientVariants, scheduleRules);
 
     console.log(`[AI AutoFill v3] Prompt size: system=${systemPrompt.length}, user=${userPrompt.length}`);
+    debug.push('prompt', 'Prompt built', {
+      systemChars: systemPrompt.length,
+      userChars: userPrompt.length,
+      variantsInPrompt: clientVariants.length,
+      activeRules: (scheduleRules || []).filter(r => r.is_active).length,
+    });
 
     // Call LLM
     const completion = await client.chat.completions.create({
@@ -363,17 +518,28 @@ router.post('/ai-autofill', async (req, res) => {
 
     console.log(`[AI AutoFill v3] Response: ${responseContent.length} chars, ${completion.usage?.total_tokens || '?'} tokens`);
     console.log(`[AI AutoFill v3] Content: ${responseContent.substring(0, 1000)}`);
+    debug.push('llm', 'LLM response received', {
+      responseChars: responseContent.length,
+      totalTokens: completion.usage?.total_tokens || null,
+    });
 
     // Parse response
     const { bestVariant: chosenIdx, swaps, reasoning } = parseSwapResponse(responseContent);
     const safeIdx = Math.min(Math.max(chosenIdx || 0, 0), clientVariants.length - 1);
 
     console.log(`[AI AutoFill v3] LLM chose variant ${safeIdx}, suggested ${swaps.length} swaps`);
+    debug.push('llm', 'Parsed LLM selection', {
+      chosenVariantRaw: chosenIdx,
+      chosenVariantSafe: safeIdx,
+      swapsSuggested: swaps.length,
+      reasoningLength: (reasoning || '').length,
+    });
 
     // Get the chosen base plan (as ID-based entries from bestVariantRaw)
     // Map the chosen variant from name-based back to ID-based
     const chosenVariant = clientVariants[safeIdx];
     const basePlan = [];
+    let skippedNameMappings = 0;
     for (const [date, positions] of Object.entries(chosenVariant.plan)) {
       for (const [position, doctorNames] of Object.entries(positions)) {
         const names = Array.isArray(doctorNames) ? doctorNames : [doctorNames];
@@ -382,31 +548,52 @@ router.post('/ai-autofill', async (req, res) => {
           const docId = idByName[cleanName];
           if (docId) {
             basePlan.push({ date, position, doctor_id: docId, isPreview: true });
+          } else {
+            skippedNameMappings++;
           }
         }
       }
     }
+    debug.push('mapping', 'Converted chosen variant to ID-based base plan', {
+      basePlanEntries: basePlan.length,
+      skippedNameMappings,
+    });
 
     // Validate and apply swaps
     let appliedSwaps = 0;
     let rejectedSwaps = 0;
     const swapDetails = [];
+    const swapDiagnostics = [];
+    const validSwaps = [];
 
-    for (const swap of swaps) {
+    for (const [index, swap] of swaps.entries()) {
       const result = validateSwap(swap, basePlan, data);
+      swapDiagnostics.push({
+        index,
+        swap,
+        valid: result.valid,
+        reason: result.reason,
+        checks: result.checks || [],
+      });
       if (result.valid) {
         appliedSwaps++;
+        validSwaps.push(swap);
         swapDetails.push(`✓ ${swap.doctor1}↔${swap.doctor2} @ ${swap.date}: ${swap.reason || ''}`);
       } else {
         rejectedSwaps++;
         swapDetails.push(`✗ ${swap.doctor1}↔${swap.doctor2} @ ${swap.date}: ${result.reason}`);
       }
     }
-
-    const validSwaps = swaps.filter((s, i) => {
-      const r = validateSwap(s, basePlan, data);
-      return r.valid;
+    debug.push('swapValidation', 'Swap validation completed', {
+      swapsSuggested: swaps.length,
+      swapsValid: validSwaps.length,
+      swapsRejected: rejectedSwaps,
     });
+    if (swaps.length > 0) {
+      debug.push('swapValidation', 'Detailed swap diagnostics available', {
+        swapDiagnostics,
+      });
+    }
 
     const optimizedPlan = validSwaps.length > 0
       ? applySwaps(basePlan, validSwaps, idByName)
@@ -419,6 +606,13 @@ router.post('/ai-autofill', async (req, res) => {
 
     console.log(`[AI AutoFill v3] Done: ${optimizedPlan.length} entries + ${autoFrei.length} auto-frei, ${appliedSwaps} swaps applied, ${rejectedSwaps} rejected (${elapsed}ms)`);
     console.log(`[AI AutoFill v3] Swap details:`, swapDetails);
+    debug.push('result', 'AI AutoFill finished', {
+      optimizedEntries: optimizedPlan.length,
+      autoFreiEntries: autoFrei.length,
+      appliedSwaps,
+      rejectedSwaps,
+      elapsed,
+    });
 
     res.json({
       suggestions: allSuggestions,
@@ -436,11 +630,23 @@ router.post('/ai-autofill', async (req, res) => {
         swapDetails: swapDetails.slice(0, 20),
         tokens: completion.usage?.total_tokens || null,
         elapsed,
+        debugEntries: debug.count(),
       },
+      debug: debugEnabled
+        ? {
+            requestId,
+            entries: debug.dump(),
+            swapDiagnostics: swapDiagnostics.slice(0, 30),
+          }
+        : undefined,
     });
 
   } catch (error) {
     console.error('[AI AutoFill v3] Error:', error);
+    debug.push('error', 'Unhandled error in AI AutoFill route', {
+      message: error.message,
+      stack: error.stack,
+    });
     
     // On any error, try to return the best deterministic variant
     try {
@@ -452,7 +658,14 @@ router.post('/ai-autofill', async (req, res) => {
           reasoning: `LLM-Fehler (${error.message}), verwende beste deterministische Variante`,
           provider: 'deterministic-fallback',
           model: 'none',
-          stats: { total: suggestions.length, validated: suggestions.length, errors: 0, llmError: error.message },
+          stats: {
+            total: suggestions.length,
+            validated: suggestions.length,
+            errors: 0,
+            llmError: error.message,
+            debugEntries: debug.count(),
+          },
+          debug: debugEnabled ? { requestId, entries: debug.dump() } : undefined,
         });
       }
     } catch {}
