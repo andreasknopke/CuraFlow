@@ -69,7 +69,8 @@ const SCHEMAS = {
             auto_off BOOLEAN,
             show_in_service_plan BOOLEAN,
             allows_rotation_concurrently BOOLEAN,
-            allows_consecutive_days BOOLEAN
+            allows_consecutive_days BOOLEAN,
+            consecutive_days_mode VARCHAR(20) DEFAULT 'allowed'
         )
     `,
     SystemSetting: `

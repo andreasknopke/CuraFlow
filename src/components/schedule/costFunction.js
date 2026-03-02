@@ -60,7 +60,8 @@ const WEIGHTS = {
     DISPLACEMENT_BONUS:  -3,       // Per displacement count → displaced doctors get priority
     SOLE_OCCUPANT:       10,       // Pulling a sole occupant from availability-relevant workplace
     LIMIT_EXCEEDED:      25,       // Doctor would exceed 4-week service limit
-    CONSECUTIVE_PENALTY: 20,       // Consecutive service days (when not allowed)
+    CONSECUTIVE_PENALTY: 20,       // Consecutive service days (when forbidden)
+    CONSECUTIVE_BONUS:   -12,      // Consecutive service days (when preferred, e.g. full weekend)
 };
 
 export { WEIGHTS };
@@ -221,6 +222,11 @@ export class CostFunction {
             const lCost = this._limitCost(doctorId, workplace.name, dateStr);
             if (lCost === Infinity) return Infinity;
             totalCost += lCost;
+        }
+
+        // 11. Consecutive days cost (forbidden → penalty, preferred → bonus)
+        if (context.phase === 'A') {
+            totalCost += this._consecutiveCost(doctorId, workplace, dateStr, context);
         }
 
         return totalCost;
@@ -384,6 +390,50 @@ export class CostFunction {
         if (isFG && (hist.fg + 1) > Math.round(this.limitFG * fte)) return WEIGHTS.LIMIT_EXCEEDED;
         if (isBG && (hist.bg + 1) > Math.round(this.limitBG * fte)) return WEIGHTS.LIMIT_EXCEEDED;
         if (isWknd && (hist.weekend + 1) > this.limitWeekend) return WEIGHTS.LIMIT_EXCEEDED;
+
+        return 0;
+    }
+
+    // ================================================================
+    //  Dimension: Consecutive Days Cost
+    //  Modes: 'forbidden' → penalty, 'allowed' → neutral, 'preferred' → bonus
+    //  Backward compat: allows_consecutive_days===false → 'forbidden'
+    // ================================================================
+
+    _consecutiveCost(doctorId, workplace, dateStr, context) {
+        if (workplace.category !== 'Dienste') return 0;
+
+        // Determine consecutive mode
+        const mode = workplace.consecutive_days_mode
+            || (workplace.allows_consecutive_days === false ? 'forbidden' : 'allowed');
+
+        if (mode === 'allowed') return 0;
+
+        // Check if this doctor already has the same service on adjacent days
+        const d = new Date(dateStr + 'T00:00:00');
+        const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        const prevStr = prev.toISOString().slice(0, 10);
+        const nextStr = next.toISOString().slice(0, 10);
+
+        const hasAdjacent = this.existingShifts.some(s =>
+            s.doctor_id === doctorId &&
+            s.position === workplace.name &&
+            (s.date === prevStr || s.date === nextStr)
+        ) || (this.suggestions || []).some(s =>
+            s.doctor_id === doctorId &&
+            s.position === workplace.name &&
+            (s.date === prevStr || s.date === nextStr)
+        );
+
+        if (mode === 'forbidden' && hasAdjacent) {
+            return WEIGHTS.CONSECUTIVE_PENALTY;
+        }
+
+        if (mode === 'preferred') {
+            // Bonus if adjacent assignment exists, small penalty if not
+            return hasAdjacent ? WEIGHTS.CONSECUTIVE_BONUS : 0;
+        }
 
         return 0;
     }

@@ -114,21 +114,26 @@ export default function GlobalVoiceControl() {
         const newServiceWorkplace = workplaces.find(w => w.name === newPosition && w.category === 'Dienste');
         const isNewService = !!newServiceWorkplace;
 
-        if (isNewService && newServiceWorkplace.allows_consecutive_days === false) {
-            const currentDt = new Date(dateStr);
-            const prevDateStr = format(addDays(currentDt, -1), 'yyyy-MM-dd');
-            const nextDateStr = format(addDays(currentDt, 1), 'yyyy-MM-dd');
+        if (isNewService) {
+            // Determine consecutive mode: 'forbidden' | 'allowed' | 'preferred'
+            const consecutiveMode = newServiceWorkplace.consecutive_days_mode
+                || (newServiceWorkplace.allows_consecutive_days === false ? 'forbidden' : 'allowed');
+            if (consecutiveMode === 'forbidden') {
+                const currentDt = new Date(dateStr);
+                const prevDateStr = format(addDays(currentDt, -1), 'yyyy-MM-dd');
+                const nextDateStr = format(addDays(currentDt, 1), 'yyyy-MM-dd');
 
-            const hasConsecutive = allShifts.some(s => 
-                s.doctor_id === doctorId && 
-                s.position === newPosition && 
-                (s.date === prevDateStr || s.date === nextDateStr)
-            );
+                const hasConsecutive = allShifts.some(s => 
+                    s.doctor_id === doctorId && 
+                    s.position === newPosition && 
+                    (s.date === prevDateStr || s.date === nextDateStr)
+                );
 
-            if (hasConsecutive) {
-                const msg = `Konflikt: "${newPosition}" ist nicht an aufeinanderfolgenden Tagen erlaubt.`;
-                if (isVoice) toast.error(msg);
-                return true;
+                if (hasConsecutive) {
+                    const msg = `Konflikt: "${newPosition}" ist nicht an aufeinanderfolgenden Tagen erlaubt.`;
+                    if (isVoice) toast.error(msg);
+                    return true;
+                }
             }
         }
 

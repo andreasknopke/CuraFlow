@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import TimeslotEditor from '@/components/admin/TimeslotEditor';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 
 // Service type constants
@@ -452,17 +453,34 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                     onCheckedChange={(checked) => setEditForm({...editForm, allows_rotation_concurrently: checked})}
                                                                                 />
                                                                                 </div>
-                                                                                <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
+                                                                                <div className="p-3 border rounded bg-slate-50 space-y-2">
                                                                                 <div className="space-y-0.5">
-                                                                                    <Label className="text-base">Aufeinanderfolgende Tage erlaubt</Label>
+                                                                                    <Label className="text-base">Aufeinanderfolgende Tage</Label>
                                                                                     <div className="text-xs text-slate-500">
-                                                                                        Darf dem gleichen Arzt an aufeinanderfolgenden Tagen zugewiesen werden.
+                                                                                        Darf dem gleichen Arzt an aufeinanderfolgenden Tagen zugewiesen werden?
                                                                                     </div>
                                                                                 </div>
-                                                                                <Switch
-                                                                                    checked={editForm.allows_consecutive_days !== false} // Default true
-                                                                                    onCheckedChange={(checked) => setEditForm({...editForm, allows_consecutive_days: checked})}
-                                                                                />
+                                                                                <ToggleGroup
+                                                                                    type="single"
+                                                                                    value={editForm.consecutive_days_mode || (editForm.allows_consecutive_days === false ? 'forbidden' : 'allowed')}
+                                                                                    onValueChange={(val) => { if (val) setEditForm({...editForm, consecutive_days_mode: val, allows_consecutive_days: val !== 'forbidden'}); }}
+                                                                                    className="justify-start"
+                                                                                >
+                                                                                    <ToggleGroupItem value="forbidden" className="text-xs px-3 data-[state=on]:bg-red-100 data-[state=on]:text-red-700">
+                                                                                        Verboten
+                                                                                    </ToggleGroupItem>
+                                                                                    <ToggleGroupItem value="allowed" className="text-xs px-3 data-[state=on]:bg-green-100 data-[state=on]:text-green-700">
+                                                                                        Erlaubt
+                                                                                    </ToggleGroupItem>
+                                                                                    <ToggleGroupItem value="preferred" className="text-xs px-3 data-[state=on]:bg-blue-100 data-[state=on]:text-blue-700">
+                                                                                        Bevorzugt
+                                                                                    </ToggleGroupItem>
+                                                                                </ToggleGroup>
+                                                                                <div className="text-xs text-slate-400 mt-1">
+                                                                                    {(editForm.consecutive_days_mode || (editForm.allows_consecutive_days === false ? 'forbidden' : 'allowed')) === 'forbidden' && 'Gleicher Arzt darf nicht an aufeinanderfolgenden Tagen eingeteilt werden.'}
+                                                                                    {(editForm.consecutive_days_mode || (editForm.allows_consecutive_days === false ? 'forbidden' : 'allowed')) === 'allowed' && 'Aufeinanderfolgende Tage sind möglich, werden aber weder angestrebt noch vermieden.'}
+                                                                                    {(editForm.consecutive_days_mode || (editForm.allows_consecutive_days === false ? 'forbidden' : 'allowed')) === 'preferred' && 'Aufeinanderfolgende Tage werden aktiv bevorzugt (z.B. ganzes Wochenende am Stück).'}
+                                                                                </div>
                                                                                 </div>
 
                                                                                 <div className="p-3 border rounded bg-slate-50 space-y-2">

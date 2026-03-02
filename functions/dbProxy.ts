@@ -106,7 +106,7 @@ Deno.serve(async (req) => {
                     } catch (e) {}
                 }
                 
-                const boolFields = ['receive_email_notifications', 'exclude_from_staffing_plan', 'user_viewed', 'auto_off', 'show_in_service_plan', 'allows_rotation_concurrently', 'allows_consecutive_days', 'acknowledged', 'is_active'];
+                const boolFields = ['receive_email_notifications', 'exclude_from_staffing_plan', 'user_viewed', 'auto_off', 'show_in_service_plan', 'allows_rotation_concurrently', 'acknowledged', 'is_active'];
                 if (boolFields.includes(key)) {
                     res[key] = !!res[key];
                 }

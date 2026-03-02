@@ -1012,9 +1012,14 @@ Deno.serve(async (req) => {
                         if (wpData.active_days && typeof wpData.active_days === 'string') {
                             try { wpData.active_days = JSON.parse(wpData.active_days); } catch {}
                         }
-                        ['auto_off', 'show_in_service_plan', 'allows_rotation_concurrently', 'allows_consecutive_days'].forEach(f => {
+                        ['auto_off', 'show_in_service_plan', 'allows_rotation_concurrently'].forEach(f => {
                             if (wpData[f] !== undefined) wpData[f] = !!wpData[f];
                         });
+                        // consecutive_days_mode is a string ('forbidden'|'allowed'|'preferred'), not boolean
+                        // Migrate legacy boolean allows_consecutive_days
+                        if (wpData.consecutive_days_mode === undefined && wpData.allows_consecutive_days !== undefined) {
+                            wpData.consecutive_days_mode = wpData.allows_consecutive_days ? 'allowed' : 'forbidden';
+                        }
                         
                         const created = await rateLimitedCreate('Workplace', wpData);
                         idMap.Workplace[oldId] = created.id;
@@ -1356,7 +1361,7 @@ Deno.serve(async (req) => {
                             if (item.active_days && typeof item.active_days === 'string') {
                                 try { item.active_days = JSON.parse(item.active_days); } catch {}
                             }
-                            const boolFields = ['receive_email_notifications', 'exclude_from_staffing_plan', 'user_viewed', 'auto_off', 'show_in_service_plan', 'allows_rotation_concurrently', 'allows_consecutive_days', 'acknowledged', 'is_active'];
+                            const boolFields = ['receive_email_notifications', 'exclude_from_staffing_plan', 'user_viewed', 'auto_off', 'show_in_service_plan', 'allows_rotation_concurrently', 'acknowledged', 'is_active'];
                             boolFields.forEach(f => {
                                 if (item[f] !== undefined) item[f] = !!item[f];
                             });

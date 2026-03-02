@@ -74,7 +74,7 @@ const fromSqlRow = (row) => {
     const boolFields = [
       'receive_email_notifications', 'exclude_from_staffing_plan', 
       'user_viewed', 'auto_off', 'show_in_service_plan', 
-      'allows_rotation_concurrently', 'allows_consecutive_days', 
+      'allows_rotation_concurrently', 
       'acknowledged', 'is_active', 'is_specialist',
       'timeslots_enabled', 'spans_midnight', 'affects_availability',
       'can_do_foreground_duty', 'can_do_background_duty', 'excluded_from_statistics',
@@ -264,6 +264,10 @@ const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
   try {
     await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS min_staff INT DEFAULT 1`);
     await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS optimal_staff INT DEFAULT 1`);
+    // consecutive_days_mode: 'forbidden' | 'allowed' | 'preferred' (replaces boolean allows_consecutive_days)
+    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS consecutive_days_mode VARCHAR(20) DEFAULT 'allowed'`);
+    // Migrate legacy boolean values if the new column was just added
+    await dbPool.execute(`UPDATE Workplace SET consecutive_days_mode = 'forbidden' WHERE consecutive_days_mode = 'allowed' AND allows_consecutive_days = 0`).catch(() => {});
     // Clear cached columns so the new columns are recognized
     const colCacheKey = `${cacheKey}:Workplace`;
     delete COLUMNS_CACHE[colCacheKey];

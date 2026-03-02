@@ -524,6 +524,34 @@ export function generateSuggestions({
         return targets.includes(wpName);
     };
 
+    /** Get consecutive days mode for a workplace: 'forbidden' | 'allowed' | 'preferred' */
+    const getConsecutiveMode = (wp) => {
+        if (wp.consecutive_days_mode) return wp.consecutive_days_mode;
+        // Backward compat: old boolean field
+        if (wp.allows_consecutive_days === false) return 'forbidden';
+        return 'allowed';
+    };
+
+    /** Check if assigning this doctor to this service on this date would violate consecutive-forbidden */
+    const wouldViolateConsecutive = (docId, svcName, dateStr) => {
+        const wp = workplaces.find(w => w.name === svcName);
+        if (!wp || getConsecutiveMode(wp) !== 'forbidden') return false;
+
+        const d = new Date(dateStr + 'T00:00:00');
+        const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        const prevStr = formatDate(prev);
+        const nextStr = formatDate(next);
+
+        return existingShifts.some(s =>
+            s.doctor_id === docId && s.position === svcName &&
+            (s.date === prevStr || s.date === nextStr)
+        ) || suggestions.some(s =>
+            s.doctor_id === docId && s.position === svcName &&
+            (s.date === prevStr || s.date === nextStr)
+        );
+    };
+
     // ========================================================
     //  Process each day
     // ========================================================
@@ -719,7 +747,8 @@ export function generateSuggestions({
                         !isExcluded(d.id, svc.id) &&
                         !hasApprovedNoService(d.id, dateStr) &&
                         isQualified(d.id, svc.id) &&
-                        !wouldExceedLimit(d.id, svc.name, dateStr)
+                        !wouldExceedLimit(d.id, svc.name, dateStr) &&
+                        !wouldViolateConsecutive(d.id, svc.name, dateStr)
                     );
                 });
 
@@ -762,7 +791,8 @@ export function generateSuggestions({
                             (!serviceAssignedToday.has(d.id) || hasWishForThis) &&
                             !isExcluded(d.id, svc.id) &&
                             !hasApprovedNoService(d.id, dateStr) &&
-                            isQualified(d.id, svc.id)
+                            isQualified(d.id, svc.id) &&
+                            !wouldViolateConsecutive(d.id, svc.name, dateStr)
                         );
                     }).sort((a, b) => {
                         const costA = costFn.assignmentCost(a.id, svc, dateStr, fallbackContext);
