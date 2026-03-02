@@ -517,7 +517,12 @@ export function generateSuggestions({
     //  Classify workplaces
     // ========================================================
     const isServiceWp = (wp) => wp.category === 'Dienste';
+    const isRotationWp = (wp) => wp.category === 'Rotationen';
     const isAffectsAvailability = (wp) => wp.affects_availability !== false;
+    const isRotationTraineeForWp = (doctorId, wpName, dateStr) => {
+        const targets = getActiveRotationTargets(doctorId, dateStr);
+        return targets.includes(wpName);
+    };
 
     // ========================================================
     //  Process each day
@@ -934,9 +939,28 @@ export function generateSuggestions({
                 const unassigned = doctors.filter(d => !usedToday.has(d.id));
                 if (unassigned.length === 0) break;
 
-                const targetSlot = underFilled[0];
+                const targetSlot = underFilled.find(slot => {
+                    const wp = slot.wp;
+                    const tsId = slot.timeslotId;
+                    const sk = slotKey(wp.name, tsId);
+                    const cur = slotCount[sk] || 0;
+                    if (!isRotationWp(wp) || cur < 1) return true;
+                    return doctors.some(d =>
+                        !usedToday.has(d.id) &&
+                        !isExcluded(d.id, wp.id) &&
+                        isRotationTraineeForWp(d.id, wp.name, dateStr)
+                    );
+                });
+                if (!targetSlot) {
+                    debugLog('phase:B:rotation-skip', 'No fillable underfilled slot due to rotation trainee rule', {
+                        date: dateStr,
+                    });
+                    break;
+                }
                 const targetWp = targetSlot.wp;
                 const targetTsId = targetSlot.timeslotId;
+                const targetSk = slotKey(targetWp.name, targetTsId);
+                const targetCurrentCount = slotCount[targetSk] || 0;
 
                 // Cost-based candidate sorting (replaces tier-based scoreCandidate/sortCandidates)
                 const costContextB = {
@@ -950,6 +974,16 @@ export function generateSuggestions({
 
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                 let eligible = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id));
+
+                // Rotation rule for second+ occupancy: restrict to active rotation trainees.
+                if (isRotationWp(targetWp) && targetCurrentCount >= 1) {
+                    const traineeOnly = eligible.filter(doc =>
+                        isRotationTraineeForWp(doc.id, targetWp.name, dateStr)
+                    );
+                    if (traineeOnly.length > 0) {
+                        eligible = traineeOnly;
+                    }
+                }
 
                 // "Sollte nicht": filter out discouraged doctors (fallback if none remain)
                 {
@@ -986,6 +1020,13 @@ export function generateSuggestions({
                         addDisplacement(chosen.id);
                     }
                     changed = true;
+                } else if (isRotationWp(targetWp) && targetCurrentCount >= 1) {
+                    debugLog('phase:B:rotation-skip', 'Skipped second occupancy for rotation workplace (no eligible trainee after filters)', {
+                        date: dateStr,
+                        workplace: targetWp.name,
+                        timeslotId: targetTsId,
+                        currentCount: targetCurrentCount,
+                    });
                 }
             }
 
@@ -1000,6 +1041,7 @@ export function generateSuggestions({
                 // Build slot-level options for overfill
                 const overSlots = expandToSlots(availWps.filter(wp => allowsMultiple(wp)));
                 const options = overSlots
+                    .filter(slot => !isRotationWp(slot.wp))
                     .map(slot => {
                         const sk = slotKey(slot.wp.name, slot.timeslotId);
                         return {
@@ -1276,10 +1318,30 @@ export function generateSuggestions({
 
                 if (underFilledC.length === 0) break;
 
-                const targetSlotC = underFilledC[0];
+                const targetSlotC = underFilledC.find(slot => {
+                    const wp = slot.wp;
+                    const tsId = slot.timeslotId;
+                    const sk = slotKey(wp.name, tsId);
+                    const cur = phaseCSlotCount[sk] || 0;
+                    if (!isRotationWp(wp) || cur < 1) return true;
+                    return doctors.some(d =>
+                        !phaseC_blocked.has(d.id) &&
+                        !isExcluded(d.id, wp.id) &&
+                        !isAlreadyAssignedToSlot(d.id, wp.name, tsId) &&
+                        isRotationTraineeForWp(d.id, wp.name, dateStr)
+                    );
+                });
+                if (!targetSlotC) {
+                    debugLog('phase:C:rotation-skip', 'No fillable underfilled slot due to rotation trainee rule', {
+                        date: dateStr,
+                    });
+                    break;
+                }
                 const targetWpC = targetSlotC.wp;
                 const targetTsIdC = targetSlotC.timeslotId;
                 const targetHasQualReq = hasQualReq(targetWpC);
+                const targetSkC = slotKey(targetWpC.name, targetTsIdC);
+                const targetCurrentCountC = phaseCSlotCount[targetSkC] || 0;
 
                 const costContextC2 = {
                     usedToday: phaseC_blocked,
@@ -1297,6 +1359,12 @@ export function generateSuggestions({
                         .filter(d => !serviceBlocked.has(d.id) && !phaseC_blocked.has(d.id) &&
                                      !isExcluded(d.id, targetWpC.id) && isQualified(d.id, targetWpC.id) &&
                                      !isAlreadyAssignedToSlot(d.id, targetWpC.name, targetTsIdC));
+
+                    if (isRotationWp(targetWpC) && targetCurrentCountC >= 1) {
+                        eligiblePflicht = eligiblePflicht.filter(d =>
+                            isRotationTraineeForWp(d.id, targetWpC.name, dateStr)
+                        );
+                    }
                     {
                         const nonDisc = eligiblePflicht.filter(d => !isDiscouraged(d.id, targetWpC.id));
                         if (nonDisc.length > 0) eligiblePflicht = nonDisc;
@@ -1318,6 +1386,12 @@ export function generateSuggestions({
                             .filter(d => !serviceBlocked.has(d.id) && !isExcluded(d.id, targetWpC.id) &&
                                          isQualified(d.id, targetWpC.id) &&
                                          !isAlreadyAssignedToSlot(d.id, targetWpC.name, targetTsIdC));
+
+                        if (isRotationWp(targetWpC) && targetCurrentCountC >= 1) {
+                            eligibleMehr = eligibleMehr.filter(d =>
+                                isRotationTraineeForWp(d.id, targetWpC.name, dateStr)
+                            );
+                        }
                         {
                             const nonDisc = eligibleMehr.filter(d => !isDiscouraged(d.id, targetWpC.id));
                             if (nonDisc.length > 0) eligibleMehr = nonDisc;
@@ -1344,6 +1418,13 @@ export function generateSuggestions({
                             doctorName: doctorNameById[eligiblePflicht[0].id] || eligiblePflicht[0].id,
                         });
                         changedC = true;
+                    } else if (isRotationWp(targetWpC) && targetCurrentCountC >= 1) {
+                        debugLog('phase:C:rotation-skip', 'Skipped second Pflicht occupancy for rotation workplace (no eligible trainee)', {
+                            date: dateStr,
+                            workplace: targetWpC.name,
+                            timeslotId: targetTsIdC,
+                            currentCount: targetCurrentCountC,
+                        });
                     }
                 } else {
                     // Non-Pflicht workplace: any unblocked doctor
@@ -1352,6 +1433,12 @@ export function generateSuggestions({
 
                     let eligibleC = availableC.filter(doc => !isExcluded(doc.id, targetWpC.id) &&
                                                              !isAlreadyAssignedToSlot(doc.id, targetWpC.name, targetTsIdC));
+
+                    if (isRotationWp(targetWpC) && targetCurrentCountC >= 1) {
+                        eligibleC = eligibleC.filter(doc =>
+                            isRotationTraineeForWp(doc.id, targetWpC.name, dateStr)
+                        );
+                    }
 
                     {
                         const nonDiscouraged = eligibleC.filter(doc => !isDiscouraged(doc.id, targetWpC.id));
@@ -1379,6 +1466,13 @@ export function generateSuggestions({
                             doctorName: doctorNameById[eligibleC[0].id] || eligibleC[0].id,
                         });
                         changedC = true;
+                    } else if (isRotationWp(targetWpC) && targetCurrentCountC >= 1) {
+                        debugLog('phase:C:rotation-skip', 'Skipped second occupancy for rotation workplace (no eligible trainee after filters)', {
+                            date: dateStr,
+                            workplace: targetWpC.name,
+                            timeslotId: targetTsIdC,
+                            currentCount: targetCurrentCountC,
+                        });
                     }
                 }
             }
@@ -1393,7 +1487,7 @@ export function generateSuggestions({
 
                 // Only over-fill into allows_multiple workplaces without Pflichtbesetzung
                 const optionsC = nonAvailSlots
-                    .filter(slot => allowsMultiple(slot.wp) && !hasQualReq(slot.wp))
+                    .filter(slot => allowsMultiple(slot.wp) && !hasQualReq(slot.wp) && !isRotationWp(slot.wp))
                     .map(slot => ({
                         wp: slot.wp,
                         timeslotId: slot.timeslotId,
