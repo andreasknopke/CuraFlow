@@ -61,7 +61,7 @@ const WEIGHTS = {
     SOLE_OCCUPANT:       10,       // Pulling a sole occupant from availability-relevant workplace
     LIMIT_EXCEEDED:      25,       // Doctor would exceed 4-week service limit
     CONSECUTIVE_PENALTY: 20,       // Consecutive service days (when forbidden)
-    CONSECUTIVE_BONUS:   -12,      // Consecutive service days (when preferred, e.g. full weekend)
+    CONSECUTIVE_BONUS:   -25,      // Consecutive service days (when preferred, e.g. full weekend)
 };
 
 export { WEIGHTS };
@@ -413,8 +413,11 @@ export class CostFunction {
         const d = new Date(dateStr + 'T00:00:00');
         const prev = new Date(d); prev.setDate(prev.getDate() - 1);
         const next = new Date(d); next.setDate(next.getDate() + 1);
-        const prevStr = prev.toISOString().slice(0, 10);
-        const nextStr = next.toISOString().slice(0, 10);
+        // Use local date formatting to avoid timezone issues (toISOString() converts to UTC)
+        const pad = n => String(n).padStart(2, '0');
+        const fmt = dt => `${dt.getFullYear()}-${pad(dt.getMonth()+1)}-${pad(dt.getDate())}`;
+        const prevStr = fmt(prev);
+        const nextStr = fmt(next);
 
         const hasAdjacent = this.existingShifts.some(s =>
             s.doctor_id === doctorId &&
