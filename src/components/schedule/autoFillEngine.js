@@ -817,6 +817,7 @@ export function generateSuggestions({
         );
 
         if (availWps.length > 0) {
+            const phaseBStartIdx = suggestions.length; // Track start for swap optimization
             // Expand into timeslot-aware slots
             const availSlots = expandToSlots(availWps);
 
@@ -1132,6 +1133,99 @@ export function generateSuggestions({
                     overChanged = true;
                 }
             }
+
+            // ============================================================
+            //  Phase B: Swap Optimization (2-opt local search)
+            //  After greedy assignment, try pairwise doctor swaps to
+            //  reduce total cost. This catches cases where the greedy
+            //  per-slot approach creates avoidable "sollte-nicht" assignments
+            //  that could be resolved by shuffling doctors between workplaces.
+            //  Example: BAR→CT (sollte-nicht) + Roch→Mamma
+            //         → Roch→CT + BAR→Mamma (no penalties)
+            // ============================================================
+            {
+                const phaseBSuggestions = [];
+                for (let idx = phaseBStartIdx; idx < suggestions.length; idx++) {
+                    const s = suggestions[idx];
+                    if (s.date !== dateStr) continue;
+                    if (s.position === 'Frei') continue;
+                    const wp = workplaces.find(w => w.name === s.position);
+                    if (!wp || isServiceWp(wp)) continue;
+                    if (!isAffectsAvailability(wp)) continue;
+                    phaseBSuggestions.push(s);
+                }
+
+                if (phaseBSuggestions.length >= 2) {
+                    const swapContext = {
+                        usedToday,
+                        posCount,
+                        displacementCount,
+                        rotationImpactScore,
+                        serviceAssignedToday,
+                        phase: 'B',
+                    };
+
+                    let swapImproved = true;
+                    let swapRounds = 0;
+                    const maxSwapRounds = 20;
+
+                    while (swapImproved && swapRounds < maxSwapRounds) {
+                        swapImproved = false;
+                        swapRounds++;
+
+                        for (let i = 0; i < phaseBSuggestions.length && !swapImproved; i++) {
+                            for (let j = i + 1; j < phaseBSuggestions.length && !swapImproved; j++) {
+                                const s1 = phaseBSuggestions[i];
+                                const s2 = phaseBSuggestions[j];
+                                if (s1.position === s2.position) continue;
+                                if (s1.doctor_id === s2.doctor_id) continue;
+
+                                const wp1 = workplaces.find(w => w.name === s1.position);
+                                const wp2 = workplaces.find(w => w.name === s2.position);
+                                if (!wp1 || !wp2) continue;
+
+                                // Validity: exclusion
+                                if (isExcluded(s2.doctor_id, wp1.id)) continue;
+                                if (isExcluded(s1.doctor_id, wp2.id)) continue;
+
+                                // Validity: mandatory qualification
+                                if (hasQualReq(wp1) && !isQualified(s2.doctor_id, wp1.id)) continue;
+                                if (hasQualReq(wp2) && !isQualified(s1.doctor_id, wp2.id)) continue;
+
+                                // Cost comparison
+                                const currentCost =
+                                    costFn.assignmentCost(s1.doctor_id, wp1, dateStr, swapContext) +
+                                    costFn.assignmentCost(s2.doctor_id, wp2, dateStr, swapContext);
+                                const swappedCost =
+                                    costFn.assignmentCost(s2.doctor_id, wp1, dateStr, swapContext) +
+                                    costFn.assignmentCost(s1.doctor_id, wp2, dateStr, swapContext);
+
+                                if (swappedCost < currentCost - 0.5) {
+                                    debugLog('phase:B:swap', `Swap reduces cost by ${(currentCost - swappedCost).toFixed(1)}`, {
+                                        before: `${doctorNameById[s1.doctor_id]}\u2192${s1.position}, ${doctorNameById[s2.doctor_id]}\u2192${s2.position}`,
+                                        after: `${doctorNameById[s2.doctor_id]}\u2192${s1.position}, ${doctorNameById[s1.doctor_id]}\u2192${s2.position}`,
+                                        costBefore: Math.round(currentCost * 10) / 10,
+                                        costAfter: Math.round(swappedCost * 10) / 10,
+                                    });
+
+                                    // Apply swap (exchange doctor_ids, keep positions)
+                                    const tmp = s1.doctor_id;
+                                    s1.doctor_id = s2.doctor_id;
+                                    s2.doctor_id = tmp;
+                                    swapImproved = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (swapRounds > 1) {
+                        debugLog('phase:B:swap-summary', `Swap optimization completed in ${swapRounds} rounds`, {
+                            date: dateStr,
+                            totalSwaps: swapRounds - 1,
+                        });
+                    }
+                }
+            }
         }
 
         // ============================================================
@@ -1176,6 +1270,7 @@ export function generateSuggestions({
         );
 
         if (nonAvailWps.length > 0) {
+            const phaseCStartIdx = suggestions.length; // Track start for swap optimization
             // For Phase C, only service-blocked and absence-blocked doctors are excluded.
             // Doctors assigned in Phase B (availability-relevant workplaces) ARE available.
             // KEY RULE: For workplaces with Pflichtqualifikation (mandatory qualifications),
@@ -1578,6 +1673,94 @@ export function generateSuggestions({
                         adjustedCost: bestCostC,
                     });
                     overChangedC = true;
+                }
+            }
+
+            // ============================================================
+            //  Phase C: Swap Optimization (2-opt local search)
+            //  Same approach as Phase B: try pairwise swaps to reduce
+            //  total cost for non-availability-relevant workplaces.
+            // ============================================================
+            {
+                const phaseCSuggestions = [];
+                for (let idx = phaseCStartIdx; idx < suggestions.length; idx++) {
+                    const s = suggestions[idx];
+                    if (s.date !== dateStr) continue;
+                    if (s.position === 'Frei') continue;
+                    const wp = workplaces.find(w => w.name === s.position);
+                    if (!wp || isServiceWp(wp)) continue;
+                    phaseCSuggestions.push(s);
+                }
+
+                if (phaseCSuggestions.length >= 2) {
+                    const swapContextC = {
+                        usedToday: phaseC_blocked,
+                        posCount: phaseCSlotCount,
+                        displacementCount,
+                        rotationImpactScore,
+                        serviceAssignedToday,
+                        soleOccupantDoctors,
+                        phase: 'C',
+                    };
+
+                    let swapImprovedC = true;
+                    let swapRoundsC = 0;
+                    const maxSwapRoundsC = 20;
+
+                    while (swapImprovedC && swapRoundsC < maxSwapRoundsC) {
+                        swapImprovedC = false;
+                        swapRoundsC++;
+
+                        for (let i = 0; i < phaseCSuggestions.length && !swapImprovedC; i++) {
+                            for (let j = i + 1; j < phaseCSuggestions.length && !swapImprovedC; j++) {
+                                const s1 = phaseCSuggestions[i];
+                                const s2 = phaseCSuggestions[j];
+                                if (s1.position === s2.position) continue;
+                                if (s1.doctor_id === s2.doctor_id) continue;
+
+                                const wp1 = workplaces.find(w => w.name === s1.position);
+                                const wp2 = workplaces.find(w => w.name === s2.position);
+                                if (!wp1 || !wp2) continue;
+
+                                // Validity: exclusion
+                                if (isExcluded(s2.doctor_id, wp1.id)) continue;
+                                if (isExcluded(s1.doctor_id, wp2.id)) continue;
+
+                                // Validity: mandatory qualification
+                                if (hasQualReq(wp1) && !isQualified(s2.doctor_id, wp1.id)) continue;
+                                if (hasQualReq(wp2) && !isQualified(s1.doctor_id, wp2.id)) continue;
+
+                                // Cost comparison
+                                const currentCostC =
+                                    costFn.assignmentCost(s1.doctor_id, wp1, dateStr, swapContextC) +
+                                    costFn.assignmentCost(s2.doctor_id, wp2, dateStr, swapContextC);
+                                const swappedCostC =
+                                    costFn.assignmentCost(s2.doctor_id, wp1, dateStr, swapContextC) +
+                                    costFn.assignmentCost(s1.doctor_id, wp2, dateStr, swapContextC);
+
+                                if (swappedCostC < currentCostC - 0.5) {
+                                    debugLog('phase:C:swap', `Swap reduces cost by ${(currentCostC - swappedCostC).toFixed(1)}`, {
+                                        before: `${doctorNameById[s1.doctor_id]}\u2192${s1.position}, ${doctorNameById[s2.doctor_id]}\u2192${s2.position}`,
+                                        after: `${doctorNameById[s2.doctor_id]}\u2192${s1.position}, ${doctorNameById[s1.doctor_id]}\u2192${s2.position}`,
+                                        costBefore: Math.round(currentCostC * 10) / 10,
+                                        costAfter: Math.round(swappedCostC * 10) / 10,
+                                    });
+
+                                    const tmp = s1.doctor_id;
+                                    s1.doctor_id = s2.doctor_id;
+                                    s2.doctor_id = tmp;
+                                    swapImprovedC = true;
+                                }
+                            }
+                        }
+                    }
+
+                    if (swapRoundsC > 1) {
+                        debugLog('phase:C:swap-summary', `Swap optimization completed in ${swapRoundsC} rounds`, {
+                            date: dateStr,
+                            totalSwaps: swapRoundsC - 1,
+                        });
+                    }
                 }
             }
         }
