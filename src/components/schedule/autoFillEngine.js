@@ -890,6 +890,68 @@ export function generateSuggestions({
                 }
             }
 
+            // --- B.1b: Rotation trainee fill ---
+            // After initial coverage, fill rotation workplaces up to optimal with active trainees.
+            const rotationSlots = availSlots.filter(slot => isRotationWp(slot.wp));
+            for (const slot of rotationSlots) {
+                const wp = slot.wp;
+                const tsId = slot.timeslotId;
+                const sk = slotKey(wp.name, tsId);
+
+                let cur = slotCount[sk] || 0;
+                const target = getOptimal(wp);
+                if (cur >= target) continue;
+                if (cur < 1) continue; // require prior base coverage first
+
+                while (cur < target) {
+                    let trainees = doctors.filter(d =>
+                        !usedToday.has(d.id) &&
+                        !isExcluded(d.id, wp.id) &&
+                        isRotationTraineeForWp(d.id, wp.name, dateStr)
+                    );
+
+                    {
+                        const nonDiscouraged = trainees.filter(d => !isDiscouraged(d.id, wp.id));
+                        if (nonDiscouraged.length > 0) trainees = nonDiscouraged;
+                    }
+
+                    if (hasOptionalQualReq(wp)) {
+                        const withPreferred = trainees.filter(d => hasOptionalQuals(d.id, wp.id));
+                        if (withPreferred.length > 0) trainees = withPreferred;
+                    }
+
+                    if (trainees.length === 0) break;
+
+                    const costContextTrainee = {
+                        usedToday,
+                        posCount,
+                        displacementCount,
+                        rotationImpactScore,
+                        serviceAssignedToday,
+                        phase: 'B',
+                    };
+
+                    trainees.sort((a, b) => {
+                        const costA = costFn.assignmentCost(a.id, wp, dateStr, costContextTrainee);
+                        const costB = costFn.assignmentCost(b.id, wp, dateStr, costContextTrainee);
+                        return costA - costB;
+                    });
+
+                    const chosen = trainees[0];
+                    assign(chosen.id, wp.name, tsId);
+                    cur++;
+                    debugLog('phase:B:rotation-trainee-fill', 'Filled rotation slot with active trainee', {
+                        date: dateStr,
+                        workplace: wp.name,
+                        timeslotId: tsId,
+                        doctorId: chosen.id,
+                        doctorName: doctorNameById[chosen.id] || chosen.id,
+                        currentCount: cur,
+                        optimal: target,
+                    });
+                }
+            }
+
             // --- B.2: Fill to optimal_staff (round-robin) ---
             // Priority: 1) Slots below min_staff first (critical)
             //           2) Then slots below optimal but above min_staff
@@ -920,7 +982,12 @@ export function generateSuggestions({
                         const bTier = bCur < bMin ? 0 : (bMin > 0 ? 1 : 2);
                         if (aTier !== bTier) return aTier - bTier;
 
-                        // Within same tier, sort by fill ratio (least filled first)
+                        // Within same tier, prefer larger absolute deficit first
+                        const aDef = aOpt - aCur;
+                        const bDef = bOpt - bCur;
+                        if (aDef !== bDef) return bDef - aDef;
+
+                        // Then sort by fill ratio (least filled first)
                         const aR = aCur / aOpt;
                         const bR = bCur / bOpt;
                         if (Math.abs(aR - bR) > 0.001) return aR - bR;
@@ -1041,15 +1108,18 @@ export function generateSuggestions({
                 // Build slot-level options for overfill
                 const overSlots = expandToSlots(availWps.filter(wp => allowsMultiple(wp)));
                 const options = overSlots
-                    .filter(slot => !isRotationWp(slot.wp))
                     .map(slot => {
                         const sk = slotKey(slot.wp.name, slot.timeslotId);
+                        const current = slotCount[sk] || 0;
+                        const optimal = Math.max(getOptimal(slot.wp), 1);
                         return {
                             ...slot,
-                            fillRatio: (slotCount[sk] || 0) / Math.max(getOptimal(slot.wp), 1),
+                            fillRatio: current / optimal,
+                            deficit: optimal - current,
                         };
                     })
                     .sort((a, b) => {
+                        if (a.deficit !== b.deficit) return b.deficit - a.deficit;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
@@ -1072,7 +1142,15 @@ export function generateSuggestions({
 
                 for (const doc of remaining) {
                     // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
-                    let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+                    let eligibleWps = options.filter(o => {
+                        if (isExcluded(doc.id, o.wp.id)) return false;
+                        const sk = slotKey(o.wp.name, o.timeslotId);
+                        const cur = slotCount[sk] || 0;
+                        if (isRotationWp(o.wp) && cur >= 1 && !isRotationTraineeForWp(doc.id, o.wp.name, dateStr)) {
+                            return false;
+                        }
+                        return true;
+                    });
 
                     // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
                     {
@@ -1091,7 +1169,7 @@ export function generateSuggestions({
                     for (const o of eligibleWps) {
                         const cost = costFn.assignmentCost(doc.id, o.wp, dateStr, costContextB3);
                         // Add fill ratio as a tiebreaker to spread assignments
-                        const adjustedCost = cost + o.fillRatio * 2;
+                        const adjustedCost = cost + o.fillRatio * 2 - o.deficit * 4;
                         if (adjustedCost < bestCost) {
                             bestCost = adjustedCost;
                             bestAssignment = { doc, wp: o.wp, timeslotId: o.timeslotId };
@@ -1310,6 +1388,11 @@ export function generateSuggestions({
                         return (phaseCSlotCount[sk] || 0) < getOptimal(slot.wp);
                     })
                     .sort((a, b) => {
+                        const aCur = phaseCSlotCount[slotKey(a.wp.name, a.timeslotId)] || 0;
+                        const bCur = phaseCSlotCount[slotKey(b.wp.name, b.timeslotId)] || 0;
+                        const aDef = getOptimal(a.wp) - aCur;
+                        const bDef = getOptimal(b.wp) - bCur;
+                        if (aDef !== bDef) return bDef - aDef;
                         const aR = (phaseCSlotCount[slotKey(a.wp.name, a.timeslotId)] || 0) / getOptimal(a.wp);
                         const bR = (phaseCSlotCount[slotKey(b.wp.name, b.timeslotId)] || 0) / getOptimal(b.wp);
                         if (Math.abs(aR - bR) > 0.001) return aR - bR;
@@ -1485,15 +1568,17 @@ export function generateSuggestions({
                 const remainingC = doctors.filter(d => !phaseC_blocked.has(d.id));
                 if (remainingC.length === 0) break;
 
-                // Only over-fill into allows_multiple workplaces without Pflichtbesetzung
+                // Over-fill remaining doctors by highest deficit first.
                 const optionsC = nonAvailSlots
-                    .filter(slot => allowsMultiple(slot.wp) && !hasQualReq(slot.wp) && !isRotationWp(slot.wp))
+                    .filter(slot => allowsMultiple(slot.wp))
                     .map(slot => ({
                         wp: slot.wp,
                         timeslotId: slot.timeslotId,
                         fillRatio: (phaseCSlotCount[slotKey(slot.wp.name, slot.timeslotId)] || 0) / Math.max(getOptimal(slot.wp), 1),
+                        deficit: Math.max(getOptimal(slot.wp), 1) - (phaseCSlotCount[slotKey(slot.wp.name, slot.timeslotId)] || 0),
                     }))
                     .sort((a, b) => {
+                        if (a.deficit !== b.deficit) return b.deficit - a.deficit;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
                         return (a.wp.order || 0) - (b.wp.order || 0);
                     });
@@ -1515,8 +1600,16 @@ export function generateSuggestions({
                 let bestCostC = Infinity;
 
                 for (const docC of remainingC) {
-                    let eligibleC3 = optionsC.filter(o => !isExcluded(docC.id, o.wp.id) &&
-                                                           !isAlreadyAssignedToSlot(docC.id, o.wp.name, o.timeslotId));
+                    let eligibleC3 = optionsC.filter(o => {
+                        if (isExcluded(docC.id, o.wp.id)) return false;
+                        if (isAlreadyAssignedToSlot(docC.id, o.wp.name, o.timeslotId)) return false;
+                        if (hasQualReq(o.wp) && !isQualified(docC.id, o.wp.id)) return false;
+                        const cur = phaseCSlotCount[slotKey(o.wp.name, o.timeslotId)] || 0;
+                        if (isRotationWp(o.wp) && cur >= 1 && !isRotationTraineeForWp(docC.id, o.wp.name, dateStr)) {
+                            return false;
+                        }
+                        return true;
+                    });
                     {
                         const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
                         if (nonDisc.length > 0) eligibleC3 = nonDisc;
@@ -1530,7 +1623,7 @@ export function generateSuggestions({
 
                     for (const o of eligibleC3) {
                         const cost = costFn.assignmentCost(docC.id, o.wp, dateStr, costContextC3);
-                        const adjustedCost = cost + o.fillRatio * 2;
+                        const adjustedCost = cost + o.fillRatio * 2 - o.deficit * 4;
                         if (adjustedCost < bestCostC) {
                             bestCostC = adjustedCost;
                             bestAssignmentC = { doc: docC, wp: o.wp, timeslotId: o.timeslotId };
