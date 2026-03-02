@@ -164,7 +164,9 @@ export function generateSuggestions({
     const allowsMultiple = (wp) => {
         if (wp.allows_multiple != null) return wp.allows_multiple;
         if (wp.category === 'Rotationen') return true;
-        if (['Dienste', 'Demonstrationen & Konsile'].includes(wp.category)) return false;
+        // Demos that are availability-relevant should not default to allows_multiple
+        if (wp.category === 'Dienste') return false;
+        if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability === true) return false;
         const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');
         if (catSetting?.value) {
             try {
@@ -590,7 +592,8 @@ export function generateSuggestions({
             const wp = workplaces.find(w => w.name === s.position);
             if (wp?.affects_availability === false) continue;
             if (wp?.allows_rotation_concurrently) continue;
-            if (wp?.category === 'Demonstrationen & Konsile') continue;
+            // Demos/Konsile only block if they are marked as availability-relevant
+            if (wp?.category === 'Demonstrationen & Konsile' && wp?.affects_availability !== true) continue;
             baseBlocked.add(s.doctor_id);
         }
 
@@ -707,7 +710,8 @@ export function generateSuggestions({
                     const xwp = workplaces.find(w => w.name === s.position);
                     if (xwp?.affects_availability === false) continue;
                     if (xwp?.allows_rotation_concurrently) continue;
-                    if (xwp?.category === 'Demonstrationen & Konsile') continue;
+                    // Demos/Konsile only block if they are marked as availability-relevant
+                    if (xwp?.category === 'Demonstrationen & Konsile' && xwp?.affects_availability !== true) continue;
                     nextDayBlocked.add(s.doctor_id);
                 }
 
@@ -1270,7 +1274,9 @@ export function generateSuggestions({
                 if (s.date !== dateStr) continue;
                 if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
                 const wp = workplaces.find(w => w.name === s.position);
-                if (!wp || wp.category === 'Dienste' || wp.category === 'Demonstrationen & Konsile') continue;
+                if (!wp || wp.category === 'Dienste') continue;
+                // Include availability-relevant Demos in sole-occupant detection
+                if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability !== true) continue;
                 if (wp.affects_availability === false) continue;
                 if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
                 wpStaffing[wp.name].add(s.doctor_id);
@@ -1279,7 +1285,8 @@ export function generateSuggestions({
                 if (s.date !== dateStr) continue;
                 if (s.position === 'Frei') continue;
                 const wp = workplaces.find(w => w.name === s.position);
-                if (!wp || wp.category === 'Dienste' || wp.category === 'Demonstrationen & Konsile') continue;
+                if (!wp || wp.category === 'Dienste') continue;
+                if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability !== true) continue;
                 if (wp.affects_availability === false) continue;
                 if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
                 wpStaffing[wp.name].add(s.doctor_id);
