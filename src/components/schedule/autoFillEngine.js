@@ -164,9 +164,9 @@ export function generateSuggestions({
     const allowsMultiple = (wp) => {
         if (wp.allows_multiple != null) return wp.allows_multiple;
         if (wp.category === 'Rotationen') return true;
-        // Demos that are availability-relevant should not default to allows_multiple
+        // Dienste and Demos default to single-occupancy (1 person per slot)
         if (wp.category === 'Dienste') return false;
-        if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability === true) return false;
+        if (wp.category === 'Demonstrationen & Konsile') return false;
         const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');
         if (catSetting?.value) {
             try {
