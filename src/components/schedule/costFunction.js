@@ -27,7 +27,7 @@ const WEIGHTS = {
     // Qualification dimension
     QUAL_EXCLUDED:       Infinity,  // Nicht-Qualifikation → impossible (like muted inner string)
     QUAL_MISSING_MANDATORY: 50,     // Missing Pflicht-Qualifikation
-    QUAL_DISCOURAGED:    15,        // Sollte-nicht → strong soft penalty
+    QUAL_DISCOURAGED:    45,        // Sollte-nicht → very strong soft penalty
     QUAL_MISSING_OPTIONAL: 3,      // Missing Sollte-Qualifikation
     QUAL_HAS_OPTIONAL:   -2,       // Has all Sollte-Qualifikationen → bonus
     QUAL_HAS_ANY_OPTIONAL: -1,     // Has at least one Sollte → small bonus
