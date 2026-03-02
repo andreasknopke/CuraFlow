@@ -403,6 +403,13 @@ export class CostFunction {
             return 0;
         }
 
+        // If the target workplace allows rotation concurrently, assigning a doctor
+        // here does NOT remove them from the available pool (see assign() in autoFillEngine).
+        // Therefore there is no understaffing consequence — the doctor remains available.
+        if (targetWorkplace.allows_rotation_concurrently) {
+            return 0;
+        }
+
         let cost = 0;
 
         // Simulate: if we assign this doctor, they're no longer available.
