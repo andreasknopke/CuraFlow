@@ -1006,24 +1006,7 @@ export function generateSuggestions({
                 const unassigned = doctors.filter(d => !usedToday.has(d.id));
                 if (unassigned.length === 0) break;
 
-                const targetSlot = underFilled.find(slot => {
-                    const wp = slot.wp;
-                    const tsId = slot.timeslotId;
-                    const sk = slotKey(wp.name, tsId);
-                    const cur = slotCount[sk] || 0;
-                    if (!isRotationWp(wp) || cur < 1) return true;
-                    return doctors.some(d =>
-                        !usedToday.has(d.id) &&
-                        !isExcluded(d.id, wp.id) &&
-                        isRotationTraineeForWp(d.id, wp.name, dateStr)
-                    );
-                });
-                if (!targetSlot) {
-                    debugLog('phase:B:rotation-skip', 'No fillable underfilled slot due to rotation trainee rule', {
-                        date: dateStr,
-                    });
-                    break;
-                }
+                const targetSlot = underFilled[0];
                 const targetWp = targetSlot.wp;
                 const targetTsId = targetSlot.timeslotId;
                 const targetSk = slotKey(targetWp.name, targetTsId);
@@ -1118,6 +1101,11 @@ export function generateSuggestions({
                             deficit: optimal - current,
                         };
                     })
+                    .filter(o => {
+                        // Never overfill rotation workplaces beyond optimal
+                        if (isRotationWp(o.wp) && o.deficit <= 0) return false;
+                        return true;
+                    })
                     .sort((a, b) => {
                         if (a.deficit !== b.deficit) return b.deficit - a.deficit;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
@@ -1140,17 +1128,29 @@ export function generateSuggestions({
                 let bestAssignment = null;
                 let bestCost = Infinity;
 
+                const hasAnyDeficitOption = options.some(o => o.deficit > 0);
+
                 for (const doc of remaining) {
                     // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
-                    let eligibleWps = options.filter(o => {
-                        if (isExcluded(doc.id, o.wp.id)) return false;
-                        const sk = slotKey(o.wp.name, o.timeslotId);
-                        const cur = slotCount[sk] || 0;
-                        if (isRotationWp(o.wp) && cur >= 1 && !isRotationTraineeForWp(doc.id, o.wp.name, dateStr)) {
-                            return false;
-                        }
-                        return true;
-                    });
+                    let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+
+                    // Deficit-first: while any deficit exists, only consider deficit slots
+                    if (hasAnyDeficitOption) {
+                        const deficitOnly = eligibleWps.filter(o => o.deficit > 0);
+                        if (deficitOnly.length > 0) eligibleWps = deficitOnly;
+                    }
+
+                    // On rotation workplaces, prefer designated trainees for 2nd+ occupancy,
+                    // but allow fallback to others if no trainee available.
+                    {
+                        const traineePreferred = eligibleWps.filter(o => {
+                            const sk = slotKey(o.wp.name, o.timeslotId);
+                            const cur = slotCount[sk] || 0;
+                            if (!isRotationWp(o.wp) || cur < 1) return true;
+                            return isRotationTraineeForWp(doc.id, o.wp.name, dateStr);
+                        });
+                        if (traineePreferred.length > 0) eligibleWps = traineePreferred;
+                    }
 
                     // "Sollte nicht": filter out workplaces where doctor is discouraged (fallback)
                     {
@@ -1401,25 +1401,7 @@ export function generateSuggestions({
 
                 if (underFilledC.length === 0) break;
 
-                const targetSlotC = underFilledC.find(slot => {
-                    const wp = slot.wp;
-                    const tsId = slot.timeslotId;
-                    const sk = slotKey(wp.name, tsId);
-                    const cur = phaseCSlotCount[sk] || 0;
-                    if (!isRotationWp(wp) || cur < 1) return true;
-                    return doctors.some(d =>
-                        !phaseC_blocked.has(d.id) &&
-                        !isExcluded(d.id, wp.id) &&
-                        !isAlreadyAssignedToSlot(d.id, wp.name, tsId) &&
-                        isRotationTraineeForWp(d.id, wp.name, dateStr)
-                    );
-                });
-                if (!targetSlotC) {
-                    debugLog('phase:C:rotation-skip', 'No fillable underfilled slot due to rotation trainee rule', {
-                        date: dateStr,
-                    });
-                    break;
-                }
+                const targetSlotC = underFilledC[0];
                 const targetWpC = targetSlotC.wp;
                 const targetTsIdC = targetSlotC.timeslotId;
                 const targetHasQualReq = hasQualReq(targetWpC);
@@ -1577,6 +1559,10 @@ export function generateSuggestions({
                         fillRatio: (phaseCSlotCount[slotKey(slot.wp.name, slot.timeslotId)] || 0) / Math.max(getOptimal(slot.wp), 1),
                         deficit: Math.max(getOptimal(slot.wp), 1) - (phaseCSlotCount[slotKey(slot.wp.name, slot.timeslotId)] || 0),
                     }))
+                    .filter(o => {
+                        if (isRotationWp(o.wp) && o.deficit <= 0) return false;
+                        return true;
+                    })
                     .sort((a, b) => {
                         if (a.deficit !== b.deficit) return b.deficit - a.deficit;
                         if (Math.abs(a.fillRatio - b.fillRatio) > 0.001) return a.fillRatio - b.fillRatio;
@@ -1599,17 +1585,29 @@ export function generateSuggestions({
                 let bestAssignmentC = null;
                 let bestCostC = Infinity;
 
+                const hasAnyDeficitOptionC = optionsC.some(o => o.deficit > 0);
+
                 for (const docC of remainingC) {
                     let eligibleC3 = optionsC.filter(o => {
                         if (isExcluded(docC.id, o.wp.id)) return false;
                         if (isAlreadyAssignedToSlot(docC.id, o.wp.name, o.timeslotId)) return false;
                         if (hasQualReq(o.wp) && !isQualified(docC.id, o.wp.id)) return false;
-                        const cur = phaseCSlotCount[slotKey(o.wp.name, o.timeslotId)] || 0;
-                        if (isRotationWp(o.wp) && cur >= 1 && !isRotationTraineeForWp(docC.id, o.wp.name, dateStr)) {
-                            return false;
-                        }
                         return true;
                     });
+
+                    if (hasAnyDeficitOptionC) {
+                        const deficitOnly = eligibleC3.filter(o => o.deficit > 0);
+                        if (deficitOnly.length > 0) eligibleC3 = deficitOnly;
+                    }
+
+                    {
+                        const traineePreferred = eligibleC3.filter(o => {
+                            const cur = phaseCSlotCount[slotKey(o.wp.name, o.timeslotId)] || 0;
+                            if (!isRotationWp(o.wp) || cur < 1) return true;
+                            return isRotationTraineeForWp(docC.id, o.wp.name, dateStr);
+                        });
+                        if (traineePreferred.length > 0) eligibleC3 = traineePreferred;
+                    }
                     {
                         const nonDisc = eligibleC3.filter(o => !isDiscouraged(docC.id, o.wp.id));
                         if (nonDisc.length > 0) eligibleC3 = nonDisc;
