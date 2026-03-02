@@ -890,68 +890,6 @@ export function generateSuggestions({
                 }
             }
 
-            // --- B.1b: Rotation trainee fill ---
-            // After initial coverage, fill rotation workplaces up to optimal with active trainees.
-            const rotationSlots = availSlots.filter(slot => isRotationWp(slot.wp));
-            for (const slot of rotationSlots) {
-                const wp = slot.wp;
-                const tsId = slot.timeslotId;
-                const sk = slotKey(wp.name, tsId);
-
-                let cur = slotCount[sk] || 0;
-                const target = getOptimal(wp);
-                if (cur >= target) continue;
-                if (cur < 1) continue; // require prior base coverage first
-
-                while (cur < target) {
-                    let trainees = doctors.filter(d =>
-                        !usedToday.has(d.id) &&
-                        !isExcluded(d.id, wp.id) &&
-                        isRotationTraineeForWp(d.id, wp.name, dateStr)
-                    );
-
-                    {
-                        const nonDiscouraged = trainees.filter(d => !isDiscouraged(d.id, wp.id));
-                        if (nonDiscouraged.length > 0) trainees = nonDiscouraged;
-                    }
-
-                    if (hasOptionalQualReq(wp)) {
-                        const withPreferred = trainees.filter(d => hasOptionalQuals(d.id, wp.id));
-                        if (withPreferred.length > 0) trainees = withPreferred;
-                    }
-
-                    if (trainees.length === 0) break;
-
-                    const costContextTrainee = {
-                        usedToday,
-                        posCount,
-                        displacementCount,
-                        rotationImpactScore,
-                        serviceAssignedToday,
-                        phase: 'B',
-                    };
-
-                    trainees.sort((a, b) => {
-                        const costA = costFn.assignmentCost(a.id, wp, dateStr, costContextTrainee);
-                        const costB = costFn.assignmentCost(b.id, wp, dateStr, costContextTrainee);
-                        return costA - costB;
-                    });
-
-                    const chosen = trainees[0];
-                    assign(chosen.id, wp.name, tsId);
-                    cur++;
-                    debugLog('phase:B:rotation-trainee-fill', 'Filled rotation slot with active trainee', {
-                        date: dateStr,
-                        workplace: wp.name,
-                        timeslotId: tsId,
-                        doctorId: chosen.id,
-                        doctorName: doctorNameById[chosen.id] || chosen.id,
-                        currentCount: cur,
-                        optimal: target,
-                    });
-                }
-            }
-
             // --- B.2: Fill to optimal_staff (round-robin) ---
             // Priority: 1) Slots below min_staff first (critical)
             //           2) Then slots below optimal but above min_staff
