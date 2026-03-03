@@ -52,7 +52,7 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
     payload.attachment = attachments.map(a => ({
       name: a.filename,
       content: a.content
-        ? (typeof a.content === 'string' ? a.content : a.content.toString('base64'))
+        ? (typeof a.content === 'string' ? Buffer.from(a.content).toString('base64') : a.content.toString('base64'))
         : undefined,
     })).filter(a => a.content);
   }

@@ -163,16 +163,16 @@ export default function ServiceStaffingPage() {
 
     const sendNotificationsMutation = useMutation({
         mutationFn: async () => {
-            const res = await base44.functions.invoke('sendShiftEmails', {
-                month: currentDate.getMonth(),
-                year: currentDate.getFullYear()
-            });
-            return res.data;
+            const data = await api.sendScheduleNotifications(
+                currentDate.getFullYear(),
+                currentDate.getMonth()
+            );
+            return data;
         },
         onSuccess: (data) => {
-            const successes = data.debug
-                .filter(line => line.startsWith('Successfully sent to'))
-                .map(line => line.replace('Successfully sent to ', '✅ '));
+            const successes = (data.debug || [])
+                .filter(line => line.startsWith('Erfolgreich gesendet an') || line.startsWith('Successfully sent to'))
+                .map(line => '✅ ' + line.replace(/^(Erfolgreich gesendet an |Successfully sent to )/, ''));
             
             const errors = (data.errors || []).map(e => `❌ ${e.doctor}: ${e.error}`);
             
