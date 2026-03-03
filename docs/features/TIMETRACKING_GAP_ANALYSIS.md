@@ -1,9 +1,124 @@
 # Gap-Analyse: Digitale Zeiterfassung – Konkurrenzvergleich
 
-> **Stand:** Juni 2025  
+> **Stand:** März 2026  
 > **Bezug:** [TIMETRACKING.md](TIMETRACKING.md) (CuraFlow-Umsetzungsplan)  
 > **Ziel:** Systematischer Abgleich der Funktionalitäten einer etablierten Zeiterfassungssoftware mit den vorhandenen und geplanten CuraFlow-Funktionen  
 > **Zielplattform:** Master-Frontend (mandantenübergreifend) + Mandanten-Frontend
+
+---
+
+## Konzept: Warum CuraFlow anders funktioniert
+
+### Das Problem der Konkurrenzsoftware
+
+Die bestehende Zeiterfassungssoftware beim potentiellen Kunden ist **HR-zentriert**:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  HR-ZENTRIERTES MODELL (Konkurrenz)                     │
+│                                                         │
+│  Abteilung (Sekretariat)          HR / Personalabteilung│
+│  ┌─────────────────────┐          ┌────────────────────┐│
+│  │ Dienstplanung       │          │ Zeiterfassung      ││
+│  │ (Excel / Papier)    │ ──✗──▸  │ (Konkurrenzsystem) ││
+│  │                     │ kein     │                    ││
+│  │ • Wer arbeitet wann │ Daten-   │ • Kommt/Geht       ││
+│  │ • Schichten         │ fluss    │ • Fehlzeiten       ││
+│  │ • Dienste           │          │ • Soll/Ist         ││
+│  └─────────────────────┘          │ • Zeitkonten       ││
+│                                   │ • Monatsabschluss  ││
+│  ⚠️ Doppelerfassung:              │ • Loga-Export      ││
+│  Sekretariat plant in Excel,      └────────────────────┘│
+│  HR tippt dieselben Daten         │                     │
+│  nochmal ins Zeiterfassungs-      ▼                     │
+│  system ein.                      Loga (Lohnabrechnung) │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Konsequenz:** Doppelter Aufwand für Sekretariate / Dienstplaner. Zwei getrennte Systeme, die nicht miteinander kommunizieren.
+
+### Der CuraFlow-Ansatz: Planung IST Zeiterfassung
+
+CuraFlow dreht die Logik um: Die **Abteilung plant den Dienst** – und diese Planung **ist gleichzeitig die Zeiterfassung**.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ABTEILUNGS-ZENTRIERTES MODELL (CuraFlow)               │
+│                                                         │
+│  Mandant = Abteilung (z.B. Radiologie)                  │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ CuraFlow Dienstplan (Mandanten-Frontend)        │    │
+│  │                                                 │    │
+│  │ • Schichtplanung mit Drag & Drop    ──────┐     │    │
+│  │ • Timeslots (Früh 07–13, Spät 13–20)      │     │    │
+│  │ • Dienste (BD, RB, SD)                    │     │    │
+│  │ • Abwesenheiten (U, K, F, DR, NV)        │     │    │
+│  │ • Qualifikationsprüfung                   │     │    │
+│  │ • KI-Autofill                             ▼     │    │
+│  │                                  ┌──────────┐   │    │
+│  │  Planung = Zeiterfassung ──────▸ │ shift_   │   │    │
+│  │  (kein Doppelaufwand)            │ entries  │   │    │
+│  │                                  │ (DB)     │   │    │
+│  └──────────────────────────────────┴──────────┘   │    │
+│                                          │              │
+│  ┌───────────────────────────────────────▼──────────┐   │
+│  │ CuraFlow Master-Frontend (HR / Geschäftsführung) │   │
+│  │                                                  │   │
+│  │ • Mandanten-Daten zusammenführen                 │   │
+│  │ • Verträge & Stellenpläne aktualisieren          │   │
+│  │ • Soll/Ist-Vergleich (aggregiert)                │   │
+│  │ • Zeitkonten & Monatsabschluss                   │   │
+│  │ • Fehlzeiten-Übersicht (cross-tenant)            │   │
+│  │ • Loga-Export                                    │   │
+│  └──────────────────────────────────────────────────┘   │
+│                          │                              │
+│                          ▼                              │
+│                    Loga (Lohnabrechnung)                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Grundprinzipien der CuraFlow-Zeiterfassung
+
+| Prinzip | Erklärung |
+|---------|-----------|
+| **1. Planung = Erfassung** | Wer im Dienstplan eingeteilt ist, hat automatisch eine Zeitbuchung. Kein Nachtragen durch HR nötig. |
+| **2. Abteilung arbeitet autonom** | Jeder Mandant (= Abteilung) plant selbstständig. Die Dienstplaner kennen die Realität am besten. |
+| **3. Master aggregiert** | Das Master-Frontend liest nur – es zieht Daten aus allen Mandanten zusammen, berechnet Salden, erstellt Reports. |
+| **4. Master steuert Stammdaten** | Verträge, Soll-Stunden, Stellenpläne werden zentral im Master gepflegt und an Mandanten vererbt. |
+| **5. Korrekturen an der Quelle** | War jemand doch anders da als geplant? Der Dienstplan wird korrigiert – nicht ein zweites System. |
+| **6. Abschluss im Master** | Monatsabschluss, Saldo-Berechnung und Loga-Export sind zentrale HR-Aufgaben → Master-Frontend. |
+
+### Feature-Zuordnung: Was gehört wohin?
+
+| Feature | Mandanten-Frontend | Master-Frontend |
+|---------|:------------------:|:---------------:|
+| Schichtplanung / Dienstplan | ✅ | – |
+| Abwesenheiten eintragen | ✅ | 👁️ (nur lesen) |
+| Ist-Stunden (automatisch aus Planung) | ✅ (berechnet) | ✅ (aggregiert) |
+| Korrektur-Buchungen (Abweichung Ist ≠ Plan) | ✅ | – |
+| Soll-Stunden / Vertragsmodell | 👁️ (nur lesen) | ✅ (pflegen) |
+| Soll/Ist-Vergleich | ✅ (eigener Mandant) | ✅ (alle Mandanten) |
+| Zeitkonten / Gleitzeitkonto | 👁️ (nur lesen) | ✅ (berechnen + verwalten) |
+| Monatsabschluss | – | ✅ |
+| Urlaubsanspruch / Resturlaub | 👁️ (anzeigen) | ✅ (pflegen) |
+| Stellenplan (VK-Anteile) | 👁️ (anzeigen) | ✅ (pflegen) |
+| Compliance-Reports (ArbZG) | ✅ (eigener Mandant) | ✅ (alle Mandanten) |
+| Loga-Export | – | ✅ |
+| Statistiken / KPIs | ✅ (eigener Mandant) | ✅ (übergreifend) |
+
+### Vorteil gegenüber der Konkurrenz
+
+```
+Konkurrenz:  Excel-Plan (Abt.) + Zeiterfassung (HR) = 2× Aufwand, 0 Verknüpfung
+CuraFlow:    Dienstplan (Abt.) = Zeiterfassung (HR)  = 1× Aufwand, voll verknüpft
+```
+
+**Der Dienstplan in CuraFlow ist kein Nebenprodukt – er ist die Datenquelle.** Jede Schichtzuweisung erzeugt automatisch einen Arbeitszeitdatensatz mit `start_time`, `end_time` und `work_time_percentage`. HR muss nur noch:
+1. Verträge/Soll-Stunden pflegen (Master)
+2. Salden prüfen und Monatsabschluss machen (Master)
+3. An Loga exportieren (Master)
+
+Die Hauptarbeit – wer war wann wo – erledigt die Abteilung über ihren normalen Dienstplan.
 
 ---
 
