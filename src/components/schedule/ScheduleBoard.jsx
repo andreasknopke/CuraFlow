@@ -138,6 +138,22 @@ export default function ScheduleBoard() {
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
 
+  // Cell-lock to prevent race conditions during rapid drag-drops
+  // Keys are "date|position" or "date|position|timeslot_id", values are timestamps
+  const cellLocksRef = useRef(new Set());
+  const lockCell = (date, position, timeslotId) => {
+    const key = timeslotId ? `${date}|${position}|${timeslotId}` : `${date}|${position}`;
+    if (cellLocksRef.current.has(key)) return false; // Already locked
+    cellLocksRef.current.add(key);
+    // Auto-release after 3 seconds (safety net)
+    setTimeout(() => cellLocksRef.current.delete(key), 3000);
+    return true;
+  };
+  const unlockCell = (date, position, timeslotId) => {
+    const key = timeslotId ? `${date}|${position}|${timeslotId}` : `${date}|${position}`;
+    cellLocksRef.current.delete(key);
+  };
+
   const handleUndo = async () => {
       if (undoStack.length === 0) return;
       const item = undoStack[undoStack.length - 1];
@@ -944,10 +960,22 @@ export default function ScheduleBoard() {
         // Only invalidate shifts in affected range
         queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
     },
+    onSettled: (data, error, newData) => {
+        // Release cell lock after mutation completes (success or error)
+        if (newData?.date && newData?.position) {
+            unlockCell(newData.date, newData.position, newData.timeslot_id);
+        }
+    },
     onError: (error, newData, context) => {
         console.error('DEBUG: Create Mutation Failed', error);
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
+        }
+        // 409 Conflict = Server-Sentinel blocked a duplicate → silent rollback + refresh
+        if (error.message?.includes('Position bereits besetzt') || error.message?.includes('409')) {
+            console.warn('[Sentinel] Duplicate blocked by server, refreshing data');
+            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            return;
         }
         alert(`Fehler beim Erstellen: ${error.message}`);
     }
@@ -1018,6 +1046,12 @@ export default function ScheduleBoard() {
         console.error('DEBUG: Bulk Create Failed', error);
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
+        }
+        // 409 Conflict = Server-Sentinel blocked duplicates → silent rollback + refresh
+        if (error.message?.includes('Position bereits besetzt') || error.message?.includes('409')) {
+            console.warn('[Sentinel] Bulk duplicate blocked by server, refreshing data');
+            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            return;
         }
         alert(`Fehler beim Erstellen (Bulk): ${error.message}`);
     }
@@ -2565,6 +2599,16 @@ export default function ScheduleBoard() {
              }
 
              const occupyingShift = findOccupyingShift(dateStr, position);
+
+             // Cell-Lock: prevent duplicate creates from rapid drag-drops
+             // Only for positions that don't allow multiple assignments
+             if (!occupyingShift) {
+                 const effectiveLockTs = timeslotId === '__unassigned__' ? null : timeslotId;
+                 if (!lockCell(dateStr, position, effectiveLockTs)) {
+                     console.warn('[CellLock] Blocked rapid duplicate drop:', dateStr, position);
+                     return;
+                 }
+             }
 
              // Hilfsfunktion für das Erstellen der Shifts
              const executeShiftCreation = () => {

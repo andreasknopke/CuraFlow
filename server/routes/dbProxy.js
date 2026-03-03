@@ -106,6 +106,75 @@ const getValidColumns = async (dbPool, tableName, cacheKey) => {
   }
 };
 
+// Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
+const WORKPLACE_CACHE = {};
+const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
+
+/**
+ * ShiftEntry Sentinel: Check if a position on a date already has an entry
+ * when the Workplace does NOT allow multiple assignments.
+ * Uses a single SELECT query — negligible performance impact.
+ * 
+ * @returns {object|null} The conflicting shift row, or null if no conflict
+ */
+const checkShiftConflict = async (dbPool, shiftData) => {
+  const { date, position, timeslot_id } = shiftData;
+  if (!date || !position) return null;
+
+  // Look up workplace config (cached per minute)
+  const wpCacheKey = `wp:${position}`;
+  let wpEntry = WORKPLACE_CACHE[wpCacheKey];
+  if (!wpEntry || Date.now() - wpEntry.ts > WORKPLACE_CACHE_TTL) {
+    try {
+      const [rows] = await dbPool.execute(
+        'SELECT allows_multiple, category FROM Workplace WHERE name = ? LIMIT 1',
+        [position]
+      );
+      const wp = rows[0] || null;
+      WORKPLACE_CACHE[wpCacheKey] = { data: wp, ts: Date.now() };
+      wpEntry = WORKPLACE_CACHE[wpCacheKey];
+    } catch (e) {
+      // If Workplace table doesn't exist or query fails, skip sentinel
+      console.warn('[Sentinel] Workplace lookup failed:', e.message);
+      return null;
+    }
+  }
+
+  const wp = wpEntry.data;
+  if (!wp) return null; // Unknown position → allow
+
+  // Determine allows_multiple (same logic as client-side)
+  let allowsMultiple;
+  if (wp.allows_multiple !== undefined && wp.allows_multiple !== null) {
+    allowsMultiple = !!wp.allows_multiple;
+  } else {
+    // Category defaults
+    if (wp.category === 'Rotationen') allowsMultiple = true;
+    else if (wp.category === 'Dienste' || wp.category === 'Demonstrationen & Konsile') allowsMultiple = false;
+    else allowsMultiple = true; // Unknown category → allow
+  }
+
+  if (allowsMultiple) return null; // Multiple allowed → no conflict
+
+  // Check if a shift already exists for this date+position (optionally +timeslot)
+  let sql, params;
+  if (timeslot_id) {
+    sql = 'SELECT id, doctor_id FROM ShiftEntry WHERE date = ? AND position = ? AND timeslot_id = ? LIMIT 1';
+    params = [date, position, timeslot_id];
+  } else {
+    sql = 'SELECT id, doctor_id FROM ShiftEntry WHERE date = ? AND position = ? LIMIT 1';
+    params = [date, position];
+  }
+
+  try {
+    const [existing] = await dbPool.execute(sql, params);
+    return existing.length > 0 ? existing[0] : null;
+  } catch (e) {
+    console.warn('[Sentinel] Conflict check failed:', e.message);
+    return null; // On error, allow the create (don't block operations)
+  }
+};
+
 // Handle GET requests with helpful error
 router.get('/', (req, res) => {
   res.status(405).json({ 
@@ -432,6 +501,20 @@ router.post('/', async (req, res, next) => {
       data.updated_date = new Date();
       data.created_by = req.user?.email || 'system';
       
+      // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
+      if (tableName === 'ShiftEntry' && data.date && data.position) {
+        const conflict = await checkShiftConflict(dbPool, data);
+        if (conflict) {
+          console.warn(`[Sentinel] Blocked duplicate ShiftEntry: ${data.position} on ${data.date} (existing: ${conflict.id})`);
+          return res.status(409).json({ 
+            error: 'Position bereits besetzt',
+            conflict: true,
+            existing_id: conflict.id,
+            existing_doctor_id: conflict.doctor_id
+          });
+        }
+      }
+      
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data);
       
@@ -520,6 +603,24 @@ router.post('/', async (req, res, next) => {
         item.created_by = req.user?.email || 'system';
         return item;
       });
+      
+      // --- ShiftEntry Sentinel for bulk creates ---
+      if (tableName === 'ShiftEntry') {
+        const filtered = [];
+        for (const item of processed) {
+          if (item.date && item.position) {
+            const conflict = await checkShiftConflict(dbPool, item);
+            if (conflict) {
+              console.warn(`[Sentinel] Blocked duplicate in bulkCreate: ${item.position} on ${item.date}`);
+              continue; // Skip this item silently
+            }
+          }
+          filtered.push(item);
+        }
+        if (filtered.length === 0) return res.json([]);
+        processed.length = 0;
+        processed.push(...filtered);
+      }
       
       const allKeys = new Set();
       processed.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
