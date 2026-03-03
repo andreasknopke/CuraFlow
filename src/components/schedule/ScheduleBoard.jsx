@@ -2181,9 +2181,9 @@ export default function ScheduleBoard() {
           const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
           const date = new Date(dateStr + 'T00:00:00');
           const dayOfWeek = date.getDay(); // 0=So, 1=Mo, ..., 6=Sa
-          // Feiertag = wie Sonntag behandeln: prüfe ob Sonntag (0) aktiv ist
-          if (isPublicHoliday(date) && !activeDays.some(d => Number(d) === 0)) {
-              return false;
+          // Feiertag = wie Sonntag behandeln: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
+          if (isPublicHoliday(date)) {
+              return activeDays.some(d => Number(d) === 0);
           }
           return activeDays.some(d => Number(d) === dayOfWeek);
       };

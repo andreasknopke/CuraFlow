@@ -573,14 +573,15 @@ export default function ServiceStaffingPage() {
                                         let isActive = true;
                                         const activeDays = (type.active_days && type.active_days.length > 0) ? type.active_days : [1, 2, 3, 4, 5];
                                         
-                                        // Robust check handling potential string/number mismatch
-                                        isActive = activeDays.some(d => Number(d) === day.getDay());
                                         // Feiertage verhalten sich wie Sonntag (Index 0)
-                                        if (isActive && isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0)) {
-                                            isActive = false;
+                                        // An Feiertagen zählt nur, ob Sonntag aktiv ist
+                                        if (isPublicHoliday(day)) {
+                                            isActive = activeDays.some(d => Number(d) === 0);
+                                        } else {
+                                            isActive = activeDays.some(d => Number(d) === day.getDay());
                                         }
                                         // Fallback for legacy/static
-                                        else if (type.id === 'Onko-Konsil') {
+                                        if (!isActive && type.id === 'Onko-Konsil') {
                                             const setting = demoSettings.find(s => s.name === 'Onko-Konsil');
                                             if (setting && setting.active_days) {
                                                 isActive = setting.active_days.includes(day.getDay());

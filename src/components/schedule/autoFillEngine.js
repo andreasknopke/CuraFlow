@@ -100,7 +100,8 @@ export function generateSuggestions({
 
     const isActiveOnDate = (wp, date) => {
         const ad = getActiveDays(wp);
-        if (isPublicHoliday(date) && !ad.some(d => Number(d) === 0)) return false;
+        // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
+        if (isPublicHoliday(date)) return ad.some(d => Number(d) === 0);
         return ad.some(d => Number(d) === date.getDay());
     };
 
