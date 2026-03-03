@@ -2111,11 +2111,11 @@ export default function ScheduleBoard() {
                 const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
                 const date = new Date(newDateStr + 'T00:00:00');
                 const dayOfWeek = date.getDay();
-                if (isPublicHoliday(date) && !activeDays.some(d => Number(d) === 0)) {
-                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-                    return;
-                }
-                if (!activeDays.some(d => Number(d) === dayOfWeek)) {
+                // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
+                const isActive = isPublicHoliday(date)
+                    ? activeDays.some(d => Number(d) === 0)
+                    : activeDays.some(d => Number(d) === dayOfWeek);
+                if (!isActive) {
                     toast.error('Diese Position ist an diesem Tag nicht aktiv.');
                     return;
                 }
@@ -3625,10 +3625,11 @@ export default function ScheduleBoard() {
                                                   const setting = workplaces.find(s => s.name === rowName);
                                                   if (setting) {
                                                       const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
-                                                      const dayOfWeek = day.getDay();
-                                                      const allowed = activeDays.some(d => Number(d) === dayOfWeek);
-                                                      const holidayBlocked = isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0);
-                                                      if (!allowed || holidayBlocked) isDisabled = true;
+                                                      // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
+                                                      const isActive = isPublicHoliday(day)
+                                                          ? activeDays.some(d => Number(d) === 0)
+                                                          : activeDays.some(d => Number(d) === day.getDay());
+                                                      if (!isActive) isDisabled = true;
                                                   }
                                               }
 
@@ -4403,11 +4404,11 @@ export default function ScheduleBoard() {
                                         const setting = workplaces.find(s => s.name === rowName);
                                         if (setting) {
                                             const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
-                                            const dayOfWeek = day.getDay(); // 0=So, 1=Mo, ..., 6=Sa
-                                            const allowed = activeDays.some(d => Number(d) === dayOfWeek);
-                                            // Feiertag = wie Sonntag: prüfe ob Sonntag (0) aktiv ist
-                                            const holidayBlocked = isPublicHoliday(day) && !activeDays.some(d => Number(d) === 0);
-                                            if (!allowed || holidayBlocked) {
+                                            // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
+                                            const isActive = isPublicHoliday(day)
+                                                ? activeDays.some(d => Number(d) === 0)
+                                                : activeDays.some(d => Number(d) === day.getDay());
+                                            if (!isActive) {
                                                 isDisabled = true;
                                             }
                                         }
