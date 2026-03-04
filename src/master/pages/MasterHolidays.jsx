@@ -123,7 +123,12 @@ export default function MasterHolidays() {
     return set;
   }, [publicHolidays]);
 
+  const schoolRemovals = previewData?.schoolRemovals || [];
+
   const isSchoolHoliday = (dateStr) => {
+    // Check if date is in a removal range
+    const isRemoved = schoolRemovals.some(r => dateStr >= r.start && dateStr <= r.end);
+    if (isRemoved) return false;
     return schoolHolidays.some(range => {
       if (!range.start || !range.end) return false;
       return dateStr >= range.start && dateStr <= range.end;

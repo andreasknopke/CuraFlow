@@ -128,7 +128,7 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
       });
     });
 
-  // Remove custom school holidays (mark as removal ranges for frontend)
+  // Remove custom school holidays — split ranges for partial overlaps
   const schoolRemovals = customHolidays
     .filter(c => c.type === 'school' && c.action === 'remove')
     .map(c => ({
@@ -136,21 +136,41 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
       end: c.end_date || c.start_date
     }));
 
-  // Filter out school ranges that fall completely within a removal
   if (schoolRemovals.length > 0) {
-    schoolRanges = schoolRanges.map(range => {
-      // Check if any removal overlaps with this range
+    let newRanges = [];
+    for (const range of schoolRanges) {
+      let currentRanges = [range];
       for (const removal of schoolRemovals) {
-        if (removal.start <= range.end && removal.end >= range.start) {
-          // Overlap: if removal covers entire range, remove it
-          if (removal.start <= range.start && removal.end >= range.end) {
-            return null; // completely removed
+        const nextRanges = [];
+        for (const r of currentRanges) {
+          // No overlap
+          if (removal.start > r.end || removal.end < r.start) {
+            nextRanges.push(r);
+            continue;
           }
-          // Partial overlap: keep range but note it (frontend handles final display)
+          // Complete removal
+          if (removal.start <= r.start && removal.end >= r.end) {
+            continue; // skip entirely
+          }
+          // Partial overlap: split range
+          if (removal.start > r.start) {
+            // Left part survives
+            const dayBefore = new Date(removal.start + 'T00:00:00');
+            dayBefore.setDate(dayBefore.getDate() - 1);
+            nextRanges.push({ ...r, end: dayBefore.toISOString().split('T')[0] });
+          }
+          if (removal.end < r.end) {
+            // Right part survives
+            const dayAfter = new Date(removal.end + 'T00:00:00');
+            dayAfter.setDate(dayAfter.getDate() + 1);
+            nextRanges.push({ ...r, start: dayAfter.toISOString().split('T')[0] });
+          }
         }
+        currentRanges = nextRanges;
       }
-      return range;
-    }).filter(Boolean);
+      newRanges.push(...currentRanges);
+    }
+    schoolRanges = newRanges;
   }
 
   const resolvedPublic = Array.from(publicMap.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -158,7 +178,7 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
   return {
     school: schoolRanges,
     public: resolvedPublic,
-    schoolRemovals // Pass removals so frontend HolidayCalculator can handle partial overlaps
+    schoolRemovals // Also pass for frontend HolidayCalculator backward compat
   };
 }
 
