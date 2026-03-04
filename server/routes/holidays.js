@@ -221,7 +221,27 @@ router.get('/', async (req, res, next) => {
       const schoolData = await schoolRes.json();
       const publicData = await publicRes.json();
       
-      apiSchool = (Array.isArray(schoolData) ? schoolData : []).map(h => ({
+      // Filter out BBS (Berufsschulen) entries - only keep ABS (allgemeinbildende Schulen).
+      // Some states (e.g. MV) return separate entries for ABS and BBS with different date ranges.
+      // We identify BBS entries by checking subdivisions codes and name/comment text.
+      const rawSchoolCount = Array.isArray(schoolData) ? schoolData.length : 0;
+      const filteredSchoolData = (Array.isArray(schoolData) ? schoolData : []).filter(h => {
+        // Check subdivisions for BBS codes (e.g. "DE-MV-BBS")
+        if (h.subdivisions?.some(s => /[-_]BBS$/i.test(s.code || s.shortName || ''))) return false;
+        // Check name text for "Berufliche Schulen" or "(BBS)"
+        const nameText = h.name?.map(n => n.text).join(' ') || '';
+        if (/berufliche\s+schule|[\(\[]BBS[\)\]]/i.test(nameText)) return false;
+        // Check comment text similarly
+        const commentText = h.comment?.map(c => c.text).join(' ') || '';
+        if (/berufliche\s+schule|[\(\[]BBS[\)\]]/i.test(commentText)) return false;
+        return true;
+      });
+      
+      if (filteredSchoolData.length < rawSchoolCount) {
+        console.log(`[Holidays] Filtered ${rawSchoolCount - filteredSchoolData.length} BBS school holiday entries (kept ${filteredSchoolData.length} ABS entries)`);
+      }
+      
+      apiSchool = filteredSchoolData.map(h => ({
         name: h.name?.[0]?.text || h.name || 'Schulferien',
         start: h.startDate,
         end: h.endDate
