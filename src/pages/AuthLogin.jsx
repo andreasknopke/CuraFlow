@@ -162,6 +162,7 @@ export default function AuthLoginPage() {
                 onComplete={completeTenantSelection}
                 tenants={allowedTenants}
                 hasFullAccess={hasFullTenantAccess}
+                isAdmin={user?.role === 'admin'}
             />
         </div>
     );

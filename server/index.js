@@ -5,6 +5,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
 
@@ -160,6 +161,42 @@ app.use(cors({
 
 // Multi-Tenant DB Middleware - attach tenant DB to each request
 app.use(tenantDbMiddleware);// Security & Compression - AFTER CORS
+
+// Enforce tenant selection for admin users in normal frontend APIs
+const adminTenantApiPrefixes = [
+  '/api/db',
+  '/api/schedule',
+  '/api/holidays',
+  '/api/staff',
+  '/api/calendar',
+  '/api/voice',
+  '/api/atomic'
+];
+
+app.use((req, res, next) => {
+  const isTenantApi = adminTenantApiPrefixes.some((prefix) => req.path.startsWith(prefix));
+  if (!isTenantApi) return next();
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return next();
+
+  const token = authHeader.substring(7);
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const hasTenantToken = !!req.headers['x-db-token'];
+
+    if (payload?.role === 'admin' && !hasTenantToken) {
+      return res.status(403).json({
+        error: 'Für Administratoren ist eine Mandantenauswahl erforderlich. Bitte wählen Sie einen Mandanten aus.'
+      });
+    }
+  } catch (e) {
+    // Auth middleware in route handlers will return the proper 401 response.
+  }
+
+  next();
+});
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginOpenerPolicy: { policy: "unsafe-none" }

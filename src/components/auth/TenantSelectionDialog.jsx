@@ -15,8 +15,9 @@ import { Loader2, Database, Building2, Check } from 'lucide-react';
  * - onComplete: () => void - Callback wenn Auswahl abgeschlossen
  * - tenants: Array - Liste der erlaubten Tenants
  * - hasFullAccess: boolean - Ob User Zugriff auf alle Tenants hat
+ * - isAdmin: boolean - Ob der eingeloggte User Admin ist
  */
-export default function TenantSelectionDialog({ open, onComplete, tenants = [], hasFullAccess = false }) {
+export default function TenantSelectionDialog({ open, onComplete, tenants = [], hasFullAccess = false, isAdmin = false }) {
     const [isActivating, setIsActivating] = useState(false);
     const [selectedId, setSelectedId] = useState(null);
     const [error, setError] = useState('');
@@ -136,8 +137,8 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                 )}
 
                 <div className="space-y-3 max-h-80 overflow-y-auto py-2">
-                    {/* Standard-Datenbank Option (nur wenn Full-Access) */}
-                    {hasFullAccess && (
+                    {/* Standard-Datenbank Option (nur wenn Full-Access und kein Admin) */}
+                    {hasFullAccess && !isAdmin && (
                         <Card 
                             className={`p-4 cursor-pointer transition-all hover:border-indigo-300 hover:shadow-sm ${
                                 selectedId === 'default' ? 'border-indigo-500 bg-indigo-50' : ''
