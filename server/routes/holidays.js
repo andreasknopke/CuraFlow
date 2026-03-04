@@ -72,6 +72,16 @@ async function getCentralCustomHolidays() {
 }
 
 /**
+ * Format a Date object to YYYY-MM-DD using local date parts (timezone-safe)
+ */
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Apply custom corrections to API data server-side
  */
 function applyCorrections(apiSchool, apiPublic, customHolidays) {
@@ -88,10 +98,10 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
       const startDate = c.start_date;
       const endDate = c.end_date || startDate;
       // Expand date range
-      let current = new Date(startDate + 'T00:00:00');
-      const end = new Date(endDate + 'T00:00:00');
+      let current = new Date(startDate + 'T12:00:00');
+      const end = new Date(endDate + 'T12:00:00');
       while (current <= end) {
-        const dStr = current.toISOString().split('T')[0];
+        const dStr = localDateStr(current);
         publicMap.set(dStr, { name: c.name, date: dStr });
         current.setDate(current.getDate() + 1);
       }
@@ -103,12 +113,9 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
     .forEach(c => {
       const startDate = c.start_date;
       const endDate = c.end_date || startDate;
-      const start = new Date(startDate + 'T00:00:00');
-      const end = new Date(endDate + 'T00:00:00');
-      // Remove all dates in range from map
+      // Remove all dates in range from map (string comparison, no Date needed)
       Array.from(publicMap.keys()).forEach(dateStr => {
-        const d = new Date(dateStr + 'T00:00:00');
-        if (d >= start && d <= end) {
+        if (dateStr >= startDate && dateStr <= endDate) {
           publicMap.delete(dateStr);
         }
       });
@@ -143,7 +150,7 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
       for (const removal of schoolRemovals) {
         const nextRanges = [];
         for (const r of currentRanges) {
-          // No overlap
+          // No overlap (string comparison works for YYYY-MM-DD)
           if (removal.start > r.end || removal.end < r.start) {
             nextRanges.push(r);
             continue;
@@ -154,16 +161,16 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
           }
           // Partial overlap: split range
           if (removal.start > r.start) {
-            // Left part survives
-            const dayBefore = new Date(removal.start + 'T00:00:00');
+            // Left part survives: range.start to day before removal.start
+            const dayBefore = new Date(removal.start + 'T12:00:00');
             dayBefore.setDate(dayBefore.getDate() - 1);
-            nextRanges.push({ ...r, end: dayBefore.toISOString().split('T')[0] });
+            nextRanges.push({ ...r, end: localDateStr(dayBefore) });
           }
           if (removal.end < r.end) {
-            // Right part survives
-            const dayAfter = new Date(removal.end + 'T00:00:00');
+            // Right part survives: day after removal.end to range.end
+            const dayAfter = new Date(removal.end + 'T12:00:00');
             dayAfter.setDate(dayAfter.getDate() + 1);
-            nextRanges.push({ ...r, start: dayAfter.toISOString().split('T')[0] });
+            nextRanges.push({ ...r, start: localDateStr(dayAfter) });
           }
         }
         currentRanges = nextRanges;
