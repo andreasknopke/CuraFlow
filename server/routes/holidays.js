@@ -222,18 +222,15 @@ router.get('/', async (req, res, next) => {
       const publicData = await publicRes.json();
       
       // Filter out BBS (Berufsschulen) entries - only keep ABS (allgemeinbildende Schulen).
-      // Some states (e.g. MV) return separate entries for ABS and BBS with different date ranges.
-      // We identify BBS entries by checking subdivisions codes and name/comment text.
+      // The OpenHoliday API returns separate entries for ABS and BBS in the "groups" array:
+      //   ABS: { code: "DE-MV-ABS", shortName: "MV-ABS" }
+      //   BBS: { code: "DE-MV-BBS", shortName: "MV-BBS" }
       const rawSchoolCount = Array.isArray(schoolData) ? schoolData.length : 0;
       const filteredSchoolData = (Array.isArray(schoolData) ? schoolData : []).filter(h => {
-        // Check subdivisions for BBS codes (e.g. "DE-MV-BBS")
+        // Primary check: "groups" array contains BBS codes (e.g. "DE-MV-BBS")
+        if (h.groups?.some(g => /[-_]BBS$/i.test(g.code || g.shortName || ''))) return false;
+        // Fallback: also check subdivisions in case API structure changes
         if (h.subdivisions?.some(s => /[-_]BBS$/i.test(s.code || s.shortName || ''))) return false;
-        // Check name text for "Berufliche Schulen" or "(BBS)"
-        const nameText = h.name?.map(n => n.text).join(' ') || '';
-        if (/berufliche\s+schule|[\(\[]BBS[\)\]]/i.test(nameText)) return false;
-        // Check comment text similarly
-        const commentText = h.comment?.map(c => c.text).join(' ') || '';
-        if (/berufliche\s+schule|[\(\[]BBS[\)\]]/i.test(commentText)) return false;
         return true;
       });
       
