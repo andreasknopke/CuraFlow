@@ -10,14 +10,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, Plus, Trash2, Calendar, AlertTriangle, Ban } from 'lucide-react';
-import { STATES } from '@/components/schedule/holidayUtils';
+import { Settings, AlertTriangle, Ban, Info } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function AppSettingsDialog() {
     const [isOpen, setIsOpen] = useState(false);
     const queryClient = useQueryClient();
-    const [newHoliday, setNewHoliday] = useState({ name: '', start_date: '', end_date: '', type: 'school', action: 'add' });
 
     // --- Settings ---
     const { data: settings = [] } = useQuery({
@@ -49,8 +47,7 @@ export default function AppSettingsDialog() {
         updateSettingMutation.mutate({ key: 'absence_blocking_rules', value: JSON.stringify(newRules) });
     };
 
-    const stateCode = settings.find(s => s.key === 'federal_state')?.value || 'MV';
-    const showSchoolHolidays = settings.find(s => s.key === 'show_school_holidays')?.value === 'true';
+    const showSchoolHolidays = settings.find(s => s.key === 'show_school_holidays')?.value !== 'false';
     
     const defaultVisibleTypes = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
     const rawVisibleTypes = settings.find(s => s.key === 'overview_visible_types')?.value;
@@ -67,30 +64,6 @@ export default function AppSettingsDialog() {
         updateSettingMutation.mutate({ key: 'overview_visible_types', value: JSON.stringify(newTypes) });
     };
 
-    // --- Custom Holidays ---
-    const { data: customHolidays = [] } = useQuery({
-        queryKey: ['customHolidays'],
-        queryFn: () => db.CustomHoliday.list(),
-    });
-
-    const createHolidayMutation = useMutation({
-        mutationFn: (data) => db.CustomHoliday.create(data),
-        onSuccess: () => {
-            queryClient.invalidateQueries(['customHolidays']);
-            setNewHoliday({ name: '', start_date: '', end_date: '', type: 'school', action: 'add' });
-        }
-    });
-
-    const deleteHolidayMutation = useMutation({
-        mutationFn: (id) => db.CustomHoliday.delete(id),
-        onSuccess: () => queryClient.invalidateQueries(['customHolidays'])
-    });
-
-    const handleAddHoliday = () => {
-        if (!newHoliday.name || !newHoliday.start_date) return;
-        createHolidayMutation.mutate(newHoliday);
-    };
-
     return (
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
@@ -104,29 +77,18 @@ export default function AppSettingsDialog() {
                 </DialogHeader>
                 
                 <Tabs defaultValue="general">
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-2">
                         <TabsTrigger value="general">Allgemein</TabsTrigger>
                         <TabsTrigger value="rules">Konfliktregeln</TabsTrigger>
-                        <TabsTrigger value="holidays">Ferien & Feiertage</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="general" className="space-y-4 py-4">
-                        <div className="space-y-2">
-                            <Label>Bundesland</Label>
-                            <Select 
-                                value={stateCode} 
-                                onValueChange={(val) => updateSettingMutation.mutate({ key: 'federal_state', value: val })}
-                            >
-                                <SelectTrigger>
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {Object.entries(STATES).map(([code, name]) => (
-                                        <SelectItem key={code} value={code}>{name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-xs text-slate-500">Bestimmt die gesetzlichen Feiertage und Schulferien.</p>
+                        <div className="flex items-start gap-2 border p-3 rounded-lg bg-blue-50/50 border-blue-200">
+                            <Info className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                            <div className="text-xs text-blue-700">
+                                <p className="font-medium">Feiertage & Ferien werden zentral verwaltet</p>
+                                <p className="mt-0.5">Bundesland-Einstellung und Korrekturen befinden sich im Master-Frontend und gelten für alle Mandanten.</p>
+                            </div>
                         </div>
 
                         <div className="flex items-center justify-between border p-3 rounded-lg bg-slate-50">
@@ -250,110 +212,6 @@ export default function AppSettingsDialog() {
                                                 onCheckedChange={() => toggleAbsenceRule(type)}
                                             />
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </TabsContent>
-
-                    <TabsContent value="holidays" className="space-y-4 py-4">
-                        <div className="grid gap-4 border p-4 rounded-lg bg-slate-50">
-                            <h4 className="font-medium text-sm">Eintrag hinzufügen / entfernen</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="col-span-2">
-                                    <Label className="text-xs">Bezeichnung</Label>
-                                    <Input 
-                                        value={newHoliday.name} 
-                                        onChange={e => setNewHoliday({...newHoliday, name: e.target.value})} 
-                                        placeholder="z.B. Brückentag" 
-                                        className="h-8"
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs">Start</Label>
-                                    <Input 
-                                        type="date" 
-                                        value={newHoliday.start_date} 
-                                        onChange={e => setNewHoliday({
-                                            ...newHoliday, 
-                                            start_date: e.target.value,
-                                            // Auto-set end date to start date for convenience
-                                            end_date: e.target.value 
-                                        })} 
-                                        className="h-8"
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs">Ende (Optional)</Label>
-                                    <Input 
-                                        type="date" 
-                                        value={newHoliday.end_date} 
-                                        onChange={e => setNewHoliday({...newHoliday, end_date: e.target.value})} 
-                                        className="h-8"
-                                    />
-                                </div>
-                                <div>
-                                    <Label className="text-xs">Typ</Label>
-                                    <Select 
-                                        value={newHoliday.type} 
-                                        onValueChange={v => setNewHoliday({...newHoliday, type: v})}
-                                    >
-                                        <SelectTrigger className="h-8">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="school">Schulferien</SelectItem>
-                                            <SelectItem value="public">Feiertag</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div>
-                                    <Label className="text-xs">Aktion</Label>
-                                    <Select 
-                                        value={newHoliday.action} 
-                                        onValueChange={v => setNewHoliday({...newHoliday, action: v})}
-                                    >
-                                        <SelectTrigger className="h-8">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="add">Hinzufügen</SelectItem>
-                                            <SelectItem value="remove">Entfernen/Blockieren</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="col-span-2 pt-2">
-                                    <Button onClick={handleAddHoliday} className="w-full h-8" size="sm">
-                                        <Plus className="w-3 h-3 mr-2" /> Speichern
-                                    </Button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-2">
-                            <h4 className="font-medium text-sm">Manuelle Einträge</h4>
-                            <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                                {customHolidays.length === 0 && <p className="text-xs text-slate-500 italic">Keine manuellen Einträge.</p>}
-                                {customHolidays.map(h => (
-                                    <div key={h.id} className="flex items-center justify-between text-sm border p-2 rounded bg-white">
-                                        <div>
-                                            <div className="font-medium flex items-center gap-2">
-                                                {h.name}
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${h.action === 'add' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                                    {h.action === 'add' ? '+' : '-'}
-                                                </span>
-                                                <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
-                                                    {h.type === 'school' ? 'Ferien' : 'Feiertag'}
-                                                </span>
-                                            </div>
-                                            <div className="text-xs text-slate-500">
-                                                {format(new Date(h.start_date), 'dd.MM.yyyy')}
-                                                {h.end_date && h.end_date !== h.start_date && ` - ${format(new Date(h.end_date), 'dd.MM.yyyy')}`}
-                                            </div>
-                                        </div>
-                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={() => deleteHolidayMutation.mutate(h.id)}>
-                                            <Trash2 className="w-3 h-3" />
-                                        </Button>
                                     </div>
                                 ))}
                             </div>

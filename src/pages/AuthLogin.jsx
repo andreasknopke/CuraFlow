@@ -15,6 +15,7 @@ export default function AuthLoginPage() {
         isAuthenticated, 
         isLoading, 
         login, 
+        user,
         needsTenantSelection, 
         allowedTenants, 
         hasFullTenantAccess,

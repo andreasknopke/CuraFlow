@@ -1,8 +1,10 @@
 import express from 'express';
+import crypto from 'crypto';
 import { db } from '../index.js';
 
 const router = express.Router();
 // Holidays are public - no auth required
+// Data is centrally managed in the master database
 
 // State code mapping (German abbreviations to ISO codes)
 const STATE_ISO_CODES = {
@@ -12,20 +14,176 @@ const STATE_ISO_CODES = {
   'SN': 'DE-SN', 'ST': 'DE-ST', 'SH': 'DE-SH', 'TH': 'DE-TH'
 };
 
-// ===== GET HOLIDAYS =====
+/**
+ * Ensure central holiday tables exist in master DB
+ */
+async function ensureHolidayTables() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS holiday_settings (
+      \`key\` VARCHAR(100) PRIMARY KEY,
+      \`value\` TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  // Insert defaults if not present
+  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('federal_state', 'MV')`);
+  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('show_school_holidays', 'true')`);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS custom_holidays (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE DEFAULT NULL,
+      type ENUM('public', 'school') NOT NULL DEFAULT 'public',
+      action ENUM('add', 'remove') NOT NULL DEFAULT 'add',
+      created_by VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+/**
+ * Get central federal state setting from master DB
+ */
+async function getCentralFederalState() {
+  try {
+    await ensureHolidayTables();
+    const [rows] = await db.execute("SELECT `value` FROM holiday_settings WHERE `key` = 'federal_state'");
+    return rows[0]?.value || 'MV';
+  } catch (err) {
+    console.error('[Holidays] Error reading central federal_state:', err.message);
+    return 'MV';
+  }
+}
+
+/**
+ * Get central custom holidays from master DB
+ */
+async function getCentralCustomHolidays() {
+  try {
+    await ensureHolidayTables();
+    const [rows] = await db.execute('SELECT * FROM custom_holidays ORDER BY start_date');
+    return rows;
+  } catch (err) {
+    console.error('[Holidays] Error reading central custom_holidays:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Apply custom corrections to API data server-side
+ */
+function applyCorrections(apiSchool, apiPublic, customHolidays) {
+  // --- Public Holidays ---
+  const publicMap = new Map();
+  apiPublic.forEach(h => {
+    if (h?.date) publicMap.set(h.date, h);
+  });
+
+  // Add custom public holidays
+  customHolidays
+    .filter(c => c.type === 'public' && c.action === 'add')
+    .forEach(c => {
+      const startDate = c.start_date;
+      const endDate = c.end_date || startDate;
+      // Expand date range
+      let current = new Date(startDate + 'T00:00:00');
+      const end = new Date(endDate + 'T00:00:00');
+      while (current <= end) {
+        const dStr = current.toISOString().split('T')[0];
+        publicMap.set(dStr, { name: c.name, date: dStr });
+        current.setDate(current.getDate() + 1);
+      }
+    });
+
+  // Remove custom public holidays
+  customHolidays
+    .filter(c => c.type === 'public' && c.action === 'remove')
+    .forEach(c => {
+      const startDate = c.start_date;
+      const endDate = c.end_date || startDate;
+      const start = new Date(startDate + 'T00:00:00');
+      const end = new Date(endDate + 'T00:00:00');
+      // Remove all dates in range from map
+      Array.from(publicMap.keys()).forEach(dateStr => {
+        const d = new Date(dateStr + 'T00:00:00');
+        if (d >= start && d <= end) {
+          publicMap.delete(dateStr);
+        }
+      });
+    });
+
+  // --- School Holidays ---
+  let schoolRanges = [...apiSchool];
+
+  // Add custom school holidays
+  customHolidays
+    .filter(c => c.type === 'school' && c.action === 'add')
+    .forEach(c => {
+      schoolRanges.push({
+        name: c.name,
+        start: c.start_date,
+        end: c.end_date || c.start_date
+      });
+    });
+
+  // Remove custom school holidays (mark as removal ranges for frontend)
+  const schoolRemovals = customHolidays
+    .filter(c => c.type === 'school' && c.action === 'remove')
+    .map(c => ({
+      start: c.start_date,
+      end: c.end_date || c.start_date
+    }));
+
+  // Filter out school ranges that fall completely within a removal
+  if (schoolRemovals.length > 0) {
+    schoolRanges = schoolRanges.map(range => {
+      // Check if any removal overlaps with this range
+      for (const removal of schoolRemovals) {
+        if (removal.start <= range.end && removal.end >= range.start) {
+          // Overlap: if removal covers entire range, remove it
+          if (removal.start <= range.start && removal.end >= range.end) {
+            return null; // completely removed
+          }
+          // Partial overlap: keep range but note it (frontend handles final display)
+        }
+      }
+      return range;
+    }).filter(Boolean);
+  }
+
+  const resolvedPublic = Array.from(publicMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    school: schoolRanges,
+    public: resolvedPublic,
+    schoolRemovals // Pass removals so frontend HolidayCalculator can handle partial overlaps
+  };
+}
+
+// ===== GET HOLIDAYS (now centralized) =====
+// The state parameter from the query is IGNORED - we always use the central setting
 router.get('/', async (req, res, next) => {
   try {
-    const { year, state = 'MV' } = req.query;
+    const { year } = req.query;
     
     if (!year) {
       return res.status(400).json({ error: 'Year parameter required' });
     }
+
+    // Read central settings from master DB
+    const stateCode = await getCentralFederalState();
+    const customHolidays = await getCentralCustomHolidays();
     
-    const isoStateCode = STATE_ISO_CODES[state] || 'DE-MV';
+    const isoStateCode = STATE_ISO_CODES[stateCode] || 'DE-MV';
     const countryCode = 'DE';
     const validFrom = `${year}-01-01`;
     const validTo = `${year}-12-31`;
     
+    let apiSchool = [];
+    let apiPublic = [];
+
     try {
       // Fetch from OpenHolidays API
       const [schoolRes, publicRes] = await Promise.all([
@@ -36,26 +194,32 @@ router.get('/', async (req, res, next) => {
       const schoolData = await schoolRes.json();
       const publicData = await publicRes.json();
       
-      // Transform school holidays to expected format (frontend expects start/end)
-      const school = (Array.isArray(schoolData) ? schoolData : []).map(h => ({
+      apiSchool = (Array.isArray(schoolData) ? schoolData : []).map(h => ({
         name: h.name?.[0]?.text || h.name || 'Schulferien',
         start: h.startDate,
         end: h.endDate
       }));
       
-      // Transform public holidays to expected format
-      const publicHolidays = (Array.isArray(publicData) ? publicData : []).map(h => ({
+      apiPublic = (Array.isArray(publicData) ? publicData : []).map(h => ({
         name: h.name?.[0]?.text || h.name || 'Feiertag',
         date: h.startDate
       }));
-      
-      res.json({ school, public: publicHolidays });
     } catch (apiError) {
       console.error('OpenHolidays API error:', apiError.message);
       // Fallback to calculated holidays
-      const fallback = calculateGermanHolidays(parseInt(year));
-      res.json({ school: [], public: fallback });
+      apiPublic = calculateGermanHolidays(parseInt(year));
     }
+
+    // Apply central corrections
+    const resolved = applyCorrections(apiSchool, apiPublic, customHolidays);
+    
+    res.json({
+      school: resolved.school,
+      public: resolved.public,
+      schoolRemovals: resolved.schoolRemovals,
+      stateCode, // Tell frontend which state is configured centrally
+      centralized: true // Flag so frontend knows corrections are already applied
+    });
   } catch (error) {
     next(error);
   }

@@ -12,35 +12,30 @@ export function useHolidays(yearOverride) {
         queryFn: () => db.SystemSetting.list(),
     });
 
-    const { data: customHolidays = [], isLoading: isLoadingCustom } = useQuery({
-        queryKey: ['customHolidays'],
-        queryFn: () => db.CustomHoliday.list(),
-    });
-
-    const stateSetting = settings.find(s => s.key === 'federal_state');
     const showSchoolSetting = settings.find(s => s.key === 'show_school_holidays');
-
-    const stateCode = stateSetting ? stateSetting.value : 'MV';
     const showSchoolHolidays = showSchoolSetting ? showSchoolSetting.value === 'true' : true;
 
-    // Fetch External Data via Backend Function
+    // Fetch holidays from central API (corrections are already applied server-side)
     const { data: apiData = { school: [], public: [] }, isLoading: isLoadingApi } = useQuery({
-        queryKey: ['externalHolidays', stateCode, year],
+        queryKey: ['externalHolidays', year],
         queryFn: async () => {
             try {
-                return await api.getHolidays(year, stateCode);
+                return await api.getHolidays(year);
             } catch (err) {
                 console.error("Error fetching holidays", err);
                 return { school: [], public: [] };
             }
         },
         staleTime: 1000 * 60 * 60 * 24, // Cache for 24 hours
-        enabled: !!stateCode
     });
 
+    // State code comes from central API response (no longer per-tenant)
+    const stateCode = apiData.stateCode || 'MV';
+
     const calculator = React.useMemo(() => {
-        return new HolidayCalculator(stateCode, customHolidays, apiData);
-    }, [stateCode, customHolidays, apiData]);
+        // No custom holidays needed – server already applies corrections
+        return new HolidayCalculator(stateCode, [], apiData);
+    }, [stateCode, apiData]);
 
     const isPublicHoliday = React.useCallback((date) => {
         return calculator.isPublicHoliday(date);
@@ -54,7 +49,7 @@ export function useHolidays(yearOverride) {
         calculator,
         stateCode,
         showSchoolHolidays,
-        isLoading: isLoadingSettings || isLoadingCustom || isLoadingApi,
+        isLoading: isLoadingSettings || isLoadingApi,
         isPublicHoliday,
         isSchoolHoliday
     };

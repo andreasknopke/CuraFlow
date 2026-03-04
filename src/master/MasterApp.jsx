@@ -10,6 +10,7 @@ import MasterEmployeeList from '@/master/pages/MasterEmployeeList';
 import MasterEmployeeDetail from '@/master/pages/MasterEmployeeDetail';
 import MasterAbsences from '@/master/pages/MasterAbsences';
 import MasterTimeTracking from '@/master/pages/MasterTimeTracking';
+import MasterHolidays from '@/master/pages/MasterHolidays';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -58,6 +59,7 @@ export default function MasterApp() {
                       <Route path="/mitarbeiter" element={<MasterEmployeeList />} />
                       <Route path="/mitarbeiter/:tenantId/:employeeId" element={<MasterEmployeeDetail />} />
                       <Route path="/fehlzeiten" element={<MasterAbsences />} />
+                      <Route path="/feiertage" element={<MasterHolidays />} />
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

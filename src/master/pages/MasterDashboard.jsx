@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Shield, Users, CalendarX2, Clock, ChevronRight } from 'lucide-react';
+import { Shield, Users, CalendarX2, Clock, ChevronRight, CalendarDays } from 'lucide-react';
 
 const SECTIONS = [
   {
@@ -18,6 +18,13 @@ const SECTIONS = [
     title: 'Fehlzeiten',
     description: 'Mandantenübergreifende Übersicht aller Abwesenheiten und Urlaubstage',
     color: 'bg-emerald-50 text-emerald-600',
+  },
+  {
+    path: '/feiertage',
+    icon: CalendarDays,
+    title: 'Feiertage & Ferien',
+    description: 'Zentrale Verwaltung von Feiertagen und Schulferien für alle Mandanten',
+    color: 'bg-red-50 text-red-600',
   },
   {
     path: '/zeiterfassung',

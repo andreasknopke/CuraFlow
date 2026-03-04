@@ -9,6 +9,7 @@
  */
 
 import express from 'express';
+import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
@@ -530,5 +531,167 @@ function timeToMin(timeStr) {
   const parts = String(timeStr).split(':');
   return parseInt(parts[0]) * 60 + parseInt(parts[1] || 0);
 }
+
+// ============ CENTRAL HOLIDAYS & VACATIONS MANAGEMENT ============
+
+// State code mapping
+const STATES = {
+  'BW': 'Baden-Württemberg', 'BY': 'Bayern', 'BE': 'Berlin', 'BB': 'Brandenburg',
+  'HB': 'Bremen', 'HH': 'Hamburg', 'HE': 'Hessen', 'MV': 'Mecklenburg-Vorpommern',
+  'NI': 'Niedersachsen', 'NW': 'Nordrhein-Westfalen', 'RP': 'Rheinland-Pfalz',
+  'SL': 'Saarland', 'SN': 'Sachsen', 'ST': 'Sachsen-Anhalt',
+  'SH': 'Schleswig-Holstein', 'TH': 'Thüringen'
+};
+
+/**
+ * Ensure central holiday tables exist
+ */
+async function ensureCentralHolidayTables() {
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS holiday_settings (
+      \`key\` VARCHAR(100) PRIMARY KEY,
+      \`value\` TEXT NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('federal_state', 'MV')`);
+  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('show_school_holidays', 'true')`);
+
+  await db.execute(`
+    CREATE TABLE IF NOT EXISTS custom_holidays (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      start_date DATE NOT NULL,
+      end_date DATE DEFAULT NULL,
+      type ENUM('public', 'school') NOT NULL DEFAULT 'public',
+      action ENUM('add', 'remove') NOT NULL DEFAULT 'add',
+      created_by VARCHAR(255) DEFAULT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+/**
+ * GET /api/master/holidays/settings
+ * Returns central holiday settings (federal_state, show_school_holidays)
+ */
+router.get('/holidays/settings', async (req, res, next) => {
+  try {
+    await ensureCentralHolidayTables();
+    const [rows] = await db.execute('SELECT * FROM holiday_settings');
+    const settings = {};
+    rows.forEach(r => { settings[r.key] = r.value; });
+    res.json({ settings, states: STATES });
+  } catch (error) {
+    console.error('[Master holidays] Settings error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/holidays/settings
+ * Update a central holiday setting
+ * Body: { key: 'federal_state', value: 'MV' }
+ */
+router.put('/holidays/settings', async (req, res, next) => {
+  try {
+    const { key, value } = req.body;
+    if (!key || value === undefined) {
+      return res.status(400).json({ error: 'key and value required' });
+    }
+    const allowedKeys = ['federal_state', 'show_school_holidays'];
+    if (!allowedKeys.includes(key)) {
+      return res.status(400).json({ error: `Unknown setting: ${key}` });
+    }
+    await ensureCentralHolidayTables();
+    await db.execute(
+      'INSERT INTO holiday_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
+      [key, String(value)]
+    );
+    console.log(`[Master holidays] Setting updated: ${key} = ${value} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master holidays] Update setting error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/holidays/custom
+ * List all custom holiday corrections
+ */
+router.get('/holidays/custom', async (req, res, next) => {
+  try {
+    await ensureCentralHolidayTables();
+    const [rows] = await db.execute('SELECT * FROM custom_holidays ORDER BY start_date');
+    res.json(rows);
+  } catch (error) {
+    console.error('[Master holidays] List custom error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/holidays/custom
+ * Add a custom holiday correction
+ * Body: { name, start_date, end_date?, type: 'public'|'school', action: 'add'|'remove' }
+ */
+router.post('/holidays/custom', async (req, res, next) => {
+  try {
+    const { name, start_date, end_date, type, action } = req.body;
+    if (!name || !start_date || !type || !action) {
+      return res.status(400).json({ error: 'name, start_date, type, and action are required' });
+    }
+
+    const id = crypto.randomUUID();
+    await ensureCentralHolidayTables();
+    await db.execute(
+      'INSERT INTO custom_holidays (id, name, start_date, end_date, type, action, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, name, start_date, end_date || null, type, action, req.user.sub]
+    );
+
+    console.log(`[Master holidays] Custom holiday created: ${name} (${type}/${action}) by user ${req.user.sub}`);
+    res.json({ id, name, start_date, end_date, type, action });
+  } catch (error) {
+    console.error('[Master holidays] Create custom error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/holidays/custom/:id
+ * Delete a custom holiday correction
+ */
+router.delete('/holidays/custom/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await ensureCentralHolidayTables();
+    await db.execute('DELETE FROM custom_holidays WHERE id = ?', [id]);
+    console.log(`[Master holidays] Custom holiday deleted: ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master holidays] Delete custom error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/holidays/preview?year=YYYY
+ * Preview the fully resolved holidays for a year (as tenants would see them)
+ */
+router.get('/holidays/preview', async (req, res, next) => {
+  try {
+    const { year } = req.query;
+    if (!year) return res.status(400).json({ error: 'year required' });
+
+    // Fetch the same data that tenants get
+    const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/holidays?year=${year}`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('[Master holidays] Preview error:', error);
+    next(error);
+  }
+});
 
 export default router;

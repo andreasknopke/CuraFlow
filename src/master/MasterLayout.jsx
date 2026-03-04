@@ -4,7 +4,7 @@ import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
   Menu, ChevronLeft, Building2, Shield,
-  Users, CalendarX2, Clock,
+  Users, CalendarX2, Clock, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/mitarbeiter', label: 'Mitarbeiter', icon: Users },
   { path: '/fehlzeiten', label: 'Fehlzeiten', icon: CalendarX2 },
+  { path: '/feiertage', label: 'Feiertage & Ferien', icon: CalendarDays },
   { path: '/zeiterfassung', label: 'Zeiterfassung', icon: Clock },
 ];
 

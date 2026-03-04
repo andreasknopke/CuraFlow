@@ -166,6 +166,18 @@ export class HolidayCalculator {
             end: parseISO((r.end_date || r.start_date) + 'T23:59:59.999').getTime()
         }));
 
+        // Also include server-side schoolRemovals (from centralized management)
+        if (this.apiData.schoolRemovals && Array.isArray(this.apiData.schoolRemovals)) {
+            this.apiData.schoolRemovals.forEach(r => {
+                if (r.start && r.end) {
+                    schoolRemovals.push({
+                        start: parseISO(r.start + 'T00:00:00').getTime(),
+                        end: parseISO(r.end + 'T23:59:59.999').getTime()
+                    });
+                }
+            });
+        }
+
         // Filter school ranges that are completely removed or adjust them? 
         // Complex removal logic (splitting ranges) is hard. 
         // For performance, we will just keep the 'isRemoved' check during lookup if needed, 

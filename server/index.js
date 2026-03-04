@@ -166,7 +166,7 @@ app.use(tenantDbMiddleware);// Security & Compression - AFTER CORS
 const adminTenantApiPrefixes = [
   '/api/db',
   '/api/schedule',
-  '/api/holidays',
+  // '/api/holidays' — now reads from central master DB, no tenant required
   '/api/staff',
   '/api/calendar',
   '/api/voice',

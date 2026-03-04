@@ -226,9 +226,11 @@ class APIClient {
   }
 
   // ==================== Holidays ====================
-
-  async getHolidays(year, state = 'NW') {
-    return this.request(`/api/holidays?year=${year}&state=${state}`);
+  // State is now centrally managed - no state parameter needed
+  async getHolidays(year, state) {
+    // state parameter kept for backward compatibility but ignored by server
+    const params = state ? `year=${year}&state=${state}` : `year=${year}`;
+    return this.request(`/api/holidays?${params}`);
   }
 
   // ==================== Staff ====================
