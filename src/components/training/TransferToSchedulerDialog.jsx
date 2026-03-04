@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { format, addDays, eachDayOfInterval, isWeekend, startOfWeek, endOfWeek, isBefore, startOfDay } from 'date-fns';
+import { format, addDays, eachDayOfInterval, startOfWeek, endOfWeek, isBefore, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { CalendarDays, AlertTriangle, Info, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ export default function TransferToSchedulerDialog({
     allShifts = [], 
     staffingPlanEntries = [],
     workplaces = [],
+    isPublicHoliday,
     onTransfer,
     isPending = false
 }) {
@@ -112,8 +113,15 @@ export default function TransferToSchedulerDialog({
                     return;
                 }
                 
-                // Skip weekends (rotations usually don't apply on weekends)
-                if (isWeekend(day)) {
+                // Check active_days of the workplace for this rotation
+                // Feiertage verhalten sich wie Sonntag (Index 0)
+                const wp = workplaces.find(w => w.name === rot.modality && w.category === 'Rotationen');
+                const activeDays = (wp?.active_days?.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
+                const isHoliday = isPublicHoliday && isPublicHoliday(day);
+                const isActiveDay = isHoliday
+                    ? activeDays.some(d => Number(d) === 0)
+                    : activeDays.some(d => Number(d) === day.getDay());
+                if (!isActiveDay) {
                     return;
                 }
                 
@@ -192,7 +200,7 @@ export default function TransferToSchedulerDialog({
         skipped.sort((a, b) => a.date.localeCompare(b.date) || a.doctorName.localeCompare(b.doctorName));
         
         return { entries, skipped };
-    }, [dateRange, rotations, doctors, allShifts, staffingPlanEntries, workplaces, overwriteExisting, today]);
+    }, [dateRange, rotations, doctors, allShifts, staffingPlanEntries, workplaces, overwriteExisting, today, isPublicHoliday]);
 
     const handleTransfer = () => {
         if (transferPreview.entries.length === 0) return;

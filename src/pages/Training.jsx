@@ -713,6 +713,7 @@ export default function TrainingPage() {
           allShifts={allShifts}
           staffingPlanEntries={staffingPlanEntries}
           workplaces={workplaces}
+          isPublicHoliday={isPublicHoliday}
           onTransfer={handleTransferToScheduler}
           isPending={isTransferPending}
       />
