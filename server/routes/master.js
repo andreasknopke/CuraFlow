@@ -15,6 +15,7 @@ import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
+import { getPublicHolidayDatesForYear } from './holidays.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -271,8 +272,11 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
 
         const doc = rows[0];
 
-        // Absences for current year
+        // Public holidays for workday filtering (includes manual corrections from master DB)
         const currentYear = new Date().getFullYear();
+        const publicHolidayDates = await getPublicHolidayDatesForYear(currentYear);
+
+        // Absences for current year
         const absencePositions = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz'];
         const placeholders = absencePositions.map(() => '?').join(',');
         let absences = [];
@@ -295,9 +299,17 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           console.warn(`[Master staff-detail] Absences query failed:`, e.message);
         }
 
-        // Vacation counts: split by past (taken) vs future (planned)
+        // Vacation counts: only count workdays (Mon-Fri, no public holidays)
         const today = format(new Date(), 'yyyy-MM-dd');
-        const vacationDays = absences.filter(a => a.type === 'Urlaub');
+        const vacationDays = absences.filter(a => {
+          if (a.type !== 'Urlaub') return false;
+          const d = new Date(a.from + 'T12:00:00');
+          const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
+          if (dayOfWeek === 0 || dayOfWeek === 6) return false;
+          // Check if this date is a public holiday
+          if (publicHolidayDates && publicHolidayDates.has(a.from)) return false;
+          return true;
+        });
         const vacationTaken = vacationDays.filter(a => a.from <= today).length;
         const vacationPlanned = vacationDays.filter(a => a.from > today).length;
 

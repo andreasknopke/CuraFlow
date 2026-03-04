@@ -316,4 +316,51 @@ function formatDate(date) {
   return date.toISOString().split('T')[0];
 }
 
+/**
+ * Get the complete set of public holiday dates for a given year,
+ * including calculated holidays AND manual corrections (adds/removes)
+ * from the central custom_holidays table.
+ * Returns a Set of 'YYYY-MM-DD' strings.
+ */
+async function getPublicHolidayDatesForYear(year) {
+  const holidays = calculateGermanHolidays(year);
+  const dateSet = new Set(holidays.map(h => h.date));
+
+  // Apply manual corrections from master DB
+  try {
+    const customHolidays = await getCentralCustomHolidays();
+    // Add custom public holidays
+    customHolidays
+      .filter(c => c.type === 'public' && c.action === 'add')
+      .forEach(c => {
+        const startDate = typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
+        const endDate = c.end_date ? (typeof c.end_date === 'string' ? c.end_date.substring(0, 10) : c.end_date) : startDate;
+        let current = new Date(startDate + 'T12:00:00');
+        const end = new Date(endDate + 'T12:00:00');
+        while (current <= end) {
+          const dStr = localDateStr(current);
+          if (dStr.startsWith(String(year))) dateSet.add(dStr);
+          current.setDate(current.getDate() + 1);
+        }
+      });
+    // Remove custom public holidays
+    customHolidays
+      .filter(c => c.type === 'public' && c.action === 'remove')
+      .forEach(c => {
+        const startDate = typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
+        const endDate = c.end_date ? (typeof c.end_date === 'string' ? c.end_date.substring(0, 10) : c.end_date) : startDate;
+        for (const dateStr of Array.from(dateSet)) {
+          if (dateStr >= startDate && dateStr <= endDate) {
+            dateSet.delete(dateStr);
+          }
+        }
+      });
+  } catch (e) {
+    console.warn('[Holidays] Could not apply custom corrections for workday check:', e.message);
+  }
+
+  return dateSet;
+}
+
 export default router;
+export { calculateGermanHolidays, getPublicHolidayDatesForYear };
