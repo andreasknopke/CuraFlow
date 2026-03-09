@@ -182,7 +182,9 @@ app.use(cors({
 app.use(tenantDbMiddleware);// Security & Compression - AFTER CORS
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginOpenerPolicy: { policy: "unsafe-none" }
+  crossOriginOpenerPolicy: { policy: "unsafe-none" },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false, // CSP handled by Coolify/Traefik reverse proxy
 }));
 app.use(compression());
 
@@ -281,6 +283,7 @@ if (fs.existsSync(distPath)) {
     const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
       ? 'master.html'
       : 'index.html';
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(distPath, htmlFile));
   });
 }
