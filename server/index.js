@@ -6,7 +6,6 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
@@ -193,6 +192,14 @@ const authLimiter = rateLimit({
 
 app.use('/api/', generalLimiter);
 
+// Serve static frontend files in Coolify (single-container) mode
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
+if (process.env.SERVE_FRONTEND === 'true') {
+  app.use(express.static(distPath, { index: 'index.html' }));
+}
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -258,30 +265,6 @@ app.use('/api/atomic', atomicRouter);
 app.use('/api/schedule', aiAutofillRouter);
 app.use('/api/master', masterRouter);
 
-// ===== Static frontend serving (Coolify / single-container deployment) =====
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const distPath = path.resolve(__dirname, '..', 'dist');
-if (fs.existsSync(distPath)) {
-  // Serve static assets (JS, CSS, images, favicon, manifest)
-  app.use(express.static(distPath, {
-    index: false, // Don't auto-serve index.html for '/'
-    setHeaders: (res, filePath) => {
-      // Hashed assets get long-term cache; other files (favicon, manifest) get short cache
-      if (filePath.includes('/assets/')) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    }
-  }));
-  // SPA fallback: serve index.html for all non-API routes
-  app.get(/^(?!\/api\/).*/, (req, res) => {
-    const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
-      ? 'master.html'
-      : 'index.html';
-    res.sendFile(path.join(distPath, htmlFile));
-  });
-}
-
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Error:', err);
@@ -296,6 +279,15 @@ app.use((err, req, res, next) => {
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
 });
+
+// SPA fallback for Coolify (single-container) mode
+if (process.env.SERVE_FRONTEND === 'true') {
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    const htmlFile = req.path.startsWith('/master') ? 'master.html' : 'index.html';
+    res.sendFile(path.join(distPath, htmlFile));
+  });
+}
 
 // 404 handler
 app.use((req, res) => {
