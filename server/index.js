@@ -31,6 +31,23 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ===== Static frontend serving (Coolify / single-container deployment) =====
+// Must be BEFORE helmet/CORS/auth middleware so static files are served fast and clean.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '..', 'dist');
+if (fs.existsSync(distPath)) {
+  console.log(`📁 Serving static frontend from ${distPath}`);
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  }));
+}
+
 // Trust proxy - Railway runs behind a reverse proxy
 app.set('trust proxy', 1);
 
@@ -258,22 +275,8 @@ app.use('/api/atomic', atomicRouter);
 app.use('/api/schedule', aiAutofillRouter);
 app.use('/api/master', masterRouter);
 
-// ===== Static frontend serving (Coolify / single-container deployment) =====
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const distPath = path.resolve(__dirname, '..', 'dist');
+// ===== SPA fallback (Coolify / single-container deployment) =====
 if (fs.existsSync(distPath)) {
-  // Serve static assets (JS, CSS, images, favicon, manifest)
-  app.use(express.static(distPath, {
-    index: false, // Don't auto-serve index.html for '/'
-    setHeaders: (res, filePath) => {
-      // Hashed assets get long-term cache; other files (favicon, manifest) get short cache
-      if (filePath.includes('/assets/')) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      }
-    }
-  }));
-  // SPA fallback: serve index.html for all non-API routes
   app.get(/^(?!\/api\/).*/, (req, res) => {
     const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
       ? 'master.html'
