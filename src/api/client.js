@@ -4,7 +4,8 @@
  * Unterstützt Multi-Tenant via DB-Token
  */
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL
+  || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 const TOKEN_KEY = 'radioplan_jwt_token';
 const DB_TOKEN_KEY = 'db_credentials';
 const DB_TOKEN_ENABLED_KEY = 'db_token_enabled';

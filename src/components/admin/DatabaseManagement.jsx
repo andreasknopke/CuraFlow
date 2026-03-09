@@ -33,7 +33,7 @@ export default function DatabaseManagement() {
     const { data: timeslotMigrationStatus, refetch: refetchTimeslotStatus } = useQuery({
         queryKey: ['timeslotMigrationStatus', getActiveDbToken()],
         queryFn: async () => {
-            const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
             const dbToken = getActiveDbToken();
             const headers = {
                 'Authorization': `Bearer ${token}`
@@ -132,7 +132,7 @@ export default function DatabaseManagement() {
     // Helper to call backend with JWT token and DB token
     const invokeWithAuth = async (action, data = {}, method = 'POST', customPath = null) => {
         try {
-            const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+            const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
             const url = customPath ? `${apiBaseUrl}${customPath}` : `${apiBaseUrl}/api/admin/tools`;
             const dbToken = getActiveDbToken();
             
