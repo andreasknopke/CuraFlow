@@ -30,6 +30,14 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Serve static frontend files in Coolify (single-container) mode — BEFORE other middleware
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '../dist');
+if (process.env.SERVE_FRONTEND === 'true') {
+  app.use(express.static(distPath, { index: 'index.html' }));
+}
+
 // Trust proxy - Railway runs behind a reverse proxy
 app.set('trust proxy', 1);
 
@@ -191,14 +199,6 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/', generalLimiter);
-
-// Serve static frontend files in Coolify (single-container) mode
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const distPath = path.resolve(__dirname, '../dist');
-if (process.env.SERVE_FRONTEND === 'true') {
-  app.use(express.static(distPath, { index: 'index.html' }));
-}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
