@@ -64,6 +64,36 @@ router.post('/send-email', async (req, res, next) => {
   }
 });
 
+// ===== SEND TEST EMAIL =====
+router.post('/send-test-email', async (req, res, next) => {
+  try {
+    const { to } = req.body;
+
+    if (!to) {
+      return res.status(400).json({ error: 'Empfänger (to) erforderlich' });
+    }
+
+    const providerInfo = getEmailProviderInfo();
+    if (!providerInfo.configured) {
+      return res.status(503).json({ 
+        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
+      });
+    }
+
+    await sendEmail({
+      to,
+      subject: 'CuraFlow Testmail',
+      text: 'Dies ist eine Testnachricht von CuraFlow. Wenn Sie diese E-Mail erhalten, funktioniert der E-Mail-Versand korrekt.',
+      html: '<h2>CuraFlow Testmail</h2><p>Dies ist eine Testnachricht von CuraFlow.</p><p>Wenn Sie diese E-Mail erhalten, funktioniert der E-Mail-Versand korrekt.</p><hr><p style="color:#888;font-size:12px">Provider: ' + providerInfo.provider + ' | Absender: ' + providerInfo.from + '</p>',
+    });
+
+    res.json({ success: true, message: `Testmail an ${to} gesendet`, provider: providerInfo.provider });
+  } catch (error) {
+    console.error('[send-test-email] Fehler:', error.message);
+    next(error);
+  }
+});
+
 // ===== SEND SCHEDULE NOTIFICATIONS (replaces sendShiftEmails function) =====
 router.post('/schedule-notifications', async (req, res, next) => {
   try {

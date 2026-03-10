@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { db } from "@/api/client";
+import { db, api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
 import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
 import { toast } from "sonner";
+import { Mail, Loader2 } from "lucide-react";
 
 // Fallback falls Rollen noch nicht geladen
 const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
@@ -35,6 +36,28 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     queryKey: ["doctors"],
     queryFn: () => db.Doctor.list(),
   });
+
+  const [sendingTestMail, setSendingTestMail] = useState(false);
+
+  const handleSendTestMail = async () => {
+    const email = formData.email;
+    if (!email) {
+      toast.error("Bitte zuerst eine E-Mail-Adresse eingeben");
+      return;
+    }
+    setSendingTestMail(true);
+    try {
+      const result = await api.request('/api/staff/send-test-email', {
+        method: 'POST',
+        body: JSON.stringify({ to: email }),
+      });
+      toast.success(result.message || `Testmail an ${email} gesendet`);
+    } catch (error) {
+      toast.error(error.message || "Testmail konnte nicht gesendet werden");
+    } finally {
+      setSendingTestMail(false);
+    }
+  };
 
   const [formData, setFormData] = useState(
     doctor || {
@@ -142,13 +165,26 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="email">E-Mail (für Benachrichtigungen)</Label>
-            <Input
-              id="email"
-              type="email"
-              value={formData.email || ''}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="name@klinik.de"
-            />
+            <div className="flex gap-2">
+              <Input
+                id="email"
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="name@klinik.de"
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSendTestMail}
+                disabled={!formData.email || sendingTestMail}
+                title="Testmail senden"
+              >
+                {sendingTestMail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="google_email">E-Mail (für Kalender / Dienstplan)</Label>
