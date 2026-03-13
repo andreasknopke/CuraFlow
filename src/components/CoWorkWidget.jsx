@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { Video, VideoOff, Copy, Check, X, Users, ExternalLink } from 'lucide-react';
+import { Video, VideoOff, X, Users, ExternalLink, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
+import { api } from '@/api/client';
 
 /**
  * Leitet den ersten Mandanten-Slug aus dem allowed_tenants-Feld ab.
@@ -20,14 +22,26 @@ function parseTenantSlug(allowed_tenants) {
   return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
+function buildJitsiUrl({ baseUrl, roomName, token, displayName }) {
+  return (
+    `${baseUrl}/${roomName}?jwt=${encodeURIComponent(token)}&lang=de` +
+    `#config.startWithAudioMuted=true` +
+    `&config.startWithVideoMuted=true` +
+    `&config.prejoinPageEnabled=false` +
+    `&config.disableDeepLinking=true` +
+    `&userInfo.displayName=${displayName}`
+  );
+}
+
 export default function CoWorkWidget() {
   const { user, isAuthenticated } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
+  const [jitsiSession, setJitsiSession] = useState(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(false);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);
@@ -37,22 +51,15 @@ export default function CoWorkWidget() {
   const roomName = `curaflow-support-${tenantSlug}`;
   const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
   const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
-  const publicLink = `${jitsiBaseUrl}/${roomName}`;
   const displayName = encodeURIComponent(user?.full_name || user?.email || 'Admin');
-  const jitsiUrl =
-    `${jitsiBaseUrl}/${roomName}?lang=de` +
-    `#config.startWithAudioMuted=true` +
-    `&config.startWithVideoMuted=true` +
-    `&config.prejoinPageEnabled=false` +
-    `&config.disableDeepLinking=true` +
-    `&userInfo.displayName=${displayName}`;
-
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(publicLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [publicLink]);
+  const jitsiUrl = jitsiSession?.token
+    ? buildJitsiUrl({
+        baseUrl: jitsiBaseUrl,
+        roomName: jitsiSession.roomName || roomName,
+        token: jitsiSession.token,
+        displayName,
+      })
+    : null;
 
   const clearHideTimer = useCallback(() => {
     if (!hideTimerRef.current) return;
@@ -115,6 +122,38 @@ export default function CoWorkWidget() {
     return () => window.removeEventListener('mousemove', onMouseMove);
   }, [scheduleHide]);
 
+  useEffect(() => {
+    if (!isOpen || !isAuthenticated || !isAdmin) return;
+
+    let cancelled = false;
+
+    const loadJitsiSession = async () => {
+      setIsLoadingSession(true);
+      setJitsiSession(null);
+      try {
+        const session = await api.getJitsiToken();
+        if (!cancelled) {
+          setJitsiSession(session);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setJitsiSession(null);
+          toast.error(error.message || 'Jitsi-Token konnte nicht geladen werden');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingSession(false);
+        }
+      }
+    };
+
+    loadJitsiSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, isAuthenticated, isAdmin]);
+
   // Nur für Admins sichtbar – NACH allen Hooks
   if (!isAuthenticated || !isAdmin) return null;
 
@@ -128,7 +167,13 @@ export default function CoWorkWidget() {
       {/* Floating-Toggle-Button */}
       <button
         onClick={() => {
-          setIsOpen((v) => !v);
+          setIsOpen((v) => {
+            const nextOpen = !v;
+            if (!nextOpen) {
+              setJitsiSession(null);
+            }
+            return nextOpen;
+          });
           setIsTriggerHidden(false);
         }}
         title={isOpen ? 'CoWork beenden' : 'CoWork-Session starten'}
@@ -162,7 +207,10 @@ export default function CoWorkWidget() {
               <span className="font-semibold text-sm">CoWork – {tenantSlug}</span>
             </div>
             <button
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                setJitsiSession(null);
+                setIsOpen(false);
+              }}
               className="rounded-full p-1 hover:bg-indigo-500 transition-colors"
             >
               <X className="h-4 w-4" />
@@ -172,34 +220,44 @@ export default function CoWorkWidget() {
           {/* Raum-Info */}
           <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
             <span className="text-xs text-indigo-700 flex-1 truncate">
-              Anderen Admin einladen: <strong>{publicLink}</strong>
+              Geschuetzter Raum: <strong>{jitsiSession?.roomName || roomName}</strong>
             </span>
-            <button
-              onClick={handleCopy}
-              title="Link kopieren"
-              className="shrink-0 flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 transition-colors px-2 py-1 rounded hover:bg-indigo-100"
-            >
-              {copied ? <Check className="h-3 w-3 text-green-600" /> : <Copy className="h-3 w-3" />}
-              {copied ? 'Kopiert' : 'Kopieren'}
-            </button>
             <a
-              href={publicLink}
+              href={jitsiUrl || undefined}
               target="_blank"
               rel="noopener noreferrer"
               title="Im Browser öffnen"
-              className="shrink-0 text-indigo-500 hover:text-indigo-800 transition-colors p-1 rounded hover:bg-indigo-100"
+              aria-disabled={!jitsiUrl}
+              className={
+                `shrink-0 p-1 rounded transition-colors ${jitsiUrl
+                  ? 'text-indigo-500 hover:text-indigo-800 hover:bg-indigo-100'
+                  : 'text-slate-300 pointer-events-none'}`
+              }
             >
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
 
           {/* Jitsi iFrame */}
-          <iframe
-            src={jitsiUrl}
-            allow="camera; microphone; display-capture; fullscreen; autoplay"
-            style={{ width: '100%', height: 360, border: 'none', display: 'block' }}
-            title="CoWork-Session"
-          />
+          {isLoadingSession ? (
+            <div className="flex h-[360px] items-center justify-center bg-slate-50 text-slate-600">
+              <div className="flex items-center gap-2 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Jitsi-Session wird vorbereitet...
+              </div>
+            </div>
+          ) : jitsiUrl ? (
+            <iframe
+              src={jitsiUrl}
+              allow="camera; microphone; display-capture; fullscreen; autoplay"
+              style={{ width: '100%', height: 360, border: 'none', display: 'block' }}
+              title="CoWork-Session"
+            />
+          ) : (
+            <div className="flex h-[360px] items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600">
+              Die CoWork-Session konnte nicht gestartet werden. Bitte pruefen Sie die Jitsi-JWT-Konfiguration.
+            </div>
+          )}
         </div>
       )}
     </>

@@ -10,6 +10,11 @@ const router = express.Router();
 // JWT Helper Functions
 const JWT_SECRET = process.env.JWT_SECRET;
 const TOKEN_EXPIRY = '24h';
+const JITSI_JWT_APP_ID = process.env.JITSI_JWT_APP_ID;
+const JITSI_JWT_APP_SECRET = process.env.JITSI_JWT_APP_SECRET;
+const JITSI_JWT_AUDIENCE = process.env.JITSI_JWT_AUDIENCE || 'jitsi';
+const JITSI_JWT_SUB = process.env.JITSI_JWT_SUB;
+const JITSI_JWT_EXPIRY_SECONDS = parseInt(process.env.JITSI_JWT_EXPIRY_SECONDS || '300', 10);
 
 function createToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -21,6 +26,42 @@ function verifyToken(token) {
   } catch (e) {
     return null;
   }
+}
+
+function parseTenantSlug(allowedTenants) {
+  if (!allowedTenants) return 'default';
+
+  try {
+    const parsed = typeof allowedTenants === 'string' ? JSON.parse(allowedTenants) : allowedTenants;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed[0].toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
+    }
+  } catch (error) {
+    // Fallback below for non-JSON values.
+  }
+
+  return allowedTenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
+}
+
+function createJitsiToken({ roomName, user }) {
+  const now = Math.floor(Date.now() / 1000);
+
+  return jwt.sign({
+    aud: JITSI_JWT_AUDIENCE,
+    iss: JITSI_JWT_APP_ID,
+    sub: JITSI_JWT_SUB,
+    room: roomName,
+    nbf: now - 10,
+    exp: now + JITSI_JWT_EXPIRY_SECONDS,
+    context: {
+      user: {
+        id: user.id,
+        name: user.full_name || user.email || 'CuraFlow Admin',
+        email: user.email,
+        moderator: user.role === 'admin',
+      },
+    },
+  }, JITSI_JWT_APP_SECRET, { algorithm: 'HS256' });
 }
 
 // Middleware to verify authentication
@@ -232,6 +273,41 @@ router.get('/me', authMiddleware, async (req, res, next) => {
     }
     
     res.json(sanitizeUser(rows[0]));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============ JITSI TOKEN (Admin only) ============
+router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
+      return res.status(503).json({
+        error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
+      });
+    }
+
+    const [rows] = await db.execute(
+      'SELECT id, email, full_name, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    const user = rows[0];
+    const tenantSlug = parseTenantSlug(user.allowed_tenants);
+    const roomName = `curaflow-support-${tenantSlug}`;
+    const token = createJitsiToken({ roomName, user });
+    const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
+
+    res.json({
+      token,
+      roomName,
+      tenantSlug,
+      expiresAt,
+    });
   } catch (error) {
     next(error);
   }

@@ -85,6 +85,10 @@ class APIClient {
     return this.request('/api/auth/me');
   }
 
+  async getJitsiToken() {
+    return this.request('/api/auth/jitsi-token');
+  }
+
   async updateMe(updates) {
     return this.request('/api/auth/me', {
       method: 'PATCH',
