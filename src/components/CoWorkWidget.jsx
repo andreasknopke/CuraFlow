@@ -22,14 +22,13 @@ function parseTenantSlug(allowed_tenants) {
   return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
-function buildJitsiUrl({ baseUrl, roomName, token, displayName }) {
+function buildJitsiUrl({ baseUrl, roomName, token }) {
   return (
     `${baseUrl}/${roomName}?jwt=${encodeURIComponent(token)}&lang=de` +
     `#config.startWithAudioMuted=true` +
     `&config.startWithVideoMuted=true` +
     `&config.prejoinPageEnabled=false` +
-    `&config.disableDeepLinking=true` +
-    `&userInfo.displayName=${displayName}`
+    `&config.disableDeepLinking=true`
   );
 }
 
@@ -51,13 +50,11 @@ export default function CoWorkWidget() {
   const roomName = `curaflow-support-${tenantSlug}`;
   const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
   const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
-  const displayName = encodeURIComponent(user?.full_name || user?.email || 'Admin');
   const jitsiUrl = jitsiSession?.token
     ? buildJitsiUrl({
         baseUrl: jitsiBaseUrl,
         roomName: jitsiSession.roomName || roomName,
         token: jitsiSession.token,
-        displayName,
       })
     : null;
 
