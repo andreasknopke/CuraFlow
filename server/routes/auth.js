@@ -521,42 +521,32 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
 
     await expireStaleCoworkInvites();
 
-    const [existingRows] = await db.execute(
-      `SELECT *
-       FROM CoWorkInvite
+    await db.execute(
+      `UPDATE CoWorkInvite
+       SET status = 'cancelled', responded_date = NOW()
        WHERE ${uuidCompareSql('inviter_user_id')}
          AND ${uuidCompareSql('invitee_user_id')}
          AND status = 'pending'
-         AND (expires_date IS NULL OR expires_date >= NOW())
-       ORDER BY created_date DESC
-       LIMIT 1`,
+         AND (expires_date IS NULL OR expires_date >= NOW())`,
       [req.user.sub, inviteeUserId]
     );
 
-    const invite = existingRows[0] || null;
-    let inviteId = invite?.id;
-    let roomName = invite?.room_name;
-    let tenantSlug = invite?.tenant_slug;
-    let expiresDate = invite?.expires_date;
+    const tenantSlug = parseTenantSlug(inviter.allowed_tenants || invitee.allowed_tenants);
+    const roomName = buildCoworkRoomName(tenantSlug);
+    const inviteId = crypto.randomUUID();
+    const expiresDate = new Date(Date.now() + COWORK_INVITE_EXPIRY_MINUTES * 60 * 1000);
 
-    if (!invite) {
-      tenantSlug = parseTenantSlug(inviter.allowed_tenants || invitee.allowed_tenants);
-      roomName = buildCoworkRoomName(tenantSlug);
-      inviteId = crypto.randomUUID();
-      expiresDate = new Date(Date.now() + COWORK_INVITE_EXPIRY_MINUTES * 60 * 1000);
-
-      await db.execute(
-        `INSERT INTO CoWorkInvite (
-          id, room_name, tenant_slug, inviter_user_id, invitee_user_id, status, expires_date
-        ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-        [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, expiresDate]
-      );
-    }
+    await db.execute(
+      `INSERT INTO CoWorkInvite (
+        id, room_name, tenant_slug, inviter_user_id, invitee_user_id, status, expires_date
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, expiresDate]
+    );
 
     const token = createJitsiToken({ roomName, user: inviter });
     const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
 
-    res.status(invite ? 200 : 201).json({
+    res.status(201).json({
       invite: {
         id: inviteId,
         room_name: roomName,
