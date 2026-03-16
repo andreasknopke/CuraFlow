@@ -388,6 +388,25 @@ async function ensureTablesExist() {
         INDEX idx_token (token),
         INDEX idx_user_id (user_id)
       )`
+    },
+    {
+      name: 'CoWorkInvite',
+      sql: `CREATE TABLE IF NOT EXISTS CoWorkInvite (
+        id VARCHAR(36) PRIMARY KEY,
+        room_name VARCHAR(128) NOT NULL,
+        tenant_slug VARCHAR(64) NOT NULL,
+        inviter_user_id VARCHAR(36) NOT NULL,
+        invitee_user_id VARCHAR(36) NOT NULL,
+        status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+        responded_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_invitee_status (invitee_user_id, status),
+        INDEX idx_inviter_status (inviter_user_id, status),
+        INDEX idx_room_name (room_name),
+        INDEX idx_expires_date (expires_date)
+      )`
     }
   ];
 
@@ -438,6 +457,7 @@ async function ensureTablesExist() {
   try {
     await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
     await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
+    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME DEFAULT NULL`);
   } catch (err) {
     // Columns may already exist - that's fine, migration is also available in Admin Panel
   }
@@ -456,6 +476,30 @@ async function ensureTablesExist() {
         expires_date TIMESTAMP NULL,
         INDEX idx_token (token),
         INDEX idx_user_id (user_id)
+      )
+    `);
+  } catch (err) {
+    // Table may already exist
+  }
+
+  // Ensure CoWorkInvite table exists
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS CoWorkInvite (
+        id VARCHAR(36) PRIMARY KEY,
+        room_name VARCHAR(128) NOT NULL,
+        tenant_slug VARCHAR(64) NOT NULL,
+        inviter_user_id VARCHAR(36) NOT NULL,
+        invitee_user_id VARCHAR(36) NOT NULL,
+        status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+        responded_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_invitee_status (invitee_user_id, status),
+        INDEX idx_inviter_status (inviter_user_id, status),
+        INDEX idx_room_name (room_name),
+        INDEX idx_expires_date (expires_date)
       )
     `);
   } catch (err) {

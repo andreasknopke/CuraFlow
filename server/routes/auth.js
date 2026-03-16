@@ -15,6 +15,8 @@ const JITSI_JWT_APP_SECRET = process.env.JITSI_JWT_APP_SECRET;
 const JITSI_JWT_AUDIENCE = process.env.JITSI_JWT_AUDIENCE || 'jitsi';
 const JITSI_JWT_SUB = process.env.JITSI_JWT_SUB;
 const JITSI_JWT_EXPIRY_SECONDS = parseInt(process.env.JITSI_JWT_EXPIRY_SECONDS || '300', 10);
+const COWORK_INVITE_EXPIRY_MINUTES = parseInt(process.env.COWORK_INVITE_EXPIRY_MINUTES || '10', 10);
+const COWORK_ONLINE_WINDOW_SECONDS = parseInt(process.env.COWORK_ONLINE_WINDOW_SECONDS || '120', 10);
 
 function createToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -41,6 +43,50 @@ function parseTenantSlug(allowedTenants) {
   }
 
   return allowedTenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
+}
+
+function parseTenantList(allowedTenants) {
+  if (!allowedTenants) return null;
+
+  try {
+    const parsed = typeof allowedTenants === 'string' ? JSON.parse(allowedTenants) : allowedTenants;
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+  } catch (error) {
+    return null;
+  }
+
+  return null;
+}
+
+function usersShareTenantAccess(firstAllowedTenants, secondAllowedTenants) {
+  const first = parseTenantList(firstAllowedTenants);
+  const second = parseTenantList(secondAllowedTenants);
+
+  if (!first || first.length === 0) return true;
+  if (!second || second.length === 0) return true;
+
+  return first.some((tenantId) => second.includes(tenantId));
+}
+
+function buildCoworkRoomName(tenantSlug) {
+  return `curaflow-support-${tenantSlug}-${crypto.randomUUID().slice(0, 8)}`;
+}
+
+function isUserOnline(lastSeenAt) {
+  if (!lastSeenAt) return false;
+  const lastSeen = new Date(lastSeenAt).getTime();
+  if (Number.isNaN(lastSeen)) return false;
+  return Date.now() - lastSeen <= COWORK_ONLINE_WINDOW_SECONDS * 1000;
+}
+
+async function expireStaleCoworkInvites() {
+  await db.execute(
+    `UPDATE CoWorkInvite
+     SET status = 'expired', responded_date = COALESCE(responded_date, NOW())
+     WHERE status = 'pending' AND expires_date IS NOT NULL AND expires_date < NOW()`
+  );
 }
 
 function createJitsiToken({ roomName, user }) {
@@ -145,7 +191,7 @@ router.post('/login', async (req, res, next) => {
     
     // Update last login
     await db.execute(
-      'UPDATE app_users SET last_login = NOW() WHERE id = ?',
+      'UPDATE app_users SET last_login = NOW(), last_seen_at = NOW() WHERE id = ?',
       [user.id]
     );
     
@@ -278,6 +324,20 @@ router.get('/me', authMiddleware, async (req, res, next) => {
   }
 });
 
+// ============ PRESENCE HEARTBEAT ============
+router.post('/presence', authMiddleware, async (req, res, next) => {
+  try {
+    await db.execute(
+      'UPDATE app_users SET last_seen_at = NOW() WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+
+    res.json({ success: true, lastSeenAt: new Date().toISOString() });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============ JITSI TOKEN (Admin only) ============
 router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
@@ -307,6 +367,355 @@ router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, nex
       roomName,
       tenantSlug,
       expiresAt,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============ COWORK CONTACTS (Admin only) ============
+router.get('/cowork/contacts', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    const [adminRows] = await db.execute(
+      'SELECT id, email, full_name, role, allowed_tenants, last_seen_at FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+
+    if (adminRows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    const adminUser = adminRows[0];
+    const [rows] = await db.execute(
+      `SELECT id, email, full_name, role, allowed_tenants, last_seen_at
+       FROM app_users
+       WHERE is_active = 1 AND id <> ?
+       ORDER BY full_name ASC, email ASC`,
+      [req.user.sub]
+    );
+
+    const contacts = rows
+      .filter((candidate) => usersShareTenantAccess(adminUser.allowed_tenants, candidate.allowed_tenants))
+      .map((candidate) => ({
+        id: candidate.id,
+        email: candidate.email,
+        full_name: candidate.full_name,
+        role: candidate.role,
+        last_seen_at: candidate.last_seen_at,
+        is_online: isUserOnline(candidate.last_seen_at),
+      }));
+
+    res.json(contacts);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============ COWORK INVITES ============
+router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
+  try {
+    await expireStaleCoworkInvites();
+
+    const [incomingRows] = await db.execute(
+      `SELECT ci.*, inviter.full_name AS inviter_name, inviter.email AS inviter_email
+       FROM CoWorkInvite ci
+       INNER JOIN app_users inviter ON inviter.id = ci.inviter_user_id
+       WHERE ci.invitee_user_id = ?
+         AND ci.status IN ('pending', 'accepted')
+         AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
+       ORDER BY ci.created_date DESC
+       LIMIT 10`,
+      [req.user.sub]
+    );
+
+    const [outgoingRows] = await db.execute(
+      `SELECT ci.*, invitee.full_name AS invitee_name, invitee.email AS invitee_email, invitee.last_seen_at AS invitee_last_seen_at
+       FROM CoWorkInvite ci
+       INNER JOIN app_users invitee ON invitee.id = ci.invitee_user_id
+       WHERE ci.inviter_user_id = ?
+         AND ci.status IN ('pending', 'accepted')
+         AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
+       ORDER BY ci.created_date DESC
+       LIMIT 10`,
+      [req.user.sub]
+    );
+
+    res.json({
+      incoming: incomingRows.map((invite) => ({
+        id: invite.id,
+        room_name: invite.room_name,
+        tenant_slug: invite.tenant_slug,
+        status: invite.status,
+        created_date: invite.created_date,
+        responded_date: invite.responded_date,
+        expires_date: invite.expires_date,
+        inviter_name: invite.inviter_name,
+        inviter_email: invite.inviter_email,
+      })),
+      outgoing: outgoingRows.map((invite) => ({
+        id: invite.id,
+        room_name: invite.room_name,
+        tenant_slug: invite.tenant_slug,
+        status: invite.status,
+        created_date: invite.created_date,
+        responded_date: invite.responded_date,
+        expires_date: invite.expires_date,
+        invitee_name: invite.invitee_name,
+        invitee_email: invite.invitee_email,
+        invitee_last_seen_at: invite.invitee_last_seen_at,
+        invitee_is_online: isUserOnline(invite.invitee_last_seen_at),
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
+      return res.status(503).json({
+        error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
+      });
+    }
+
+    const { inviteeUserId } = req.body || {};
+    if (!inviteeUserId) {
+      return res.status(400).json({ error: 'inviteeUserId ist erforderlich' });
+    }
+
+    if (inviteeUserId === req.user.sub) {
+      return res.status(400).json({ error: 'Sie koennen sich nicht selbst einladen' });
+    }
+
+    const [userRows] = await db.execute(
+      `SELECT id, email, full_name, role, allowed_tenants
+       FROM app_users
+       WHERE id IN (?, ?) AND is_active = 1`,
+      [req.user.sub, inviteeUserId]
+    );
+
+    const inviter = userRows.find((row) => row.id === req.user.sub);
+    const invitee = userRows.find((row) => row.id === inviteeUserId);
+
+    if (!inviter || !invitee) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    if (!usersShareTenantAccess(inviter.allowed_tenants, invitee.allowed_tenants)) {
+      return res.status(403).json({ error: 'Der Benutzer liegt ausserhalb Ihres Mandantenkontexts' });
+    }
+
+    await expireStaleCoworkInvites();
+
+    const [existingRows] = await db.execute(
+      `SELECT *
+       FROM CoWorkInvite
+       WHERE inviter_user_id = ?
+         AND invitee_user_id = ?
+         AND status = 'pending'
+         AND (expires_date IS NULL OR expires_date >= NOW())
+       ORDER BY created_date DESC
+       LIMIT 1`,
+      [req.user.sub, inviteeUserId]
+    );
+
+    const invite = existingRows[0] || null;
+    let inviteId = invite?.id;
+    let roomName = invite?.room_name;
+    let tenantSlug = invite?.tenant_slug;
+    let expiresDate = invite?.expires_date;
+
+    if (!invite) {
+      tenantSlug = parseTenantSlug(inviter.allowed_tenants || invitee.allowed_tenants);
+      roomName = buildCoworkRoomName(tenantSlug);
+      inviteId = crypto.randomUUID();
+      expiresDate = new Date(Date.now() + COWORK_INVITE_EXPIRY_MINUTES * 60 * 1000);
+
+      await db.execute(
+        `INSERT INTO CoWorkInvite (
+          id, room_name, tenant_slug, inviter_user_id, invitee_user_id, status, expires_date
+        ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+        [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, expiresDate]
+      );
+    }
+
+    const token = createJitsiToken({ roomName, user: inviter });
+    const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
+
+    res.status(invite ? 200 : 201).json({
+      invite: {
+        id: inviteId,
+        room_name: roomName,
+        tenant_slug: tenantSlug,
+        status: 'pending',
+        expires_date: expiresDate,
+        invitee_name: invitee.full_name,
+        invitee_email: invitee.email,
+      },
+      session: {
+        inviteId,
+        roomName,
+        tenantSlug,
+        token,
+        expiresAt,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res, next) => {
+  try {
+    const { inviteId } = req.params;
+
+    const [rows] = await db.execute(
+      'SELECT id, invitee_user_id, status, expires_date FROM CoWorkInvite WHERE id = ?',
+      [inviteId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+    }
+
+    const invite = rows[0];
+    if (invite.invitee_user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Nur der eingeladene Benutzer kann ablehnen' });
+    }
+
+    if (invite.status === 'expired' || (invite.expires_date && new Date(invite.expires_date) < new Date())) {
+      return res.status(410).json({ error: 'Die Einladung ist bereits abgelaufen' });
+    }
+
+    await db.execute(
+      `UPDATE CoWorkInvite
+       SET status = 'declined', responded_date = NOW()
+       WHERE id = ?`,
+      [inviteId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res, next) => {
+  try {
+    const { inviteId } = req.params;
+
+    const [rows] = await db.execute(
+      'SELECT id, inviter_user_id, status FROM CoWorkInvite WHERE id = ?',
+      [inviteId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+    }
+
+    const invite = rows[0];
+    if (invite.inviter_user_id !== req.user.sub) {
+      return res.status(403).json({ error: 'Nur der Einladende kann abbrechen' });
+    }
+
+    await db.execute(
+      `UPDATE CoWorkInvite
+       SET status = 'cancelled', responded_date = NOW()
+       WHERE id = ? AND status IN ('pending', 'accepted')`,
+      [inviteId]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) => {
+  try {
+    if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
+      return res.status(503).json({
+        error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
+      });
+    }
+
+    await expireStaleCoworkInvites();
+
+    const { inviteId } = req.params;
+    const [inviteRows] = await db.execute(
+      `SELECT ci.*, inviter.full_name AS inviter_name, inviter.email AS inviter_email,
+              invitee.full_name AS invitee_name, invitee.email AS invitee_email
+       FROM CoWorkInvite ci
+       INNER JOIN app_users inviter ON inviter.id = ci.inviter_user_id
+       INNER JOIN app_users invitee ON invitee.id = ci.invitee_user_id
+       WHERE ci.id = ?`,
+      [inviteId]
+    );
+
+    if (inviteRows.length === 0) {
+      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+    }
+
+    const invite = inviteRows[0];
+    const isInviter = invite.inviter_user_id === req.user.sub;
+    const isInvitee = invite.invitee_user_id === req.user.sub;
+
+    if (!isInviter && !isInvitee) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diese Einladung' });
+    }
+
+    if (['declined', 'cancelled', 'expired'].includes(invite.status)) {
+      return res.status(410).json({ error: 'Diese Einladung ist nicht mehr gueltig' });
+    }
+
+    if (invite.expires_date && new Date(invite.expires_date) < new Date()) {
+      await db.execute(
+        `UPDATE CoWorkInvite SET status = 'expired', responded_date = NOW() WHERE id = ?`,
+        [inviteId]
+      );
+      return res.status(410).json({ error: 'Diese Einladung ist abgelaufen' });
+    }
+
+    const [userRows] = await db.execute(
+      'SELECT id, email, full_name, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+
+    if (userRows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    let inviteStatus = invite.status;
+    if (isInvitee && invite.status === 'pending') {
+      inviteStatus = 'accepted';
+      await db.execute(
+        `UPDATE CoWorkInvite
+         SET status = 'accepted', responded_date = NOW()
+         WHERE id = ?`,
+        [inviteId]
+      );
+    }
+
+    await db.execute(
+      'UPDATE app_users SET last_seen_at = NOW() WHERE id = ?',
+      [req.user.sub]
+    );
+
+    const token = createJitsiToken({ roomName: invite.room_name, user: userRows[0] });
+    const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
+
+    res.json({
+      inviteId,
+      roomName: invite.room_name,
+      tenantSlug: invite.tenant_slug,
+      token,
+      expiresAt,
+      inviteStatus,
+      inviterName: invite.inviter_name,
+      inviterEmail: invite.inviter_email,
+      inviteeName: invite.invitee_name,
+      inviteeEmail: invite.invitee_email,
     });
   } catch (error) {
     next(error);

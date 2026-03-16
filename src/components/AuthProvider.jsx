@@ -86,6 +86,30 @@ const JWTAuthProviderInner = ({ children }) => {
         checkAuth();
     }, []);
 
+    useEffect(() => {
+        if (!isAuthenticated || !user) return undefined;
+
+        let cancelled = false;
+
+        const sendPresence = async () => {
+            try {
+                await api.updatePresence();
+            } catch (error) {
+                if (!cancelled) {
+                    console.warn('[Auth] Presence update failed:', error.message);
+                }
+            }
+        };
+
+        sendPresence();
+        const intervalId = window.setInterval(sendPresence, 60000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(intervalId);
+        };
+    }, [isAuthenticated, user?.id]);
+
     const login = async (email, password) => {
         console.log('[Auth] Login started for:', email);
         

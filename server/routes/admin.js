@@ -671,7 +671,19 @@ router.post('/run-migrations', async (req, res, next) => {
       }
     }
 
-    // Migration 4: Create EmailVerification table
+    // Migration 4: Add last_seen_at to app_users
+    try {
+      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME DEFAULT NULL`);
+      results.push({ migration: 'add_last_seen_at', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_DUP_FIELDNAME') {
+        results.push({ migration: 'add_last_seen_at', status: 'skipped', reason: 'Column already exists' });
+      } else {
+        results.push({ migration: 'add_last_seen_at', status: 'error', error: err.message });
+      }
+    }
+
+    // Migration 5: Create EmailVerification table
     try {
       await db.execute(`
         CREATE TABLE IF NOT EXISTS EmailVerification (
@@ -693,6 +705,35 @@ router.post('/run-migrations', async (req, res, next) => {
         results.push({ migration: 'create_email_verification_table', status: 'skipped', reason: 'Table already exists' });
       } else {
         results.push({ migration: 'create_email_verification_table', status: 'error', error: err.message });
+      }
+    }
+
+    // Migration 6: Create CoWorkInvite table
+    try {
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS CoWorkInvite (
+          id VARCHAR(36) PRIMARY KEY,
+          room_name VARCHAR(128) NOT NULL,
+          tenant_slug VARCHAR(64) NOT NULL,
+          inviter_user_id VARCHAR(36) NOT NULL,
+          invitee_user_id VARCHAR(36) NOT NULL,
+          status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+          responded_date TIMESTAMP NULL,
+          expires_date TIMESTAMP NULL,
+          created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          INDEX idx_invitee_status (invitee_user_id, status),
+          INDEX idx_inviter_status (inviter_user_id, status),
+          INDEX idx_room_name (room_name),
+          INDEX idx_expires_date (expires_date)
+        )
+      `);
+      results.push({ migration: 'create_cowork_invite_table', status: 'success' });
+    } catch (err) {
+      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
+        results.push({ migration: 'create_cowork_invite_table', status: 'skipped', reason: 'Table already exists' });
+      } else {
+        results.push({ migration: 'create_cowork_invite_table', status: 'error', error: err.message });
       }
     }
     
@@ -729,6 +770,11 @@ router.get('/migration-status', async (req, res, next) => {
         name: 'add_email_verified', 
         description: 'E-Mail-Verifizierung für Benutzer',
         applied: columnNames.includes('email_verified') && columnNames.includes('email_verified_date')
+      },
+      {
+        name: 'add_last_seen_at',
+        description: 'Praesenz-Zeitstempel fuer CoWork',
+        applied: columnNames.includes('last_seen_at')
       }
     ];
 
@@ -744,6 +790,19 @@ router.get('/migration-status', async (req, res, next) => {
       name: 'create_email_verification_table',
       description: 'E-Mail-Verifizierung & Passwort-Versand Tabelle',
       applied: emailVerificationTableExists
+    });
+
+    let coworkInviteTableExists = false;
+    try {
+      const [tables] = await db.execute(`SHOW TABLES LIKE 'CoWorkInvite'`);
+      coworkInviteTableExists = tables.length > 0;
+    } catch (err) {
+      // ignore
+    }
+    migrations.push({
+      name: 'create_cowork_invite_table',
+      description: 'CoWork-Einladungen fuer Support-Sessions',
+      applied: coworkInviteTableExists
     });
     
     res.json({

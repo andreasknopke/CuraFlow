@@ -114,10 +114,11 @@ npm run build
 ## Schritt 8: Smoke-Test
 
 1. In CuraFlow als Admin anmelden
-2. CoWork öffnen
-3. Zweiten Browser/Inkognito beitreten
-4. Audio, Video und Screen-Sharing testen
-5. Netzwerkwechsel (WLAN/LTE) kurz prüfen
+2. CoWork oeffnen und einen online Nutzer einladen
+3. Zweiten Browser/Inkognito als eingeladener Nutzer in CuraFlow anmelden
+4. Einladung im Widget annehmen und dem gleichen Raum beitreten
+5. Audio, Video und Screen-Sharing testen
+6. Netzwerkwechsel (WLAN/LTE) kurz pruefen
 
 ## Betrieb & Monitoring
 
@@ -169,5 +170,6 @@ VITE_JITSI_BASE_URL=https://meet.jit.si
 
 - TURN-Server ergänzen für restriktive Netze
 - Authentifizierung (JWT/Lobby) aktivieren
+- Polling-basierte Einladungen spaeter bei Bedarf durch WebSocket/SSE ersetzen
 - Separate JVB-Knoten für höhere Last
 - Monitoring mit Prometheus/Grafana

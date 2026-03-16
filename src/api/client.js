@@ -85,8 +85,47 @@ class APIClient {
     return this.request('/api/auth/me');
   }
 
+  async updatePresence() {
+    return this.request('/api/auth/presence', {
+      method: 'POST',
+    });
+  }
+
   async getJitsiToken() {
     return this.request('/api/auth/jitsi-token');
+  }
+
+  async listCoworkContacts() {
+    return this.request('/api/auth/cowork/contacts');
+  }
+
+  async listCoworkInvites() {
+    return this.request('/api/auth/cowork/invites');
+  }
+
+  async sendCoworkInvite(inviteeUserId) {
+    return this.request('/api/auth/cowork/invites', {
+      method: 'POST',
+      body: JSON.stringify({ inviteeUserId }),
+    });
+  }
+
+  async declineCoworkInvite(inviteId) {
+    return this.request(`/api/auth/cowork/invites/${inviteId}/decline`, {
+      method: 'POST',
+    });
+  }
+
+  async cancelCoworkInvite(inviteId) {
+    return this.request(`/api/auth/cowork/invites/${inviteId}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  async joinCoworkInvite(inviteId) {
+    return this.request(`/api/auth/cowork/session/${inviteId}`, {
+      method: 'POST',
+    });
   }
 
   async updateMe(updates) {

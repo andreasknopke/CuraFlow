@@ -202,6 +202,8 @@ Nach dem Start:
 | `NODE_ENV` | ☐ | `development` oder `production` |
 | `VITE_API_URL` | ✅ (FE) | URL des Backends (für Frontend-Build) |
 | `VITE_JITSI_BASE_URL` | ☐ (FE) | Basis-URL für CoWork (Jitsi), z.B. `https://meet.jit.si` oder `https://jitsi.eure-domain.tld` |
+| `COWORK_INVITE_EXPIRY_MINUTES` | ☐ | Gültigkeit einer CoWork-Einladung in Minuten (Standard: `10`) |
+| `COWORK_ONLINE_WINDOW_SECONDS` | ☐ | Ab wann ein Benutzer in CoWork als offline gilt (Standard: `120`) |
 | `SMTP_HOST` | ☐ | SMTP-Server für E-Mails |
 | `SMTP_PORT` | ☐ | SMTP-Port |
 | `SMTP_USER` | ☐ | SMTP-Benutzername |
@@ -230,6 +232,12 @@ VITE_JITSI_BASE_URL=https://jitsi.eure-domain.tld
 3. Frontend neu bauen/deployen (`npm run build`)
 
 Hinweis: `VITE_JITSI_BASE_URL` ohne Slash am Ende angeben (ein trailing Slash wird zur Laufzeit automatisch entfernt).
+
+Mit dem aktuellen CoWork-MVP gilt zusaetzlich:
+
+1. Nach Backend-Deployment Server einmal neu starten oder im Adminbereich die Migrationen ausfuehren.
+2. Admins koennen im CoWork-Widget online Nutzer direkt einladen.
+3. Eingeladene Nutzer sehen die Einladung in CuraFlow und treten ohne Link-Kopieren bei.
 
 ---
 
