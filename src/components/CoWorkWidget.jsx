@@ -56,6 +56,10 @@ function formatExpiry(expiresDate) {
   }).format(new Date(expiresDate));
 }
 
+function getInviteToastId(inviteId) {
+  return `cowork-invite-${inviteId}`;
+}
+
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
@@ -69,6 +73,7 @@ export default function CoWorkWidget() {
   const [activeSession, setActiveSession] = useState(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [hiddenInviteIds, setHiddenInviteIds] = useState([]);
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);
@@ -104,7 +109,19 @@ export default function CoWorkWidget() {
     refetchInterval: isAuthenticated && isAdmin && isOpen ? 15000 : false,
   });
 
-  const incomingInvites = invitesQuery.data?.incoming || [];
+  const hideInviteLocally = useCallback((inviteId) => {
+    if (!inviteId) return;
+    setHiddenInviteIds((currentIds) => (
+      currentIds.includes(inviteId) ? currentIds : [...currentIds, inviteId]
+    ));
+  }, []);
+
+  const showInviteLocally = useCallback((inviteId) => {
+    if (!inviteId) return;
+    setHiddenInviteIds((currentIds) => currentIds.filter((currentId) => currentId !== inviteId));
+  }, []);
+
+  const incomingInvites = (invitesQuery.data?.incoming || []).filter((invite) => !hiddenInviteIds.includes(invite.id));
   const outgoingInvites = invitesQuery.data?.outgoing || [];
   const currentIncomingInvite = incomingInvites[0] || null;
   const sortedContacts = [...(contactsQuery.data || [])].sort((left, right) => {
@@ -170,6 +187,11 @@ export default function CoWorkWidget() {
   }, [scheduleHide, clearHideTimer]);
 
   useEffect(() => {
+    const activeIncomingIds = new Set((invitesQuery.data?.incoming || []).map((invite) => invite.id));
+    setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
+  }, [invitesQuery.data?.incoming]);
+
+  useEffect(() => {
     const onMouseMove = (e) => {
       const nearRightEdge = window.innerWidth - e.clientX <= 140;
       const nearBottomEdge = window.innerHeight - e.clientY <= 140;
@@ -183,12 +205,13 @@ export default function CoWorkWidget() {
   }, [scheduleHide]);
 
   useEffect(() => {
-    if (!currentIncomingInvite || announcedInviteIdsRef.current.has(currentIncomingInvite.id)) return;
+    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || announcedInviteIdsRef.current.has(currentIncomingInvite.id)) return;
 
     announcedInviteIdsRef.current.add(currentIncomingInvite.id);
     setIsTriggerHidden(false);
     setIsOpen(true);
     toast.info(`Support-Einladung von ${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}`, {
+      id: getInviteToastId(currentIncomingInvite.id),
       duration: 15000,
     });
   }, [currentIncomingInvite]);
@@ -202,7 +225,7 @@ export default function CoWorkWidget() {
   }, [invitesQuery.error]);
 
   useEffect(() => {
-    if (!currentIncomingInvite || typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || typeof window === 'undefined' || typeof Notification === 'undefined') return;
     if (document.visibilityState === 'visible') return;
     if (Notification.permission !== 'granted') return;
 
@@ -262,6 +285,7 @@ export default function CoWorkWidget() {
 
     try {
       const session = await api.joinCoworkInvite(inviteId);
+      toast.dismiss(getInviteToastId(inviteId));
       setActiveSession(session);
       setIsOpen(true);
       await refreshCoworkData();
@@ -275,6 +299,8 @@ export default function CoWorkWidget() {
 
   const handleDeclineInvite = useCallback(async (inviteId) => {
     setBusyId(inviteId);
+    hideInviteLocally(inviteId);
+    toast.dismiss(getInviteToastId(inviteId));
     try {
       await api.declineCoworkInvite(inviteId);
       toast.success('Einladung abgelehnt');
@@ -283,14 +309,17 @@ export default function CoWorkWidget() {
       }
       await refreshCoworkData();
     } catch (error) {
+      showInviteLocally(inviteId);
       toast.error(error.message || 'Einladung konnte nicht abgelehnt werden');
     } finally {
       setBusyId(null);
     }
-  }, [activeSession?.inviteId, refreshCoworkData]);
+  }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
   const handleCancelInvite = useCallback(async (inviteId) => {
     setBusyId(inviteId);
+    hideInviteLocally(inviteId);
+    toast.dismiss(getInviteToastId(inviteId));
     try {
       await api.cancelCoworkInvite(inviteId);
       toast.success('Einladung abgebrochen');
@@ -299,11 +328,12 @@ export default function CoWorkWidget() {
       }
       await refreshCoworkData();
     } catch (error) {
+      showInviteLocally(inviteId);
       toast.error(error.message || 'Einladung konnte nicht abgebrochen werden');
     } finally {
       setBusyId(null);
     }
-  }, [activeSession?.inviteId, refreshCoworkData]);
+  }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
   const handleCloseSession = useCallback(async () => {
     const inviteId = activeSession?.inviteId;
@@ -315,17 +345,20 @@ export default function CoWorkWidget() {
     }
 
     setBusyId(inviteId);
+    hideInviteLocally(inviteId);
+    toast.dismiss(getInviteToastId(inviteId));
     try {
       await api.cancelCoworkInvite(inviteId);
       setActiveSession(null);
       setIsOpen(false);
       await refreshCoworkData();
     } catch (error) {
+      showInviteLocally(inviteId);
       toast.error(error.message || 'CoWork-Session konnte nicht beendet werden');
     } finally {
       setBusyId(null);
     }
-  }, [activeSession?.inviteId, refreshCoworkData]);
+  }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
   const shouldRender = isAuthenticated && (isAdmin || !!currentIncomingInvite || !!activeSession);
   if (!shouldRender) return null;
