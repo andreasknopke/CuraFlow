@@ -57,6 +57,30 @@ export default function MasterAuthProvider({ children }) {
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    if (!isAuthenticated || !user) return undefined;
+
+    let cancelled = false;
+
+    const sendPresence = async () => {
+      try {
+        await api.updatePresence();
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('[MasterAuth] Presence update failed:', error.message);
+        }
+      }
+    };
+
+    sendPresence();
+    const intervalId = window.setInterval(sendPresence, 60000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isAuthenticated, user?.id]);
+
   const login = async (email, password) => {
     localStorage.removeItem(DB_TOKEN_KEY);
     localStorage.setItem(DB_TOKEN_ENABLED_KEY, 'false');

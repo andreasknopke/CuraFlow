@@ -4,6 +4,7 @@ import { Video, VideoOff, X, Users, ExternalLink, Loader2, PhoneCall, PhoneIncom
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
+import { useMasterAuth } from '@/master/MasterAuthProvider';
 
 /**
  * Leitet den ersten Mandanten-Slug aus dem allowed_tenants-Feld ab.
@@ -56,7 +57,10 @@ function formatExpiry(expiresDate) {
 }
 
 export default function CoWorkWidget() {
-  const { user, isAuthenticated } = useAuth();
+  const appAuth = useAuth();
+  const masterAuth = useMasterAuth();
+  const authState = masterAuth?.isAuthenticated ? masterAuth : appAuth;
+  const { user, isAuthenticated } = authState;
   const isAdmin = user?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);

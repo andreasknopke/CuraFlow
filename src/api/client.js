@@ -96,11 +96,15 @@ class APIClient {
   }
 
   async listCoworkContacts() {
-    return this.request('/api/auth/cowork/contacts');
+    return this.request(`/api/auth/cowork/contacts?_=${Date.now()}`, {
+      cache: 'no-store',
+    });
   }
 
   async listCoworkInvites() {
-    return this.request('/api/auth/cowork/invites');
+    return this.request(`/api/auth/cowork/invites?_=${Date.now()}`, {
+      cache: 'no-store',
+    });
   }
 
   async sendCoworkInvite(inviteeUserId) {

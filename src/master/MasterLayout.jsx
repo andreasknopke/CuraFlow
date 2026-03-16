@@ -7,6 +7,7 @@ import {
   Users, CalendarX2, Clock, CalendarDays,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import CoWorkWidget from '@/components/CoWorkWidget';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -96,6 +97,8 @@ export default function MasterLayout({ children }) {
           {children}
         </div>
       </main>
+
+      <CoWorkWidget />
     </div>
   );
 }

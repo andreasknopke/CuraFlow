@@ -380,6 +380,8 @@ router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, nex
 // ============ COWORK CONTACTS (Admin only) ============
 router.get('/cowork/contacts', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+
     const [adminRows] = await db.execute(
       'SELECT id, email, full_name, role, allowed_tenants, last_seen_at FROM app_users WHERE id = ? AND is_active = 1',
       [req.user.sub]
@@ -419,6 +421,8 @@ router.get('/cowork/contacts', authMiddleware, adminMiddleware, async (req, res,
 // ============ COWORK INVITES ============
 router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
   try {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+
     await expireStaleCoworkInvites();
 
     const [incomingRows] = await db.execute(
