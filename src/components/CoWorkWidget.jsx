@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Video, VideoOff, X, Users, ExternalLink, Loader2, PhoneCall, PhoneIncoming, PhoneOff } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Video, VideoOff, X, Users, Loader2, PhoneCall, PhoneIncoming, PhoneOff, Maximize2, Minimize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
@@ -63,11 +63,13 @@ function getInviteToastId(inviteId) {
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
+  const queryClient = useQueryClient();
   const authState = masterAuth?.isAuthenticated ? masterAuth : appAuth;
   const { user, isAuthenticated } = authState;
   const isAdmin = user?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
   const [activeSession, setActiveSession] = useState(null);
@@ -190,6 +192,18 @@ export default function CoWorkWidget() {
     const activeIncomingIds = new Set((invitesQuery.data?.incoming || []).map((invite) => invite.id));
     setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
   }, [invitesQuery.data?.incoming]);
+
+  useEffect(() => {
+    if (!activeSession) return undefined;
+
+    const syncInterval = window.setInterval(() => {
+      queryClient.refetchQueries({ type: 'active' });
+    }, 10000);
+
+    return () => {
+      window.clearInterval(syncInterval);
+    };
+  }, [activeSession, queryClient]);
 
   useEffect(() => {
     const onMouseMove = (e) => {
@@ -340,6 +354,7 @@ export default function CoWorkWidget() {
 
     if (!inviteId) {
       setActiveSession(null);
+      setIsExpanded(false);
       setIsOpen(false);
       return;
     }
@@ -350,6 +365,7 @@ export default function CoWorkWidget() {
     try {
       await api.cancelCoworkInvite(inviteId);
       setActiveSession(null);
+      setIsExpanded(false);
       setIsOpen(false);
       await refreshCoworkData();
     } catch (error) {
@@ -367,9 +383,12 @@ export default function CoWorkWidget() {
   const isAcceptedIncomingInvite = currentIncomingInvite?.status === 'accepted';
 
   /** @type {React.CSSProperties} */
-  const panelStyle = position.x !== null
-    ? { position: 'fixed', left: position.x, top: position.y, bottom: 'auto', right: 'auto' }
-    : { position: 'fixed', bottom: 80, right: 20 };
+  const panelStyle = isExpanded
+    ? { position: 'fixed', top: 20, right: 20, bottom: 20, left: 20 }
+    : position.x !== null
+      ? { position: 'fixed', left: position.x, top: position.y, bottom: 'auto', right: 'auto' }
+      : { position: 'fixed', bottom: 80, right: 20 };
+  const sessionHeight = isExpanded ? '100%' : 360;
 
   const triggerTone = currentIncomingInvite
     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -444,24 +463,38 @@ export default function CoWorkWidget() {
       {isOpen && (
         <div
           ref={panelRef}
-          style={{ ...panelStyle, zIndex: 9999, width: 560, maxWidth: 'calc(100vw - 32px)' }}
+          style={{
+            ...panelStyle,
+            zIndex: 9999,
+            width: isExpanded ? 'auto' : 560,
+            maxWidth: isExpanded ? 'none' : 'calc(100vw - 32px)',
+          }}
           className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
         >
           {/* Header – Drag-Handle */}
           <div
-            className="flex items-center justify-between px-4 py-3 bg-indigo-600 text-white cursor-move select-none"
-            onMouseDown={onMouseDown}
+            className={`flex items-center justify-between px-4 py-3 bg-indigo-600 text-white select-none ${isExpanded ? 'cursor-default' : 'cursor-move'}`}
+            onMouseDown={isExpanded ? undefined : onMouseDown}
           >
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4" />
               <span className="font-semibold text-sm">CoWork Support - {tenantSlug}</span>
             </div>
-            <button
-              onClick={() => { void handleCloseSession(); }}
-              className="rounded-full p-1 hover:bg-indigo-500 transition-colors"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setIsExpanded((currentValue) => !currentValue)}
+                className="rounded-full p-1 hover:bg-indigo-500 transition-colors"
+                title={isExpanded ? 'Fenster verkleinern' : 'Fenster vergroessern'}
+              >
+                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={() => { void handleCloseSession(); }}
+                className="rounded-full p-1 hover:bg-indigo-500 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* Raum-Info */}
@@ -469,20 +502,14 @@ export default function CoWorkWidget() {
             <span className="text-xs text-indigo-700 flex-1 truncate">
               Geschuetzter Raum: <strong>{activeRoomName || 'noch nicht gestartet'}</strong>
             </span>
-            <a
-              href={jitsiUrl || undefined}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Im Browser öffnen"
-              aria-disabled={!jitsiUrl}
-              className={
-                `shrink-0 p-1 rounded transition-colors ${jitsiUrl
-                  ? 'text-indigo-500 hover:text-indigo-800 hover:bg-indigo-100'
-                  : 'text-slate-300 pointer-events-none'}`
-              }
+            <button
+              type="button"
+              onClick={() => setIsExpanded((currentValue) => !currentValue)}
+              className="shrink-0 rounded p-1 text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-800"
+              title={isExpanded ? 'Fenster verkleinern' : 'Fenster vergroessern'}
             >
-              <ExternalLink className="h-3 w-3" />
-            </a>
+              {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            </button>
           </div>
 
           {currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id && (
@@ -614,7 +641,7 @@ export default function CoWorkWidget() {
 
           {/* Jitsi iFrame */}
           {isLoadingSession ? (
-            <div className="flex h-[360px] items-center justify-center bg-slate-50 text-slate-600">
+            <div className="flex min-h-[360px] items-center justify-center bg-slate-50 text-slate-600" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
               <div className="flex items-center gap-2 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Jitsi-Session wird vorbereitet...
@@ -624,11 +651,11 @@ export default function CoWorkWidget() {
             <iframe
               src={jitsiUrl}
               allow="camera; microphone; display-capture; fullscreen; autoplay"
-              style={{ width: '100%', height: 360, border: 'none', display: 'block' }}
+              style={{ width: '100%', height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto', border: 'none', display: 'block' }}
               title="CoWork-Session"
             />
           ) : (
-            <div className="flex h-[360px] items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600">
+            <div className="flex min-h-[360px] items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
               {isAdmin
                 ? 'Waehlen Sie einen Nutzer fuer die Einladung aus oder oeffnen Sie einen allgemeinen Support-Raum.'
                 : 'Es liegt aktuell keine aktive CoWork-Session vor.'}
