@@ -84,8 +84,8 @@ function isUserOnline(lastSeenAt) {
 async function expireStaleCoworkInvites() {
   await db.execute(
     `UPDATE CoWorkInvite
-     SET status = 'expired', responded_date = COALESCE(responded_date, NOW())
-     WHERE status = 'pending' AND expires_date IS NOT NULL AND expires_date < NOW()`
+     SET status = 'expired', responded_date = COALESCE(responded_date, UTC_TIMESTAMP())
+     WHERE status = 'pending' AND expires_date IS NOT NULL AND expires_date < UTC_TIMESTAMP()`
   );
 }
 
@@ -431,7 +431,7 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
        INNER JOIN app_users inviter ON inviter.id COLLATE utf8mb4_unicode_ci = ci.inviter_user_id COLLATE utf8mb4_unicode_ci
        WHERE ${uuidCompareSql('ci.invitee_user_id')}
          AND ci.status IN ('pending', 'accepted')
-         AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
+         AND (ci.expires_date IS NULL OR ci.expires_date >= UTC_TIMESTAMP())
        ORDER BY ci.created_date DESC
        LIMIT 10`,
       [req.user.sub]
@@ -443,7 +443,7 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
        INNER JOIN app_users invitee ON invitee.id COLLATE utf8mb4_unicode_ci = ci.invitee_user_id COLLATE utf8mb4_unicode_ci
        WHERE ${uuidCompareSql('ci.inviter_user_id')}
          AND ci.status IN ('pending', 'accepted')
-         AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
+         AND (ci.expires_date IS NULL OR ci.expires_date >= UTC_TIMESTAMP())
        ORDER BY ci.created_date DESC
        LIMIT 10`,
       [req.user.sub]
@@ -523,24 +523,23 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
 
     await db.execute(
       `UPDATE CoWorkInvite
-       SET status = 'cancelled', responded_date = NOW()
+       SET status = 'cancelled', responded_date = UTC_TIMESTAMP()
        WHERE ${uuidCompareSql('inviter_user_id')}
          AND ${uuidCompareSql('invitee_user_id')}
          AND status = 'pending'
-         AND (expires_date IS NULL OR expires_date >= NOW())`,
+         AND (expires_date IS NULL OR expires_date >= UTC_TIMESTAMP())`,
       [req.user.sub, inviteeUserId]
     );
 
     const tenantSlug = parseTenantSlug(inviter.allowed_tenants || invitee.allowed_tenants);
     const roomName = buildCoworkRoomName(tenantSlug);
     const inviteId = crypto.randomUUID();
-    const expiresDate = new Date(Date.now() + COWORK_INVITE_EXPIRY_MINUTES * 60 * 1000);
 
     await db.execute(
       `INSERT INTO CoWorkInvite (
         id, room_name, tenant_slug, inviter_user_id, invitee_user_id, status, expires_date
-      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
-      [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, expiresDate]
+      ) VALUES (?, ?, ?, ?, ?, 'pending', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE))`,
+      [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, COWORK_INVITE_EXPIRY_MINUTES]
     );
 
     const token = createJitsiToken({ roomName, user: inviter });
@@ -552,7 +551,7 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
         room_name: roomName,
         tenant_slug: tenantSlug,
         status: 'pending',
-        expires_date: expiresDate,
+        expires_date: new Date(Date.now() + COWORK_INVITE_EXPIRY_MINUTES * 60 * 1000),
         invitee_name: invitee.full_name,
         invitee_email: invitee.email,
       },
@@ -589,14 +588,16 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
       return res.status(403).json({ error: 'Nur der eingeladene Benutzer kann ablehnen' });
     }
 
-    if (invite.status === 'expired' || (invite.expires_date && new Date(invite.expires_date) < new Date())) {
+    if (invite.status === 'expired') {
       return res.status(410).json({ error: 'Die Einladung ist bereits abgelaufen' });
     }
 
     await db.execute(
       `UPDATE CoWorkInvite
-       SET status = 'declined', responded_date = NOW()
-       WHERE id = ?`,
+       SET status = 'declined', responded_date = UTC_TIMESTAMP()
+       WHERE ${uuidCompareSql('id')}
+         AND status = 'pending'
+         AND (expires_date IS NULL OR expires_date >= UTC_TIMESTAMP())`,
       [inviteId]
     );
 
@@ -628,8 +629,8 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
 
     await db.execute(
       `UPDATE CoWorkInvite
-       SET status = 'cancelled', responded_date = NOW()
-       WHERE id = ? AND status IN ('pending', 'accepted')`,
+       SET status = 'cancelled', responded_date = UTC_TIMESTAMP()
+       WHERE ${uuidCompareSql('id')} AND status IN ('pending', 'accepted')`,
       [inviteId]
     );
 
@@ -676,9 +677,9 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
       return res.status(410).json({ error: 'Diese Einladung ist nicht mehr gueltig' });
     }
 
-    if (invite.expires_date && new Date(invite.expires_date) < new Date()) {
+    if (invite.expires_date && new Date(invite.expires_date).getTime() < Date.now()) {
       await db.execute(
-        `UPDATE CoWorkInvite SET status = 'expired', responded_date = NOW() WHERE id = ?`,
+        `UPDATE CoWorkInvite SET status = 'expired', responded_date = UTC_TIMESTAMP() WHERE ${uuidCompareSql('id')}`,
         [inviteId]
       );
       return res.status(410).json({ error: 'Diese Einladung ist abgelaufen' });
@@ -698,8 +699,8 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
       inviteStatus = 'accepted';
       await db.execute(
         `UPDATE CoWorkInvite
-         SET status = 'accepted', responded_date = NOW()
-         WHERE id = ?`,
+         SET status = 'accepted', responded_date = UTC_TIMESTAMP()
+         WHERE ${uuidCompareSql('id')}`,
         [inviteId]
       );
     }

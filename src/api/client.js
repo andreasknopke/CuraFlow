@@ -10,6 +10,10 @@ const TOKEN_KEY = 'radioplan_jwt_token';
 const DB_TOKEN_KEY = 'db_credentials';
 const DB_TOKEN_ENABLED_KEY = 'db_token_enabled';
 
+function shouldAttachDbToken(endpoint) {
+  return !endpoint.startsWith('/api/auth/');
+}
+
 class APIClient {
   constructor() {
     this.baseURL = API_URL;
@@ -36,7 +40,7 @@ class APIClient {
 
   async request(endpoint, options = {}) {
     const token = this.getToken();
-    const dbToken = this.getDbToken();
+    const dbToken = shouldAttachDbToken(endpoint) ? this.getDbToken() : null;
     
     const headers = {
       'Content-Type': 'application/json',
