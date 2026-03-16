@@ -70,6 +70,7 @@ export default function CoWorkWidget() {
   const panelRef = useRef(null);
   const hideTimerRef = useRef(null);
   const announcedInviteIdsRef = useRef(new Set());
+  const lastInviteErrorRef = useRef(null);
 
   const tenantSlug = parseTenantSlug(user?.allowed_tenants);
   const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
@@ -87,7 +88,9 @@ export default function CoWorkWidget() {
     queryKey: ['coworkInvites'],
     queryFn: () => api.listCoworkInvites(),
     enabled: isAuthenticated,
-    refetchInterval: isAuthenticated ? 10000 : false,
+    refetchInterval: isAuthenticated ? 3000 : false,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 
   const contactsQuery = useQuery({
@@ -186,6 +189,35 @@ export default function CoWorkWidget() {
     });
   }, [currentIncomingInvite]);
 
+  useEffect(() => {
+    const message = invitesQuery.error?.message || null;
+    if (!message || lastInviteErrorRef.current === message) return;
+
+    lastInviteErrorRef.current = message;
+    toast.error(`CoWork-Einladungen konnten nicht geladen werden: ${message}`);
+  }, [invitesQuery.error]);
+
+  useEffect(() => {
+    if (!currentIncomingInvite || typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (document.visibilityState === 'visible') return;
+    if (Notification.permission !== 'granted') return;
+
+    const notification = new Notification('CuraFlow Support-Einladung', {
+      body: `${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email} hat Sie eingeladen.`,
+      tag: `cowork-invite-${currentIncomingInvite.id}`,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+      setIsOpen(true);
+      notification.close();
+    };
+
+    return () => {
+      notification.close();
+    };
+  }, [currentIncomingInvite]);
+
   const handleOpenDefaultRoom = useCallback(async () => {
     setBusyId('default-room');
     setIsLoadingSession(true);
@@ -272,6 +304,8 @@ export default function CoWorkWidget() {
   const shouldRender = isAuthenticated && (isAdmin || !!currentIncomingInvite || !!activeSession);
   if (!shouldRender) return null;
 
+  const shouldShowIncomingPrompt = !!currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id;
+
   /** @type {React.CSSProperties} */
   const panelStyle = position.x !== null
     ? { position: 'fixed', left: position.x, top: position.y, bottom: 'auto', right: 'auto' }
@@ -285,6 +319,42 @@ export default function CoWorkWidget() {
 
   return (
     <>
+      {shouldShowIncomingPrompt && (
+        <div className="fixed inset-x-4 top-20 z-[10000] mx-auto max-w-md rounded-2xl border border-emerald-200 bg-white p-4 shadow-2xl">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
+              <PhoneIncoming className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-slate-900">
+                Support-Einladung von {currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                Raum {currentIncomingInvite.room_name} · gueltig bis {formatExpiry(currentIncomingInvite.expires_date)}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={() => handleJoinInvite(currentIncomingInvite.id)}
+              disabled={busyId === currentIncomingInvite.id || isLoadingSession}
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busyId === currentIncomingInvite.id && isLoadingSession ? <Loader2 className="h-3 w-3 animate-spin" /> : <PhoneCall className="h-3 w-3" />}
+              Beitreten
+            </button>
+            <button
+              onClick={() => handleDeclineInvite(currentIncomingInvite.id)}
+              disabled={busyId === currentIncomingInvite.id}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <PhoneOff className="h-3 w-3" />
+              Ablehnen
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Floating-Toggle-Button */}
       <button
         onClick={() => {
@@ -359,7 +429,7 @@ export default function CoWorkWidget() {
             </a>
           </div>
 
-          {currentIncomingInvite && !activeSession && (
+          {currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id && (
             <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-3">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
