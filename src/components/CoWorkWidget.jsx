@@ -305,10 +305,33 @@ export default function CoWorkWidget() {
     }
   }, [activeSession?.inviteId, refreshCoworkData]);
 
+  const handleCloseSession = useCallback(async () => {
+    const inviteId = activeSession?.inviteId;
+
+    if (!inviteId) {
+      setActiveSession(null);
+      setIsOpen(false);
+      return;
+    }
+
+    setBusyId(inviteId);
+    try {
+      await api.cancelCoworkInvite(inviteId);
+      setActiveSession(null);
+      setIsOpen(false);
+      await refreshCoworkData();
+    } catch (error) {
+      toast.error(error.message || 'CoWork-Session konnte nicht beendet werden');
+    } finally {
+      setBusyId(null);
+    }
+  }, [activeSession?.inviteId, refreshCoworkData]);
+
   const shouldRender = isAuthenticated && (isAdmin || !!currentIncomingInvite || !!activeSession);
   if (!shouldRender) return null;
 
   const shouldShowIncomingPrompt = !!currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id;
+  const isAcceptedIncomingInvite = currentIncomingInvite?.status === 'accepted';
 
   /** @type {React.CSSProperties} */
   const panelStyle = position.x !== null
@@ -348,12 +371,12 @@ export default function CoWorkWidget() {
               Beitreten
             </button>
             <button
-              onClick={() => handleDeclineInvite(currentIncomingInvite.id)}
+              onClick={() => (isAcceptedIncomingInvite ? handleCancelInvite(currentIncomingInvite.id) : handleDeclineInvite(currentIncomingInvite.id))}
               disabled={busyId === currentIncomingInvite.id}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <PhoneOff className="h-3 w-3" />
-              Ablehnen
+              {isAcceptedIncomingInvite ? 'Entfernen' : 'Ablehnen'}
             </button>
           </div>
         </div>
@@ -362,13 +385,12 @@ export default function CoWorkWidget() {
       {/* Floating-Toggle-Button */}
       <button
         onClick={() => {
-          setIsOpen((v) => {
-            const nextOpen = !v;
-            if (!nextOpen) {
-              setActiveSession(null);
-            }
-            return nextOpen;
-          });
+          if (isOpen) {
+            void handleCloseSession();
+            return;
+          }
+
+          setIsOpen(true);
           setIsTriggerHidden(false);
         }}
         title={currentIncomingInvite ? 'Support-Einladung oeffnen' : (isOpen ? 'CoWork beenden' : 'CoWork starten')}
@@ -402,10 +424,7 @@ export default function CoWorkWidget() {
               <span className="font-semibold text-sm">CoWork Support - {tenantSlug}</span>
             </div>
             <button
-              onClick={() => {
-                setActiveSession(null);
-                setIsOpen(false);
-              }}
+              onClick={() => { void handleCloseSession(); }}
               className="rounded-full p-1 hover:bg-indigo-500 transition-colors"
             >
               <X className="h-4 w-4" />
@@ -459,12 +478,12 @@ export default function CoWorkWidget() {
                   Beitreten
                 </button>
                 <button
-                  onClick={() => handleDeclineInvite(currentIncomingInvite.id)}
+                  onClick={() => (isAcceptedIncomingInvite ? handleCancelInvite(currentIncomingInvite.id) : handleDeclineInvite(currentIncomingInvite.id))}
                   disabled={busyId === currentIncomingInvite.id}
                   className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 px-3 py-2 text-xs font-medium text-emerald-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <PhoneOff className="h-3 w-3" />
-                  Ablehnen
+                  {isAcceptedIncomingInvite ? 'Entfernen' : 'Ablehnen'}
                 </button>
               </div>
             </div>

@@ -612,7 +612,7 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
     const { inviteId } = req.params;
 
     const [rows] = await db.execute(
-      `SELECT id, inviter_user_id, status
+      `SELECT id, inviter_user_id, invitee_user_id, status
        FROM CoWorkInvite
        WHERE ${uuidCompareSql('id')}`,
       [inviteId]
@@ -623,8 +623,9 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
     }
 
     const invite = rows[0];
-    if (invite.inviter_user_id !== req.user.sub) {
-      return res.status(403).json({ error: 'Nur der Einladende kann abbrechen' });
+    const isParticipant = invite.inviter_user_id === req.user.sub || invite.invitee_user_id === req.user.sub;
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Nur Teilnehmer dieser CoWork-Einladung koennen sie beenden' });
     }
 
     await db.execute(
