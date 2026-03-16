@@ -89,6 +89,10 @@ async function expireStaleCoworkInvites() {
   );
 }
 
+function uuidCompareSql(columnName) {
+  return `${columnName} COLLATE utf8mb4_unicode_ci = CAST(? AS CHAR(36) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci`;
+}
+
 function createJitsiToken({ roomName, user }) {
   const now = Math.floor(Date.now() / 1000);
 
@@ -420,8 +424,8 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
     const [incomingRows] = await db.execute(
       `SELECT ci.*, inviter.full_name AS inviter_name, inviter.email AS inviter_email
        FROM CoWorkInvite ci
-       INNER JOIN app_users inviter ON inviter.id = ci.inviter_user_id
-       WHERE ci.invitee_user_id = ?
+       INNER JOIN app_users inviter ON inviter.id COLLATE utf8mb4_unicode_ci = ci.inviter_user_id COLLATE utf8mb4_unicode_ci
+       WHERE ${uuidCompareSql('ci.invitee_user_id')}
          AND ci.status IN ('pending', 'accepted')
          AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
        ORDER BY ci.created_date DESC
@@ -432,8 +436,8 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
     const [outgoingRows] = await db.execute(
       `SELECT ci.*, invitee.full_name AS invitee_name, invitee.email AS invitee_email, invitee.last_seen_at AS invitee_last_seen_at
        FROM CoWorkInvite ci
-       INNER JOIN app_users invitee ON invitee.id = ci.invitee_user_id
-       WHERE ci.inviter_user_id = ?
+       INNER JOIN app_users invitee ON invitee.id COLLATE utf8mb4_unicode_ci = ci.invitee_user_id COLLATE utf8mb4_unicode_ci
+       WHERE ${uuidCompareSql('ci.inviter_user_id')}
          AND ci.status IN ('pending', 'accepted')
          AND (ci.expires_date IS NULL OR ci.expires_date >= NOW())
        ORDER BY ci.created_date DESC
@@ -516,8 +520,8 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
     const [existingRows] = await db.execute(
       `SELECT *
        FROM CoWorkInvite
-       WHERE inviter_user_id = ?
-         AND invitee_user_id = ?
+       WHERE ${uuidCompareSql('inviter_user_id')}
+         AND ${uuidCompareSql('invitee_user_id')}
          AND status = 'pending'
          AND (expires_date IS NULL OR expires_date >= NOW())
        ORDER BY created_date DESC
@@ -576,7 +580,9 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
     const { inviteId } = req.params;
 
     const [rows] = await db.execute(
-      'SELECT id, invitee_user_id, status, expires_date FROM CoWorkInvite WHERE id = ?',
+      `SELECT id, invitee_user_id, status, expires_date
+       FROM CoWorkInvite
+       WHERE ${uuidCompareSql('id')}`,
       [inviteId]
     );
 
@@ -611,7 +617,9 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
     const { inviteId } = req.params;
 
     const [rows] = await db.execute(
-      'SELECT id, inviter_user_id, status FROM CoWorkInvite WHERE id = ?',
+      `SELECT id, inviter_user_id, status
+       FROM CoWorkInvite
+       WHERE ${uuidCompareSql('id')}`,
       [inviteId]
     );
 
@@ -652,9 +660,9 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
       `SELECT ci.*, inviter.full_name AS inviter_name, inviter.email AS inviter_email,
               invitee.full_name AS invitee_name, invitee.email AS invitee_email
        FROM CoWorkInvite ci
-       INNER JOIN app_users inviter ON inviter.id = ci.inviter_user_id
-       INNER JOIN app_users invitee ON invitee.id = ci.invitee_user_id
-       WHERE ci.id = ?`,
+       INNER JOIN app_users inviter ON inviter.id COLLATE utf8mb4_unicode_ci = ci.inviter_user_id COLLATE utf8mb4_unicode_ci
+       INNER JOIN app_users invitee ON invitee.id COLLATE utf8mb4_unicode_ci = ci.invitee_user_id COLLATE utf8mb4_unicode_ci
+       WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
     );
 

@@ -726,8 +726,9 @@ router.post('/run-migrations', async (req, res, next) => {
           INDEX idx_inviter_status (inviter_user_id, status),
           INDEX idx_room_name (room_name),
           INDEX idx_expires_date (expires_date)
-        )
+        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
       `);
+      await db.execute(`ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
       results.push({ migration: 'create_cowork_invite_table', status: 'success' });
     } catch (err) {
       if (err.code === 'ER_TABLE_EXISTS_ERROR') {

@@ -137,13 +137,19 @@ export const tenantDbMiddleware = (req, res, next) => {
 };
 
 // CORS Configuration - MUST be before other middleware!
-const allowedOrigins = [
+const configuredAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([
   'https://curaflow-production.up.railway.app',
   'https://curaflow-frontend-production.up.railway.app',
   process.env.FRONTEND_URL,
+  ...configuredAllowedOrigins,
   'http://localhost:5173',
   'http://localhost:3000'
-].filter(Boolean);
+].filter(Boolean)));
 
 console.log('CORS allowed origins:', allowedOrigins);
 console.log('NODE_ENV:', process.env.NODE_ENV);
@@ -406,7 +412,7 @@ async function ensureTablesExist() {
         INDEX idx_inviter_status (inviter_user_id, status),
         INDEX idx_room_name (room_name),
         INDEX idx_expires_date (expires_date)
-      )`
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     }
   ];
 
@@ -500,8 +506,9 @@ async function ensureTablesExist() {
         INDEX idx_inviter_status (inviter_user_id, status),
         INDEX idx_room_name (room_name),
         INDEX idx_expires_date (expires_date)
-      )
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
+    await db.execute(`ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   } catch (err) {
     // Table may already exist
   }

@@ -15,4 +15,6 @@ CREATE TABLE IF NOT EXISTS CoWorkInvite (
   INDEX idx_inviter_status (inviter_user_id, status),
   INDEX idx_room_name (room_name),
   INDEX idx_expires_date (expires_date)
-);
+) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
