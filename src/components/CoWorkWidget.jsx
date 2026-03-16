@@ -180,7 +180,10 @@ export default function CoWorkWidget() {
 
     announcedInviteIdsRef.current.add(currentIncomingInvite.id);
     setIsTriggerHidden(false);
-    toast.info(`Support-Einladung von ${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}`);
+    setIsOpen(true);
+    toast.info(`Support-Einladung von ${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}`, {
+      duration: 15000,
+    });
   }, [currentIncomingInvite]);
 
   const handleOpenDefaultRoom = useCallback(async () => {
@@ -399,7 +402,7 @@ export default function CoWorkWidget() {
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Nutzer erreichen</div>
-                    <div className="text-xs text-slate-500">Online-Nutzer koennen direkt in den Support-Raum eingeladen werden.</div>
+                    <div className="text-xs text-slate-500">Online-Admins koennen direkt in den Support-Raum eingeladen werden.</div>
                   </div>
                   <button
                     onClick={handleOpenDefaultRoom}
@@ -437,7 +440,7 @@ export default function CoWorkWidget() {
                     ))
                   ) : (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
-                      Keine erreichbaren Nutzer gefunden.
+                      Keine erreichbaren Admins gefunden.
                     </div>
                   )}
                 </div>

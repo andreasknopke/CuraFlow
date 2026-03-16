@@ -236,8 +236,8 @@ Hinweis: `VITE_JITSI_BASE_URL` ohne Slash am Ende angeben (ein trailing Slash wi
 Mit dem aktuellen CoWork-MVP gilt zusaetzlich:
 
 1. Nach Backend-Deployment Server einmal neu starten oder im Adminbereich die Migrationen ausfuehren.
-2. Admins koennen im CoWork-Widget online Nutzer direkt einladen.
-3. Eingeladene Nutzer sehen die Einladung in CuraFlow und treten ohne Link-Kopieren bei.
+2. Admins koennen im CoWork-Widget online Admins direkt einladen.
+3. Eingeladene Admins sehen die Einladung in CuraFlow automatisch und treten ohne Link-Kopieren bei.
 
 ---
 

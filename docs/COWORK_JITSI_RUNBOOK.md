@@ -114,8 +114,8 @@ npm run build
 ## Schritt 8: Smoke-Test
 
 1. In CuraFlow als Admin anmelden
-2. CoWork oeffnen und einen online Nutzer einladen
-3. Zweiten Browser/Inkognito als eingeladener Nutzer in CuraFlow anmelden
+2. CoWork oeffnen und einen online Admin einladen
+3. Zweiten Browser/Inkognito als eingeladener Admin in CuraFlow anmelden
 4. Einladung im Widget annehmen und dem gleichen Raum beitreten
 5. Audio, Video und Screen-Sharing testen
 6. Netzwerkwechsel (WLAN/LTE) kurz pruefen

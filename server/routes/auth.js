@@ -395,6 +395,7 @@ router.get('/cowork/contacts', authMiddleware, adminMiddleware, async (req, res,
     );
 
     const contacts = rows
+      .filter((candidate) => candidate.role === 'admin')
       .filter((candidate) => usersShareTenantAccess(adminUser.allowed_tenants, candidate.allowed_tenants))
       .map((candidate) => ({
         id: candidate.id,
@@ -500,6 +501,10 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
 
     if (!inviter || !invitee) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    if (invitee.role !== 'admin') {
+      return res.status(400).json({ error: 'CoWork-Einladungen koennen aktuell nur an Admins gesendet werden' });
     }
 
     if (!usersShareTenantAccess(inviter.allowed_tenants, invitee.allowed_tenants)) {
