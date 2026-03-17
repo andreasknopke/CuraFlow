@@ -118,17 +118,20 @@ const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
  * 
  * @returns {object|null} The conflicting shift row, or null if no conflict
  */
-const checkShiftConflict = async (dbPool, shiftData) => {
+const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
   const { date, position, timeslot_id } = shiftData;
   if (!date || !position) return null;
 
   // Look up workplace config (cached per minute)
-  const wpCacheKey = `wp:${position}`;
+  const wpCacheKey = `${cacheKey}:wp:${position}`;
   let wpEntry = WORKPLACE_CACHE[wpCacheKey];
   if (!wpEntry || Date.now() - wpEntry.ts > WORKPLACE_CACHE_TTL) {
     try {
+      const workplaceColumns = await getValidColumns(dbPool, 'Workplace', cacheKey);
+      const hasAllowsMultiple = Array.isArray(workplaceColumns) && workplaceColumns.includes('allows_multiple');
+      const selectColumns = hasAllowsMultiple ? 'allows_multiple, category' : 'category';
       const [rows] = await dbPool.execute(
-        'SELECT allows_multiple, category FROM Workplace WHERE name = ? LIMIT 1',
+        `SELECT ${selectColumns} FROM Workplace WHERE name = ? LIMIT 1`,
         [position]
       );
       const wp = rows[0] || null;
@@ -509,7 +512,7 @@ router.post('/', async (req, res, next) => {
       
       // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
       if (tableName === 'ShiftEntry' && data.date && data.position) {
-        const conflict = await checkShiftConflict(dbPool, data);
+        const conflict = await checkShiftConflict(dbPool, data, cacheKey);
         if (conflict) {
           console.warn(`[Sentinel] Blocked duplicate ShiftEntry: ${data.position} on ${data.date} (existing: ${conflict.id})`);
           return res.status(409).json({ 
@@ -643,7 +646,7 @@ router.post('/', async (req, res, next) => {
         const filtered = [];
         for (const item of processed) {
           if (item.date && item.position) {
-            const conflict = await checkShiftConflict(dbPool, item);
+            const conflict = await checkShiftConflict(dbPool, item, cacheKey);
             if (conflict) {
               console.warn(`[Sentinel] Blocked duplicate in bulkCreate: ${item.position} on ${item.date}`);
               continue; // Skip this item silently
