@@ -41,9 +41,11 @@ function buildRealtimeUrl() {
   return `${baseUrl}/api/auth/events/stream?${params.toString()}`;
 }
 
-export default function PlanUpdateListener() {
+export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }) {
   const queryClient = useQueryClient();
-  const { isAuthenticated, user } = useAuth();
+  const authState = useAuth();
+  const isAuthenticated = isAuthenticatedProp ?? authState.isAuthenticated;
+  const user = userProp ?? authState.user;
   const pendingKeysRef = useRef(new Map());
   const pendingPayloadsRef = useRef([]);
   const flushTimerRef = useRef(null);
@@ -55,6 +57,7 @@ export default function PlanUpdateListener() {
     if (!streamUrl) return undefined;
 
     const eventSource = new EventSource(streamUrl);
+  console.info('[PlanUpdateListener] Realtime-Verbindung wird aufgebaut:', streamUrl);
 
     const flushPendingUpdates = () => {
       flushTimerRef.current = null;
@@ -99,10 +102,11 @@ export default function PlanUpdateListener() {
     };
 
     eventSource.addEventListener('plan-update', handlePlanUpdate);
+    eventSource.addEventListener('connected', () => {
+      console.info('[PlanUpdateListener] Realtime-Verbindung aktiv');
+    });
     eventSource.onerror = () => {
-      if (eventSource.readyState === EventSource.CLOSED) {
-        console.warn('[PlanUpdateListener] Realtime-Verbindung geschlossen');
-      }
+      console.warn('[PlanUpdateListener] Realtime-Fehler', { readyState: eventSource.readyState });
     };
 
     return () => {

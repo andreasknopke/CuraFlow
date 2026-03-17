@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CoWorkWidget from '@/components/CoWorkWidget';
+import PlanUpdateListener from '@/components/PlanUpdateListener';
 
 const NAV_ITEMS = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
 
 export default function MasterLayout({ children }) {
   const { user, logout } = useMasterAuth();
+  const { isAuthenticated } = useMasterAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -99,6 +101,7 @@ export default function MasterLayout({ children }) {
       </main>
 
       <CoWorkWidget />
+      <PlanUpdateListener isAuthenticated={isAuthenticated} user={user} />
     </div>
   );
 }
