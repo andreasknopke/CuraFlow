@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Video, VideoOff, X, Users, Loader2, PhoneCall, PhoneIncoming, PhoneOff, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
@@ -124,7 +124,6 @@ function decodeJwtPayload(token) {
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
-  const queryClient = useQueryClient();
   const authState = masterAuth?.isAuthenticated ? masterAuth : appAuth;
   const { user, isAuthenticated } = authState;
   const isAdmin = user?.role === 'admin';
@@ -160,16 +159,17 @@ export default function CoWorkWidget() {
     queryKey: ['coworkInvites'],
     queryFn: () => api.listCoworkInvites(),
     enabled: isAuthenticated,
-    refetchInterval: isAuthenticated ? 3000 : false,
+    refetchInterval: isAuthenticated ? (activeSession ? 15000 : 10000) : false,
     refetchIntervalInBackground: true,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
   });
 
   const contactsQuery = useQuery({
     queryKey: ['coworkContacts'],
     queryFn: () => api.listCoworkContacts(),
-    enabled: isAuthenticated && isAdmin && isOpen,
-    refetchInterval: isAuthenticated && isAdmin && isOpen ? 15000 : false,
+    enabled: isAuthenticated && isAdmin && isOpen && isDetailsOpen,
+    refetchInterval: isAuthenticated && isAdmin && isOpen && isDetailsOpen ? 30000 : false,
+    refetchOnWindowFocus: false,
   });
 
   const hideInviteLocally = useCallback((inviteId) => {
@@ -196,10 +196,10 @@ export default function CoWorkWidget() {
 
   const refreshCoworkData = useCallback(async () => {
     await invitesQuery.refetch();
-    if (isAdmin && isOpen) {
+    if (isAdmin && isOpen && isDetailsOpen) {
       await contactsQuery.refetch();
     }
-  }, [contactsQuery, invitesQuery, isAdmin, isOpen]);
+  }, [contactsQuery, invitesQuery, isAdmin, isOpen, isDetailsOpen]);
 
   const clearHideTimer = useCallback(() => {
     if (!hideTimerRef.current) return;
@@ -526,18 +526,6 @@ export default function CoWorkWidget() {
       }
     };
   }, [activeRoomName, activeSession?.token, jitsiBaseUrl, jitsiDomain, user?.email, user?.full_name]);
-
-  useEffect(() => {
-    if (!activeSession) return undefined;
-
-    const syncInterval = window.setInterval(() => {
-      queryClient.refetchQueries({ type: 'active' });
-    }, 10000);
-
-    return () => {
-      window.clearInterval(syncInterval);
-    };
-  }, [activeSession, queryClient]);
 
   useEffect(() => {
     const onMouseMove = (e) => {

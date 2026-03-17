@@ -212,6 +212,21 @@ const generalLimiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    const path = req.path || '';
+    return path === '/api/auth/me'
+      || path === '/api/auth/presence'
+      || path === '/api/auth/jitsi-token'
+      || path.startsWith('/api/auth/cowork');
+  },
+});
+
+const internalAuthLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 1200,
+  message: { error: 'Too many internal auth or CoWork requests from this IP, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // Stricter rate limiting for auth endpoints
@@ -225,6 +240,10 @@ const authLimiter = rateLimit({
 });
 
 app.use('/api/', generalLimiter);
+app.use('/api/auth/me', internalAuthLimiter);
+app.use('/api/auth/presence', internalAuthLimiter);
+app.use('/api/auth/jitsi-token', internalAuthLimiter);
+app.use('/api/auth/cowork', internalAuthLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
