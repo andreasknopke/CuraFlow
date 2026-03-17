@@ -213,11 +213,11 @@ const generalLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    const path = req.path || '';
-    return path === '/api/auth/me'
-      || path === '/api/auth/presence'
-      || path === '/api/auth/jitsi-token'
-      || path.startsWith('/api/auth/cowork');
+    const requestPath = req.originalUrl?.split('?')[0] || `${req.baseUrl || ''}${req.path || ''}`;
+    return requestPath === '/api/auth/me'
+      || requestPath === '/api/auth/presence'
+      || requestPath === '/api/auth/jitsi-token'
+      || requestPath.startsWith('/api/auth/cowork');
   },
 });
 
