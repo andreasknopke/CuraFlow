@@ -15,7 +15,7 @@ const JITSI_JWT_APP_ID = process.env.JITSI_JWT_APP_ID;
 const JITSI_JWT_APP_SECRET = process.env.JITSI_JWT_APP_SECRET;
 const JITSI_JWT_AUDIENCE = process.env.JITSI_JWT_AUDIENCE || 'jitsi';
 const JITSI_JWT_SUB = process.env.JITSI_JWT_SUB;
-const JITSI_JWT_EXPIRY_SECONDS = parseInt(process.env.JITSI_JWT_EXPIRY_SECONDS || '300', 10);
+const JITSI_JWT_EXPIRY_SECONDS = parseInt(process.env.JITSI_JWT_EXPIRY_SECONDS || '1800', 10);
 const COWORK_INVITE_EXPIRY_MINUTES = parseInt(process.env.COWORK_INVITE_EXPIRY_MINUTES || '10', 10);
 const COWORK_ONLINE_WINDOW_SECONDS = parseInt(process.env.COWORK_ONLINE_WINDOW_SECONDS || '120', 10);
 
