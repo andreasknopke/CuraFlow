@@ -31,6 +31,10 @@ function getClientsForScope(scope) {
 function writeEvent(res, eventName, payload) {
   res.write(`event: ${eventName}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+
+  if (typeof res.flush === 'function') {
+    res.flush();
+  }
 }
 
 function removeClient(scope, clientId) {
@@ -67,6 +71,9 @@ export function registerRealtimeClient({ scope, res, userId }) {
   });
 
   res.write('retry: 5000\n\n');
+  if (typeof res.flush === 'function') {
+    res.flush();
+  }
   writeEvent(res, 'connected', {
     clientId,
     connectedAt: new Date().toISOString(),
@@ -148,6 +155,9 @@ setInterval(() => {
 
       try {
         client.res.write(': keepalive\n\n');
+        if (typeof client.res.flush === 'function') {
+          client.res.flush();
+        }
       } catch (error) {
         clients.delete(clientId);
       }

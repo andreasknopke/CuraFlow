@@ -192,7 +192,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false, // CSP handled by Coolify/Traefik reverse proxy
 }));
-app.use(compression());
+app.use(compression({
+  filter: (req, res) => {
+    if (req.path === '/api/auth/events/stream') {
+      return false;
+    }
+
+    return compression.filter(req, res);
+  },
+}));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
