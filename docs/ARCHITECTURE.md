@@ -9,6 +9,7 @@ CuraFlow folgt einer klassischen **Client-Server-Architektur**. Das Frontend (Re
 │                        Browser (Client)                      │
 │                                                              │
 │   React SPA ── TanStack Query ─── REST Calls (fetch)        │
+│        ├────────────── Server-Sent Events (Planupdates)     │
 │        │                                                     │
 │   React Router (SPA-Navigation, keine Server-Roundtrips)    │
 └──────────────────────┬───────────────────────────────────────┘
@@ -18,11 +19,11 @@ CuraFlow folgt einer klassischen **Client-Server-Architektur**. Das Frontend (Re
 │               Express Backend (Node.js 18+)                  │
 │                                                              │
 │  Middleware-Stack:                                           │
-│  cors → helmet → rateLimit → compression →                  │
+│  cors → helmet → compression → express.json →               │
 │  tenantDbMiddleware → authMiddleware → routeHandler          │
 │                                                              │
 │  Routes:                                                     │
-│  /api/auth     → auth.js       (Login, Register, Users)     │
+│  /api/auth     → auth.js       (Login, Register, Users, SSE)│
 │  /api/db       → dbProxy.js    (CRUD-Proxy für Entitäten)   │
 │  /api/schedule → schedule.js   (Dienstplan-Spezial-Ops)     │
 │  /api/staff    → staff.js      (Mitarbeiter-APIs)           │
@@ -76,6 +77,35 @@ export const tenantDbMiddleware = (req, res, next) => {
 | `src/api/client.js` | DB-Token an alle Requests anhängen |
 | `src/components/admin/ServerTokenManager.jsx` | Tokens verwalten (Admin-UI) |
 
+### Realtime-Updates im Multi-Tenant-Betrieb
+
+Offene Department-Frontends erhalten Planänderungen per Server-Sent Events.
+
+1. Das Frontend baut nach erfolgreichem Login einen Stream zu `/api/auth/events/stream` auf.
+2. Das JWT wird als `access_token` übergeben.
+3. Falls ein Department-DB-Token aktiv ist, wird dieses zusätzlich als `db_token` übergeben.
+4. Das Backend bildet daraus einen tenant-spezifischen Scope-Hash.
+5. Schreiboperationen in `dbProxy.js` und `atomic.js` senden `plan-update`-Events an genau diesen Scope.
+6. Das Frontend invalidiert daraufhin gezielt die betroffenen TanStack-Query-Keys.
+
+Relevante Dateien:
+
+| Datei | Funktion |
+|---|---|
+| `src/components/PlanUpdateListener.jsx` | Globaler SSE-Listener für das Department-Frontend |
+| `src/App.jsx` | Hängt den Realtime-Listener global an die Department-App |
+| `server/routes/auth.js` | Endpoint `GET /api/auth/events/stream` |
+| `server/utils/realtime.js` | Client-Registry, Broadcast und Keepalive |
+| `server/routes/dbProxy.js` | Broadcast bei generischen CRUD-Änderungen |
+| `server/routes/atomic.js` | Broadcast bei atomaren Planänderungen |
+
+Wichtige Details:
+
+- Der Stream ist JWT-basiert. Ein aktives Department-Token allein genügt nicht.
+- Der Stream wird erst aufgebaut, wenn der Auth-Check abgeschlossen ist und tatsächlich ein JWT vorliegt.
+- Für den SSE-Endpoint ist HTTP-Kompression deaktiviert, damit Events nicht gepuffert werden.
+- Nach jedem Event und Keepalive wird explizit geflusht.
+
 ---
 
 ## Frontend-Architektur
@@ -104,6 +134,15 @@ await db.ShiftEntry.delete(id);
 ```
 
 Hinter `db.Doctor`, `db.ShiftEntry` etc. steht jeweils eine `createEntityApi(entityName)`-Factory, die HTTP-Requests an `/api/db/:entity` baut.
+
+### Realtime-Invalidierung im Frontend
+
+Der Realtime-Listener hält keine eigene Schattenkopie des Plans. Stattdessen invalidiert er bei eingehenden `plan-update`-Events die betroffenen Query-Keys, zum Beispiel:
+
+- `ShiftEntry` → `['shifts']`, `['shifts-history']`
+- `ScheduleNote` → `['scheduleNotes']`
+- `StaffingPlanEntry` → `['staffingPlanEntries']`
+- `Doctor`, `Workplace`, `WorkplaceTimeslot` → planrelevante Stammdatenqueries
 
 ### Routing
 
@@ -156,6 +195,15 @@ router.get('/doctors', authMiddleware, async (req, res) => {
 ### CRUD-Proxy (`server/routes/dbProxy.js`)
 
 Für Standardoperationen existiert ein generischer CRUD-Proxy. Tabellen-Map und erlaubte Felder sind darin konfiguriert. Dadurch müssen keine separaten Routen für jede Entität geschrieben werden.
+
+### Sentinel für ShiftEntry-Duplikate
+
+Beim Erstellen von `ShiftEntry`-Datensätzen prüft ein Sentinel, ob ein Arbeitsplatz Mehrfachbelegung zulässt.
+
+- Die Workplace-Metadaten werden tenant-spezifisch gecacht.
+- Ältere Department-Datenbanken ohne Spalte `allows_multiple` werden unterstützt.
+- Wenn die Spalte fehlt, fällt die Logik auf die Workplace-Kategorie zurück.
+- Dadurch verschwinden Warnungen wie `Unknown column 'allows_multiple'` bei Legacy-Schemas.
 
 ---
 

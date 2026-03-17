@@ -27,6 +27,7 @@ X-DB-Token: <encrypted-db-token>
 | POST | `/api/auth/change-email` | ✅ | E-Mail-Adresse ändern |
 | GET | `/api/auth/my-tenants` | ✅ | Eigene Mandanten abrufen |
 | POST | `/api/auth/activate-tenant/:id` | ✅ | Mandanten-Token aktivieren |
+| GET | `/api/auth/events/stream` | ✅ | SSE-Stream für Realtime-Planupdates |
 
 ### Admin-Endpunkte (Rolle: `admin`)
 
@@ -47,6 +48,26 @@ Content-Type: application/json
   "email": "max@example.com",
   "password": "geheim123"
 }
+```
+
+### Realtime-Planupdates per SSE
+
+```http
+GET /api/auth/events/stream?access_token=<jwt>&db_token=<optional-db-token>
+Accept: text/event-stream
+```
+
+Hinweise:
+
+- `access_token` ist verpflichtend und enthält das normale JWT aus dem Login.
+- `db_token` ist für Department-Frontends mit aktivem Mandantenkontext erforderlich.
+- Die Verbindung bleibt offen und liefert Events vom Typ `connected` und `plan-update`.
+
+Beispiel:
+
+```text
+event: plan-update
+data: {"entity":"ShiftEntry","action":"bulkCreate","recordId":null,"recordCount":1,"changedAt":"2026-03-17T12:00:00.000Z","actor":{"id":"...","email":"admin@example.com"}}
 ```
 
 ```json

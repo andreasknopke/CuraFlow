@@ -18,6 +18,7 @@
 - **Seitenleiste**: Mitarbeiterliste zum Ziehen auf den Plan
 - **KI-Generierung**: Automatische Planvorschläge (Wand-Icon)
 - **Excel-Export**: Dienstplan als XLSX herunterladen
+- **Realtime-Synchronisierung**: Offene Planansichten aktualisieren sich automatisch bei externen Änderungen
 - **Mobile Ansicht**: Vereinfachte Darstellung für Smartphones
 - **Abschnitts-Konfiguration**: Sichtbarkeit und Reihenfolge anpassbar
 
@@ -37,6 +38,7 @@
 | `src/components/schedule/FreeTextCell.jsx` | Freitext-Zellen Rendering |
 | `src/components/schedule/AIRulesDialog.jsx` | KI-Regelkonfigurations-Dialog |
 | `src/components/schedule/MobileScheduleView.jsx` | Mobile Ansicht |
+| `src/components/PlanUpdateListener.jsx` | Globaler Realtime-Listener für Planupdates |
 | `src/components/schedule/stuffingUtils.jsx` | Verfügbarkeitsberechnungen |
 | `src/components/schedule/holidayUtils.jsx` | Feiertagslogik (MV) |
 | `src/components/validation/useShiftValidation.js` | Schicht-Validierungs-Hook |
@@ -44,6 +46,8 @@
 | `src/components/settings/WorkplaceConfigDialog.jsx` | Arbeitsbereich-Konfiguration |
 | `src/components/settings/SectionConfigDialog.jsx` | Abschnitts-Konfiguration |
 | `server/routes/schedule.js` | Backend: Generierung, Export, E-Mail |
+| `server/routes/auth.js` | SSE-Endpoint für Realtime-Planupdates |
+| `server/utils/realtime.js` | Tenant-spezifischer Broadcast-Manager |
 
 ### Datenbankentitäten
 
@@ -62,6 +66,27 @@
 6. queryClient.invalidateQueries(['shifts']) → automatisches Re-render
 7. Undo-Stack wird aktualisiert
 ```
+
+### Datenfluss bei externen Änderungen (Realtime)
+
+```
+1. Benutzer A ändert den Plan über dbProxy.js oder atomic.js
+2. Das Backend sendet ein tenant-spezifisches `plan-update`-Event
+3. PlanUpdateListener im offenen Fenster von Benutzer B empfängt das Event
+4. Betroffene Query-Keys werden invalidiert
+5. TanStack Query lädt Plan- und Stammdaten neu
+6. Benutzer B sieht die Änderung ohne Navigation oder manuelles Blättern
+```
+
+### Realtime-Debugging
+
+Bei ausbleibenden Updates zuerst an diesen Stellen prüfen:
+
+- Browser-Konsole: Logs aus `PlanUpdateListener`
+- Network-Tab: offener Request auf `/api/auth/events/stream`
+- Backend-Log: `[Realtime] Stream-Anfrage`, `[Realtime] Client verbunden`, `[Realtime] Sende Plan-Event`
+- Department-Kontext: stimmt das aktive `db_token` mit dem Stream-Scope überein?
+- JWT-Kontext: liegt wirklich ein `radioplan_jwt_token` vor?
 
 ### Abschnitte und Arbeitsbereiche
 

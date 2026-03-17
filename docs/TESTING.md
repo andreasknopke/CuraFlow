@@ -18,6 +18,7 @@ CuraFlow besitzt aktuell **keine automatisierten Tests**. Dieses Dokument defini
 | Sprachsteuerung | T-VOICE | Mikrofon, Befehle, Agent |
 | API | T-API | Backend-Endpunkte direkt testen |
 | Performance | T-PERF | Ladezeiten, große Datenmengen |
+| Realtime | T-RT | SSE-Stream, automatische Planaktualisierung |
 
 Einzelne Szenarien je Kategorie sind in den jeweiligen Feature-Dokumenten beschrieben.
 
@@ -112,6 +113,23 @@ curl -X POST http://localhost:3000/api/db/ShiftEntry/filter \
   }' | jq .
 ```
 
+### Realtime-Stream prüfen
+
+```bash
+curl -N "http://localhost:3000/api/auth/events/stream?access_token=$TOKEN"
+```
+
+Mit aktivem Department-Token:
+
+```bash
+curl -N "http://localhost:3000/api/auth/events/stream?access_token=$TOKEN&db_token=$DB_TOKEN"
+```
+
+Erwartung:
+
+- Direkt nach Aufbau erscheint ein `connected`-Event.
+- Nach einer Planänderung erscheint ein `plan-update`-Event.
+
 ---
 
 ## Automatisiertes Testing einrichten
@@ -139,6 +157,53 @@ npm install -D supertest
 # E2E
 npm install -D @playwright/test
 npx playwright install
+```
+
+---
+
+## Realtime-Tests
+
+### T-RT-01: Stream-Aufbau im Department-Frontend
+
+```text
+Voraussetzung: Benutzer ist im Department-Frontend eingeloggt, Department-Token ist aktiv
+Aktion: Browser-Konsole und Network-Tab öffnen
+Erwartet:
+  - Offener Request auf /api/auth/events/stream
+  - Browser-Konsole zeigt "Realtime-Verbindung aktiv"
+  - Backend-Log zeigt "[Realtime] Stream-Anfrage" und "[Realtime] Client verbunden"
+```
+
+### T-RT-02: Planänderung wird an zweites Fenster gepusht
+
+```text
+Voraussetzung: Zwei Browserfenster im selben Department, beide eingeloggt
+Aktion: In Fenster A eine Schicht anlegen, verschieben oder löschen
+Erwartet:
+  - Backend-Log zeigt "[Realtime] Sende Plan-Event"
+  - Fenster B loggt "Push-Event empfangen"
+  - Fenster B invalidiert Queries und zeigt den neuen Planstand ohne Navigation
+```
+
+### T-RT-03: Tenant-Scope ist korrekt getrennt
+
+```text
+Voraussetzung: Zwei unterschiedliche Departments mit verschiedenen DB-Tokens
+Aktion: In Department A den Plan ändern
+Erwartet:
+  - Backend-Log sendet das Event nur an den Scope von Department A
+  - Offene Fenster in Department B erhalten kein plan-update-Event
+```
+
+### T-RT-04: Debugging bei fehlenden Updates
+
+```text
+Prüfschritte:
+  1. Browser-Konsole auf PlanUpdateListener filtern
+  2. Prüfen, ob Auth-Check abgeschlossen ist und ein JWT vorliegt
+  3. Network-Tab: bleibt /api/auth/events/stream offen?
+  4. Backend-Log: erscheinen "Stream-Anfrage", "Client verbunden" und "Sende Plan-Event"?
+  5. Falls Backend sendet, aber Browser nichts erhält: Proxy-/Compression-Buffering prüfen
 ```
 
 ### Beispiel: Unit-Test für Hilfsfunktion

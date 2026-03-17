@@ -45,7 +45,7 @@ CuraFlow ist ein webbasiertes Dienstplanungs- und Personalverwaltungssystem, das
 ├────────────────────────────────────────────────────────────-─┤
 │              KI-Sprachsteuerung (ElevenLabs)                 │
 ├──────────────────────────────────────────────────────────────┤
-│   JWT-Auth │ Rollenmodell │ Multi-Tenant │ E-Mail-Versand    │
+│   JWT-Auth │ Rollenmodell │ Multi-Tenant │ E-Mail │ SSE       │
 └──────────────────────────────────────────────────────────────┘
 ```
 
