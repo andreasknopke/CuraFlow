@@ -47,6 +47,14 @@ function removeClient(scope, clientId) {
   }
 }
 
+function pruneDisconnectedClients(clients) {
+  for (const [clientId, client] of clients.entries()) {
+    if (client.res.writableEnded || client.res.destroyed) {
+      clients.delete(clientId);
+    }
+  }
+}
+
 export function buildRealtimeScope(dbToken) {
   if (!dbToken) return 'default';
 
@@ -127,12 +135,9 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
     clientCount: clients.size,
   });
 
-  for (const [clientId, client] of clients.entries()) {
-    if (client.res.writableEnded || client.res.destroyed) {
-      clients.delete(clientId);
-      continue;
-    }
+  pruneDisconnectedClients(clients);
 
+  for (const [clientId, client] of clients.entries()) {
     try {
       writeEvent(client.res, 'plan-update', payload);
     } catch (error) {
@@ -143,6 +148,42 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
   if (clients.size === 0) {
     realtimeClients.delete(scope);
   }
+}
+
+export function broadcastUserEvent({ eventName, payload, userIds = [] }) {
+  const targetUserIds = new Set((userIds || []).filter(Boolean));
+  if (targetUserIds.size === 0) {
+    return;
+  }
+
+  let deliveredCount = 0;
+
+  for (const [scope, clients] of realtimeClients.entries()) {
+    pruneDisconnectedClients(clients);
+
+    for (const [clientId, client] of clients.entries()) {
+      if (!targetUserIds.has(client.userId)) {
+        continue;
+      }
+
+      try {
+        writeEvent(client.res, eventName, payload);
+        deliveredCount += 1;
+      } catch (error) {
+        clients.delete(clientId);
+      }
+    }
+
+    if (clients.size === 0) {
+      realtimeClients.delete(scope);
+    }
+  }
+
+  console.log('[Realtime] Sende User-Event', {
+    eventName,
+    targetUserIds: Array.from(targetUserIds),
+    deliveredCount,
+  });
 }
 
 setInterval(() => {

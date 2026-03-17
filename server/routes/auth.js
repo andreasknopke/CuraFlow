@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { db } from '../index.js';
 import { sendEmail } from '../utils/email.js';
-import { buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
+import { broadcastUserEvent, buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -113,6 +113,48 @@ function createJitsiToken({ roomName, user }) {
       },
     },
   }, JITSI_JWT_APP_SECRET, { algorithm: 'HS256' });
+}
+
+async function getCoworkAudienceUserIds({ allowedTenants, includeUserIds = [] }) {
+  const [rows] = await db.execute(
+    `SELECT id, allowed_tenants
+     FROM app_users
+     WHERE is_active = 1 AND role = 'admin'`
+  );
+
+  const audience = rows
+    .filter((candidate) => usersShareTenantAccess(allowedTenants, candidate.allowed_tenants))
+    .map((candidate) => candidate.id);
+
+  for (const userId of includeUserIds) {
+    if (userId && !audience.includes(userId)) {
+      audience.push(userId);
+    }
+  }
+
+  return audience;
+}
+
+async function broadcastCoworkUpdate({ type, actor = null, allowedTenants = null, includeUserIds = [], invite = null }) {
+  const userIds = await getCoworkAudienceUserIds({ allowedTenants, includeUserIds });
+
+  broadcastUserEvent({
+    eventName: 'cowork-update',
+    userIds,
+    payload: {
+      type,
+      changedAt: new Date().toISOString(),
+      actor: actor ? {
+        id: actor.id || null,
+        email: actor.email || null,
+      } : null,
+      invite: invite ? {
+        id: invite.id || null,
+        roomName: invite.roomName || null,
+        status: invite.status || null,
+      } : null,
+    },
+  });
 }
 
 // Middleware to verify authentication
@@ -336,6 +378,20 @@ router.post('/presence', authMiddleware, async (req, res, next) => {
       'UPDATE app_users SET last_seen_at = NOW() WHERE id = ? AND is_active = 1',
       [req.user.sub]
     );
+
+    const [rows] = await db.execute(
+      'SELECT id, email, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+
+    if (rows[0]?.role === 'admin') {
+      await broadcastCoworkUpdate({
+        type: 'presence-updated',
+        actor: rows[0],
+        allowedTenants: rows[0].allowed_tenants,
+        includeUserIds: [rows[0].id],
+      });
+    }
 
     res.json({ success: true, lastSeenAt: new Date().toISOString() });
   } catch (error) {
@@ -580,6 +636,18 @@ router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res,
     const token = createJitsiToken({ roomName, user: inviter });
     const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
 
+    await broadcastCoworkUpdate({
+      type: 'invite-created',
+      actor: inviter,
+      allowedTenants: inviter.allowed_tenants,
+      includeUserIds: [inviter.id, invitee.id],
+      invite: {
+        id: inviteId,
+        roomName,
+        status: 'pending',
+      },
+    });
+
     res.status(201).json({
       invite: {
         id: inviteId,
@@ -608,9 +676,9 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
     const { inviteId } = req.params;
 
     const [rows] = await db.execute(
-      `SELECT id, invitee_user_id, status, expires_date
-       FROM CoWorkInvite
-       WHERE ${uuidCompareSql('id')}`,
+      `SELECT ci.id, ci.inviter_user_id, ci.invitee_user_id, ci.status, ci.expires_date, ci.room_name
+       FROM CoWorkInvite ci
+       WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
     );
 
@@ -636,6 +704,27 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
       [inviteId]
     );
 
+    const [userRows] = await db.execute(
+      `SELECT id, email, allowed_tenants
+       FROM app_users
+       WHERE id = ? AND is_active = 1`,
+      [req.user.sub]
+    );
+
+    if (userRows.length > 0) {
+      await broadcastCoworkUpdate({
+        type: 'invite-declined',
+        actor: userRows[0],
+        allowedTenants: userRows[0].allowed_tenants,
+        includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+        invite: {
+          id: inviteId,
+          roomName: invite.room_name,
+          status: 'declined',
+        },
+      });
+    }
+
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -647,9 +736,11 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
     const { inviteId } = req.params;
 
     const [rows] = await db.execute(
-      `SELECT id, inviter_user_id, invitee_user_id, status
-       FROM CoWorkInvite
-       WHERE ${uuidCompareSql('id')}`,
+      `SELECT ci.id, ci.inviter_user_id, ci.invitee_user_id, ci.status, ci.room_name,
+              inviter.allowed_tenants AS inviter_allowed_tenants
+       FROM CoWorkInvite ci
+       INNER JOIN app_users inviter ON inviter.id COLLATE utf8mb4_unicode_ci = ci.inviter_user_id COLLATE utf8mb4_unicode_ci
+       WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
     );
 
@@ -669,6 +760,18 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
        WHERE ${uuidCompareSql('id')} AND status IN ('pending', 'accepted')`,
       [inviteId]
     );
+
+    await broadcastCoworkUpdate({
+      type: 'invite-cancelled',
+      actor: { id: req.user.sub, email: req.user.email || null },
+      allowedTenants: invite.inviter_allowed_tenants,
+      includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+      invite: {
+        id: inviteId,
+        roomName: invite.room_name,
+        status: 'cancelled',
+      },
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -745,6 +848,18 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
       'UPDATE app_users SET last_seen_at = NOW() WHERE id = ?',
       [req.user.sub]
     );
+
+    await broadcastCoworkUpdate({
+      type: inviteStatus === 'accepted' ? 'invite-accepted' : 'session-opened',
+      actor: userRows[0],
+      allowedTenants: userRows[0].allowed_tenants,
+      includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+      invite: {
+        id: inviteId,
+        roomName: invite.room_name,
+        status: inviteStatus,
+      },
+    });
 
     const token = createJitsiToken({ roomName: invite.room_name, user: userRows[0] });
     const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;

@@ -159,8 +159,8 @@ export default function CoWorkWidget() {
     queryKey: ['coworkInvites'],
     queryFn: () => api.listCoworkInvites(),
     enabled: isAuthenticated,
-    refetchInterval: isAuthenticated ? (activeSession ? 15000 : 10000) : false,
-    refetchIntervalInBackground: true,
+    refetchInterval: false,
+    refetchIntervalInBackground: false,
     refetchOnWindowFocus: false,
   });
 
@@ -168,7 +168,7 @@ export default function CoWorkWidget() {
     queryKey: ['coworkContacts'],
     queryFn: () => api.listCoworkContacts(),
     enabled: isAuthenticated && isAdmin && isOpen && isDetailsOpen,
-    refetchInterval: isAuthenticated && isAdmin && isOpen && isDetailsOpen ? 30000 : false,
+    refetchInterval: false,
     refetchOnWindowFocus: false,
   });
 

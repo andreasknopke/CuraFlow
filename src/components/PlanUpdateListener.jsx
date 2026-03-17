@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
@@ -40,6 +40,8 @@ function buildRealtimeUrl() {
   const baseUrl = api.baseURL || '';
   return `${baseUrl}/api/auth/events/stream?${params.toString()}`;
 }
+
+const COWORK_QUERY_KEYS = [['coworkInvites'], ['coworkContacts']];
 
 export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }) {
   const queryClient = useQueryClient();
@@ -142,7 +144,21 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       }
     };
 
+    const handleCoworkUpdate = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        console.info('[PlanUpdateListener] CoWork-Push-Event empfangen', payload);
+        for (const queryKey of COWORK_QUERY_KEYS) {
+          queryClient.invalidateQueries({ queryKey });
+        }
+      } catch (error) {
+        console.warn('[PlanUpdateListener] Konnte CoWork-Event nicht verarbeiten:', error);
+      }
+    };
+
     eventSource.addEventListener('plan-update', handlePlanUpdate);
+    eventSource.addEventListener('cowork-update', handleCoworkUpdate);
     eventSource.addEventListener('connected', () => {
       console.info('[PlanUpdateListener] Realtime-Verbindung aktiv');
     });
@@ -153,6 +169,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     return () => {
       console.info('[PlanUpdateListener] Realtime-Verbindung wird beendet');
       eventSource.removeEventListener('plan-update', handlePlanUpdate);
+      eventSource.removeEventListener('cowork-update', handleCoworkUpdate);
       eventSource.close();
       if (flushTimerRef.current) {
         window.clearTimeout(flushTimerRef.current);
