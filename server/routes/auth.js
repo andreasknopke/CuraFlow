@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { db } from '../index.js';
 import { sendEmail } from '../utils/email.js';
+import { buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -375,6 +376,32 @@ router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, nex
   } catch (error) {
     next(error);
   }
+});
+
+router.get('/events/stream', (req, res) => {
+  const accessToken = typeof req.query.access_token === 'string' ? req.query.access_token : null;
+  const payload = accessToken ? verifyToken(accessToken) : null;
+
+  if (!payload) {
+    return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
+  }
+
+  const dbToken = typeof req.query.db_token === 'string' ? req.query.db_token : null;
+  const scope = buildRealtimeScope(dbToken);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  const cleanup = registerRealtimeClient({ scope, res, userId: payload.sub });
+
+  req.on('close', cleanup);
+  req.on('aborted', cleanup);
 });
 
 // ============ COWORK CONTACTS (Admin only) ============

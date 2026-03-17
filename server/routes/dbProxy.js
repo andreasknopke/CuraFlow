@@ -2,6 +2,7 @@ import express from 'express';
 import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
 import crypto from 'crypto';
+import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -375,6 +376,11 @@ router.post('/', async (req, res, next) => {
     // Get the database pool (set by tenantDbMiddleware)
     const dbPool = req.db || db;
     const cacheKey = req.headers['x-db-token'] || 'default';
+    const realtimeScope = buildRealtimeScope(req.dbToken);
+    const actor = {
+      id: req.user?.sub || null,
+      email: req.user?.email || 'system',
+    };
     
     // Auto-create TeamRole table for tenants if needed
     if (tableName === 'TeamRole') {
@@ -534,6 +540,15 @@ router.post('/', async (req, res, next) => {
       try {
         const safeValues = values.map(v => v === undefined ? null : v);
         await dbPool.execute(sql, safeValues);
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({
+            scope: realtimeScope,
+            entity: tableName,
+            action: 'create',
+            recordId: data.id,
+            actor,
+          });
+        }
         return res.json(data);
       } catch (err) {
         console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
@@ -565,6 +580,15 @@ router.post('/', async (req, res, next) => {
       await dbPool.execute(sql, safeValues);
       
       const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
+      if (isPlanSyncEntity(tableName)) {
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity: tableName,
+          action: 'update',
+          recordId: id,
+          actor,
+        });
+      }
       return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
     }
     
@@ -588,6 +612,16 @@ router.post('/', async (req, res, next) => {
         details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp },
         userEmail
       });
+
+      if (isPlanSyncEntity(tableName)) {
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity: tableName,
+          action: 'delete',
+          recordId: id,
+          actor,
+        });
+      }
       
       return res.json({ success: true });
     }
@@ -643,6 +677,16 @@ router.post('/', async (req, res, next) => {
         const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
         const safeValues = values.map(v => v === undefined ? null : v);
         await dbPool.execute(sql, safeValues);
+      }
+
+      if (isPlanSyncEntity(tableName)) {
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity: tableName,
+          action: 'bulkCreate',
+          recordCount: processed.length,
+          actor,
+        });
       }
       
       return res.json(processed);

@@ -2,6 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { authMiddleware } from './auth.js';
 import { writeAuditLog } from './dbProxy.js';
+import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -43,6 +44,11 @@ router.post('/', async (req, res, next) => {
     const { operation, entity, id, data, check } = req.body;
     const dbPool = req.db; // Set by tenantDbMiddleware
     const userEmail = req.user?.email || 'system';
+    const realtimeScope = buildRealtimeScope(req.dbToken);
+    const actor = {
+      id: req.user?.sub || null,
+      email: userEmail,
+    };
 
     // Helper: Get single record
     const getRecord = async (tableName, recordId) => {
@@ -153,6 +159,15 @@ router.post('/', async (req, res, next) => {
       }
 
       const result = await updateRecord(entity, id, data);
+      if (isPlanSyncEntity(entity)) {
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity,
+          action: 'update',
+          recordId: id,
+          actor,
+        });
+      }
       return res.json(result);
     }
 
@@ -183,6 +198,15 @@ router.post('/', async (req, res, next) => {
       }
 
       const result = await createRecord(entity, data);
+      if (isPlanSyncEntity(entity)) {
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity,
+          action: 'create',
+          recordId: result.id,
+          actor,
+        });
+      }
       return res.json(result);
     }
 
@@ -211,11 +235,25 @@ router.post('/', async (req, res, next) => {
         // Delete if empty value
         if (value === '' || value === null || value === undefined) {
           await deleteRecord('StaffingPlanEntry', existing.id);
+          broadcastPlanUpdate({
+            scope: realtimeScope,
+            entity: 'StaffingPlanEntry',
+            action: 'delete',
+            recordId: existing.id,
+            actor,
+          });
           return res.json({ deleted: true, id: existing.id });
         }
 
         // Update existing
         const result = await updateRecord('StaffingPlanEntry', existing.id, { value });
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity: 'StaffingPlanEntry',
+          action: 'update',
+          recordId: existing.id,
+          actor,
+        });
         return res.json(result);
       } else {
         // Skip if empty value
@@ -225,6 +263,13 @@ router.post('/', async (req, res, next) => {
 
         // Create new
         const result = await createRecord('StaffingPlanEntry', { doctor_id, year, month, value });
+        broadcastPlanUpdate({
+          scope: realtimeScope,
+          entity: 'StaffingPlanEntry',
+          action: 'create',
+          recordId: result.id,
+          actor,
+        });
         return res.json(result);
       }
     }

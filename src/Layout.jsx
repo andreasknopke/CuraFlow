@@ -14,6 +14,7 @@ import ThemeSelector from '@/components/ThemeSelector';
 import { Palette } from 'lucide-react';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import CoWorkWidget from '@/components/CoWorkWidget';
+import PlanUpdateListener from '@/components/PlanUpdateListener';
 
 function LayoutContent({ children }) {
   const { isAuthenticated, isReadOnly, isLoading, mustChangePassword, setMustChangePassword } = useAuth();
@@ -322,6 +323,8 @@ function LayoutContent({ children }) {
           onPasswordChanged={() => setMustChangePassword(false)}
         />
       )}
+
+      <PlanUpdateListener />
       
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
       <CoWorkWidget />
