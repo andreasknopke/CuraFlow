@@ -46,18 +46,33 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
   const authState = useAuth();
   const isAuthenticated = isAuthenticatedProp ?? authState.isAuthenticated;
   const user = userProp ?? authState.user;
+  const isLoading = authState.isLoading ?? false;
+  const authToken = authState.token || api.getToken();
+  const activeDbToken = getActiveDbToken();
   const pendingKeysRef = useRef(new Map());
   const pendingPayloadsRef = useRef([]);
   const flushTimerRef = useRef(null);
 
   useEffect(() => {
     console.info('[PlanUpdateListener] Mount', {
+      isLoading,
       isAuthenticated,
       userEmail: user?.email || null,
+      hasAuthToken: !!authToken,
+      hasDbToken: !!activeDbToken,
     });
 
-    if (!isAuthenticated) {
-      console.info('[PlanUpdateListener] Kein Stream, Benutzer nicht authentifiziert');
+    if (isLoading) {
+      console.info('[PlanUpdateListener] Warte auf abgeschlossenen Auth-Check');
+      return undefined;
+    }
+
+    if (!authToken) {
+      console.warn('[PlanUpdateListener] Kein Stream, kein JWT vorhanden', {
+        isAuthenticated,
+        userEmail: user?.email || null,
+        hasDbToken: !!activeDbToken,
+      });
       return undefined;
     }
 
@@ -73,7 +88,9 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     const eventSource = new EventSource(streamUrl);
     console.info('[PlanUpdateListener] Realtime-Verbindung wird aufgebaut', {
       streamUrl,
+      isAuthenticated,
       userEmail: user?.email || null,
+      hasDbToken: !!activeDbToken,
     });
 
     const flushPendingUpdates = () => {
@@ -144,7 +161,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       pendingKeysRef.current.clear();
       pendingPayloadsRef.current = [];
     };
-  }, [isAuthenticated, queryClient, user?.email]);
+  }, [activeDbToken, authToken, isAuthenticated, isLoading, queryClient, user?.email]);
 
   return null;
 }
