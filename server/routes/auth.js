@@ -383,11 +383,19 @@ router.get('/events/stream', (req, res) => {
   const payload = accessToken ? verifyToken(accessToken) : null;
 
   if (!payload) {
+    console.warn('[Realtime] Stream abgelehnt: Token ungültig oder abgelaufen');
     return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
   }
 
   const dbToken = typeof req.query.db_token === 'string' ? req.query.db_token : null;
   const scope = buildRealtimeScope(dbToken);
+
+  console.log('[Realtime] Stream-Anfrage', {
+    userId: payload.sub,
+    email: payload.email || null,
+    scope,
+    hasDbToken: !!dbToken,
+  });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');

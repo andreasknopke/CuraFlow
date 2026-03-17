@@ -4,7 +4,7 @@ import { createPageUrl } from '@/utils';
 import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2 } from 'lucide-react';
 import { api, db, base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
-import { AuthProvider, useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/components/AuthProvider';
 import AccountMenu from '@/components/auth/AccountMenu';
 import ForcePasswordChangeDialog from '@/components/auth/ForcePasswordChangeDialog';
 
@@ -14,7 +14,6 @@ import ThemeSelector from '@/components/ThemeSelector';
 import { Palette } from 'lucide-react';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import CoWorkWidget from '@/components/CoWorkWidget';
-import PlanUpdateListener from '@/components/PlanUpdateListener';
 
 function LayoutContent({ children }) {
   const { isAuthenticated, isReadOnly, isLoading, mustChangePassword, setMustChangePassword } = useAuth();
@@ -323,9 +322,6 @@ function LayoutContent({ children }) {
           onPasswordChanged={() => setMustChangePassword(false)}
         />
       )}
-
-      <PlanUpdateListener />
-      
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
       <CoWorkWidget />
     </div>
@@ -333,9 +329,5 @@ function LayoutContent({ children }) {
 }
 
 export default function Layout({ children }) {
-  return (
-    <AuthProvider>
-      <LayoutContent>{children}</LayoutContent>
-    </AuthProvider>
-  );
+  return <LayoutContent>{children}</LayoutContent>;
 }

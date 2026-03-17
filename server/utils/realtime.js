@@ -59,18 +59,44 @@ export function registerRealtimeClient({ scope, res, userId }) {
   const clients = getClientsForScope(scope);
   clients.set(clientId, { res, userId, connectedAt: Date.now() });
 
+  console.log('[Realtime] Client verbunden', {
+    scope,
+    clientId,
+    userId,
+    clientCount: clients.size,
+  });
+
   res.write('retry: 5000\n\n');
   writeEvent(res, 'connected', {
     clientId,
     connectedAt: new Date().toISOString(),
   });
 
-  return () => removeClient(scope, clientId);
+  return () => {
+    removeClient(scope, clientId);
+    const remainingClients = realtimeClients.get(scope)?.size || 0;
+    console.log('[Realtime] Client getrennt', {
+      scope,
+      clientId,
+      userId,
+      clientCount: remainingClients,
+    });
+  };
 }
 
 export function broadcastPlanUpdate({ scope, entity, action, recordId = null, recordCount = null, actor = null }) {
   const clients = realtimeClients.get(scope);
-  if (!clients || clients.size === 0) return;
+  if (!clients || clients.size === 0) {
+    console.log('[Realtime] Event ohne Empfänger', {
+      scope,
+      entity,
+      action,
+      recordId,
+      recordCount,
+      actorEmail: actor?.email || null,
+    });
+    return;
+  }
 
   const payload = {
     entity,
@@ -83,6 +109,16 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
       email: actor.email || null,
     } : null,
   };
+
+  console.log('[Realtime] Sende Plan-Event', {
+    scope,
+    entity,
+    action,
+    recordId,
+    recordCount,
+    actorEmail: actor?.email || null,
+    clientCount: clients.size,
+  });
 
   for (const [clientId, client] of clients.entries()) {
     if (client.res.writableEnded || client.res.destroyed) {

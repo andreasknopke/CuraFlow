@@ -51,13 +51,30 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
   const flushTimerRef = useRef(null);
 
   useEffect(() => {
-    if (!isAuthenticated) return undefined;
+    console.info('[PlanUpdateListener] Mount', {
+      isAuthenticated,
+      userEmail: user?.email || null,
+    });
+
+    if (!isAuthenticated) {
+      console.info('[PlanUpdateListener] Kein Stream, Benutzer nicht authentifiziert');
+      return undefined;
+    }
 
     const streamUrl = buildRealtimeUrl();
-    if (!streamUrl) return undefined;
+    if (!streamUrl) {
+      console.warn('[PlanUpdateListener] Kein Stream, URL konnte nicht gebaut werden', {
+        hasToken: !!api.getToken(),
+        hasDbToken: !!getActiveDbToken(),
+      });
+      return undefined;
+    }
 
     const eventSource = new EventSource(streamUrl);
-  console.info('[PlanUpdateListener] Realtime-Verbindung wird aufgebaut:', streamUrl);
+    console.info('[PlanUpdateListener] Realtime-Verbindung wird aufgebaut', {
+      streamUrl,
+      userEmail: user?.email || null,
+    });
 
     const flushPendingUpdates = () => {
       flushTimerRef.current = null;
@@ -67,6 +84,11 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       }
 
       const payloads = pendingPayloadsRef.current;
+      console.info('[PlanUpdateListener] Invalidiere Queries nach Push-Event', {
+        count: payloads.length,
+        entities: payloads.map((payload) => payload.entity),
+      });
+
       const foreignChange = payloads.find((payload) => payload?.actor?.email && payload.actor.email !== user?.email);
       if (foreignChange) {
         const actorLabel = foreignChange.actor.email;
@@ -90,6 +112,8 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
         const payload = JSON.parse(event.data);
         const queryKeys = getQueryKeysForEntity(payload.entity);
 
+        console.info('[PlanUpdateListener] Push-Event empfangen', payload);
+
         for (const queryKey of queryKeys) {
           pendingKeysRef.current.set(JSON.stringify(queryKey), queryKey);
         }
@@ -110,6 +134,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     };
 
     return () => {
+      console.info('[PlanUpdateListener] Realtime-Verbindung wird beendet');
       eventSource.removeEventListener('plan-update', handlePlanUpdate);
       eventSource.close();
       if (flushTimerRef.current) {
