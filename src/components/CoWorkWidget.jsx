@@ -104,6 +104,23 @@ function getInviteToastId(inviteId) {
   return `cowork-invite-${inviteId}`;
 }
 
+function decodeJwtPayload(token) {
+  try {
+    const parts = (token || '').split('.');
+    if (parts.length < 2) return null;
+
+    const normalizedPayload = parts[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+
+    return JSON.parse(atob(normalizedPayload));
+  } catch (error) {
+    console.error('[CoWork/Jitsi] JWT decode failed', error);
+    return null;
+  }
+}
+
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
@@ -421,6 +438,8 @@ export default function CoWorkWidget() {
         if (disposed || !jitsiContainerRef.current) return;
 
         jitsiContainerRef.current.innerHTML = '';
+        const tokenPayload = decodeJwtPayload(activeSession.token);
+
         externalApi = new JitsiMeetExternalAPI(jitsiDomain, {
           roomName: activeRoomName,
           parentNode: jitsiContainerRef.current,
@@ -431,6 +450,7 @@ export default function CoWorkWidget() {
             displayName: user?.full_name || user?.email || 'CuraFlow',
             email: user?.email || undefined,
           },
+          apiLogLevels: ['debug', 'info', 'warn', 'error'],
           configOverwrite: {
             startWithAudioMuted: true,
             startWithVideoMuted: true,
@@ -444,11 +464,32 @@ export default function CoWorkWidget() {
         });
 
         jitsiApiRef.current = externalApi;
+        console.info('[CoWork/Jitsi] session created', {
+          roomName: activeRoomName,
+          tokenExp: tokenPayload?.exp || null,
+          secondsLeft: tokenPayload?.exp ? tokenPayload.exp - Math.floor(Date.now() / 1000) : null,
+        });
+
+        externalApi.addListener('log', (event) => {
+          console.debug('[CoWork/Jitsi log]', event);
+        });
+
         externalApi.addEventListeners({
-          videoConferenceJoined: () => {
+          videoConferenceJoined: (event) => {
+            console.info('[CoWork/Jitsi] joined', event);
             setIsLoadingSession(false);
           },
+          videoConferenceLeft: (event) => {
+            console.warn('[CoWork/Jitsi] left', event);
+          },
+          readyToClose: () => {
+            console.warn('[CoWork/Jitsi] readyToClose');
+          },
+          errorOccurred: (event) => {
+            console.error('[CoWork/Jitsi] errorOccurred', event);
+          },
           screenSharingStatusChanged: (event) => {
+            console.warn('[CoWork/Jitsi] screenSharingStatusChanged', event);
             const sharingActive = Boolean(event?.on);
             setIsScreenSharing(sharingActive);
 
