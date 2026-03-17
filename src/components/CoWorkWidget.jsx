@@ -116,6 +116,7 @@ export default function CoWorkWidget() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isContactsCollapsed, setIsContactsCollapsed] = useState(false);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
@@ -224,6 +225,7 @@ export default function CoWorkWidget() {
       toast.dismiss(getInviteToastId(inviteId));
       setActiveSession(session);
       setIsContactsCollapsed(true);
+      setIsDetailsOpen(false);
       setIsOpen(true);
       await refreshCoworkData();
       return session;
@@ -244,6 +246,7 @@ export default function CoWorkWidget() {
       const session = await api.getJitsiToken();
       setActiveSession(session);
       setIsContactsCollapsed(true);
+      setIsDetailsOpen(false);
       setIsOpen(true);
     } catch (error) {
       toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
@@ -261,6 +264,7 @@ export default function CoWorkWidget() {
       const result = await api.sendCoworkInvite(contact.id);
       setActiveSession(result.session);
       setIsContactsCollapsed(true);
+      setIsDetailsOpen(false);
       setIsOpen(true);
       toast.success(`Einladung an ${contact.full_name || contact.email} gesendet`);
       await refreshCoworkData();
@@ -377,6 +381,12 @@ export default function CoWorkWidget() {
   useEffect(() => {
     if (!activeSession) return;
     setIsContactsCollapsed(true);
+    setIsDetailsOpen(false);
+  }, [activeSession]);
+
+  useEffect(() => {
+    if (activeSession) return;
+    setIsDetailsOpen(true);
   }, [activeSession]);
 
   useEffect(() => {
@@ -425,6 +435,10 @@ export default function CoWorkWidget() {
             startWithAudioMuted: true,
             startWithVideoMuted: true,
             prejoinPageEnabled: false,
+            prejoinConfig: {
+              enabled: false,
+              hideDisplayName: true,
+            },
             disableDeepLinking: true,
           },
         });
@@ -550,6 +564,7 @@ export default function CoWorkWidget() {
 
   const shouldShowIncomingPrompt = !!currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id;
   const isAcceptedIncomingInvite = currentIncomingInvite?.status === 'accepted';
+  const hasActiveMeeting = Boolean(activeSession?.token && activeRoomName);
 
   /** @type {React.CSSProperties} */
   const panelStyle = isExpanded
@@ -676,6 +691,17 @@ export default function CoWorkWidget() {
             <span className="text-xs text-indigo-700 flex-1 truncate">
               Geschuetzter Raum: <strong>{activeRoomName || 'noch nicht gestartet'}</strong>
             </span>
+            {hasActiveMeeting && (
+              <button
+                type="button"
+                onClick={() => setIsDetailsOpen((currentValue) => !currentValue)}
+                className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-100 hover:text-indigo-900"
+                title={isDetailsOpen ? 'Steuerung ausblenden' : 'Steuerung einblenden'}
+              >
+                {isDetailsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                {isDetailsOpen ? 'Steuerung ausblenden' : 'Steuerung anzeigen'}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { void handleToggleFullscreen(); }}
@@ -687,7 +713,7 @@ export default function CoWorkWidget() {
             </button>
           </div>
 
-          {currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id && (
+          {isDetailsOpen && currentIncomingInvite && activeSession?.inviteId !== currentIncomingInvite.id && (
             <div className="border-b border-emerald-100 bg-emerald-50 px-4 py-3">
               <div className="flex items-start gap-3">
                 <div className="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
@@ -724,7 +750,7 @@ export default function CoWorkWidget() {
             </div>
           )}
 
-          {isAdmin && (
+          {isAdmin && isDetailsOpen && (
             <div className="border-b border-slate-200 bg-slate-50 px-4 py-4 space-y-4">
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
