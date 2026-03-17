@@ -1,10 +1,13 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Video, VideoOff, X, Users, Loader2, PhoneCall, PhoneIncoming, PhoneOff, Maximize2, Minimize2 } from 'lucide-react';
+import { Video, VideoOff, X, Users, Loader2, PhoneCall, PhoneIncoming, PhoneOff, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
+
+let jitsiExternalApiLoader = null;
+let jitsiExternalApiScriptUrl = null;
 
 /**
  * Leitet den ersten Mandanten-Slug aus dem allowed_tenants-Feld ab.
@@ -24,14 +27,55 @@ function parseTenantSlug(allowed_tenants) {
   return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
-function buildJitsiUrl({ baseUrl, roomName, token }) {
-  return (
-    `${baseUrl}/${roomName}?jwt=${encodeURIComponent(token)}&lang=de` +
-    `#config.startWithAudioMuted=true` +
-    `&config.startWithVideoMuted=true` +
-    `&config.prejoinPageEnabled=false` +
-    `&config.disableDeepLinking=true`
-  );
+function buildJitsiDomain(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return null;
+  }
+}
+
+function loadJitsiExternalApi(baseUrl) {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Jitsi kann nur im Browser geladen werden'));
+  }
+
+  if (window.JitsiMeetExternalAPI) {
+    return Promise.resolve(window.JitsiMeetExternalAPI);
+  }
+
+  const scriptUrl = `${baseUrl}/external_api.js`;
+  if (jitsiExternalApiLoader && jitsiExternalApiScriptUrl === scriptUrl) {
+    return jitsiExternalApiLoader;
+  }
+
+  jitsiExternalApiScriptUrl = scriptUrl;
+  jitsiExternalApiLoader = new Promise((resolve, reject) => {
+    const existingScript = document.querySelector(`script[data-jitsi-external-api="true"][src="${scriptUrl}"]`);
+
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.JitsiMeetExternalAPI), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('Jitsi-API konnte nicht geladen werden')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.async = true;
+    script.dataset.jitsiExternalApi = 'true';
+    script.onload = () => {
+      if (window.JitsiMeetExternalAPI) {
+        resolve(window.JitsiMeetExternalAPI);
+        return;
+      }
+
+      reject(new Error('Jitsi-API ist nach dem Laden nicht verfuegbar'));
+    };
+    script.onerror = () => reject(new Error('Jitsi-API konnte nicht geladen werden'));
+    document.body.appendChild(script);
+  });
+
+  return jitsiExternalApiLoader;
 }
 
 function formatLastSeen(lastSeenAt) {
@@ -70,6 +114,9 @@ export default function CoWorkWidget() {
 
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isContactsCollapsed, setIsContactsCollapsed] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
   const [activeSession, setActiveSession] = useState(null);
@@ -79,6 +126,8 @@ export default function CoWorkWidget() {
   const dragging = useRef(false);
   const dragOffset = useRef({ x: 0, y: 0 });
   const panelRef = useRef(null);
+  const jitsiContainerRef = useRef(null);
+  const jitsiApiRef = useRef(null);
   const hideTimerRef = useRef(null);
   const announcedInviteIdsRef = useRef(new Set());
   const lastInviteErrorRef = useRef(null);
@@ -86,14 +135,8 @@ export default function CoWorkWidget() {
   const tenantSlug = parseTenantSlug(user?.allowed_tenants);
   const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
   const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
+  const jitsiDomain = buildJitsiDomain(jitsiBaseUrl);
   const activeRoomName = activeSession?.roomName || null;
-  const jitsiUrl = activeSession?.token
-    ? buildJitsiUrl({
-        baseUrl: jitsiBaseUrl,
-        roomName: activeRoomName,
-        token: activeSession.token,
-      })
-    : null;
 
   const invitesQuery = useQuery({
     queryKey: ['coworkInvites'],
@@ -157,107 +200,41 @@ export default function CoWorkWidget() {
     }, 8000);
   }, [clearHideTimer, isOpen]);
 
-  // Drag-Logik für das Panel
-  const onMouseDown = (e) => {
-    if (e.target.closest('button') || e.target.closest('iframe')) return;
-    dragging.current = true;
-    const rect = panelRef.current.getBoundingClientRect();
-    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    e.preventDefault();
-  };
+  const handleToggleFullscreen = useCallback(async () => {
+    if (typeof document === 'undefined' || !panelRef.current) return;
 
-  useEffect(() => {
-    const onMove = (e) => {
-      if (!dragging.current) return;
-      setPosition({
-        x: e.clientX - dragOffset.current.x,
-        y: e.clientY - dragOffset.current.y,
-      });
-    };
-    const onUp = () => { dragging.current = false; };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
+    try {
+      if (document.fullscreenElement === panelRef.current) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      await panelRef.current.requestFullscreen();
+    } catch {
+      toast.error('Vollbild konnte nicht aktiviert werden');
+    }
   }, []);
 
-  useEffect(() => {
-    scheduleHide();
-    return clearHideTimer;
-  }, [scheduleHide, clearHideTimer]);
+  const joinInviteInternal = useCallback(async (inviteId) => {
+    setBusyId(inviteId);
+    setIsLoadingSession(true);
 
-  useEffect(() => {
-    const activeIncomingIds = new Set((invitesQuery.data?.incoming || []).map((invite) => invite.id));
-    setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
-  }, [invitesQuery.data?.incoming]);
-
-  useEffect(() => {
-    if (!activeSession) return undefined;
-
-    const syncInterval = window.setInterval(() => {
-      queryClient.refetchQueries({ type: 'active' });
-    }, 10000);
-
-    return () => {
-      window.clearInterval(syncInterval);
-    };
-  }, [activeSession, queryClient]);
-
-  useEffect(() => {
-    const onMouseMove = (e) => {
-      const nearRightEdge = window.innerWidth - e.clientX <= 140;
-      const nearBottomEdge = window.innerHeight - e.clientY <= 140;
-      if (!nearRightEdge || !nearBottomEdge) return;
-      setIsTriggerHidden(false);
-      scheduleHide();
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    return () => window.removeEventListener('mousemove', onMouseMove);
-  }, [scheduleHide]);
-
-  useEffect(() => {
-    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || announcedInviteIdsRef.current.has(currentIncomingInvite.id)) return;
-
-    announcedInviteIdsRef.current.add(currentIncomingInvite.id);
-    setIsTriggerHidden(false);
-    setIsOpen(true);
-    toast.info(`Support-Einladung von ${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}`, {
-      id: getInviteToastId(currentIncomingInvite.id),
-      duration: 15000,
-    });
-  }, [currentIncomingInvite]);
-
-  useEffect(() => {
-    const message = invitesQuery.error?.message || null;
-    if (!message || lastInviteErrorRef.current === message) return;
-
-    lastInviteErrorRef.current = message;
-    toast.error(`CoWork-Einladungen konnten nicht geladen werden: ${message}`);
-  }, [invitesQuery.error]);
-
-  useEffect(() => {
-    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || typeof window === 'undefined' || typeof Notification === 'undefined') return;
-    if (document.visibilityState === 'visible') return;
-    if (Notification.permission !== 'granted') return;
-
-    const notification = new Notification('CuraFlow Support-Einladung', {
-      body: `${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email} hat Sie eingeladen.`,
-      tag: `cowork-invite-${currentIncomingInvite.id}`,
-    });
-
-    notification.onclick = () => {
-      window.focus();
+    try {
+      const session = await api.joinCoworkInvite(inviteId);
+      toast.dismiss(getInviteToastId(inviteId));
+      setActiveSession(session);
+      setIsContactsCollapsed(true);
       setIsOpen(true);
-      notification.close();
-    };
-
-    return () => {
-      notification.close();
-    };
-  }, [currentIncomingInvite]);
+      await refreshCoworkData();
+      return session;
+    } catch (error) {
+      toast.error(error.message || 'CoWork-Session konnte nicht geoeffnet werden');
+      return null;
+    } finally {
+      setBusyId(null);
+      setIsLoadingSession(false);
+    }
+  }, [refreshCoworkData]);
 
   const handleOpenDefaultRoom = useCallback(async () => {
     setBusyId('default-room');
@@ -266,6 +243,7 @@ export default function CoWorkWidget() {
     try {
       const session = await api.getJitsiToken();
       setActiveSession(session);
+      setIsContactsCollapsed(true);
       setIsOpen(true);
     } catch (error) {
       toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
@@ -282,6 +260,7 @@ export default function CoWorkWidget() {
     try {
       const result = await api.sendCoworkInvite(contact.id);
       setActiveSession(result.session);
+      setIsContactsCollapsed(true);
       setIsOpen(true);
       toast.success(`Einladung an ${contact.full_name || contact.email} gesendet`);
       await refreshCoworkData();
@@ -294,22 +273,8 @@ export default function CoWorkWidget() {
   }, [refreshCoworkData]);
 
   const handleJoinInvite = useCallback(async (inviteId) => {
-    setBusyId(inviteId);
-    setIsLoadingSession(true);
-
-    try {
-      const session = await api.joinCoworkInvite(inviteId);
-      toast.dismiss(getInviteToastId(inviteId));
-      setActiveSession(session);
-      setIsOpen(true);
-      await refreshCoworkData();
-    } catch (error) {
-      toast.error(error.message || 'CoWork-Session konnte nicht geoeffnet werden');
-    } finally {
-      setBusyId(null);
-      setIsLoadingSession(false);
-    }
-  }, [refreshCoworkData]);
+    await joinInviteInternal(inviteId);
+  }, [joinInviteInternal]);
 
   const handleDeclineInvite = useCallback(async (inviteId) => {
     setBusyId(inviteId);
@@ -352,6 +317,8 @@ export default function CoWorkWidget() {
   const handleCloseSession = useCallback(async () => {
     const inviteId = activeSession?.inviteId;
 
+    setIsScreenSharing(false);
+
     if (!inviteId) {
       setActiveSession(null);
       setIsExpanded(false);
@@ -376,6 +343,208 @@ export default function CoWorkWidget() {
     }
   }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
+  // Drag-Logik für das Panel
+  const onMouseDown = (e) => {
+    if (e.target.closest('button') || e.target.closest('iframe')) return;
+    dragging.current = true;
+    const rect = panelRef.current.getBoundingClientRect();
+    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    e.preventDefault();
+  };
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      setPosition({
+        x: e.clientX - dragOffset.current.x,
+        y: e.clientY - dragOffset.current.y,
+      });
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    scheduleHide();
+    return clearHideTimer;
+  }, [scheduleHide, clearHideTimer]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    setIsContactsCollapsed(true);
+  }, [activeSession]);
+
+  useEffect(() => {
+    const activeIncomingIds = new Set((invitesQuery.data?.incoming || []).map((invite) => invite.id));
+    setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
+  }, [invitesQuery.data?.incoming]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === panelRef.current);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeSession?.token || !activeRoomName || !jitsiDomain || !jitsiContainerRef.current) return undefined;
+
+    let disposed = false;
+    let externalApi = null;
+
+    setIsLoadingSession(true);
+    setIsScreenSharing(false);
+
+    void loadJitsiExternalApi(jitsiBaseUrl)
+      .then((JitsiMeetExternalAPI) => {
+        if (disposed || !jitsiContainerRef.current) return;
+
+        jitsiContainerRef.current.innerHTML = '';
+        externalApi = new JitsiMeetExternalAPI(jitsiDomain, {
+          roomName: activeRoomName,
+          parentNode: jitsiContainerRef.current,
+          jwt: activeSession.token,
+          width: '100%',
+          height: '100%',
+          userInfo: {
+            displayName: user?.full_name || user?.email || 'CuraFlow',
+            email: user?.email || undefined,
+          },
+          configOverwrite: {
+            startWithAudioMuted: true,
+            startWithVideoMuted: true,
+            prejoinPageEnabled: false,
+            disableDeepLinking: true,
+          },
+        });
+
+        jitsiApiRef.current = externalApi;
+        externalApi.addEventListeners({
+          videoConferenceJoined: () => {
+            setIsLoadingSession(false);
+          },
+          screenSharingStatusChanged: (event) => {
+            const sharingActive = Boolean(event?.on);
+            setIsScreenSharing(sharingActive);
+
+            if (sharingActive) {
+              setIsTriggerHidden(true);
+            }
+          },
+        });
+
+        setIsLoadingSession(false);
+      })
+      .catch((error) => {
+        if (disposed) return;
+
+        setActiveSession(null);
+        setIsLoadingSession(false);
+        toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
+      });
+
+    return () => {
+      disposed = true;
+      setIsScreenSharing(false);
+
+      if (jitsiApiRef.current === externalApi) {
+        jitsiApiRef.current = null;
+      }
+
+      if (externalApi?.dispose) {
+        externalApi.dispose();
+      }
+
+      if (jitsiContainerRef.current) {
+        jitsiContainerRef.current.innerHTML = '';
+      }
+    };
+  }, [activeRoomName, activeSession?.token, jitsiBaseUrl, jitsiDomain, user?.email, user?.full_name]);
+
+  useEffect(() => {
+    if (!activeSession) return undefined;
+
+    const syncInterval = window.setInterval(() => {
+      queryClient.refetchQueries({ type: 'active' });
+    }, 10000);
+
+    return () => {
+      window.clearInterval(syncInterval);
+    };
+  }, [activeSession, queryClient]);
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      const nearRightEdge = window.innerWidth - e.clientX <= 140;
+      const nearBottomEdge = window.innerHeight - e.clientY <= 140;
+      if (!nearRightEdge || !nearBottomEdge) return;
+      setIsTriggerHidden(false);
+      scheduleHide();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    return () => window.removeEventListener('mousemove', onMouseMove);
+  }, [scheduleHide]);
+
+  useEffect(() => {
+    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || announcedInviteIdsRef.current.has(currentIncomingInvite.id)) return;
+
+    announcedInviteIdsRef.current.add(currentIncomingInvite.id);
+    setIsTriggerHidden(false);
+    setIsOpen(true);
+    toast.info(`Support-Einladung von ${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}`, {
+      id: getInviteToastId(currentIncomingInvite.id),
+      duration: 15000,
+      action: {
+        label: 'Beitreten',
+        onClick: () => {
+          void joinInviteInternal(currentIncomingInvite.id);
+        },
+      },
+    });
+  }, [currentIncomingInvite, joinInviteInternal]);
+
+  useEffect(() => {
+    const message = invitesQuery.error?.message || null;
+    if (!message || lastInviteErrorRef.current === message) return;
+
+    lastInviteErrorRef.current = message;
+    toast.error(`CoWork-Einladungen konnten nicht geladen werden: ${message}`);
+  }, [invitesQuery.error]);
+
+  useEffect(() => {
+    if (!currentIncomingInvite || currentIncomingInvite.status !== 'pending' || typeof window === 'undefined' || typeof Notification === 'undefined') return;
+    if (document.visibilityState === 'visible') return;
+    if (Notification.permission !== 'granted') return;
+
+    const notification = new Notification('CuraFlow Support-Einladung', {
+      body: `${currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email} hat Sie eingeladen.`,
+      tag: `cowork-invite-${currentIncomingInvite.id}`,
+    });
+
+    notification.onclick = () => {
+      window.focus();
+      setIsOpen(true);
+      void joinInviteInternal(currentIncomingInvite.id);
+      notification.close();
+    };
+
+    return () => {
+      notification.close();
+    };
+  }, [currentIncomingInvite, joinInviteInternal]);
+
   const shouldRender = isAuthenticated && (isAdmin || !!currentIncomingInvite || !!activeSession);
   if (!shouldRender) return null;
 
@@ -398,7 +567,7 @@ export default function CoWorkWidget() {
 
   return (
     <>
-      {shouldShowIncomingPrompt && (
+      {!isScreenSharing && shouldShowIncomingPrompt && (
         <div className="fixed inset-x-4 top-20 z-[10000] mx-auto max-w-md rounded-2xl border border-emerald-200 bg-white p-4 shadow-2xl">
           <div className="flex items-start gap-3">
             <div className="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
@@ -435,29 +604,31 @@ export default function CoWorkWidget() {
       )}
 
       {/* Floating-Toggle-Button */}
-      <button
-        onClick={() => {
-          if (isOpen) {
-            void handleCloseSession();
-            return;
-          }
+      {!isScreenSharing && (
+        <button
+          onClick={() => {
+            if (isOpen) {
+              void handleCloseSession();
+              return;
+            }
 
-          setIsOpen(true);
-          setIsTriggerHidden(false);
-        }}
-        title={currentIncomingInvite ? 'Support-Einladung oeffnen' : (isOpen ? 'CoWork beenden' : 'CoWork starten')}
-        className={`
-          fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full px-4 py-3
-          shadow-lg text-sm font-medium transition-all duration-200
-          ${!isOpen && isTriggerHidden ? 'opacity-0 pointer-events-none translate-y-2' : 'opacity-100'}
-          ${triggerTone}
-        `}
-      >
-        {currentIncomingInvite ? <PhoneIncoming className="h-4 w-4" /> : (isOpen ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />)}
-        <span className="hidden sm:inline">
-          {currentIncomingInvite ? 'Support' : (isOpen ? 'Session beenden' : 'CoWork')}
-        </span>
-      </button>
+            setIsOpen(true);
+            setIsTriggerHidden(false);
+          }}
+          title={currentIncomingInvite ? 'Support-Einladung oeffnen' : (isOpen ? 'CoWork beenden' : 'CoWork starten')}
+          className={`
+            fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full px-4 py-3
+            shadow-lg text-sm font-medium transition-all duration-200
+            ${!isOpen && isTriggerHidden ? 'opacity-0 pointer-events-none translate-y-2' : 'opacity-100'}
+            ${triggerTone}
+          `}
+        >
+          {currentIncomingInvite ? <PhoneIncoming className="h-4 w-4" /> : (isOpen ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />)}
+          <span className="hidden sm:inline">
+            {currentIncomingInvite ? 'Support' : (isOpen ? 'Session beenden' : 'CoWork')}
+          </span>
+        </button>
+      )}
 
       {/* CoWork-Panel */}
       {isOpen && (
@@ -468,8 +639,11 @@ export default function CoWorkWidget() {
             zIndex: 9999,
             width: isExpanded ? 'auto' : 560,
             maxWidth: isExpanded ? 'none' : 'calc(100vw - 32px)',
+            opacity: isScreenSharing ? 0 : 1,
+            pointerEvents: isScreenSharing ? 'none' : 'auto',
+            transform: isScreenSharing ? 'translateY(24px)' : 'translateY(0)',
           }}
-          className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col"
+          className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-200"
         >
           {/* Header – Drag-Handle */}
           <div
@@ -504,11 +678,12 @@ export default function CoWorkWidget() {
             </span>
             <button
               type="button"
-              onClick={() => setIsExpanded((currentValue) => !currentValue)}
-              className="shrink-0 rounded p-1 text-indigo-500 transition-colors hover:bg-indigo-100 hover:text-indigo-800"
-              title={isExpanded ? 'Fenster verkleinern' : 'Fenster vergroessern'}
+              onClick={() => { void handleToggleFullscreen(); }}
+              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition-colors hover:bg-indigo-100 hover:text-indigo-900"
+              title={isFullscreen ? 'Vollbild beenden' : 'Vollbild aktivieren'}
             >
-              {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              {isFullscreen ? 'Vollbild beenden' : 'Vollbild'}
             </button>
           </div>
 
@@ -557,46 +732,65 @@ export default function CoWorkWidget() {
                     <div className="text-sm font-semibold text-slate-900">Nutzer erreichen</div>
                     <div className="text-xs text-slate-500">Online-Admins koennen direkt in den Support-Raum eingeladen werden.</div>
                   </div>
-                  <button
-                    onClick={handleOpenDefaultRoom}
-                    disabled={busyId === 'default-room' || isLoadingSession}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {busyId === 'default-room' && isLoadingSession ? <Loader2 className="h-3 w-3 animate-spin" /> : <Video className="h-3 w-3" />}
-                    Raum ohne Einladung
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleOpenDefaultRoom}
+                      disabled={busyId === 'default-room' || isLoadingSession}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {busyId === 'default-room' && isLoadingSession ? <Loader2 className="h-3 w-3 animate-spin" /> : <Video className="h-3 w-3" />}
+                      Raum ohne Einladung
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsContactsCollapsed((currentValue) => !currentValue)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      title={isContactsCollapsed ? 'Nutzerliste anzeigen' : 'Nutzerliste einklappen'}
+                    >
+                      {isContactsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                      {isContactsCollapsed ? 'Nutzer anzeigen' : 'Nutzer einklappen'}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="max-h-48 space-y-2 overflow-auto pr-1">
-                  {contactsQuery.isLoading ? (
-                    <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Kontakte werden geladen...
-                    </div>
-                  ) : sortedContacts.length > 0 ? (
-                    sortedContacts.map((contact) => (
-                      <div key={contact.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
-                        <div className={`h-2.5 w-2.5 rounded-full ${contact.is_online ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-slate-900">{contact.full_name || contact.email}</div>
-                          <div className="truncate text-xs text-slate-500">{contact.email} · {contact.is_online ? 'online' : formatLastSeen(contact.last_seen_at)}</div>
-                        </div>
-                        <button
-                          onClick={() => handleSendInvite(contact)}
-                          disabled={!contact.is_online || busyId === contact.id}
-                          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                        >
-                          {busyId === contact.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <PhoneCall className="h-3 w-3" />}
-                          Einladen
-                        </button>
+                {!isContactsCollapsed && (
+                  <div className="max-h-48 space-y-2 overflow-auto pr-1">
+                    {contactsQuery.isLoading ? (
+                      <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Kontakte werden geladen...
                       </div>
-                    ))
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
-                      Keine erreichbaren Admins gefunden.
-                    </div>
-                  )}
-                </div>
+                    ) : sortedContacts.length > 0 ? (
+                      sortedContacts.map((contact) => (
+                        <div key={contact.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+                          <div className={`h-2.5 w-2.5 rounded-full ${contact.is_online ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-slate-900">{contact.full_name || contact.email}</div>
+                            <div className="truncate text-xs text-slate-500">{contact.email} · {contact.is_online ? 'online' : formatLastSeen(contact.last_seen_at)}</div>
+                          </div>
+                          <button
+                            onClick={() => handleSendInvite(contact)}
+                            disabled={!contact.is_online || busyId === contact.id}
+                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                          >
+                            {busyId === contact.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <PhoneCall className="h-3 w-3" />}
+                            Einladen
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
+                        Keine erreichbaren Admins gefunden.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isContactsCollapsed && (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-white px-3 py-4 text-sm text-slate-500">
+                    Nutzerliste eingeklappt, damit mehr Platz fuer die aktive Besprechung bleibt.
+                  </div>
+                )}
               </div>
 
               <div>
@@ -640,20 +834,28 @@ export default function CoWorkWidget() {
           )}
 
           {/* Jitsi iFrame */}
-          {isLoadingSession ? (
+          {activeSession?.token && activeRoomName ? (
+            <div className="relative bg-slate-950" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
+              {isLoadingSession && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/70 text-slate-100">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Jitsi-Session wird vorbereitet...
+                  </div>
+                </div>
+              )}
+              <div
+                ref={jitsiContainerRef}
+                style={{ width: '100%', height: '100%', opacity: isLoadingSession ? 0.01 : 1 }}
+              />
+            </div>
+          ) : isLoadingSession ? (
             <div className="flex min-h-[360px] items-center justify-center bg-slate-50 text-slate-600" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
               <div className="flex items-center gap-2 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Jitsi-Session wird vorbereitet...
               </div>
             </div>
-          ) : jitsiUrl ? (
-            <iframe
-              src={jitsiUrl}
-              allow="camera; microphone; display-capture; fullscreen; autoplay"
-              style={{ width: '100%', height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto', border: 'none', display: 'block' }}
-              title="CoWork-Session"
-            />
           ) : (
             <div className="flex min-h-[360px] items-center justify-center bg-slate-50 px-6 text-center text-sm text-slate-600" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
               {isAdmin
