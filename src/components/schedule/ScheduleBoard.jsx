@@ -3437,16 +3437,6 @@ export default function ScheduleBoard() {
             };
         }
 
-        const conflictingServiceWish = doctorWishes.find(w =>
-            w.type === 'service' && w.position && w.position !== shift.position
-        );
-        if (conflictingServiceWish) {
-            return {
-                color: 'red',
-                title: `Dienstwunsch nicht erfüllt: gewünscht ${conflictingServiceWish.position}, eingeteilt ${shift.position}`
-            };
-        }
-
         return null;
     }, [getDoctorDayWishes, workplaces]);
 
