@@ -3593,11 +3593,12 @@ export default function ScheduleBoard() {
                     isBeingDragged={isDraggingThis}
                     qualificationStatus={qualificationStatus}
                     fairnessInfo={shift.isPreview ? getFairnessInfo(shift) : null}
+                    wishMarker={getShiftWishMarker(shift)}
                 />
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, isEmbeddedSchedule, isSplitViewEnabled]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
