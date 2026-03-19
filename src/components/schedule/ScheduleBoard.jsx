@@ -344,6 +344,19 @@ export default function ScheduleBoard() {
       }
   }, [sortDoctorsAlphabetically, user]);
 
+  const sortDoctorsForDisplay = (doctorList = []) => {
+      if (!sortDoctorsAlphabetically) {
+          return doctorList;
+      }
+
+      return [...doctorList].sort((a, b) => {
+          const nameDiff = (a?.name || '').localeCompare(b?.name || '', 'de', { sensitivity: 'base' });
+          if (nameDiff !== 0) return nameDiff;
+
+          return (a?.initials || '').localeCompare(b?.initials || '', 'de', { sensitivity: 'base' });
+      });
+  };
+
 
 
   const [gridFontSize, setGridFontSize] = useState(() => {
