@@ -3,7 +3,7 @@ import { Draggable } from '@hello-pangea/dnd';
 
 const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, draggableIdPrefix = '', ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
@@ -23,6 +23,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
     }
     return lines.join('\n');
   }, [fairnessInfo]);
+
+  const combinedTooltip = [fairnessTooltip, wishMarker?.title].filter(Boolean).join('\n');
   
   // Qualification warning/error indicator
   const QualWarning = qualificationStatus === 'excluded' ? (
@@ -41,6 +43,13 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
     >
       ⚠
     </div>
+  ) : null;
+
+  const WishMarker = wishMarker ? (
+    <div
+      className={`absolute -top-0.5 -left-0.5 z-20 h-0 w-0 border-t-[10px] border-r-[10px] border-r-transparent ${wishMarker.color === 'green' ? 'border-t-green-500' : 'border-t-red-500'}`}
+      title={wishMarker.title}
+    />
   ) : null;
 
   const dynamicStyle = {
@@ -129,7 +138,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             {...(isFullWidth ? {} : provided.dragHandleProps)}
             className={containerClass}
             style={containerStyle}
-            title={fairnessTooltip || (isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined)}
+            title={combinedTooltip || (isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined)}
           >
             {isDragging ? (
                 // The visual badge - square like small chips
@@ -144,18 +153,20 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     fontSize: `${fontSize}px`,
                 }}
                 >
+                  {WishMarker}
                     <span className="truncate">
                      {getDoctorShortLabel(doctor)}
                     </span>
                 </div>
             ) : isFullWidth ? (
                 <>
+                  {WishMarker}
                     {QualWarning}
                     <div 
                         {...provided.dragHandleProps}
                         className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
                         style={{ width: `${boxSize}px`, fontSize: `${fontSize}px` }}
-                        title={fairnessTooltip || "Ziehen zum Verschieben"}
+                        title={combinedTooltip || "Ziehen zum Verschieben"}
                     >
                         {getDoctorShortLabel(doctor)}
                     </div>
@@ -180,6 +191,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             )}
             {!isDragging && !isFullWidth && (
                 <>
+              {WishMarker}
                 {QualWarning}
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full relative z-10" 

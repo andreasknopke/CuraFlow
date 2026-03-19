@@ -3383,6 +3383,73 @@ export default function ScheduleBoard() {
     return info;
   }, [previewFairnessData, workplaces, wishes]);
 
+    const getDoctorDayWishes = useMemo(() => (doctorId, dateStr) => {
+        return wishes.filter(w =>
+            w.doctor_id === doctorId &&
+            w.date === dateStr &&
+            w.status !== 'rejected'
+        );
+    }, [wishes]);
+
+    const buildWishTooltip = useMemo(() => (doctor, doctorWishes = []) => {
+        const lines = [doctor.name];
+
+        for (const wish of doctorWishes) {
+            if (wish.type === 'service') {
+                lines.push(`Dienstwunsch: ${wish.position || 'Beliebiger Dienst'}`);
+            } else if (wish.type === 'no_service') {
+                lines.push(`Kein-Dienst-Wunsch: ${wish.position || 'Alle Dienste'}`);
+            }
+
+            if (wish.priority) lines.push(`Prio: ${wish.priority}`);
+            if (wish.reason) lines.push(`Grund: ${wish.reason}`);
+        }
+
+        return lines.join('\n');
+    }, []);
+
+    const getShiftWishMarker = useMemo(() => (shift) => {
+        if (!shift) return null;
+
+        const workplace = workplaces.find(w => w.name === shift.position);
+        if (workplace?.category !== 'Dienste') return null;
+
+        const doctorWishes = getDoctorDayWishes(shift.doctor_id, shift.date);
+        if (!doctorWishes.length) return null;
+
+        const matchingServiceWish = doctorWishes.find(w =>
+            w.type === 'service' && (!w.position || w.position === shift.position)
+        );
+        if (matchingServiceWish) {
+            return {
+                color: 'green',
+                title: `Dienstwunsch erfüllt: ${matchingServiceWish.position || shift.position}`
+            };
+        }
+
+        const conflictingNoServiceWish = doctorWishes.find(w =>
+            w.type === 'no_service' && (!w.position || w.position === shift.position)
+        );
+        if (conflictingNoServiceWish) {
+            return {
+                color: 'red',
+                title: `Kein-Dienst-Wunsch verletzt: ${conflictingNoServiceWish.position || shift.position}`
+            };
+        }
+
+        const conflictingServiceWish = doctorWishes.find(w =>
+            w.type === 'service' && w.position && w.position !== shift.position
+        );
+        if (conflictingServiceWish) {
+            return {
+                color: 'red',
+                title: `Dienstwunsch nicht erfüllt: gewünscht ${conflictingServiceWish.position}, eingeteilt ${shift.position}`
+            };
+        }
+
+        return null;
+    }, [getDoctorDayWishes, workplaces]);
+
     const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '', cellWidth = null) => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
@@ -4577,22 +4644,21 @@ export default function ScheduleBoard() {
                                                                 >
                                                                     {(provided, snapshot) => {
                                                                         let style = getRoleColor(doc.role);
-                                                                        const wish = wishes.find(w => w.doctor_id === doc.id && w.date === dateStr && w.status !== 'rejected');
+                                                                        const doctorWishes = getDoctorDayWishes(doc.id, dateStr);
+                                                                        const wish = doctorWishes[0];
                                                                         let wishClass = "";
                                                                         const isCurrentUser = user?.doctor_id && doc.id === user.doctor_id;
                                                                         if (isCurrentUser && highlightMyName) wishClass = "ring-2 ring-red-500 ring-offset-1 z-10";
 
-                                                                        let tooltipText = doc.name;
+                                                                        let tooltipText = buildWishTooltip(doc, doctorWishes);
 
                                                                         if (wish) {
                                                                             if (wish.type === 'service') {
                                                                                 style = { backgroundColor: '#dcfce7', color: '#166534' }; // Green
                                                                                 wishClass = "ring-1 ring-green-500";
-                                                                                tooltipText += `\nWunsch: ${wish.position || 'Dienst'}\nPrio: ${wish.priority}\n${wish.reason ? `Grund: ${wish.reason}` : ''}`;
                                                                             } else if (wish.type === 'no_service') {
                                                                                 style = { backgroundColor: '#fee2e2', color: '#991b1b' }; // Red
                                                                                 wishClass = "ring-1 ring-red-500";
-                                                                                tooltipText += `\nWunsch: Kein Dienst\nPrio: ${wish.priority}\n${wish.reason ? `Grund: ${wish.reason}` : ''}`;
                                                                             }
                                                                         }
 
@@ -4687,4 +4753,5 @@ export default function ScheduleBoard() {
       />
     </div>
   );
+}  );
 }
