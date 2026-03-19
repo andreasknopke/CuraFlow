@@ -16,6 +16,7 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
 import { AlertTriangle } from 'lucide-react';
 import { isWishOnDate } from '@/utils/wishRange';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
@@ -30,6 +31,7 @@ export default function ServiceStaffingPage() {
     const queryClient = useQueryClient();
     const servicesCaption = getSectionName('Dienste');
     const servicesPageTitle = servicesCaption === 'Dienste' ? 'Dienstbesetzung' : servicesCaption;
+    const alphabeticalDoctorSorting = useMemo(() => isAlphabeticalDoctorSortingEnabled(user), [user]);
 
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],
@@ -547,26 +549,28 @@ export default function ServiceStaffingPage() {
                                         }
 
                                         // Sort: preferred ("Sollte") doctors first, discouraged ("Sollte nicht") doctors last
-                                        availableDoctors = availableDoctors.sort((a, b) => {
-                                            const aQuals = getDoctorQualIds(a.id);
-                                            const bQuals = getDoctorQualIds(b.id);
+                                        availableDoctors = alphabeticalDoctorSorting
+                                            ? sortDoctorsAlphabetically(availableDoctors)
+                                            : availableDoctors.sort((a, b) => {
+                                                const aQuals = getDoctorQualIds(a.id);
+                                                const bQuals = getDoctorQualIds(b.id);
 
-                                            // "Sollte nicht" – doctors WITH discouraged qualifications sort to the bottom
-                                            if (discouragedQualIds.length > 0) {
-                                                const aHasDiscouraged = discouragedQualIds.some(qid => aQuals.includes(qid));
-                                                const bHasDiscouraged = discouragedQualIds.some(qid => bQuals.includes(qid));
-                                                if (aHasDiscouraged && !bHasDiscouraged) return 1;
-                                                if (!aHasDiscouraged && bHasDiscouraged) return -1;
-                                            }
+                                                // "Sollte nicht" – doctors WITH discouraged qualifications sort to the bottom
+                                                if (discouragedQualIds.length > 0) {
+                                                    const aHasDiscouraged = discouragedQualIds.some(qid => aQuals.includes(qid));
+                                                    const bHasDiscouraged = discouragedQualIds.some(qid => bQuals.includes(qid));
+                                                    if (aHasDiscouraged && !bHasDiscouraged) return 1;
+                                                    if (!aHasDiscouraged && bHasDiscouraged) return -1;
+                                                }
 
-                                            // "Sollte" – doctors WITH preferred qualifications sort to the top
-                                            if (preferredQualIds.length === 0) return 0;
-                                            const aHasPreferred = preferredQualIds.every(qid => aQuals.includes(qid));
-                                            const bHasPreferred = preferredQualIds.every(qid => bQuals.includes(qid));
-                                            if (aHasPreferred && !bHasPreferred) return -1;
-                                            if (!aHasPreferred && bHasPreferred) return 1;
-                                            return 0;
-                                        });
+                                                // "Sollte" – doctors WITH preferred qualifications sort to the top
+                                                if (preferredQualIds.length === 0) return 0;
+                                                const aHasPreferred = preferredQualIds.every(qid => aQuals.includes(qid));
+                                                const bHasPreferred = preferredQualIds.every(qid => bQuals.includes(qid));
+                                                if (aHasPreferred && !bHasPreferred) return -1;
+                                                if (!aHasPreferred && bHasPreferred) return 1;
+                                                return 0;
+                                            });
 
                                         // Check if active (for Demos/Konsile with restricted days)
                                         // Default active_days: Mo-Fr [1,2,3,4,5]

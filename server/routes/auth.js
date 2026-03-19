@@ -202,7 +202,7 @@ function sanitizeUser(user) {
   }
   
   // Convert boolean fields
-  const boolFields = ['schedule_show_sidebar', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active', 'must_change_password', 'email_verified'];
+  const boolFields = ['schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active', 'must_change_password', 'email_verified'];
   for (const field of boolFields) {
     if (safe[field] !== undefined) {
       safe[field] = !!safe[field];
@@ -894,7 +894,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     // Whitelist allowed fields for self-update
     const allowedFields = [
       'full_name', 'theme', 'section_config', 'collapsed_sections',
-      'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
+      'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
       'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
     ];
     
@@ -1152,7 +1152,7 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
     const allowedFields = [
       'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants',
       'theme', 'section_config', 'collapsed_sections',
-      'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
+      'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
       'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
     ];
     

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from "@/components/ui/use-toast";
 import { getWishStartDate, getWishEndDate, hasWishRange } from '@/utils/wishRange';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 // Safe parseISO that handles undefined/null
 const safeParseISO = (dateStr) => {
@@ -233,25 +234,29 @@ export default function MyDashboardPage() {
         queryFn: () => db.Doctor.list(),
     });
 
+    const doctorsForSelection = useMemo(() => {
+        return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
+    }, [doctors, user]);
+
     // Determine initial doctor selection
     useEffect(() => {
-        if (doctors.length > 0 && user && !selectedDoctorId) {
+        if (doctorsForSelection.length > 0 && user && !selectedDoctorId) {
             // Admins: prefer user.doctor_id, otherwise first doctor
             // Non-Admins: only their assigned doctor
             if (user.role === 'admin') {
-                if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                     setSelectedDoctorId(user.doctor_id);
                 } else {
-                    setSelectedDoctorId(doctors[0].id);
+                    setSelectedDoctorId(doctorsForSelection[0].id);
                 }
             } else {
-                if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+                if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                     setSelectedDoctorId(user.doctor_id);
                 }
                 // If no doctor_id for non-admin, selectedDoctorId stays null
             }
         }
-    }, [doctors, user, selectedDoctorId]);
+    }, [doctorsForSelection, user, selectedDoctorId]);
 
     // Fetch data for selected doctor
     const { data: shifts = [], isLoading: isLoadingShifts } = useQuery({
@@ -581,7 +586,7 @@ export default function MyDashboardPage() {
                                     <SelectValue placeholder="Person wählen..." />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {doctors.map(doc => (
+                                    {doctorsForSelection.map(doc => (
                                         <SelectItem key={doc.id} value={doc.id}>
                                             {doc.name} ({doc.role})
                                         </SelectItem>

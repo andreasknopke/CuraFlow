@@ -14,6 +14,7 @@ import { useHolidays } from '@/components/useHolidays';
 import { useToast } from '@/components/ui/use-toast';
 import { getDefaultRotationColor } from '@/components/settings/ColorSettingsDialog';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
@@ -47,6 +48,10 @@ export default function TrainingPage() {
     }),
   });
 
+    const doctorsForSelection = useMemo(() => {
+        return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
+    }, [doctors, user]);
+
   // Fetch Workplaces for dynamic modalities
   const { data: workplaces = [] } = useQuery({
     queryKey: ['workplaces'],
@@ -55,27 +60,27 @@ export default function TrainingPage() {
 
   // Select doctor logic - only set initial value, don't override user selection
   React.useEffect(() => {
-    if (doctors.length > 0 && !selectedDoctorId) {
+    if (doctorsForSelection.length > 0 && !selectedDoctorId) {
         if (user && user.role !== 'admin') {
             // Non-admins: use their assigned doctor
-            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+            if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                 setSelectedDoctorId(user.doctor_id);
             }
         } else if (user) {
             // Admins: prefer user.doctor_id, otherwise first Assistenzarzt
-            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+            if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                 setSelectedDoctorId(user.doctor_id);
             } else {
-                const assis = doctors.find(d => d.role === 'Assistenzarzt');
-                setSelectedDoctorId(assis ? assis.id : doctors[0].id);
+                const assis = doctorsForSelection.find(d => d.role === 'Assistenzarzt');
+                setSelectedDoctorId(assis ? assis.id : doctorsForSelection[0].id);
             }
         } else {
             // No user yet, use default Assistenzarzt
-            const assis = doctors.find(d => d.role === 'Assistenzarzt');
-            setSelectedDoctorId(assis ? assis.id : doctors[0].id);
+            const assis = doctorsForSelection.find(d => d.role === 'Assistenzarzt');
+            setSelectedDoctorId(assis ? assis.id : doctorsForSelection[0].id);
         }
     }
-  }, [doctors, user]);
+  }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
@@ -616,7 +621,7 @@ export default function TrainingPage() {
                             <SelectValue placeholder="Person auswählen" />
                         </SelectTrigger>
                         <SelectContent>
-                            {doctors.map(d => (
+                            {doctorsForSelection.map(d => (
                                 <SelectItem key={d.id} value={d.id}>
                                     {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
                                 </SelectItem>

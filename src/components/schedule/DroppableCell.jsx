@@ -1,10 +1,34 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 
 export default function DroppableCell({ 
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
     isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone
 }) {
+  const cellRef = useRef(null);
+  const [cellWidth, setCellWidth] = useState(null);
+
+  useEffect(() => {
+    const node = cellRef.current;
+    if (!node) return undefined;
+
+    const updateWidth = () => {
+      const nextWidth = Math.max(node.clientWidth - 8, 0);
+      setCellWidth(prev => (prev === nextWidth ? prev : nextWidth));
+    };
+
+    updateWidth();
+
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(() => updateWidth());
+    observer.observe(node);
+
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <Droppable 
       droppableId={id} 
@@ -14,7 +38,10 @@ export default function DroppableCell({
     >
       {(provided, snapshot) => (
         <div
-          ref={provided.innerRef}
+          ref={(node) => {
+            cellRef.current = node;
+            provided.innerRef(node);
+          }}
           {...provided.droppableProps}
           className={`
           min-h-[60px] p-1 border rounded-sm h-full flex flex-wrap content-start gap-1 relative will-change-auto
@@ -42,7 +69,7 @@ export default function DroppableCell({
                   )}
               </div>
           )}
-          {children}
+          {typeof children === 'function' ? children({ cellWidth }) : children}
           {/* Always hide placeholder to prevent layout shift */}
           <div style={{ display: 'none' }}>{provided.placeholder}</div>
         </div>

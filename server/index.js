@@ -10,6 +10,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
+import { runMasterMigrations } from './utils/masterMigrations.js';
 
 // Import routes
 import authRouter from './routes/auth.js';
@@ -347,6 +348,17 @@ app.listen(PORT, async () => {
   console.log(`🚀 CuraFlow Railway Server running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️  Database: ${process.env.MYSQL_HOST}`);
+
+  try {
+    const migrationResults = await runMasterMigrations(db);
+    const failedMigrations = migrationResults.filter(result => result.status === 'error');
+    console.log('🔧 Master migrations on startup:', migrationResults);
+    if (failedMigrations.length > 0) {
+      console.error('⚠️  Some startup migrations failed:', failedMigrations);
+    }
+  } catch (err) {
+    console.error('⚠️  Startup migration error:', err.message);
+  }
   
   // Auto-create missing tables on startup
   try {

@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../index.js';
+import { runMasterMigrations } from '../utils/masterMigrations.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
 import { checkAndSendWishReminders } from '../utils/wishReminder.js';
@@ -625,118 +626,7 @@ router.post('/rename-position', async (req, res, next) => {
 
 router.post('/run-migrations', async (req, res, next) => {
   try {
-    const results = [];
-    
-    // Migration 1: Add allowed_tenants to app_users
-    try {
-      await db.execute(`
-        ALTER TABLE app_users 
-        ADD COLUMN IF NOT EXISTS allowed_tenants JSON DEFAULT NULL
-      `);
-      results.push({ migration: 'add_allowed_tenants', status: 'success' });
-    } catch (err) {
-      // Column might already exist
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_allowed_tenants', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_allowed_tenants', status: 'error', error: err.message });
-      }
-    }
-    
-    // Migration 2: Add must_change_password to app_users (if not exists)
-    try {
-      await db.execute(`
-        ALTER TABLE app_users 
-        ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE
-      `);
-      results.push({ migration: 'add_must_change_password', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_must_change_password', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_must_change_password', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 3: Add email_verified columns to app_users
-    try {
-      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
-      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
-      results.push({ migration: 'add_email_verified', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_email_verified', status: 'skipped', reason: 'Columns already exist' });
-      } else {
-        results.push({ migration: 'add_email_verified', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 4: Add last_seen_at to app_users
-    try {
-      await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME DEFAULT NULL`);
-      results.push({ migration: 'add_last_seen_at', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_last_seen_at', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_last_seen_at', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 5: Create EmailVerification table
-    try {
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS EmailVerification (
-          id VARCHAR(36) PRIMARY KEY,
-          user_id VARCHAR(36) NOT NULL,
-          token VARCHAR(64) NOT NULL UNIQUE,
-          type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
-          status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
-          created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          verified_date TIMESTAMP NULL,
-          expires_date TIMESTAMP NULL,
-          INDEX idx_token (token),
-          INDEX idx_user_id (user_id)
-        )
-      `);
-      results.push({ migration: 'create_email_verification_table', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
-        results.push({ migration: 'create_email_verification_table', status: 'skipped', reason: 'Table already exists' });
-      } else {
-        results.push({ migration: 'create_email_verification_table', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 6: Create CoWorkInvite table
-    try {
-      await db.execute(`
-        CREATE TABLE IF NOT EXISTS CoWorkInvite (
-          id VARCHAR(36) PRIMARY KEY,
-          room_name VARCHAR(128) NOT NULL,
-          tenant_slug VARCHAR(64) NOT NULL,
-          inviter_user_id VARCHAR(36) NOT NULL,
-          invitee_user_id VARCHAR(36) NOT NULL,
-          status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
-          responded_date TIMESTAMP NULL,
-          expires_date TIMESTAMP NULL,
-          created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          INDEX idx_invitee_status (invitee_user_id, status),
-          INDEX idx_inviter_status (inviter_user_id, status),
-          INDEX idx_room_name (room_name),
-          INDEX idx_expires_date (expires_date)
-        ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-      `);
-      await db.execute(`ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-      results.push({ migration: 'create_cowork_invite_table', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
-        results.push({ migration: 'create_cowork_invite_table', status: 'skipped', reason: 'Table already exists' });
-      } else {
-        results.push({ migration: 'create_cowork_invite_table', status: 'error', error: err.message });
-      }
-    }
+    const results = await runMasterMigrations(db);
     
     console.log(`[Migrations] Executed by ${req.user?.email}:`, results);
     
@@ -776,6 +666,16 @@ router.get('/migration-status', async (req, res, next) => {
         name: 'add_last_seen_at',
         description: 'Praesenz-Zeitstempel fuer CoWork',
         applied: columnNames.includes('last_seen_at')
+      },
+      {
+        name: 'add_schedule_initials_only',
+        description: 'Ansichtseinstellung nur fuer Kuerzel',
+        applied: columnNames.includes('schedule_initials_only')
+      },
+      {
+        name: 'add_schedule_sort_doctors_alphabetically',
+        description: 'Ansichtseinstellung fuer alphabetische Mitarbeitersortierung',
+        applied: columnNames.includes('schedule_sort_doctors_alphabetically')
       }
     ];
 

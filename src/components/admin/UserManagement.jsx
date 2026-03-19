@@ -11,6 +11,7 @@ import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Chec
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 export default function UserManagement() {
     const queryClient = useQueryClient();
@@ -38,6 +39,10 @@ export default function UserManagement() {
         cacheTime: 10 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
+
+    const doctorsForSelection = React.useMemo(() => {
+        return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
+    }, [doctors, user]);
 
     // Fetch available tenants (db tokens)
     const { data: tenants = [] } = useQuery({
@@ -183,7 +188,7 @@ export default function UserManagement() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="none">Keine Person</SelectItem>
-                                            {doctors.map(doc => (
+                                            {doctorsForSelection.map(doc => (
                                                 <SelectItem key={doc.id} value={doc.id}>
                                                     {doc.name} ({doc.initials})
                                                 </SelectItem>

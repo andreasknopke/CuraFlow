@@ -124,6 +124,40 @@ const getInitialScheduleState = () => {
         };
 };
 
+const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
+
+const measureTextWidth = (() => {
+    let canvas = null;
+
+    return (text, fontSize) => {
+        if (!text) return 0;
+        if (typeof document === 'undefined') return text.length * fontSize * 0.62;
+
+        if (!canvas) {
+            canvas = document.createElement('canvas');
+        }
+
+        const context = canvas.getContext('2d');
+        if (!context) return text.length * fontSize * 0.62;
+
+        context.font = `700 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+        return context.measureText(text).width;
+    };
+})();
+
+const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSectionFullWidth, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }) => {
+    if (forceInitialsOnly || isSplitModeActive || (!isSectionFullWidth && !isSingleShift)) {
+        return 'compact';
+    }
+
+    if (!doctor?.name || !cellWidth) {
+        return 'full';
+    }
+
+    const requiredWidth = boxSize + measureTextWidth(doctor.name, gridFontSize) + 40;
+    return cellWidth >= requiredWidth ? 'full' : 'compact';
+};
+
 export default function ScheduleBoard() {
     const initialState = useMemo(() => getInitialScheduleState(), []);
     const isEmbeddedSchedule = useMemo(() => {
@@ -251,6 +285,22 @@ export default function ScheduleBoard() {
       } catch (e) { return true; }
   });
 
+  const [showInitialsOnly, setShowInitialsOnly] = useState(() => {
+      if (user?.schedule_initials_only !== undefined) return user.schedule_initials_only;
+      try {
+          const saved = localStorage.getItem('radioplan_showInitialsOnly');
+          return saved ? JSON.parse(saved) : false;
+      } catch (e) { return false; }
+  });
+
+  const [sortDoctorsAlphabetically, setSortDoctorsAlphabetically] = useState(() => {
+      if (user?.schedule_sort_doctors_alphabetically !== undefined) return user.schedule_sort_doctors_alphabetically;
+      try {
+          const saved = localStorage.getItem('radioplan_sortDoctorsAlphabetically');
+          return saved ? JSON.parse(saved) : false;
+      } catch (e) { return false; }
+  });
+
   // Sync with user profile when it loads/updates
   useEffect(() => {
       if (user?.collapsed_sections && Array.isArray(user.collapsed_sections)) {
@@ -265,6 +315,12 @@ export default function ScheduleBoard() {
       if (user?.highlight_my_name !== undefined) {
           setHighlightMyName(user.highlight_my_name);
       }
+      if (user?.schedule_initials_only !== undefined) {
+          setShowInitialsOnly(user.schedule_initials_only);
+      }
+      if (user?.schedule_sort_doctors_alphabetically !== undefined) {
+          setSortDoctorsAlphabetically(user.schedule_sort_doctors_alphabetically);
+      }
   }, [user]);
 
   useEffect(() => {
@@ -273,6 +329,20 @@ export default function ScheduleBoard() {
           api.updateMe({ data: { highlight_my_name: highlightMyName } }).catch(e => console.error("Pref save failed", e));
       }
   }, [highlightMyName, user]);
+
+  useEffect(() => {
+      localStorage.setItem('radioplan_showInitialsOnly', JSON.stringify(showInitialsOnly));
+      if (user && user.schedule_initials_only !== showInitialsOnly) {
+          api.updateMe({ data: { schedule_initials_only: showInitialsOnly } }).catch(e => console.error("Pref save failed", e));
+      }
+  }, [showInitialsOnly, user]);
+
+  useEffect(() => {
+      localStorage.setItem('radioplan_sortDoctorsAlphabetically', JSON.stringify(sortDoctorsAlphabetically));
+      if (user && user.schedule_sort_doctors_alphabetically !== sortDoctorsAlphabetically) {
+          api.updateMe({ data: { schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically } }).catch(e => console.error("Pref save failed", e));
+      }
+  }, [sortDoctorsAlphabetically, user]);
 
 
 
@@ -3298,7 +3368,7 @@ export default function ScheduleBoard() {
     return info;
   }, [previewFairnessData, workplaces, wishes]);
 
-    const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '') => {
+    const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '', cellWidth = null) => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
     if (!isValid(date)) return null;
@@ -3356,7 +3426,7 @@ export default function ScheduleBoard() {
 
     const isSingleShift = shifts.length === 1;
     const isSplitModeActive = isEmbeddedSchedule || isSplitViewEnabled;
-    const isFullWidth = !isSplitModeActive && (isSectionFullWidth || isSingleShift);
+    const boxSize = gridFontSize * 3.5;
 
     // Qualifikations-Status für diese Position ermitteln
     const workplace = workplaces.find(w => w.name === rowName);
@@ -3394,6 +3464,17 @@ export default function ScheduleBoard() {
         const roleColor = getRoleColor(doctor.role);
         const isDraggingThis = draggingShiftId === shift.id;
         const showCopyGhost = isCtrlPressed && isDraggingThis;
+        const displayMode = getShiftDisplayMode({
+            doctor,
+            isSplitModeActive,
+            isSectionFullWidth,
+            isSingleShift,
+            forceInitialsOnly: showInitialsOnly,
+            cellWidth,
+            gridFontSize,
+            boxSize
+        });
+        const isFullWidth = displayMode === 'full';
 
         return (
             <div key={shift.id} style={{ display: 'contents' }}>
@@ -3411,7 +3492,7 @@ export default function ScheduleBoard() {
                         }}
                     >
                         <span className="truncate px-1">
-                            {isFullWidth ? doctor.name : doctor.initials}
+                            {isFullWidth ? doctor.name : getDoctorShortLabel(doctor)}
                         </span>
                     </div>
                 )}
@@ -3421,10 +3502,10 @@ export default function ScheduleBoard() {
                     index={index}
                     draggableIdPrefix={dragIdPrefix}
                     style={roleColor}
-                    isFullWidth={isFullWidth}
+                    displayMode={displayMode}
                     isDragDisabled={isReadOnly}
                     fontSize={gridFontSize}
-                    boxSize={gridFontSize * 3.5}
+                    boxSize={boxSize}
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
@@ -3434,7 +3515,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, isEmbeddedSchedule, isSplitViewEnabled]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, isEmbeddedSchedule, isSplitViewEnabled]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -3477,7 +3558,7 @@ export default function ScheduleBoard() {
             zIndex: 9999,
           }}
         >
-          <span>{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+                    <span>{getDoctorShortLabel(doctor)}</span>
         </div>
       </div>
     );
@@ -3648,7 +3729,9 @@ export default function ScheduleBoard() {
                                                                       return true;
                                                                   });
                                                                   const assignedDocIds = new Set(blockingShifts.map(s => s.doctor_id));
-                                                                  const availableDocs = doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe');
+                                                                  const availableDocs = sortDoctorsForDisplay(
+                                                                      doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
+                                                                  );
 
                                                                   return (
                                                                       <div
@@ -3704,14 +3787,15 @@ export default function ScheduleBoard() {
                                                               baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                               renderClone={renderShiftClone}
                                                           >
-                                                              {renderCellShifts(
+                                                              {({ cellWidth }) => renderCellShifts(
                                                                   day,
                                                                   rowName,
                                                                   ['Dienste', 'Demonstrationen & Konsile'].includes(section.title),
                                                                   rowTimeslotId,
                                                                   isGroupHeader && isGroupCollapsed ? rowObj.allTimeslotIds : null,
                                                                   rowObj.singleTimeslotId || null,
-                                                                  SPLIT_DRAG_PREFIX
+                                                                  SPLIT_DRAG_PREFIX,
+                                                                  cellWidth
                                                               )}
                                                           </DroppableCell>
                                                       )}
@@ -3931,6 +4015,18 @@ export default function ScheduleBoard() {
                            onCheckedChange={setHighlightMyName}
                        >
                            Eigenen Namen hervorheben
+                       </DropdownMenuCheckboxItem>
+                       <DropdownMenuCheckboxItem 
+                           checked={showInitialsOnly}
+                           onCheckedChange={setShowInitialsOnly}
+                       >
+                           Nur Kürzel
+                       </DropdownMenuCheckboxItem>
+                       <DropdownMenuCheckboxItem 
+                           checked={sortDoctorsAlphabetically}
+                           onCheckedChange={setSortDoctorsAlphabetically}
+                       >
+                           Mitarbeiter alphabetisch sortieren
                        </DropdownMenuCheckboxItem>
                        <DropdownMenuSeparator />
 
@@ -4153,7 +4249,9 @@ export default function ScheduleBoard() {
                     const dateStr = format(day, 'yyyy-MM-dd');
                     const dayShifts = currentWeekShifts.filter(s => s.date === dateStr);
                     const assignedDocIds = new Set(dayShifts.map(s => s.doctor_id));
-                    const unassignedDocs = doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe');
+                    const unassignedDocs = sortDoctorsForDisplay(
+                        doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
+                    );
                     
                     // Rotations are in sections[2] (if structure maintained)
                     // Better: find section by title
@@ -4445,7 +4543,9 @@ export default function ScheduleBoard() {
                                                     });
 
                                                     const assignedDocIds = new Set(blockingShifts.map(s => s.doctor_id));
-                                                    const availableDocs = doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe');
+                                                    const availableDocs = sortDoctorsForDisplay(
+                                                        doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
+                                                    );
 
                                                     return (
                                                         <div
@@ -4533,13 +4633,15 @@ export default function ScheduleBoard() {
                                                 baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                 renderClone={renderShiftClone}
                                             >
-                                                {renderCellShifts(
+                                                {({ cellWidth }) => renderCellShifts(
                                                     day, 
                                                     rowName, 
                                                     ["Dienste", "Demonstrationen & Konsile"].includes(section.title), 
                                                     rowTimeslotId,
                                                     isGroupHeader && isGroupCollapsed ? rowObj.allTimeslotIds : null,
-                                                    rowObj.singleTimeslotId || null
+                                                    rowObj.singleTimeslotId || null,
+                                                    '',
+                                                    cellWidth
                                                 )}
                                             </DroppableCell>
                                         )}

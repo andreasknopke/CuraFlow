@@ -1,10 +1,13 @@
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, isFullWidth, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, draggableIdPrefix = '', ...props }) {
+const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
+
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, draggableIdPrefix = '', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
-  const displayText = isFullWidth ? doctor.name : (doctor.initials || doctor.name.substring(0, 3));
+  const isFullWidth = displayMode === 'full';
+  const displayText = isFullWidth ? doctor.name : getDoctorShortLabel(doctor);
   const displayFontSize = fontSize;
 
   // Build fairness tooltip text for preview service shifts
@@ -79,7 +82,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 fontSize: `${fontSize}px`,
               }}
             >
-              <span>{doctor.initials || doctor.name.substring(0, 3)}</span>
+              <span>{getDoctorShortLabel(doctor)}</span>
             </div>
           </div>
         )}
@@ -142,7 +145,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                 }}
                 >
                     <span className="truncate">
-                       {doctor.initials || doctor.name.substring(0,3)}
+                     {getDoctorShortLabel(doctor)}
                     </span>
                 </div>
             ) : isFullWidth ? (
@@ -154,7 +157,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, isFullW
                         style={{ width: `${boxSize}px`, fontSize: `${fontSize}px` }}
                         title={fairnessTooltip || "Ziehen zum Verschieben"}
                     >
-                        {doctor.initials || doctor.name.substring(0, 3)}
+                        {getDoctorShortLabel(doctor)}
                     </div>
                     <span 
                       className="block min-w-0 basis-0 flex-1 truncate px-1 leading-tight text-center" 

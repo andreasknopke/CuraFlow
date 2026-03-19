@@ -46,6 +46,8 @@ CREATE TABLE app_users (
   collapsed_sections       TEXT,
   schedule_hidden_rows     TEXT,
   schedule_show_sidebar    TINYINT(1),
+  schedule_initials_only   TINYINT(1),
+  schedule_sort_doctors_alphabetically TINYINT(1),
   highlight_my_name        TINYINT(1),
   wish_hidden_doctors      TEXT,
   wish_show_occupied       TINYINT(1),

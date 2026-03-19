@@ -15,6 +15,7 @@ import { trackDbChange } from '@/components/utils/dbTracker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Table2 } from 'lucide-react';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 export default function WishListPage() {
   const { isReadOnly, isAuthenticated, user } = useAuth();
@@ -78,28 +79,32 @@ export default function WishListPage() {
     }),
   });
 
+    const doctorsForSelection = React.useMemo(() => {
+            return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
+    }, [doctors, user]);
+
   // Select first doctor by default or user's assigned doctor
   React.useEffect(() => {
-    if (doctors.length > 0 && !selectedDoctorId) {
+    if (doctorsForSelection.length > 0 && !selectedDoctorId) {
         if (user && user.role !== 'admin') {
             // Non-admins can ONLY see their assigned doctor
-            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+            if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                 setSelectedDoctorId(user.doctor_id);
             }
             // No doctor assigned to this non-admin user: selectedDoctorId stays null
         } else if (user) {
             // Admins: prefer user.doctor_id, otherwise use first
-            if (user.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+            if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
                 setSelectedDoctorId(user.doctor_id);
             } else {
-                setSelectedDoctorId(doctors[0].id);
+                setSelectedDoctorId(doctorsForSelection[0].id);
             }
         } else {
             // No user yet, set first doctor
-            setSelectedDoctorId(doctors[0].id);
+            setSelectedDoctorId(doctorsForSelection[0].id);
         }
     }
-  }, [doctors, selectedDoctorId, user]);
+  }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
@@ -312,7 +317,7 @@ export default function WishListPage() {
                         <SelectValue placeholder="Person auswählen" />
                     </SelectTrigger>
                     <SelectContent>
-                        {doctors.map(d => (
+                        {doctorsForSelection.map(d => (
                             <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                         ))}
                     </SelectContent>

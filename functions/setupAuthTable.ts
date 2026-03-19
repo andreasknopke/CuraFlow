@@ -52,6 +52,8 @@ Deno.serve(async (req) => {
                     collapsed_sections JSON,
                     schedule_hidden_rows JSON,
                     schedule_show_sidebar BOOLEAN DEFAULT TRUE,
+                    schedule_initials_only BOOLEAN DEFAULT FALSE,
+                    schedule_sort_doctors_alphabetically BOOLEAN DEFAULT FALSE,
                     highlight_my_name BOOLEAN DEFAULT TRUE,
                     grid_font_size INT DEFAULT 14,
                     
@@ -130,8 +132,8 @@ Deno.serve(async (req) => {
                     await connection.execute(
                         `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active,
                          theme, section_config, collapsed_sections, schedule_hidden_rows, schedule_show_sidebar,
-                         highlight_my_name, grid_font_size, wish_show_occupied, wish_show_absences, wish_hidden_doctors)
-                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         schedule_initials_only, schedule_sort_doctors_alphabetically, highlight_my_name, grid_font_size, wish_show_occupied, wish_show_absences, wish_hidden_doctors)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                         [
                             b44User.id,
                             b44User.email.toLowerCase().trim(),
@@ -144,6 +146,8 @@ Deno.serve(async (req) => {
                             b44User.collapsed_sections ? JSON.stringify(b44User.collapsed_sections) : null,
                             b44User.schedule_hidden_rows ? JSON.stringify(b44User.schedule_hidden_rows) : null,
                             b44User.schedule_show_sidebar !== false,
+                            b44User.schedule_initials_only === true,
+                            b44User.schedule_sort_doctors_alphabetically === true,
                             b44User.highlight_my_name !== false,
                             b44User.grid_font_size || 14,
                             b44User.wish_show_occupied !== false,

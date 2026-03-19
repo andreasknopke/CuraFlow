@@ -21,6 +21,7 @@ import { useHolidays } from '@/components/useHolidays';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
+import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
@@ -50,16 +51,20 @@ export default function VacationPage() {
     }),
   });
 
+  const doctorsForSelection = React.useMemo(() => {
+      return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
+  }, [doctors, user]);
+
   // Select doctor: prefer user's assigned doctor, otherwise first in list
   React.useEffect(() => {
-    if (doctors.length > 0 && !selectedDoctorId) {
-      if (user?.doctor_id && doctors.some(d => d.id === user.doctor_id)) {
+    if (doctorsForSelection.length > 0 && !selectedDoctorId) {
+      if (user?.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
         setSelectedDoctorId(user.doctor_id);
       } else {
-        setSelectedDoctorId(doctors[0].id);
+        setSelectedDoctorId(doctorsForSelection[0].id);
       }
     }
-  }, [doctors, selectedDoctorId, user]);
+  }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
@@ -634,7 +639,7 @@ export default function VacationPage() {
                         <SelectValue placeholder="Person auswählen" />
                     </SelectTrigger>
                     <SelectContent>
-                        {doctors.map(d => (
+                        {doctorsForSelection.map(d => (
                             <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
                         ))}
                     </SelectContent>
