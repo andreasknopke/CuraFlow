@@ -45,13 +45,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
     </div>
   ) : null;
 
-  const WishMarker = wishMarker ? (
-    <div
-      className={`absolute left-0 top-0 z-30 h-[11px] w-[11px] ${wishMarker.color === 'green' ? 'bg-green-500' : 'bg-red-500'}`}
-      style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
-      title={wishMarker.title}
-    />
-  ) : null;
+  const wishMarkerColor = wishMarker?.color === 'green' ? '#22c55e' : '#ef4444';
 
   const dynamicStyle = {
       fontSize: `${fontSize}px`,
@@ -124,6 +118,10 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
              ...provided.draggableProps.style,
              ...dynamicStyle, // Apply normal layout dimensions
              backgroundColor: props.style?.backgroundColor || '#f1f5f9',
+             backgroundImage: wishMarker ? `linear-gradient(135deg, ${wishMarkerColor} 0, ${wishMarkerColor} 50%, transparent 50%, transparent 100%)` : undefined,
+             backgroundRepeat: 'no-repeat',
+             backgroundSize: wishMarker ? '14px 14px' : undefined,
+             backgroundPosition: wishMarker ? 'top left' : undefined,
              color: props.style?.color || '#0f172a',
              zIndex: 'auto'
         };
@@ -154,14 +152,12 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     fontSize: `${fontSize}px`,
                 }}
                 >
-                  {WishMarker}
                     <span className="truncate">
                      {getDoctorShortLabel(doctor)}
                     </span>
                 </div>
             ) : isFullWidth ? (
                 <>
-                  {WishMarker}
                     {QualWarning}
                     <div 
                         {...provided.dragHandleProps}
@@ -192,7 +188,6 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             )}
             {!isDragging && !isFullWidth && (
                 <>
-              {WishMarker}
                 {QualWarning}
                 <span 
                     className="truncate px-0.5 leading-tight text-center w-full relative z-10" 
