@@ -47,7 +47,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
 
   const WishMarker = wishMarker ? (
     <div
-      className={`absolute -top-0.5 -left-0.5 z-20 h-0 w-0 border-t-[10px] border-r-[10px] border-r-transparent ${wishMarker.color === 'green' ? 'border-t-green-500' : 'border-t-red-500'}`}
+      className={`absolute left-0 top-0 z-30 h-[11px] w-[11px] ${wishMarker.color === 'green' ? 'bg-green-500' : 'bg-red-500'}`}
+      style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
       title={wishMarker.title}
     />
   ) : null;
@@ -143,7 +144,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             {isDragging ? (
                 // The visual badge - square like small chips
                 <div className={`
-                    flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 z-[9999]
+                  relative flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 z-[9999]
                 `}
                 style={{
                     backgroundColor: props.style?.backgroundColor || '#f1f5f9',
