@@ -4753,5 +4753,4 @@ export default function ScheduleBoard() {
       />
     </div>
   );
-}  );
 }
