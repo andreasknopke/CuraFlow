@@ -242,7 +242,7 @@ export default function ScheduleBoard() {
     };
   }, [undoStack]);
 
-  const { isReadOnly, user } = useAuth();
+    const { isReadOnly, user, updateMe } = useAuth();
 
   // Load saved settings from user profile or localStorage fallback
   const [showSidebar, setShowSidebar] = useState(() => {
@@ -326,23 +326,23 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_highlightMyName', JSON.stringify(highlightMyName));
       if (user && user.highlight_my_name !== highlightMyName) {
-          api.updateMe({ data: { highlight_my_name: highlightMyName } }).catch(e => console.error("Pref save failed", e));
+          updateMe({ highlight_my_name: highlightMyName }).catch(e => console.error("Pref save failed", e));
       }
-  }, [highlightMyName, user]);
+  }, [highlightMyName, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_showInitialsOnly', JSON.stringify(showInitialsOnly));
       if (user && user.schedule_initials_only !== showInitialsOnly) {
-          api.updateMe({ data: { schedule_initials_only: showInitialsOnly } }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_initials_only: showInitialsOnly }).catch(e => console.error("Pref save failed", e));
       }
-  }, [showInitialsOnly, user]);
+  }, [showInitialsOnly, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_sortDoctorsAlphabetically', JSON.stringify(sortDoctorsAlphabetically));
       if (user && user.schedule_sort_doctors_alphabetically !== sortDoctorsAlphabetically) {
-          api.updateMe({ data: { schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically } }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch(e => console.error("Pref save failed", e));
       }
-  }, [sortDoctorsAlphabetically, user]);
+  }, [sortDoctorsAlphabetically, updateMe, user]);
 
   const sortDoctorsForDisplay = (doctorList = []) => {
       if (!sortDoctorsAlphabetically) {
@@ -385,16 +385,16 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_showSidebar', JSON.stringify(showSidebar));
       if (user && user.schedule_show_sidebar !== showSidebar) {
-          api.updateMe({ data: { schedule_show_sidebar: showSidebar } }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_show_sidebar: showSidebar }).catch(e => console.error("Pref save failed", e));
       }
-  }, [showSidebar, user]);
+  }, [showSidebar, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_hiddenRows', JSON.stringify(hiddenRows));
       if (user && JSON.stringify(user.schedule_hidden_rows) !== JSON.stringify(hiddenRows)) {
-          api.updateMe({ data: { schedule_hidden_rows: hiddenRows } }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_hidden_rows: hiddenRows }).catch(e => console.error("Pref save failed", e));
       }
-  }, [hiddenRows, user]);
+  }, [hiddenRows, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_collapsedSections', JSON.stringify(collapsedSections));
@@ -407,10 +407,10 @@ export default function ScheduleBoard() {
           // However, updateMe triggers user update which triggers effect.
           // We should only updateMe if the value is different from what's in user object currently.
           if (JSON.stringify(user.collapsed_sections) !== JSON.stringify(collapsedSections)) {
-             api.updateMe({ data: { collapsed_sections: collapsedSections } }).catch(e => console.error("Pref save failed", e));
+             updateMe({ collapsed_sections: collapsedSections }).catch(e => console.error("Pref save failed", e));
           }
       }
-  }, [collapsedSections, user]);
+  }, [collapsedSections, updateMe, user]);
 
   // State für eingeklappte Timeslot-Gruppen (Arbeitsplatz-Namen)
   const [collapsedTimeslotGroups, setCollapsedTimeslotGroups] = useState(() => {
@@ -1933,8 +1933,10 @@ export default function ScheduleBoard() {
     if (!weekDays.length || !doctors.length) return doctors;
     // Prüfe Verfügbarkeit anhand des Montags der aktuellen Woche
     const checkDate = weekDays[0];
-    return doctors.filter(doc => isDoctorAvailable(doc, checkDate, staffingPlanEntries));
-  }, [doctors, weekDays, staffingPlanEntries]);
+        return sortDoctorsForDisplay(
+            doctors.filter(doc => isDoctorAvailable(doc, checkDate, staffingPlanEntries))
+        );
+    }, [doctors, sortDoctorsAlphabetically, staffingPlanEntries, weekDays]);
 
   const currentWeekShifts = useMemo(() => {
     // Use weekDays to determine range, ensuring we catch shifts for visible days
