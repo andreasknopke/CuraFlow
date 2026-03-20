@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/components/AuthProvider';
+import EnvironmentMigrationNotice from '@/components/EnvironmentMigrationNotice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Activity, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import TenantSelectionDialog from '@/components/auth/TenantSelectionDialog';
 
 export default function AuthLoginPage() {
@@ -81,6 +82,7 @@ export default function AuthLoginPage() {
                             className="w-16 h-16 object-contain" 
                         />
                     </div>
+                    <EnvironmentMigrationNotice />
                     <div>
                         <CardTitle className="text-2xl font-bold">CuraFlow</CardTitle>
                         <CardDescription className="text-slate-500">

@@ -1,9 +1,9 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { CalendarDays, LogIn, ShieldCheck, Activity, Lock } from 'lucide-react';
+import EnvironmentMigrationNotice from '@/components/EnvironmentMigrationNotice';
+import { CalendarDays, LogIn, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -24,6 +24,10 @@ export default function Home() {
 
   return (
     <div className="max-w-4xl mx-auto py-12 px-4">
+      <div className="mb-8">
+        <EnvironmentMigrationNotice />
+      </div>
+
       <div className="text-center mb-12">
         <div className="flex justify-center mb-4">
           <div className="p-4 bg-indigo-100 rounded-full">
