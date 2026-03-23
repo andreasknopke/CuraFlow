@@ -78,6 +78,26 @@ router.post('/export', async (req, res, next) => {
       console.log('ColorSetting table not available, using defaults');
     }
 
+    // Fetch schedule blocks (locked cells)
+    let blockRows = [];
+    try {
+      const [rows] = await dbPool.execute(
+        `SELECT * FROM ScheduleBlock WHERE date >= ? AND date <= ?`,
+        [startDate, endDate]
+      );
+      blockRows = rows;
+    } catch (e) {
+      // ScheduleBlock table may not exist yet
+    }
+
+    // Build block lookup map: "date|position" → reason
+    const blockMap = new Map();
+    for (const block of blockRows) {
+      const dateStr = block.date instanceof Date ? format(block.date, 'yyyy-MM-dd') : String(block.date).substring(0, 10);
+      const key = `${dateStr}|${block.position}`;
+      blockMap.set(key, block.reason || 'Gesperrt');
+    }
+
     // Helper: Get color for a name and category
     const getColor = (name, category) => {
       // 1. Check custom setting
@@ -229,6 +249,18 @@ router.post('/export', async (req, res, next) => {
           };
           if (colNumber > 1) {
             cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            // Check if cell is blocked
+            const dayIndex = colNumber - 2;
+            if (dayIndex >= 0 && dayIndex < days.length) {
+              const dateStr = format(days[dayIndex], 'yyyy-MM-dd');
+              const blockKey = `${dateStr}|${rowName}`;
+              const blockReason = blockMap.get(blockKey);
+              if (blockReason) {
+                cell.value = `🔒 ${blockReason}`;
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                cell.font = { color: { argb: 'FF991B1B' }, italic: true };
+              }
+            }
           }
         });
       });

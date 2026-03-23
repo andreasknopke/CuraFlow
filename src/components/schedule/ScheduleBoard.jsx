@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles, ExternalLink, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles, ExternalLink, X, Lock, Unlock } from 'lucide-react';
 import { toast } from "sonner";
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -923,6 +923,35 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
+  // ScheduleBlock: Gesperrte Zellen im Wochenplan
+  const { data: scheduleBlocks = [] } = useQuery({
+    queryKey: ['scheduleBlocks', fetchRange.start, fetchRange.end],
+    queryFn: () => db.ScheduleBlock.filter({
+        date: { $gte: fetchRange.start, $lte: fetchRange.end }
+    }),
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: false,
+    keepPreviousData: true,
+  });
+
+  // Map for quick lookup: "date|position" or "date|position|timeslotId" → block
+  const scheduleBlocksMap = useMemo(() => {
+    const map = new Map();
+    for (const block of scheduleBlocks) {
+      const dateStr = typeof block.date === 'string' ? block.date.substring(0, 10) : format(new Date(block.date), 'yyyy-MM-dd');
+      const key = block.timeslot_id ? `${dateStr}|${block.position}|${block.timeslot_id}` : `${dateStr}|${block.position}`;
+      map.set(key, block);
+    }
+    return map;
+  }, [scheduleBlocks]);
+
+  const getScheduleBlock = (dateStr, position, timeslotId) => {
+    if (timeslotId) {
+      return scheduleBlocksMap.get(`${dateStr}|${position}|${timeslotId}`) || scheduleBlocksMap.get(`${dateStr}|${position}`);
+    }
+    return scheduleBlocksMap.get(`${dateStr}|${position}`);
+  };
+
   const { validate, validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
 
   // Qualifikationsdaten für visuelle Indikatoren
@@ -1401,6 +1430,62 @@ export default function ScheduleBoard() {
     mutationFn: (id) => db.ScheduleNote.delete(id),
     onSuccess: () => queryClient.invalidateQueries(['scheduleNotes']),
   });
+
+  // ScheduleBlock mutations
+  const createBlockMutation = useMutation({
+    mutationFn: (data) => db.ScheduleBlock.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['scheduleBlocks']);
+      toast.success('Zelle gesperrt');
+    },
+  });
+
+  const deleteBlockMutation = useMutation({
+    mutationFn: (id) => db.ScheduleBlock.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['scheduleBlocks']);
+      toast.success('Sperrung aufgehoben');
+    },
+  });
+
+  // Context menu state for cell blocking
+  const [blockContextMenu, setBlockContextMenu] = useState(null);
+  const [blockReasonInput, setBlockReasonInput] = useState('');
+
+  const handleCellContextMenu = (e, dateStr, position, timeslotId = null) => {
+    if (isReadOnly) return;
+    e.preventDefault();
+    const block = getScheduleBlock(dateStr, position, timeslotId);
+    setBlockContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      dateStr,
+      position,
+      timeslotId,
+      existingBlock: block || null,
+    });
+    setBlockReasonInput(block?.reason || '');
+  };
+
+  const handleBlockCell = () => {
+    if (!blockContextMenu) return;
+    const { dateStr, position, timeslotId } = blockContextMenu;
+    createBlockMutation.mutate({
+      date: dateStr,
+      position,
+      timeslot_id: timeslotId || null,
+      reason: blockReasonInput.trim() || null,
+    });
+    setBlockContextMenu(null);
+    setBlockReasonInput('');
+  };
+
+  const handleUnblockCell = () => {
+    if (!blockContextMenu?.existingBlock) return;
+    deleteBlockMutation.mutate(blockContextMenu.existingBlock.id);
+    setBlockContextMenu(null);
+    setBlockReasonInput('');
+  };
 
   const handleClearWeek = () => {
       const protectedPositions = ["Frei", "Krank", "Urlaub", "Dienstreise"];
@@ -2392,6 +2477,12 @@ export default function ScheduleBoard() {
         for (const day of daysToAssign) {
             const dateStr = format(day, 'yyyy-MM-dd');
 
+            // Check ScheduleBlock
+            if (getScheduleBlock(dateStr, rowName, rowHeaderTimeslotId)) {
+                blockedCount++;
+                continue;
+            }
+
             // Check conflicts (using isVoice=true for silent/toast mode to prevent 5 alerts)
             // Note: checkConflicts is defined in outer scope (ScheduleBoard)
             if (checkConflicts(doctorId, dateStr, rowName, true)) { 
@@ -2622,6 +2713,13 @@ export default function ScheduleBoard() {
 
         console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
 
+        // Check ScheduleBlock
+        const dropBlock = getScheduleBlock(dateStr, position, timeslotId);
+        if (dropBlock) {
+            toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
+            return;
+        }
+
         // Check active_days before processing drop
         if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, dateStr)) {
             toast.error('Diese Position ist an diesem Tag nicht aktiv.');
@@ -2835,6 +2933,13 @@ export default function ScheduleBoard() {
         // Check active_days for grid-to-grid moves to different position/date
         if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
             toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+            return;
+        }
+
+        // Check ScheduleBlock for grid-to-grid moves
+        const moveBlock = getScheduleBlock(newDateStr, newPosition, newTimeslotId);
+        if (moveBlock) {
+            toast.error('Zelle gesperrt' + (moveBlock.reason ? `: ${moveBlock.reason}` : ''));
             return;
         }
 
@@ -3856,6 +3961,9 @@ export default function ScheduleBoard() {
                                                               isReadOnly={isReadOnly}
                                                               isAlternate={rIdx % 2 !== 0}
                                                               isTrainingHighlight={isTrainingHighlight}
+                                                              isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
+                                                              blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                              onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                               baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                               baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                               renderClone={renderShiftClone}
@@ -4701,6 +4809,9 @@ export default function ScheduleBoard() {
                                                 isReadOnly={isReadOnly}
                                                 isAlternate={rIdx % 2 !== 0}
                                                 isTrainingHighlight={isTrainingHighlight}
+                                                isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
+                                                blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                 baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                 baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                 renderClone={renderShiftClone}
@@ -4742,6 +4853,55 @@ export default function ScheduleBoard() {
           onConfirm={confirmOverride}
           onCancel={cancelOverride}
       />
+
+      {/* Schedule Block Context Menu */}
+      {blockContextMenu && (
+        <>
+          <div className="fixed inset-0 z-[9998]" onClick={() => setBlockContextMenu(null)} />
+          <div
+            className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-3 min-w-[220px]"
+            style={{ left: blockContextMenu.x, top: blockContextMenu.y }}
+          >
+            <div className="text-xs text-slate-500 mb-2 font-medium">
+              {blockContextMenu.position} — {blockContextMenu.dateStr}
+            </div>
+            {blockContextMenu.existingBlock ? (
+              <>
+                <div className="text-sm text-red-700 mb-2 flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5" />
+                  Gesperrt{blockContextMenu.existingBlock.reason ? `: ${blockContextMenu.existingBlock.reason}` : ''}
+                </div>
+                <button
+                  onClick={handleUnblockCell}
+                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-green-50 text-green-700 flex items-center gap-2"
+                >
+                  <Unlock className="w-3.5 h-3.5" />
+                  Sperrung aufheben
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Begründung (z.B. Wartung)"
+                  value={blockReasonInput}
+                  onChange={(e) => setBlockReasonInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
+                  className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-red-300"
+                  autoFocus
+                />
+                <button
+                  onClick={handleBlockCell}
+                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-red-50 text-red-700 flex items-center gap-2"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Zelle sperren
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

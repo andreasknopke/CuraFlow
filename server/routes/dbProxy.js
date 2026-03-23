@@ -512,6 +512,30 @@ router.post('/', async (req, res, next) => {
       
       // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
       if (tableName === 'ShiftEntry' && data.date && data.position) {
+        // Check ScheduleBlock first
+        try {
+          let blockSql, blockParams;
+          if (data.timeslot_id) {
+            blockSql = 'SELECT id, reason FROM ScheduleBlock WHERE date = ? AND position = ? AND (timeslot_id = ? OR timeslot_id IS NULL) LIMIT 1';
+            blockParams = [data.date, data.position, data.timeslot_id];
+          } else {
+            blockSql = 'SELECT id, reason FROM ScheduleBlock WHERE date = ? AND position = ? AND timeslot_id IS NULL LIMIT 1';
+            blockParams = [data.date, data.position];
+          }
+          const [blockRows] = await dbPool.execute(blockSql, blockParams);
+          if (blockRows.length > 0) {
+            console.warn(`[Sentinel] Blocked ShiftEntry on locked cell: ${data.position} on ${data.date} (reason: ${blockRows[0].reason})`);
+            return res.status(409).json({
+              error: 'Zelle gesperrt' + (blockRows[0].reason ? `: ${blockRows[0].reason}` : ''),
+              blocked: true,
+              block_id: blockRows[0].id,
+              reason: blockRows[0].reason
+            });
+          }
+        } catch (e) {
+          // ScheduleBlock table may not exist yet — skip silently
+        }
+
         const conflict = await checkShiftConflict(dbPool, data, cacheKey);
         if (conflict) {
           console.warn(`[Sentinel] Blocked duplicate ShiftEntry: ${data.position} on ${data.date} (existing: ${conflict.id})`);
