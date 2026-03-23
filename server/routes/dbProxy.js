@@ -187,6 +187,31 @@ router.get('/', (req, res) => {
   });
 });
 
+// Auto-create ScheduleBlock table if it doesn't exist (for multi-tenant support)
+const ensureScheduleBlockTable = async (dbPool, cacheKey) => {
+  const tableCheckKey = `${cacheKey}:ScheduleBlock:checked`;
+  if (COLUMNS_CACHE[tableCheckKey]) return;
+  
+  try {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS ScheduleBlock (
+        id VARCHAR(36) PRIMARY KEY,
+        date DATE NOT NULL,
+        position VARCHAR(255) NOT NULL,
+        timeslot_id VARCHAR(36) DEFAULT NULL,
+        reason VARCHAR(500) DEFAULT NULL,
+        created_by VARCHAR(255) DEFAULT NULL,
+        created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_block (date, position, timeslot_id)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+    COLUMNS_CACHE[tableCheckKey] = true;
+  } catch (err) {
+    console.warn('ensureScheduleBlockTable error:', err.message);
+  }
+};
+
 // Auto-create TeamRole table if it doesn't exist (for multi-tenant support)
 const ensureTeamRoleTable = async (dbPool, cacheKey) => {
   const tableCheckKey = `${cacheKey}:TeamRole:checked`;
@@ -399,6 +424,11 @@ router.post('/', async (req, res, next) => {
     if (tableName === 'Workplace') {
       await ensureWorkplaceStaffColumns(dbPool, cacheKey);
     }
+
+    // Auto-create ScheduleBlock table for tenants if needed
+    if (tableName === 'ScheduleBlock') {
+      await ensureScheduleBlockTable(dbPool, cacheKey);
+    }
     
     if (!tableName) {
       return res.status(400).json({ error: 'Entity/table required' });
@@ -512,7 +542,8 @@ router.post('/', async (req, res, next) => {
       
       // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
       if (tableName === 'ShiftEntry' && data.date && data.position) {
-        // Check ScheduleBlock first
+        // Check ScheduleBlock first (ensure table exists for tenant DBs)
+        await ensureScheduleBlockTable(dbPool, cacheKey);
         try {
           let blockSql, blockParams;
           if (data.timeslot_id) {
