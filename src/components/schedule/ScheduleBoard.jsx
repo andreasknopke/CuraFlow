@@ -4616,9 +4616,9 @@ export default function ScheduleBoard() {
                                         {format(day, 'd', { locale: de })}
                                     </div>
                                     <div className={`text-[10px] uppercase leading-tight mt-1 ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
-                                                                                          className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
+                                        {format(day, 'EEEEE', { locale: de })}
                                     </div>
-                                                                                          {getDoctorChipLabel(doc)}
+                                    {isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">FT</span>}
                                     {isSchoolHol && !isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">Ferien</span>}
                                 </>
                             ) : (
