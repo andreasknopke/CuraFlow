@@ -4,7 +4,7 @@ import { Droppable } from '@hello-pangea/dnd';
 export default function DroppableCell({ 
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
     isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone,
-    isBlocked, blockReason, onContextMenu
+  isBlocked, blockReason, onContextMenu, isCompact = false
 }) {
   const cellRef = useRef(null);
   const [cellWidth, setCellWidth] = useState(null);
@@ -48,7 +48,7 @@ export default function DroppableCell({
           {...provided.droppableProps}
           onContextMenu={onContextMenu}
           className={`
-          min-h-[60px] p-1 border rounded-sm h-full flex flex-wrap content-start gap-1 relative will-change-auto
+          ${isCompact ? 'min-h-[38px] p-0.5 gap-0.5' : 'min-h-[60px] p-1 gap-1'} border rounded-sm h-full flex flex-wrap content-start relative will-change-auto
           ${isBlocked ? 'bg-red-50/60 border-red-200 cursor-not-allowed overflow-hidden' : ''}
           ${isDisabled && !isBlocked ? 'bg-slate-100/80 border-slate-100 cursor-not-allowed overflow-hidden' : ''}
           ${isTrainingHighlight && !effectiveDisabled ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 shadow-inner' : ''}

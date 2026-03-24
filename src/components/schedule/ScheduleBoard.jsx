@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, isValid } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles, ExternalLink, X, Lock, Unlock } from 'lucide-react';
 import { toast } from "sonner";
@@ -116,7 +116,7 @@ const getInitialScheduleState = () => {
         const params = new URLSearchParams(window.location.search);
         const initialDate = parseDateFromQuery(params.get('date'));
         const rawView = params.get('view');
-        const initialViewMode = rawView === 'day' ? 'day' : 'week';
+    const initialViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
         return {
                 currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
                 viewMode: initialViewMode,
@@ -167,7 +167,8 @@ export default function ScheduleBoard() {
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
     const [currentDate, setCurrentDate] = useState(initialState.currentDate);
-    const [viewMode, setViewMode] = useState(initialState.viewMode); // 'week' | 'day'
+    const [viewMode, setViewMode] = useState(initialState.viewMode); // 'week' | 'day' | 'month'
+    const isMonthView = viewMode === 'month';
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
   const [undoStack, setUndoStack] = useState([]);
@@ -437,6 +438,8 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_gridFontSize', JSON.stringify(gridFontSize));
   }, [gridFontSize]);
+    const effectiveGridFontSize = isMonthView ? Math.min(gridFontSize, 11) : gridFontSize;
+    const shiftBoxSize = isMonthView ? Math.max(effectiveGridFontSize * 2.4, 24) : effectiveGridFontSize * 3.5;
   const [previewShifts, setPreviewShifts] = useState(null);
   const [previewCategories, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
@@ -795,7 +798,13 @@ export default function ScheduleBoard() {
         }
     }, [isMobile, isSplitViewEnabled]);
 
-    const canUseSplitView = !isEmbeddedSchedule && !isMobile;
+    useEffect(() => {
+        if (viewMode === 'month' && isSplitViewEnabled) {
+            setIsSplitViewEnabled(false);
+        }
+    }, [viewMode, isSplitViewEnabled]);
+
+    const canUseSplitView = !isEmbeddedSchedule && !isMobile && viewMode !== 'month';
     const effectiveSplitTabId = availableSectionTabs.some(t => t.id === splitSectionTabId)
         ? splitSectionTabId
         : (availableSectionTabs[0]?.id || '');
@@ -2009,19 +2018,36 @@ export default function ScheduleBoard() {
     if (viewMode === 'day') {
         return [currentDate];
     }
+        if (viewMode === 'month') {
+                return eachDayOfInterval({
+                        start: startOfMonth(currentDate),
+                        end: endOfMonth(currentDate)
+                });
+        }
     const start = startOfWeek(currentDate, { weekStartsOn: 1 });
     return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
   }, [currentDate, viewMode]);
 
+    const rowLabelWidth = isMonthView ? 160 : 200;
+    const matrixGridStyle = useMemo(() => ({
+        gridTemplateColumns: viewMode === 'day'
+            ? `${rowLabelWidth}px minmax(0, 1fr)`
+            : `${rowLabelWidth}px repeat(${weekDays.length}, minmax(${isMonthView ? 38 : 0}px, 1fr))`
+    }), [viewMode, rowLabelWidth, weekDays.length, isMonthView]);
+
+    const matrixMinWidth = useMemo(() => {
+        if (viewMode === 'day') return rowLabelWidth + 480;
+        return rowLabelWidth + (weekDays.length * (isMonthView ? 38 : 90));
+    }, [viewMode, rowLabelWidth, weekDays.length, isMonthView]);
+
   // Sidebar-Ärzte filtern: Ausgeschiedene, KO, MS, 0.0 FTE ausblenden
   const sidebarDoctors = useMemo(() => {
     if (!weekDays.length || !doctors.length) return doctors;
-    // Prüfe Verfügbarkeit anhand des Montags der aktuellen Woche
-    const checkDate = weekDays[0];
+        const checkDate = viewMode === 'month' ? currentDate : weekDays[0];
         return sortDoctorsForDisplay(
             doctors.filter(doc => isDoctorAvailable(doc, checkDate, staffingPlanEntries))
         );
-    }, [doctors, sortDoctorsAlphabetically, staffingPlanEntries, weekDays]);
+        }, [currentDate, doctors, sortDoctorsAlphabetically, staffingPlanEntries, viewMode, weekDays]);
 
   const currentWeekShifts = useMemo(() => {
     // Use weekDays to determine range, ensuring we catch shifts for visible days
@@ -3603,7 +3629,7 @@ export default function ScheduleBoard() {
 
     const isSingleShift = shifts.length === 1;
     const isSplitModeActive = isEmbeddedSchedule || isSplitViewEnabled;
-    const boxSize = gridFontSize * 3.5;
+    const boxSize = shiftBoxSize;
 
     // Qualifikations-Status für diese Position ermitteln
     const workplace = workplaces.find(w => w.name === rowName);
@@ -3646,9 +3672,9 @@ export default function ScheduleBoard() {
             isSplitModeActive,
             isSectionFullWidth,
             isSingleShift,
-            forceInitialsOnly: showInitialsOnly,
+            forceInitialsOnly: showInitialsOnly || isMonthView,
             cellWidth,
-            gridFontSize,
+            gridFontSize: effectiveGridFontSize,
             boxSize
         });
         const isFullWidth = displayMode === 'full';
@@ -3659,12 +3685,12 @@ export default function ScheduleBoard() {
                     <div 
                         className="flex items-center justify-center rounded-md font-bold border shadow-sm opacity-40 border-dashed border-slate-400 pointer-events-none"
                         style={{
-                            fontSize: `${gridFontSize}px`,
+                            fontSize: `${effectiveGridFontSize}px`,
                             backgroundColor: roleColor.backgroundColor,
                             color: roleColor.color,
-                            width: isFullWidth ? '100%' : `${gridFontSize * 3.5}px`,
-                            height: isFullWidth ? '100%' : `${gridFontSize * 3.5}px`,
-                            minHeight: isFullWidth ? `${gridFontSize * 3.5 * 0.8}px` : undefined,
+                            width: isFullWidth ? '100%' : `${boxSize}px`,
+                            height: isFullWidth ? '100%' : `${boxSize}px`,
+                            minHeight: isFullWidth ? `${boxSize * 0.8}px` : undefined,
                             marginBottom: '4px'
                         }}
                     >
@@ -3681,19 +3707,19 @@ export default function ScheduleBoard() {
                     style={roleColor}
                     displayMode={displayMode}
                     isDragDisabled={isReadOnly}
-                    fontSize={gridFontSize}
+                    fontSize={effectiveGridFontSize}
                     boxSize={boxSize}
                     currentUserDoctorId={user?.doctor_id}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
                     qualificationStatus={qualificationStatus}
-                    fairnessInfo={shift.isPreview ? getFairnessInfo(shift) : null}
+                    fairnessInfo={shift.isPreview && !isMonthView ? getFairnessInfo(shift) : null}
                     wishMarker={getShiftWishMarker(shift)}
                 />
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, gridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -3708,7 +3734,7 @@ export default function ScheduleBoard() {
     if (!doctor) return null;
     
     const roleColor = getRoleColor(doctor.role);
-    const cloneSize = gridFontSize * 3.5;
+    const cloneSize = shiftBoxSize;
     
     return (
       <div
@@ -3732,7 +3758,7 @@ export default function ScheduleBoard() {
             color: roleColor?.color || '#0f172a',
             width: `${cloneSize}px`,
             height: `${cloneSize}px`,
-            fontSize: `${gridFontSize}px`,
+                        fontSize: `${effectiveGridFontSize}px`,
             zIndex: 9999,
           }}
         >
@@ -3740,7 +3766,7 @@ export default function ScheduleBoard() {
         </div>
       </div>
     );
-  }, [currentWeekShifts, doctors, getRoleColor, gridFontSize]);
+    }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize]);
 
   const renderSplitMatrix = () => {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
@@ -4030,7 +4056,7 @@ export default function ScheduleBoard() {
 
         <Button 
             variant="outline" 
-            onClick={() => setCurrentDate(viewMode === 'week' ? startOfWeek(new Date(), { weekStartsOn: 1 }) : new Date())}
+                        onClick={() => setCurrentDate(viewMode === 'week' ? startOfWeek(new Date(), { weekStartsOn: 1 }) : viewMode === 'month' ? startOfMonth(new Date()) : new Date())}
             className="h-9"
             disabled={!!previewShifts}
             title={previewShifts ? 'Navigation im Preview-Modus gesperrt' : undefined}
@@ -4038,17 +4064,19 @@ export default function ScheduleBoard() {
             Heute
         </Button>
           <div className="flex items-center bg-slate-100 rounded-md p-1">
-            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => addDays(d, viewMode === 'week' ? -7 : -1))}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <span className="px-2 sm:px-4 font-medium w-[180px] sm:w-[280px] text-center block truncate text-sm">
               {viewMode === 'week' ? (
                   `${format(weekDays[0], 'd. MMM', { locale: de })} - ${format(weekDays[6], 'd. MMM', { locale: de })}`
+                            ) : viewMode === 'month' ? (
+                                    format(currentDate, 'MMMM yyyy', { locale: de })
               ) : (
                   format(currentDate, 'EEE, d. MMM yyyy', { locale: de })
               )}
             </span>
-            <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => addDays(d, viewMode === 'week' ? 7 : 1))}>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
@@ -4064,6 +4092,17 @@ export default function ScheduleBoard() {
               >
                   <Calendar className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">Woche</span>
+              </button>
+              <button 
+                  disabled={!!previewShifts}
+                  onClick={() => {
+                    setViewMode('month');
+                    setCurrentDate(d => startOfMonth(d));
+                  }}
+                  className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'month' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                  <Layout className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Monat</span>
               </button>
               <button 
                   disabled={!!previewShifts}
@@ -4350,7 +4389,7 @@ export default function ScheduleBoard() {
                     renderClone={(provided, snapshot, rubric) => {
                         const doctor = sidebarDoctors[rubric.source.index];
                         const roleStyle = getRoleColor(doctor?.role);
-                        const cloneSize = gridFontSize * 3.5;
+                        const cloneSize = shiftBoxSize;
                         return (
                             <div
                                 ref={provided.innerRef}
@@ -4373,7 +4412,7 @@ export default function ScheduleBoard() {
                                         color: roleStyle?.color || '#000000',
                                         width: `${cloneSize}px`,
                                         height: `${cloneSize}px`,
-                                        fontSize: `${gridFontSize}px`,
+                                        fontSize: `${effectiveGridFontSize}px`,
                                         zIndex: 9999,
                                     }}
                                 >
@@ -4407,8 +4446,8 @@ export default function ScheduleBoard() {
 
                             {/* Matrix */}
                             <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
-                            <div className="min-w-[800px]">
-                              <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
+                                                        <div style={{ minWidth: `${matrixMinWidth}px` }}>
+                                                            <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm" style={matrixGridStyle}>
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
                     Bereich / Datum
                 </div>
@@ -4444,15 +4483,30 @@ export default function ScheduleBoard() {
                     const showWarning = allRotationsFilled && unassignedDocs.length > 0 && !isHoliday && ![0,6].includes(day.getDay());
 
                     return (
-                        <div key={day.toISOString()} className={`group relative p-2 text-center border-r border-slate-200 last:border-r-0 ${bgClass || 'bg-white'}`}>
-                            <div className={`font-semibold ${isToday ? 'text-blue-700' : 'text-slate-800'}`}>
-                                {format(day, 'EEEE', { locale: de })}
-                            </div>
-                            <div className={`text-xs ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
-                                {format(day, 'dd.MM.', { locale: de })}
-                                {isHoliday && <span className="block text-[10px] opacity-75 leading-tight mt-1">Feiertag</span>}
-                                {isSchoolHol && !isHoliday && <span className="block text-[10px] opacity-75 leading-tight mt-1">Ferien</span>}
-                            </div>
+                        <div key={day.toISOString()} className={`group relative text-center border-r border-slate-200 last:border-r-0 ${isMonthView ? 'px-0.5 py-1' : 'p-2'} ${bgClass || 'bg-white'}`}>
+                            {isMonthView ? (
+                                <>
+                                    <div className={`font-semibold leading-none ${isToday ? 'text-blue-700' : 'text-slate-800'}`}>
+                                        {format(day, 'd', { locale: de })}
+                                    </div>
+                                    <div className={`text-[10px] uppercase leading-tight mt-1 ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
+                                        {format(day, 'EEEEE', { locale: de })}
+                                    </div>
+                                    {isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">FT</span>}
+                                    {isSchoolHol && !isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">Ferien</span>}
+                                </>
+                            ) : (
+                                <>
+                                    <div className={`font-semibold ${isToday ? 'text-blue-700' : 'text-slate-800'}`}>
+                                        {format(day, 'EEEE', { locale: de })}
+                                    </div>
+                                    <div className={`text-xs ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
+                                        {format(day, 'dd.MM.', { locale: de })}
+                                        {isHoliday && <span className="block text-[10px] opacity-75 leading-tight mt-1">Feiertag</span>}
+                                        {isSchoolHol && !isHoliday && <span className="block text-[10px] opacity-75 leading-tight mt-1">Ferien</span>}
+                                    </div>
+                                </>
+                            )}
 
                             {showWarning && (
                                 <Popover>
@@ -4572,7 +4626,7 @@ export default function ScheduleBoard() {
                             : `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
                         
                         return (
-                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
+                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixGridStyle}>
                             <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly}>
                                 {(provided, snapshot) => (
                                     <div 
@@ -4732,7 +4786,7 @@ export default function ScheduleBoard() {
                                                         <div
                                                             ref={provided.innerRef}
                                                             {...provided.droppableProps}
-                                                            className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50/30'}`}
+                                                            className={`${isMonthView ? 'min-h-[32px] p-0.5 gap-0.5' : 'min-h-[40px] p-1 gap-1'} flex flex-wrap transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50/30'}`}
                                                         >
                                                             {availableDocs.map((doc, idx) => (
                                                                 <Draggable 
@@ -4768,7 +4822,7 @@ export default function ScheduleBoard() {
                                                                                 {...provided.dragHandleProps}
                                                                                 style={{ ...provided.draggableProps.style, ...style }}
                                                                                 className={`
-                                                                                    text-[10px] px-1.5 py-0.5 rounded border shadow-sm select-none truncate max-w-[100px]
+                                                                                    ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px]' : 'text-[10px] px-1.5 py-0.5 max-w-[100px]'} rounded border shadow-sm select-none truncate
                                                                                     ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}
                                                                                     ${wishClass}
                                                                                 `}
@@ -4803,6 +4857,7 @@ export default function ScheduleBoard() {
                                         ) : (
                                             <DroppableCell 
                                                 id={cellId}
+                                                isCompact={isMonthView}
                                                 isToday={isToday}
                                                 isWeekend={isWeekend}
                                                 isDisabled={isDisabled}
