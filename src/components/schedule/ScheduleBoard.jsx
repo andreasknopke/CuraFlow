@@ -4209,17 +4209,6 @@ export default function ScheduleBoard() {
               <button 
                   disabled={!!previewShifts}
                   onClick={() => {
-                    setViewMode('week');
-                    setCurrentDate(d => startOfWeek(d, { weekStartsOn: 1 }));
-                  }}
-                  className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'week' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
-              >
-                  <Calendar className="w-4 h-4 sm:mr-1" />
-                  <span className="hidden sm:inline">Woche</span>
-              </button>
-              <button 
-                  disabled={!!previewShifts}
-                  onClick={() => {
                     setViewMode('month');
                     setCurrentDate(d => startOfMonth(d));
                   }}
@@ -4227,6 +4216,17 @@ export default function ScheduleBoard() {
               >
                   <Layout className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">Monat</span>
+              </button>
+              <button 
+                  disabled={!!previewShifts}
+                  onClick={() => {
+                    setViewMode('week');
+                    setCurrentDate(d => startOfWeek(d, { weekStartsOn: 1 }));
+                  }}
+                  className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'week' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                  <Calendar className="w-4 h-4 sm:mr-1" />
+                  <span className="hidden sm:inline">Woche</span>
               </button>
               <button 
                   disabled={!!previewShifts}
