@@ -126,6 +126,111 @@ const getInitialScheduleState = () => {
 
 const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
+const normalizeChipSource = (doctor) => {
+    const raw = `${doctor?.initials || ''}${doctor?.name ? ` ${doctor.name}` : ''}`.trim();
+    const normalized = raw
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z]/g, '')
+        .toLowerCase();
+
+    return normalized || 'xxx';
+};
+
+const formatChipLabel = (value) => {
+    if (!value) return '';
+    const trimmed = value.slice(0, 3);
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+};
+
+const getUniqueChipCandidates = (doctor) => {
+    const source = normalizeChipSource(doctor);
+    const candidates = [];
+    const seen = new Set();
+    const pushCandidate = (value) => {
+        if (!value) return;
+        const label = formatChipLabel(value);
+        if (!label || seen.has(label)) return;
+        seen.add(label);
+        candidates.push(label);
+    };
+
+    pushCandidate(source.slice(0, 3));
+
+    const indexPairs = [];
+    for (let first = 1; first < source.length; first += 1) {
+        for (let second = first + 1; second < source.length; second += 1) {
+            indexPairs.push([first, second]);
+        }
+    }
+
+    indexPairs.sort((left, right) => {
+        const leftScore = Math.abs(left[0] - 3) + Math.abs(left[1] - 4);
+        const rightScore = Math.abs(right[0] - 3) + Math.abs(right[1] - 4);
+        if (leftScore !== rightScore) return leftScore - rightScore;
+        if (left[0] !== right[0]) return left[0] - right[0];
+        return left[1] - right[1];
+    });
+
+    indexPairs.forEach(([first, second]) => {
+        pushCandidate(`${source[0]}${source[first]}${source[second]}`);
+    });
+
+    for (let index = 1; index < source.length; index += 1) {
+        pushCandidate(`${source[0]}${source[index]}${source[source.length - 1]}`);
+    }
+
+    return candidates;
+};
+
+const buildDoctorChipLabelMap = (doctors = []) => {
+    const labelMap = new Map();
+    const usedLabels = new Set();
+    const groupedDoctors = new Map();
+
+    doctors.forEach((doctor) => {
+        const baseLabel = formatChipLabel(normalizeChipSource(doctor).slice(0, 3));
+        if (!groupedDoctors.has(baseLabel)) {
+            groupedDoctors.set(baseLabel, []);
+        }
+        groupedDoctors.get(baseLabel).push(doctor);
+    });
+
+    groupedDoctors.forEach((group, baseLabel) => {
+        if (group.length === 1) {
+            labelMap.set(group[0].id, baseLabel);
+            usedLabels.add(baseLabel);
+        }
+    });
+
+    const conflictingGroups = Array.from(groupedDoctors.entries())
+        .filter(([, group]) => group.length > 1)
+        .sort((left, right) => right[1].length - left[1].length);
+
+    conflictingGroups.forEach(([, group]) => {
+        group.forEach((doctor, groupIndex) => {
+            const candidate = getUniqueChipCandidates(doctor).find((label) => !usedLabels.has(label));
+            if (candidate) {
+                labelMap.set(doctor.id, candidate);
+                usedLabels.add(candidate);
+                return;
+            }
+
+            const fallbackSource = normalizeChipSource(doctor);
+            for (let index = 0; index < fallbackSource.length; index += 1) {
+                const fallback = formatChipLabel(`${fallbackSource[0]}${fallbackSource[index]}${String.fromCharCode(97 + ((groupIndex + index) % 26))}`);
+                if (!usedLabels.has(fallback)) {
+                    labelMap.set(doctor.id, fallback);
+                    usedLabels.add(fallback);
+                    return;
+                }
+            }
+        });
+    });
+
+    return labelMap;
+};
+
 const measureTextWidth = (() => {
     let canvas = null;
 
@@ -439,7 +544,7 @@ export default function ScheduleBoard() {
       localStorage.setItem('radioplan_gridFontSize', JSON.stringify(gridFontSize));
   }, [gridFontSize]);
     const effectiveGridFontSize = isMonthView ? Math.min(gridFontSize, 11) : gridFontSize;
-    const shiftBoxSize = isMonthView ? Math.max(effectiveGridFontSize * 2.4, 24) : effectiveGridFontSize * 3.5;
+    const shiftBoxSize = isMonthView ? Math.max(effectiveGridFontSize * 2.8, 30) : effectiveGridFontSize * 3.5;
   const [previewShifts, setPreviewShifts] = useState(null);
   const [previewCategories, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
@@ -931,6 +1036,22 @@ export default function ScheduleBoard() {
     staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
   });
+
+    const doctorChipLabelMap = useMemo(() => buildDoctorChipLabelMap(doctors), [doctors]);
+
+    const getDoctorChipLabel = useMemo(() => (doctor) => {
+            if (!doctor) return '';
+            if (!isMonthView) return getDoctorShortLabel(doctor);
+            return doctorChipLabelMap.get(doctor.id) || formatChipLabel(normalizeChipSource(doctor).slice(0, 3));
+    }, [doctorChipLabelMap, isMonthView]);
+
+    const scheduleNotesMap = useMemo(() => {
+            const noteMap = new Map();
+            scheduleNotes.forEach((note) => {
+                    noteMap.set(`${note.date}|${note.position}`, note);
+            });
+            return noteMap;
+    }, [scheduleNotes]);
 
   // ScheduleBlock: Gesperrte Zellen im Wochenplan
   const { data: scheduleBlocks = [] } = useQuery({
@@ -3649,6 +3770,7 @@ export default function ScheduleBoard() {
     return shifts.map((shift, index) => {
         const doctor = doctors.find(d => d.id === shift.doctor_id);
         if (!doctor) return null;
+        const compactLabel = getDoctorChipLabel(doctor);
         
         // Qualifikations-Indikator
         // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
@@ -3694,8 +3816,8 @@ export default function ScheduleBoard() {
                             marginBottom: '4px'
                         }}
                     >
-                        <span className="truncate px-1">
-                            {isFullWidth ? doctor.name : getDoctorShortLabel(doctor)}
+                        <span className={`${isMonthView ? 'whitespace-nowrap leading-none' : 'truncate'} px-1`}>
+                            {isFullWidth ? doctor.name : compactLabel}
                         </span>
                     </div>
                 )}
@@ -3706,6 +3828,7 @@ export default function ScheduleBoard() {
                     draggableIdPrefix={dragIdPrefix}
                     style={roleColor}
                     displayMode={displayMode}
+                    compactLabel={compactLabel}
                     isDragDisabled={isReadOnly}
                     fontSize={effectiveGridFontSize}
                     boxSize={boxSize}
@@ -3719,7 +3842,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -3732,6 +3855,7 @@ export default function ScheduleBoard() {
     
     const doctor = doctors.find(d => d.id === shift.doctor_id);
     if (!doctor) return null;
+    const compactLabel = getDoctorChipLabel(doctor);
     
     const roleColor = getRoleColor(doctor.role);
     const cloneSize = shiftBoxSize;
@@ -3762,11 +3886,11 @@ export default function ScheduleBoard() {
             zIndex: 9999,
           }}
         >
-                    <span>{getDoctorShortLabel(doctor)}</span>
+                                        <span>{compactLabel}</span>
         </div>
       </div>
     );
-    }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize]);
+        }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel]);
 
   const renderSplitMatrix = () => {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
@@ -3951,9 +4075,9 @@ export default function ScheduleBoard() {
                                                                                           {...provided.draggableProps}
                                                                                           {...provided.dragHandleProps}
                                                                                           style={{ ...provided.draggableProps.style, ...getRoleColor(doc.role) }}
-                                                                                          className={`text-[10px] px-1.5 py-0.5 rounded border shadow-sm select-none truncate max-w-[100px] ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
+                                                                                          className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
                                                                                       >
-                                                                                          {doc.initials}
+                                                                                          {getDoctorChipLabel(doc)}
                                                                                       </div>
                                                                                   )}
                                                                               </Draggable>
@@ -4416,7 +4540,7 @@ export default function ScheduleBoard() {
                                         zIndex: 9999,
                                     }}
                                 >
-                                    <span>{doctor?.initials || doctor?.name?.substring(0, 3)}</span>
+                                    <span>{getDoctorChipLabel(doctor)}</span>
                                 </div>
                             </div>
                         );
@@ -4430,6 +4554,8 @@ export default function ScheduleBoard() {
                                     doctor={doctor} 
                                     index={index} 
                                     style={getRoleColor(doctor.role)}
+                                    compactLabel={getDoctorChipLabel(doctor)}
+                                    isCompactMode={isMonthView}
                                     isDragDisabled={isReadOnly}
                                     isBeingDragged={draggingDoctorId === doctor.id}
                                 />
@@ -4490,9 +4616,9 @@ export default function ScheduleBoard() {
                                         {format(day, 'd', { locale: de })}
                                     </div>
                                     <div className={`text-[10px] uppercase leading-tight mt-1 ${isToday ? 'text-blue-600' : 'text-slate-500'}`}>
-                                        {format(day, 'EEEEE', { locale: de })}
+                                                                                          className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
                                     </div>
-                                    {isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">FT</span>}
+                                                                                          {getDoctorChipLabel(doc)}
                                     {isSchoolHol && !isHoliday && <span className="block text-[9px] opacity-75 leading-tight mt-1">Ferien</span>}
                                 </>
                             ) : (
@@ -4529,7 +4655,7 @@ export default function ScheduleBoard() {
                                                     {unassignedDocs.map(doc => (
                                                         <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-700 p-1 hover:bg-white rounded">
                                                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${getRoleColor(doc.role).backgroundColor}`} style={{ color: getRoleColor(doc.role).color }}>
-                                                                {doc.initials}
+                                                                {getDoctorChipLabel(doc)}
                                                             </div>
                                                             <span>{doc.name}</span>
                                                         </div>
@@ -4822,13 +4948,13 @@ export default function ScheduleBoard() {
                                                                                 {...provided.dragHandleProps}
                                                                                 style={{ ...provided.draggableProps.style, ...style }}
                                                                                 className={`
-                                                                                    ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px]' : 'text-[10px] px-1.5 py-0.5 max-w-[100px]'} rounded border shadow-sm select-none truncate
+                                                                                    ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none
                                                                                     ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}
                                                                                     ${wishClass}
                                                                                 `}
                                                                                 title={tooltipText}
                                                                             >
-                                                                                {doc.initials}
+                                                                                {getDoctorChipLabel(doc)}
                                                                             </div>
                                                                         );
                                                                     }}
@@ -4840,9 +4966,20 @@ export default function ScheduleBoard() {
                                                 }}
                                             </Droppable>
                                         ) : rowName === 'Sonstiges' ? (
-                                            isReadOnly ? (
+                                            isMonthView ? (() => {
+                                                const note = scheduleNotesMap.get(`${dateStr}|${rowName}`);
+                                                const hasNote = Boolean(note?.content?.trim());
+                                                return (
+                                                    <div
+                                                        className={`h-full min-h-[38px] flex items-center justify-center ${hasNote ? 'bg-purple-50/40 hover:bg-purple-100/70 cursor-help' : 'bg-purple-50/10'} transition-colors`}
+                                                        title={hasNote ? note.content : undefined}
+                                                    >
+                                                        {hasNote ? <StickyNote className="w-3.5 h-3.5 text-purple-500" /> : null}
+                                                    </div>
+                                                );
+                                            })() : isReadOnly ? (
                                                 <div className="p-2 text-base text-slate-500 h-full min-h-[40px] whitespace-pre-wrap">
-                                                    {scheduleNotes.find(n => n.date === format(day, 'yyyy-MM-dd') && n.position === rowName)?.content || ''}
+                                                    {scheduleNotesMap.get(`${dateStr}|${rowName}`)?.content || ''}
                                                 </div>
                                             ) : (
                                                 <FreeTextCell 

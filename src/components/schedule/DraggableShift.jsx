@@ -3,11 +3,12 @@ import { Draggable } from '@hello-pangea/dnd';
 
 const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
-export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
-  const displayText = isFullWidth ? doctor.name : getDoctorShortLabel(doctor);
+  const chipLabel = compactLabel || getDoctorShortLabel(doctor);
+  const displayText = isFullWidth ? doctor.name : chipLabel;
   const displayFontSize = fontSize;
 
   // Build fairness tooltip text for preview service shifts
@@ -86,7 +87,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                 fontSize: `${fontSize}px`,
               }}
             >
-              <span>{getDoctorShortLabel(doctor)}</span>
+              <span className="whitespace-nowrap leading-none">{chipLabel}</span>
             </div>
           </div>
         )}
@@ -152,8 +153,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     fontSize: `${fontSize}px`,
                 }}
                 >
-                    <span className="truncate">
-                     {getDoctorShortLabel(doctor)}
+                  <span className="whitespace-nowrap leading-none">
+                   {chipLabel}
                     </span>
                 </div>
             ) : isFullWidth ? (
@@ -165,7 +166,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                         style={{ width: `${boxSize}px`, fontSize: `${fontSize}px` }}
                         title={combinedTooltip || "Ziehen zum Verschieben"}
                     >
-                        {getDoctorShortLabel(doctor)}
+                      {chipLabel}
                     </div>
                     <span 
                       className="block min-w-0 basis-0 flex-1 truncate px-1 leading-tight text-center" 
@@ -190,7 +191,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                 <>
                 {QualWarning}
                 <span 
-                    className="truncate px-0.5 leading-tight text-center w-full relative z-10" 
+                  className="px-0.5 leading-none text-center w-full relative z-10 whitespace-nowrap" 
                     style={{ fontSize: `${displayFontSize}px` }}
                 >
                     {displayText}

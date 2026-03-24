@@ -2,7 +2,9 @@ import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { User } from 'lucide-react';
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged }) {
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false }) {
+  const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
+
   return (
     <Draggable draggableId={`sidebar-doc-${doctor.id}`} index={index} isDragDisabled={isDragDisabled}>
       {(provided, snapshot) => {
@@ -43,16 +45,16 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                   fontSize: '14px',
                 }}
               >
-                <span>{doctor.initials || doctor.name.substring(0, 3)}</span>
+                <span className="whitespace-nowrap leading-none">{chipLabel}</span>
               </div>
             ) : (
               <>
                 <div 
                   {...provided.dragHandleProps}
-                  className="flex-shrink-0 font-bold text-xs w-10 h-full py-2 bg-white/50 rounded-l-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-black/10 transition-colors"
+                  className={`flex-shrink-0 font-bold text-xs h-full py-2 bg-white/50 rounded-l-md flex items-center justify-center cursor-grab active:cursor-grabbing hover:bg-black/10 transition-colors ${isCompactMode ? 'w-11' : 'w-10'}`}
                   title="Ziehen zum Verschieben"
                 >
-                  {doctor.initials || <User size={12} />}
+                  {chipLabel || <User size={12} />}
                 </div>
                 <span className="text-sm font-medium truncate px-2 py-2">{doctor.name}</span>
               </>
