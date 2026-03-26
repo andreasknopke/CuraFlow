@@ -4352,7 +4352,7 @@ export default function ScheduleBoard() {
                            checked={showSidebar}
                            onCheckedChange={setShowSidebar}
                        >
-                           Ärzteleiste anzeigen
+                           Team Leiste anzeigen
                        </DropdownMenuCheckboxItem>
                        <DropdownMenuCheckboxItem 
                            checked={highlightMyName}

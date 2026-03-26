@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { format, getDaysInMonth, startOfMonth, addMonths, subMonths, isSameDay, isWeekend, getYear } from 'date-fns';
+import { useState, useEffect } from 'react';
+import { format, getDaysInMonth, addMonths, subMonths, isSameDay, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, XCircle, AlertCircle, Eye, CheckSquare, Square } from 'lucide-react';
+import { ChevronLeft, ChevronRight, XCircle, Eye, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { api, db, base44 } from "@/api/client";
+import { api, base44 } from "@/api/client";
 
 export default function WishMonthOverview({ 
     year, 
@@ -25,8 +25,6 @@ export default function WishMonthOverview({
     const [showAbsences, setShowAbsences] = useState(true);
     // Wunschmarkierung ist immer ausgeschaltet
     const showOccupiedDates = false;
-    const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-
     // Load all user preferences
     useEffect(() => {
         const loadPreferences = async () => {
@@ -42,8 +40,6 @@ export default function WishMonthOverview({
                 }
             } catch (e) {
                 console.error("Could not load preferences", e);
-            } finally {
-                setPreferencesLoaded(true);
             }
         };
         loadPreferences();
@@ -85,6 +81,7 @@ export default function WishMonthOverview({
     const days = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
 
     const visibleDoctors = doctors.filter(d => !hiddenDoctorIds.includes(d.id));
+    const areAllDoctorsVisible = doctors.length > 0 && hiddenDoctorIds.length === 0;
 
     const getWish = (doctor, date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
@@ -127,6 +124,21 @@ export default function WishMonthOverview({
     const showAllDoctors = () => {
         setHiddenDoctorIds([]);
         saveHiddenDoctors([]);
+    };
+
+    const hideAllDoctors = () => {
+        const allDoctorIds = doctors.map((doc) => doc.id);
+        setHiddenDoctorIds(allDoctorIds);
+        saveHiddenDoctors(allDoctorIds);
+    };
+
+    const toggleAllDoctorsVisibility = () => {
+        if (areAllDoctorsVisible) {
+            hideAllDoctors();
+            return;
+        }
+
+        showAllDoctors();
     };
 
     const renderCell = (doctor, date) => {
@@ -374,10 +386,14 @@ export default function WishMonthOverview({
                         <div className="grid gap-2">
                             <div 
                                 className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200"
-                                onClick={showAllDoctors}
+                                onClick={toggleAllDoctorsVisibility}
                             >
-                                <CheckSquare className="w-4 h-4 text-indigo-600" />
-                                <span className="font-medium">Alle anzeigen</span>
+                                {areAllDoctorsVisible ? (
+                                    <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                ) : (
+                                    <Square className="w-4 h-4 text-slate-300" />
+                                )}
+                                <span className="font-medium">{areAllDoctorsVisible ? 'Keinen ansehen' : 'Alle ansehen'}</span>
                             </div>
                             {doctors.map(doc => {
                                 const isHidden = hiddenDoctorIds.includes(doc.id);
