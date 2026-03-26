@@ -4,14 +4,83 @@
  * Unterstützt Multi-Tenant via DB-Token
  */
 
+import { toast as showToast } from "@/components/ui/use-toast";
+
 const API_URL = import.meta.env.VITE_API_URL
   || (import.meta.env.DEV ? 'http://localhost:3000' : '');
 const TOKEN_KEY = 'radioplan_jwt_token';
 const DB_TOKEN_KEY = 'db_credentials';
 const DB_TOKEN_ENABLED_KEY = 'db_token_enabled';
+const REQUEST_RETRY_DELAYS_MS = [300, 900];
+const DATABASE_TOAST_COOLDOWN_MS = 15000;
+const DATABASE_ERROR_PATTERNS = [
+  /database/i,
+  /mysql/i,
+  /sql/i,
+  /connection.*closed/i,
+  /lost connection/i,
+  /server has gone away/i,
+  /unknown column/i,
+  /doesn't exist/i,
+  /ECONNRESET/i,
+  /ECONNREFUSED/i,
+  /ETIMEDOUT/i,
+  /PROTOCOL_CONNECTION_LOST/i,
+  /ER_[A-Z_]+/i,
+];
+
+let lastDatabaseToastAt = 0;
 
 function shouldAttachDbToken(endpoint) {
   return !endpoint.startsWith('/api/auth/');
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function extractErrorMessage(errorData) {
+  if (!errorData) return '';
+  if (typeof errorData === 'string') return errorData;
+  return errorData.error || errorData.message || errorData.details || '';
+}
+
+function isDatabaseProblem({ status, errorData, error }) {
+  if (errorData?.databaseError === true) {
+    return true;
+  }
+
+  if (status === 503) {
+    return true;
+  }
+
+  const code = errorData?.code || error?.code || '';
+  if (typeof code === 'string' && (code.startsWith('ER_') || code.startsWith('PROTOCOL_') || code === 'ECONNRESET' || code === 'ECONNREFUSED' || code === 'ETIMEDOUT')) {
+    return true;
+  }
+
+  const message = [extractErrorMessage(errorData), error?.message || ''].join(' ').trim();
+  return DATABASE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function notifyDatabaseProblem(message) {
+  const now = Date.now();
+  if (now - lastDatabaseToastAt < DATABASE_TOAST_COOLDOWN_MS) {
+    return;
+  }
+
+  lastDatabaseToastAt = now;
+  showToast({
+    variant: 'destructive',
+    title: 'Datenbankproblem',
+    description: message || 'Die Datenbank ist momentan nicht stabil erreichbar. Bitte versuchen Sie es erneut.',
+  });
+}
+
+function createRequestError(message, extras = {}) {
+  const error = new Error(message);
+  Object.assign(error, extras);
+  return error;
 }
 
 class APIClient {
@@ -55,14 +124,56 @@ class APIClient {
     };
 
     const url = `${this.baseURL}${endpoint}`;
-    const response = await fetch(url, config);
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Request failed' }));
-      throw new Error(error.error || error.message || `HTTP ${response.status}`);
+    for (let attempt = 1; attempt <= REQUEST_RETRY_DELAYS_MS.length + 1; attempt += 1) {
+      try {
+        const response = await fetch(url, config);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(async () => {
+            const text = await response.text().catch(() => 'Request failed');
+            return { error: text || 'Request failed' };
+          });
+          const message = extractErrorMessage(errorData) || `HTTP ${response.status}`;
+          const databaseError = isDatabaseProblem({ status: response.status, errorData });
+          throw createRequestError(message, {
+            status: response.status,
+            code: errorData?.code,
+            details: errorData,
+            databaseError,
+            retryable: databaseError && (response.status >= 500 || response.status === 503),
+          });
+        }
+
+        return response.json();
+      } catch (error) {
+        const databaseError = isDatabaseProblem({ status: error.status, errorData: error.details, error });
+        const networkError = error instanceof TypeError || /Failed to fetch/i.test(error.message || '');
+        const canRetry = attempt <= REQUEST_RETRY_DELAYS_MS.length && (networkError || (databaseError && (error.retryable !== false)));
+
+        if (canRetry) {
+          console.warn(`[API] Retry ${attempt}/${REQUEST_RETRY_DELAYS_MS.length + 1} for ${endpoint}`, {
+            message: error.message,
+            status: error.status || null,
+            code: error.code || null,
+          });
+          await wait(REQUEST_RETRY_DELAYS_MS[attempt - 1]);
+          continue;
+        }
+
+        if (databaseError || networkError) {
+          console.error(`[API] Database/server issue on ${endpoint}`, {
+            message: error.message,
+            status: error.status || null,
+            code: error.code || null,
+            details: error.details || null,
+          });
+          notifyDatabaseProblem('Beim Speichern oder Laden gab es ein Datenbankproblem. Bitte versuchen Sie es erneut.');
+        }
+
+        throw error;
+      }
     }
-
-    return response.json();
   }
 
   // ==================== Auth ====================

@@ -29,6 +29,160 @@ import { checkAndSendWishReminders } from './utils/wishReminder.js';
 // Load environment variables
 dotenv.config();
 
+const DB_RETRY_DELAYS_MS = [250, 750];
+const TRANSIENT_DB_ERROR_CODES = new Set([
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+  'PROTOCOL_ENQUEUE_AFTER_QUIT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ER_CON_COUNT_ERROR',
+  'ER_LOCK_DEADLOCK',
+  'ER_LOCK_WAIT_TIMEOUT',
+]);
+const TRANSIENT_DB_ERROR_PATTERNS = [
+  /server has gone away/i,
+  /lost connection/i,
+  /connection.*closed/i,
+  /closed state/i,
+  /read ECONNRESET/i,
+  /connect ETIMEDOUT/i,
+  /can't add new command when connection is in closed state/i,
+  /can't add new command when connection is closed/i,
+  /the client was disconnected by the server/i,
+];
+const DATABASE_ERROR_PATTERNS = [
+  /mysql/i,
+  /sql/i,
+  /database/i,
+  /unknown column/i,
+  /doesn't exist/i,
+  /table .* doesn't exist/i,
+  /ER_[A-Z_]+/i,
+  ...TRANSIENT_DB_ERROR_PATTERNS,
+];
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientDbError = (error) => {
+  if (!error) return false;
+
+  if (TRANSIENT_DB_ERROR_CODES.has(error.code)) {
+    return true;
+  }
+
+  const message = `${error.message || ''} ${error.sqlMessage || ''}`.trim();
+  return TRANSIENT_DB_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+};
+
+export const isDatabaseError = (error) => {
+  if (!error) return false;
+  if (error.isDatabaseError) return true;
+  if (isTransientDbError(error)) return true;
+  if (typeof error.code === 'string' && error.code.startsWith('ER_')) return true;
+  if (error.sql || error.sqlMessage || error.sqlState) return true;
+
+  const message = `${error.message || ''} ${error.sqlMessage || ''}`.trim();
+  return DATABASE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+};
+
+const annotateDatabaseError = (error, meta = {}) => {
+  if (!error || typeof error !== 'object') return error;
+
+  error.isDatabaseError = true;
+  if (meta.poolLabel) {
+    error.poolLabel = meta.poolLabel;
+  }
+  if (meta.retryable !== undefined) {
+    error.retryable = meta.retryable;
+  } else if (error.retryable === undefined) {
+    error.retryable = isTransientDbError(error);
+  }
+
+  return error;
+};
+
+const getSqlPreview = (sql) => {
+  if (typeof sql !== 'string') return 'n/a';
+  return sql.replace(/\s+/g, ' ').trim().slice(0, 180);
+};
+
+const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
+  if (!pool || pool.__curaflowRetryWrapped) {
+    return pool;
+  }
+
+  const wrapMethod = (methodName) => {
+    if (typeof pool[methodName] !== 'function') {
+      return;
+    }
+
+    const originalMethod = pool[methodName].bind(pool);
+    pool[methodName] = async (...args) => {
+      let lastError;
+
+      for (let attempt = 1; attempt <= DB_RETRY_DELAYS_MS.length + 1; attempt += 1) {
+        try {
+          return await originalMethod(...args);
+        } catch (error) {
+          lastError = error;
+          const databaseError = isDatabaseError(error);
+          const transient = isTransientDbError(error);
+          const canRetry = transient && attempt <= DB_RETRY_DELAYS_MS.length;
+
+          if (!databaseError) {
+            throw error;
+          }
+
+          annotateDatabaseError(error, {
+            poolLabel,
+            retryable: canRetry,
+          });
+
+          const logPrefix = canRetry ? '[DB][Retry]' : '[DB][Failure]';
+          const logger = canRetry ? console.warn : console.error;
+          logger(
+            `${logPrefix} ${poolLabel || 'default'} ${methodName} attempt ${attempt}/${DB_RETRY_DELAYS_MS.length + 1} failed`,
+            {
+              code: error.code || null,
+              message: error.message,
+              sql: getSqlPreview(args[0]),
+            }
+          );
+
+          if (canRetry) {
+            await sleep(DB_RETRY_DELAYS_MS[attempt - 1]);
+            continue;
+          }
+
+          if (typeof onFinalFailure === 'function') {
+            try {
+              await onFinalFailure(error);
+            } catch (cleanupError) {
+              console.error('[DB][Cleanup] Failed to cleanup pool after error:', cleanupError.message);
+            }
+          }
+
+          throw error;
+        }
+      }
+
+      throw lastError;
+    };
+  };
+
+  wrapMethod('execute');
+  wrapMethod('query');
+  Object.defineProperty(pool, '__curaflowRetryWrapped', {
+    value: true,
+    configurable: false,
+    enumerable: false,
+  });
+  return pool;
+};
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -53,7 +207,7 @@ if (fs.existsSync(distPath)) {
 app.set('trust proxy', 1);
 
 // Default MySQL Connection Pool
-export const db = createPool({
+export const db = wrapPoolWithRetry(createPool({
   host: process.env.MYSQL_HOST,
   port: parseInt(process.env.MYSQL_PORT || '3306'),
   user: process.env.MYSQL_USER,
@@ -64,7 +218,7 @@ export const db = createPool({
   queueLimit: 0,
   dateStrings: true, // Important for DATE/DATETIME consistency
   timezone: '+00:00'
-});
+}), { poolLabel: 'default' });
 
 // Cache for tenant database pools (Multi-Tenant Support)
 const tenantPools = new Map();
@@ -103,7 +257,7 @@ export const getTenantDb = (dbToken) => {
     }
     
     // Create new pool for this tenant
-    const tenantPool = createPool({
+    const tenantPool = wrapPoolWithRetry(createPool({
       host: config.host,
       port: parseInt(config.port || '3306'),
       user: config.user,
@@ -115,6 +269,13 @@ export const getTenantDb = (dbToken) => {
       queueLimit: 0,
       dateStrings: true,
       timezone: '+00:00'
+    }), {
+      poolLabel: `tenant:${config.host}/${config.database}`,
+      onFinalFailure: async (error) => {
+        if (dbToken && (isTransientDbError(error) || error.code === 'ER_ACCESS_DENIED_ERROR')) {
+          removeTenantPool(dbToken);
+        }
+      }
     });
     
     // Cache it
@@ -324,15 +485,40 @@ if (fs.existsSync(distPath)) {
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  
-  const status = err.status || 500;
-  const message = process.env.NODE_ENV === 'production' && status === 500
-    ? 'Internal server error'
-    : err.message;
-  
+  const databaseError = isDatabaseError(err);
+  const retryable = databaseError && (err.retryable ?? isTransientDbError(err));
+
+  if (databaseError) {
+    console.error('[DB][HTTP] Request failed', {
+      method: req.method,
+      path: req.originalUrl,
+      code: err.code || null,
+      retryable,
+      pool: err.poolLabel || 'unknown',
+      message: err.message,
+    });
+  } else {
+    console.error('Error:', err);
+  }
+
+  const status = err.status || (databaseError && retryable ? 503 : 500);
+  const message = databaseError
+    ? 'Datenbankproblem auf dem Server. Bitte versuchen Sie es erneut.'
+    : (process.env.NODE_ENV === 'production' && status === 500
+        ? 'Internal server error'
+        : err.message);
+
   res.status(status).json({ 
     error: message,
+    ...(databaseError && {
+      databaseError: true,
+      retryable,
+      code: err.code || null,
+    }),
+    ...(databaseError && process.env.NODE_ENV !== 'production' && {
+      details: err.message,
+      pool: err.poolLabel || 'unknown',
+    }),
     ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
   });
 });
