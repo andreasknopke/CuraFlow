@@ -1,11 +1,10 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { format, addDays, subDays, startOfWeek, isSameDay, isWeekend, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, GripHorizontal, Calendar, LayoutList, Plus, StickyNote, AlertTriangle, Download, Undo, Sparkles, ExternalLink, X, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock } from 'lucide-react';
 import { toast } from "sonner";
-import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from '@/components/ui/button';
 import {
@@ -18,21 +17,19 @@ import {
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { api, db, base44 } from "@/api/client";
+import { db, base44 } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import DraggableDoctor from './DraggableDoctor';
 import DraggableShift from './DraggableShift';
 import DroppableCell from './DroppableCell';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
-import AIRulesDialog from './AIRulesDialog';
 import { generateSuggestions } from './autoFillEngine';
-import { generateAISuggestions } from './aiAutoFillEngine';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
-import { useQualifications, useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
@@ -91,73 +88,50 @@ const parseAvailableDoctorId = (draggableId = '') => {
     return normalized.substring(14, normalized.length - 11);
 };
 
-const parseSectionTabs = (rawValue) => {
-    if (!rawValue) return [];
-    try {
-        const parsed = JSON.parse(rawValue);
-        if (Array.isArray(parsed)) {
-            return parsed.filter(t => t?.id && t?.sectionTitle);
-        }
-    } catch {
-        return [];
-    }
-    return [];
-};
-
-const parseDateFromQuery = (rawDate) => {
-        if (!rawDate) return null;
-        const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (!match) return null;
-        const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-        return isValid(parsed) ? parsed : null;
-};
-
-const getInitialScheduleState = () => {
-        const params = new URLSearchParams(window.location.search);
-        const initialDate = parseDateFromQuery(params.get('date'));
-        const rawView = params.get('view');
-    const initialViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
-        return {
-                currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
-                viewMode: initialViewMode,
-                activeSectionTabId: params.get('sectionTab') || 'main'
-        };
-};
-
-const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
-
 const normalizeChipSource = (doctor) => {
-    const raw = `${doctor?.initials || ''}${doctor?.name ? ` ${doctor.name}` : ''}`.trim();
-    const normalized = raw
+    const rawSource = `${doctor?.initials || ''}${doctor?.name || ''}${doctor?.id || ''}`;
+    const normalized = rawSource
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z]/g, '')
-        .toLowerCase();
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase();
 
-    return normalized || 'xxx';
+    return normalized || 'DOC';
 };
 
-const formatChipLabel = (value) => {
-    if (!value) return '';
-    const trimmed = value.slice(0, 3);
-    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+const formatChipLabel = (value = '') => {
+    const normalized = String(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toUpperCase();
+
+    if (!normalized) return 'DOC';
+    if (normalized.length >= 3) return normalized.slice(0, 3);
+    return normalized.padEnd(3, normalized[normalized.length - 1] || 'X');
 };
 
 const getUniqueChipCandidates = (doctor) => {
     const source = normalizeChipSource(doctor);
     const candidates = [];
     const seen = new Set();
+
     const pushCandidate = (value) => {
-        if (!value) return;
-        const label = formatChipLabel(value);
-        if (!label || seen.has(label)) return;
-        seen.add(label);
-        candidates.push(label);
+        const candidate = formatChipLabel(value);
+        if (!seen.has(candidate)) {
+            seen.add(candidate);
+            candidates.push(candidate);
+        }
     };
 
     pushCandidate(source.slice(0, 3));
 
+    if (source.length < 3) {
+        return candidates;
+    }
+
     const indexPairs = [];
+
     for (let first = 1; first < source.length; first += 1) {
         for (let second = first + 1; second < source.length; second += 1) {
             indexPairs.push([first, second]);
@@ -356,7 +330,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_showSidebar');
           return saved ? JSON.parse(saved) : true;
-      } catch (e) { return true; }
+    } catch { return true; }
   });
   
   const [hiddenRows, setHiddenRows] = useState(() => {
@@ -364,7 +338,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_hiddenRows');
           return saved ? JSON.parse(saved) : [];
-      } catch (e) { return []; }
+    } catch { return []; }
   });
   
   // Use dynamic holiday calculator instead of static MV functions
@@ -380,7 +354,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_collapsedSections');
           return saved ? JSON.parse(saved) : [];
-      } catch (e) { return []; }
+    } catch { return []; }
   });
 
   const [highlightMyName, setHighlightMyName] = useState(() => {
@@ -388,7 +362,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_highlightMyName');
           return saved ? JSON.parse(saved) : true;
-      } catch (e) { return true; }
+    } catch { return true; }
   });
 
   const [showInitialsOnly, setShowInitialsOnly] = useState(() => {
@@ -396,7 +370,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_showInitialsOnly');
           return saved ? JSON.parse(saved) : false;
-      } catch (e) { return false; }
+    } catch { return false; }
   });
 
   const [sortDoctorsAlphabetically, setSortDoctorsAlphabetically] = useState(() => {
@@ -404,7 +378,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_sortDoctorsAlphabetically');
           return saved ? JSON.parse(saved) : false;
-      } catch (e) { return false; }
+    } catch { return false; }
   });
 
   // Sync with user profile when it loads/updates
@@ -469,7 +443,7 @@ export default function ScheduleBoard() {
       try {
           const saved = localStorage.getItem('radioplan_gridFontSize');
           return saved ? JSON.parse(saved) : 14;
-      } catch (e) { return 14; }
+    } catch { return 14; }
   });
 
   // Sync with user profile when it loads/updates (for sidebar/hiddenRows)
@@ -546,7 +520,7 @@ export default function ScheduleBoard() {
     const effectiveGridFontSize = isMonthView ? Math.min(gridFontSize, 11) : gridFontSize;
     const shiftBoxSize = isMonthView ? Math.max(effectiveGridFontSize * 2.8, 30) : effectiveGridFontSize * 3.5;
   const [previewShifts, setPreviewShifts] = useState(null);
-  const [previewCategories, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
+    const [, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
   const [draggingDoctorId, setDraggingDoctorId] = useState(null);
   const [draggingShiftId, setDraggingShiftId] = useState(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
@@ -966,7 +940,7 @@ export default function ScheduleBoard() {
             await persistSectionTabs(nextTabs);
             setActiveSectionTabId(newTab.id);
             toast.success(`"${getSectionName(sectionTitle)}" wurde in einen eigenen Reiter verschoben`);
-        } catch (error) {
+        } catch {
             toast.error('Reiter konnte nicht gespeichert werden');
         }
     };
@@ -1013,13 +987,6 @@ export default function ScheduleBoard() {
     queryKey: ['trainingRotations'],
     queryFn: () => db.TrainingRotation.list(),
     staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-
-  const { data: scheduleRules = [] } = useQuery({
-    queryKey: ['scheduleRules'],
-    queryFn: () => db.ScheduleRule.list(),
-    staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
@@ -1082,12 +1049,11 @@ export default function ScheduleBoard() {
     return scheduleBlocksMap.get(`${dateStr}|${position}`);
   };
 
-  const { validate, validateWithUI, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
+    const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
 
   // Qualifikationsdaten für visuelle Indikatoren
-  const { qualifications: allQualifications } = useQualifications();
-  const { getQualificationIds: getDoctorQualIds, allDoctorQualifications } = useAllDoctorQualifications();
-  const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds, getDiscouragedQualificationIds: getWpDiscouragedQualIds, allWorkplaceQualifications } = useAllWorkplaceQualifications();
+    const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
+    const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds, getDiscouragedQualificationIds: getWpDiscouragedQualIds } = useAllWorkplaceQualifications();
 
   // Override-Validierung mit Dialog
   const {
@@ -1097,22 +1063,6 @@ export default function ScheduleBoard() {
       cancelOverride,
       setOverrideDialogOpen
   } = useOverrideValidation({ user, doctors });
-
-  // Hilfsfunktion: Timeslots für einen Arbeitsplatz
-  const getTimeslotsForWorkplace = useMemo(() => (workplaceName) => {
-      const workplace = workplaces.find(w => w.name === workplaceName);
-      if (!workplace?.timeslots_enabled) return [];
-      return workplaceTimeslots
-          .filter(t => t.workplace_id === workplace.id)
-          .sort((a, b) => (a.order || 0) - (b.order || 0));
-  }, [workplaces, workplaceTimeslots]);
-
-  // Prüft ob ein Arbeitsplatz Timeslots hat
-  const workplaceHasTimeslots = useMemo(() => (workplaceName) => {
-      const workplace = workplaces.find(w => w.name === workplaceName);
-      return workplace?.timeslots_enabled === true && 
-             workplaceTimeslots.some(t => t.workplace_id === workplace?.id);
-  }, [workplaces, workplaceTimeslots]);
 
   const getRoleColor = useMemo(() => (role) => {
       const setting = colorSettings.find(s => s.name === role && s.category === 'role');
@@ -1196,13 +1146,13 @@ export default function ScheduleBoard() {
         }
         return { previousShifts };
     },
-    onSuccess: (data, newData, context) => {
+    onSuccess: (data, _newData, _context) => {
         // trackDbChange(); // Disabled - MySQL mode
         setUndoStack(prev => [...prev, { type: 'DELETE', id: data.id }]);
         // Only invalidate shifts in affected range
         queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
     },
-    onSettled: (data, error, newData) => {
+    onSettled: (_data, _error, newData) => {
         // Release cell lock after mutation completes (success or error)
         if (newData?.date && newData?.position) {
             unlockCell(newData.date, newData.position, newData.timeslot_id);
@@ -1277,14 +1227,14 @@ export default function ScheduleBoard() {
         }
         return { previousShifts };
     },
-    onSuccess: (data, variables, context) => {
+    onSuccess: (data, _variables, _context) => {
         // trackDbChange(data.length); // Disabled - MySQL mode
         if (Array.isArray(data)) {
              setUndoStack(prev => [...prev, { type: 'BULK_DELETE', ids: data.map(s => s.id) }]);
         }
         queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
     },
-    onError: (error, variables, context) => {
+    onError: (error, _variables, context) => {
         console.error('DEBUG: Bulk Create Failed', error);
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
@@ -1346,7 +1296,7 @@ export default function ScheduleBoard() {
     onSuccess: (data, { id, data: inputData }, context) => {
         // trackDbChange(); // Disabled - MySQL mode
         if (context.oldShift) {
-            const { id: _, created_date, updated_date, created_by, ...oldData } = context.oldShift;
+            const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...oldData } = context.oldShift;
             setUndoStack(prev => [...prev, { type: 'UPDATE', id, data: oldData }]);
 
             // Notify user if admin updated it
@@ -1398,7 +1348,7 @@ export default function ScheduleBoard() {
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
         }, 100);
     },
-    onError: (error, variables, context) => {
+    onError: (error, _variables, context) => {
         console.error('DEBUG: Update Mutation Failed', error);
         // Rollback to the previous value on error
         if (context?.previousShifts) {
@@ -1432,7 +1382,7 @@ export default function ScheduleBoard() {
     },
     onSuccess: (data, { id }, context) => {
         if (context.oldShift) {
-            const { id: _, created_date, updated_date, created_by, ...oldData } = context.oldShift;
+            const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...oldData } = context.oldShift;
             const undoAction = { type: 'UPDATE', id, data: oldData };
             
             setUndoStack(prev => {
@@ -1481,10 +1431,10 @@ export default function ScheduleBoard() {
         const shift = allShifts.find(s => s.id === id);
         return { shift, previousShifts };
     },
-    onSuccess: (data, id, context) => {
+    onSuccess: (_data, id, context) => {
         // trackDbChange(); // Disabled - MySQL mode
         if (context.shift) {
-            const { id: _, created_date, updated_date, created_by, ...shiftData } = context.shift;
+            const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...shiftData } = context.shift;
             setUndoStack(prev => [...prev, { type: 'CREATE', data: shiftData }]);
 
             if (user?.role === 'admin' && context.shift.doctor_id && context.shift.doctor_id !== user.doctor_id) {
@@ -1525,17 +1475,17 @@ export default function ScheduleBoard() {
         const shifts = allShifts.filter(s => ids.includes(s.id));
         return { shifts, previousShifts };
     },
-    onError: (err, ids, context) => {
+    onError: (err, _ids, context) => {
          if (context?.previousShifts) {
              queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
          }
          alert("Fehler beim Löschen: " + err.message);
     },
-    onSuccess: (data, ids, context) => {
+    onSuccess: (_data, ids, context) => {
         // trackDbChange(ids.length); // Disabled - MySQL mode
         if (context.shifts && context.shifts.length > 0) {
             const shiftsData = context.shifts.map(s => {
-                const { id, created_date, updated_date, created_by, ...rest } = s;
+                const { id: _id, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...rest } = s;
                 return rest;
             });
             setUndoStack(prev => [...prev, { type: 'BULK_CREATE', data: shiftsData }]);
@@ -1735,33 +1685,6 @@ export default function ScheduleBoard() {
       return result.warnings.length > 0 ? result.warnings.join('\n') : null;
   };
 
-  // Staffing-Prüfung mit Override-Dialog (für Abwesenheiten)
-  // Gibt true zurück wenn blockiert (Aktion abbrechen)
-  const checkStaffingWithOverride = (doctorId, dateStr, position, onProceed = null) => {
-      const result = validate(doctorId, dateStr, position, {});
-      const doctor = doctors.find(d => d.id === doctorId);
-      
-      // Staffing-Warnungen als Override-Möglichkeit anzeigen
-      const staffingWarnings = result.warnings.filter(w => 
-          w.includes('Mindestbesetzung') || w.includes('anwesend')
-      );
-      
-      if (staffingWarnings.length > 0) {
-          requestOverride({
-              blockers: staffingWarnings, // Als Blocker anzeigen für Override-Option
-              warnings: [],
-              doctorId,
-              doctorName: doctor?.name,
-              date: dateStr,
-              position: position,
-              onConfirm: onProceed
-          });
-          return true; // Blockiert - warte auf Override-Bestätigung
-      }
-      
-      return false; // Nicht blockiert
-  };
-
   // Wrapper für Limit-Prüfung (jetzt nur Warnung)
   const checkLimits = (doctorId, dateStr, position) => {
       const result = validate(doctorId, dateStr, position, {});
@@ -1807,293 +1730,6 @@ export default function ScheduleBoard() {
           onConfirm: onProceed
       });
       return true; // Blockiert - warte auf Override
-  };
-
-  const handleVoiceCommand = async (command) => {
-      console.log("Received Voice Command:", command);
-
-      if (command.action === 'unknown') {
-          toast.error(command.reason || "Konnte den Befehl nicht verstehen.");
-          return;
-      }
-
-      // Helper to resolve doctor (handles ID or fuzzy Name match)
-      const resolveDoctor = (idOrName) => {
-          if (!idOrName) return null;
-          
-          const term = idOrName.toString().trim();
-          const lower = term.toLowerCase();
-
-          // 1. Try exact ID match
-          let doc = doctors.find(d => d.id === term);
-          if (doc) return doc;
-
-          // 2. Try exact Name/Initials match
-          doc = doctors.find(d => d.name.toLowerCase() === lower || (d.initials && d.initials.toLowerCase() === lower));
-          if (doc) return doc;
-
-          // 3. Try fuzzy Name match (search term in doctor name)
-          doc = doctors.find(d => d.name.toLowerCase().includes(lower));
-          if (doc) return doc;
-
-          // 4. Try fuzzy Name match (doctor name parts in search term)
-          // Useful if voice recognition captured "Dr. Müller" but stored name is "Müller"
-          doc = doctors.find(d => lower.includes(d.name.toLowerCase()));
-          if (doc) return doc;
-          
-          // 5. Last resort: Split search term and find matches for parts
-          const parts = lower.split(/\s+/).filter(p => p.length > 2);
-          for (const part of parts) {
-              doc = doctors.find(d => d.name.toLowerCase().includes(part));
-              if (doc) return doc;
-          }
-
-          console.log("Resolve Doctor Failed. Term:", term);
-          console.log("Available Doctors:", doctors.map(d => `${d.name} (${d.id})`));
-          
-          return null;
-      };
-
-      // Helper to resolve position (handles exact or fuzzy Name match)
-      const resolvePosition = (name) => {
-          if (!name) return null;
-          // 1. Try exact match
-          let wp = workplaces.find(w => w.name === name);
-          if (wp) return wp.name;
-
-          // 2. Try fuzzy match
-          const lower = name.toLowerCase();
-          wp = workplaces.find(w => w.name.toLowerCase() === lower);
-          if (wp) return wp.name;
-          
-          // 3. Try contains
-          wp = workplaces.find(w => w.name.toLowerCase().includes(lower) || lower.includes(w.name.toLowerCase()));
-          if (wp) return wp.name;
-          
-          return name;
-      };
-
-      try {
-          let actionHandled = false;
-
-          if (command.action === 'navigate' && command.navigation) {
-              if (previewShifts) {
-                  toast.warning('Navigation im Preview-Modus nicht möglich. Bitte zuerst Vorschläge übernehmen oder verwerfen.');
-                  return;
-              }
-              if (command.navigation.date) {
-                  setCurrentDate(new Date(command.navigation.date));
-              }
-              if (command.navigation.viewMode) {
-                  setViewMode(command.navigation.viewMode);
-              }
-              toast.success("Ansicht aktualisiert");
-              actionHandled = true;
-          }
-
-          // Direct API calls to batch operations and avoid multiple re-renders
-          let updatesCount = 0;
-          let skippedCount = 0;
-
-          if (command.action === 'assign') {
-              if (!command.assignments || command.assignments.length === 0) {
-                  toast.warning("Keine Zuweisungen im Befehl gefunden.");
-                  actionHandled = true; // Handled as warning
-              } else {
-                  const toCreate = [];
-                  const toUpdate = [];
-
-                  for (const assignment of command.assignments) {
-                      const { doctor_id, position, date } = assignment;
-                      const doc = resolveDoctor(doctor_id);
-                      const posName = resolvePosition(position);
-
-                      if (!doc) {
-                          toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
-                          skippedCount++;
-                          continue;
-                      }
-                      if (!posName) {
-                          toast.error(`Konnte Position "${position}" nicht finden.`);
-                          skippedCount++;
-                          continue;
-                      }
-
-                      // 1. Validation
-                      if (absencePositions.includes(posName)) {
-                           const warning = checkStaffing(date, doc.id);
-                           if (warning) toast.warning(warning);
-                      } else {
-                           // Check limits
-                           const limitWarning = checkLimits(doc.id, date, posName);
-                           if (limitWarning) toast.warning(limitWarning);
-
-                           // Check conflicts (Blocker)
-                           if (checkConflicts(doc.id, date, posName, true)) {
-                               skippedCount++;
-                               continue; // Skip this assignment
-                           }
-                      }
-                      
-                      const existingShift = allShifts.find(s => s.date === date && s.position === posName);
-                      
-                      if (existingShift) {
-                          if (existingShift.doctor_id !== doc.id) {
-                              toUpdate.push({ id: existingShift.id, data: { doctor_id: doc.id } });
-                          }
-                      } else {
-                          const cellShifts = allShifts.filter(s => s.date === date && s.position === posName);
-                          const pendingInCell = toCreate.filter(s => s.date === date && s.position === posName);
-                          const maxOrder = Math.max(
-                              cellShifts.reduce((max, s) => Math.max(max, s.order || 0), -1),
-                              pendingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1)
-                          );
-                          toCreate.push({ date, position: posName, doctor_id: doc.id, order: maxOrder + 1 });
-                      }
-                  }
-
-                  // Execute Batch Operations
-                  if (toCreate.length > 0) {
-                      await db.ShiftEntry.bulkCreate(toCreate);
-                      updatesCount += toCreate.length;
-                  }
-                  
-                  if (toUpdate.length > 0) {
-                      await Promise.all(toUpdate.map(item => db.ShiftEntry.update(item.id, item.data)));
-                      updatesCount += toUpdate.length;
-                  }
-                  
-                  if (updatesCount > 0) {
-                      if (skippedCount > 0) {
-                           toast.warning(`${updatesCount} zugewiesen, ${skippedCount} übersprungen (siehe Warnungen).`);
-                      } else {
-                           toast.success(`${updatesCount} Zuweisung(en) durchgeführt`);
-                      }
-                  } else if (skippedCount > 0) {
-                      toast.error(`Keine Zuweisung durchgeführt. ${skippedCount} Fehler/Konflikte.`);
-                  }
-                  actionHandled = true;
-              }
-          }
-
-          if (command.action === 'move') {
-              if (!command.move) {
-                  toast.warning("Keine Verschiebungsinformationen gefunden.");
-                  actionHandled = true;
-              } else {
-                  const { doctor_id, source_position, target_position, source_date, target_date } = command.move;
-                  const doc = resolveDoctor(doctor_id);
-
-                  if (!doc) {
-                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
-                      skippedCount++;
-                  } else {
-                      const tDate = target_date || source_date;
-                      const tPos = resolvePosition(target_position);
-                      const sPos = resolvePosition(source_position);
-                      const promises = [];
-
-                      if (target_position && !tPos) {
-                          toast.error(`Konnte Zielposition "${target_position}" nicht finden.`);
-                          skippedCount++;
-                      } else if (source_position && !sPos) {
-                          toast.error(`Konnte Quellposition "${source_position}" nicht finden.`);
-                          skippedCount++;
-                      }
-
-                      // Case 1: Move Position
-                      else if (tPos) {
-                          let shift = null;
-                          if (sPos) {
-                              shift = allShifts.find(s => s.date === source_date && s.position === sPos && s.doctor_id === doc.id);
-                          } else {
-                              shift = allShifts.find(s => s.date === source_date && s.doctor_id === doc.id);
-                          }
-
-                          if (shift) {
-                              promises.push(db.ShiftEntry.update(shift.id, { position: tPos, date: tDate }));
-                          } else {
-                              toast.warning(`Kein passender Dienst gefunden für ${doc.name}`);
-                              skippedCount++;
-                          }
-                      } 
-                      // Case 2: Move Day (all shifts of doc)
-                      else if (source_date && tDate && source_date !== tDate) {
-                           const shifts = allShifts.filter(s => s.date === source_date && s.doctor_id === doc.id);
-                           if (shifts.length > 0) {
-                               shifts.forEach(s => promises.push(db.ShiftEntry.update(s.id, { date: tDate })));
-                           } else {
-                               toast.warning(`Keine Dienste am ${format(new Date(source_date), 'dd.MM.')} gefunden.`);
-                               skippedCount++;
-                           }
-                      }
-                      
-                      if (promises.length > 0) {
-                          await Promise.all(promises);
-                          updatesCount += promises.length;
-                          toast.success(`${promises.length} Verschiebung(en) durchgeführt`);
-                      } else if (skippedCount === 0) {
-                          toast.warning("Keine Verschiebungen möglich.");
-                      }
-                  }
-                  actionHandled = true;
-              }
-          }
-
-          if (command.action === 'delete') {
-              if (!command.delete) {
-                  toast.warning("Keine Löschinformationen gefunden.");
-                  actionHandled = true;
-              } else {
-                  const { doctor_id, scope, date } = command.delete;
-                  const doc = resolveDoctor(doctor_id);
-
-                  if (!doc) {
-                      toast.error(`Konnte Person "${doctor_id}" nicht finden.`);
-                      skippedCount++;
-                  } else {
-                      let idsToDelete = [];
-
-                      if (scope === 'day' && date) {
-                          const shifts = allShifts.filter(s => s.date === date && s.doctor_id === doc.id);
-                          idsToDelete = shifts.map(s => s.id);
-                      } else if (scope === 'week') {
-                          const startStr = format(weekDays[0], 'yyyy-MM-dd');
-                          const endStr = format(weekDays[6], 'yyyy-MM-dd');
-                          const shifts = allShifts.filter(s => 
-                              s.doctor_id === doc.id && 
-                              s.date >= startStr && 
-                              s.date <= endStr
-                          );
-                          idsToDelete = shifts.map(s => s.id);
-                      }
-                      
-                      if (idsToDelete.length > 0) {
-                          await Promise.all(idsToDelete.map(id => db.ShiftEntry.delete(id)));
-                          toast.success(`${idsToDelete.length} Eintrag/Einträge gelöscht`);
-                          updatesCount += idsToDelete.length;
-                      } else {
-                          toast.warning("Keine passenden Einträge zum Löschen gefunden.");
-                          skippedCount++;
-                      }
-                  }
-                  actionHandled = true;
-              }
-          }
-
-          // Debounced invalidation at the end
-          if (updatesCount > 0) {
-              setTimeout(() => queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]), 150);
-          }
-
-          if (!actionHandled) {
-               toast.info(`Befehl "${command.action}" wurde erkannt, aber es wurden keine Aktionen ausgeführt.`);
-          }
-
-      } catch (err) {
-          console.error("Error executing voice command:", err);
-          toast.error("Fehler bei der Ausführung: " + err.message);
-      }
   };
 
   const handleExportExcel = async () => {
@@ -3071,12 +2707,6 @@ export default function ScheduleBoard() {
             }
         }
         
-        const srcParts = sourceDroppableId.split('__');
-        const oldDateStr = srcParts[0];
-        const oldPosition = srcParts[1];
-        const rawOldTimeslotId = srcParts[2] || null;
-        const oldTimeslotId = rawOldTimeslotId === '__unassigned__' ? null : rawOldTimeslotId;
-
         // Check active_days for grid-to-grid moves to different position/date
         if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
             toast.error('Diese Position ist an diesem Tag nicht aktiv.');
@@ -3316,7 +2946,7 @@ export default function ScheduleBoard() {
   const applyPreview = async () => {
       if (!previewShifts) return;
       // Remove isPreview flag before saving
-      const shiftsToCreate = previewShifts.map(({ isPreview, id, ...rest }) => rest);
+    const shiftsToCreate = previewShifts.map(({ isPreview: _isPreview, id: _id, ...rest }) => rest);
       await db.ShiftEntry.bulkCreate(shiftsToCreate);
       queryClient.invalidateQueries(['shifts']);
       setPreviewShifts(null);
@@ -3427,98 +3057,6 @@ export default function ScheduleBoard() {
     } catch (error) {
       console.error('AutoFill Error:', error);
       toast.error('Fehler beim Generieren: ' + error.message);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleAIAutoFill = async () => {
-    setIsGenerating(true);
-    try {
-      const allCategories = [
-        'Rotationen', 
-        'Dienste', 
-        'Demonstrationen & Konsile',
-        ...(() => {
-          const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
-          if (!catSetting?.value) return [];
-          try {
-            const parsed = JSON.parse(catSetting.value);
-            return Array.isArray(parsed) ? parsed.map(c => typeof c === 'string' ? c : c.name) : [];
-          } catch { return []; }
-        })()
-      ];
-      setPreviewCategories(allCategories);
-
-      toast.info('KI-Optimierung läuft…', { duration: 10000, id: 'ai-autofill' });
-
-      const result = await generateAISuggestions({
-        weekDays,
-        doctors,
-        workplaces,
-        existingShifts: currentWeekShifts.filter(s => !s.isPreview),
-        allShifts,
-        trainingRotations,
-        isPublicHoliday,
-        getDoctorQualIds,
-        getWpRequiredQualIds,
-        getWpOptionalQualIds,
-        getWpExcludedQualIds,
-        getWpDiscouragedQualIds,
-        categoriesToFill: allCategories,
-        systemSettings,
-        wishes,
-        allQualifications,
-        allDoctorQualifications,
-        allWorkplaceQualifications,
-        scheduleRules,
-      });
-
-      toast.dismiss('ai-autofill');
-
-      if (result.suggestions.length > 0) {
-        // Assign stable IDs immediately so drag-drop can find them in state
-        const withIds = result.suggestions.map((s, i) => ({ ...s, id: `preview-${i}` }));
-        setPreviewShifts(withIds);
-        const swapInfo = result.stats.swapsApplied > 0
-          ? ` — ${result.stats.swapsApplied} KI-Tausche angewendet`
-          : '';
-        const variantInfo = result.stats.variantsGenerated
-          ? ` (${result.stats.variantsGenerated} Varianten getestet)`
-          : '';
-        const statsMsg = `${result.suggestions.length} Vorschläge${swapInfo}${variantInfo}`;
-        toast.success(statsMsg, { duration: 6000 });
-        
-        if (result.reasoning) {
-          console.log(`🤖 KI-Reasoning: ${result.reasoning}`);
-          toast.info(`🤖 ${result.reasoning}`, { duration: 8000 });
-        }
-
-                if (result.debug?.entries?.length) {
-                    const reqId = result.debug.requestId || 'n/a';
-                    console.groupCollapsed(`🧭 AI AutoFill Debug (${reqId}) — ${result.debug.entries.length} Events`);
-                    for (const entry of result.debug.entries) {
-                        const prefix = `[${entry.ts}] [${entry.stage}] ${entry.message}`;
-                        if (entry.meta) {
-                            console.log(prefix, entry.meta);
-                        } else {
-                            console.log(prefix);
-                        }
-                    }
-                    if (result.debug.swapDiagnostics?.length) {
-                        console.log('🔍 Swap Diagnostics:', result.debug.swapDiagnostics);
-                    }
-                    console.groupEnd();
-                }
-        
-        console.log(`📊 Deterministic baseline: ${result.deterministicCount} | AI: ${result.suggestions.length}`, result.stats);
-      } else {
-        toast.info('KI hat keine Vorschläge generiert');
-      }
-    } catch (error) {
-      toast.dismiss('ai-autofill');
-      console.error('AI AutoFill Error:', error);
-      toast.error('KI-Fehler: ' + error.message, { duration: 8000 });
     } finally {
       setIsGenerating(false);
     }
@@ -4834,7 +4372,6 @@ export default function ScheduleBoard() {
                                 
                                 // Check if it's a demo row and if it's allowed
                                 let isDisabled = false;
-                                let disabledText = null;
                                 let isTrainingHighlight = false;
 
                                 if (draggingDoctorId) {
