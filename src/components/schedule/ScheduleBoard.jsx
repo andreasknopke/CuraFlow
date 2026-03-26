@@ -88,6 +88,46 @@ const parseAvailableDoctorId = (draggableId = '') => {
     return normalized.substring(14, normalized.length - 11);
 };
 
+const parseSectionTabs = (rawValue) => {
+    if (!rawValue) return [];
+
+    try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed)) {
+            return parsed.filter((tab) => tab?.id && tab?.sectionTitle);
+        }
+    } catch {
+        return [];
+    }
+
+    return [];
+};
+
+const parseDateFromQuery = (rawDate) => {
+    if (!rawDate) return null;
+
+    const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return null;
+
+    const parsed = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    return isValid(parsed) ? parsed : null;
+};
+
+const getInitialScheduleState = () => {
+    const params = new URLSearchParams(window.location.search);
+    const initialDate = parseDateFromQuery(params.get('date'));
+    const rawView = params.get('view');
+    const initialViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
+
+    return {
+        currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
+        viewMode: initialViewMode,
+        activeSectionTabId: params.get('sectionTab') || 'main',
+    };
+};
+
+const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
+
 const normalizeChipSource = (doctor) => {
     const rawSource = `${doctor?.initials || ''}${doctor?.name || ''}${doctor?.id || ''}`;
     const normalized = rawSource
