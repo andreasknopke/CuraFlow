@@ -1919,10 +1919,10 @@ export default function ScheduleBoard() {
   //  Mirror the DB-based auto-frei logic for in-memory preview shifts
   // ============================================================
 
-  /**
-   * Adds an Auto-Frei preview entry for the next workday if the position has auto_off.
-   * Returns the updated preview array (or unchanged array if no auto-frei needed).
-   */
+    /**
+     * Adds an Auto-Frei preview entry for the direct next day if the position has auto_off.
+     * Returns the updated preview array (or unchanged array if no auto-frei needed).
+     */
   const addPreviewAutoFrei = (doctorId, dateStr, positionName, currentPreviews) => {
       const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
       if (!autoFreiDateStr) return currentPreviews;
@@ -2491,7 +2491,7 @@ export default function ScheduleBoard() {
 
             const newId = `preview-add-${Date.now()}`;
             let updatedPreviews = [...previewShifts, { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true }];
-            // Auto-Frei: if added to an auto-off position → add auto-frei for next workday
+            // Auto-Frei: if added to an auto-off position → add auto-frei for the direct eligible next day
             if (isAutoOffPosition(position)) {
                 updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews);
             }

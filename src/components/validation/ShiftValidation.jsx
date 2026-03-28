@@ -1,5 +1,6 @@
 import { format, addDays, isWeekend, parseISO } from 'date-fns';
 import { timeslotsOverlap, createFullDayTimeslot, formatTimeslotShort } from '@/utils/timeslotUtils';
+import { getAutoFreiDate } from '@/utils/autoFrei';
 
 // Hilfsfunktion für Fehlermeldungen
 function formatTimeRange(slot) {
@@ -600,33 +601,15 @@ export class ShiftValidator {
     }
 
     /**
-     * Prüft ob Auto-Frei am nächsten Werktag erstellt werden soll
-     * Überspringt Wochenenden und Feiertage automatisch
+     * Prüft ob Auto-Frei am direkten Folgetag erstellt werden soll.
+     * Samstage, Sonntage und Feiertage lösen kein verschobenes Auto-Frei aus.
      * @returns {string|null} - Datum für Auto-Frei oder null
      */
     shouldCreateAutoFrei(position, dateStr, isPublicHoliday) {
         const workplace = this.workplaces.find(w => w.name === position);
         if (!workplace?.auto_off) return null;
 
-        // Suche den nächsten Werktag (max 7 Tage voraus, um Endlosschleifen zu vermeiden)
-        let candidateDay = addDays(parseISO(dateStr), 1);
-        
-        for (let i = 0; i < 7; i++) {
-            const dayOfWeek = candidateDay.getDay();
-            const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-            const isHoliday = isPublicHoliday && isPublicHoliday(candidateDay);
-            
-            if (!isWeekend && !isHoliday) {
-                // Gefunden: Werktag der kein Feiertag ist
-                return format(candidateDay, 'yyyy-MM-dd');
-            }
-            
-            // Nächsten Tag prüfen
-            candidateDay = addDays(candidateDay, 1);
-        }
-        
-        // Kein passender Werktag gefunden (sehr unwahrscheinlich)
-        return null;
+        return getAutoFreiDate(dateStr, isPublicHoliday);
     }
 
     /**

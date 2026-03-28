@@ -261,12 +261,8 @@ function generateAutoFreiEntries(assignments, workplaces, existingShifts, weekDa
     const nextDay = new Date(curDay);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    for (let i = 0; i < 7; i++) {
-      if (nextDay.getDay() !== 0 && nextDay.getDay() !== 6 && !holidaySet.has(fmtDate(nextDay))) break;
-      nextDay.setDate(nextDay.getDate() + 1);
-    }
-
     const nextStr = fmtDate(nextDay);
+    if (nextDay.getDay() === 0 || nextDay.getDay() === 6 || holidaySet.has(nextStr)) continue;
     const hasExisting = allEntries.some(x => x.date === nextStr && x.doctor_id === s.doctor_id) ||
                         autoFreiEntries.some(x => x.date === nextStr && x.doctor_id === s.doctor_id);
 

@@ -17,6 +17,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from "@/components/ui/use-toast";
 import { getWishStartDate, getWishEndDate, hasWishRange } from '@/utils/wishRange';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
+import { HolidayCalculator } from '@/components/schedule/holidayUtils';
+import { getAutoFreiDate } from '@/utils/autoFrei';
 
 // Safe parseISO that handles undefined/null
 const safeParseISO = (dateStr) => {
@@ -355,6 +357,7 @@ export default function MyDashboardPage() {
 
     // CRITICAL: Must be defined BEFORE mutations that use it
     const queryClient = useQueryClient();
+    const holidayCalculatorsByYear = useMemo(() => new Map(), []);
 
     // Mark unviewed items as viewed when user visits dashboard
     useEffect(() => {
@@ -372,7 +375,19 @@ export default function MyDashboardPage() {
         }
     }, [isAuthenticated, isAdmin, user]);
 
-    // Helper for Auto-Off logic (simplified version of what's in ScheduleBoard)
+    const getHolidayCalculatorForYear = async (year) => {
+        if (!holidayCalculatorsByYear.has(year)) {
+            const apiData = await api.getHolidays(year);
+            holidayCalculatorsByYear.set(
+                year,
+                new HolidayCalculator(apiData.stateCode || 'MV', [], apiData)
+            );
+        }
+
+        return holidayCalculatorsByYear.get(year);
+    };
+
+    // Helper for Auto-Off logic
     const handleAutoShiftCreation = async (wish, dateStr) => {
         if (wish.type !== 'service' || !wish.position) return;
 
@@ -399,17 +414,10 @@ export default function MyDashboardPage() {
             const currentDate = new Date(dateStr);
             if (!isValid(currentDate)) return;
 
-            const nextDay = new Date(currentDate);
-            nextDay.setDate(currentDate.getDate() + 1);
-            
-            // Simple check: skip weekends (Saturday=6, Sunday=0)
-            const day = nextDay.getDay();
-            if (day === 0 || day === 6) return;
-
-            // We skip public holiday check here to keep it simple/robust without full calendar lib dependency
-            // If user wants strict holiday check, they should use the full schedule board
-            
-            const nextDayStr = format(nextDay, 'yyyy-MM-dd');
+            const nextDay = addDays(currentDate, 1);
+            const holidayCalculator = await getHolidayCalculatorForYear(nextDay.getFullYear());
+            const nextDayStr = getAutoFreiDate(dateStr, (date) => holidayCalculator.isPublicHoliday(date));
+            if (!nextDayStr) return;
             
             // Check if next day is free
             const nextDayShifts = await db.ShiftEntry.filter({ date: nextDayStr, doctor_id: wish.doctor_id });

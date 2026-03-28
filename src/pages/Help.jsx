@@ -227,7 +227,7 @@ export default function HelpPage() {
                                         Automatischer Freizeitausgleich
                                     </h3>
                                     <p className="text-sm text-blue-800">
-                                        Bestimmte Dienste lösen automatisch einen <strong>Freizeitausgleich am nächsten Werktag</strong> aus. Wochenenden und Feiertage werden übersprungen. Wird der Dienst gelöscht, verschwindet auch das "Frei".
+                                        Bestimmte Dienste lösen automatisch einen <strong>Freizeitausgleich am Folgetag</strong> aus, aber nur wenn dieser Tag weder Samstag, Sonntag noch ein Feiertag ist. Wird der Dienst gelöscht, verschwindet auch das "Frei".
                                     </p>
                                 </div>
                             </div>
@@ -428,7 +428,7 @@ export default function HelpPage() {
                                 <div className="p-4 bg-red-50 rounded-lg border border-red-100">
                                     <h4 className="font-semibold text-red-900 mb-2">Feiertage</h4>
                                     <p className="text-sm text-red-800">
-                                        Werden wie Sonntage behandelt. Automatische Freistellungen überspringen Feiertage.
+                                        Werden wie Sonntage behandelt. Automatische Freistellungen entstehen nur, wenn der direkte Folgetag kein Feiertag ist.
                                     </p>
                                 </div>
                             </div>

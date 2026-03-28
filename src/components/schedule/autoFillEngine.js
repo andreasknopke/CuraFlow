@@ -12,8 +12,8 @@
  *         • Approved "kein Dienst" (type='no_service', status='approved') → hard NOT (excluded)
  *         • Pending "kein Dienst" (type='no_service', status='pending') → soft NOT (only if others available)
  *         • Qualification + NOT-qualification checks still apply
- *         • Auto-Frei: if service has auto_off, a "Frei" entry is generated for the next workday
- *           and that doctor is blocked for the next day immediately
+ *         • Auto-Frei: if service has auto_off, a "Frei" entry is generated only on the direct next day
+ *           when that day is neither Saturday, Sunday nor a public holiday
  *
  *   Phase B – Verfügbarkeitsrelevante Arbeitsplätze (affects_availability=true, non-service):
  *       After services are filled and Auto-Frei is applied, we know who is truly available.
@@ -34,6 +34,7 @@
  */
 
 import { CostFunction } from './costFunction';
+import { getAutoFreiDate } from '@/utils/autoFrei';
 
 export function generateSuggestions({
     weekDays,
@@ -435,21 +436,10 @@ export function generateSuggestions({
         systemSettings,
     });
 
-    /** Generate an Auto-Frei for a doctor on the next workday after dateStr */
+    /** Generate an Auto-Frei for a doctor on the direct next day after dateStr when eligible. */
     const generateAutoFrei = (doctorId, dateStr) => {
-        const curDay = new Date(dateStr + 'T00:00:00');
-        const nextDay = new Date(curDay);
-        nextDay.setDate(nextDay.getDate() + 1);
-
-        // Skip weekends and holidays to find the next workday
-        for (let i = 0; i < 7; i++) {
-            if (nextDay.getDay() !== 0 && nextDay.getDay() !== 6 && !isPublicHoliday(nextDay)) {
-                break;
-            }
-            nextDay.setDate(nextDay.getDate() + 1);
-        }
-
-        const nextStr = formatDate(nextDay);
+        const nextStr = getAutoFreiDate(dateStr, isPublicHoliday);
+        if (!nextStr) return;
 
         // Check if something already exists that day for this doctor
         const hasExisting =
@@ -648,8 +638,8 @@ export function generateSuggestions({
         //  This prevents sending ALL qualified Fachärzte into services
         //  when they are the only ones who can fill rotation positions.
         //
-        //  ALSO: For services with auto_off, consider the NEXT working
-        //  day's impact. If a doctor gets Auto-Frei tomorrow, they can't
+        //  ALSO: For services with auto_off, consider the direct next day's
+        //  impact when that day actually receives Auto-Frei. If a doctor gets Auto-Frei tomorrow, they can't
         //  fill rotation positions there either.
         // ============================================================
         const rotationImpactScore = {}; // doctorId -> number (higher = more critical for rotations)
@@ -685,38 +675,33 @@ export function generateSuggestions({
             // Impact for TODAY (weight 1x)
             computeImpactForDay(day, baseBlocked, 1);
 
-            // Impact for NEXT WORKING DAY (weight 1x) — relevant for auto_off services
-            // If any active service today has auto_off, the chosen doctor will be
-            // blocked tomorrow. We must account for that.
+            // Impact for the DIRECT NEXT DAY (weight 1x) — relevant for auto_off services
+            // only if that day is eligible for Auto-Frei.
             const hasAutoOffService = allTodayWps.some(wp => isServiceWp(wp) && wp.auto_off);
             if (hasAutoOffService) {
-                // Find next working day (same logic as generateAutoFrei)
-                const nextDay = new Date(day);
-                nextDay.setDate(nextDay.getDate() + 1);
-                for (let i = 0; i < 7; i++) {
-                    if (nextDay.getDay() !== 0 && nextDay.getDay() !== 6 && !isPublicHoliday(nextDay)) break;
-                    nextDay.setDate(nextDay.getDate() + 1);
-                }
-                const nextDateStr = formatDate(nextDay);
+                const nextDateStr = getAutoFreiDate(dateStr, isPublicHoliday);
+                if (nextDateStr) {
+                    const nextDay = new Date(nextDateStr + 'T00:00:00');
 
-                // Build blocked set for next day: absences + existing assignments + auto-frei
-                const nextDayBlocked = new Set();
-                if (autoFreiByDate[nextDateStr]) {
-                    for (const docId of autoFreiByDate[nextDateStr]) nextDayBlocked.add(docId);
-                }
-                for (const s of existingShifts) {
-                    if (s.date !== nextDateStr) continue;
-                    if (absencePositions.includes(s.position)) { nextDayBlocked.add(s.doctor_id); continue; }
-                    if (s.position === 'Verfügbar') continue;
-                    const xwp = workplaces.find(w => w.name === s.position);
-                    if (xwp?.affects_availability === false) continue;
-                    if (xwp?.allows_rotation_concurrently) continue;
-                    // Demos/Konsile only block if they are marked as availability-relevant
-                    if (xwp?.category === 'Demonstrationen & Konsile' && xwp?.affects_availability !== true) continue;
-                    nextDayBlocked.add(s.doctor_id);
-                }
+                    // Build blocked set for next day: absences + existing assignments + auto-frei
+                    const nextDayBlocked = new Set();
+                    if (autoFreiByDate[nextDateStr]) {
+                        for (const docId of autoFreiByDate[nextDateStr]) nextDayBlocked.add(docId);
+                    }
+                    for (const s of existingShifts) {
+                        if (s.date !== nextDateStr) continue;
+                        if (absencePositions.includes(s.position)) { nextDayBlocked.add(s.doctor_id); continue; }
+                        if (s.position === 'Verfügbar') continue;
+                        const xwp = workplaces.find(w => w.name === s.position);
+                        if (xwp?.affects_availability === false) continue;
+                        if (xwp?.allows_rotation_concurrently) continue;
+                        // Demos/Konsile only block if they are marked as availability-relevant
+                        if (xwp?.category === 'Demonstrationen & Konsile' && xwp?.affects_availability !== true) continue;
+                        nextDayBlocked.add(s.doctor_id);
+                    }
 
-                computeImpactForDay(nextDay, nextDayBlocked, 1);
+                    computeImpactForDay(nextDay, nextDayBlocked, 1);
+                }
             }
         }
 
@@ -832,7 +817,7 @@ export function generateSuggestions({
                         cost: Number.isFinite(chosenCost) ? chosenCost : null,
                     });
 
-                    // Auto-Frei: if service has auto_off, block doctor on next workday
+                    // Auto-Frei: if service has auto_off, block doctor on the direct next eligible day
                     if (svc.auto_off) {
                         generateAutoFrei(chosen.id, dateStr);
                     }
