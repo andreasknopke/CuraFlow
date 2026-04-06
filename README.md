@@ -215,6 +215,8 @@ Backend:
 
 ## Lizenz und Haftung
 
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Copyright (c) 2026 andreasknopke.
+
 Diese Software wird ohne Gewährleistung bereitgestellt. Der Einsatz in produktiven Umgebungen erfolgt auf eigene Verantwortung. Vor dem produktiven Einsatz sollte eine umfassende Prüfung der Sicherheits- und Datenschutzanforderungen der jeweiligen Einrichtung erfolgen.
 
 
