@@ -1,6 +1,7 @@
 import { format, addDays, isWeekend, parseISO } from 'date-fns';
 import { timeslotsOverlap, createFullDayTimeslot, formatTimeslotShort } from '@/utils/timeslotUtils';
 import { getAutoFreiDate } from '@/utils/autoFrei';
+import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 
 // Hilfsfunktion für Fehlermeldungen
 function formatTimeRange(slot) {
@@ -38,7 +39,7 @@ export class ShiftValidator {
         this.wpQualsByWorkplace = wpQualsByWorkplace || {};
         
         // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
-        this._customCategories = this._parseCustomCategories();
+        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
         
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
@@ -46,28 +47,11 @@ export class ShiftValidator {
         this.staffingMinimums = this._parseStaffingMinimums();
     }
 
-    _parseCustomCategories() {
-        const setting = this.systemSettings.find(s => s.key === 'workplace_categories');
-        if (!setting?.value) return [];
-        try {
-            const parsed = JSON.parse(setting.value);
-            if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
-                return parsed.map(name => ({ name, allows_multiple: true }));
-            }
-            return parsed;
-        } catch {
-            return [];
-        }
-    }
-
     /**
      * Prüft ob eine Kategorie Mehrfachbesetzung erlaubt
      */
     _categoryAllowsMultiple(categoryName) {
-        if (categoryName === 'Rotationen') return true;
-        if (categoryName === 'Dienste' || categoryName === 'Demonstrationen & Konsile') return false;
-        const custom = this._customCategories.find(c => c.name === categoryName);
-        return custom?.allows_multiple ?? true;
+        return categoryAllowsMultiple(categoryName, this._customCategories);
     }
 
     /**
@@ -75,10 +59,7 @@ export class ShiftValidator {
      * Nutzt workplace.allows_multiple wenn gesetzt, sonst Kategorie-Default.
      */
     _workplaceAllowsMultiple(workplace) {
-        if (workplace.allows_multiple !== undefined && workplace.allows_multiple !== null) {
-            return workplace.allows_multiple;
-        }
-        return this._categoryAllowsMultiple(workplace.category);
+        return workplaceAllowsMultiple(workplace, this._customCategories);
     }
 
     _parseAbsenceRules() {

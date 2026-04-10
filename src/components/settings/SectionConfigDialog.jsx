@@ -8,6 +8,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getWorkplaceCategoryNames } from '@/utils/workplaceCategoryUtils';
 
 const DEFAULT_SECTIONS = [
     { id: 'absences', defaultName: 'Abwesenheiten', order: 0 },
@@ -95,20 +96,13 @@ export default function SectionConfigDialog() {
 
     // Alle verfügbaren Sections berechnen (Default + Custom), leere dynamische ausblenden
     const allAvailableSections = useMemo(() => {
-        // Custom-Kategorien aus den SystemSettings laden
-        const customCategoriesSetting = systemSettings.find(s => s.key === 'workplace_categories');
-        let customCategories = [];
-        if (customCategoriesSetting?.value) {
-            try {
-                customCategories = JSON.parse(customCategoriesSetting.value);
-            } catch { }
-        }
+        const customCategoryNames = getWorkplaceCategoryNames(systemSettings);
 
         // Prüfe welche dynamischen Kategorien tatsächlich Workplaces haben
         const categoriesWithWorkplaces = new Set(workplaces.map(w => w.category));
 
         // Dynamische Kategorien (die nur angezeigt werden wenn Workplaces vorhanden)
-        const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategories.map(c => c.name || c)];
+        const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategoryNames];
 
         // Statische Sections die immer angezeigt werden
         const staticSections = DEFAULT_SECTIONS.filter(s => 

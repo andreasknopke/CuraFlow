@@ -38,6 +38,7 @@ import SectionConfigDialog, { useSectionConfig } from '@/components/settings/Sec
 import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -693,13 +694,8 @@ export default function ScheduleBoard() {
 
     const allSections = useMemo(() => {
       // Get custom categories from settings
-      const customCategoriesSetting = systemSettings.find(s => s.key === 'workplace_categories');
-      let customCategories = [];
-      if (customCategoriesSetting?.value) {
-          try {
-              customCategories = JSON.parse(customCategoriesSetting.value);
-          } catch { }
-      }
+            const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
+            const customCategoryNames = customCategories.map(category => category.name);
 
       // Hilfsfunktion: Erstellt Zeilen für Arbeitsplätze (mit Timeslot-Expansion)
       const createRowsForCategory = (categoryName) => {
@@ -789,8 +785,8 @@ export default function ScheduleBoard() {
       };
 
       // Add custom categories to dynamicRows
-      for (const cat of customCategories) {
-          dynamicRows[cat] = createRowsForCategory(cat);
+      for (const categoryName of customCategoryNames) {
+          dynamicRows[categoryName] = createRowsForCategory(categoryName);
       }
 
       // Für statische Sections: Einfache String-zu-Objekt Konvertierung
@@ -805,7 +801,7 @@ export default function ScheduleBoard() {
           ...dynamicRows["Dienste"].map(r => r.name),
           ...dynamicRows["Rotationen"].map(r => r.name),
           ...dynamicRows["Demonstrationen & Konsile"].map(r => r.name),
-          ...customCategories.flatMap(cat => (dynamicRows[cat] || []).map(r => r.name)),
+          ...customCategoryNames.flatMap(categoryName => (dynamicRows[categoryName] || []).map(r => r.name)),
           ...STATIC_SECTIONS["Sonstiges"].rows
       ]);
 
@@ -840,11 +836,11 @@ export default function ScheduleBoard() {
               rows: dynamicRows["Demonstrationen & Konsile"] 
           },
           // Add custom categories dynamically
-          ...customCategories.map(cat => ({
-              title: cat,
+          ...customCategoryNames.map(categoryName => ({
+              title: categoryName,
               headerColor: "bg-indigo-100 text-indigo-900",
               rowColor: "bg-indigo-50/30",
-              rows: dynamicRows[cat] || []
+              rows: dynamicRows[categoryName] || []
           })),
           { title: "Sonstiges", ...STATIC_SECTIONS["Sonstiges"], rows: staticRowsToObjects(STATIC_SECTIONS["Sonstiges"].rows) }
       ];
@@ -2187,29 +2183,8 @@ export default function ScheduleBoard() {
           if (!targetWorkplace) return null;
 
           // Prüfe allows_multiple direkt am Workplace (mit Kategorie-Fallback)
-          let allowsMultiple;
-          if (targetWorkplace.allows_multiple !== undefined && targetWorkplace.allows_multiple !== null) {
-              allowsMultiple = targetWorkplace.allows_multiple;
-          } else {
-              // Fallback: Default Categories
-              if (targetWorkplace.category === 'Rotationen') allowsMultiple = true;
-              else if (targetWorkplace.category === 'Dienste' || targetWorkplace.category === 'Demonstrationen & Konsile') allowsMultiple = false;
-              else {
-                  // Custom category fallback
-                  const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
-                  let customCats = [];
-                  if (catSetting?.value) {
-                      try {
-                          const parsed = JSON.parse(catSetting.value);
-                          customCats = Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string'
-                              ? parsed.map(name => ({ name, allows_multiple: true }))
-                              : parsed;
-                      } catch {}
-                  }
-                  const catConfig = customCats.find(c => c.name === targetWorkplace.category);
-                  allowsMultiple = catConfig?.allows_multiple ?? true;
-              }
-          }
+          const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
+          const allowsMultiple = workplaceAllowsMultiple(targetWorkplace, customCategories);
 
           if (allowsMultiple) return null;
 
@@ -3014,14 +2989,7 @@ export default function ScheduleBoard() {
         'Rotationen', 
         'Dienste', 
         'Demonstrationen & Konsile',
-        ...(() => {
-          const catSetting = systemSettings.find(s => s.key === 'workplace_categories');
-          if (!catSetting?.value) return [];
-          try {
-            const parsed = JSON.parse(catSetting.value);
-            return Array.isArray(parsed) ? parsed.map(c => typeof c === 'string' ? c : c.name) : [];
-          } catch { return []; }
-        })()
+                ...getWorkplaceCategoryNames(systemSettings)
       ];
       // Always calculate with ALL categories so the cost function can
       // consider every workplace (understaffing, fairness, impact, etc.).
@@ -3859,22 +3827,11 @@ export default function ScheduleBoard() {
                          <DropdownMenuItem onClick={() => handleAutoFill(['Demonstrationen & Konsile'])}>
                              Nur {getSectionName('Demonstrationen & Konsile')}
                          </DropdownMenuItem>
-                         {(() => {
-                             const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');
-                             if (!catSetting?.value) return null;
-                             try {
-                                 const parsed = JSON.parse(catSetting.value);
-                                 if (!Array.isArray(parsed) || parsed.length === 0) return null;
-                                 return parsed.map(c => {
-                                     const name = typeof c === 'string' ? c : c.name;
-                                     return (
-                                         <DropdownMenuItem key={name} onClick={() => handleAutoFill([name])}>
-                                             Nur {name}
-                                         </DropdownMenuItem>
-                                     );
-                                 });
-                             } catch { return null; }
-                         })()}
+                         {getWorkplaceCategoryNames(systemSettings).map(name => (
+                             <DropdownMenuItem key={name} onClick={() => handleAutoFill([name])}>
+                                 Nur {name}
+                             </DropdownMenuItem>
+                         ))}
                          {/* KI-Optimierung temporarily hidden
                          <DropdownMenuSeparator />
                          <DropdownMenuLabel className="flex items-center gap-1">

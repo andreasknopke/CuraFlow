@@ -35,6 +35,7 @@
 
 import { CostFunction } from './costFunction';
 import { getAutoFreiDate } from '@/utils/autoFrei';
+import { getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 
 export function generateSuggestions({
     weekDays,
@@ -163,25 +164,8 @@ export function generateSuggestions({
         return disc.some(q => doc.includes(q));
     };
 
-    const allowsMultiple = (wp) => {
-        if (wp.allows_multiple != null) return wp.allows_multiple;
-        if (wp.category === 'Rotationen') return true;
-        // Dienste and Demos default to single-occupancy (1 person per slot)
-        if (wp.category === 'Dienste') return false;
-        if (wp.category === 'Demonstrationen & Konsile') return false;
-        const catSetting = systemSettings?.find(s => s.key === 'workplace_categories');
-        if (catSetting?.value) {
-            try {
-                const parsed = JSON.parse(catSetting.value);
-                const cats = Array.isArray(parsed) && parsed[0] && typeof parsed[0] === 'string'
-                    ? parsed.map(n => ({ name: n, allows_multiple: true }))
-                    : parsed;
-                const cc = cats?.find(c => c.name === wp.category);
-                if (cc) return cc.allows_multiple ?? true;
-            } catch {}
-        }
-        return true;
-    };
+    const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
+    const allowsMultiple = (wp) => workplaceAllowsMultiple(wp, customCategories);
 
     /** optimal_staff: target headcount */
     const getOptimal = (wp) => {

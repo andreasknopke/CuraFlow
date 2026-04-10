@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import TimeslotEditor from '@/components/admin/TimeslotEditor';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
+import { getWorkplaceCategoriesFromSettings, categoryAllowsMultiple as getCategoryAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 
 // Service type constants
 const SERVICE_TYPES = [
@@ -57,24 +58,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
         queryFn: () => db.SystemSetting.list(),
     });
 
-    // Get custom categories from settings
-    // Supports both legacy format (string[]) and new format (object[] with allows_multiple)
-    const customCategories = useMemo(() => {
-        const setting = settings.find(s => s.key === 'workplace_categories');
-        if (setting?.value) {
-            try {
-                const parsed = JSON.parse(setting.value);
-                // Migrate legacy format: string[] → object[]
-                if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
-                    return parsed.map(name => ({ name, allows_multiple: true }));
-                }
-                return parsed;
-            } catch {
-                return [];
-            }
-        }
-        return [];
-    }, [settings]);
+    const customCategories = useMemo(() => getWorkplaceCategoriesFromSettings(settings), [settings]);
 
     // Category names for tab display and lookup
     const customCategoryNames = useMemo(() => customCategories.map(c => c.name), [customCategories]);
@@ -254,10 +238,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
 
     // Helper: Erlaubt diese Kategorie Mehrfachbesetzung?
     const categoryAllowsMultiple = (categoryName) => {
-        if (categoryName === 'Rotationen') return true;
-        if (categoryName === 'Dienste' || categoryName === 'Demonstrationen & Konsile') return false;
-        const custom = customCategories.find(c => c.name === categoryName);
-        return custom?.allows_multiple ?? true;
+        return getCategoryAllowsMultiple(categoryName, customCategories);
     };
 
     return (
