@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,14 +9,15 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   Users, Loader2, Building2, Search, ChevronRight,
-  Clock, CalendarDays, FileText, TrendingUp, TrendingDown, Minus,
-  UserCheck, UserX, Plus,
+  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight,
 } from 'lucide-react';
 
 export default function MasterEmployeeList() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [selectedTenant, setSelectedTenant] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('central'); // 'central' | 'legacy'
@@ -102,6 +103,49 @@ export default function MasterEmployeeList() {
     ].filter(Boolean)).size,
   }), [centralEmployees, unlinkedStaff, legacyStaff]);
 
+  // Import: lokale Mitarbeiter → zentrale Employee-Einträge
+  const importMutation = useMutation({
+    mutationFn: (items) =>
+      api.request('/api/master/employees/import-from-tenant', {
+        method: 'POST',
+        body: JSON.stringify({ items }),
+      }),
+    onSuccess: (res) => {
+      const { imported, total, results } = res;
+      const skipped = results?.filter(r => r.status === 'skipped').length || 0;
+      if (imported > 0) {
+        toast.success(`${imported} von ${total} Mitarbeiter(n) importiert${skipped ? `, ${skipped} übersprungen` : ''}`);
+      } else if (skipped > 0) {
+        toast.info(`Alle ${skipped} Mitarbeiter waren bereits verknüpft`);
+      } else {
+        toast.warning('Keine Mitarbeiter importiert');
+      }
+      queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
+      queryClient.invalidateQueries({ queryKey: ['master-legacy-staff'] });
+    },
+    onError: (err) => toast.error('Import fehlgeschlagen: ' + err.message),
+  });
+
+  const handleImportSingle = (staff) => {
+    importMutation.mutate([{
+      tenant_id: staff.tenantId,
+      doctor_id: staff.id,
+      name: staff.name,
+      role: staff.role,
+    }]);
+  };
+
+  const handleImportAll = () => {
+    const items = filteredList.map(s => ({
+      tenant_id: s.tenantId,
+      doctor_id: s.id,
+      name: s.name,
+      role: s.role,
+    }));
+    if (items.length === 0) return;
+    importMutation.mutate(items);
+  };
+
   const displayName = (emp) => {
     if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
     if (emp.last_name) return emp.last_name;
@@ -186,12 +230,28 @@ export default function MasterEmployeeList() {
             <Users className="w-5 h-5" />
             {viewMode === 'central' ? 'Zentrale Mitarbeiter' : 'Nur lokal erfasste Mitarbeiter'}
           </CardTitle>
-          <CardDescription>
-            {viewMode === 'central'
-              ? 'In der zentralen Employee-Tabelle erfasste Mitarbeiter mit Mandantenzuordnungen'
-              : 'Mitarbeiter die nur in Mandanten-Datenbanken existieren (z.B. Externe, Studenten). Können mit zentralen Einträgen verknüpft werden.'
-            }
-          </CardDescription>
+          <div className="flex items-center justify-between">
+            <CardDescription>
+              {viewMode === 'central'
+                ? 'In der zentralen Employee-Tabelle erfasste Mitarbeiter mit Mandantenzuordnungen'
+                : 'Mitarbeiter die nur in Mandanten-Datenbanken existieren (z.B. Externe, Studenten). Können mit zentralen Einträgen verknüpft werden.'
+              }
+            </CardDescription>
+            {viewMode === 'legacy' && filteredList.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-4 shrink-0"
+                disabled={importMutation.isPending}
+                onClick={handleImportAll}
+              >
+                {importMutation.isPending
+                  ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  : <Upload className="w-4 h-4 mr-2" />}
+                Alle importieren ({filteredList.length})
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -306,7 +366,7 @@ export default function MasterEmployeeList() {
                     <TableHead>Funktion / Rolle</TableHead>
                     <TableHead>Arbeitsmodell</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="w-10" />
+                    <TableHead className="w-24">Aktion</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -343,7 +403,19 @@ export default function MasterEmployeeList() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 text-xs px-2"
+                          disabled={importMutation.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleImportSingle(staff);
+                          }}
+                        >
+                          <ArrowUpRight className="w-3.5 h-3.5 mr-1" />
+                          Importieren
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}

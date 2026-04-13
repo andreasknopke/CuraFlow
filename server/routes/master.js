@@ -996,6 +996,107 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
 });
 
 /**
+ * POST /api/master/employees/import-from-tenant
+ * Create central Employee(s) from tenant Doctor records and auto-link them.
+ * Body: { items: [{ tenant_id, doctor_id, name, role }] }
+ */
+router.post('/employees/import-from-tenant', async (req, res, next) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items array required' });
+    }
+
+    // Pre-check: admin has access to referenced tenants
+    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokenMap = new Map(tokens.map(t => [String(t.id), t]));
+
+    const results = [];
+    for (const item of items) {
+      const { tenant_id, doctor_id, name } = item;
+      if (!tenant_id || !doctor_id || !name) {
+        results.push({ doctor_id, status: 'error', error: 'Fehlende Pflichtfelder' });
+        continue;
+      }
+      const token = tokenMap.get(String(tenant_id));
+      if (!token) {
+        results.push({ doctor_id, status: 'error', error: 'Kein Zugriff auf Mandanten' });
+        continue;
+      }
+
+      try {
+        // Parse name: "Vorname Nachname" or "Nachname"
+        const nameParts = name.trim().split(/\s+/);
+        let first_name, last_name;
+        if (nameParts.length >= 2) {
+          first_name = nameParts.slice(0, -1).join(' ');
+          last_name = nameParts[nameParts.length - 1];
+        } else {
+          first_name = null;
+          last_name = nameParts[0];
+        }
+
+        // Check if Doctor is already linked to a central employee
+        let alreadyLinked = false;
+        await withTenantDb(token, async (pool) => {
+          const [cols] = await pool.execute(
+            `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+             WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'central_employee_id' AND TABLE_SCHEMA = DATABASE()`
+          );
+          if (cols.length > 0) {
+            const [rows] = await pool.execute(
+              'SELECT central_employee_id FROM Doctor WHERE id = ?', [doctor_id]
+            );
+            if (rows.length > 0 && rows[0].central_employee_id) {
+              alreadyLinked = true;
+            }
+          }
+        });
+        if (alreadyLinked) {
+          results.push({ doctor_id, name, status: 'skipped', reason: 'Bereits verknüpft' });
+          continue;
+        }
+
+        // Create central Employee
+        const empId = crypto.randomUUID();
+        await db.execute(
+          `INSERT INTO Employee (id, last_name, first_name, is_active, created_by)
+           VALUES (?, ?, ?, TRUE, ?)`,
+          [empId, last_name, first_name, req.user.sub]
+        );
+
+        // Set central_employee_id on tenant Doctor
+        await withTenantDb(token, async (pool) => {
+          await pool.execute(
+            'UPDATE Doctor SET central_employee_id = ? WHERE id = ?',
+            [empId, doctor_id]
+          );
+        });
+
+        // Create EmployeeTenantAssignment
+        await db.execute(
+          `INSERT INTO EmployeeTenantAssignment (id, employee_id, tenant_id, tenant_doctor_id, fte_share, is_primary, assigned_since)
+           VALUES (?, ?, ?, ?, 1.00, TRUE, CURDATE())`,
+          [crypto.randomUUID(), empId, tenant_id, doctor_id]
+        );
+
+        results.push({ doctor_id, name, employee_id: empId, status: 'success' });
+      } catch (err) {
+        console.error(`[Master import] Error for doctor ${doctor_id}:`, err.message);
+        results.push({ doctor_id, name, status: 'error', error: err.message });
+      }
+    }
+
+    const successCount = results.filter(r => r.status === 'success').length;
+    console.log(`[Master import] Imported ${successCount}/${items.length} employees by ${req.user.email}`);
+    res.json({ results, imported: successCount, total: items.length });
+  } catch (error) {
+    console.error('[Master import] Error:', error);
+    next(error);
+  }
+});
+
+/**
  * POST /api/master/employees/:id/link-tenant
  * Link a central employee to a tenant's Doctor record
  * Body: { tenant_id, doctor_id }
