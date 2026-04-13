@@ -1036,23 +1036,12 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
           last_name = nameParts[0];
         }
 
-        // Check if Doctor is already linked to a central employee
-        let alreadyLinked = false;
-        await withTenantDb(token, async (pool) => {
-          const [cols] = await pool.execute(
-            `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
-             WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'central_employee_id' AND TABLE_SCHEMA = DATABASE()`
-          );
-          if (cols.length > 0) {
-            const [rows] = await pool.execute(
-              'SELECT central_employee_id FROM Doctor WHERE id = ?', [doctor_id]
-            );
-            if (rows.length > 0 && rows[0].central_employee_id) {
-              alreadyLinked = true;
-            }
-          }
-        });
-        if (alreadyLinked) {
+        // Check if already linked — primary check in master DB (reliable, no tenant column dependency)
+        const [existingAssign] = await db.execute(
+          'SELECT id FROM EmployeeTenantAssignment WHERE tenant_id = ? AND tenant_doctor_id = ?',
+          [tenant_id, doctor_id]
+        );
+        if (existingAssign.length > 0) {
           results.push({ doctor_id, name, status: 'skipped', reason: 'Bereits verknüpft' });
           continue;
         }

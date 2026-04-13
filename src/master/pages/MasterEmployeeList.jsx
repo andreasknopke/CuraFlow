@@ -110,7 +110,7 @@ export default function MasterEmployeeList() {
         method: 'POST',
         body: JSON.stringify({ items }),
       }),
-    onSuccess: (res) => {
+    onSuccess: async (res) => {
       const { imported, total, results } = res;
       const skipped = results?.filter(r => r.status === 'skipped').length || 0;
       if (imported > 0) {
@@ -120,8 +120,8 @@ export default function MasterEmployeeList() {
       } else {
         toast.warning('Keine Mitarbeiter importiert');
       }
-      queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
-      queryClient.invalidateQueries({ queryKey: ['master-legacy-staff'] });
+      await queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
+      await queryClient.refetchQueries({ queryKey: ['master-legacy-staff'] });
     },
     onError: (err) => toast.error('Import fehlgeschlagen: ' + err.message),
   });
