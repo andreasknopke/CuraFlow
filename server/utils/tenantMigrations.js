@@ -202,6 +202,35 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   await addCol('add_doctor_target_weekly_hours',
     `ALTER TABLE Doctor ADD COLUMN target_weekly_hours DECIMAL(4,1) DEFAULT NULL`);
 
+  // ── ShiftTimeRule: Kürzel (short_code) für Dienstmodelle ──
+  await addCol('add_shift_time_rule_short_code',
+    `ALTER TABLE ShiftTimeRule ADD COLUMN short_code VARCHAR(20) DEFAULT NULL`);
+
+  // ── ShiftTimeRule: Unique Key ändern für multi-Modell pro Workplace ──
+  try {
+    const [keys] = await tenantDb.execute(
+      `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ShiftTimeRule'
+       AND CONSTRAINT_NAME = 'uk_workplace_model' AND CONSTRAINT_TYPE = 'UNIQUE'`
+    );
+    if (keys.length > 0) {
+      await tenantDb.execute(`ALTER TABLE ShiftTimeRule DROP INDEX uk_workplace_model`);
+      results.push({ migration: 'drop_uk_workplace_model', status: 'applied' });
+    }
+  } catch (e) {
+    // Already dropped or doesn't exist
+  }
+  try {
+    await tenantDb.execute(
+      `ALTER TABLE ShiftTimeRule ADD UNIQUE KEY uk_shortcode_model (short_code, work_time_model_id)`
+    );
+    results.push({ migration: 'add_uk_shortcode_model', status: 'applied' });
+  } catch (e) {
+    if (e.code !== 'ER_DUP_KEYNAME') {
+      results.push({ migration: 'add_uk_shortcode_model', status: 'skipped', reason: e.message });
+    }
+  }
+
   // Clear column cache so new columns are recognized immediately
   clearColumnsCache([
     'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',
