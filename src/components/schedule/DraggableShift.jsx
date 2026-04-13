@@ -20,7 +20,7 @@ const getTimeLabel = (shift) => {
   return `${start}–${end}`;
 };
 
-export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
@@ -239,6 +239,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                         title={fairnessTooltip}
                     >
                         {fairnessInfo.total}
+                    </div>
+                )}
+                {timeslotLabel && (
+                    <div
+                        className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 z-20 rounded px-1 bg-indigo-600 text-white font-semibold leading-none whitespace-nowrap"
+                        style={{ fontSize: `${Math.max(fontSize * 0.5, 7)}px`, padding: '1px 3px', maxWidth: `${boxSize + 8}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        title={timeslotLabel}
+                    >
+                        {timeslotLabel}
                     </div>
                 )}
                 </>

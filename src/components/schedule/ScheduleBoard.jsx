@@ -2304,9 +2304,26 @@ export default function ScheduleBoard() {
         const headerParts = destinationDroppableId.replace('rowHeader__', '').split('__');
         const rowName = headerParts[0];
         const rawHeaderTimeslotId = headerParts[1] || null;
-        // Special case: __allTimeslots__ means assign to ALL timeslots of this workplace
+        // Special case: __allTimeslots__ means collapsed timeslot group header
         const isAllTimeslots = rawHeaderTimeslotId === 'allTimeslots';
         const rowHeaderTimeslotId = isAllTimeslots ? null : rawHeaderTimeslotId;
+
+        // Auto-expand collapsed timeslot group instead of assigning to all
+        if (isAllTimeslots) {
+            const workplace = workplaces.find(w => w.name === rowName);
+            if (workplace) {
+                const groupKey = `${workplace.id}`;
+                setCollapsedTimeslotGroups(prev => {
+                    const next = new Set(prev);
+                    next.delete(groupKey);
+                    localStorage.setItem('radioplan_collapsedTimeslotGroups', JSON.stringify([...next]));
+                    return next;
+                });
+                toast.info('Zeitfenster aufgeklappt – bitte Mitarbeiter in das gewünschte Zeitfenster ziehen.');
+            }
+            return;
+        }
+
         let doctorId = null;
 
            if (sourceDroppableId === 'sidebar') {
@@ -2371,15 +2388,8 @@ export default function ScheduleBoard() {
             }
 
             // Prepare Assignment - Duplikat-Prüfung mit Timeslot-Berücksichtigung
-            // Bei isAllTimeslots: Schichten für ALLE Timeslots des Arbeitsplatzes erstellen
-            const workplace = workplaces.find(w => w.name === rowName);
-            const timeslotsToAssign = isAllTimeslots && workplace?.timeslots_enabled
-                ? workplaceTimeslots
-                    .filter(t => t.workplace_id === workplace.id)
-                    .map(t => t.id)
-                : [rowHeaderTimeslotId]; // Array mit einem Element (oder null)
-
-            for (const tsId of timeslotsToAssign) {
+            {
+                const tsId = rowHeaderTimeslotId; // einzelner Timeslot oder null
                 const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
                 
                 const existingShift = currentWeekShifts.find(s => {
@@ -2539,24 +2549,25 @@ export default function ScheduleBoard() {
         const dateStr = dropParts[0];
         const position = dropParts[1];
         const rawTimeslotId = dropParts[2] || null;
-        // Special case: __allTimeslots__ means assign to ALL timeslots of this workplace
+        // Special case: __allTimeslots__ means the group header was collapsed
+        // → auto-expand the group so the user can pick a specific timeslot
         const isAllTimeslots = rawTimeslotId === 'allTimeslots';
+        if (isAllTimeslots) {
+            // Expand the collapsed timeslot group
+            setCollapsedTimeslotGroups(prev => prev.filter(n => n !== position));
+            toast.info(`Bitte Zeitfenster wählen: "${position}" wurde aufgeklappt.`);
+            return;
+        }
         // '__unassigned__' bedeutet explizit kein Timeslot
-        let timeslotId = (rawTimeslotId === '__unassigned__' || isAllTimeslots) ? null : rawTimeslotId;
+        let timeslotId = rawTimeslotId === '__unassigned__' ? null : rawTimeslotId;
 
-        // Bei allTimeslots: Alle Timeslots des Arbeitsplatzes ermitteln
+        // Bei allTimeslots haben wir bereits oben returned (auto-expand)
         const workplace = workplaces.find(w => w.name === position);
         let timeslotsToAssign = null;
-        if (isAllTimeslots && workplace?.timeslots_enabled) {
-            timeslotsToAssign = workplaceTimeslots
-                .filter(t => t.workplace_id === workplace.id)
-                .map(t => t.id);
-            console.log('allTimeslots drop - assigning to:', timeslotsToAssign);
-        }
 
         // Auto-Timeslot: Wenn kein Timeslot angegeben, aber Workplace nur einen Timeslot hat,
         // automatisch diesen verwenden
-        if (!timeslotId && !isAllTimeslots) {
+        if (!timeslotId) {
             if (workplace?.timeslots_enabled) {
                 const wpTimeslots = workplaceTimeslots
                     .filter(t => t.workplace_id === workplace.id)
@@ -2620,10 +2631,9 @@ export default function ScheduleBoard() {
              if (limitWarning) alert(limitWarning);
 
              // WICHTIG: Duplikat-Prüfung VOR dem Löschen des bestehenden Shifts
-             // Bei isAllTimeslots: Prüfung pro Timeslot erfolgt später in der Schleife
              // Bei Timeslot-Zeilen auch timeslot_id prüfen
              // '__unassigned__' = Zeile für Shifts ohne Timeslot
-             if (!isAllTimeslots) {
+             {
                  const effectiveTimeslotId = timeslotId === '__unassigned__' ? null : timeslotId;
                  const exists = currentWeekShifts.some(s => {
                      if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
@@ -3377,6 +3387,13 @@ export default function ScheduleBoard() {
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
+        // Timeslot-Label für Badge (nur bei eingeklappter Gruppe)
+        let shiftTimeslotLabel = null;
+        if (allTimeslotIds && allTimeslotIds.length > 0 && shift.timeslot_id) {
+            const ts = workplaceTimeslots.find(t => t.id === shift.timeslot_id);
+            if (ts) shiftTimeslotLabel = ts.label;
+        }
+        
         // Qualifikations-Indikator
         // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
         // 'unqualified' wenn Pflicht-Qualifikation fehlt und kein qualifizierter Kollege da ist
@@ -3443,11 +3460,12 @@ export default function ScheduleBoard() {
                     qualificationStatus={qualificationStatus}
                     fairnessInfo={shift.isPreview && !isMonthView ? getFairnessInfo(shift) : null}
                     wishMarker={getShiftWishMarker(shift)}
+                    timeslotLabel={shiftTimeslotLabel}
                 />
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {

@@ -28,7 +28,6 @@ import QualificationManagement from '@/components/settings/QualificationManageme
 import { DoctorQualificationBadges } from '@/components/staff/DoctorQualificationEditor';
 import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
 import QualificationOverview from '@/components/staff/QualificationOverview';
-import ShiftTimeRuleManager from '@/components/settings/ShiftTimeRuleManager';
 
 export default function StaffPage() {
   const { isReadOnly, user } = useAuth();
@@ -170,7 +169,6 @@ export default function StaffPage() {
               <TabsTrigger value="list">Mitarbeiterliste</TabsTrigger>
               <TabsTrigger value="qualifications">Qualifikationen</TabsTrigger>
               <TabsTrigger value="staffing">Stellenplan</TabsTrigger>
-              <TabsTrigger value="shift-models">Dienstmodelle</TabsTrigger>
           </TabsList>
 
           <TabsContent value="list">
@@ -285,9 +283,6 @@ export default function StaffPage() {
               <StaffingPlanTable doctors={doctors} isReadOnly={isReadOnly} />
           </TabsContent>
 
-          <TabsContent value="shift-models">
-              <ShiftTimeRuleManager isReadOnly={isReadOnly} />
-          </TabsContent>
       </Tabs>
 
       <DoctorForm

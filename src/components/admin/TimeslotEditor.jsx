@@ -456,7 +456,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                         )}
 
                                                         <div className="space-y-1">
-                                                            <Label className="text-xs">Übergangstoleranz (Minuten)</Label>
+                                                            <Label className="text-xs">Pause (Minuten)</Label>
                                                             <Input
                                                                 type="number"
                                                                 min={0}
@@ -466,7 +466,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 className="h-8 w-24"
                                                             />
                                                             <p className="text-[10px] text-slate-500">
-                                                                Erlaubte Überschneidung zwischen Schichten
+                                                                Pausenzeit in Minuten
                                                             </p>
                                                         </div>
 
@@ -507,7 +507,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 )}
                                                                 {slot.overlap_tolerance_minutes > 0 && (
                                                                     <span className="text-[10px] text-slate-400">
-                                                                        ±{slot.overlap_tolerance_minutes}min
+                                                                        ☕{slot.overlap_tolerance_minutes}min
                                                                     </span>
                                                                 )}
                                                             </div>
