@@ -574,6 +574,7 @@ export const db = {
   Qualification: new EntityClient('Qualification'),
   DoctorQualification: new EntityClient('DoctorQualification'),
   WorkplaceQualification: new EntityClient('WorkplaceQualification'),
+  ShiftTimeRule: new EntityClient('ShiftTimeRule'),
   ScheduleBlock: new EntityClient('ScheduleBlock'),
   
   collection: (name) => new EntityClient(name)
