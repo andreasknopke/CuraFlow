@@ -402,6 +402,59 @@ router.get('/my-tenants', authMiddleware, async (req, res, next) => {
   }
 });
 
+// Activate a tenant for the current user (checks tenant access)
+router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) => {
+  try {
+    const { tokenId } = req.params;
+
+    // Check user's allowed tenants
+    const [userRows] = await db.execute(
+      'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+      [req.user.sub]
+    );
+    if (userRows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    const allowedTenants = userRows[0].allowed_tenants;
+    let allowedTenantList = null;
+    if (allowedTenants) {
+      allowedTenantList = typeof allowedTenants === 'string'
+        ? JSON.parse(allowedTenants)
+        : allowedTenants;
+    }
+
+    // If user has restricted access, verify this tenant is allowed
+    if (allowedTenantList && allowedTenantList.length > 0) {
+      if (!allowedTenantList.includes(Number(tokenId)) && !allowedTenantList.includes(String(tokenId))) {
+        return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+      }
+    }
+
+    // Find the token
+    const [existing] = await db.execute('SELECT id, token, name, host, db_name FROM db_tokens WHERE id = ?', [tokenId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Token nicht gefunden' });
+    }
+
+    // Deactivate all, activate selected
+    await db.execute('UPDATE db_tokens SET is_active = FALSE');
+    await db.execute('UPDATE db_tokens SET is_active = TRUE WHERE id = ?', [tokenId]);
+
+    console.log(`[Auth] Tenant "${existing[0].name}" activated by ${req.user.email}`);
+
+    res.json({
+      success: true,
+      token: existing[0].token,
+      name: existing[0].name,
+      host: existing[0].host,
+      db_name: existing[0].db_name
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============ VERIFY TOKEN ============
 router.get('/verify', (req, res) => {
   const authHeader = req.headers.authorization;
