@@ -130,7 +130,9 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         ...formData,
         initials: trimmedInitials,
         fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100,
-        target_weekly_hours: formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours) : null,
+        target_weekly_hours: formData.central_employee_id
+          ? undefined  // Zentral verknüpft → nicht lokal überschreiben
+          : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours) : null),
         central_employee_id: formData.central_employee_id || null,
     };
     onSubmit(dataToSubmit);
@@ -231,7 +233,22 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
             </div>
             <div className="grid gap-2">
                 <Label htmlFor="target_weekly_hours">Wochen-h (Soll)</Label>
-                <Input
+                {formData.central_employee_id ? (
+                  <div>
+                    <Input
+                      id="target_weekly_hours"
+                      type="number"
+                      value={(() => {
+                        const emp = centralEmployees.find(e => e.id === formData.central_employee_id);
+                        return emp?.model_hours_per_week || formData.target_weekly_hours || '';
+                      })()}
+                      disabled
+                      className="bg-slate-100"
+                    />
+                    <p className="text-[10px] text-slate-400 mt-0.5">Aus Zentrale</p>
+                  </div>
+                ) : (
+                  <Input
                     id="target_weekly_hours"
                     type="number"
                     step="0.5"
@@ -240,7 +257,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                     placeholder="z.B. 38.5"
                     value={formData.target_weekly_hours || ''}
                     onChange={(e) => setFormData({ ...formData, target_weekly_hours: e.target.value })}
-                />
+                  />
+                )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
