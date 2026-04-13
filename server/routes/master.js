@@ -996,6 +996,66 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
 });
 
 /**
+ * DELETE /api/master/employees/:id
+ * Permanently delete a deactivated employee and clean up all references
+ */
+router.delete('/employees/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check employee exists and is inactive
+    const [empRows] = await db.execute('SELECT id, is_active, last_name, first_name FROM Employee WHERE id = ?', [id]);
+    if (empRows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+    if (empRows[0].is_active) {
+      return res.status(400).json({ error: 'Nur deaktivierte Mitarbeiter können gelöscht werden. Bitte zuerst deaktivieren.' });
+    }
+
+    // Get assignments to clean up tenant-side references
+    const [assignments] = await db.execute(
+      'SELECT eta.tenant_id, eta.tenant_doctor_id FROM EmployeeTenantAssignment eta WHERE eta.employee_id = ?',
+      [id]
+    );
+
+    // Clean up central_employee_id in tenant Doctor tables
+    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokenMap = new Map(tokens.map(t => [String(t.id), t]));
+    for (const assign of assignments) {
+      const token = tokenMap.get(String(assign.tenant_id));
+      if (token && assign.tenant_doctor_id) {
+        try {
+          await withTenantDb(token, async (pool) => {
+            await pool.execute(
+              'UPDATE Doctor SET central_employee_id = NULL WHERE id = ?',
+              [assign.tenant_doctor_id]
+            );
+          });
+        } catch (err) {
+          console.warn(`[Master employees] Could not unlink tenant doctor ${assign.tenant_doctor_id}: ${err.message}`);
+        }
+      }
+    }
+
+    // Delete assignments
+    await db.execute('DELETE FROM EmployeeTenantAssignment WHERE employee_id = ?', [id]);
+
+    // Delete time accounts
+    await db.execute('DELETE FROM TimeAccount WHERE employee_id = ?', [id]);
+
+    // Delete employee
+    await db.execute('DELETE FROM Employee WHERE id = ?', [id]);
+
+    const name = [empRows[0].first_name, empRows[0].last_name].filter(Boolean).join(' ');
+    console.log(`[Master employees] Permanently deleted employee ${id} (${name}) by ${req.user.email}`);
+    res.json({ success: true, message: `Mitarbeiter "${name}" wurde permanent gelöscht` });
+  } catch (error) {
+    console.error('[Master employees] Delete error:', error);
+    next(error);
+  }
+});
+
+/**
  * POST /api/master/employees/import-from-tenant
  * Create central Employee(s) from tenant Doctor records and auto-link them.
  * Body: { items: [{ tenant_id, doctor_id, name, role }] }

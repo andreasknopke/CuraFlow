@@ -11,8 +11,8 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
-  Users, Loader2, Building2, Search, ChevronRight,
-  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight,
+  Users, Loader2, Building2, Search, ChevronRight, ArrowUpDown,
+  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff,
 } from 'lucide-react';
 
 export default function MasterEmployeeList() {
@@ -20,7 +20,10 @@ export default function MasterEmployeeList() {
   const queryClient = useQueryClient();
   const [selectedTenant, setSelectedTenant] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState('central'); // 'central' | 'legacy'
+  const [viewMode, setViewMode] = useState('central');
+  const [sortField, setSortField] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [showInactive, setShowInactive] = useState(false); // 'central' | 'legacy'
 
   // Mandanten laden
   const { data: tenants = [] } = useQuery({
@@ -34,12 +37,12 @@ export default function MasterEmployeeList() {
     },
   });
 
-  // Zentrale Mitarbeiter laden (Employee-Tabelle)
+  // Zentrale Mitarbeiter laden (alle, Filter im Frontend)
   const { data: centralData, isLoading: centralLoading } = useQuery({
     queryKey: ['master-central-employees'],
     queryFn: async () => {
       try {
-        return await api.request('/api/master/employees?active=true');
+        return await api.request('/api/master/employees');
       } catch {
         return { employees: [] };
       }
@@ -70,29 +73,126 @@ export default function MasterEmployeeList() {
     return legacyStaff.filter(s => !s.central_employee_id);
   }, [legacyStaff]);
 
-  // Aktive Liste je nach Ansicht
-  const activeList = viewMode === 'central' ? centralEmployees : unlinkedStaff;
+  // Sortier-Helfer
+  const toggleSort = (field) => {
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
 
-  // Suche filtern
-  const filteredList = useMemo(() => {
-    if (!searchQuery.trim()) return activeList;
-    const q = searchQuery.toLowerCase();
-    if (viewMode === 'central') {
-      return activeList.filter((e) =>
+  const SortHeader = ({ field, children }) => (
+    <TableHead
+      className="cursor-pointer select-none hover:text-slate-900"
+      onClick={() => toggleSort(field)}
+    >
+      <span className="inline-flex items-center gap-1">
+        {children}
+        {sortField === field && (
+          <ArrowUpDown className={`w-3 h-3 ${sortDir === 'desc' ? 'rotate-180' : ''}`} />
+        )}
+      </span>
+    </TableHead>
+  );
+
+  // Gefilterte + sortierte zentrale Mitarbeiter
+  const filteredCentral = useMemo(() => {
+    let list = centralEmployees;
+
+    // Aktiv/Inaktiv-Filter
+    if (!showInactive) {
+      list = list.filter(e => e.is_active);
+    }
+
+    // Tenant-Filter
+    if (selectedTenant !== 'all') {
+      list = list.filter(e =>
+        (e.assignments || []).some(a => String(a.tenant_id) === String(selectedTenant))
+      );
+    }
+
+    // Suche
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(e =>
         e.last_name?.toLowerCase().includes(q) ||
         e.first_name?.toLowerCase().includes(q) ||
         e.payroll_id?.toLowerCase().includes(q) ||
-        e.work_time_model_name?.toLowerCase().includes(q)
+        e.work_time_model_name?.toLowerCase().includes(q) ||
+        (e.assignments || []).some(a => a.tenant_name?.toLowerCase().includes(q))
       );
     }
-    return activeList.filter((s) =>
-      s.name?.toLowerCase().includes(q) ||
-      s.tenantName?.toLowerCase().includes(q) ||
-      s.role?.toLowerCase().includes(q)
-    );
-  }, [activeList, searchQuery, viewMode]);
+
+    // Sortierung
+    const cmp = (a, b) => {
+      let va, vb;
+      switch (sortField) {
+        case 'name':
+          va = (a.last_name || a.name || '').toLowerCase();
+          vb = (b.last_name || b.name || '').toLowerCase();
+          break;
+        case 'model':
+          va = (a.work_time_model_name || '').toLowerCase();
+          vb = (b.work_time_model_name || '').toLowerCase();
+          break;
+        case 'tenant':
+          va = ((a.assignments || [])[0]?.tenant_name || '').toLowerCase();
+          vb = ((b.assignments || [])[0]?.tenant_name || '').toLowerCase();
+          break;
+        case 'status':
+          va = a.is_active ? 0 : 1;
+          vb = b.is_active ? 0 : 1;
+          return sortDir === 'asc' ? va - vb : vb - va;
+        default:
+          va = ''; vb = '';
+      }
+      const r = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortDir === 'asc' ? r : -r;
+    };
+    return [...list].sort(cmp);
+  }, [centralEmployees, showInactive, selectedTenant, searchQuery, sortField, sortDir]);
+
+  // Gefilterte + sortierte Legacy-Mitarbeiter
+  const filteredLegacy = useMemo(() => {
+    let list = unlinkedStaff;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(s =>
+        s.name?.toLowerCase().includes(q) ||
+        s.tenantName?.toLowerCase().includes(q) ||
+        s.role?.toLowerCase().includes(q)
+      );
+    }
+    const cmp = (a, b) => {
+      let va, vb;
+      switch (sortField) {
+        case 'name':
+          va = (a.name || '').toLowerCase();
+          vb = (b.name || '').toLowerCase();
+          break;
+        case 'tenant':
+          va = (a.tenantName || '').toLowerCase();
+          vb = (b.tenantName || '').toLowerCase();
+          break;
+        case 'role':
+          va = (a.role || '').toLowerCase();
+          vb = (b.role || '').toLowerCase();
+          break;
+        default:
+          va = ''; vb = '';
+      }
+      const r = va < vb ? -1 : va > vb ? 1 : 0;
+      return sortDir === 'asc' ? r : -r;
+    };
+    return [...list].sort(cmp);
+  }, [unlinkedStaff, searchQuery, sortField, sortDir]);
+
+  const filteredList = viewMode === 'central' ? filteredCentral : filteredLegacy;
 
   // KPI-Statistiken
+  const inactiveCount = centralEmployees.filter(e => !e.is_active).length;
   const stats = useMemo(() => ({
     centralTotal: centralEmployees.length,
     centralActive: centralEmployees.filter((e) => e.is_active).length,
@@ -125,6 +225,25 @@ export default function MasterEmployeeList() {
     },
     onError: (err) => toast.error('Import fehlgeschlagen: ' + err.message),
   });
+
+  // Löschen: deaktivierte Mitarbeiter permanent entfernen
+  const deleteMutation = useMutation({
+    mutationFn: (employeeId) =>
+      api.request(`/api/master/employees/${employeeId}`, { method: 'DELETE' }),
+    onSuccess: async (res) => {
+      toast.success(res.message || 'Mitarbeiter gelöscht');
+      await queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
+    },
+    onError: (err) => toast.error('Löschen fehlgeschlagen: ' + err.message),
+  });
+
+  const handleDelete = (emp, e) => {
+    e.stopPropagation();
+    const name = displayName(emp);
+    if (window.confirm(`"${name}" endgültig löschen?\n\nDies entfernt den Eintrag aus der zentralen Verwaltung und löst alle Mandanten-Verknüpfungen.`)) {
+      deleteMutation.mutate(emp.id);
+    }
+  };
 
   const handleImportSingle = (staff) => {
     importMutation.mutate([{
@@ -183,7 +302,7 @@ export default function MasterEmployeeList() {
             className={`px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === 'central' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
             onClick={() => setViewMode('central')}
           >
-            Zentral ({centralEmployees.length})
+            Zentral ({centralEmployees.filter(e => e.is_active).length})
           </button>
           <button
             className={`px-3 py-1.5 text-sm font-medium transition-colors border-l ${viewMode === 'legacy' ? 'bg-amber-50 text-amber-700' : 'text-slate-500 hover:text-slate-700'}`}
@@ -193,19 +312,29 @@ export default function MasterEmployeeList() {
           </button>
         </div>
 
-        {viewMode === 'legacy' && (
-          <Select value={selectedTenant} onValueChange={setSelectedTenant}>
-            <SelectTrigger className="w-52">
-              <Building2 className="w-4 h-4 mr-2 text-slate-400" />
-              <SelectValue placeholder="Mandant wählen" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Alle Mandanten</SelectItem>
-              {tenants.map((t) => (
-                <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Select value={selectedTenant} onValueChange={setSelectedTenant}>
+          <SelectTrigger className="w-52">
+            <Building2 className="w-4 h-4 mr-2 text-slate-400" />
+            <SelectValue placeholder="Mandant wählen" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Alle Mandanten</SelectItem>
+            {tenants.map((t) => (
+              <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {viewMode === 'central' && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`text-xs ${showInactive ? 'text-amber-700 bg-amber-50' : 'text-slate-500'}`}
+            onClick={() => setShowInactive(v => !v)}
+          >
+            {showInactive ? <Eye className="w-3.5 h-3.5 mr-1" /> : <EyeOff className="w-3.5 h-3.5 mr-1" />}
+            Inaktive {showInactive ? 'ausblenden' : `anzeigen (${inactiveCount})`}
+          </Button>
         )}
 
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -276,11 +405,11 @@ export default function MasterEmployeeList() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Arbeitszeitmodell</TableHead>
+                    <SortHeader field="name">Name</SortHeader>
+                    <SortHeader field="model">Arbeitszeitmodell</SortHeader>
                     <TableHead>Vertragsart</TableHead>
-                    <TableHead>Mandanten</TableHead>
-                    <TableHead>Status</TableHead>
+                    <SortHeader field="tenant">Mandanten</SortHeader>
+                    <SortHeader field="status">Status</SortHeader>
                     <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
@@ -288,7 +417,7 @@ export default function MasterEmployeeList() {
                   {filteredList.map((emp) => (
                     <TableRow
                       key={emp.id}
-                      className="cursor-pointer hover:bg-indigo-50/50 transition-colors"
+                      className={`cursor-pointer transition-colors ${emp.is_active ? 'hover:bg-indigo-50/50' : 'hover:bg-red-50/50 opacity-60'}`}
                       onClick={() => navigate(`/mitarbeiter/central/${emp.id}`)}
                     >
                       <TableCell>
@@ -342,13 +471,26 @@ export default function MasterEmployeeList() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${emp.is_active ? 'text-emerald-700' : 'text-slate-400'}`}>
-                          <span className={`w-2 h-2 rounded-full ${emp.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${emp.is_active ? 'text-emerald-700' : 'text-red-500'}`}>
+                          <span className={`w-2 h-2 rounded-full ${emp.is_active ? 'bg-emerald-500' : 'bg-red-400'}`} />
                           {emp.is_active ? 'Aktiv' : 'Inaktiv'}
                         </span>
                       </TableCell>
                       <TableCell>
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
+                        {!emp.is_active ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50 text-xs px-2"
+                            disabled={deleteMutation.isPending}
+                            onClick={(e) => handleDelete(emp, e)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-1" />
+                            Löschen
+                          </Button>
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-slate-300" />
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -361,9 +503,9 @@ export default function MasterEmployeeList() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Mandant</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Funktion / Rolle</TableHead>
+                    <SortHeader field="tenant">Mandant</SortHeader>
+                    <SortHeader field="name">Name</SortHeader>
+                    <SortHeader field="role">Funktion / Rolle</SortHeader>
                     <TableHead>Arbeitsmodell</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-24">Aktion</TableHead>
