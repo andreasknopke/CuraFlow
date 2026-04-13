@@ -11,6 +11,9 @@ import MasterEmployeeDetail from '@/master/pages/MasterEmployeeDetail';
 import MasterAbsences from '@/master/pages/MasterAbsences';
 import MasterTimeTracking from '@/master/pages/MasterTimeTracking';
 import MasterHolidays from '@/master/pages/MasterHolidays';
+import MasterWorkTimeModels from '@/master/pages/MasterWorkTimeModels';
+import MasterEmployeeCreate from '@/master/pages/MasterEmployeeCreate';
+import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDetail';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -57,7 +60,10 @@ export default function MasterApp() {
                     <Routes>
                       <Route path="/" element={<MasterDashboard />} />
                       <Route path="/mitarbeiter" element={<MasterEmployeeList />} />
+                      <Route path="/mitarbeiter/neu" element={<MasterEmployeeCreate />} />
+                      <Route path="/mitarbeiter/central/:employeeId" element={<MasterCentralEmployeeDetail />} />
                       <Route path="/mitarbeiter/:tenantId/:employeeId" element={<MasterEmployeeDetail />} />
+                      <Route path="/arbeitszeitmodelle" element={<MasterWorkTimeModels />} />
                       <Route path="/fehlzeiten" element={<MasterAbsences />} />
                       <Route path="/feiertage" element={<MasterHolidays />} />
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />

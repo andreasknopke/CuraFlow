@@ -579,6 +579,46 @@ router.post('/', async (req, res, next) => {
         }
       }
       
+      // --- ShiftEntry Auto-Time: calculate start_time/end_time from ShiftTimeRule ---
+      if (tableName === 'ShiftEntry' && data.doctor_id && data.position && !data.start_time) {
+        try {
+          // 1. Get doctor's work_time_model_id
+          const [docRows] = await dbPool.execute(
+            `SELECT work_time_model_id FROM Doctor WHERE id = ? LIMIT 1`,
+            [data.doctor_id]
+          );
+          const modelId = docRows[0]?.work_time_model_id;
+          
+          if (modelId) {
+            // 2. Find workplace_id by position name
+            const [wpRows] = await dbPool.execute(
+              `SELECT id FROM Workplace WHERE name = ? LIMIT 1`,
+              [data.position]
+            );
+            const workplaceId = wpRows[0]?.id;
+            
+            if (workplaceId) {
+              // 3. Look up ShiftTimeRule for this workplace + model
+              const [ruleRows] = await dbPool.execute(
+                `SELECT start_time, end_time, break_minutes FROM ShiftTimeRule WHERE workplace_id = ? AND work_time_model_id = ? LIMIT 1`,
+                [workplaceId, modelId]
+              );
+              
+              if (ruleRows[0]) {
+                data.start_time = ruleRows[0].start_time;
+                data.end_time = ruleRows[0].end_time;
+                if (ruleRows[0].break_minutes) {
+                  data.break_minutes = ruleRows[0].break_minutes;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Non-critical: if auto-time fails, create shift without times
+          console.warn(`[AutoTime] Failed to calculate shift times: ${e.message}`);
+        }
+      }
+      
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data);
       
@@ -712,6 +752,39 @@ router.post('/', async (req, res, next) => {
         if (filtered.length === 0) return res.json([]);
         processed.length = 0;
         processed.push(...filtered);
+
+        // --- Auto-Time for bulk creates ---
+        for (const item of processed) {
+          if (item.doctor_id && item.position && !item.start_time) {
+            try {
+              const [docRows] = await dbPool.execute(
+                `SELECT work_time_model_id FROM Doctor WHERE id = ? LIMIT 1`,
+                [item.doctor_id]
+              );
+              const modelId = docRows[0]?.work_time_model_id;
+              if (modelId) {
+                const [wpRows] = await dbPool.execute(
+                  `SELECT id FROM Workplace WHERE name = ? LIMIT 1`,
+                  [item.position]
+                );
+                const workplaceId = wpRows[0]?.id;
+                if (workplaceId) {
+                  const [ruleRows] = await dbPool.execute(
+                    `SELECT start_time, end_time, break_minutes FROM ShiftTimeRule WHERE workplace_id = ? AND work_time_model_id = ? LIMIT 1`,
+                    [workplaceId, modelId]
+                  );
+                  if (ruleRows[0]) {
+                    item.start_time = ruleRows[0].start_time;
+                    item.end_time = ruleRows[0].end_time;
+                    if (ruleRows[0].break_minutes) item.break_minutes = ruleRows[0].break_minutes;
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn(`[AutoTime] Bulk: Failed for ${item.position}: ${e.message}`);
+            }
+          }
+        }
       }
       
       const allKeys = new Set();

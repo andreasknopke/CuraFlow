@@ -223,6 +223,11 @@ export const db = wrapPoolWithRetry(createPool({
 // Cache for tenant database pools (Multi-Tenant Support)
 const tenantPools = new Map();
 
+// Track which tenants have been auto-migrated (resets on server restart)
+const migratedTenants = new Set();
+// Track in-flight migration promises to avoid duplicate runs
+const migrationInFlight = new Map();
+
 // Remove a tenant pool from cache (e.g., on connection error)
 export const removeTenantPool = (dbToken) => {
   if (tenantPools.has(dbToken)) {
@@ -233,6 +238,8 @@ export const removeTenantPool = (dbToken) => {
       // Ignore errors during cleanup
     }
     tenantPools.delete(dbToken);
+    migratedTenants.delete(dbToken);
+    migrationInFlight.delete(dbToken);
     console.log(`Removed tenant pool from cache`);
   }
 };
@@ -289,12 +296,44 @@ export const getTenantDb = (dbToken) => {
   }
 };
 
-// Middleware to attach tenant DB to request
-export const tenantDbMiddleware = (req, res, next) => {
+// Middleware to attach tenant DB to request + auto-run migrations
+export const tenantDbMiddleware = async (req, res, next) => {
   const dbToken = req.headers['x-db-token'];
   req.db = getTenantDb(dbToken);
   req.dbToken = dbToken; // Store for error handling
   req.isCustomDb = !!dbToken && req.db !== db;
+
+  // Auto-run tenant migrations on first access per tenant (per server lifetime)
+  if (req.isCustomDb && !migratedTenants.has(dbToken)) {
+    try {
+      // Deduplicate: if another request already triggered migration, wait for the same promise
+      if (!migrationInFlight.has(dbToken)) {
+        const { runTenantMigrations } = await import('./utils/tenantMigrations.js');
+        const promise = runTenantMigrations(req.db, dbToken)
+          .then((results) => {
+            const errors = results.filter(r => r.status === 'error');
+            if (errors.length > 0) {
+              console.warn(`[Auto-Migration] Tenant migration completed with ${errors.length} errors:`, errors);
+            } else {
+              console.log(`[Auto-Migration] Tenant migrations OK (${results.length} checked)`);
+            }
+            migratedTenants.add(dbToken);
+          })
+          .catch((err) => {
+            console.error('[Auto-Migration] Failed:', err.message);
+          })
+          .finally(() => {
+            migrationInFlight.delete(dbToken);
+          });
+        migrationInFlight.set(dbToken, promise);
+      }
+      await migrationInFlight.get(dbToken);
+    } catch (err) {
+      // Non-blocking: don't prevent tenant access on migration failure
+      console.error('[Auto-Migration] Unexpected error:', err.message);
+    }
+  }
+
   next();
 };
 

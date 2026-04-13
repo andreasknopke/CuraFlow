@@ -3,6 +3,23 @@ import { Draggable } from '@hello-pangea/dnd';
 
 const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
+// Format TIME value (HH:MM:SS or HH:MM) to compact display (H:MM or HH:MM)
+const formatShiftTime = (timeStr) => {
+  if (!timeStr) return null;
+  const parts = String(timeStr).split(':');
+  if (parts.length < 2) return null;
+  const h = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  return m === 0 ? `${h}` : `${h}:${String(m).padStart(2, '0')}`;
+};
+
+const getTimeLabel = (shift) => {
+  const start = formatShiftTime(shift.start_time);
+  const end = formatShiftTime(shift.end_time);
+  if (!start || !end) return null;
+  return `${start}–${end}`;
+};
+
 export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
@@ -10,6 +27,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
   const chipLabel = compactLabel || getDoctorShortLabel(doctor);
   const displayText = isFullWidth ? doctor.name : chipLabel;
   const displayFontSize = fontSize;
+  const timeLabel = getTimeLabel(shift);
 
   // Build fairness tooltip text for preview service shifts
   const fairnessTooltip = React.useMemo(() => {
@@ -174,6 +192,14 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     >
                         {displayText}
                     </span>
+                    {timeLabel && (
+                        <span
+                            className="flex-shrink-0 text-slate-500 font-normal mr-1 whitespace-nowrap"
+                            style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
+                        >
+                            {timeLabel}
+                        </span>
+                    )}
                     {fairnessInfo && (
                         <span
                             className="flex-shrink-0 rounded px-1 text-white font-semibold mr-1"
@@ -190,12 +216,22 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             {!isDragging && !isFullWidth && (
                 <>
                 {QualWarning}
-                <span 
-                  className="px-0.5 leading-none text-center w-full relative z-10 whitespace-nowrap" 
-                    style={{ fontSize: `${displayFontSize}px` }}
-                >
-                    {displayText}
-                </span>
+                <div className="flex flex-col items-center justify-center w-full relative z-10">
+                  <span 
+                    className="px-0.5 leading-none text-center whitespace-nowrap" 
+                      style={{ fontSize: `${displayFontSize}px` }}
+                  >
+                      {displayText}
+                  </span>
+                  {timeLabel && (
+                    <span 
+                      className="leading-none text-center whitespace-nowrap opacity-60"
+                      style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}
+                    >
+                      {timeLabel}
+                    </span>
+                  )}
+                </div>
                 {fairnessInfo && (
                     <div
                         className="absolute -bottom-1 -right-1 z-20 rounded-full px-1 text-white font-bold leading-none"

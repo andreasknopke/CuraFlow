@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
 import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
 import { toast } from "sonner";
-import { Mail, Loader2 } from "lucide-react";
+import { Mail, Loader2, Link2, Unlink } from "lucide-react";
 
 // Fallback falls Rollen noch nicht geladen
 const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
@@ -35,6 +35,19 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   const { data: allDoctors = [] } = useQuery({
     queryKey: ["doctors"],
     queryFn: () => db.Doctor.list(),
+  });
+
+  // Zentrale Mitarbeiterliste laden (für Verknüpfung)
+  const { data: centralEmployees = [] } = useQuery({
+    queryKey: ["central-employees-for-linking"],
+    queryFn: async () => {
+      try {
+        const res = await api.request('/api/master/employees?active=true');
+        return res.employees || [];
+      } catch {
+        return [];
+      }
+    },
   });
 
   const [sendingTestMail, setSendingTestMail] = useState(false);
@@ -73,6 +86,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
       setFormData({
         ...doctor,
         fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
+        central_employee_id: doctor.central_employee_id || '',
       });
     } else if (open) {
       // Nur zurücksetzen wenn Dialog geöffnet wird UND kein doctor
@@ -84,6 +98,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         fte: 1.0,
         contract_end_date: "",
         exclude_from_staffing_plan: false,
+        central_employee_id: '',
       });
     }
   }, [doctor, open]); // availableRoles entfernt - wird nur beim Öffnen benötigt
@@ -112,7 +127,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     const dataToSubmit = {
         ...formData,
         initials: trimmedInitials,
-        fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100
+        fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100,
+        central_employee_id: formData.central_employee_id || null,
     };
     onSubmit(dataToSubmit);
   };
@@ -235,6 +251,55 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               />
           </div>
           
+          {/* Zentrale Mitarbeiterverknüpfung */}
+          <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-base flex items-center gap-1.5">
+                <Link2 className="w-4 h-4" />
+                Zentrale Verknüpfung
+              </Label>
+              {formData.central_employee_id && (
+                <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-slate-500"
+                  onClick={() => setFormData({ ...formData, central_employee_id: '' })}>
+                  <Unlink className="w-3 h-3 mr-1" /> Trennen
+                </Button>
+              )}
+            </div>
+            <Select
+              value={formData.central_employee_id || '__none__'}
+              onValueChange={(value) => {
+                const empId = value === '__none__' ? '' : value;
+                setFormData({ ...formData, central_employee_id: empId });
+                // Auto-fill name from central employee if linking
+                if (empId) {
+                  const emp = centralEmployees.find(e => e.id === empId);
+                  if (emp) {
+                    const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
+                    if (fullName && !formData.name) {
+                      setFormData(prev => ({ ...prev, central_employee_id: empId, name: fullName }));
+                    }
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="bg-white">
+                <SelectValue placeholder="Nicht verknüpft (lokaler Mitarbeiter)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Nicht verknüpft (lokaler Mitarbeiter)</SelectItem>
+                {centralEmployees.map((emp) => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {[emp.first_name, emp.last_name].filter(Boolean).join(' ') || emp.last_name}
+                    {emp.work_time_model_name ? ` — ${emp.work_time_model_name}` : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-slate-400">
+              Verknüpfte Mitarbeiter erben Vertragsdaten (Arbeitszeit, Urlaub) aus der Zentrale.
+            </p>
+          </div>
+
           {/* Qualifikations-Zuordnung - nur bei bestehenden Mitarbeitern */}
           {doctor?.id && (
               <div className="border rounded-lg p-3 bg-slate-50">

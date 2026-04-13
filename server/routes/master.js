@@ -220,6 +220,9 @@ router.get('/staff', async (req, res, next) => {
         if (colNames.has('qualifications')) selectCols.push('qualifications');
         if (colNames.has('notes')) selectCols.push('notes');
         if (colNames.has('color')) selectCols.push('color');
+        if (colNames.has('central_employee_id')) selectCols.push('central_employee_id');
+        if (colNames.has('work_time_model_id')) selectCols.push('work_time_model_id');
+        if (colNames.has('target_hours_per_week')) selectCols.push('target_hours_per_week');
 
         const [rows] = await pool.execute(
           `SELECT ${selectCols.join(', ')} FROM Doctor ORDER BY name`
@@ -232,6 +235,9 @@ router.get('/staff', async (req, res, next) => {
           is_active: colNames.has('is_active') ? !!r.is_active : true,
           qualifications: r.qualifications || null,
           notes: r.notes || null,
+          central_employee_id: r.central_employee_id || null,
+          work_time_model_id: r.work_time_model_id || null,
+          target_hours_per_week: r.target_hours_per_week || null,
           tenantId: token.id,
           tenantName: token.name,
         }));
@@ -331,6 +337,8 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           vk_share: doc.vk_share || null,
           work_time_percentage: doc.work_time_percentage || null,
           special_status: doc.special_status || null,
+          central_employee_id: doc.central_employee_id || null,
+          work_time_model_id: doc.work_time_model_id || null,
           vacation_days_total: doc.vacation_days || 30,
           vacation_days_taken: vacationTaken,
           vacation_days_planned: vacationPlanned,
@@ -702,6 +710,510 @@ router.get('/holidays/preview', async (req, res, next) => {
     res.json(data);
   } catch (error) {
     console.error('[Master holidays] Preview error:', error);
+    next(error);
+  }
+});
+
+// ============ CENTRAL EMPLOYEE MANAGEMENT ============
+
+/**
+ * GET /api/master/employees
+ * List all central employees (with optional search)
+ */
+router.get('/employees', async (req, res, next) => {
+  try {
+    const { q, active } = req.query;
+    let sql = `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week
+               FROM Employee e
+               LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id`;
+    const params = [];
+    const conditions = [];
+
+    if (active !== undefined) {
+      conditions.push('e.is_active = ?');
+      params.push(active === 'true' || active === '1' ? 1 : 0);
+    }
+    if (q) {
+      conditions.push('(e.last_name LIKE ? OR e.first_name LIKE ? OR e.payroll_id LIKE ?)');
+      const like = `%${q}%`;
+      params.push(like, like, like);
+    }
+
+    if (conditions.length > 0) {
+      sql += ' WHERE ' + conditions.join(' AND ');
+    }
+    sql += ' ORDER BY e.last_name, e.first_name';
+
+    const [rows] = await db.execute(sql, params);
+
+    // Enrich with tenant assignments
+    const [assignments] = await db.execute(
+      `SELECT eta.*, dt.name as tenant_name 
+       FROM EmployeeTenantAssignment eta 
+       LEFT JOIN db_tokens dt ON eta.tenant_id = dt.id`
+    );
+
+    const employees = rows.map(emp => ({
+      ...emp,
+      is_active: !!emp.is_active,
+      assignments: assignments.filter(a => a.employee_id === emp.id).map(a => ({
+        id: a.id,
+        tenant_id: a.tenant_id,
+        tenant_name: a.tenant_name,
+        tenant_doctor_id: a.tenant_doctor_id,
+        fte_share: a.fte_share,
+        is_primary: !!a.is_primary,
+        assigned_since: a.assigned_since,
+      })),
+    }));
+
+    res.json({ employees });
+  } catch (error) {
+    console.error('[Master employees] List error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/employees/:id
+ * Single employee detail with assignments and time accounts
+ */
+router.get('/employees/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.execute(
+      `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week
+       FROM Employee e
+       LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+       WHERE e.id = ?`,
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+    const emp = rows[0];
+
+    // Tenant assignments
+    const [assignments] = await db.execute(
+      `SELECT eta.*, dt.name as tenant_name 
+       FROM EmployeeTenantAssignment eta 
+       LEFT JOIN db_tokens dt ON eta.tenant_id = dt.id
+       WHERE eta.employee_id = ?`,
+      [id]
+    );
+
+    // Time accounts
+    const [timeAccounts] = await db.execute(
+      `SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year DESC, month DESC LIMIT 24`,
+      [id]
+    );
+
+    res.json({
+      ...emp,
+      is_active: !!emp.is_active,
+      assignments: assignments.map(a => ({
+        id: a.id,
+        tenant_id: a.tenant_id,
+        tenant_name: a.tenant_name,
+        tenant_doctor_id: a.tenant_doctor_id,
+        fte_share: a.fte_share,
+        is_primary: !!a.is_primary,
+        assigned_since: a.assigned_since,
+      })),
+      time_accounts: timeAccounts,
+    });
+  } catch (error) {
+    console.error('[Master employees] Detail error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees
+ * Create a new central employee
+ */
+router.post('/employees', async (req, res, next) => {
+  try {
+    const {
+      last_name, first_name, former_name, date_of_birth, email, phone, address,
+      contract_type, contract_start, contract_end, probation_end,
+      target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes
+    } = req.body;
+
+    if (!last_name || !last_name.trim()) {
+      return res.status(400).json({ error: 'Nachname ist erforderlich' });
+    }
+
+    const id = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO Employee (id, last_name, first_name, former_name, date_of_birth, email, phone, address,
+        contract_type, contract_start, contract_end, probation_end,
+        target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        last_name.trim(),
+        first_name?.trim() || null,
+        former_name?.trim() || null,
+        date_of_birth || null,
+        email?.trim() || null,
+        phone?.trim() || null,
+        address?.trim() || null,
+        contract_type || null,
+        contract_start || null,
+        contract_end || null,
+        probation_end || null,
+        target_hours_per_week ?? 38.5,
+        vacation_days_annual ?? 30,
+        payroll_id?.trim() || null,
+        work_time_model_id || null,
+        notes?.trim() || null,
+        req.user.sub,
+      ]
+    );
+
+    console.log(`[Master employees] Created employee ${id} (${last_name}) by user ${req.user.sub}`);
+    res.status(201).json({ id, last_name, first_name });
+  } catch (error) {
+    console.error('[Master employees] Create error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/employees/:id
+ * Update a central employee
+ */
+router.put('/employees/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check employee exists
+    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    const allowedFields = [
+      'last_name', 'first_name', 'former_name', 'date_of_birth', 'email', 'phone', 'address',
+      'contract_type', 'contract_start', 'contract_end', 'probation_end',
+      'target_hours_per_week', 'vacation_days_annual', 'payroll_id', 'work_time_model_id',
+      'is_active', 'exit_date', 'exit_reason', 'notes'
+    ];
+
+    const updates = [];
+    const values = [];
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        let val = req.body[field];
+        // Trim strings
+        if (typeof val === 'string') val = val.trim() || null;
+        // Handle empty date strings
+        if (['date_of_birth', 'contract_start', 'contract_end', 'probation_end', 'exit_date'].includes(field) && val === '') {
+          val = null;
+        }
+        values.push(val);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Keine Felder zum Aktualisieren' });
+    }
+
+    values.push(id);
+    await db.execute(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    console.log(`[Master employees] Updated employee ${id} (fields: ${updates.map(u => u.split(' =')[0]).join(', ')}) by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master employees] Update error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/employees/:id/assignments
+ * Update tenant assignments for a central employee
+ * Body: { assignments: [{ tenant_id, fte_share, is_primary, tenant_doctor_id }] }
+ */
+router.put('/employees/:id/assignments', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { assignments } = req.body;
+
+    if (!Array.isArray(assignments)) {
+      return res.status(400).json({ error: 'assignments array required' });
+    }
+
+    // Check employee exists
+    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    // Get current assignments
+    const [currentAssignments] = await db.execute(
+      'SELECT * FROM EmployeeTenantAssignment WHERE employee_id = ?',
+      [id]
+    );
+
+    // Upsert: for each assignment, insert or update
+    for (const a of assignments) {
+      if (!a.tenant_id) continue;
+
+      const existing = currentAssignments.find(ca => ca.tenant_id === a.tenant_id);
+      if (existing) {
+        await db.execute(
+          `UPDATE EmployeeTenantAssignment SET fte_share = ?, is_primary = ?, tenant_doctor_id = ? WHERE id = ?`,
+          [a.fte_share ?? 1.0, !!a.is_primary, a.tenant_doctor_id || null, existing.id]
+        );
+      } else {
+        const aId = crypto.randomUUID();
+        await db.execute(
+          `INSERT INTO EmployeeTenantAssignment (id, employee_id, tenant_id, tenant_doctor_id, fte_share, is_primary, assigned_since) 
+           VALUES (?, ?, ?, ?, ?, ?, CURDATE())`,
+          [aId, id, a.tenant_id, a.tenant_doctor_id || null, a.fte_share ?? 1.0, !!a.is_primary]
+        );
+      }
+    }
+
+    // Remove assignments not in the new list
+    const newTenantIds = assignments.map(a => a.tenant_id).filter(Boolean);
+    for (const ca of currentAssignments) {
+      if (!newTenantIds.includes(ca.tenant_id)) {
+        await db.execute('DELETE FROM EmployeeTenantAssignment WHERE id = ?', [ca.id]);
+      }
+    }
+
+    console.log(`[Master employees] Updated assignments for employee ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master employees] Assignments error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees/:id/link-tenant
+ * Link a central employee to a tenant's Doctor record
+ * Body: { tenant_id, doctor_id }
+ */
+router.post('/employees/:id/link-tenant', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { tenant_id, doctor_id } = req.body;
+
+    if (!tenant_id || !doctor_id) {
+      return res.status(400).json({ error: 'tenant_id and doctor_id required' });
+    }
+
+    // Check employee exists
+    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    if (empRows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    // Check admin has access to this tenant
+    const tokens = await getAllTenantTokens(req.user.sub);
+    const token = tokens.find(t => t.id === tenant_id);
+    if (!token) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+
+    // Update Doctor in tenant DB to set central_employee_id
+    await withTenantDb(token, async (pool) => {
+      // First check if doctor has central_employee_id column
+      const [cols] = await pool.execute(
+        `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
+         WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'central_employee_id' AND TABLE_SCHEMA = DATABASE()`
+      );
+      if (cols.length === 0) {
+        throw new Error('Tenant hat noch keine Migrationen für zentrale Mitarbeiterverwaltung. Bitte zuerst Migrationen ausführen.');
+      }
+
+      await pool.execute(
+        'UPDATE Doctor SET central_employee_id = ? WHERE id = ?',
+        [id, doctor_id]
+      );
+    });
+
+    // Upsert EmployeeTenantAssignment
+    const [existingAssign] = await db.execute(
+      'SELECT id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ?',
+      [id, tenant_id]
+    );
+    if (existingAssign.length > 0) {
+      await db.execute(
+        'UPDATE EmployeeTenantAssignment SET tenant_doctor_id = ? WHERE id = ?',
+        [doctor_id, existingAssign[0].id]
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO EmployeeTenantAssignment (id, employee_id, tenant_id, tenant_doctor_id, fte_share, is_primary, assigned_since)
+         VALUES (?, ?, ?, ?, 1.00, FALSE, CURDATE())`,
+        [crypto.randomUUID(), id, tenant_id, doctor_id]
+      );
+    }
+
+    console.log(`[Master employees] Linked employee ${id} to tenant ${tenant_id} doctor ${doctor_id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master employees] Link error:', error);
+    next(error);
+  }
+});
+
+// ============ WORK TIME MODELS ============
+
+/**
+ * GET /api/master/work-time-models
+ * List all work time models
+ */
+router.get('/work-time-models', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute('SELECT * FROM WorkTimeModel ORDER BY hours_per_week DESC');
+    res.json({ models: rows });
+  } catch (error) {
+    console.error('[Master work-time-models] List error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/work-time-models
+ * Create a new work time model
+ */
+router.post('/work-time-models', async (req, res, next) => {
+  try {
+    const { name, hours_per_week, hours_per_day, is_default, description } = req.body;
+
+    if (!name?.trim() || !hours_per_week || !hours_per_day) {
+      return res.status(400).json({ error: 'name, hours_per_week, and hours_per_day are required' });
+    }
+
+    const id = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO WorkTimeModel (id, name, hours_per_week, hours_per_day, is_default, description)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, name.trim(), hours_per_week, hours_per_day, !!is_default, description?.trim() || null]
+    );
+
+    console.log(`[Master work-time-models] Created model ${id} (${name}) by user ${req.user.sub}`);
+    res.status(201).json({ id, name, hours_per_week, hours_per_day });
+  } catch (error) {
+    console.error('[Master work-time-models] Create error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/work-time-models/:id
+ * Update an existing work time model
+ */
+router.put('/work-time-models/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, hours_per_week, hours_per_day, is_default, description } = req.body;
+
+    const [existing] = await db.execute('SELECT id FROM WorkTimeModel WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Arbeitszeitmodell nicht gefunden' });
+    }
+
+    await db.execute(
+      `UPDATE WorkTimeModel SET name = ?, hours_per_week = ?, hours_per_day = ?, is_default = ?, description = ?
+       WHERE id = ?`,
+      [name?.trim(), hours_per_week, hours_per_day, !!is_default, description?.trim() || null, id]
+    );
+
+    console.log(`[Master work-time-models] Updated model ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master work-time-models] Update error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/work-time-models/:id
+ * Delete a work time model (only if not assigned to any employee)
+ */
+router.delete('/work-time-models/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if any employees use this model
+    const [usages] = await db.execute(
+      'SELECT COUNT(*) as cnt FROM Employee WHERE work_time_model_id = ?',
+      [id]
+    );
+    if (usages[0].cnt > 0) {
+      return res.status(409).json({ 
+        error: `Dieses Modell wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.` 
+      });
+    }
+
+    await db.execute('DELETE FROM WorkTimeModel WHERE id = ?', [id]);
+
+    console.log(`[Master work-time-models] Deleted model ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master work-time-models] Delete error:', error);
+    next(error);
+  }
+});
+
+// ============ SHIFT TIME RULES (Tenant-specific) ============
+
+/**
+ * GET /api/master/shift-time-rules?tenantId=xxx
+ * Get shift time rules for a specific tenant
+ */
+router.get('/shift-time-rules', async (req, res, next) => {
+  try {
+    const { tenantId } = req.query;
+    if (!tenantId) {
+      return res.status(400).json({ error: 'tenantId required' });
+    }
+
+    const tokens = await getAllTenantTokens(req.user.sub);
+    const token = tokens.find(t => t.id === tenantId);
+    if (!token) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+
+    const rules = await withTenantDb(token, async (pool) => {
+      try {
+        const [tables] = await pool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`);
+        if (tables.length === 0) return [];
+
+        const [rows] = await pool.execute(`
+          SELECT str.*, w.name as workplace_name
+          FROM ShiftTimeRule str
+          LEFT JOIN Workplace w ON str.workplace_id = w.id
+          ORDER BY w.name, str.work_time_model_id
+        `);
+        return rows;
+      } catch (e) {
+        console.warn(`[Master shift-time-rules] Query failed:`, e.message);
+        return [];
+      }
+    });
+
+    // Enrich with work time model names from master DB
+    const [models] = await db.execute('SELECT id, name FROM WorkTimeModel');
+    const modelMap = Object.fromEntries(models.map(m => [m.id, m.name]));
+
+    const enriched = (rules || []).map(r => ({
+      ...r,
+      work_time_model_name: modelMap[r.work_time_model_id] || r.work_time_model_id,
+    }));
+
+    res.json({ rules: enriched });
+  } catch (error) {
+    console.error('[Master shift-time-rules] List error:', error);
     next(error);
   }
 });

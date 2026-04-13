@@ -103,5 +103,127 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // ===== PHASE 0: Central Employee Management =====
+
+  await run('create_employee_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS Employee (
+        id VARCHAR(36) PRIMARY KEY,
+        payroll_id VARCHAR(50),
+        last_name VARCHAR(200) NOT NULL,
+        first_name VARCHAR(100),
+        former_name VARCHAR(200),
+        date_of_birth DATE,
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        address TEXT,
+        contract_type ENUM('vollzeit','teilzeit','minijob','werkstudent','praktikant','honorar') DEFAULT NULL,
+        contract_start DATE,
+        contract_end DATE,
+        probation_end DATE,
+        target_hours_per_week DECIMAL(4,1) DEFAULT 38.5,
+        vacation_days_annual INT DEFAULT 30,
+        is_active BOOLEAN DEFAULT TRUE,
+        exit_date DATE,
+        exit_reason VARCHAR(255),
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        created_by VARCHAR(255),
+        INDEX idx_payroll (payroll_id),
+        INDEX idx_active (is_active),
+        INDEX idx_name (last_name, first_name)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_employee_tenant_assignment_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS EmployeeTenantAssignment (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        tenant_id VARCHAR(36) NOT NULL,
+        tenant_doctor_id VARCHAR(255),
+        assigned_since DATE,
+        is_primary BOOLEAN DEFAULT FALSE,
+        fte_share DECIMAL(3,2) DEFAULT 1.00,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_employee_tenant (employee_id, tenant_id),
+        INDEX idx_employee (employee_id),
+        INDEX idx_tenant (tenant_id)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  // ===== PHASE 1: Work Time Models =====
+
+  await run('create_work_time_model_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS WorkTimeModel (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        hours_per_week DECIMAL(4,1) NOT NULL,
+        hours_per_day DECIMAL(4,2) NOT NULL,
+        is_default BOOLEAN DEFAULT FALSE,
+        description VARCHAR(255),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_default (is_default)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+
+    // Seed standard work time models (idempotent via INSERT IGNORE)
+    const models = [
+      { id: 'wtm-vz-39', name: 'Vollzeit 39h', hpw: 39.0, hpd: 7.80, def: true },
+      { id: 'wtm-vz-40', name: 'Vollzeit 40h', hpw: 40.0, hpd: 8.00, def: false },
+      { id: 'wtm-tz-35', name: 'Teilzeit 35h', hpw: 35.0, hpd: 7.00, def: false },
+      { id: 'wtm-tz-30', name: 'Teilzeit 30h', hpw: 30.0, hpd: 6.00, def: false },
+      { id: 'wtm-tz-20', name: 'Teilzeit 20h', hpw: 20.0, hpd: 4.00, def: false },
+      { id: 'wtm-mini-8', name: 'Minijob 8h', hpw: 8.0, hpd: 8.00, def: false },
+      { id: 'wtm-tz-385', name: 'Vollzeit 38.5h (Pflege)', hpw: 38.5, hpd: 7.70, def: false },
+    ];
+    for (const m of models) {
+      await dbPool.execute(
+        `INSERT IGNORE INTO WorkTimeModel (id, name, hours_per_week, hours_per_day, is_default, description) VALUES (?, ?, ?, ?, ?, ?)`,
+        [m.id, m.name, m.hpw, m.hpd, m.def, null]
+      );
+    }
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('add_employee_work_time_model_id', async () => {
+    await dbPool.execute(`
+      ALTER TABLE Employee
+      ADD COLUMN work_time_model_id VARCHAR(36) DEFAULT NULL
+    `);
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+
+  // ===== PHASE 4: Time Accounts (Master-DB) =====
+
+  await run('create_time_account_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS TimeAccount (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        year INT NOT NULL,
+        month INT NOT NULL,
+        target_minutes INT DEFAULT 0,
+        actual_minutes INT DEFAULT 0,
+        balance_minutes INT DEFAULT 0,
+        carry_over_minutes INT DEFAULT 0,
+        status ENUM('open','provisional','closed') DEFAULT 'open',
+        closed_by VARCHAR(255),
+        closed_at DATETIME,
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uk_employee_period (employee_id, year, month),
+        INDEX idx_employee (employee_id),
+        INDEX idx_period (year, month),
+        INDEX idx_status (status)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }

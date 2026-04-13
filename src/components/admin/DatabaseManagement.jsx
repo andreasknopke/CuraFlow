@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Trash2, Clock, ArrowUpCircle } from 'lucide-react';
+import { Loader2, Database, Download, AlertTriangle, CheckCircle, Wrench, ShieldAlert, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from "@/components/ui/checkbox";
 import ServerTokenManager from './ServerTokenManager';
@@ -26,58 +26,7 @@ export default function DatabaseManagement() {
     const [wipeConfirmText, setWipeConfirmText] = useState('');
     const [isWiping, setIsWiping] = useState(false);
 
-    // Timeslot Migration State
-    const [isRunningTimeslotMigrations, setIsRunningTimeslotMigrations] = useState(false);
 
-    // Fetch timeslot migration status
-    const { data: timeslotMigrationStatus, refetch: refetchTimeslotStatus } = useQuery({
-        queryKey: ['timeslotMigrationStatus', getActiveDbToken()],
-        queryFn: async () => {
-            const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
-            const dbToken = getActiveDbToken();
-            const headers = {
-                'Authorization': `Bearer ${token}`
-            };
-            if (dbToken) {
-                headers['X-DB-Token'] = dbToken;
-            }
-            const response = await fetch(`${apiBaseUrl}/api/admin/timeslot-migration-status`, {
-                headers
-            });
-            if (!response.ok) {
-                throw new Error('Failed to fetch migration status');
-            }
-            return response.json();
-        },
-        enabled: !!token,
-        staleTime: 30 * 1000
-    });
-
-    // Run timeslot migrations
-    const handleRunTimeslotMigrations = async () => {
-        setIsRunningTimeslotMigrations(true);
-        try {
-            const res = await invokeWithAuth('run-timeslot-migrations', {}, 'POST', '/api/admin/run-timeslot-migrations');
-            const successCount = res.data.results.filter(r => r.status === 'success').length;
-            const skippedCount = res.data.results.filter(r => r.status === 'skipped').length;
-            const errorCount = res.data.results.filter(r => r.status === 'error').length;
-
-            if (errorCount > 0) {
-                toast.error(`Migrationen abgeschlossen mit ${errorCount} Fehlern`);
-            } else if (successCount > 0) {
-                toast.success(`${successCount} Migration(en) erfolgreich ausgeführt`);
-            } else {
-                toast.info('Alle Migrationen waren bereits angewendet');
-            }
-
-            refetchTimeslotStatus();
-            queryClient.invalidateQueries(['workplaces']);
-        } catch (e) {
-            toast.error('Fehler: ' + e.message);
-        } finally {
-            setIsRunningTimeslotMigrations(false);
-        }
-    };
 
     // --- CHECK ---
     const checkMutation = useMutation({
@@ -260,62 +209,6 @@ export default function DatabaseManagement() {
                     </CardContent>
                 </Card>
             </div>
-
-            {/* Timeslot Migrations Card */}
-            <Card className="border-indigo-200">
-                <CardHeader className="bg-indigo-50/50">
-                    <CardTitle className="flex items-center gap-2 text-indigo-900">
-                        <Clock className="w-5 h-5" /> Zeitfenster-Migrationen
-                    </CardTitle>
-                    <CardDescription>
-                        Ermöglicht die zeitliche Teilbesetzung von Arbeitsplätzen (z.B. Früh-/Spätteam)
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4 pt-4">
-                    {timeslotMigrationStatus && (
-                        <div className="space-y-2">
-                            {timeslotMigrationStatus.migrations.map((m, idx) => (
-                                <div key={idx} className="flex items-center justify-between p-2 border rounded bg-slate-50">
-                                    <div>
-                                        <span className="font-medium text-sm">{m.description}</span>
-                                        {m.error && <span className="text-xs text-red-500 ml-2">{m.error}</span>}
-                                    </div>
-                                    <Badge variant={m.applied ? "default" : "outline"} className={m.applied ? "bg-green-100 text-green-700" : ""}>
-                                        {m.applied ? <CheckCircle className="w-3 h-3 mr-1" /> : null}
-                                        {m.applied ? "Angewendet" : "Ausstehend"}
-                                    </Badge>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {timeslotMigrationStatus?.allApplied && (
-                        <Alert className="bg-green-50 border-green-200">
-                            <CheckCircle className="w-4 h-4 text-green-600" />
-                            <AlertTitle className="text-green-800">Zeitfenster-Feature aktiviert</AlertTitle>
-                            <AlertDescription className="text-green-700">
-                                Alle Migrationen wurden erfolgreich angewendet. Sie können nun in den Arbeitsplatz-Einstellungen Zeitfenster konfigurieren.
-                            </AlertDescription>
-                        </Alert>
-                    )}
-                    
-                    <Button 
-                        onClick={handleRunTimeslotMigrations}
-                        disabled={isRunningTimeslotMigrations}
-                        variant={timeslotMigrationStatus?.allApplied ? "outline" : "default"}
-                        className={timeslotMigrationStatus?.allApplied ? "w-full" : "w-full bg-indigo-600 hover:bg-indigo-700"}
-                    >
-                        {isRunningTimeslotMigrations ? (
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        ) : (
-                            <ArrowUpCircle className="w-4 h-4 mr-2" />
-                        )}
-                        {timeslotMigrationStatus?.allApplied 
-                            ? "Migrationen erneut ausführen / Cache leeren" 
-                            : "Zeitfenster-Migrationen ausführen"}
-                    </Button>
-                </CardContent>
-            </Card>
 
             {/* Wipe Database Confirmation Dialog */}
             <Dialog open={showWipeDialog} onOpenChange={setShowWipeDialog}>

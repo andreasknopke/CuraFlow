@@ -7,6 +7,7 @@ import { runMasterMigrations } from '../utils/masterMigrations.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
 import { checkAndSendWishReminders } from '../utils/wishReminder.js';
+import { runTenantMigrations } from '../utils/tenantMigrations.js';
 
 const router = express.Router();
 
@@ -721,269 +722,8 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
   try {
     // Use tenant DB if available (req.db is set by tenantDbMiddleware)
     const dbPool = req.db || db;
-    const results = [];
-
-    // Migration 1: Create WorkplaceTimeslot table
-    try {
-      await dbPool.execute(`
-        CREATE TABLE IF NOT EXISTS WorkplaceTimeslot (
-          id VARCHAR(255) PRIMARY KEY,
-          workplace_id VARCHAR(255) NOT NULL,
-          label VARCHAR(100) NOT NULL,
-          start_time TIME NOT NULL,
-          end_time TIME NOT NULL,
-          \`order\` INT DEFAULT 0,
-          overlap_tolerance_minutes INT DEFAULT 0,
-          spans_midnight BOOLEAN DEFAULT FALSE,
-          created_date DATETIME(3),
-          updated_date DATETIME(3),
-          created_by VARCHAR(255),
-          INDEX idx_timeslot_workplace (workplace_id)
-        )
-      `);
-      results.push({ migration: 'create_workplace_timeslot_table', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
-        results.push({ migration: 'create_workplace_timeslot_table', status: 'skipped', reason: 'Table already exists' });
-      } else {
-        results.push({ migration: 'create_workplace_timeslot_table', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 2: Add timeslots_enabled to Workplace
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN timeslots_enabled BOOLEAN DEFAULT FALSE
-      `);
-      results.push({ migration: 'add_workplace_timeslots_enabled', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_timeslots_enabled', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_timeslots_enabled', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 3: Add default_overlap_tolerance_minutes to Workplace
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN default_overlap_tolerance_minutes INT DEFAULT 15
-      `);
-      results.push({ migration: 'add_workplace_overlap_tolerance', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_overlap_tolerance', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_overlap_tolerance', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 4: Add timeslot_id to ShiftEntry
-    try {
-      await dbPool.execute(`
-        ALTER TABLE ShiftEntry 
-        ADD COLUMN timeslot_id VARCHAR(255) DEFAULT NULL
-      `);
-      results.push({ migration: 'add_shiftentry_timeslot_id', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_shiftentry_timeslot_id', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_shiftentry_timeslot_id', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 5: Add index on timeslot_id in ShiftEntry
-    try {
-      await dbPool.execute(`
-        CREATE INDEX idx_shiftentry_timeslot ON ShiftEntry(timeslot_id)
-      `);
-      results.push({ migration: 'add_shiftentry_timeslot_index', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_KEYNAME') {
-        results.push({ migration: 'add_shiftentry_timeslot_index', status: 'skipped', reason: 'Index already exists' });
-      } else {
-        results.push({ migration: 'add_shiftentry_timeslot_index', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 6: Create TimeslotTemplate table for custom templates
-    try {
-      await dbPool.execute(`
-        CREATE TABLE IF NOT EXISTS TimeslotTemplate (
-          id VARCHAR(255) PRIMARY KEY,
-          name VARCHAR(100) NOT NULL,
-          slots_json TEXT NOT NULL,
-          created_date DATETIME(3),
-          updated_date DATETIME(3),
-          created_by VARCHAR(255)
-        )
-      `);
-      results.push({ migration: 'create_timeslot_template_table', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
-        results.push({ migration: 'create_timeslot_template_table', status: 'skipped', reason: 'Table already exists' });
-      } else {
-        results.push({ migration: 'create_timeslot_template_table', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 7: Add work_time_percentage to Workplace (for services like on-call = 70%)
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN work_time_percentage DECIMAL(5,2) DEFAULT 100.00
-      `);
-      results.push({ migration: 'add_workplace_work_time_percentage', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_work_time_percentage', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_work_time_percentage', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 8: Add permission columns to TeamRole for dynamic role permissions
-    try {
-      const alterStatements = [
-        `ALTER TABLE TeamRole ADD COLUMN can_do_foreground_duty BOOLEAN NOT NULL DEFAULT TRUE`,
-        `ALTER TABLE TeamRole ADD COLUMN can_do_background_duty BOOLEAN NOT NULL DEFAULT FALSE`,
-        `ALTER TABLE TeamRole ADD COLUMN excluded_from_statistics BOOLEAN NOT NULL DEFAULT FALSE`,
-        `ALTER TABLE TeamRole ADD COLUMN description VARCHAR(255) DEFAULT NULL`
-      ];
-      
-      let addedColumns = 0;
-      for (const stmt of alterStatements) {
-        try {
-          await dbPool.execute(stmt);
-          addedColumns++;
-        } catch (alterErr) {
-          // Column might already exist
-        }
-      }
-      
-      if (addedColumns > 0) {
-        // Update existing roles with default permissions
-        await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Oberste Führungsebene' WHERE name = 'Chefarzt' AND description IS NULL`);
-        await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Kann Hintergrunddienste übernehmen' WHERE name = 'Oberarzt' AND description IS NULL`);
-        await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = TRUE, description = 'Kann alle Dienste übernehmen' WHERE name = 'Facharzt' AND description IS NULL`);
-        await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = FALSE, description = 'Kann Vordergrunddienste übernehmen' WHERE name = 'Assistenzarzt' AND description IS NULL`);
-        await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = FALSE, excluded_from_statistics = TRUE, description = 'Wird in Statistiken nicht gezählt' WHERE name = 'Nicht-Radiologe' AND description IS NULL`);
-        
-        results.push({ migration: 'add_team_role_permissions', status: 'success', message: `${addedColumns} columns added` });
-      } else {
-        results.push({ migration: 'add_team_role_permissions', status: 'skipped', reason: 'Columns already exist' });
-      }
-    } catch (err) {
-      results.push({ migration: 'add_team_role_permissions', status: 'error', error: err.message });
-    }
-
-    // Migration 9: Add affects_availability to Workplace (for non-blocking positions like "Demo Chirurgie")
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN affects_availability BOOLEAN DEFAULT TRUE
-      `);
-      results.push({ migration: 'add_workplace_affects_availability', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_affects_availability', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_affects_availability', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 10: Add min_staff and optimal_staff to Workplace (for auto-fill engine)
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN min_staff INT DEFAULT 1
-      `);
-      results.push({ migration: 'add_workplace_min_staff', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_min_staff', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_min_staff', status: 'error', error: err.message });
-      }
-    }
-
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN optimal_staff INT DEFAULT 1
-      `);
-      results.push({ migration: 'add_workplace_optimal_staff', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_optimal_staff', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_optimal_staff', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 11: Add is_excluded to WorkplaceQualification (for NOT-qualifications)
-    try {
-      await dbPool.execute(`
-        ALTER TABLE WorkplaceQualification 
-        ADD COLUMN is_excluded BOOLEAN NOT NULL DEFAULT FALSE
-      `);
-      results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'success' });
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_qualification_is_excluded', status: 'error', error: err.message });
-      }
-    }
-
-    // Migration 12: Add service_type to Workplace (Bereitschaftsdienst/Rufbereitschaft/Schichtdienst/Andere)
-    // service_type: 1=Bereitschaftsdienst (Vordergrund), 2=Rufbereitschaftsdienst (Hintergrund), 3=Schichtdienst, 4=Andere
-    try {
-      await dbPool.execute(`
-        ALTER TABLE Workplace 
-        ADD COLUMN service_type INT DEFAULT NULL
-      `);
-      results.push({ migration: 'add_workplace_service_type', status: 'success' });
-      
-      // Auto-migrate existing data: first service (by order) gets type 1, all others get type 2
-      try {
-        const [serviceWps] = await dbPool.execute(
-          `SELECT id, \`order\` FROM Workplace WHERE category = 'Dienste' ORDER BY COALESCE(\`order\`, 0) ASC`
-        );
-        if (serviceWps.length > 0) {
-          // First service = Bereitschaftsdienst (1)
-          await dbPool.execute(
-            `UPDATE Workplace SET service_type = 1 WHERE id = ?`,
-            [serviceWps[0].id]
-          );
-          // All others = Rufbereitschaftsdienst (2)
-          if (serviceWps.length > 1) {
-            const otherIds = serviceWps.slice(1).map(w => w.id);
-            const placeholders = otherIds.map(() => '?').join(',');
-            await dbPool.execute(
-              `UPDATE Workplace SET service_type = 2 WHERE id IN (${placeholders})`,
-              otherIds
-            );
-          }
-          results.push({ migration: 'migrate_service_types_data', status: 'success', message: `${serviceWps.length} services migrated` });
-        }
-      } catch (dataErr) {
-        results.push({ migration: 'migrate_service_types_data', status: 'error', error: dataErr.message });
-      }
-    } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
-        results.push({ migration: 'add_workplace_service_type', status: 'skipped', reason: 'Column already exists' });
-      } else {
-        results.push({ migration: 'add_workplace_service_type', status: 'error', error: err.message });
-      }
-    }
-
-    // Clear column cache for affected tables so new columns are recognized
     const cacheKey = req.headers['x-db-token'] || 'default';
-    clearColumnsCache(['Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate', 'TeamRole', 'WorkplaceQualification'], cacheKey);
+    const results = await runTenantMigrations(dbPool, cacheKey);
 
     console.log(`[Timeslot Migrations] Executed by ${req.user?.email}:`, results);
 
@@ -1068,6 +808,24 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         description: 'Timeslot-Zuordnung für ShiftEntries',
         applied: columnNames.includes('timeslot_id')
       });
+
+      migrations.push({
+        name: 'add_shiftentry_start_time',
+        description: 'Automatisch berechnete Startzeit pro Schicht',
+        applied: columnNames.includes('start_time')
+      });
+
+      migrations.push({
+        name: 'add_shiftentry_end_time',
+        description: 'Automatisch berechnete Endzeit pro Schicht',
+        applied: columnNames.includes('end_time')
+      });
+
+      migrations.push({
+        name: 'add_shiftentry_break_minutes',
+        description: 'Pausenminuten pro Schicht',
+        applied: columnNames.includes('break_minutes')
+      });
     } catch (err) {
       migrations.push({
         name: 'shiftentry_columns',
@@ -1110,6 +868,57 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
       migrations.push({
         name: 'add_workplace_service_type',
         description: 'Diensttyp pro Dienst',
+        applied: false,
+        error: err.message
+      });
+    }
+
+    // Check central_employee_id column in Doctor
+    try {
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'central_employee_id'`);
+      migrations.push({
+        name: 'add_doctor_central_employee_id',
+        description: 'Verknüpfung zur zentralen Mitarbeiterverwaltung',
+        applied: columns.length > 0
+      });
+    } catch (err) {
+      migrations.push({
+        name: 'add_doctor_central_employee_id',
+        description: 'Verknüpfung zur zentralen Mitarbeiterverwaltung',
+        applied: false,
+        error: err.message
+      });
+    }
+
+    // Check work_time_model_id column in Doctor
+    try {
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'work_time_model_id'`);
+      migrations.push({
+        name: 'add_doctor_work_time_model_id',
+        description: 'Arbeitszeitmodell-Zuordnung pro Mitarbeiter',
+        applied: columns.length > 0
+      });
+    } catch (err) {
+      migrations.push({
+        name: 'add_doctor_work_time_model_id',
+        description: 'Arbeitszeitmodell-Zuordnung pro Mitarbeiter',
+        applied: false,
+        error: err.message
+      });
+    }
+
+    // Check ShiftTimeRule table
+    try {
+      const [tables] = await dbPool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`);
+      migrations.push({
+        name: 'create_shift_time_rule_table',
+        description: 'Schichtzeitregeln pro Arbeitsplatz und Arbeitszeitmodell',
+        applied: tables.length > 0
+      });
+    } catch (err) {
+      migrations.push({
+        name: 'create_shift_time_rule_table',
+        description: 'Schichtzeitregeln pro Arbeitsplatz und Arbeitszeitmodell',
         applied: false,
         error: err.message
       });
