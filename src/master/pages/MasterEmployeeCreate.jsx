@@ -38,7 +38,10 @@ export default function MasterEmployeeCreate() {
 
   const { data: models = [] } = useQuery({
     queryKey: ['master-work-time-models'],
-    queryFn: () => api.request('/api/master/work-time-models'),
+    queryFn: async () => {
+      const res = await api.request('/api/master/work-time-models');
+      return res.models || [];
+    },
   });
 
   const createMutation = useMutation({

@@ -39,7 +39,10 @@ export default function MasterCentralEmployeeDetail() {
   // Arbeitszeitmodelle laden
   const { data: models = [] } = useQuery({
     queryKey: ['master-work-time-models'],
-    queryFn: () => api.request('/api/master/work-time-models'),
+    queryFn: async () => {
+      const res = await api.request('/api/master/work-time-models');
+      return res.models || [];
+    },
   });
 
   // Form initialisieren wenn Employee geladen
