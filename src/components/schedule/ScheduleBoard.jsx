@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Clock } from 'lucide-react';
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from '@/components/ui/button';
@@ -17,7 +17,7 @@ import {
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { db, base44 } from "@/api/client";
+import { db, api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import DraggableDoctor from './DraggableDoctor';
@@ -691,6 +691,27 @@ export default function ScheduleBoard() {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
+
+  // Arbeitszeitmodelle aus Master-DB laden
+  const { data: workTimeModels = [] } = useQuery({
+    queryKey: ['workTimeModels'],
+    queryFn: async () => {
+      const res = await api.request('/api/staff/work-time-models');
+      return res.models || [];
+    },
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
+  // Lookup: work_time_model_id → { name, hours_per_week, hours_per_day }
+  const workTimeModelMap = useMemo(() => {
+    const map = new Map();
+    for (const m of workTimeModels) {
+      map.set(m.id, m);
+    }
+    return map;
+  }, [workTimeModels]);
+
 
     const allSections = useMemo(() => {
       // Get custom categories from settings
@@ -1872,6 +1893,35 @@ export default function ScheduleBoard() {
     
     return dbShifts;
   }, [allShifts, currentDate, previewShifts]);
+
+  // Pro Arzt: Geplante Stunden in der aktuellen Woche berechnen
+  const weeklyPlannedHours = useMemo(() => {
+    if (!weekDays.length || !currentWeekShifts.length) return new Map();
+    const map = new Map();
+    const weekStart = format(weekDays[0], 'yyyy-MM-dd');
+    const weekEnd = format(weekDays[weekDays.length - 1], 'yyyy-MM-dd');
+    for (const shift of currentWeekShifts) {
+      if (shift.date < weekStart || shift.date > weekEnd) continue;
+      if (!shift.doctor_id) continue;
+      const pos = shift.position?.toLowerCase() || '';
+      if (pos.includes('urlaub') || pos.includes('frei') || pos.includes('krank') || pos === 'az' || pos === 'ko' || pos === 'ez' || pos === 'ms') continue;
+      let hours = 0;
+      if (shift.start_time && shift.end_time) {
+        const [sh, sm] = shift.start_time.split(':').map(Number);
+        const [eh, em] = shift.end_time.split(':').map(Number);
+        let mins = (eh * 60 + em) - (sh * 60 + sm);
+        if (mins < 0) mins += 24 * 60;
+        mins -= (shift.break_minutes || 0);
+        hours = mins / 60;
+      } else {
+        const doc = doctors.find(d => d.id === shift.doctor_id);
+        const model = doc?.work_time_model_id ? workTimeModelMap.get(doc.work_time_model_id) : null;
+        hours = model ? Number(model.hours_per_day) : 0;
+      }
+      map.set(shift.doctor_id, (map.get(shift.doctor_id) || 0) + hours);
+    }
+    return map;
+  }, [currentWeekShifts, weekDays, doctors, workTimeModelMap]);
 
   const cleanupAutoFreiOnly = (doctorId, dateStr, position) => {
       const autoFreiShift = findAutoFreiToCleanup(doctorId, dateStr, position);
@@ -4042,6 +4092,31 @@ export default function ScheduleBoard() {
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{sidebarDoctors.length}</span>
                     Verfügbares Personal
                 </h3>
+                {/* Wochen-Stundenbilanz */}
+                {viewMode === 'week' && workTimeModels.length > 0 && (() => {
+                  const overplanned = sidebarDoctors.filter(d => {
+                    const model = d.work_time_model_id ? workTimeModelMap.get(d.work_time_model_id) : null;
+                    if (!model) return false;
+                    const planned = weeklyPlannedHours.get(d.id) || 0;
+                    return planned > Number(model.hours_per_week);
+                  });
+                  const withModel = sidebarDoctors.filter(d => d.work_time_model_id && workTimeModelMap.has(d.work_time_model_id));
+                  if (withModel.length === 0) return null;
+                  return (
+                    <div className="mb-3 p-2 rounded-md bg-slate-50 border border-slate-200 text-xs">
+                      <div className="flex items-center justify-between text-slate-600 mb-1">
+                        <span className="flex items-center gap-1"><Clock size={11} /> Wochenstunden</span>
+                        <span className="text-slate-400">{withModel.length} mit Modell</span>
+                      </div>
+                      {overplanned.length > 0 && (
+                        <div className="flex items-center gap-1 text-red-600 font-medium mt-1">
+                          <AlertTriangle size={11} />
+                          <span>{overplanned.length} überplant</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <Droppable 
                     droppableId="sidebar" 
                     isDropDisabled={isReadOnly}
@@ -4093,6 +4168,8 @@ export default function ScheduleBoard() {
                                     isCompactMode={isMonthView}
                                     isDragDisabled={isReadOnly}
                                     isBeingDragged={draggingDoctorId === doctor.id}
+                                    workTimeModel={doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null}
+                                    plannedHours={weeklyPlannedHours.get(doctor.id) || 0}
                                 />
                             ))}
                             {provided.placeholder}

@@ -1,9 +1,13 @@
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
-import { User } from 'lucide-react';
+import { User, Clock } from 'lucide-react';
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false }) {
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, plannedHours }) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
+  const targetWeekly = workTimeModel ? Number(workTimeModel.hours_per_week) : null;
+  const planned = plannedHours || 0;
+  // Warnstufen: >100% = rot, 80-100% = grün, <80% = neutral
+  const pct = targetWeekly ? (planned / targetWeekly) * 100 : null;
 
   return (
     <Draggable draggableId={`sidebar-doc-${doctor.id}`} index={index} isDragDisabled={isDragDisabled}>
@@ -56,7 +60,23 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                 >
                   {chipLabel || <User size={12} />}
                 </div>
-                <span className="text-sm font-medium truncate px-2 py-2">{doctor.name}</span>
+                <div className="flex-1 min-w-0 px-2 py-1.5">
+                  <span className="text-sm font-medium truncate block">{doctor.name}</span>
+                  {targetWeekly !== null && (
+                    <div className="flex items-center gap-1 text-[10px] leading-tight mt-0.5">
+                      <Clock size={9} className="text-slate-400 flex-shrink-0" />
+                      <span className={
+                        pct > 100 ? 'text-red-600 font-semibold' :
+                        pct >= 80 ? 'text-emerald-600' :
+                        'text-slate-400'
+                      }>
+                        {planned > 0 ? `${planned.toFixed(1)}` : '0'}
+                      </span>
+                      <span className="text-slate-400">/ {targetWeekly}h</span>
+                      {pct > 100 && <span className="text-red-500" title="Überplanung!">⚠</span>}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>

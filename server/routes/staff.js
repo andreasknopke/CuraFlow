@@ -429,4 +429,15 @@ router.get('/wish-reminder-status', async (req, res, next) => {
   }
 });
 
+// ===== WORK TIME MODELS (from master DB) =====
+router.get('/work-time-models', async (req, res, next) => {
+  try {
+    const [models] = await db.execute('SELECT id, name, hours_per_week, hours_per_day FROM WorkTimeModel ORDER BY hours_per_week DESC');
+    res.json({ models });
+  } catch (error) {
+    console.error('[work-time-models] Error:', error.message);
+    res.json({ models: [] });
+  }
+});
+
 export default router;
