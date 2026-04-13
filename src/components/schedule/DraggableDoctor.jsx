@@ -4,9 +4,12 @@ import { User, Clock } from 'lucide-react';
 
 export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, plannedHours }) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
-  const targetWeekly = workTimeModel ? Number(workTimeModel.hours_per_week) : null;
+  // Wochenstunden-Priorität: 1) Doctor.target_weekly_hours, 2) WorkTimeModel, 3) FTE * 38.5
+  const DEFAULT_FULLTIME_HOURS = 38.5;
+  const targetWeekly = doctor.target_weekly_hours ? Number(doctor.target_weekly_hours)
+    : workTimeModel ? Number(workTimeModel.hours_per_week)
+    : (doctor.fte && Number(doctor.fte) > 0 ? Math.round(Number(doctor.fte) * DEFAULT_FULLTIME_HOURS * 10) / 10 : null);
   const planned = plannedHours || 0;
-  // Warnstufen: >100% = rot, 80-100% = grün, <80% = neutral
   const pct = targetWeekly ? (planned / targetWeekly) * 100 : null;
 
   return (

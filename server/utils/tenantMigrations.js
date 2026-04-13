@@ -198,6 +198,10 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   await addCol('add_shiftentry_break_minutes',
     `ALTER TABLE ShiftEntry ADD COLUMN break_minutes INT DEFAULT NULL`);
 
+  // ── Doctor: Vertragliche Wochenstunden (Wochen-h wie in Excel) ──
+  await addCol('add_doctor_target_weekly_hours',
+    `ALTER TABLE Doctor ADD COLUMN target_weekly_hours DECIMAL(4,1) DEFAULT NULL`);
+
   // Clear column cache so new columns are recognized immediately
   clearColumnsCache([
     'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',

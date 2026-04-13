@@ -86,6 +86,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
       setFormData({
         ...doctor,
         fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
+        target_weekly_hours: doctor.target_weekly_hours || '',
         central_employee_id: doctor.central_employee_id || '',
       });
     } else if (open) {
@@ -96,6 +97,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         role: defaultRole,
         google_email: "",
         fte: 1.0,
+        target_weekly_hours: '',
         contract_end_date: "",
         exclude_from_staffing_plan: false,
         central_employee_id: '',
@@ -128,6 +130,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         ...formData,
         initials: trimmedInitials,
         fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100,
+        target_weekly_hours: formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours) : null,
         central_employee_id: formData.central_employee_id || null,
     };
     onSubmit(dataToSubmit);
@@ -226,6 +229,21 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                     onChange={(e) => setFormData({ ...formData, fte: e.target.value })}
                 />
             </div>
+            <div className="grid gap-2">
+                <Label htmlFor="target_weekly_hours">Wochen-h (Soll)</Label>
+                <Input
+                    id="target_weekly_hours"
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="48"
+                    placeholder="z.B. 38.5"
+                    value={formData.target_weekly_hours || ''}
+                    onChange={(e) => setFormData({ ...formData, target_weekly_hours: e.target.value })}
+                />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
                 <Label htmlFor="contract_end_date">Befristet bis (Optional)</Label>
                 <Input

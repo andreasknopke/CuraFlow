@@ -1914,9 +1914,18 @@ export default function ScheduleBoard() {
         mins -= (shift.break_minutes || 0);
         hours = mins / 60;
       } else {
+        // Fallback: target_weekly_hours / 5, Modell, oder FTE
         const doc = doctors.find(d => d.id === shift.doctor_id);
-        const model = doc?.work_time_model_id ? workTimeModelMap.get(doc.work_time_model_id) : null;
-        hours = model ? Number(model.hours_per_day) : 0;
+        if (doc?.target_weekly_hours) {
+          hours = Number(doc.target_weekly_hours) / 5;
+        } else {
+          const model = doc?.work_time_model_id ? workTimeModelMap.get(doc.work_time_model_id) : null;
+          if (model) {
+            hours = Number(model.hours_per_day);
+          } else if (doc?.fte && Number(doc.fte) > 0) {
+            hours = Number(doc.fte) * 7.7; // 38.5h / 5 Tage
+          }
+        }
       }
       map.set(shift.doctor_id, (map.get(shift.doctor_id) || 0) + hours);
     }
@@ -4093,20 +4102,27 @@ export default function ScheduleBoard() {
                     Verfügbares Personal
                 </h3>
                 {/* Wochen-Stundenbilanz */}
-                {viewMode === 'week' && workTimeModels.length > 0 && (() => {
-                  const overplanned = sidebarDoctors.filter(d => {
+                {viewMode === 'week' && (() => {
+                  const DEFAULT_FT = 38.5;
+                  const getTargetHours = (d) => {
+                    if (d.target_weekly_hours) return Number(d.target_weekly_hours);
                     const model = d.work_time_model_id ? workTimeModelMap.get(d.work_time_model_id) : null;
-                    if (!model) return false;
+                    if (model) return Number(model.hours_per_week);
+                    if (d.fte && Number(d.fte) > 0) return Math.round(Number(d.fte) * DEFAULT_FT * 10) / 10;
+                    return null;
+                  };
+                  const withHours = sidebarDoctors.filter(d => getTargetHours(d) !== null);
+                  const overplanned = withHours.filter(d => {
+                    const target = getTargetHours(d);
                     const planned = weeklyPlannedHours.get(d.id) || 0;
-                    return planned > Number(model.hours_per_week);
+                    return planned > target;
                   });
-                  const withModel = sidebarDoctors.filter(d => d.work_time_model_id && workTimeModelMap.has(d.work_time_model_id));
-                  if (withModel.length === 0) return null;
+                  if (withHours.length === 0) return null;
                   return (
                     <div className="mb-3 p-2 rounded-md bg-slate-50 border border-slate-200 text-xs">
                       <div className="flex items-center justify-between text-slate-600 mb-1">
                         <span className="flex items-center gap-1"><Clock size={11} /> Wochenstunden</span>
-                        <span className="text-slate-400">{withModel.length} mit Modell</span>
+                        <span className="text-slate-400">{withHours.length} Mitarbeiter</span>
                       </div>
                       {overplanned.length > 0 && (
                         <div className="flex items-center gap-1 text-red-600 font-medium mt-1">
