@@ -25,7 +25,10 @@ export default function MasterWorkTimeModels() {
 
   const { data: models = [], isLoading } = useQuery({
     queryKey: ['master-work-time-models'],
-    queryFn: () => api.request('/api/master/work-time-models'),
+    queryFn: async () => {
+      const res = await api.request('/api/master/work-time-models');
+      return res.models || [];
+    },
   });
 
   const saveMutation = useMutation({

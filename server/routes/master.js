@@ -750,7 +750,7 @@ router.get('/employees', async (req, res, next) => {
     const [assignments] = await db.execute(
       `SELECT eta.*, dt.name as tenant_name 
        FROM EmployeeTenantAssignment eta 
-       LEFT JOIN db_tokens dt ON eta.tenant_id = dt.id`
+       LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id`
     );
 
     const employees = rows.map(emp => ({
@@ -798,7 +798,7 @@ router.get('/employees/:id', async (req, res, next) => {
     const [assignments] = await db.execute(
       `SELECT eta.*, dt.name as tenant_name 
        FROM EmployeeTenantAssignment eta 
-       LEFT JOIN db_tokens dt ON eta.tenant_id = dt.id
+       LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
        WHERE eta.employee_id = ?`,
       [id]
     );
