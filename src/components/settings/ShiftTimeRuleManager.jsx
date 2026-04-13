@@ -6,24 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Save, Clock, AlertTriangle, Info } from 'lucide-react';
+import { Plus, Trash2, Save, Clock, AlertTriangle, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 
-/**
- * ShiftTimeRuleManager - Dienstmodell-Verwaltung
- * 
- * Bildet die Excel-Tabelle "Dienstmodelle MTR" ab:
- * Zeilen = Arbeitsplätze/Positionen (Rö, CT1, MR, S, N...)
- * Spalten = Arbeitszeitmodelle (VZ, 35h, 30h...)
- * Zellen = Start-/Endzeit + Pause
- */
 export default function ShiftTimeRuleManager({ isReadOnly = false }) {
   const queryClient = useQueryClient();
-  const [editingCell, setEditingCell] = useState(null); // { workplaceId, modelId }
-  const [editForm, setEditForm] = useState({ start_time: '', end_time: '', break_minutes: 0, label: '' });
-  const [newRow, setNewRow] = useState(null); // workplace_id for adding a new position row
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ label: '', workplace_id: '', work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 });
 
-  // Arbeitsplätze (Positionen) laden
+  // Arbeitsplätze
   const { data: workplaces = [] } = useQuery({
     queryKey: ['workplaces'],
     queryFn: () => db.Workplace.list(null, 1000),
@@ -49,38 +41,17 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     staleTime: 2 * 60 * 1000,
   });
 
-  // Lookup: workplace_id + model_id → rule
-  const ruleMap = useMemo(() => {
-    const map = new Map();
-    for (const r of rules) {
-      map.set(`${r.workplace_id}__${r.work_time_model_id}`, r);
-    }
-    return map;
-  }, [rules]);
-
-  // Welche Workplaces haben mind. eine Rule?
-  const workplacesWithRules = useMemo(() => {
-    const ids = new Set(rules.map(r => r.workplace_id));
-    return workplaces.filter(w => ids.has(w.id)).sort((a, b) => a.name.localeCompare(b.name));
-  }, [rules, workplaces]);
-
-  // Alle Workplaces ohne Rule (für "Hinzufügen")
-  const workplacesWithoutRules = useMemo(() => {
-    const ids = new Set(rules.map(r => r.workplace_id));
-    return workplaces.filter(w => !ids.has(w.id)).sort((a, b) => a.name.localeCompare(b.name));
-  }, [rules, workplaces]);
-
-  // Modelle sortiert nach Stunden absteigend
-  const sortedModels = useMemo(() =>
-    [...workTimeModels].sort((a, b) => Number(b.hours_per_week) - Number(a.hours_per_week)),
-    [workTimeModels]
-  );
+  // Lookups
+  const workplaceMap = useMemo(() => new Map(workplaces.map(w => [w.id, w])), [workplaces]);
+  const modelMap = useMemo(() => new Map(workTimeModels.map(m => [m.id, m])), [workTimeModels]);
+  const existingLabels = useMemo(() => rules.map(r => (r.label || '').trim().toLowerCase()), [rules]);
 
   const createMutation = useMutation({
     mutationFn: (data) => db.ShiftTimeRule.create(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['shiftTimeRules']);
-      toast.success('Dienstmodell gespeichert');
+      toast.success('Dienstmodell angelegt');
+      resetForm();
     },
     onError: (e) => toast.error(`Fehler: ${e.message}`),
   });
@@ -90,6 +61,7 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     onSuccess: () => {
       queryClient.invalidateQueries(['shiftTimeRules']);
       toast.success('Dienstmodell aktualisiert');
+      resetForm();
     },
     onError: (e) => toast.error(`Fehler: ${e.message}`),
   });
@@ -98,66 +70,87 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     mutationFn: (id) => db.ShiftTimeRule.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries(['shiftTimeRules']);
-      toast.success('Eintrag gelöscht');
+      toast.success('Dienstmodell gelöscht');
     },
     onError: (e) => toast.error(`Fehler: ${e.message}`),
   });
 
-  const handleCellClick = (workplaceId, modelId) => {
-    if (isReadOnly) return;
-    const key = `${workplaceId}__${modelId}`;
-    const existing = ruleMap.get(key);
-    setEditingCell({ workplaceId, modelId });
-    setEditForm({
-      start_time: existing?.start_time?.substring(0, 5) || '07:00',
-      end_time: existing?.end_time?.substring(0, 5) || '15:12',
-      break_minutes: existing?.break_minutes || 0,
-      label: existing?.label || '',
+  const resetForm = () => {
+    setAdding(false);
+    setEditingId(null);
+    setForm({ label: '', workplace_id: '', work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 });
+  };
+
+  const startEdit = (rule) => {
+    setAdding(false);
+    setEditingId(rule.id);
+    setForm({
+      label: rule.label || '',
+      workplace_id: rule.workplace_id || '',
+      work_time_model_id: rule.work_time_model_id || '',
+      start_time: rule.start_time?.substring(0, 5) || '07:00',
+      end_time: rule.end_time?.substring(0, 5) || '15:12',
+      break_minutes: rule.break_minutes || 0,
     });
   };
 
-  const handleSave = () => {
-    if (!editingCell) return;
-    const { workplaceId, modelId } = editingCell;
-    const key = `${workplaceId}__${modelId}`;
-    const existing = ruleMap.get(key);
+  const startAdd = () => {
+    setEditingId(null);
+    setAdding(true);
+    setForm({ label: '', workplace_id: '', work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 });
+  };
 
-    // Berechne spans_midnight
-    const [sh, sm] = editForm.start_time.split(':').map(Number);
-    const [eh, em] = editForm.end_time.split(':').map(Number);
-    const startMins = sh * 60 + sm;
-    const endMins = eh * 60 + em;
-    const spansMidnight = endMins <= startMins;
+  const validateAndSave = () => {
+    const trimmedLabel = form.label.trim();
+    if (!trimmedLabel) {
+      toast.error('Bitte eine Bezeichnung eingeben.');
+      return;
+    }
+    if (!form.workplace_id) {
+      toast.error('Bitte einen Arbeitsplatz auswählen.');
+      return;
+    }
+    if (!form.work_time_model_id) {
+      toast.error('Bitte ein Arbeitszeitmodell auswählen.');
+      return;
+    }
+    if (!form.start_time || !form.end_time) {
+      toast.error('Bitte Start- und Endzeit eingeben.');
+      return;
+    }
+
+    // Bezeichnung doppelt?
+    const editingRule = editingId ? rules.find(r => r.id === editingId) : null;
+    const isDuplicate = rules.some(r =>
+      r.id !== editingId && (r.label || '').trim().toLowerCase() === trimmedLabel.toLowerCase()
+    );
+    if (isDuplicate) {
+      toast.error(`Die Bezeichnung "${trimmedLabel}" ist bereits vergeben.`);
+      return;
+    }
+
+    // spans_midnight berechnen
+    const [sh, sm] = form.start_time.split(':').map(Number);
+    const [eh, em] = form.end_time.split(':').map(Number);
+    const spansMidnight = (eh * 60 + em) <= (sh * 60 + sm);
 
     const payload = {
-      start_time: editForm.start_time + ':00',
-      end_time: editForm.end_time + ':00',
-      break_minutes: parseInt(editForm.break_minutes) || 0,
-      label: editForm.label || null,
+      label: trimmedLabel,
+      workplace_id: form.workplace_id,
+      work_time_model_id: form.work_time_model_id,
+      start_time: form.start_time + ':00',
+      end_time: form.end_time + ':00',
+      break_minutes: parseInt(form.break_minutes) || 0,
       spans_midnight: spansMidnight,
     };
 
-    if (existing) {
-      updateMutation.mutate({ id: existing.id, data: payload });
+    if (editingId) {
+      updateMutation.mutate({ id: editingId, data: payload });
     } else {
       createMutation.mutate({
         id: globalThis.crypto?.randomUUID?.() || `str-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        workplace_id: workplaceId,
-        work_time_model_id: modelId,
         ...payload,
       });
-    }
-    setEditingCell(null);
-  };
-
-  const handleDelete = (workplaceId, modelId) => {
-    const key = `${workplaceId}__${modelId}`;
-    const existing = ruleMap.get(key);
-    if (existing) {
-      deleteMutation.mutate(existing.id);
-    }
-    if (editingCell?.workplaceId === workplaceId && editingCell?.modelId === modelId) {
-      setEditingCell(null);
     }
   };
 
@@ -173,18 +166,71 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     return (mins / 60).toFixed(1);
   };
 
-  if (workTimeModels.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex items-center gap-2 text-amber-600">
-            <AlertTriangle size={16} />
-            <span>Keine Arbeitszeitmodelle vorhanden. Bitte zuerst im Master-Frontend Arbeitszeitmodelle anlegen.</span>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  const sortedRules = useMemo(() =>
+    [...rules].sort((a, b) => (a.label || '').localeCompare(b.label || '')),
+    [rules]
+  );
+
+  const FormRow = ({ isNew }) => (
+    <tr className="bg-indigo-50/50 border-b border-slate-200">
+      <td className="py-2 px-3">
+        <Input
+          value={form.label}
+          onChange={e => setForm({ ...form, label: e.target.value })}
+          placeholder="z.B. Frühdienst CT"
+          className="h-8 text-sm"
+          autoFocus
+        />
+      </td>
+      <td className="py-2 px-3">
+        <Select value={form.workplace_id} onValueChange={v => setForm({ ...form, workplace_id: v })}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Wählen…" /></SelectTrigger>
+          <SelectContent>
+            {workplaces.map(w => (
+              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </td>
+      <td className="py-2 px-3">
+        <Select value={form.work_time_model_id} onValueChange={v => setForm({ ...form, work_time_model_id: v })}>
+          <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Wählen…" /></SelectTrigger>
+          <SelectContent>
+            {workTimeModels.map(m => (
+              <SelectItem key={m.id} value={m.id}>{m.name} ({m.hours_per_week}h)</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </td>
+      <td className="py-2 px-3">
+        <Input type="time" value={form.start_time}
+          onChange={e => setForm({ ...form, start_time: e.target.value })}
+          className="h-8 text-sm w-28" />
+      </td>
+      <td className="py-2 px-3">
+        <Input type="time" value={form.end_time}
+          onChange={e => setForm({ ...form, end_time: e.target.value })}
+          className="h-8 text-sm w-28" />
+      </td>
+      <td className="py-2 px-3">
+        <Input type="number" value={form.break_minutes} min={0} max={120}
+          onChange={e => setForm({ ...form, break_minutes: e.target.value })}
+          className="h-8 text-sm w-20" />
+      </td>
+      <td className="py-2 px-3 text-center text-slate-400">–</td>
+      <td className="py-2 px-3">
+        <div className="flex gap-1">
+          <Button size="sm" className="h-7 px-2 text-xs" onClick={validateAndSave}
+            disabled={createMutation.isPending || updateMutation.isPending}>
+            <Save size={12} className="mr-1" />{isNew ? 'Anlegen' : 'Speichern'}
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={resetForm}>
+            <X size={12} />
+          </Button>
+        </div>
+      </td>
+    </tr>
+  );
 
   return (
     <div className="space-y-4">
@@ -197,188 +243,80 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
                 Dienstmodelle
               </CardTitle>
               <p className="text-sm text-slate-500 mt-1">
-                Arbeitszeiten pro Position und Arbeitszeitmodell
+                Definieren Sie Arbeitszeiten pro Bezeichnung, Arbeitsplatz und Arbeitszeitmodell.
               </p>
             </div>
-            {!isReadOnly && workplacesWithoutRules.length > 0 && (
-              <Select value="" onValueChange={(wpId) => {
-                if (wpId && sortedModels.length > 0) {
-                  setNewRow(null);
-                  handleCellClick(wpId, sortedModels[0].id);
-                }
-              }}>
-                <SelectTrigger className="w-56">
-                  <div className="flex items-center gap-1">
-                    <Plus size={14} />
-                    <span>Position hinzufügen</span>
-                  </div>
-                </SelectTrigger>
-                <SelectContent>
-                  {workplacesWithoutRules.map(w => (
-                    <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            {!isReadOnly && !adding && !editingId && (
+              <Button size="sm" onClick={startAdd}>
+                <Plus size={14} className="mr-1" />Neues Dienstmodell
+              </Button>
             )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {/* Info-Hinweis */}
-          <div className="px-4 pb-3">
-            <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50 rounded p-2">
-              <Info size={13} className="mt-0.5 flex-shrink-0" />
-              <span>
-                Klicken Sie auf eine Zelle, um Start-/Endzeit und Pause zu definieren.
-                Jede Kombination aus Position und Arbeitszeitmodell ergibt ein Dienstmodell.
-              </span>
-            </div>
-          </div>
-
-          {/* Tabelle */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-y border-slate-200">
-                  <th className="text-left py-2 px-3 font-medium text-slate-700 border-r border-slate-200 min-w-[180px] sticky left-0 bg-slate-50 z-10">
-                    Position
-                  </th>
-                  {sortedModels.map(m => (
-                    <th key={m.id} className="text-center py-2 px-2 font-medium text-slate-700 border-r border-slate-200 min-w-[130px]">
-                      <div>{m.name}</div>
-                      <div className="text-[10px] text-slate-400 font-normal">{m.hours_per_week}h/Wo</div>
-                    </th>
-                  ))}
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 min-w-[160px]">Bezeichnung</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 min-w-[150px]">Arbeitsplatz</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 min-w-[150px]">AZ-Modell</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 w-28">Von</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 w-28">Bis</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 w-20">Pause</th>
+                  <th className="text-center py-2 px-3 font-medium text-slate-700 w-16">Std.</th>
+                  <th className="text-left py-2 px-3 font-medium text-slate-700 w-28"></th>
                 </tr>
               </thead>
               <tbody>
-                {workplacesWithRules.length === 0 && !editingCell ? (
+                {/* Neues Dienstmodell (Formular oben) */}
+                {adding && <FormRow isNew />}
+
+                {sortedRules.length === 0 && !adding ? (
                   <tr>
-                    <td colSpan={sortedModels.length + 1} className="text-center py-8 text-slate-400">
-                      Noch keine Dienstmodelle definiert. Fügen Sie eine Position hinzu.
+                    <td colSpan={8} className="text-center py-8 text-slate-400">
+                      Noch keine Dienstmodelle definiert.
                     </td>
                   </tr>
                 ) : null}
-                {/* Bestehende Positionen */}
-                {workplacesWithRules.map(wp => (
-                  <tr key={wp.id} className="border-b border-slate-100 hover:bg-slate-50/50">
-                    <td className="py-2 px-3 font-medium text-slate-800 border-r border-slate-200 sticky left-0 bg-white z-10">
-                      <div>{wp.name}</div>
-                      {wp.time && <div className="text-[10px] text-slate-400">{wp.time} Uhr</div>}
-                    </td>
-                    {sortedModels.map(m => {
-                      const key = `${wp.id}__${m.id}`;
-                      const rule = ruleMap.get(key);
-                      const isEditing = editingCell?.workplaceId === wp.id && editingCell?.modelId === m.id;
 
-                      if (isEditing) {
-                        return (
-                          <td key={m.id} className="p-1 border-r border-slate-200 bg-indigo-50">
-                            <div className="space-y-1">
-                              <div className="flex gap-1">
-                                <Input type="time" value={editForm.start_time}
-                                  onChange={e => setEditForm({ ...editForm, start_time: e.target.value })}
-                                  className="h-7 text-xs px-1" />
-                                <Input type="time" value={editForm.end_time}
-                                  onChange={e => setEditForm({ ...editForm, end_time: e.target.value })}
-                                  className="h-7 text-xs px-1" />
-                              </div>
-                              <div className="flex gap-1 items-center">
-                                <Input type="number" value={editForm.break_minutes} min={0} max={120}
-                                  onChange={e => setEditForm({ ...editForm, break_minutes: e.target.value })}
-                                  className="h-7 text-xs px-1 w-14" placeholder="P" />
-                                <span className="text-[10px] text-slate-400">Min P.</span>
-                                <div className="flex-1" />
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500"
-                                  onClick={() => setEditingCell(null)}>✕</Button>
-                                <Button size="sm" className="h-6 px-2 text-xs" onClick={handleSave}>
-                                  <Save size={11} className="mr-0.5" />OK
-                                </Button>
-                              </div>
-                              {rule && (
-                                <Button size="sm" variant="ghost" className="h-5 w-full text-[10px] text-red-400 hover:text-red-600"
-                                  onClick={() => handleDelete(wp.id, m.id)}>
-                                  <Trash2 size={10} className="mr-1" />Löschen
-                                </Button>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      }
+                {sortedRules.map(rule => {
+                  if (editingId === rule.id) {
+                    return <FormRow key={rule.id} isNew={false} />;
+                  }
 
-                      return (
-                        <td key={m.id}
-                          className={`py-2 px-2 text-center border-r border-slate-200 ${rule ? 'cursor-pointer hover:bg-indigo-50' : 'cursor-pointer hover:bg-slate-50'}`}
-                          onClick={() => handleCellClick(wp.id, m.id)}
-                        >
-                          {rule ? (
-                            <div>
-                              <div className="font-mono text-xs">
-                                {formatTime(rule.start_time)}–{formatTime(rule.end_time)}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                {calcHours(rule)}h
-                                {rule.break_minutes > 0 && ` (${rule.break_minutes}′ P.)`}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300 text-xs">–</span>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-                {/* Neue Position (wenn gerade per Select hinzugefügt und noch nicht in workplacesWithRules) */}
-                {editingCell && !workplacesWithRules.find(w => w.id === editingCell.workplaceId) && (() => {
-                  const wp = workplaces.find(w => w.id === editingCell.workplaceId);
-                  if (!wp) return null;
+                  const wp = workplaceMap.get(rule.workplace_id);
+                  const model = modelMap.get(rule.work_time_model_id);
+
                   return (
-                    <tr className="border-b border-slate-100 bg-indigo-50/30">
-                      <td className="py-2 px-3 font-medium text-indigo-700 border-r border-slate-200 sticky left-0 bg-indigo-50/30 z-10">
-                        {wp.name}
+                    <tr key={rule.id} className="border-b border-slate-100 hover:bg-slate-50/50">
+                      <td className="py-2 px-3 font-medium text-slate-800">{rule.label || '–'}</td>
+                      <td className="py-2 px-3 text-slate-600">{wp?.name || rule.workplace_id}</td>
+                      <td className="py-2 px-3 text-slate-600">
+                        {model ? `${model.name} (${model.hours_per_week}h)` : rule.work_time_model_id}
                       </td>
-                      {sortedModels.map(m => {
-                        const isEditing = editingCell.modelId === m.id;
-                        if (isEditing) {
-                          return (
-                            <td key={m.id} className="p-1 border-r border-slate-200 bg-indigo-50">
-                              <div className="space-y-1">
-                                <div className="flex gap-1">
-                                  <Input type="time" value={editForm.start_time}
-                                    onChange={e => setEditForm({ ...editForm, start_time: e.target.value })}
-                                    className="h-7 text-xs px-1" />
-                                  <Input type="time" value={editForm.end_time}
-                                    onChange={e => setEditForm({ ...editForm, end_time: e.target.value })}
-                                    className="h-7 text-xs px-1" />
-                                </div>
-                                <div className="flex gap-1 items-center">
-                                  <Input type="number" value={editForm.break_minutes} min={0} max={120}
-                                    onChange={e => setEditForm({ ...editForm, break_minutes: e.target.value })}
-                                    className="h-7 text-xs px-1 w-14" placeholder="P" />
-                                  <span className="text-[10px] text-slate-400">Min P.</span>
-                                  <div className="flex-1" />
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500"
-                                    onClick={() => setEditingCell(null)}>✕</Button>
-                                  <Button size="sm" className="h-6 px-2 text-xs" onClick={handleSave}>
-                                    <Save size={11} className="mr-0.5" />OK
-                                  </Button>
-                                </div>
-                              </div>
-                            </td>
-                          );
-                        }
-                        return (
-                          <td key={m.id}
-                            className="py-2 px-2 text-center border-r border-slate-200 cursor-pointer hover:bg-indigo-50"
-                            onClick={() => handleCellClick(wp.id, m.id)}
-                          >
-                            <span className="text-slate-300 text-xs">–</span>
-                          </td>
-                        );
-                      })}
+                      <td className="py-2 px-3 font-mono text-slate-700">{formatTime(rule.start_time)}</td>
+                      <td className="py-2 px-3 font-mono text-slate-700">{formatTime(rule.end_time)}</td>
+                      <td className="py-2 px-3 text-slate-600">{rule.break_minutes || 0} Min</td>
+                      <td className="py-2 px-3 text-center text-slate-600">{calcHours(rule)}h</td>
+                      <td className="py-2 px-3">
+                        {!isReadOnly && (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                              onClick={() => startEdit(rule)} title="Bearbeiten">
+                              <Pencil size={13} />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700"
+                              onClick={() => { if (confirm('Dienstmodell wirklich löschen?')) deleteMutation.mutate(rule.id); }}
+                              title="Löschen">
+                              <Trash2 size={13} />
+                            </Button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   );
-                })()}
+                })}
               </tbody>
             </table>
           </div>
