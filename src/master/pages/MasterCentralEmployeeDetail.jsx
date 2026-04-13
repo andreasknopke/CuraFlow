@@ -272,12 +272,12 @@ export default function MasterCentralEmployeeDetail() {
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">Arbeitszeitmodell</Label>
                   {editMode ? (
-                    <Select value={form.work_time_model_id} onValueChange={(v) => updateField('work_time_model_id', v)}>
+                    <Select value={form.work_time_model_id || '__none__'} onValueChange={(v) => updateField('work_time_model_id', v === '__none__' ? '' : v)}>
                       <SelectTrigger><SelectValue placeholder="Modell wählen…" /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Kein Modell</SelectItem>
+                        <SelectItem value="__none__">Kein Modell</SelectItem>
                         {models.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
+                          <SelectItem key={m.id} value={String(m.id)}>
                             {m.name} ({m.hours_per_week}h/W)
                           </SelectItem>
                         ))}
