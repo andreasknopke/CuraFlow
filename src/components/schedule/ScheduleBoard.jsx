@@ -558,6 +558,7 @@ export default function ScheduleBoard() {
           return [];
       }
   });
+  const autoExpandedTimeslotGroupRef = useRef(null);
 
   useEffect(() => {
       localStorage.setItem('radioplan_collapsedTimeslotGroups', JSON.stringify(collapsedTimeslotGroups));
@@ -569,6 +570,84 @@ export default function ScheduleBoard() {
               ? prev.filter(n => n !== workplaceName) 
               : [...prev, workplaceName]
       );
+  };
+
+  const expandTimeslotGroup = (workplaceName) => {
+      if (!workplaceName) return false;
+
+      let didExpand = false;
+      setCollapsedTimeslotGroups(prev => {
+          if (!prev.includes(workplaceName)) {
+              return prev;
+          }
+
+          didExpand = true;
+          return prev.filter(n => n !== workplaceName);
+      });
+
+      return didExpand;
+  };
+
+  const collapseTimeslotGroup = (workplaceName) => {
+      if (!workplaceName) return false;
+
+      let didCollapse = false;
+      setCollapsedTimeslotGroups(prev => {
+          if (prev.includes(workplaceName)) {
+              return prev;
+          }
+
+          didCollapse = true;
+          return [...prev, workplaceName];
+      });
+
+      return didCollapse;
+  };
+
+  const getCollapsedTimeslotGroupTarget = (droppableId) => {
+      const normalizedDroppableId = stripPanelPrefix(droppableId || '');
+      if (!normalizedDroppableId || !normalizedDroppableId.endsWith('__allTimeslots__')) {
+          return null;
+      }
+
+      if (normalizedDroppableId.startsWith('rowHeader__')) {
+          const headerParts = normalizedDroppableId.replace('rowHeader__', '').split('__');
+          return headerParts[0] || null;
+      }
+
+      const parts = normalizedDroppableId.split('__');
+      return parts[1] || null;
+  };
+
+  const getWorkplaceNameFromDroppableId = (droppableId) => {
+      const normalizedDroppableId = stripPanelPrefix(droppableId || '');
+      if (!normalizedDroppableId) return null;
+
+      if (normalizedDroppableId.startsWith('rowHeader__')) {
+          const headerParts = normalizedDroppableId.replace('rowHeader__', '').split('__');
+          return headerParts[0] || null;
+      }
+
+      const parts = normalizedDroppableId.split('__');
+      return parts[1] || null;
+  };
+
+  const isSpecificTimeslotDestination = (droppableId, workplaceName) => {
+      const normalizedDroppableId = stripPanelPrefix(droppableId || '');
+      if (!normalizedDroppableId) return false;
+
+      const targetWorkplace = getWorkplaceNameFromDroppableId(normalizedDroppableId);
+      if (!targetWorkplace || targetWorkplace !== workplaceName) return false;
+
+      if (normalizedDroppableId.startsWith('rowHeader__')) {
+          const headerParts = normalizedDroppableId.replace('rowHeader__', '').split('__');
+          const rawTimeslotId = headerParts[1] || null;
+          return !!rawTimeslotId && rawTimeslotId !== 'allTimeslots';
+      }
+
+      const parts = normalizedDroppableId.split('__');
+      const rawTimeslotId = parts[2] || null;
+      return !!rawTimeslotId && rawTimeslotId !== 'allTimeslots';
   };
 
   useEffect(() => {
@@ -2101,6 +2180,7 @@ export default function ScheduleBoard() {
     }
     console.log('Dragging Doctor ID:', docId);
     setDraggingDoctorId(docId);
+    autoExpandedTimeslotGroupRef.current = null;
 
     // Check if dragging from grid
     const { source } = start;
@@ -2110,8 +2190,33 @@ export default function ScheduleBoard() {
     }
     };
 
+    const handleDragUpdate = (update) => {
+        const workplaceName = getCollapsedTimeslotGroupTarget(update?.destination?.droppableId);
+        const autoExpandedWorkplace = autoExpandedTimeslotGroupRef.current;
+
+        if (autoExpandedWorkplace && autoExpandedWorkplace !== workplaceName) {
+            collapseTimeslotGroup(autoExpandedWorkplace);
+            autoExpandedTimeslotGroupRef.current = null;
+        }
+
+        if (!workplaceName) return;
+        if (autoExpandedWorkplace === workplaceName) return;
+
+        const expanded = expandTimeslotGroup(workplaceName);
+        if (expanded) {
+            autoExpandedTimeslotGroupRef.current = workplaceName;
+            toast.info(`Zeitfenster aufgeklappt: "${workplaceName}"`);
+        }
+    };
+
   const handleDragEnd = async (result) => {
     setIsDraggingFromGrid(false);
+        const autoExpandedWorkplace = autoExpandedTimeslotGroupRef.current;
+        const keepAutoExpanded = autoExpandedWorkplace && isSpecificTimeslotDestination(result.destination?.droppableId, autoExpandedWorkplace);
+        if (autoExpandedWorkplace && !keepAutoExpanded) {
+            collapseTimeslotGroup(autoExpandedWorkplace);
+        }
+        autoExpandedTimeslotGroupRef.current = null;
     console.log('DEBUG: Drag Operation Ended', { 
         draggableId: result.draggableId,
         source: result.source,
@@ -2325,15 +2430,7 @@ export default function ScheduleBoard() {
 
         // Auto-expand collapsed timeslot group instead of assigning to all
         if (isAllTimeslots) {
-            const workplace = workplaces.find(w => w.name === rowName);
-            if (workplace) {
-                const groupKey = `${workplace.id}`;
-                setCollapsedTimeslotGroups(prev => {
-                    const next = new Set(prev);
-                    next.delete(groupKey);
-                    localStorage.setItem('radioplan_collapsedTimeslotGroups', JSON.stringify([...next]));
-                    return next;
-                });
+            if (expandTimeslotGroup(rowName)) {
                 toast.info('Zeitfenster aufgeklappt – bitte Mitarbeiter in das gewünschte Zeitfenster ziehen.');
             }
             return;
@@ -2569,8 +2666,9 @@ export default function ScheduleBoard() {
         const isAllTimeslots = rawTimeslotId === 'allTimeslots';
         if (isAllTimeslots) {
             // Expand the collapsed timeslot group
-            setCollapsedTimeslotGroups(prev => prev.filter(n => n !== position));
-            toast.info(`Bitte Zeitfenster wählen: "${position}" wurde aufgeklappt.`);
+            if (expandTimeslotGroup(position)) {
+                toast.info(`Bitte Zeitfenster wählen: "${position}" wurde aufgeklappt.`);
+            }
             return;
         }
         // '__unassigned__' bedeutet explizit kein Timeslot
@@ -4120,6 +4218,7 @@ export default function ScheduleBoard() {
                 <DragDropContext 
                   onBeforeCapture={handleBeforeCapture}
                   onDragStart={handleDragStart} 
+                                    onDragUpdate={handleDragUpdate}
                   onDragEnd={handleDragEnd}
                   autoScrollerOptions={{ disabled: true }}
                 >
