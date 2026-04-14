@@ -192,6 +192,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     >
                         {displayText}
                     </span>
+                    {timeslotLabel && (
+                      <span
+                        className="flex-shrink-0 rounded px-1 bg-indigo-600 text-white font-semibold mr-1 whitespace-nowrap"
+                        style={{ fontSize: `${Math.max(fontSize * 0.6, 8)}px`, lineHeight: '1.4', maxWidth: `${boxSize * 1.6}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        title={timeslotLabel}
+                      >
+                        {timeslotLabel}
+                      </span>
+                    )}
                     {timeLabel && (
                         <span
                             className="flex-shrink-0 text-slate-500 font-normal mr-1 whitespace-nowrap"
