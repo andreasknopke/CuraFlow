@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calendar, Clock, Users, TrendingUp, Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { timeToMinutes, calculateDurationMinutes } from '@/utils/timeslotUtils';
+import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 
 /**
@@ -182,8 +183,7 @@ export default function WorkingTimeReport() {
                 dayShifts.forEach(shift => {
                     const workplace = workplaces.find(w => w.name === shift.position);
                     
-                    // Skip absence positions (Frei, Urlaub, etc.)
-                    if (['Frei', 'Urlaub', 'Krank', 'Fortbildung', 'Kongress'].includes(shift.position)) {
+                    if (isNonWorkingShiftPosition(shift.position)) {
                         return;
                     }
 

@@ -3,6 +3,8 @@
  * Feature: Zeitfenster-Besetzung (Timeslots) für Arbeitsplätze
  */
 
+import { isNonWorkingShiftPosition } from './shiftPositionUtils';
+
 /**
  * Konvertiert Zeit-String zu Minuten seit Mitternacht
  * @param {string} time - Zeit im Format "HH:MM" oder "HH:MM:SS"
@@ -187,6 +189,10 @@ export function aggregateWorkingHours(shifts, timeslots, dateRange) {
     const hoursPerDoctor = {};
     
     for (const shift of shifts) {
+        if (isNonWorkingShiftPosition(shift.position)) {
+            continue;
+        }
+
         // Datumsfilter
         if (dateRange) {
             if (shift.date < dateRange.start || shift.date > dateRange.end) {

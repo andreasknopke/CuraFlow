@@ -39,6 +39,7 @@ import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
+import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -1918,8 +1919,7 @@ export default function ScheduleBoard() {
     for (const shift of currentWeekShifts) {
       if (shift.date < weekStart || shift.date > weekEnd) continue;
       if (!shift.doctor_id) continue;
-      const pos = shift.position?.toLowerCase() || '';
-      if (pos.includes('urlaub') || pos.includes('frei') || pos.includes('krank') || pos === 'az' || pos === 'ko' || pos === 'ez' || pos === 'ms') continue;
+            if (isNonWorkingShiftPosition(shift.position)) continue;
       let hours = 0;
       if (shift.start_time && shift.end_time) {
         const [sh, sm] = shift.start_time.split(':').map(Number);
