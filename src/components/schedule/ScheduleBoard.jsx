@@ -2191,16 +2191,23 @@ export default function ScheduleBoard() {
     };
 
     const handleDragUpdate = (update) => {
-        const workplaceName = getCollapsedTimeslotGroupTarget(update?.destination?.droppableId);
+        const destinationDroppableId = update?.destination?.droppableId;
+        const workplaceName = getCollapsedTimeslotGroupTarget(destinationDroppableId);
+        const destinationWorkplace = getWorkplaceNameFromDroppableId(destinationDroppableId);
         const autoExpandedWorkplace = autoExpandedTimeslotGroupRef.current;
 
-        if (autoExpandedWorkplace && autoExpandedWorkplace !== workplaceName) {
+        if (
+            autoExpandedWorkplace &&
+            destinationWorkplace &&
+            destinationWorkplace !== autoExpandedWorkplace &&
+            autoExpandedWorkplace !== workplaceName
+        ) {
             collapseTimeslotGroup(autoExpandedWorkplace);
             autoExpandedTimeslotGroupRef.current = null;
         }
 
         if (!workplaceName) return;
-        if (autoExpandedWorkplace === workplaceName) return;
+        if (autoExpandedTimeslotGroupRef.current === workplaceName) return;
 
         const expanded = expandTimeslotGroup(workplaceName);
         if (expanded) {
