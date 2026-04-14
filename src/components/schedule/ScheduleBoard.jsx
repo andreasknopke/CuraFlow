@@ -284,6 +284,11 @@ const formatTimeslotTimeRange = (startTime, endTime) => {
     return `${startTime.substring(0, 5)}-${endTime.substring(0, 5)}`;
 };
 
+const formatTimeslotEndTime = (endTime) => {
+    if (!endTime) return null;
+    return endTime.substring(0, 5);
+};
+
 const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
     if (!rowObj?.isTimeslotRow || rowObj?.isUnassignedRow) {
         return rowDisplayName;
@@ -3543,7 +3548,7 @@ export default function ScheduleBoard() {
         let shiftTimeslotLabel = null;
         if (allTimeslotIds && allTimeslotIds.length > 0 && shift.timeslot_id) {
             const ts = workplaceTimeslots.find(t => t.id === shift.timeslot_id);
-            if (ts) shiftTimeslotLabel = ts.label;
+            if (ts) shiftTimeslotLabel = formatTimeslotEndTime(ts.end_time);
         }
         
         // Qualifikations-Indikator
