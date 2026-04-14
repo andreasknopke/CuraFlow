@@ -559,6 +559,7 @@ export default function ScheduleBoard() {
       }
   });
   const savedCollapsedGroupsRef = useRef(null);
+  const savedCollapsedSectionsRef = useRef(null);
   const droppedInTimeslotGroupRef = useRef(null);
 
   useEffect(() => {
@@ -2153,11 +2154,18 @@ export default function ScheduleBoard() {
     }
     // Use flushSync to ensure DOM updates before measurement
     // This is critical for correct drag clone dimensions
-    // Alle eingeklappten Timeslot-Gruppen VOR der Messung expandieren,
+    // Alle eingeklappten Sektionen und Timeslot-Gruppen VOR der Messung expandieren,
     // damit @hello-pangea/dnd korrekte Droppable-Positionen cached.
     flushSync(() => {
       if (docId) setDraggingDoctorId(docId);
       if (shiftId) setDraggingShiftId(shiftId);
+      setCollapsedSections(prev => {
+        if (prev.length > 0) {
+          savedCollapsedSectionsRef.current = prev;
+          return [];
+        }
+        return prev;
+      });
       setCollapsedTimeslotGroups(prev => {
         if (prev.length > 0) {
           savedCollapsedGroupsRef.current = prev;
@@ -2214,6 +2222,28 @@ export default function ScheduleBoard() {
 
   const handleDragEnd = async (result) => {
     setIsDraggingFromGrid(false);
+        // Gespeicherte Collapsed-Sektionen wiederherstellen
+        const savedSections = savedCollapsedSectionsRef.current;
+        if (savedSections) {
+            // Sektion offen lassen, in die gedroppt wurde
+            const droppedWp = result.destination
+                ? getWorkplaceNameFromDroppableId(result.destination.droppableId)
+                : null;
+            if (droppedWp) {
+                // Finde die Sektion, die diesen Arbeitsplatz enthält
+                const droppedSection = allSections.find(s =>
+                    s.rows.some(r => (typeof r === 'string' ? r : r.name) === droppedWp)
+                );
+                if (droppedSection) {
+                    setCollapsedSections(savedSections.filter(t => t !== droppedSection.title));
+                } else {
+                    setCollapsedSections(savedSections);
+                }
+            } else {
+                setCollapsedSections(savedSections);
+            }
+            savedCollapsedSectionsRef.current = null;
+        }
         // Gespeicherte Collapsed-Gruppen wiederherstellen
         const saved = savedCollapsedGroupsRef.current;
         if (saved) {
