@@ -278,6 +278,21 @@ const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSectionFullWidth, is
     return cellWidth >= requiredWidth ? 'full' : 'compact';
 };
 
+const formatTimeslotTimeRange = (startTime, endTime) => {
+    if (!startTime || !endTime) return '';
+    return `${startTime.substring(0, 5)}-${endTime.substring(0, 5)}`;
+};
+
+const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
+    if (!rowObj?.isTimeslotRow || rowObj?.isUnassignedRow) {
+        return rowDisplayName;
+    }
+
+    const timeRange = formatTimeslotTimeRange(rowObj.startTime, rowObj.endTime);
+    const label = rowObj.timeslotLabel || rowDisplayName;
+    return timeRange ? `${label} ${timeRange}` : label;
+};
+
 export default function ScheduleBoard() {
     const initialState = useMemo(() => getInitialScheduleState(), []);
     const isEmbeddedSchedule = useMemo(() => {
@@ -4409,7 +4424,7 @@ export default function ScheduleBoard() {
                                         onClick={isGroupHeader ? () => toggleTimeslotGroup(rowName) : undefined}
                                     >
                                         <div className="flex flex-col min-w-0">
-                                            <span className="truncate flex items-center gap-1" title={rowDisplayName}>
+                                            <span className="truncate flex items-center gap-1" title={getExpandedTimeslotRowLabel(rowObj, rowDisplayName)}>
                                                 {isGroupHeader && (
                                                     <span className="text-slate-500">
                                                         {isGroupCollapsed ? <ChevronRight className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />}
@@ -4418,7 +4433,7 @@ export default function ScheduleBoard() {
                                                 {rowObj.isTimeslotRow && !rowObj.isUnassignedRow && <span className="text-slate-400 mr-1">↳</span>}
                                                 {rowObj.isUnassignedRow && <span className="text-amber-500 mr-1">⚠</span>}
                                                 <span className={rowObj.isUnassignedRow ? 'text-amber-700' : ''}>
-                                                    {rowDisplayName}
+                                                    {getExpandedTimeslotRowLabel(rowObj, rowDisplayName)}
                                                 </span>
                                                 {isGroupHeader && rowObj.timeslotCount && (
                                                     <span className="text-[10px] text-slate-400 ml-1">({rowObj.timeslotCount})</span>
@@ -4427,11 +4442,6 @@ export default function ScheduleBoard() {
                                             {rowObj.isUnassignedRow && (
                                                 <span className="text-[10px] font-normal text-amber-600">
                                                     Bitte Zeitfenster zuweisen
-                                                </span>
-                                            )}
-                                            {rowObj.isTimeslotRow && !rowObj.isUnassignedRow && rowObj.startTime && (
-                                                <span className="text-[10px] font-normal opacity-80">
-                                                    {rowObj.startTime?.substring(0,5)}-{rowObj.endTime?.substring(0,5)}
                                                 </span>
                                             )}
                                             {!rowObj.isTimeslotRow && workplaces.find(s => s.name === rowName)?.time && (
