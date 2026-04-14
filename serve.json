@@ -47,14 +47,6 @@
   ],
   "rewrites": [
     {
-      "source": "/master",
-      "destination": "/master.html"
-    },
-    {
-      "source": "/master/**",
-      "destination": "/master.html"
-    },
-    {
       "source": "**",
       "destination": "/index.html"
     }
