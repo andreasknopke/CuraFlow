@@ -1,0 +1,7 @@
+node_modules
+dist
+.vite
+package-lock.json
+server/node_modules
+server/package-lock.json
+src/components/docs/*.md.jsx

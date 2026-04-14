@@ -1,18 +1,19 @@
 import nodemailer from 'nodemailer';
+import config from '../config.js';
 
 /**
  * Email sending utility with multiple provider support.
- * 
+ *
  * Priority order:
  *   1. BREVO_API_KEY → sends via Brevo HTTP API (works on Railway/serverless)
  *   2. SMTP_HOST + SMTP_USER + SMTP_PASS → sends via SMTP (works locally / on VPS)
- * 
+ *
  * Brevo setup (recommended for Railway):
  *   - Sign up at https://www.brevo.com (free: 300 emails/day)
  *   - Add & verify your sender domain/email
  *   - Set BREVO_API_KEY env var on Railway
  *   - Optionally set SMTP_FROM for the sender address
- * 
+ *
  * SMTP setup (for local dev or VPS):
  *   - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
  *   - Optional: SMTP_FROM, SMTP_SECURE
@@ -21,8 +22,9 @@ import nodemailer from 'nodemailer';
 // ==================== Brevo HTTP API ====================
 
 async function sendViaBrevo({ to, subject, text, html, attachments }) {
-  const apiKey = process.env.BREVO_API_KEY;
-  const fromRaw = process.env.SMTP_FROM || process.env.BREVO_FROM || 'CuraFlow <noreply@curaflow.de>';
+  const apiKey = config.email.brevoApiKey;
+  const fromRaw =
+    config.email.smtpFrom || config.email.brevoFrom || 'CuraFlow <noreply@curaflow.de>';
 
   // Parse "Name <email>" format
   let senderName = 'CuraFlow';
@@ -37,7 +39,7 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
   }
 
   // Build recipients array
-  const recipients = (Array.isArray(to) ? to : [to]).map(email => ({ email: email.trim() }));
+  const recipients = (Array.isArray(to) ? to : [to]).map((email) => ({ email: email.trim() }));
 
   const payload = {
     sender: { name: senderName, email: senderEmail },
@@ -49,12 +51,16 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
 
   // Brevo supports attachments as base64
   if (attachments && attachments.length > 0) {
-    payload.attachment = attachments.map(a => ({
-      name: a.filename,
-      content: a.content
-        ? (typeof a.content === 'string' ? Buffer.from(a.content).toString('base64') : a.content.toString('base64'))
-        : undefined,
-    })).filter(a => a.content);
+    payload.attachment = attachments
+      .map((a) => ({
+        name: a.filename,
+        content: a.content
+          ? typeof a.content === 'string'
+            ? Buffer.from(a.content).toString('base64')
+            : a.content.toString('base64')
+          : undefined,
+      }))
+      .filter((a) => a.content);
   }
 
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
@@ -62,7 +68,7 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
     headers: {
       'api-key': apiKey,
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(payload),
   });
@@ -90,19 +96,17 @@ export function resetTransporter() {
 export function getTransporter() {
   if (transporter) return transporter;
 
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587');
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = config.email.smtpHost;
+  const port = config.email.smtpPort;
+  const user = config.email.smtpUser;
+  const pass = config.email.smtpPass;
 
   if (!host || !user || !pass) {
     console.warn('[Email] SMTP nicht konfiguriert (SMTP_HOST, SMTP_USER, SMTP_PASS erforderlich)');
     return null;
   }
 
-  const secure = process.env.SMTP_SECURE 
-    ? process.env.SMTP_SECURE === 'true' 
-    : port === 465;
+  const secure = config.email.smtpSecure || port === 465;
 
   transporter = nodemailer.createTransport({
     host,
@@ -114,24 +118,28 @@ export function getTransporter() {
     tls: {
       // Do not fail on invalid/self-signed certs (common with shared hosting like ALL-INKL)
       rejectUnauthorized: false,
-      minVersion: 'TLSv1.2'
+      minVersion: 'TLSv1.2',
     },
     connectionTimeout: 15000,
     greetingTimeout: 15000,
     socketTimeout: 30000,
   });
 
-  console.log(`[Email] SMTP Transporter konfiguriert: ${host}:${port} (secure=${secure}, STARTTLS=${!secure})`);
+  console.log(
+    `[Email] SMTP Transporter konfiguriert: ${host}:${port} (secure=${secure}, STARTTLS=${!secure})`,
+  );
   return transporter;
 }
 
 async function sendViaSMTP({ to, subject, text, html, attachments }) {
   const transport = getTransporter();
   if (!transport) {
-    throw new Error('SMTP nicht konfiguriert. Bitte SMTP_HOST, SMTP_USER, SMTP_PASS als Umgebungsvariablen setzen.');
+    throw new Error(
+      'SMTP nicht konfiguriert. Bitte SMTP_HOST, SMTP_USER, SMTP_PASS als Umgebungsvariablen setzen.',
+    );
   }
 
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = config.email.smtpFrom || config.email.smtpUser;
 
   const info = await transport.sendMail({
     from,
@@ -151,13 +159,13 @@ async function sendViaSMTP({ to, subject, text, html, attachments }) {
 /**
  * Send an email. Automatically uses Brevo (HTTP) if BREVO_API_KEY is set,
  * otherwise falls back to SMTP.
- * 
+ *
  * @param {object} opts - { to, subject, text, html, attachments }
  * @returns {Promise<object>} send result with messageId and provider
  */
 export async function sendEmail({ to, subject, text, html, attachments }) {
   // Prefer Brevo on serverless/Railway (SMTP ports often blocked)
-  if (process.env.BREVO_API_KEY) {
+  if (config.email.brevoApiKey) {
     return sendViaBrevo({ to, subject, text, html, attachments });
   }
 
@@ -170,23 +178,27 @@ export async function sendEmail({ to, subject, text, html, attachments }) {
  * Useful for diagnostics / admin UI.
  */
 export function getEmailProviderInfo() {
-  if (process.env.BREVO_API_KEY) {
+  if (config.email.brevoApiKey) {
     return {
       provider: 'brevo',
       configured: true,
-      from: process.env.SMTP_FROM || process.env.BREVO_FROM || 'noreply@curaflow.de',
+      from: config.email.smtpFrom || config.email.brevoFrom || 'noreply@curaflow.de',
       note: 'HTTP API – funktioniert auf Railway',
     };
   }
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  if (config.email.smtpHost && config.email.smtpUser && config.email.smtpPass) {
     return {
       provider: 'smtp',
       configured: true,
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT || '587',
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      host: config.email.smtpHost,
+      port: config.email.smtpPort,
+      from: config.email.smtpFrom || config.email.smtpUser,
       note: 'SMTP – funktioniert nicht auf Railway (Ports blockiert)',
     };
   }
-  return { provider: 'none', configured: false, note: 'Weder BREVO_API_KEY noch SMTP konfiguriert' };
+  return {
+    provider: 'none',
+    configured: false,
+    note: 'Weder BREVO_API_KEY noch SMTP konfiguriert',
+  };
 }

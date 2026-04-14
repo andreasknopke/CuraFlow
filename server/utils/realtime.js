@@ -99,7 +99,14 @@ export function registerRealtimeClient({ scope, res, userId }) {
   };
 }
 
-export function broadcastPlanUpdate({ scope, entity, action, recordId = null, recordCount = null, actor = null }) {
+export function broadcastPlanUpdate({
+  scope,
+  entity,
+  action,
+  recordId = null,
+  recordCount = null,
+  actor = null,
+}) {
   const clients = realtimeClients.get(scope);
   if (!clients || clients.size === 0) {
     console.log('[Realtime] Event ohne Empfänger', {
@@ -119,10 +126,12 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
     recordId,
     recordCount,
     changedAt: new Date().toISOString(),
-    actor: actor ? {
-      id: actor.id || null,
-      email: actor.email || null,
-    } : null,
+    actor: actor
+      ? {
+          id: actor.id || null,
+          email: actor.email || null,
+        }
+      : null,
   };
 
   console.log('[Realtime] Sende Plan-Event', {

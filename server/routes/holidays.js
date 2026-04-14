@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import { db } from '../index.js';
+import { db } from '../db/pool.js';
 
 const router = express.Router();
 // Holidays are public - no auth required
@@ -8,10 +8,22 @@ const router = express.Router();
 
 // State code mapping (German abbreviations to ISO codes)
 const STATE_ISO_CODES = {
-  'BW': 'DE-BW', 'BY': 'DE-BY', 'BE': 'DE-BE', 'BB': 'DE-BB',
-  'HB': 'DE-HB', 'HH': 'DE-HH', 'HE': 'DE-HE', 'MV': 'DE-MV',
-  'NI': 'DE-NI', 'NW': 'DE-NW', 'RP': 'DE-RP', 'SL': 'DE-SL',
-  'SN': 'DE-SN', 'ST': 'DE-ST', 'SH': 'DE-SH', 'TH': 'DE-TH'
+  BW: 'DE-BW',
+  BY: 'DE-BY',
+  BE: 'DE-BE',
+  BB: 'DE-BB',
+  HB: 'DE-HB',
+  HH: 'DE-HH',
+  HE: 'DE-HE',
+  MV: 'DE-MV',
+  NI: 'DE-NI',
+  NW: 'DE-NW',
+  RP: 'DE-RP',
+  SL: 'DE-SL',
+  SN: 'DE-SN',
+  ST: 'DE-ST',
+  SH: 'DE-SH',
+  TH: 'DE-TH',
 };
 
 /**
@@ -26,8 +38,12 @@ async function ensureHolidayTables() {
     )
   `);
   // Insert defaults if not present
-  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('federal_state', 'MV')`);
-  await db.execute(`INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('show_school_holidays', 'true')`);
+  await db.execute(
+    `INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('federal_state', 'MV')`,
+  );
+  await db.execute(
+    `INSERT IGNORE INTO holiday_settings (\`key\`, \`value\`) VALUES ('show_school_holidays', 'true')`,
+  );
 
   await db.execute(`
     CREATE TABLE IF NOT EXISTS custom_holidays (
@@ -49,7 +65,9 @@ async function ensureHolidayTables() {
 async function getCentralFederalState() {
   try {
     await ensureHolidayTables();
-    const [rows] = await db.execute("SELECT `value` FROM holiday_settings WHERE `key` = 'federal_state'");
+    const [rows] = await db.execute(
+      "SELECT `value` FROM holiday_settings WHERE `key` = 'federal_state'",
+    );
     return rows[0]?.value || 'MV';
   } catch (err) {
     console.error('[Holidays] Error reading central federal_state:', err.message);
@@ -87,14 +105,14 @@ function localDateStr(d) {
 function applyCorrections(apiSchool, apiPublic, customHolidays) {
   // --- Public Holidays ---
   const publicMap = new Map();
-  apiPublic.forEach(h => {
+  apiPublic.forEach((h) => {
     if (h?.date) publicMap.set(h.date, h);
   });
 
   // Add custom public holidays
   customHolidays
-    .filter(c => c.type === 'public' && c.action === 'add')
-    .forEach(c => {
+    .filter((c) => c.type === 'public' && c.action === 'add')
+    .forEach((c) => {
       const startDate = c.start_date;
       const endDate = c.end_date || startDate;
       // Expand date range
@@ -109,12 +127,12 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
 
   // Remove custom public holidays
   customHolidays
-    .filter(c => c.type === 'public' && c.action === 'remove')
-    .forEach(c => {
+    .filter((c) => c.type === 'public' && c.action === 'remove')
+    .forEach((c) => {
       const startDate = c.start_date;
       const endDate = c.end_date || startDate;
       // Remove all dates in range from map (string comparison, no Date needed)
-      Array.from(publicMap.keys()).forEach(dateStr => {
+      Array.from(publicMap.keys()).forEach((dateStr) => {
         if (dateStr >= startDate && dateStr <= endDate) {
           publicMap.delete(dateStr);
         }
@@ -126,21 +144,21 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
 
   // Add custom school holidays
   customHolidays
-    .filter(c => c.type === 'school' && c.action === 'add')
-    .forEach(c => {
+    .filter((c) => c.type === 'school' && c.action === 'add')
+    .forEach((c) => {
       schoolRanges.push({
         name: c.name,
         start: c.start_date,
-        end: c.end_date || c.start_date
+        end: c.end_date || c.start_date,
       });
     });
 
   // Remove custom school holidays — split ranges for partial overlaps
   const schoolRemovals = customHolidays
-    .filter(c => c.type === 'school' && c.action === 'remove')
-    .map(c => ({
+    .filter((c) => c.type === 'school' && c.action === 'remove')
+    .map((c) => ({
       start: c.start_date,
-      end: c.end_date || c.start_date
+      end: c.end_date || c.start_date,
     }));
 
   if (schoolRemovals.length > 0) {
@@ -180,12 +198,14 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
     schoolRanges = newRanges;
   }
 
-  const resolvedPublic = Array.from(publicMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+  const resolvedPublic = Array.from(publicMap.values()).sort((a, b) =>
+    a.date.localeCompare(b.date),
+  );
 
   return {
     school: schoolRanges,
     public: resolvedPublic,
-    schoolRemovals // Also pass for frontend HolidayCalculator backward compat
+    schoolRemovals, // Also pass for frontend HolidayCalculator backward compat
   };
 }
 
@@ -194,7 +214,7 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
 router.get('/', async (req, res, next) => {
   try {
     const { year } = req.query;
-    
+
     if (!year) {
       return res.status(400).json({ error: 'Year parameter required' });
     }
@@ -202,51 +222,58 @@ router.get('/', async (req, res, next) => {
     // Read central settings from master DB
     const stateCode = await getCentralFederalState();
     const customHolidays = await getCentralCustomHolidays();
-    
+
     const isoStateCode = STATE_ISO_CODES[stateCode] || 'DE-MV';
     const countryCode = 'DE';
     const validFrom = `${year}-01-01`;
     const validTo = `${year}-12-31`;
-    
+
     let apiSchool = [];
     let apiPublic = [];
 
     try {
       // Fetch from OpenHolidays API
       const [schoolRes, publicRes] = await Promise.all([
-        fetch(`https://openholidaysapi.org/SchoolHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`),
-        fetch(`https://openholidaysapi.org/PublicHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`)
+        fetch(
+          `https://openholidaysapi.org/SchoolHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`,
+        ),
+        fetch(
+          `https://openholidaysapi.org/PublicHolidays?countryIsoCode=${countryCode}&subdivisionCode=${isoStateCode}&validFrom=${validFrom}&validTo=${validTo}&languageIsoCode=DE`,
+        ),
       ]);
-      
+
       const schoolData = await schoolRes.json();
       const publicData = await publicRes.json();
-      
+
       // Filter out BBS (Berufsschulen) entries - only keep ABS (allgemeinbildende Schulen).
       // The OpenHoliday API returns separate entries for ABS and BBS in the "groups" array:
       //   ABS: { code: "DE-MV-ABS", shortName: "MV-ABS" }
       //   BBS: { code: "DE-MV-BBS", shortName: "MV-BBS" }
       const rawSchoolCount = Array.isArray(schoolData) ? schoolData.length : 0;
-      const filteredSchoolData = (Array.isArray(schoolData) ? schoolData : []).filter(h => {
+      const filteredSchoolData = (Array.isArray(schoolData) ? schoolData : []).filter((h) => {
         // Primary check: "groups" array contains BBS codes (e.g. "DE-MV-BBS")
-        if (h.groups?.some(g => /[-_]BBS$/i.test(g.code || g.shortName || ''))) return false;
+        if (h.groups?.some((g) => /[-_]BBS$/i.test(g.code || g.shortName || ''))) return false;
         // Fallback: also check subdivisions in case API structure changes
-        if (h.subdivisions?.some(s => /[-_]BBS$/i.test(s.code || s.shortName || ''))) return false;
+        if (h.subdivisions?.some((s) => /[-_]BBS$/i.test(s.code || s.shortName || '')))
+          return false;
         return true;
       });
-      
+
       if (filteredSchoolData.length < rawSchoolCount) {
-        console.log(`[Holidays] Filtered ${rawSchoolCount - filteredSchoolData.length} BBS school holiday entries (kept ${filteredSchoolData.length} ABS entries)`);
+        console.log(
+          `[Holidays] Filtered ${rawSchoolCount - filteredSchoolData.length} BBS school holiday entries (kept ${filteredSchoolData.length} ABS entries)`,
+        );
       }
-      
-      apiSchool = filteredSchoolData.map(h => ({
+
+      apiSchool = filteredSchoolData.map((h) => ({
         name: h.name?.[0]?.text || h.name || 'Schulferien',
         start: h.startDate,
-        end: h.endDate
+        end: h.endDate,
       }));
-      
-      apiPublic = (Array.isArray(publicData) ? publicData : []).map(h => ({
+
+      apiPublic = (Array.isArray(publicData) ? publicData : []).map((h) => ({
         name: h.name?.[0]?.text || h.name || 'Feiertag',
-        date: h.startDate
+        date: h.startDate,
       }));
     } catch (apiError) {
       console.error('OpenHolidays API error:', apiError.message);
@@ -256,13 +283,13 @@ router.get('/', async (req, res, next) => {
 
     // Apply central corrections
     const resolved = applyCorrections(apiSchool, apiPublic, customHolidays);
-    
+
     res.json({
       school: resolved.school,
       public: resolved.public,
       schoolRemovals: resolved.schoolRemovals,
       stateCode, // Tell frontend which state is configured centrally
-      centralized: true // Flag so frontend knows corrections are already applied
+      centralized: true, // Flag so frontend knows corrections are already applied
     });
   } catch (error) {
     next(error);
@@ -278,7 +305,7 @@ function calculateGermanHolidays(year) {
     { date: `${year}-12-25`, name: '1. Weihnachtstag' },
     { date: `${year}-12-26`, name: '2. Weihnachtstag' },
   ];
-  
+
   // Calculate Easter and dependent holidays
   const easter = calculateEaster(year);
   holidays.push(
@@ -286,9 +313,9 @@ function calculateGermanHolidays(year) {
     { date: formatDate(easter), name: 'Ostersonntag' },
     { date: formatDate(addDays(easter, 1)), name: 'Ostermontag' },
     { date: formatDate(addDays(easter, 39)), name: 'Christi Himmelfahrt' },
-    { date: formatDate(addDays(easter, 50)), name: 'Pfingstmontag' }
+    { date: formatDate(addDays(easter, 50)), name: 'Pfingstmontag' },
   );
-  
+
   return holidays.sort((a, b) => a.date.localeCompare(b.date));
 }
 
@@ -302,7 +329,7 @@ function calculateEaster(year) {
     L = I - J,
     month = 3 + f((L + 40) / 44),
     day = L + 28 - 31 * f(month / 4);
-  
+
   return new Date(year, month - 1, day);
 }
 
@@ -324,17 +351,22 @@ function formatDate(date) {
  */
 async function getPublicHolidayDatesForYear(year) {
   const holidays = calculateGermanHolidays(year);
-  const dateSet = new Set(holidays.map(h => h.date));
+  const dateSet = new Set(holidays.map((h) => h.date));
 
   // Apply manual corrections from master DB
   try {
     const customHolidays = await getCentralCustomHolidays();
     // Add custom public holidays
     customHolidays
-      .filter(c => c.type === 'public' && c.action === 'add')
-      .forEach(c => {
-        const startDate = typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
-        const endDate = c.end_date ? (typeof c.end_date === 'string' ? c.end_date.substring(0, 10) : c.end_date) : startDate;
+      .filter((c) => c.type === 'public' && c.action === 'add')
+      .forEach((c) => {
+        const startDate =
+          typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
+        const endDate = c.end_date
+          ? typeof c.end_date === 'string'
+            ? c.end_date.substring(0, 10)
+            : c.end_date
+          : startDate;
         let current = new Date(startDate + 'T12:00:00');
         const end = new Date(endDate + 'T12:00:00');
         while (current <= end) {
@@ -345,10 +377,15 @@ async function getPublicHolidayDatesForYear(year) {
       });
     // Remove custom public holidays
     customHolidays
-      .filter(c => c.type === 'public' && c.action === 'remove')
-      .forEach(c => {
-        const startDate = typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
-        const endDate = c.end_date ? (typeof c.end_date === 'string' ? c.end_date.substring(0, 10) : c.end_date) : startDate;
+      .filter((c) => c.type === 'public' && c.action === 'remove')
+      .forEach((c) => {
+        const startDate =
+          typeof c.start_date === 'string' ? c.start_date.substring(0, 10) : c.start_date;
+        const endDate = c.end_date
+          ? typeof c.end_date === 'string'
+            ? c.end_date.substring(0, 10)
+            : c.end_date
+          : startDate;
         for (const dateStr of Array.from(dateSet)) {
           if (dateStr >= startDate && dateStr <= endDate) {
             dateSet.delete(dateStr);

@@ -1,3 +1,5 @@
+import { ensureColumns } from './schema.js';
+
 export async function runMasterMigrations(dbPool) {
   const results = [];
 
@@ -5,7 +7,12 @@ export async function runMasterMigrations(dbPool) {
     const { duplicateCodes = [], duplicateReason = 'Bereits vorhanden' } = options;
 
     try {
-      await execute();
+      const outcome = await execute();
+      if (outcome?.status === 'skipped') {
+        results.push({ migration, status: 'skipped', reason: outcome.reason || duplicateReason });
+        return;
+      }
+
       results.push({ migration, status: 'success' });
     } catch (err) {
       if (duplicateCodes.includes(err.code)) {
@@ -18,38 +25,64 @@ export async function runMasterMigrations(dbPool) {
   };
 
   await run('add_allowed_tenants', async () => {
-    await dbPool.execute(`
-      ALTER TABLE app_users
-      ADD COLUMN IF NOT EXISTS allowed_tenants JSON DEFAULT NULL
-    `);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'allowed_tenants', definition: 'JSON DEFAULT NULL' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalte bereits vorhanden' };
+    }
+  });
 
   await run('add_must_change_password', async () => {
-    await dbPool.execute(`
-      ALTER TABLE app_users
-      ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE
-    `);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'must_change_password', definition: 'BOOLEAN DEFAULT FALSE' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalte bereits vorhanden' };
+    }
+  });
 
   await run('add_email_verified', async () => {
-    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
-    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'email_verified', definition: 'TINYINT(1) DEFAULT 0' },
+      { name: 'email_verified_date', definition: 'DATETIME DEFAULT NULL' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalten bereits vorhanden' };
+    }
+  });
 
   await run('add_last_seen_at', async () => {
-    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME DEFAULT NULL`);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'last_seen_at', definition: 'DATETIME DEFAULT NULL' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalte bereits vorhanden' };
+    }
+  });
 
   await run('add_schedule_initials_only', async () => {
-    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS schedule_initials_only TINYINT(1) DEFAULT 0`);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'schedule_initials_only', definition: 'TINYINT(1) DEFAULT 0' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalte bereits vorhanden' };
+    }
+  });
 
   await run('add_schedule_sort_doctors_alphabetically', async () => {
-    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS schedule_sort_doctors_alphabetically TINYINT(1) DEFAULT 0`);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const addedColumns = await ensureColumns(dbPool, 'app_users', [
+      { name: 'schedule_sort_doctors_alphabetically', definition: 'TINYINT(1) DEFAULT 0' },
+    ]);
+    if (addedColumns === 0) {
+      return { status: 'skipped', reason: 'Spalte bereits vorhanden' };
+    }
+  });
 
-  await run('create_email_verification_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_email_verification_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS EmailVerification (
         id VARCHAR(36) PRIMARY KEY,
         user_id VARCHAR(36) NOT NULL,
@@ -63,10 +96,14 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_user_id (user_id)
       )
     `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
-  await run('create_cowork_invite_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_cowork_invite_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS CoWorkInvite (
         id VARCHAR(36) PRIMARY KEY,
         room_name VARCHAR(128) NOT NULL,
@@ -84,11 +121,17 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_expires_date (expires_date)
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
-    await dbPool.execute(`ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+      await dbPool.execute(
+        `ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
-  await run('create_schedule_block_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_schedule_block_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS ScheduleBlock (
         id VARCHAR(36) PRIMARY KEY,
         date DATE NOT NULL,
@@ -101,12 +144,16 @@ export async function runMasterMigrations(dbPool) {
         UNIQUE KEY unique_block (date, position, timeslot_id)
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
   // ===== PHASE 0: Central Employee Management =====
 
-  await run('create_employee_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_employee_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS Employee (
         id VARCHAR(36) PRIMARY KEY,
         payroll_id VARCHAR(50),
@@ -135,10 +182,14 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_name (last_name, first_name)
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
-  await run('create_employee_tenant_assignment_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_employee_tenant_assignment_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS EmployeeTenantAssignment (
         id VARCHAR(36) PRIMARY KEY,
         employee_id VARCHAR(36) NOT NULL,
@@ -154,12 +205,16 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_tenant (tenant_id)
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
   // ===== PHASE 1: Work Time Models =====
 
-  await run('create_work_time_model_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_work_time_model_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS WorkTimeModel (
         id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
@@ -173,35 +228,43 @@ export async function runMasterMigrations(dbPool) {
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
 
-    // Seed standard work time models (idempotent via INSERT IGNORE)
-    const models = [
-      { id: 'wtm-vz-39', name: 'Vollzeit 39h', hpw: 39.0, hpd: 7.80, def: true },
-      { id: 'wtm-vz-40', name: 'Vollzeit 40h', hpw: 40.0, hpd: 8.00, def: false },
-      { id: 'wtm-tz-35', name: 'Teilzeit 35h', hpw: 35.0, hpd: 7.00, def: false },
-      { id: 'wtm-tz-30', name: 'Teilzeit 30h', hpw: 30.0, hpd: 6.00, def: false },
-      { id: 'wtm-tz-20', name: 'Teilzeit 20h', hpw: 20.0, hpd: 4.00, def: false },
-      { id: 'wtm-mini-8', name: 'Minijob 8h', hpw: 8.0, hpd: 8.00, def: false },
-      { id: 'wtm-tz-385', name: 'Vollzeit 38.5h (Pflege)', hpw: 38.5, hpd: 7.70, def: false },
-    ];
-    for (const m of models) {
-      await dbPool.execute(
-        `INSERT IGNORE INTO WorkTimeModel (id, name, hours_per_week, hours_per_day, is_default, description) VALUES (?, ?, ?, ?, ?, ?)`,
-        [m.id, m.name, m.hpw, m.hpd, m.def, null]
-      );
-    }
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+      // Seed standard work time models (idempotent via INSERT IGNORE)
+      const models = [
+        { id: 'wtm-vz-39', name: 'Vollzeit 39h', hpw: 39.0, hpd: 7.8, def: true },
+        { id: 'wtm-vz-40', name: 'Vollzeit 40h', hpw: 40.0, hpd: 8.0, def: false },
+        { id: 'wtm-tz-35', name: 'Teilzeit 35h', hpw: 35.0, hpd: 7.0, def: false },
+        { id: 'wtm-tz-30', name: 'Teilzeit 30h', hpw: 30.0, hpd: 6.0, def: false },
+        { id: 'wtm-tz-20', name: 'Teilzeit 20h', hpw: 20.0, hpd: 4.0, def: false },
+        { id: 'wtm-mini-8', name: 'Minijob 8h', hpw: 8.0, hpd: 8.0, def: false },
+        { id: 'wtm-tz-385', name: 'Vollzeit 38.5h (Pflege)', hpw: 38.5, hpd: 7.7, def: false },
+      ];
+      for (const m of models) {
+        await dbPool.execute(
+          `INSERT IGNORE INTO WorkTimeModel (id, name, hours_per_week, hours_per_day, is_default, description) VALUES (?, ?, ?, ?, ?, ?)`,
+          [m.id, m.name, m.hpw, m.hpd, m.def, null],
+        );
+      }
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
-  await run('add_employee_work_time_model_id', async () => {
-    await dbPool.execute(`
+  await run(
+    'add_employee_work_time_model_id',
+    async () => {
+      await dbPool.execute(`
       ALTER TABLE Employee
       ADD COLUMN work_time_model_id VARCHAR(36) DEFAULT NULL
     `);
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' },
+  );
 
   // ===== PHASE 4: Time Accounts (Master-DB) =====
 
-  await run('create_time_account_table', async () => {
-    await dbPool.execute(`
+  await run(
+    'create_time_account_table',
+    async () => {
+      await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS TimeAccount (
         id VARCHAR(36) PRIMARY KEY,
         employee_id VARCHAR(36) NOT NULL,
@@ -223,7 +286,9 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_status (status)
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+    },
+    { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' },
+  );
 
   return results;
 }

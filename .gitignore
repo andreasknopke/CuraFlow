@@ -14,7 +14,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+.vite/
+coverage/
 *.local
+
+# Temporary migration helpers
+_apply_types.py
 
 # Editor directories and files
 .vscode/*

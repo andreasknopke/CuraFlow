@@ -2,13 +2,11 @@
 
 Webbasiertes Dienstplanungs- und Personalverwaltungssystem für Krankenhäuser und Kliniken
 
-
 ## Überblick
 
 CuraFlow ist eine moderne Webanwendung zur digitalen Verwaltung von Dienstplänen, Urlaubsplanung und Personalressourcen in medizinischen Einrichtungen. Das System wurde speziell für die Anforderungen von radiologischen Abteilungen und vergleichbaren Krankenhausbereichen entwickelt, lässt sich jedoch flexibel an andere Fachabteilungen anpassen.
 
 Die Anwendung bietet eine intuitive Oberfläche zur Planung von Schichtdiensten, Bereitschaftsdiensten und Rotationen. Durch rollenbasierte Zugriffssteuerung können Administratoren die vollständige Kontrolle über Dienstpläne und Mitarbeiterdaten ausüben, während reguläre Mitarbeiter ihre eigenen Dienste und Wunschlisten einsehen und bearbeiten können.
-
 
 ## Systemarchitektur
 
@@ -18,20 +16,20 @@ Frontend: React-basierte Single-Page-Application mit Vite als Build-Tool. Die Be
 
 Backend: Node.js/Express-Server mit REST-API. Die Authentifizierung erfolgt über JWT-Token. Als Datenbank wird MySQL verwendet. Das Backend unterstützt Multi-Tenant-Betrieb, sodass mehrere Mandanten (z.B. verschiedene Abteilungen oder Standorte) über eine zentrale Installation bedient werden können.
 
-
 ## Technische Voraussetzungen
 
 Server-Anforderungen:
+
 - Node.js Version 18 oder höher
 - MySQL Version 8.0 oder höher
 - Mindestens 1 GB RAM für den Anwendungsserver
 - Netzwerkzugriff für HTTPS-Verbindungen
 
 Client-Anforderungen:
+
 - Moderner Webbrowser (Chrome, Firefox, Edge, Safari in aktueller Version)
 - JavaScript muss aktiviert sein
 - Bildschirmauflösung von mindestens 1024x768 Pixeln empfohlen
-
 
 ## Hauptfunktionen
 
@@ -83,7 +81,6 @@ Auswertungen über die Verteilung von Diensten, Rotationen und Abwesenheiten. Gr
 Administration (Admin):
 Zentrale Verwaltungsoberfläche für Systemadministratoren. Benutzerverwaltung mit Rollen und Berechtigungen inklusive E-Mail-Verifizierung. Datenbank-Wartungsfunktionen. Systemprotokollierung. Einstellungen für Farbschemata, Abschnittskonfiguration und weitere Anpassungen.
 
-
 ## Sicherheit und Datenschutz
 
 Die Anwendung implementiert folgende Sicherheitsmaßnahmen:
@@ -97,17 +94,18 @@ Die Anwendung implementiert folgende Sicherheitsmaßnahmen:
 - Mandantenspezifische Datenbanktrennung bei Multi-Tenant-Betrieb
 
 Für den Betrieb in Krankenhausumgebungen wird empfohlen:
+
 - Betrieb hinter einem Reverse-Proxy mit SSL-Terminierung
 - Regelmäßige Datensicherung der MySQL-Datenbank
 - Integration in das vorhandene Netzwerk- und Firewall-Konzept
 - Prüfung der Kompatibilität mit lokalen Datenschutzrichtlinien
-
 
 ## Installation und Deployment
 
 Die Anwendung kann auf verschiedenen Plattformen betrieben werden:
 
 Lokale Installation:
+
 1. Repository klonen
 2. Dependencies installieren mit npm install im Hauptverzeichnis und im server-Verzeichnis
 3. Umgebungsvariablen konfigurieren (siehe Abschnitt Konfiguration)
@@ -115,12 +113,24 @@ Lokale Installation:
 5. Frontend bauen mit npm run build
 6. Server starten mit npm start im server-Verzeichnis
 
-Cloud-Deployment (Railway):
-Die Anwendung ist für das Deployment auf Railway optimiert. Detaillierte Anleitungen finden sich in den Dateien RAILWAY_DEPLOYMENT.md und RAILWAY_QUICKSTART.md. Railway bietet eine einfache Möglichkeit, sowohl das Frontend als auch das Backend inklusive MySQL-Datenbank zu hosten.
-
 Docker:
 Ein Dockerfile ist im Repository enthalten und ermöglicht den Betrieb in Container-Umgebungen.
 
+Docker Compose (localhost):
+
+```bash
+cp .env.example .env
+# set MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, JWT_SECRET and CURAFLOW_ADMIN_PASSWORD
+docker compose up --build
+```
+
+Dadurch werden MySQL und die Anwendung auf `http://localhost:3000` gestartet. Beim ersten Start initialisiert der App-Container das lokale Basisschema, legt einen Admin-Benutzer mit den in `.env` gesetzten `CURAFLOW_ADMIN_EMAIL`- und `CURAFLOW_ADMIN_PASSWORD`-Werten an und fügt eine kleine Demo-Konfiguration hinzu.
+
+Wenn ein früherer Startversuch bei der MySQL-Initialisierung abgebrochen ist, das lokale Volume einmal zurücksetzen:
+
+```bash
+docker compose down -v
+```
 
 ## Konfiguration
 
@@ -145,7 +155,6 @@ VITE_JITSI_BASE_URL: Basis-URL für CoWork-Videokonferenzen (Standard: https://m
 Hinweis zu CoWork:
 Die Jitsi-Einbettung kann kostenlos betrieben werden, indem entweder `meet.jit.si` (öffentlich, ohne SLA) genutzt wird oder eine eigene Jitsi-Instanz über `VITE_JITSI_BASE_URL` eingebunden wird (empfohlen für produktive Nutzung).
 
-
 ## Datenmodell
 
 Die Anwendung verwendet folgende Haupttabellen:
@@ -169,7 +178,6 @@ schedule_rules: Benutzerdefinierte KI-Planungsregeln in natürlicher Sprache
 
 Die Tabellenstruktur kann über die SQL-Migrationen im Verzeichnis server/migrations angepasst werden.
 
-
 ## Schnittstellen und Integrationen
 
 REST-API:
@@ -180,7 +188,6 @@ Optionale Integration mit Google Calendar zur automatischen Synchronisation von 
 
 Excel-Export:
 Dienstpläne können als Excel-Dateien exportiert werden zur Weitergabe oder Archivierung.
-
 
 ## Wartung und Support
 
@@ -193,10 +200,10 @@ Das Backend protokolliert Zugriffe und Fehler. Die Logs können über die Admin-
 Updates:
 Bei Updates sollte zunächst ein Backup erstellt werden. Anschließend können die neuen Dateien eingespielt und eventuell erforderliche Datenbankmigrationen ausgeführt werden.
 
-
 ## Technologie-Stack
 
 Frontend:
+
 - React 18 mit Vite
 - TanStack Query für Datenverwaltung
 - Tailwind CSS für Styling
@@ -205,6 +212,7 @@ Frontend:
 - Recharts für Diagramme
 
 Backend:
+
 - Node.js mit Express
 - MySQL mit mysql2-Treiber
 - JWT für Authentifizierung
@@ -212,13 +220,11 @@ Backend:
 - Helmet für Security-Header
 - express-rate-limit für Anfragebegrenzung
 
-
 ## Lizenz und Haftung
 
 Dieses Projekt steht unter der [MIT-Lizenz](LICENSE). Copyright (c) 2026 andreasknopke.
 
 Diese Software wird ohne Gewährleistung bereitgestellt. Der Einsatz in produktiven Umgebungen erfolgt auf eigene Verantwortung. Vor dem produktiven Einsatz sollte eine umfassende Prüfung der Sicherheits- und Datenschutzanforderungen der jeweiligen Einrichtung erfolgen.
-
 
 ## Kontakt und Weiterentwicklung
 
