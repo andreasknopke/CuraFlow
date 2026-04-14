@@ -27,10 +27,14 @@ const fromSqlRow = (row) => {
   if (!row) return null;
   const res = { ...row };
   const boolFields = [
-    'receive_email_notifications', 'exclude_from_staffing_plan', 
-    'user_viewed', 'auto_off', 'show_in_service_plan', 
-    'allows_rotation_concurrently', 
-    'acknowledged', 'is_active'
+    'receive_email_notifications',
+    'exclude_from_staffing_plan',
+    'user_viewed',
+    'auto_off',
+    'show_in_service_plan',
+    'allows_rotation_concurrently',
+    'acknowledged',
+    'is_active',
   ];
   for (const key in res) {
     if (boolFields.includes(key)) res[key] = !!res[key];
@@ -52,10 +56,9 @@ router.post('/', async (req, res, next) => {
 
     // Helper: Get single record
     const getRecord = async (tableName, recordId) => {
-      const [rows] = await dbPool.execute(
-        `SELECT * FROM \`${tableName}\` WHERE id = ?`, 
-        [recordId]
-      );
+      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [
+        recordId,
+      ]);
       return rows[0] ? fromSqlRow(rows[0]) : null;
     };
 
@@ -68,10 +71,7 @@ router.post('/', async (req, res, next) => {
         params.push(toSqlValue(val));
       }
       const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-      const [rows] = await dbPool.execute(
-        `SELECT * FROM \`${tableName}\`${whereClause}`, 
-        params
-      );
+      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\`${whereClause}`, params);
       return rows.map(fromSqlRow);
     };
 
@@ -83,12 +83,12 @@ router.post('/', async (req, res, next) => {
       createData.created_by = userEmail;
 
       const keys = Object.keys(createData);
-      const values = keys.map(k => toSqlValue(createData[k]));
+      const values = keys.map((k) => toSqlValue(createData[k]));
       const placeholders = keys.map(() => '?').join(',');
-      
+
       await dbPool.execute(
-        `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`, 
-        values
+        `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`,
+        values,
       );
       return createData;
     };
@@ -96,26 +96,25 @@ router.post('/', async (req, res, next) => {
     // Helper: Update record
     const updateRecord = async (tableName, recordId, updateData) => {
       updateData.updated_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
-      const keys = Object.keys(updateData).filter(k => k !== 'id');
-      const sets = keys.map(k => `\`${k}\` = ?`).join(',');
-      const values = keys.map(k => toSqlValue(updateData[k]));
+      const keys = Object.keys(updateData).filter((k) => k !== 'id');
+      const sets = keys.map((k) => `\`${k}\` = ?`).join(',');
+      const values = keys.map((k) => toSqlValue(updateData[k]));
       values.push(recordId);
-      
-      await dbPool.execute(
-        `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`, 
-        values
-      );
+
+      await dbPool.execute(`UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`, values);
       return await getRecord(tableName, recordId);
     };
 
     // Helper: Delete record
     const deleteRecord = async (tableName, recordId) => {
       // Fetch record before deletion for audit log
-      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [recordId]);
+      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [
+        recordId,
+      ]);
       const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
-      
+
       await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [recordId]);
-      
+
       // Write audit to SystemLog table
       const timestamp = new Date().toISOString();
       await writeAuditLog(dbPool, {
@@ -123,9 +122,9 @@ router.post('/', async (req, res, next) => {
         source: 'Löschung',
         message: `${tableName} gelöscht von ${userEmail} (ID: ${recordId})`,
         details: { table: tableName, record_id: recordId, deleted_data: deletedRecord, timestamp },
-        userEmail
+        userEmail,
       });
-      
+
       return { success: true };
     };
 
@@ -138,9 +137,9 @@ router.post('/', async (req, res, next) => {
 
       const current = await getRecord(entity, id);
       if (!current) {
-        return res.status(404).json({ 
-          error: 'NOT_FOUND', 
-          message: 'Eintrag nicht gefunden.' 
+        return res.status(404).json({
+          error: 'NOT_FOUND',
+          message: 'Eintrag nicht gefunden.',
         });
       }
 
@@ -148,12 +147,12 @@ router.post('/', async (req, res, next) => {
       if (check && check.updated_date) {
         const dbDate = new Date(current.updated_date).getTime();
         const clientDate = new Date(check.updated_date).getTime();
-        
+
         if (dbDate !== clientDate) {
           return res.status(409).json({
             error: 'CONCURRENCY_ERROR',
             message: 'Daten wurden von einem anderen Benutzer geändert.',
-            currentData: current
+            currentData: current,
           });
         }
       }
@@ -181,7 +180,7 @@ router.post('/', async (req, res, next) => {
       // Check for existing record with same unique keys
       if (check && check.uniqueKeys) {
         const filter = {};
-        check.uniqueKeys.forEach(k => {
+        check.uniqueKeys.forEach((k) => {
           if (data[k] !== undefined) filter[k] = data[k];
         });
 
@@ -191,7 +190,7 @@ router.post('/', async (req, res, next) => {
             return res.status(409).json({
               error: 'DUPLICATE_ERROR',
               message: 'Eintrag existiert bereits.',
-              existingEntry: existing[0]
+              existingEntry: existing[0],
             });
           }
         }
@@ -228,7 +227,7 @@ router.post('/', async (req, res, next) => {
           return res.status(409).json({
             error: 'CONCURRENCY_ERROR',
             message: 'Wert wurde von einem anderen Benutzer geändert.',
-            currentValue: existing.value
+            currentValue: existing.value,
           });
         }
 
@@ -274,8 +273,10 @@ router.post('/', async (req, res, next) => {
       }
     }
 
-    return res.status(400).json({ error: 'Invalid operation', validOperations: ['checkAndUpdate', 'checkAndCreate', 'upsertStaffing'] });
-
+    return res.status(400).json({
+      error: 'Invalid operation',
+      validOperations: ['checkAndUpdate', 'checkAndCreate', 'upsertStaffing'],
+    });
   } catch (error) {
     console.error('Atomic operation error:', error);
     next(error);

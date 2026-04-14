@@ -2,10 +2,11 @@ import { addMonths, subDays, format, startOfMonth, endOfMonth, isSameDay } from 
 import { de } from 'date-fns/locale';
 import crypto from 'crypto';
 import { sendEmail } from '../utils/email.js';
+import config from '../config.js';
 
 /**
  * Checks if a wish reminder email should be sent today and sends it.
- * 
+ *
  * Logic:
  * - wish_deadline_months = N means the next N months are already locked/finalized
  * - In month X, users can submit wishes earliest for month X + (N + 1)
@@ -19,7 +20,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
   try {
     // 1. Read settings
     const [settingsRows] = await dbPool.execute(
-      "SELECT `key`, `value` FROM SystemSetting WHERE `key` IN ('wish_deadline_months', 'wish_reminder_email_enabled', 'wish_reminder_last_sent')"
+      "SELECT `key`, `value` FROM SystemSetting WHERE `key` IN ('wish_deadline_months', 'wish_reminder_email_enabled', 'wish_reminder_last_sent')",
     );
 
     const settings = {};
@@ -60,7 +61,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
     // 4. Get all doctors with email
     // Erinnerungsmails gehen an die Benachrichtigungs-E-Mail-Adresse (email)
     const [doctors] = await dbPool.execute(
-      "SELECT id, name, email FROM Doctor WHERE email IS NOT NULL AND email != ''"
+      "SELECT id, name, email FROM Doctor WHERE email IS NOT NULL AND email != ''",
     );
 
     if (doctors.length === 0) {
@@ -70,12 +71,14 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
     // 5. Send emails
     const targetMonthFormatted = format(targetMonth, 'MMMM yyyy', { locale: de });
     const sperrterminFormatted = format(sperrtermin, 'dd.MM.yyyy');
-    
+
     // Build base URL for ack links
-    const apiBaseUrl = (process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN 
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
-      : 'http://localhost:3000').replace(/\/+$/, '');
-    
+    const apiBaseUrl = (
+      process.env.API_URL || config.railway.publicDomain
+        ? `https://${config.railway.publicDomain}`
+        : 'http://localhost:3000'
+    ).replace(/\/+$/, '');
+
     let sentCount = 0;
     const errors = [];
 
@@ -88,7 +91,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
         // Store ack record
         await dbPool.execute(
           "INSERT INTO WishReminderAck (id, doctor_id, target_month, token, status, created_date) VALUES (?, ?, ?, ?, 'sent', NOW())",
-          [ackId, doctor.id, targetKey, token]
+          [ackId, doctor.id, targetKey, token],
         );
 
         const ackUrl = `${apiBaseUrl}/api/wish-ack?token=${token}`;
@@ -107,7 +110,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
           ackUrl,
           '',
           `Viele Grüße,`,
-          `Ihr CuraFlow-System`
+          `Ihr CuraFlow-System`,
         ].join('\n');
 
         const html = `
@@ -139,28 +142,33 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
 
         sentCount++;
       } catch (err) {
-        console.error(`[WishReminder][${contextLabel}] Fehler beim Senden an ${doctor.name}:`, err.message);
+        console.error(
+          `[WishReminder][${contextLabel}] Fehler beim Senden an ${doctor.name}:`,
+          err.message,
+        );
         errors.push({ doctor: doctor.name, error: err.message });
       }
     }
 
     // 6. Record that we sent the reminder for this target month
     const [existing] = await dbPool.execute(
-      "SELECT id FROM SystemSetting WHERE `key` = 'wish_reminder_last_sent'"
+      "SELECT id FROM SystemSetting WHERE `key` = 'wish_reminder_last_sent'",
     );
     if (existing.length > 0) {
       await dbPool.execute(
         "UPDATE SystemSetting SET `value` = ? WHERE `key` = 'wish_reminder_last_sent'",
-        [targetKey]
+        [targetKey],
       );
     } else {
       await dbPool.execute(
         "INSERT INTO SystemSetting (id, `key`, `value`, created_date) VALUES (?, 'wish_reminder_last_sent', ?, NOW())",
-        [crypto.randomUUID(), targetKey]
+        [crypto.randomUUID(), targetKey],
       );
     }
 
-    console.log(`[WishReminder][${contextLabel}] Erinnerung für ${targetMonthFormatted} gesendet: ${sentCount} Mails, ${errors.length} Fehler`);
+    console.log(
+      `[WishReminder][${contextLabel}] Erinnerung für ${targetMonthFormatted} gesendet: ${sentCount} Mails, ${errors.length} Fehler`,
+    );
 
     return {
       sent: true,

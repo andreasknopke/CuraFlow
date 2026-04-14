@@ -50,7 +50,9 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   };
 
   // ── 1. WorkplaceTimeslot table ──
-  await createTbl('create_workplace_timeslot_table', `
+  await createTbl(
+    'create_workplace_timeslot_table',
+    `
     CREATE TABLE IF NOT EXISTS WorkplaceTimeslot (
       id VARCHAR(255) PRIMARY KEY,
       workplace_id VARCHAR(255) NOT NULL,
@@ -65,22 +67,33 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       created_by VARCHAR(255),
       INDEX idx_timeslot_workplace (workplace_id)
     )
-  `);
+  `,
+  );
 
   // ── 2-3. Workplace columns ──
-  await addCol('add_workplace_timeslots_enabled',
-    `ALTER TABLE Workplace ADD COLUMN timeslots_enabled BOOLEAN DEFAULT FALSE`);
-  await addCol('add_workplace_overlap_tolerance',
-    `ALTER TABLE Workplace ADD COLUMN default_overlap_tolerance_minutes INT DEFAULT 15`);
+  await addCol(
+    'add_workplace_timeslots_enabled',
+    `ALTER TABLE Workplace ADD COLUMN timeslots_enabled BOOLEAN DEFAULT FALSE`,
+  );
+  await addCol(
+    'add_workplace_overlap_tolerance',
+    `ALTER TABLE Workplace ADD COLUMN default_overlap_tolerance_minutes INT DEFAULT 15`,
+  );
 
   // ── 4-5. ShiftEntry timeslot ──
-  await addCol('add_shiftentry_timeslot_id',
-    `ALTER TABLE ShiftEntry ADD COLUMN timeslot_id VARCHAR(255) DEFAULT NULL`);
-  await createIdx('add_shiftentry_timeslot_index',
-    `CREATE INDEX idx_shiftentry_timeslot ON ShiftEntry(timeslot_id)`);
+  await addCol(
+    'add_shiftentry_timeslot_id',
+    `ALTER TABLE ShiftEntry ADD COLUMN timeslot_id VARCHAR(255) DEFAULT NULL`,
+  );
+  await createIdx(
+    'add_shiftentry_timeslot_index',
+    `CREATE INDEX idx_shiftentry_timeslot ON ShiftEntry(timeslot_id)`,
+  );
 
   // ── 6. TimeslotTemplate ──
-  await createTbl('create_timeslot_template_table', `
+  await createTbl(
+    'create_timeslot_template_table',
+    `
     CREATE TABLE IF NOT EXISTS TimeslotTemplate (
       id VARCHAR(255) PRIMARY KEY,
       name VARCHAR(100) NOT NULL,
@@ -89,11 +102,14 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       updated_date DATETIME(3),
       created_by VARCHAR(255)
     )
-  `);
+  `,
+  );
 
   // ── 7. Workplace work_time_percentage ──
-  await addCol('add_workplace_work_time_percentage',
-    `ALTER TABLE Workplace ADD COLUMN work_time_percentage DECIMAL(5,2) DEFAULT 100.00`);
+  await addCol(
+    'add_workplace_work_time_percentage',
+    `ALTER TABLE Workplace ADD COLUMN work_time_percentage DECIMAL(5,2) DEFAULT 100.00`,
+  );
 
   // ── 8. TeamRole permissions ──
   try {
@@ -101,39 +117,70 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       `ALTER TABLE TeamRole ADD COLUMN can_do_foreground_duty BOOLEAN NOT NULL DEFAULT TRUE`,
       `ALTER TABLE TeamRole ADD COLUMN can_do_background_duty BOOLEAN NOT NULL DEFAULT FALSE`,
       `ALTER TABLE TeamRole ADD COLUMN excluded_from_statistics BOOLEAN NOT NULL DEFAULT FALSE`,
-      `ALTER TABLE TeamRole ADD COLUMN description VARCHAR(255) DEFAULT NULL`
+      `ALTER TABLE TeamRole ADD COLUMN description VARCHAR(255) DEFAULT NULL`,
     ];
     let addedColumns = 0;
     for (const stmt of alterStatements) {
-      try { await dbPool.execute(stmt); addedColumns++; } catch { /* column exists */ }
+      try {
+        await dbPool.execute(stmt);
+        addedColumns++;
+      } catch {
+        /* column exists */
+      }
     }
     if (addedColumns > 0) {
-      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Oberste Führungsebene' WHERE name = 'Chefarzt' AND description IS NULL`);
-      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Kann Hintergrunddienste übernehmen' WHERE name = 'Oberarzt' AND description IS NULL`);
-      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = TRUE, description = 'Kann alle Dienste übernehmen' WHERE name = 'Facharzt' AND description IS NULL`);
-      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = FALSE, description = 'Kann Vordergrunddienste übernehmen' WHERE name = 'Assistenzarzt' AND description IS NULL`);
-      await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = FALSE, excluded_from_statistics = TRUE, description = 'Wird in Statistiken nicht gezählt' WHERE name = 'Nicht-Radiologe' AND description IS NULL`);
-      results.push({ migration: 'add_team_role_permissions', status: 'success', message: `${addedColumns} columns added` });
+      await dbPool.execute(
+        `UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Oberste Führungsebene' WHERE name = 'Chefarzt' AND description IS NULL`,
+      );
+      await dbPool.execute(
+        `UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = TRUE, description = 'Kann Hintergrunddienste übernehmen' WHERE name = 'Oberarzt' AND description IS NULL`,
+      );
+      await dbPool.execute(
+        `UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = TRUE, description = 'Kann alle Dienste übernehmen' WHERE name = 'Facharzt' AND description IS NULL`,
+      );
+      await dbPool.execute(
+        `UPDATE TeamRole SET can_do_foreground_duty = TRUE, can_do_background_duty = FALSE, description = 'Kann Vordergrunddienste übernehmen' WHERE name = 'Assistenzarzt' AND description IS NULL`,
+      );
+      await dbPool.execute(
+        `UPDATE TeamRole SET can_do_foreground_duty = FALSE, can_do_background_duty = FALSE, excluded_from_statistics = TRUE, description = 'Wird in Statistiken nicht gezählt' WHERE name = 'Nicht-Radiologe' AND description IS NULL`,
+      );
+      results.push({
+        migration: 'add_team_role_permissions',
+        status: 'success',
+        message: `${addedColumns} columns added`,
+      });
     } else {
-      results.push({ migration: 'add_team_role_permissions', status: 'skipped', reason: 'Columns already exist' });
+      results.push({
+        migration: 'add_team_role_permissions',
+        status: 'skipped',
+        reason: 'Columns already exist',
+      });
     }
   } catch (err) {
     results.push({ migration: 'add_team_role_permissions', status: 'error', error: err.message });
   }
 
   // ── 9. Workplace affects_availability ──
-  await addCol('add_workplace_affects_availability',
-    `ALTER TABLE Workplace ADD COLUMN affects_availability BOOLEAN DEFAULT TRUE`);
+  await addCol(
+    'add_workplace_affects_availability',
+    `ALTER TABLE Workplace ADD COLUMN affects_availability BOOLEAN DEFAULT TRUE`,
+  );
 
   // ── 10. Workplace staffing ──
-  await addCol('add_workplace_min_staff',
-    `ALTER TABLE Workplace ADD COLUMN min_staff INT DEFAULT 1`);
-  await addCol('add_workplace_optimal_staff',
-    `ALTER TABLE Workplace ADD COLUMN optimal_staff INT DEFAULT 1`);
+  await addCol(
+    'add_workplace_min_staff',
+    `ALTER TABLE Workplace ADD COLUMN min_staff INT DEFAULT 1`,
+  );
+  await addCol(
+    'add_workplace_optimal_staff',
+    `ALTER TABLE Workplace ADD COLUMN optimal_staff INT DEFAULT 1`,
+  );
 
   // ── 11. WorkplaceQualification is_excluded ──
-  await addCol('add_workplace_qualification_is_excluded',
-    `ALTER TABLE WorkplaceQualification ADD COLUMN is_excluded BOOLEAN NOT NULL DEFAULT FALSE`);
+  await addCol(
+    'add_workplace_qualification_is_excluded',
+    `ALTER TABLE WorkplaceQualification ADD COLUMN is_excluded BOOLEAN NOT NULL DEFAULT FALSE`,
+  );
 
   // ── 12. Workplace service_type ──
   try {
@@ -141,38 +188,58 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     results.push({ migration: 'add_workplace_service_type', status: 'success' });
     try {
       const [serviceWps] = await dbPool.execute(
-        `SELECT id, \`order\` FROM Workplace WHERE category = 'Dienste' ORDER BY COALESCE(\`order\`, 0) ASC`
+        `SELECT id, \`order\` FROM Workplace WHERE category = 'Dienste' ORDER BY COALESCE(\`order\`, 0) ASC`,
       );
       if (serviceWps.length > 0) {
-        await dbPool.execute(`UPDATE Workplace SET service_type = 1 WHERE id = ?`, [serviceWps[0].id]);
+        await dbPool.execute(`UPDATE Workplace SET service_type = 1 WHERE id = ?`, [
+          serviceWps[0].id,
+        ]);
         if (serviceWps.length > 1) {
-          const otherIds = serviceWps.slice(1).map(w => w.id);
+          const otherIds = serviceWps.slice(1).map((w) => w.id);
           await dbPool.execute(
             `UPDATE Workplace SET service_type = 2 WHERE id IN (${otherIds.map(() => '?').join(',')})`,
-            otherIds
+            otherIds,
           );
         }
       }
-    } catch { /* data migration optional */ }
+    } catch {
+      /* data migration optional */
+    }
   } catch (err) {
     if (err.code === 'ER_DUP_FIELDNAME') {
-      results.push({ migration: 'add_workplace_service_type', status: 'skipped', reason: 'Column already exists' });
+      results.push({
+        migration: 'add_workplace_service_type',
+        status: 'skipped',
+        reason: 'Column already exists',
+      });
     } else {
-      results.push({ migration: 'add_workplace_service_type', status: 'error', error: err.message });
+      results.push({
+        migration: 'add_workplace_service_type',
+        status: 'error',
+        error: err.message,
+      });
     }
   }
 
   // ── PHASE 0: Central Employee Management ──
-  await addCol('add_doctor_central_employee_id',
-    `ALTER TABLE Doctor ADD COLUMN central_employee_id VARCHAR(36) DEFAULT NULL`);
-  await createIdx('add_doctor_central_employee_index',
-    `CREATE INDEX idx_doctor_central_employee ON Doctor(central_employee_id)`);
+  await addCol(
+    'add_doctor_central_employee_id',
+    `ALTER TABLE Doctor ADD COLUMN central_employee_id VARCHAR(36) DEFAULT NULL`,
+  );
+  await createIdx(
+    'add_doctor_central_employee_index',
+    `CREATE INDEX idx_doctor_central_employee ON Doctor(central_employee_id)`,
+  );
 
   // ── PHASE 1: Work Time Models ──
-  await addCol('add_doctor_work_time_model_id',
-    `ALTER TABLE Doctor ADD COLUMN work_time_model_id VARCHAR(36) DEFAULT NULL`);
+  await addCol(
+    'add_doctor_work_time_model_id',
+    `ALTER TABLE Doctor ADD COLUMN work_time_model_id VARCHAR(36) DEFAULT NULL`,
+  );
 
-  await createTbl('create_shift_time_rule_table', `
+  await createTbl(
+    'create_shift_time_rule_table',
+    `
     CREATE TABLE IF NOT EXISTS ShiftTimeRule (
       id VARCHAR(36) PRIMARY KEY,
       workplace_id VARCHAR(255) NOT NULL,
@@ -188,30 +255,41 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       INDEX idx_workplace (workplace_id),
       INDEX idx_model (work_time_model_id)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
-  `);
+  `,
+  );
 
   // ── PHASE 2: ShiftEntry time fields ──
-  await addCol('add_shiftentry_start_time',
-    `ALTER TABLE ShiftEntry ADD COLUMN start_time TIME DEFAULT NULL`);
-  await addCol('add_shiftentry_end_time',
-    `ALTER TABLE ShiftEntry ADD COLUMN end_time TIME DEFAULT NULL`);
-  await addCol('add_shiftentry_break_minutes',
-    `ALTER TABLE ShiftEntry ADD COLUMN break_minutes INT DEFAULT NULL`);
+  await addCol(
+    'add_shiftentry_start_time',
+    `ALTER TABLE ShiftEntry ADD COLUMN start_time TIME DEFAULT NULL`,
+  );
+  await addCol(
+    'add_shiftentry_end_time',
+    `ALTER TABLE ShiftEntry ADD COLUMN end_time TIME DEFAULT NULL`,
+  );
+  await addCol(
+    'add_shiftentry_break_minutes',
+    `ALTER TABLE ShiftEntry ADD COLUMN break_minutes INT DEFAULT NULL`,
+  );
 
   // ── Doctor: Vertragliche Wochenstunden (Wochen-h wie in Excel) ──
-  await addCol('add_doctor_target_weekly_hours',
-    `ALTER TABLE Doctor ADD COLUMN target_weekly_hours DECIMAL(4,1) DEFAULT NULL`);
+  await addCol(
+    'add_doctor_target_weekly_hours',
+    `ALTER TABLE Doctor ADD COLUMN target_weekly_hours DECIMAL(4,1) DEFAULT NULL`,
+  );
 
   // ── ShiftTimeRule: Kürzel (short_code) für Dienstmodelle ──
-  await addCol('add_shift_time_rule_short_code',
-    `ALTER TABLE ShiftTimeRule ADD COLUMN short_code VARCHAR(20) DEFAULT NULL`);
+  await addCol(
+    'add_shift_time_rule_short_code',
+    `ALTER TABLE ShiftTimeRule ADD COLUMN short_code VARCHAR(20) DEFAULT NULL`,
+  );
 
   // ── ShiftTimeRule: Unique Key ändern für multi-Modell pro Workplace ──
   try {
     const [keys] = await tenantDb.execute(
       `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ShiftTimeRule'
-       AND CONSTRAINT_NAME = 'uk_workplace_model' AND CONSTRAINT_TYPE = 'UNIQUE'`
+       AND CONSTRAINT_NAME = 'uk_workplace_model' AND CONSTRAINT_TYPE = 'UNIQUE'`,
     );
     if (keys.length > 0) {
       await tenantDb.execute(`ALTER TABLE ShiftTimeRule DROP INDEX uk_workplace_model`);
@@ -222,7 +300,7 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   }
   try {
     await tenantDb.execute(
-      `ALTER TABLE ShiftTimeRule ADD UNIQUE KEY uk_shortcode_model (short_code, work_time_model_id)`
+      `ALTER TABLE ShiftTimeRule ADD UNIQUE KEY uk_shortcode_model (short_code, work_time_model_id)`,
     );
     results.push({ migration: 'add_uk_shortcode_model', status: 'applied' });
   } catch (e) {
@@ -232,10 +310,19 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   }
 
   // Clear column cache so new columns are recognized immediately
-  clearColumnsCache([
-    'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',
-    'TeamRole', 'WorkplaceQualification', 'Doctor', 'ShiftTimeRule'
-  ], cacheKey);
+  clearColumnsCache(
+    [
+      'Workplace',
+      'WorkplaceTimeslot',
+      'ShiftEntry',
+      'TimeslotTemplate',
+      'TeamRole',
+      'WorkplaceQualification',
+      'Doctor',
+      'ShiftTimeRule',
+    ],
+    cacheKey,
+  );
 
   return results;
 }

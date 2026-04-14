@@ -1,8 +1,9 @@
 import express from 'express';
 import crypto from 'crypto';
-import { db } from '../index.js';
+import { db } from '../db/pool.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
+import config from '../config.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -22,11 +23,11 @@ router.get('/', async (req, res, next) => {
 router.post('/notify', async (req, res, next) => {
   try {
     const { staffIds, message, type } = req.body;
-    
+
     if (!staffIds || !message) {
       return res.status(400).json({ error: 'Missing required parameters' });
     }
-    
+
     console.log(`Sending ${type} notification to ${staffIds.length} staff members`);
     res.json({ success: true, notified: staffIds.length });
   } catch (error) {
@@ -34,7 +35,7 @@ router.post('/notify', async (req, res, next) => {
   }
 });
 
-// ===== SEND GENERIC EMAIL (replaces base44.integrations.Core.SendEmail) =====
+// ===== SEND GENERIC EMAIL =====
 router.post('/send-email', async (req, res, next) => {
   try {
     const { to, subject, body: textBody, html } = req.body;
@@ -45,8 +46,9 @@ router.post('/send-email', async (req, res, next) => {
 
     // Check email configuration (Brevo or SMTP)
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({ 
-        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
+      return res.status(503).json({
+        error:
+          'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
       });
     }
 
@@ -75,8 +77,9 @@ router.post('/send-test-email', async (req, res, next) => {
 
     const providerInfo = getEmailProviderInfo();
     if (!providerInfo.configured) {
-      return res.status(503).json({ 
-        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
+      return res.status(503).json({
+        error:
+          'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
       });
     }
 
@@ -84,10 +87,19 @@ router.post('/send-test-email', async (req, res, next) => {
       to,
       subject: 'CuraFlow Testmail',
       text: 'Dies ist eine Testnachricht von CuraFlow. Wenn Sie diese E-Mail erhalten, funktioniert der E-Mail-Versand korrekt.',
-      html: '<h2>CuraFlow Testmail</h2><p>Dies ist eine Testnachricht von CuraFlow.</p><p>Wenn Sie diese E-Mail erhalten, funktioniert der E-Mail-Versand korrekt.</p><hr><p style="color:#888;font-size:12px">Provider: ' + providerInfo.provider + ' | Absender: ' + providerInfo.from + '</p>',
+      html:
+        '<h2>CuraFlow Testmail</h2><p>Dies ist eine Testnachricht von CuraFlow.</p><p>Wenn Sie diese E-Mail erhalten, funktioniert der E-Mail-Versand korrekt.</p><hr><p style="color:#888;font-size:12px">Provider: ' +
+        providerInfo.provider +
+        ' | Absender: ' +
+        providerInfo.from +
+        '</p>',
     });
 
-    res.json({ success: true, message: `Testmail an ${to} gesendet`, provider: providerInfo.provider });
+    res.json({
+      success: true,
+      message: `Testmail an ${to} gesendet`,
+      provider: providerInfo.provider,
+    });
   } catch (error) {
     console.error('[send-test-email] Fehler:', error.message);
     next(error);
@@ -102,23 +114,30 @@ router.post('/schedule-notifications', async (req, res, next) => {
 
     // Check email configuration (Brevo or SMTP)
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({ 
-        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
+      return res.status(503).json({
+        error:
+          'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
       });
     }
 
     // 1. Fetch doctors with email
     // Dienstplan-Kalender-Emails gehen an die Kalender-E-Mail-Adresse (google_email)
-    const [doctors] = await dbPool.execute("SELECT * FROM Doctor WHERE google_email IS NOT NULL AND google_email != ''");
+    const [doctors] = await dbPool.execute(
+      "SELECT * FROM Doctor WHERE google_email IS NOT NULL AND google_email != ''",
+    );
     if (doctors.length === 0) {
-      return res.json({ success: true, count: 0, message: 'Keine Ärzte mit E-Mail gefunden', errors: [], debug: [] });
+      return res.json({
+        success: true,
+        count: 0,
+        message: 'Keine Ärzte mit E-Mail gefunden',
+        errors: [],
+        debug: [],
+      });
     }
 
     // 2. Fetch workplaces (service category)
-    const [workplaces] = await dbPool.execute("SELECT * FROM Workplace");
-    const serviceNames = workplaces
-      .filter(w => w.category === 'Dienste')
-      .map(w => w.name);
+    const [workplaces] = await dbPool.execute('SELECT * FROM Workplace');
+    const serviceNames = workplaces.filter((w) => w.category === 'Dienste').map((w) => w.name);
     if (serviceNames.length === 0) {
       serviceNames.push('Dienst Vordergrund', 'Dienst Hintergrund', 'Spätdienst');
     }
@@ -140,20 +159,20 @@ router.post('/schedule-notifications', async (req, res, next) => {
     if (endDate) {
       const [rows] = await dbPool.execute(
         'SELECT * FROM ShiftEntry WHERE date >= ? AND date <= ? ORDER BY date',
-        [startDate, endDate]
+        [startDate, endDate],
       );
       shifts = rows;
     } else {
       const [rows] = await dbPool.execute(
         'SELECT * FROM ShiftEntry WHERE date >= ? ORDER BY date',
-        [startDate]
+        [startDate],
       );
       shifts = rows;
     }
 
     // 5. Group shifts by doctor
     const shiftsByDoctor = {};
-    shifts.forEach(shift => {
+    shifts.forEach((shift) => {
       if (!shiftsByDoctor[shift.doctor_id]) {
         shiftsByDoctor[shift.doctor_id] = [];
       }
@@ -171,30 +190,33 @@ router.post('/schedule-notifications', async (req, res, next) => {
       weekday: 'long',
       year: 'numeric',
       month: '2-digit',
-      day: '2-digit'
+      day: '2-digit',
     });
 
     // Helper: ICS generation
     const generateICS = (docShifts) => {
-      const events = docShifts.map(shift => {
-        const d = new Date(shift.date);
-        if (isNaN(d.getTime())) return '';
-        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-        const nextDay = new Date(d);
-        nextDay.setDate(nextDay.getDate() + 1);
-        const nextDayStr = nextDay.toISOString().split('T')[0].replace(/-/g, '');
+      const events = docShifts
+        .map((shift) => {
+          const d = new Date(shift.date);
+          if (isNaN(d.getTime())) return '';
+          const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
+          const nextDay = new Date(d);
+          nextDay.setDate(nextDay.getDate() + 1);
+          const nextDayStr = nextDay.toISOString().split('T')[0].replace(/-/g, '');
 
-        return [
-          'BEGIN:VEVENT',
-          `UID:${shift.id}@curaflow`,
-          `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
-          `DTSTART;VALUE=DATE:${dateStr}`,
-          `DTEND;VALUE=DATE:${nextDayStr}`,
-          `SUMMARY:${shift.position}`,
-          `DESCRIPTION:Eingeteilter Dienst: ${shift.position}`,
-          'END:VEVENT'
-        ].join('\r\n');
-      }).filter(Boolean).join('\r\n');
+          return [
+            'BEGIN:VEVENT',
+            `UID:${shift.id}@curaflow`,
+            `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+            `DTSTART;VALUE=DATE:${dateStr}`,
+            `DTEND;VALUE=DATE:${nextDayStr}`,
+            `SUMMARY:${shift.position}`,
+            `DESCRIPTION:Eingeteilter Dienst: ${shift.position}`,
+            'END:VEVENT',
+          ].join('\r\n');
+        })
+        .filter(Boolean)
+        .join('\r\n');
 
       return [
         'BEGIN:VCALENDAR',
@@ -203,7 +225,7 @@ router.post('/schedule-notifications', async (req, res, next) => {
         'CALSCALE:GREGORIAN',
         'METHOD:PUBLISH',
         events,
-        'END:VCALENDAR'
+        'END:VCALENDAR',
       ].join('\r\n');
     };
 
@@ -217,7 +239,7 @@ router.post('/schedule-notifications', async (req, res, next) => {
         }
 
         // Only service shifts
-        const relevantShifts = docShifts.filter(s => serviceNames.includes(s.position));
+        const relevantShifts = docShifts.filter((s) => serviceNames.includes(s.position));
         if (relevantShifts.length === 0) {
           debugLog.push(`${doctor.name}: Keine relevanten Dienste.`);
           continue;
@@ -225,11 +247,13 @@ router.post('/schedule-notifications', async (req, res, next) => {
 
         relevantShifts.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        const dateList = relevantShifts.map(s => {
-          const date = new Date(s.date);
-          if (isNaN(date.getTime())) return `- ${s.date} (Ungültiges Datum): ${s.position}`;
-          return `- ${formatter.format(date)}: ${s.position}`;
-        }).join('\n');
+        const dateList = relevantShifts
+          .map((s) => {
+            const date = new Date(s.date);
+            if (isNaN(date.getTime())) return `- ${s.date} (Ungültiges Datum): ${s.position}`;
+            return `- ${formatter.format(date)}: ${s.position}`;
+          })
+          .join('\n');
 
         // Generate ICS as attachment
         const icsContent = generateICS(relevantShifts);
@@ -247,11 +271,13 @@ router.post('/schedule-notifications', async (req, res, next) => {
           to: email,
           subject,
           text,
-          attachments: [{
-            filename: `dienstplan_${doctor.initials || doctor.name.replace(/\s+/g, '_')}.ics`,
-            content: icsContent,
-            contentType: 'text/calendar'
-          }]
+          attachments: [
+            {
+              filename: `dienstplan_${doctor.initials || doctor.name.replace(/\s+/g, '_')}.ics`,
+              content: icsContent,
+              contentType: 'text/calendar',
+            },
+          ],
         });
 
         sentCount++;
@@ -266,13 +292,21 @@ router.post('/schedule-notifications', async (req, res, next) => {
     // 7. Log result
     try {
       const id = crypto.randomUUID();
-      await dbPool.execute(
-        'INSERT INTO SystemLog (id, level, source, message, details, created_date) VALUES (?, ?, ?, ?, ?, NOW())',
-        [id, errors.length > 0 ? 'warning' : 'success', 'EmailNotification',
-         `E-Mail-Versand abgeschlossen. Gesendet: ${sentCount}, Fehler: ${errors.length}`,
-         JSON.stringify({ errors, debug: debugLog })]
-      ).catch(() => {}); // SystemLog table might not exist
-    } catch (e) { /* ignore */ }
+      await dbPool
+        .execute(
+          'INSERT INTO SystemLog (id, level, source, message, details, created_date) VALUES (?, ?, ?, ?, ?, NOW())',
+          [
+            id,
+            errors.length > 0 ? 'warning' : 'success',
+            'EmailNotification',
+            `E-Mail-Versand abgeschlossen. Gesendet: ${sentCount}, Fehler: ${errors.length}`,
+            JSON.stringify({ errors, debug: debugLog }),
+          ],
+        )
+        .catch(() => {}); // SystemLog table might not exist
+    } catch (e) {
+      /* ignore */
+    }
 
     res.json({ success: true, count: sentCount, errors, debug: debugLog });
   } catch (error) {
@@ -304,14 +338,17 @@ router.post('/shift-notification', async (req, res, next) => {
 
     const doctor = doctors[0];
     if (!doctor.email) {
-      return res.json({ success: false, message: 'Keine Benachrichtigungs-E-Mail-Adresse hinterlegt' });
+      return res.json({
+        success: false,
+        message: 'Keine Benachrichtigungs-E-Mail-Adresse hinterlegt',
+      });
     }
 
     const formatter = new Intl.DateTimeFormat('de-DE', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
-      day: 'numeric'
+      day: 'numeric',
     });
 
     const dateFormatted = date ? formatter.format(new Date(date)) : '';
@@ -321,9 +358,10 @@ router.post('/shift-notification', async (req, res, next) => {
     if (message) {
       text += message;
     } else {
-      text += notifType === 'new'
-        ? `Dir wurde ein neuer Dienst zugewiesen: ${position || ''} am ${dateFormatted}.`
-        : `Es gab eine Änderung an deinem Dienstplan für den ${dateFormatted}.`;
+      text +=
+        notifType === 'new'
+          ? `Dir wurde ein neuer Dienst zugewiesen: ${position || ''} am ${dateFormatted}.`
+          : `Es gab eine Änderung an deinem Dienstplan für den ${dateFormatted}.`;
     }
     text += `\n\nViele Grüße,\nDein CuraFlow-System`;
 
@@ -343,10 +381,10 @@ router.post('/shift-notification', async (req, res, next) => {
 // ===== SMTP STATUS CHECK =====
 router.get('/email-status', async (req, res) => {
   const configured = !!getTransporter();
-  res.json({ 
+  res.json({
     smtp_configured: configured,
-    smtp_host: process.env.SMTP_HOST || null,
-    smtp_user: process.env.SMTP_USER ? '***' : null, 
+    smtp_host: config.email.smtpHost || null,
+    smtp_user: config.email.smtpUser ? '***' : null,
   });
 });
 
@@ -363,13 +401,13 @@ router.get('/wish-reminder-status', async (req, res, next) => {
 
     // 1. Get all doctors
     const [doctors] = await dbPool.execute(
-      "SELECT id, name, initials, email FROM Doctor ORDER BY name"
+      'SELECT id, name, initials, email FROM Doctor ORDER BY name',
     );
 
     // 2. Get ack records for this target month
     const [acks] = await dbPool.execute(
-      "SELECT doctor_id, status, acknowledged_date FROM WishReminderAck WHERE target_month = ?",
-      [month]
+      'SELECT doctor_id, status, acknowledged_date FROM WishReminderAck WHERE target_month = ?',
+      [month],
     );
     const ackMap = {};
     for (const a of acks) {
@@ -383,16 +421,16 @@ router.get('/wish-reminder-status', async (req, res, next) => {
     const monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`;
 
     const [wishes] = await dbPool.execute(
-      "SELECT DISTINCT doctor_id FROM WishRequest WHERE date >= ? AND date <= ?",
-      [monthStart, monthEnd]
+      'SELECT DISTINCT doctor_id FROM WishRequest WHERE date >= ? AND date <= ?',
+      [monthStart, monthEnd],
     );
-    const hasWishes = new Set(wishes.map(w => w.doctor_id));
+    const hasWishes = new Set(wishes.map((w) => w.doctor_id));
 
     // 4. Build response
-    const result = doctors.map(doc => {
+    const result = doctors.map((doc) => {
       const ack = ackMap[doc.id];
       let reminderStatus;
-      
+
       if (hasWishes.has(doc.id)) {
         reminderStatus = 'has_wishes'; // Has submitted wishes → no ack needed
       } else if (ack?.status === 'acknowledged') {
@@ -416,10 +454,10 @@ router.get('/wish-reminder-status', async (req, res, next) => {
     // 5. Summary stats
     const stats = {
       total: doctors.length,
-      has_wishes: result.filter(r => r.reminder_status === 'has_wishes').length,
-      acknowledged: result.filter(r => r.reminder_status === 'acknowledged').length,
-      sent: result.filter(r => r.reminder_status === 'sent').length,
-      no_reminder: result.filter(r => r.reminder_status === 'no_reminder').length,
+      has_wishes: result.filter((r) => r.reminder_status === 'has_wishes').length,
+      acknowledged: result.filter((r) => r.reminder_status === 'acknowledged').length,
+      sent: result.filter((r) => r.reminder_status === 'sent').length,
+      no_reminder: result.filter((r) => r.reminder_status === 'no_reminder').length,
     };
 
     res.json({ month, doctors: result, stats });
@@ -432,7 +470,9 @@ router.get('/wish-reminder-status', async (req, res, next) => {
 // ===== WORK TIME MODELS (from master DB) =====
 router.get('/work-time-models', async (req, res, next) => {
   try {
-    const [models] = await db.execute('SELECT id, name, hours_per_week, hours_per_day FROM WorkTimeModel ORDER BY hours_per_week DESC');
+    const [models] = await db.execute(
+      'SELECT id, name, hours_per_week, hours_per_day FROM WorkTimeModel ORDER BY hours_per_week DESC',
+    );
     res.json({ models });
   } catch (error) {
     console.error('[work-time-models] Error:', error.message);

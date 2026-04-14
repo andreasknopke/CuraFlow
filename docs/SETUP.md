@@ -2,12 +2,12 @@
 
 ## Voraussetzungen
 
-| Tool | Mindestversion | Prüfen mit |
-|---|---|---|
-| Node.js | 18.x | `node --version` |
-| npm | 9.x | `npm --version` |
-| MySQL | 8.0 | `mysql --version` |
-| Git | 2.x | `git --version` |
+| Tool    | Mindestversion | Prüfen mit        |
+| ------- | -------------- | ----------------- |
+| Node.js | 18.x           | `node --version`  |
+| npm     | 9.x            | `npm --version`   |
+| MySQL   | 8.0            | `mysql --version` |
+| Git     | 2.x            | `git --version`   |
 
 ---
 
@@ -16,6 +16,48 @@
 ```bash
 git clone https://github.com/andreasknopke/CuraFlow.git
 cd CuraFlow
+```
+
+---
+
+## Lokaler Schnellstart mit Docker Compose
+
+Für einen schnellen Funktionscheck auf `localhost` kann die komplette Umgebung mit Docker Compose gestartet werden:
+
+```bash
+cp .env.example .env
+# set MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, JWT_SECRET and CURAFLOW_ADMIN_PASSWORD
+docker compose up --build
+```
+
+Falls ein früherer Startversuch während der MySQL-Initialisierung fehlgeschlagen ist, zuerst das lokale Volume zurücksetzen:
+
+```bash
+docker compose down -v
+```
+
+Standardmäßig wird dadurch Folgendes bereitgestellt:
+
+- App unter `http://localhost:3000`
+- MySQL unter `localhost:3306`
+- lokaler Admin-Login über die in `.env` gesetzten `CURAFLOW_ADMIN_EMAIL`- und `CURAFLOW_ADMIN_PASSWORD`-Werte
+- eine kleine Demo-Grundkonfiguration (2 Mitarbeitende, 5 Arbeitsplätze, Basis-Settings)
+
+Die Compose-Datei erwartet eine `.env` im Projektverzeichnis. Am einfachsten:
+
+```bash
+cp .env.example .env
+# then fill in at least:
+# - MYSQL_PASSWORD
+# - MYSQL_ROOT_PASSWORD
+# - JWT_SECRET
+# - CURAFLOW_ADMIN_PASSWORD
+```
+
+Zum vollständigen Zurücksetzen der lokalen Umgebung:
+
+```bash
+docker compose down -v
 ```
 
 ---
@@ -170,47 +212,46 @@ Nach dem Start:
 
 ### Frontend (`package.json` im Root)
 
-| Skript | Beschreibung |
-|---|---|
-| `npm run dev` | Vite Dev-Server starten |
-| `npm run build` | Produktions-Build erstellen (`dist/`) |
-| `npm run preview` | Produktions-Build lokal vorschauen |
-| `npm run lint` | ESLint ausführen |
-| `npm run lint:fix` | ESLint mit Auto-Fix |
+| Skript             | Beschreibung                          |
+| ------------------ | ------------------------------------- |
+| `npm run dev`      | Vite Dev-Server starten               |
+| `npm run build`    | Produktions-Build erstellen (`dist/`) |
+| `npm run preview`  | Produktions-Build lokal vorschauen    |
+| `npm run lint`     | ESLint ausführen                      |
+| `npm run lint:fix` | ESLint mit Auto-Fix                   |
 
 ### Backend (`server/package.json`)
 
-| Skript | Beschreibung |
-|---|---|
-| `npm start` | Produktionsstart |
+| Skript        | Beschreibung                |
+| ------------- | --------------------------- |
+| `npm start`   | Produktionsstart            |
 | `npm run dev` | Entwicklung mit Auto-Reload |
-| `npm run migrate` | Datenmigration von Base44 ausführen |
 
 ---
 
 ## Umgebungsvariablen Referenz
 
-| Variable | Pflicht | Beschreibung |
-|---|---|---|
-| `MYSQL_HOST` | ✅ | MySQL-Host (z.B. `localhost`) |
-| `MYSQL_PORT` | ☐ | MySQL-Port (Standard: `3306`) |
-| `MYSQL_USER` | ✅ | Datenbankbenutzer |
-| `MYSQL_PASSWORD` | ✅ | Datenbankpasswort |
-| `MYSQL_DATABASE` | ✅ | Datenbankname |
-| `JWT_SECRET` | ✅ | Geheimer Schlüssel für JWT (min. 32 Zeichen) |
-| `PORT` | ☐ | Server-Port (Standard: `3000`) |
-| `NODE_ENV` | ☐ | `development` oder `production` |
-| `VITE_API_URL` | ✅ (FE) | URL des Backends (für Frontend-Build) |
-| `VITE_JITSI_BASE_URL` | ☐ (FE) | Basis-URL für CoWork (Jitsi), z.B. `https://meet.jit.si` oder `https://jitsi.eure-domain.tld` |
-| `COWORK_INVITE_EXPIRY_MINUTES` | ☐ | Gültigkeit einer CoWork-Einladung in Minuten (Standard: `10`) |
-| `COWORK_ONLINE_WINDOW_SECONDS` | ☐ | Ab wann ein Benutzer in CoWork als offline gilt (Standard: `120`) |
-| `SMTP_HOST` | ☐ | SMTP-Server für E-Mails |
-| `SMTP_PORT` | ☐ | SMTP-Port |
-| `SMTP_USER` | ☐ | SMTP-Benutzername |
-| `SMTP_PASS` | ☐ | SMTP-Passwort |
-| `SMTP_FROM` | ☐ | Absenderadresse für E-Mails |
-| `ELEVENLABS_API_KEY` | ☐ | API-Key für ElevenLabs (Sprachsteuerung) |
-| `ALLOWED_ORIGINS` | ☐ | Kommaseparierte CORS-Origins |
+| Variable                       | Pflicht | Beschreibung                                                                                  |
+| ------------------------------ | ------- | --------------------------------------------------------------------------------------------- |
+| `MYSQL_HOST`                   | ✅      | MySQL-Host (z.B. `localhost`)                                                                 |
+| `MYSQL_PORT`                   | ☐       | MySQL-Port (Standard: `3306`)                                                                 |
+| `MYSQL_USER`                   | ✅      | Datenbankbenutzer                                                                             |
+| `MYSQL_PASSWORD`               | ✅      | Datenbankpasswort                                                                             |
+| `MYSQL_DATABASE`               | ✅      | Datenbankname                                                                                 |
+| `JWT_SECRET`                   | ✅      | Geheimer Schlüssel für JWT (min. 32 Zeichen)                                                  |
+| `PORT`                         | ☐       | Server-Port (Standard: `3000`)                                                                |
+| `NODE_ENV`                     | ☐       | `development` oder `production`                                                               |
+| `VITE_API_URL`                 | ✅ (FE) | URL des Backends (für Frontend-Build)                                                         |
+| `VITE_JITSI_BASE_URL`          | ☐ (FE)  | Basis-URL für CoWork (Jitsi), z.B. `https://meet.jit.si` oder `https://jitsi.eure-domain.tld` |
+| `COWORK_INVITE_EXPIRY_MINUTES` | ☐       | Gültigkeit einer CoWork-Einladung in Minuten (Standard: `10`)                                 |
+| `COWORK_ONLINE_WINDOW_SECONDS` | ☐       | Ab wann ein Benutzer in CoWork als offline gilt (Standard: `120`)                             |
+| `SMTP_HOST`                    | ☐       | SMTP-Server für E-Mails                                                                       |
+| `SMTP_PORT`                    | ☐       | SMTP-Port                                                                                     |
+| `SMTP_USER`                    | ☐       | SMTP-Benutzername                                                                             |
+| `SMTP_PASS`                    | ☐       | SMTP-Passwort                                                                                 |
+| `SMTP_FROM`                    | ☐       | Absenderadresse für E-Mails                                                                   |
+| `ELEVENLABS_API_KEY`           | ☐       | API-Key für ElevenLabs (Sprachsteuerung)                                                      |
+| `ALLOWED_ORIGINS`              | ☐       | Kommaseparierte CORS-Origins                                                                  |
 
 ---
 

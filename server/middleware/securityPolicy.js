@@ -1,0 +1,15 @@
+export const CONTENT_SECURITY_POLICY_DIRECTIVES = {
+  defaultSrc: ["'self'"],
+  baseUri: ["'self'"],
+  objectSrc: ["'none'"],
+  scriptSrc: ["'self'", 'https:'],
+  styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+  imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+  fontSrc: ["'self'", 'data:', 'https:'],
+  connectSrc: ["'self'", 'https:', 'ws:', 'wss:'],
+  frameSrc: ["'self'", 'https:'],
+  frameAncestors: ["'self'"],
+  mediaSrc: ["'self'", 'data:', 'blob:', 'https:'],
+  workerSrc: ["'self'", 'blob:'],
+  formAction: ["'self'"],
+};

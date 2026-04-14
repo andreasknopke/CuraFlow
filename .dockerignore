@@ -1,0 +1,14 @@
+.copilot
+.git
+.gitignore
+dist
+node_modules
+server/node_modules
+.vite
+coverage
+npm-debug.log*
+server/npm-debug.log*
+.env
+.env.local
+.env.*.local
+

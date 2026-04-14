@@ -1,41 +1,31 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
-import { db } from '../index.js';
+import { db } from '../db/pool.js';
+import { createAuthTokens, verifyAccessToken, verifyRefreshToken } from '../utils/authTokens.js';
+import {
+  canAccessTenant,
+  filterTokensByTenantAccess,
+  getUserTenantAccess,
+} from '../utils/tenantAccess.js';
 
 const router = express.Router();
-
-// JWT Helper Functions
-const JWT_SECRET = process.env.JWT_SECRET;
-const TOKEN_EXPIRY = '24h';
-
-function createToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
-}
-
-function verifyToken(token) {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (e) {
-    return null;
-  }
-}
 
 // Middleware to verify authentication
 export function authMiddleware(req, res, next) {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Nicht autorisiert' });
   }
-  
+
   const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  
+  const payload = verifyAccessToken(token);
+
   if (!payload) {
     return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
   }
-  
+
   req.user = payload;
   next();
 }
@@ -51,11 +41,16 @@ export function adminMiddleware(req, res, next) {
 // Sanitize user object (remove sensitive data)
 function sanitizeUser(user) {
   if (!user) return null;
-  
+
   const { password_hash, ...safe } = user;
-  
+
   // Parse JSON fields
-  const jsonFields = ['collapsed_sections', 'schedule_hidden_rows', 'wish_hidden_doctors'];
+  const jsonFields = [
+    'allowed_tenants',
+    'collapsed_sections',
+    'schedule_hidden_rows',
+    'wish_hidden_doctors',
+  ];
   for (const field of jsonFields) {
     if (safe[field] && typeof safe[field] === 'string') {
       try {
@@ -63,15 +58,25 @@ function sanitizeUser(user) {
       } catch (e) {}
     }
   }
-  
+
   // Convert boolean fields
-  const boolFields = ['schedule_show_sidebar', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active'];
+  const boolFields = [
+    'schedule_show_sidebar',
+    'schedule_initials_only',
+    'schedule_sort_doctors_alphabetically',
+    'highlight_my_name',
+    'wish_show_occupied',
+    'wish_show_absences',
+    'is_active',
+    'must_change_password',
+    'email_verified',
+  ];
   for (const field of boolFields) {
     if (safe[field] !== undefined) {
       safe[field] = !!safe[field];
     }
   }
-  
+
   return safe;
 }
 
@@ -79,45 +84,72 @@ function sanitizeUser(user) {
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
     }
-    
-    const [rows] = await db.execute(
-      'SELECT * FROM app_users WHERE email = ? AND is_active = 1',
-      [email.toLowerCase().trim()]
-    );
-    
+
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE email = ? AND is_active = 1', [
+      email.toLowerCase().trim(),
+    ]);
+
     if (rows.length === 0) {
       return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
     }
-    
+
     const user = rows[0];
     const validPassword = await bcrypt.compare(password, user.password_hash);
-    
+
     if (!validPassword) {
       return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
     }
-    
+
     // Update last login
-    await db.execute(
-      'UPDATE app_users SET last_login = NOW() WHERE id = ?',
-      [user.id]
-    );
-    
-    // Create JWT
-    const token = createToken({
+    await db.execute('UPDATE app_users SET last_login = NOW() WHERE id = ?', [user.id]);
+
+    const { token, refreshToken } = createAuthTokens({
       sub: user.id,
       email: user.email,
       role: user.role,
-      doctor_id: user.doctor_id
+      doctor_id: user.doctor_id,
     });
-    
+
     res.json({
       token,
-      user: sanitizeUser(user)
+      refreshToken,
+      user: sanitizeUser(user),
+      must_change_password: Boolean(user.must_change_password),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/refresh', async (req, res, next) => {
+  try {
+    const refreshToken = req.body?.refreshToken;
+
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      return res.status(400).json({ error: 'Refresh-Token erforderlich' });
+    }
+
+    const refreshPayload = verifyRefreshToken(refreshToken);
+
+    if (!refreshPayload?.sub) {
+      return res.status(401).json({ error: 'Refresh-Token ungültig oder abgelaufen' });
+    }
+
+    const [rows] = await db.execute(
+      'SELECT id, email, role, doctor_id FROM app_users WHERE id = ? AND is_active = 1',
+      [refreshPayload.sub],
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'Benutzer nicht gefunden oder deaktiviert' });
+    }
+
+    const tokens = createAuthTokens(rows[0]);
+    res.json(tokens);
   } catch (error) {
     next(error);
   }
@@ -127,33 +159,32 @@ router.post('/login', async (req, res, next) => {
 router.post('/register', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const { email, password, full_name, role = 'user', doctor_id } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
     }
-    
+
     // Check if user exists
-    const [existing] = await db.execute(
-      'SELECT id FROM app_users WHERE email = ?',
-      [email.toLowerCase().trim()]
-    );
-    
+    const [existing] = await db.execute('SELECT id FROM app_users WHERE email = ?', [
+      email.toLowerCase().trim(),
+    ]);
+
     if (existing.length > 0) {
       return res.status(409).json({ error: 'Benutzer existiert bereits' });
     }
-    
+
     // Hash password
     const password_hash = await bcrypt.hash(password, 12);
     const id = crypto.randomUUID();
-    
+
     await db.execute(
       `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active) 
        VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null]
+      [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null],
     );
-    
+
     const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]);
-    
+
     res.status(201).json({ user: sanitizeUser(newUser[0]) });
   } catch (error) {
     next(error);
@@ -163,15 +194,14 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
 // ============ ME (Get current user) ============
 router.get('/me', authMiddleware, async (req, res, next) => {
   try {
-    const [rows] = await db.execute(
-      'SELECT * FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
-    
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ? AND is_active = 1', [
+      req.user.sub,
+    ]);
+
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     }
-    
+
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
     next(error);
@@ -182,21 +212,31 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 router.patch('/me', authMiddleware, async (req, res, next) => {
   try {
     const { data } = req.body;
-    
+
     if (!data || Object.keys(data).length === 0) {
       return res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
     }
-    
+
     // Whitelist allowed fields for self-update
     const allowedFields = [
-      'full_name', 'theme', 'section_config', 'collapsed_sections',
-      'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
-      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
+      'full_name',
+      'theme',
+      'section_config',
+      'collapsed_sections',
+      'schedule_hidden_rows',
+      'schedule_show_sidebar',
+      'schedule_initials_only',
+      'schedule_sort_doctors_alphabetically',
+      'highlight_my_name',
+      'grid_font_size',
+      'wish_show_occupied',
+      'wish_show_absences',
+      'wish_hidden_doctors',
     ];
-    
+
     const updates = [];
     const values = [];
-    
+
     for (const [key, value] of Object.entries(data)) {
       if (allowedFields.includes(key)) {
         updates.push(`\`${key}\` = ?`);
@@ -208,20 +248,20 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
         }
       }
     }
-    
+
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Keine gültigen Felder zum Aktualisieren' });
     }
-    
+
     values.push(req.user.sub);
-    
+
     await db.execute(
       `UPDATE app_users SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
-      values
+      values,
     );
-    
+
     const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
-    
+
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
     next(error);
@@ -232,33 +272,33 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
 router.post('/change-password', authMiddleware, async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
-    
+
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
     }
-    
+
     if (newPassword.length < 8) {
       return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
     }
-    
+
     const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
-    
+
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     }
-    
+
     const validPassword = await bcrypt.compare(currentPassword, rows[0].password_hash);
-    
+
     if (!validPassword) {
       return res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
     }
-    
+
     const newHash = await bcrypt.hash(newPassword, 12);
-    await db.execute(
-      'UPDATE app_users SET password_hash = ?, updated_date = NOW() WHERE id = ?',
-      [newHash, req.user.sub]
-    );
-    
+    await db.execute('UPDATE app_users SET password_hash = ?, updated_date = NOW() WHERE id = ?', [
+      newHash,
+      req.user.sub,
+    ]);
+
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -280,22 +320,34 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
   try {
     const { userId } = req.params;
     const { data } = req.body;
-    
+
     if (!data || Object.keys(data).length === 0) {
       return res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
     }
-    
+
     // Admin can update more fields
     const allowedFields = [
-      'full_name', 'role', 'doctor_id', 'is_active',
-      'theme', 'section_config', 'collapsed_sections',
-      'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
-      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
+      'full_name',
+      'role',
+      'doctor_id',
+      'is_active',
+      'theme',
+      'section_config',
+      'collapsed_sections',
+      'schedule_hidden_rows',
+      'schedule_show_sidebar',
+      'schedule_initials_only',
+      'schedule_sort_doctors_alphabetically',
+      'highlight_my_name',
+      'grid_font_size',
+      'wish_show_occupied',
+      'wish_show_absences',
+      'wish_hidden_doctors',
     ];
-    
+
     const updates = [];
     const values = [];
-    
+
     for (const [key, value] of Object.entries(data)) {
       if (allowedFields.includes(key)) {
         updates.push(`\`${key}\` = ?`);
@@ -306,26 +358,26 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
         }
       }
     }
-    
+
     // Handle password reset
     if (data.password) {
       updates.push('password_hash = ?');
       values.push(await bcrypt.hash(data.password, 12));
     }
-    
+
     if (updates.length === 0) {
       return res.status(400).json({ error: 'Keine gültigen Felder' });
     }
-    
+
     values.push(userId);
-    
+
     await db.execute(
       `UPDATE app_users SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
-      values
+      values,
     );
-    
+
     const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [userId]);
-    
+
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
     next(error);
@@ -336,12 +388,11 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
 router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const { userId } = req.params;
-    
-    await db.execute(
-      'UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?',
-      [userId]
-    );
-    
+
+    await db.execute('UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?', [
+      userId,
+    ]);
+
     res.json({ success: true });
   } catch (error) {
     next(error);
@@ -352,50 +403,34 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
 // Returns the tenants that the current user is allowed to access
 router.get('/my-tenants', authMiddleware, async (req, res, next) => {
   try {
-    // Get user's allowed_tenants
-    const [userRows] = await db.execute(
-      'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
-    
-    if (userRows.length === 0) {
+    const { found, access } = await getUserTenantAccess(db, req.user.sub);
+
+    if (!found) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     }
-    
-    const allowedTenants = userRows[0].allowed_tenants;
-    let allowedTenantList = null;
-    
-    // Parse allowed_tenants (could be JSON string, array, or null)
-    if (allowedTenants) {
-      allowedTenantList = typeof allowedTenants === 'string' 
-        ? JSON.parse(allowedTenants) 
-        : allowedTenants;
+
+    if (!access.isValid) {
+      return res.status(403).json({ error: 'Mandantenzugriff fehlerhaft konfiguriert' });
     }
-    
+
     // Get all db_tokens
     const [tokenRows] = await db.execute(`
       SELECT id, name, host, db_name, description, is_active
       FROM db_tokens
       ORDER BY name ASC
     `);
-    
-    // Filter tokens based on user's allowed_tenants
-    let filteredTokens = tokenRows;
-    
-    // If allowedTenantList is null or empty, user has access to all tenants
-    if (allowedTenantList && allowedTenantList.length > 0) {
-      filteredTokens = tokenRows.filter(token => allowedTenantList.includes(token.id));
-    }
-    
+
+    const filteredTokens = filterTokensByTenantAccess(tokenRows, access);
+
     // Convert is_active from MySQL tinyint to proper boolean
-    const tokens = filteredTokens.map(row => ({
+    const tokens = filteredTokens.map((row) => ({
       ...row,
-      is_active: Boolean(row.is_active)
+      is_active: Boolean(row.is_active),
     }));
-    
+
     res.json({
-      hasFullAccess: !allowedTenantList || allowedTenantList.length === 0,
-      tenants: tokens
+      hasFullAccess: access.hasFullAccess,
+      tenants: tokens,
     });
   } catch (error) {
     next(error);
@@ -407,32 +442,25 @@ router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) 
   try {
     const { tokenId } = req.params;
 
-    // Check user's allowed tenants
-    const [userRows] = await db.execute(
-      'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
-    if (userRows.length === 0) {
+    const { found, access } = await getUserTenantAccess(db, req.user.sub);
+
+    if (!found) {
       return res.status(404).json({ error: 'Benutzer nicht gefunden' });
     }
 
-    const allowedTenants = userRows[0].allowed_tenants;
-    let allowedTenantList = null;
-    if (allowedTenants) {
-      allowedTenantList = typeof allowedTenants === 'string'
-        ? JSON.parse(allowedTenants)
-        : allowedTenants;
+    if (!access.isValid) {
+      return res.status(403).json({ error: 'Mandantenzugriff fehlerhaft konfiguriert' });
     }
 
-    // If user has restricted access, verify this tenant is allowed
-    if (allowedTenantList && allowedTenantList.length > 0) {
-      if (!allowedTenantList.includes(Number(tokenId)) && !allowedTenantList.includes(String(tokenId))) {
-        return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
-      }
+    if (!canAccessTenant(access, tokenId)) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
 
     // Find the token
-    const [existing] = await db.execute('SELECT id, token, name, host, db_name FROM db_tokens WHERE id = ?', [tokenId]);
+    const [existing] = await db.execute(
+      'SELECT id, token, name, host, db_name FROM db_tokens WHERE id = ?',
+      [tokenId],
+    );
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Token nicht gefunden' });
     }
@@ -448,7 +476,7 @@ router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) 
       token: existing[0].token,
       name: existing[0].name,
       host: existing[0].host,
-      db_name: existing[0].db_name
+      db_name: existing[0].db_name,
     });
   } catch (error) {
     next(error);
@@ -458,14 +486,14 @@ router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) 
 // ============ VERIFY TOKEN ============
 router.get('/verify', (req, res) => {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader?.startsWith('Bearer ')) {
     return res.json({ valid: false });
   }
-  
+
   const token = authHeader.substring(7);
-  const payload = verifyToken(token);
-  
+  const payload = verifyAccessToken(token);
+
   res.json({ valid: !!payload, payload });
 });
 
