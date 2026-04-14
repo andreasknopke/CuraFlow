@@ -559,6 +559,7 @@ export default function ScheduleBoard() {
       }
   });
   const autoExpandedTimeslotGroupRef = useRef(null);
+  const [dragExpandedGroup, setDragExpandedGroup] = useState(null);
 
   useEffect(() => {
       localStorage.setItem('radioplan_collapsedTimeslotGroups', JSON.stringify(collapsedTimeslotGroups));
@@ -2181,6 +2182,7 @@ export default function ScheduleBoard() {
     console.log('Dragging Doctor ID:', docId);
     setDraggingDoctorId(docId);
     autoExpandedTimeslotGroupRef.current = null;
+    setDragExpandedGroup(null);
 
     // Check if dragging from grid
     const { source } = start;
@@ -2194,35 +2196,33 @@ export default function ScheduleBoard() {
         const destinationDroppableId = update?.destination?.droppableId;
         const workplaceName = getCollapsedTimeslotGroupTarget(destinationDroppableId);
         const destinationWorkplace = getWorkplaceNameFromDroppableId(destinationDroppableId);
-        const autoExpandedWorkplace = autoExpandedTimeslotGroupRef.current;
+        const prevExpanded = autoExpandedTimeslotGroupRef.current;
 
-        if (
-            autoExpandedWorkplace &&
-            destinationWorkplace &&
-            destinationWorkplace !== autoExpandedWorkplace &&
-            autoExpandedWorkplace !== workplaceName
-        ) {
-            collapseTimeslotGroup(autoExpandedWorkplace);
+        // Wenn zu anderem Arbeitsplatz gewechselt: vorherige Drag-Expansion zurücksetzen
+        if (prevExpanded && destinationWorkplace && destinationWorkplace !== prevExpanded) {
+            setDragExpandedGroup(null);
             autoExpandedTimeslotGroupRef.current = null;
         }
 
         if (!workplaceName) return;
         if (autoExpandedTimeslotGroupRef.current === workplaceName) return;
 
-        const expanded = expandTimeslotGroup(workplaceName);
-        if (expanded) {
+        // CSS-only Expansion: Droppables bleiben gemountet, nur Sichtbarkeit ändert sich
+        if (collapsedTimeslotGroups.includes(workplaceName)) {
+            setDragExpandedGroup(workplaceName);
             autoExpandedTimeslotGroupRef.current = workplaceName;
-            toast.info(`Zeitfenster aufgeklappt: "${workplaceName}"`);
         }
     };
 
   const handleDragEnd = async (result) => {
     setIsDraggingFromGrid(false);
         const autoExpandedWorkplace = autoExpandedTimeslotGroupRef.current;
-        const keepAutoExpanded = autoExpandedWorkplace && isSpecificTimeslotDestination(result.destination?.droppableId, autoExpandedWorkplace);
-        if (autoExpandedWorkplace && !keepAutoExpanded) {
-            collapseTimeslotGroup(autoExpandedWorkplace);
+        const droppedInSpecificTimeslot = autoExpandedWorkplace && isSpecificTimeslotDestination(result.destination?.droppableId, autoExpandedWorkplace);
+        // Wenn in konkretes Zeitfenster gedroppt: Gruppe dauerhaft aufklappen
+        if (droppedInSpecificTimeslot) {
+            setCollapsedTimeslotGroups(prev => prev.filter(n => n !== autoExpandedWorkplace));
         }
+        setDragExpandedGroup(null);
         autoExpandedTimeslotGroupRef.current = null;
     console.log('DEBUG: Drag Operation Ended', { 
         draggableId: result.draggableId,
@@ -3677,7 +3677,6 @@ export default function ScheduleBoard() {
 
                       const visibleRows = normalizedRows.filter(r => {
                           if (hiddenRows.includes(r.name)) return false;
-                          if (r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name)) return false;
                           if (r.isUnassignedRow) {
                               const hasUnassignedShifts = currentWeekShifts.some(s =>
                                   s.position === r.name && !s.timeslot_id
@@ -3686,6 +3685,7 @@ export default function ScheduleBoard() {
                           }
                           return true;
                       });
+                      const displayRowCount = visibleRows.filter(r => !(r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name) && dragExpandedGroup !== r.name)).length;
                       if (visibleRows.length === 0) return null;
 
                       const isCollapsed = collapsedSections.includes(section.title);
@@ -3702,7 +3702,7 @@ export default function ScheduleBoard() {
                                       {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                                       {getSectionName(section.title)}
                                   </div>
-                                  <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">{visibleRows.length}</span>
+                                  <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">{displayRowCount}</span>
                               </div>
 
                               {!isCollapsed && visibleRows.map((rowObj, rIdx) => {
@@ -3711,6 +3711,7 @@ export default function ScheduleBoard() {
                                   const rowTimeslotId = rowObj.timeslotId;
                                   const isGroupHeader = rowObj.isTimeslotGroupHeader;
                                   const isGroupCollapsed = collapsedTimeslotGroups.includes(rowName);
+                                  const isRowCssHidden = rowObj.isTimeslotRow && isGroupCollapsed && dragExpandedGroup !== rowName;
                                   const rowStyle = getRowStyle(rowName, customStyle);
 
                                   const rawHeaderDroppableId = isGroupHeader
@@ -3719,7 +3720,7 @@ export default function ScheduleBoard() {
                                   const headerDroppableId = withPanelPrefix(rawHeaderDroppableId, SPLIT_PANEL_PREFIX);
 
                                   return (
-                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
+                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} ${isRowCssHidden ? '' : 'border-b border-slate-200'} ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={isRowCssHidden ? { height: 0, minHeight: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' } : undefined}>
                                           <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly}>
                                               {(provided, snapshot) => (
                                                   <div
@@ -4455,12 +4456,10 @@ export default function ScheduleBoard() {
                     typeof r === 'string' ? { name: r, displayName: r, timeslotId: null, isTimeslotRow: false, isTimeslotGroupHeader: false } : r
                 );
                 
-                // Filter: Versteckte Zeilen ausblenden + Timeslot-Zeilen ausblenden wenn Gruppe eingeklappt
+                // Filter: Versteckte Zeilen ausblenden
                 // + "Nicht zugewiesen" Zeilen ausblenden wenn keine Altdaten vorhanden
                 const visibleRows = normalizedRows.filter(r => {
                     if (hiddenRows.includes(r.name)) return false;
-                    // Timeslot-Unterzeilen ausblenden wenn die Gruppe eingeklappt ist
-                    if (r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name)) return false;
                     // "Nicht zugewiesen" Zeile nur anzeigen wenn es Altdaten gibt
                     if (r.isUnassignedRow) {
                         const hasUnassignedShifts = currentWeekShifts.some(s => 
@@ -4470,6 +4469,7 @@ export default function ScheduleBoard() {
                     }
                     return true;
                 });
+                const displayRowCount = visibleRows.filter(r => !(r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name) && dragExpandedGroup !== r.name)).length;
                 if (visibleRows.length === 0) return null;
                 
                 const isCollapsed = collapsedSections.includes(section.title);
@@ -4500,7 +4500,7 @@ export default function ScheduleBoard() {
                                 </button>
                             )}
                             <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">
-                                {visibleRows.length}
+                                {displayRowCount}
                             </span>
                         </div>
                     </div>
@@ -4511,6 +4511,7 @@ export default function ScheduleBoard() {
                         const rowTimeslotId = rowObj.timeslotId;
                         const isGroupHeader = rowObj.isTimeslotGroupHeader;
                         const isGroupCollapsed = collapsedTimeslotGroups.includes(rowName);
+                        const isRowCssHidden = rowObj.isTimeslotRow && isGroupCollapsed && dragExpandedGroup !== rowName;
                         const rowStyle = getRowStyle(rowName, customStyle);
                         
                         // Gruppen-Header: droppableId mit spezieller Markierung "__allTimeslots__"
@@ -4519,7 +4520,7 @@ export default function ScheduleBoard() {
                             : `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
                         
                         return (
-                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixGridStyle}>
+                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${isRowCssHidden ? '' : 'border-b border-slate-200'} ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={isRowCssHidden ? { ...matrixGridStyle, height: 0, minHeight: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' } : matrixGridStyle}>
                             <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly}>
                                 {(provided, snapshot) => (
                                     <div 
