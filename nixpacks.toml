@@ -2,7 +2,7 @@
 NIXPACKS_NODE_VERSION = "22"
 
 [phases.setup]
-nixPkgs = ["nodejs", "npm-10_x"]
+nixPkgs = ["nodejs"]
 
 [phases.install]
 cmds = ["npm ci"]
