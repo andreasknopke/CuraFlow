@@ -2195,20 +2195,17 @@ export default function ScheduleBoard() {
     const handleDragUpdate = (update) => {
         const destinationDroppableId = update?.destination?.droppableId;
         const workplaceName = getCollapsedTimeslotGroupTarget(destinationDroppableId);
-        const destinationWorkplace = getWorkplaceNameFromDroppableId(destinationDroppableId);
-        const prevExpanded = autoExpandedTimeslotGroupRef.current;
 
-        // Wenn zu anderem Arbeitsplatz gewechselt: vorherige Drag-Expansion zurücksetzen
-        if (prevExpanded && destinationWorkplace && destinationWorkplace !== prevExpanded) {
-            setDragExpandedGroup(null);
-            autoExpandedTimeslotGroupRef.current = null;
-        }
-
+        // Nur expandieren, nie während des Drags collapen.
+        // @hello-pangea/dnd cached Droppable-Positionen beim Drag-Start —
+        // nach CSS-Expansion sind die gecachten Rects falsch, was zu
+        // falschen Destinations führt. Collapse passiert nur in handleDragEnd.
         if (!workplaceName) return;
         if (autoExpandedTimeslotGroupRef.current === workplaceName) return;
 
-        // CSS-only Expansion: Droppables bleiben gemountet, nur Sichtbarkeit ändert sich
         if (collapsedTimeslotGroups.includes(workplaceName)) {
+            // dragExpandedGroup wechseln — CSS versteckt alte Gruppe automatisch
+            // weil isRowCssHidden prüft: dragExpandedGroup !== rowName
             setDragExpandedGroup(workplaceName);
             autoExpandedTimeslotGroupRef.current = workplaceName;
         }
