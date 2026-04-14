@@ -7,8 +7,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "serve -s dist -l ${PORT:-3000}",
-    "start:master": "cp dist/master.html dist/index.html && npx serve dist -p ${PORT:-3000}",
+    "start": "if [ \"${FRONTEND_VARIANT:-main}\" = \"master\" ]; then serve -c ../serve.master.json -s dist -l ${PORT:-3000}; else serve -c ../serve.json -s dist -l ${PORT:-3000}; fi",
+    "start:master": "serve -c ../serve.master.json -s dist -l ${PORT:-3000}",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -p ./jsconfig.json",

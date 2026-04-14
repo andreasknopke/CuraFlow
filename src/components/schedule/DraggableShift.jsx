@@ -20,7 +20,7 @@ const getTimeLabel = (shift) => {
   return `${start}–${end}`;
 };
 
-export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
@@ -28,6 +28,9 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
   const displayText = isFullWidth ? doctor.name : chipLabel;
   const displayFontSize = fontSize;
   const timeLabel = getTimeLabel(shift);
+  const timeslotBadgeClasses = timeslotLabelTone === 'warning'
+    ? 'bg-amber-300 text-amber-950'
+    : 'bg-indigo-600 text-white';
 
   // Build fairness tooltip text for preview service shifts
   const fairnessTooltip = React.useMemo(() => {
@@ -194,8 +197,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     </span>
                     {timeslotLabel && (
                       <span
-                        className="flex-shrink-0 rounded px-1 bg-indigo-600 text-white font-semibold mr-1 whitespace-nowrap"
-                        style={{ fontSize: `${Math.max(fontSize * 0.6, 8)}px`, lineHeight: '1.4', maxWidth: `${boxSize * 1.6}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                        className={`flex-shrink-0 rounded px-1 font-semibold mr-1 whitespace-nowrap ${timeslotBadgeClasses}`}
+                        style={{ fontSize: `${Math.max(fontSize * 0.72, 9)}px`, lineHeight: '1.4', maxWidth: `${boxSize * 1.7}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
                         title={timeslotLabel}
                       >
                         {timeslotLabel}
@@ -252,8 +255,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                 )}
                 {timeslotLabel && (
                     <div
-                        className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 z-20 rounded px-1 bg-indigo-600 text-white font-semibold leading-none whitespace-nowrap"
-                        style={{ fontSize: `${Math.max(fontSize * 0.5, 7)}px`, padding: '1px 3px', maxWidth: `${boxSize + 8}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                    className={`absolute -bottom-1.5 left-1/2 -translate-x-1/2 z-20 rounded px-1 font-semibold leading-none whitespace-nowrap ${timeslotBadgeClasses}`}
+                    style={{ fontSize: `${Math.max(fontSize * 0.62, 8)}px`, padding: '1px 4px', maxWidth: `${boxSize + 12}px`, overflow: 'hidden', textOverflow: 'ellipsis' }}
                         title={timeslotLabel}
                     >
                         {timeslotLabel}

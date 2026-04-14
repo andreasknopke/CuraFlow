@@ -284,9 +284,29 @@ const formatTimeslotTimeRange = (startTime, endTime) => {
     return `${startTime.substring(0, 5)}-${endTime.substring(0, 5)}`;
 };
 
+const DEFAULT_FULLTIME_DAILY_HOURS = 7.7;
+
 const formatTimeslotEndTime = (endTime) => {
     if (!endTime) return null;
     return endTime.substring(0, 5);
+};
+
+const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr) return null;
+    const parts = String(timeStr).split(':');
+    if (parts.length < 2) return null;
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1]);
+    if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+    return hours * 60 + minutes;
+};
+
+const formatMinutesAsTime = (totalMinutes) => {
+    if (totalMinutes === null || totalMinutes === undefined) return null;
+    const normalized = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const hours = Math.floor(normalized / 60);
+    const minutes = normalized % 60;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 };
 
 const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
@@ -297,6 +317,61 @@ const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
     const timeRange = formatTimeslotTimeRange(rowObj.startTime, rowObj.endTime);
     const label = rowObj.timeslotLabel || rowDisplayName;
     return timeRange ? `${label} ${timeRange}` : label;
+};
+
+const getDoctorTargetDailyHours = (doctor, workTimeModelMap) => {
+    if (!doctor) return null;
+
+    if (doctor.target_weekly_hours) {
+        return Number(doctor.target_weekly_hours) / 5;
+    }
+
+    const model = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
+    if (model?.hours_per_day) {
+        return Number(model.hours_per_day);
+    }
+    if (model?.hours_per_week) {
+        return Number(model.hours_per_week) / 5;
+    }
+
+    if (doctor.fte && Number(doctor.fte) > 0) {
+        return Number(doctor.fte) * DEFAULT_FULLTIME_DAILY_HOURS;
+    }
+
+    return null;
+};
+
+const getShiftTimeslotBadge = (shift, doctor, workplaceTimeslots, workTimeModelMap) => {
+    if (!shift?.timeslot_id) return { label: null, tone: 'default' };
+
+    const timeslot = workplaceTimeslots.find(t => t.id === shift.timeslot_id);
+    if (!timeslot?.end_time) {
+        return { label: null, tone: 'default' };
+    }
+
+    const defaultEndTime = formatTimeslotEndTime(timeslot.end_time);
+    const startMinutes = parseTimeToMinutes(timeslot.start_time);
+    const endMinutes = parseTimeToMinutes(timeslot.end_time);
+    const dailyHours = getDoctorTargetDailyHours(doctor, workTimeModelMap);
+
+    if (startMinutes === null || endMinutes === null || !dailyHours) {
+        return { label: defaultEndTime, tone: 'default' };
+    }
+
+    let slotDurationMinutes = endMinutes - startMinutes;
+    if (slotDurationMinutes < 0) {
+        slotDurationMinutes += 24 * 60;
+    }
+
+    const allowedMinutes = Math.round(dailyHours * 60);
+    if (allowedMinutes <= 0 || slotDurationMinutes <= allowedMinutes) {
+        return { label: defaultEndTime, tone: 'default' };
+    }
+
+    return {
+        label: formatMinutesAsTime(startMinutes + allowedMinutes),
+        tone: 'warning'
+    };
 };
 
 export default function ScheduleBoard() {
@@ -3544,11 +3619,13 @@ export default function ScheduleBoard() {
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
-        // Timeslot-Label für Badge (nur bei eingeklappter Gruppe)
+        // Timeslot-Badge für eingeklappte Gruppen: Endzeit, bei Teilzeit ggf. gekappt
         let shiftTimeslotLabel = null;
+        let shiftTimeslotLabelTone = 'default';
         if (allTimeslotIds && allTimeslotIds.length > 0 && shift.timeslot_id) {
-            const ts = workplaceTimeslots.find(t => t.id === shift.timeslot_id);
-            if (ts) shiftTimeslotLabel = formatTimeslotEndTime(ts.end_time);
+            const badgeInfo = getShiftTimeslotBadge(shift, doctor, workplaceTimeslots, workTimeModelMap);
+            shiftTimeslotLabel = badgeInfo.label;
+            shiftTimeslotLabelTone = badgeInfo.tone;
         }
         
         // Qualifikations-Indikator
@@ -3618,11 +3695,12 @@ export default function ScheduleBoard() {
                     fairnessInfo={shift.isPreview && !isMonthView ? getFairnessInfo(shift) : null}
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={shiftTimeslotLabel}
+                    timeslotLabelTone={shiftTimeslotLabelTone}
                 />
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {

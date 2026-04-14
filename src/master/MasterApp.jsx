@@ -46,10 +46,14 @@ function ProtectedRoute({ children }) {
 }
 
 export default function MasterApp() {
+  const basename = window.location.pathname === '/master' || window.location.pathname.startsWith('/master/')
+    ? '/master'
+    : undefined;
+
   return (
     <QueryClientProvider client={queryClient}>
       <MasterAuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={basename}>
           <Routes>
             <Route path="/login" element={<MasterLogin />} />
             <Route
