@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import {
   Users, Loader2, Building2, Search, ChevronRight, ArrowUpDown,
-  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff,
+  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff, RefreshCw,
 } from 'lucide-react';
 
 export default function MasterEmployeeList() {
@@ -193,6 +193,9 @@ export default function MasterEmployeeList() {
 
   // KPI-Statistiken
   const inactiveCount = centralEmployees.filter(e => !e.is_active).length;
+  const linkedCentralCount = centralEmployees.filter((employee) =>
+    (employee.assignments || []).some((assignment) => assignment.tenant_id && assignment.tenant_doctor_id)
+  ).length;
   const stats = useMemo(() => ({
     centralTotal: centralEmployees.length,
     centralActive: centralEmployees.filter((e) => e.is_active).length,
@@ -235,6 +238,19 @@ export default function MasterEmployeeList() {
       await queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
     },
     onError: (err) => toast.error('Löschen fehlgeschlagen: ' + err.message),
+  });
+
+  const globalTimeAccountSyncMutation = useMutation({
+    mutationFn: () => api.request('/api/master/employees/sync-time-accounts', { method: 'POST' }),
+    onSuccess: async (result) => {
+      toast.success(
+        result.linkedEmployees > 0
+          ? `Zeitkonten für ${result.syncedEmployees} verknüpfte Mitarbeiter neu berechnet`
+          : 'Keine verknüpften Mitarbeiter zum Synchronisieren gefunden'
+      );
+      await queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
+    },
+    onError: (err) => toast.error('Globaler Zeitkonto-Sync fehlgeschlagen: ' + err.message),
   });
 
   const handleDelete = (emp, e) => {
@@ -281,10 +297,23 @@ export default function MasterEmployeeList() {
             Zentrale Verwaltung aller Mitarbeiter – Verträge, Arbeitsmodelle, Urlaub und Zeitkonten
           </p>
         </div>
-        <Button onClick={() => navigate('/mitarbeiter/neu')} size="sm">
-          <Plus className="w-4 h-4 mr-2" />
-          Neuer Mitarbeiter
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => globalTimeAccountSyncMutation.mutate()}
+            disabled={globalTimeAccountSyncMutation.isPending || linkedCentralCount === 0}
+          >
+            {globalTimeAccountSyncMutation.isPending
+              ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              : <RefreshCw className="w-4 h-4 mr-2" />}
+            Zeitkonten neu berechnen ({linkedCentralCount})
+          </Button>
+          <Button onClick={() => navigate('/mitarbeiter/neu')} size="sm">
+            <Plus className="w-4 h-4 mr-2" />
+            Neuer Mitarbeiter
+          </Button>
+        </div>
       </div>
 
       {/* KPI-Karten */}

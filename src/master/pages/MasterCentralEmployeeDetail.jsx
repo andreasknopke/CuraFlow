@@ -19,7 +19,7 @@ import {
   ArrowLeft, Building2, User, FileText, Clock, CalendarDays,
   TrendingUp, TrendingDown, Minus, Save, Pencil, AlertCircle,
   Briefcase, Hash, Mail, Phone, MapPin,
-  Loader2, UserCheck, UserX, Link2,
+  Loader2, UserCheck, UserX, Link2, RefreshCw,
 } from 'lucide-react';
 
 export default function MasterCentralEmployeeDetail() {
@@ -93,6 +93,29 @@ export default function MasterCentralEmployeeDetail() {
     saveMutation.mutate(form);
   };
 
+  const syncTimeAccountsMutation = useMutation({
+    mutationFn: () => api.request(`/api/master/employees/${employeeId}/sync-time-accounts`, {
+      method: 'POST',
+    }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['master-central-employee', employeeId] });
+      queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
+      toast({
+        title: 'Zeitkonto aktualisiert',
+        description: result?.synced === false
+          ? 'Für diesen Mitarbeiter gibt es keine verknüpften Tenant-Zuordnungen.'
+          : 'Die Zeitkontodaten wurden neu berechnet.',
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Zeitkonto konnte nicht neu berechnet werden.',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const updateField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -121,6 +144,7 @@ export default function MasterCentralEmployeeDetail() {
 
   const displayName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || 'Unbekannt';
   const currentModel = models.find((m) => m.id === (form.work_time_model_id || employee.work_time_model_id));
+  const hasLinkedAssignments = (employee.assignments || []).some((assignment) => assignment.tenant_id && assignment.tenant_doctor_id);
 
   return (
     <div className="space-y-6">
@@ -408,13 +432,35 @@ export default function MasterCentralEmployeeDetail() {
         <TabsContent value="zeitkonto" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="w-5 h-5" />
-                Zeitkonto
-              </CardTitle>
-              <CardDescription>Monatliche Soll/Ist-Stunden und Saldo-Übersicht</CardDescription>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="w-5 h-5" />
+                    Zeitkonto
+                  </CardTitle>
+                  <CardDescription>Monatliche Soll/Ist-Stunden und Saldo-Übersicht</CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncTimeAccountsMutation.mutate()}
+                  disabled={!hasLinkedAssignments || syncTimeAccountsMutation.isPending}
+                >
+                  {syncTimeAccountsMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : (
+                    <RefreshCw className="w-4 h-4 mr-2" />
+                  )}
+                  Jetzt neu berechnen
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
+              {!hasLinkedAssignments && (
+                <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  Keine verknüpften Tenant-Mitarbeiter vorhanden. Das Zeitkonto kann erst nach einer Verknüpfung berechnet werden.
+                </div>
+              )}
               {(employee.timeAccounts || []).length === 0 ? (
                 <div className="text-center py-12 text-slate-400">
                   <Clock className="w-10 h-10 mx-auto mb-3 opacity-20" />

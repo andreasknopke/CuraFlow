@@ -301,6 +301,69 @@ const parseTimeToMinutes = (timeStr) => {
     return hours * 60 + minutes;
 };
 
+const mergePlannedIntervals = (intervals) => {
+    if (!intervals.length) return 0;
+
+    const sorted = [...intervals].sort((left, right) => left.start - right.start);
+    const merged = [{ ...sorted[0] }];
+
+    for (let index = 1; index < sorted.length; index += 1) {
+        const current = sorted[index];
+        const last = merged[merged.length - 1];
+
+        if (current.start <= last.end) {
+            last.end = Math.max(last.end, current.end);
+            continue;
+        }
+
+        merged.push({ ...current });
+    }
+
+    return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+};
+
+const buildShiftInterval = (shift, doctor, workplace, timeslot, workTimeModelMap) => {
+    if (shift.start_time && shift.end_time) {
+        const start = parseTimeToMinutes(shift.start_time);
+        let end = parseTimeToMinutes(shift.end_time);
+        if (start !== null && end !== null) {
+            if (end < start) {
+                end += 24 * 60;
+            }
+
+            const breakMinutes = Number(shift.break_minutes) || 0;
+            return {
+                start,
+                end: Math.max(start, end - breakMinutes),
+            };
+        }
+    }
+
+    if (timeslot?.start_time && timeslot?.end_time) {
+        const start = parseTimeToMinutes(timeslot.start_time);
+        let end = parseTimeToMinutes(timeslot.end_time);
+        if (start !== null && end !== null) {
+            if (end <= start) {
+                end += 24 * 60;
+            }
+
+            const workTimeFactor = (workplace?.work_time_percentage ?? 100) / 100;
+            return {
+                start,
+                end: start + ((end - start) * workTimeFactor),
+            };
+        }
+    }
+
+    const fallbackHours = getDoctorTargetDailyHours(doctor, workTimeModelMap);
+    if (!fallbackHours) return null;
+
+    return {
+        start: 8 * 60,
+        end: (8 * 60) + (fallbackHours * 60),
+    };
+};
+
 const formatMinutesAsTime = (totalMinutes) => {
     if (totalMinutes === null || totalMinutes === undefined) return null;
     const normalized = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
@@ -2077,36 +2140,46 @@ export default function ScheduleBoard() {
     const map = new Map();
     const weekStart = format(weekDays[0], 'yyyy-MM-dd');
     const weekEnd = format(weekDays[weekDays.length - 1], 'yyyy-MM-dd');
-    for (const shift of currentWeekShifts) {
-      if (shift.date < weekStart || shift.date > weekEnd) continue;
-      if (!shift.doctor_id) continue;
+        const shiftsByDoctorAndDate = new Map();
+
+        for (const shift of currentWeekShifts) {
+            if (shift.date < weekStart || shift.date > weekEnd) continue;
+            if (!shift.doctor_id) continue;
             if (isNonWorkingShiftPosition(shift.position)) continue;
-      let hours = 0;
-      if (shift.start_time && shift.end_time) {
-        const [sh, sm] = shift.start_time.split(':').map(Number);
-        const [eh, em] = shift.end_time.split(':').map(Number);
-        let mins = (eh * 60 + em) - (sh * 60 + sm);
-        if (mins < 0) mins += 24 * 60;
-        mins -= (shift.break_minutes || 0);
-        hours = mins / 60;
-      } else {
-        // Fallback: target_weekly_hours / 5, Modell, oder FTE
-        const doc = doctors.find(d => d.id === shift.doctor_id);
-        if (doc?.target_weekly_hours) {
-          hours = Number(doc.target_weekly_hours) / 5;
-        } else {
-          const model = doc?.work_time_model_id ? workTimeModelMap.get(doc.work_time_model_id) : null;
-          if (model) {
-            hours = Number(model.hours_per_day);
-          } else if (doc?.fte && Number(doc.fte) > 0) {
-            hours = Number(doc.fte) * 7.7; // 38.5h / 5 Tage
-          }
+
+            const workplace = workplaces.find(wp => wp.name === shift.position);
+            if (workplace?.service_type === 2) continue;
+            if (workplace?.affects_availability === false) continue;
+
+            const groupKey = `${shift.doctor_id}__${shift.date}`;
+            if (!shiftsByDoctorAndDate.has(groupKey)) {
+                shiftsByDoctorAndDate.set(groupKey, []);
+            }
+            shiftsByDoctorAndDate.get(groupKey).push({ shift, workplace });
         }
-      }
-      map.set(shift.doctor_id, (map.get(shift.doctor_id) || 0) + hours);
-    }
+
+        shiftsByDoctorAndDate.forEach((entries, groupKey) => {
+            const [doctorId] = groupKey.split('__');
+            const doctor = doctors.find(d => d.id === doctorId);
+            const intervals = entries
+                .map(({ shift, workplace }) => {
+                    const timeslot = shift.timeslot_id
+                        ? workplaceTimeslots.find(slot => slot.id === shift.timeslot_id)
+                        : null;
+                    return buildShiftInterval(shift, doctor, workplace, timeslot, workTimeModelMap);
+                })
+                .filter(Boolean);
+
+            if (!intervals.length) return;
+
+            const totalMinutes = mergePlannedIntervals(intervals);
+            if (totalMinutes <= 0) return;
+
+            map.set(doctorId, (map.get(doctorId) || 0) + (totalMinutes / 60));
+        });
+
     return map;
-  }, [currentWeekShifts, weekDays, doctors, workTimeModelMap]);
+    }, [currentWeekShifts, weekDays, doctors, workplaces, workplaceTimeslots, workTimeModelMap]);
 
   const cleanupAutoFreiOnly = (doctorId, dateStr, position) => {
       const autoFreiShift = findAutoFreiToCleanup(doctorId, dateStr, position);

@@ -76,6 +76,18 @@ function mergeTimeIntervals(intervals) {
 }
 
 function shiftToInterval(shift, timeslot, workplace) {
+  if (shift?.start_time && shift?.end_time) {
+    const start = timeToMin(shift.start_time);
+    let end = timeToMin(shift.end_time);
+    if (end < start) end += 24 * 60;
+
+    const breakMinutes = Number(shift.break_minutes) || 0;
+    return {
+      start,
+      end: Math.max(start, end - breakMinutes),
+    };
+  }
+
   const workTimePercentage = (workplace?.work_time_percentage ?? 100) / 100;
 
   if (timeslot?.start_time && timeslot?.end_time) {
@@ -95,6 +107,214 @@ function shiftToInterval(shift, timeslot, workplace) {
     start: defaultStart,
     end: defaultStart + ((defaultEnd - defaultStart) * workTimePercentage),
   };
+}
+
+function getMonthKey(year, month) {
+  return `${year}-${String(month).padStart(2, '0')}`;
+}
+
+function createMonthlyPeriods(startDate, endDate = new Date(), maxMonths = 24) {
+  const periods = [];
+  const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
+  const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+
+  while (cursor <= endCursor) {
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth() + 1;
+    const daysInMonth = getDaysInMonth(cursor);
+
+    periods.push({
+      year,
+      month,
+      key: getMonthKey(year, month),
+      startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+      endDate: `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`,
+      daysInMonth,
+    });
+
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return periods.slice(-maxMonths);
+}
+
+function calculateMonthlyTargetMinutes(targetHoursPerWeek, year, month) {
+  const weeklyHours = Number(targetHoursPerWeek);
+  if (!Number.isFinite(weeklyHours) || weeklyHours <= 0) return 0;
+
+  const daysInMonth = getDaysInMonth(new Date(year, month - 1, 1));
+  return Math.round((daysInMonth * weeklyHours / 7) * 60);
+}
+
+async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
+  const linkedAssignments = (assignments || []).filter(a => a.tenant_id && a.tenant_doctor_id);
+  if (linkedAssignments.length === 0) {
+    return { synced: false, reason: 'no-linked-assignments' };
+  }
+
+  const now = new Date();
+  const defaultStart = new Date(now.getFullYear(), now.getMonth() - 23, 1);
+  const earliestAssignedSince = linkedAssignments
+    .map(a => a.assigned_since)
+    .filter(Boolean)
+    .sort()[0];
+  const periodStart = earliestAssignedSince
+    ? new Date(`${String(earliestAssignedSince).substring(0, 10)}T12:00:00`)
+    : defaultStart;
+  const periods = createMonthlyPeriods(periodStart < defaultStart ? defaultStart : periodStart, now, 24);
+  if (periods.length === 0) {
+    return { synced: false, reason: 'no-periods' };
+  }
+
+  const actualMinutesByMonth = new Map();
+  const tokens = await getAllTenantTokens(adminUserId);
+  const tokenMap = new Map(tokens.map(token => [token.id, token]));
+  const rangeStart = periods[0].startDate;
+  const rangeEnd = periods[periods.length - 1].endDate;
+
+  await Promise.all(linkedAssignments.map(async (assignment) => {
+    const token = tokenMap.get(assignment.tenant_id);
+    if (!token) return;
+
+    await withTenantDb(token, async (pool) => {
+      try {
+        const [shiftCols] = await pool.execute(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_NAME = 'ShiftEntry' AND TABLE_SCHEMA = DATABASE()`
+        );
+        const shiftColNames = new Set(shiftCols.map(col => col.COLUMN_NAME));
+        const shiftSelectCols = ['doctor_id', 'date', 'position'];
+        if (shiftColNames.has('start_time')) shiftSelectCols.push('start_time');
+        if (shiftColNames.has('end_time')) shiftSelectCols.push('end_time');
+        if (shiftColNames.has('break_minutes')) shiftSelectCols.push('break_minutes');
+        if (shiftColNames.has('timeslot_id')) shiftSelectCols.push('timeslot_id');
+
+        const [shifts] = await pool.execute(
+          `SELECT ${shiftSelectCols.join(', ')}
+           FROM ShiftEntry
+           WHERE doctor_id = ? AND date >= ? AND date <= ?`,
+          [assignment.tenant_doctor_id, rangeStart, rangeEnd]
+        );
+
+        let timeslots = [];
+        try {
+          const [ts] = await pool.execute('SELECT id, start_time, end_time FROM WorkplaceTimeslot');
+          timeslots = ts;
+        } catch { /* table may not exist */ }
+
+        let workplaces = [];
+        try {
+          const [workplaceCols] = await pool.execute(
+            `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_NAME = 'Workplace' AND TABLE_SCHEMA = DATABASE()`
+          );
+          const workplaceColNames = new Set(workplaceCols.map(col => col.COLUMN_NAME));
+          const workplaceSelectCols = ['name'];
+          if (workplaceColNames.has('work_time_percentage')) workplaceSelectCols.push('work_time_percentage');
+          if (workplaceColNames.has('service_type')) workplaceSelectCols.push('service_type');
+          if (workplaceColNames.has('affects_availability')) workplaceSelectCols.push('affects_availability');
+
+          const [wp] = await pool.execute(`SELECT ${workplaceSelectCols.join(', ')} FROM Workplace`);
+          workplaces = wp;
+        } catch { /* ignore */ }
+
+        const shiftsByDate = new Map();
+        shifts.forEach((shift) => {
+          const dateKey = typeof shift.date === 'string'
+            ? shift.date.substring(0, 10)
+            : format(shift.date, 'yyyy-MM-dd');
+          if (!shiftsByDate.has(dateKey)) {
+            shiftsByDate.set(dateKey, []);
+          }
+          shiftsByDate.get(dateKey).push(shift);
+        });
+
+        shiftsByDate.forEach((dayShifts, dateKey) => {
+          const eligibleShifts = dayShifts.filter((shift) => {
+            if (isNonWorkingShiftPosition(shift.position)) return false;
+
+            const workplace = workplaces.find(w => w.name === shift.position);
+            if (workplace?.service_type === 2) return false;
+            if (workplace?.affects_availability === false) return false;
+            return true;
+          });
+
+          if (eligibleShifts.length === 0) return;
+
+          const intervals = eligibleShifts
+            .map((shift) => {
+              const workplace = workplaces.find(w => w.name === shift.position);
+              const timeslot = shift.timeslot_id
+                ? timeslots.find(t => t.id === shift.timeslot_id)
+                : null;
+              return shiftToInterval(shift, timeslot, workplace);
+            })
+            .filter(Boolean);
+
+          const dayMinutes = mergeTimeIntervals(intervals);
+          if (dayMinutes <= 0) return;
+
+          const monthKey = dateKey.substring(0, 7);
+          actualMinutesByMonth.set(monthKey, (actualMinutesByMonth.get(monthKey) || 0) + dayMinutes);
+        });
+      } catch (error) {
+        console.warn(`[Master time-account sync] Tenant "${token.name}": ${error.message}`);
+      }
+
+      return [];
+    });
+  }));
+
+  const [existingRows] = await db.execute(
+    'SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year ASC, month ASC',
+    [employee.id]
+  );
+  const existingMap = new Map(existingRows.map(row => [getMonthKey(row.year, row.month), row]));
+
+  const oldestPeriod = periods[0];
+  let carryForwardMinutes = 0;
+  const previousRows = existingRows.filter((row) => {
+    if (row.year < oldestPeriod.year) return true;
+    if (row.year === oldestPeriod.year && row.month < oldestPeriod.month) return true;
+    return false;
+  });
+  if (previousRows.length > 0) {
+    const seedRow = previousRows[previousRows.length - 1];
+    carryForwardMinutes = Number(seedRow.carry_over_minutes || 0) + Number(seedRow.balance_minutes || 0);
+  }
+
+  for (const period of periods) {
+    const existing = existingMap.get(period.key);
+    if (existing?.status === 'closed') {
+      carryForwardMinutes = Number(existing.carry_over_minutes || 0) + Number(existing.balance_minutes || 0);
+      continue;
+    }
+
+    const targetMinutes = calculateMonthlyTargetMinutes(employee.target_hours_per_week ?? 38.5, period.year, period.month);
+    const actualMinutes = Math.round(actualMinutesByMonth.get(period.key) || 0);
+    const balanceMinutes = actualMinutes - targetMinutes;
+    const status = (period.year === now.getFullYear() && period.month === now.getMonth() + 1)
+      ? 'open'
+      : 'provisional';
+
+    const id = existing?.id || crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO TimeAccount (id, employee_id, year, month, target_minutes, actual_minutes, balance_minutes, carry_over_minutes, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         target_minutes = VALUES(target_minutes),
+         actual_minutes = VALUES(actual_minutes),
+         balance_minutes = VALUES(balance_minutes),
+         carry_over_minutes = VALUES(carry_over_minutes),
+         status = VALUES(status),
+         updated_at = CURRENT_TIMESTAMP`,
+      [id, employee.id, period.year, period.month, targetMinutes, actualMinutes, balanceMinutes, carryForwardMinutes, status]
+    );
+
+    carryForwardMinutes += balanceMinutes;
+  }
+
+  return { synced: true, periods: periods.length };
 }
 
 /**
@@ -846,6 +1066,49 @@ router.get('/employees', async (req, res, next) => {
 });
 
 /**
+ * POST /api/master/employees/sync-time-accounts
+ * Recalculate time accounts for all linked central employees
+ */
+router.post('/employees/sync-time-accounts', async (req, res, next) => {
+  try {
+    const [employees] = await db.execute('SELECT * FROM Employee ORDER BY last_name ASC, first_name ASC');
+    const [allAssignments] = await db.execute(
+      `SELECT eta.*, dt.name as tenant_name
+       FROM EmployeeTenantAssignment eta
+       LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id`
+    );
+
+    const linkedEmployees = employees.filter((employee) =>
+      allAssignments.some((assignment) =>
+        assignment.employee_id === employee.id && assignment.tenant_id && assignment.tenant_doctor_id
+      )
+    );
+
+    let syncedEmployees = 0;
+    const skippedEmployees = employees.length - linkedEmployees.length;
+
+    for (const employee of linkedEmployees) {
+      const assignments = allAssignments.filter((assignment) => assignment.employee_id === employee.id);
+      const result = await syncTimeAccountsForEmployee(req.user.sub, employee, assignments);
+      if (result?.synced) {
+        syncedEmployees += 1;
+      }
+    }
+
+    res.json({
+      success: true,
+      totalEmployees: employees.length,
+      linkedEmployees: linkedEmployees.length,
+      syncedEmployees,
+      skippedEmployees,
+    });
+  } catch (error) {
+    console.error('[Master employees] Global time-account sync error:', error);
+    next(error);
+  }
+});
+
+/**
  * GET /api/master/employees/:id
  * Single employee detail with assignments and time accounts
  */
@@ -874,6 +1137,12 @@ router.get('/employees/:id', async (req, res, next) => {
       [id]
     );
 
+    try {
+      await syncTimeAccountsForEmployee(req.user.sub, emp, assignments);
+    } catch (syncError) {
+      console.warn(`[Master employees] Time-account sync failed for ${id}: ${syncError.message}`);
+    }
+
     // Time accounts
     const [timeAccounts] = await db.execute(
       `SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year DESC, month DESC LIMIT 24`,
@@ -892,10 +1161,55 @@ router.get('/employees/:id', async (req, res, next) => {
         is_primary: !!a.is_primary,
         assigned_since: a.assigned_since,
       })),
+      timeAccounts: timeAccounts,
       time_accounts: timeAccounts,
     });
   } catch (error) {
     console.error('[Master employees] Detail error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees/:id/sync-time-accounts
+ * Recalculate time accounts for a linked central employee
+ */
+router.post('/employees/:id/sync-time-accounts', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.execute(
+      `SELECT e.*
+       FROM Employee e
+       WHERE e.id = ?`,
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    const employee = rows[0];
+    const [assignments] = await db.execute(
+      `SELECT eta.*, dt.name as tenant_name
+       FROM EmployeeTenantAssignment eta
+       LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
+       WHERE eta.employee_id = ?`,
+      [id]
+    );
+
+    const result = await syncTimeAccountsForEmployee(req.user.sub, employee, assignments);
+    const [timeAccounts] = await db.execute(
+      `SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year DESC, month DESC LIMIT 24`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      ...result,
+      timeAccounts: timeAccounts.length,
+    });
+  } catch (error) {
+    console.error('[Master employees] Time-account sync error:', error);
     next(error);
   }
 });
