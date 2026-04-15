@@ -433,6 +433,69 @@ async function queryAllTenants(adminUserId, tenantId, queryFn) {
   return results;
 }
 
+async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
+  const [assignments] = await db.execute(
+    `SELECT employee_id, tenant_id, tenant_doctor_id
+     FROM EmployeeTenantAssignment
+     WHERE tenant_doctor_id IS NOT NULL
+       AND tenant_doctor_id != ''
+       ${tenantId ? 'AND tenant_id = ?' : ''}`,
+    tenantId ? [tenantId] : []
+  );
+
+  if (assignments.length === 0) {
+    return { repaired: 0, checked: 0 };
+  }
+
+  const tokens = await getAllTenantTokens(adminUserId);
+  const targetTokens = tenantId ? tokens.filter((token) => String(token.id) === String(tenantId)) : tokens;
+  const assignmentsByTenant = new Map();
+
+  assignments.forEach((assignment) => {
+    const key = String(assignment.tenant_id);
+    if (!assignmentsByTenant.has(key)) {
+      assignmentsByTenant.set(key, []);
+    }
+    assignmentsByTenant.get(key).push(assignment);
+  });
+
+  let repaired = 0;
+  let checked = 0;
+
+  await Promise.all(targetTokens.map(async (token) => {
+    const tenantAssignments = assignmentsByTenant.get(String(token.id)) || [];
+    if (tenantAssignments.length === 0) return;
+
+    await withTenantDb(token, async (pool) => {
+      try {
+        const [cols] = await pool.execute(
+          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+           WHERE TABLE_NAME = 'Doctor' AND TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'central_employee_id'`
+        );
+        if (cols.length === 0) return [];
+
+        for (const assignment of tenantAssignments) {
+          checked += 1;
+          const [result] = await pool.execute(
+            `UPDATE Doctor
+             SET central_employee_id = ?
+             WHERE id = ?
+               AND (central_employee_id IS NULL OR central_employee_id = '' OR central_employee_id != ?)`,
+            [assignment.employee_id, assignment.tenant_doctor_id, assignment.employee_id]
+          );
+          repaired += Number(result?.affectedRows || 0);
+        }
+      } catch (error) {
+        console.warn(`[Master staff] Link repair failed for tenant "${token.name}": ${error.message}`);
+      }
+
+      return [];
+    });
+  }));
+
+  return { repaired, checked };
+}
+
 // ============ ROUTES ============
 
 /**
@@ -498,6 +561,15 @@ router.get('/staff', async (req, res, next) => {
   try {
     const { tenantId } = req.query;
     console.log(`[Master staff] Request: tenantId=${tenantId || 'all'}, user=${req.user.sub}`);
+
+    try {
+      const repairResult = await repairTenantCentralEmployeeLinks(req.user.sub, tenantId || null);
+      if (repairResult.repaired > 0) {
+        console.log(`[Master staff] Repaired ${repairResult.repaired} tenant link(s) before staff listing`);
+      }
+    } catch (repairError) {
+      console.warn(`[Master staff] Link repair skipped: ${repairError.message}`);
+    }
 
     const staff = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
