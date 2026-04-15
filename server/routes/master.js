@@ -21,7 +21,81 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(adminMiddleware);
 
+const NON_WORKING_SHIFT_POSITIONS = new Set([
+  'frei',
+  'urlaub',
+  'krank',
+  'dienstreise',
+  'nicht verfugbar',
+  'nicht verfügbar',
+  'fortbildung',
+  'kongress',
+  'elternzeit',
+  'mutterschutz',
+  'verfugbar',
+  'verfügbar',
+  'az',
+  'ko',
+  'ez',
+  'ms',
+]);
+
 // ============ HELPERS ============
+
+function normalizeShiftPosition(position) {
+  return String(position || '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+function isNonWorkingShiftPosition(position) {
+  return NON_WORKING_SHIFT_POSITIONS.has(normalizeShiftPosition(position));
+}
+
+function mergeTimeIntervals(intervals) {
+  if (!intervals || intervals.length === 0) return 0;
+
+  const sorted = [...intervals].sort((left, right) => left.start - right.start);
+  const merged = [sorted[0]];
+
+  for (let index = 1; index < sorted.length; index++) {
+    const current = sorted[index];
+    const last = merged[merged.length - 1];
+
+    if (current.start <= last.end) {
+      last.end = Math.max(last.end, current.end);
+      continue;
+    }
+
+    merged.push({ ...current });
+  }
+
+  return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+}
+
+function shiftToInterval(shift, timeslot, workplace) {
+  const workTimePercentage = (workplace?.work_time_percentage ?? 100) / 100;
+
+  if (timeslot?.start_time && timeslot?.end_time) {
+    const start = timeToMin(timeslot.start_time);
+    let end = timeToMin(timeslot.end_time);
+    if (end <= start) end += 24 * 60;
+
+    return {
+      start,
+      end: start + ((end - start) * workTimePercentage),
+    };
+  }
+
+  const defaultStart = 8 * 60;
+  const defaultEnd = 16 * 60;
+  return {
+    start: defaultStart,
+    end: defaultStart + ((defaultEnd - defaultStart) * workTimePercentage),
+  };
+}
 
 /**
  * Get all configured tenant database tokens from master DB
@@ -434,8 +508,6 @@ router.get('/time-tracking', async (req, res, next) => {
     const daysInMonth = getDaysInMonth(new Date(y, m - 1));
     const endDate = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
-    const absencePositions = ['Frei', 'Urlaub', 'Krank', 'Fortbildung', 'Kongress', 'Dienstreise', 'Nicht verfügbar'];
-
     const entries = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
         // Get all active doctors
@@ -456,10 +528,10 @@ router.get('/time-tracking', async (req, res, next) => {
           timeslots = ts;
         } catch { /* table may not exist */ }
 
-        // Get workplaces for work_time_percentage
+        // Get workplaces for work_time_percentage, service_type and availability relevance
         let workplaces = [];
         try {
-          const [wp] = await pool.execute('SELECT name, work_time_percentage FROM Workplace');
+          const [wp] = await pool.execute('SELECT name, work_time_percentage, service_type, affects_availability FROM Workplace');
           workplaces = wp;
         } catch { /* ignore */ }
 
@@ -476,32 +548,31 @@ router.get('/time-tracking', async (req, res, next) => {
           let totalMinutes = 0;
           let workDays = 0;
 
-          Object.entries(shiftsByDate).forEach(([date, dayShifts]) => {
-            // Skip if only absences
-            const workShifts = dayShifts.filter(s => !absencePositions.includes(s.position));
+          Object.values(shiftsByDate).forEach((dayShifts) => {
+            const workShifts = dayShifts.filter(s => {
+              if (isNonWorkingShiftPosition(s.position)) return false;
+
+              const wp = workplaces.find(w => w.name === s.position);
+              if (wp?.affects_availability === false) return false;
+              return wp?.service_type !== 2;
+            });
             if (workShifts.length === 0) return;
 
-            workDays++;
-            let dayMinutes = 0;
+            const intervals = [];
 
             workShifts.forEach(shift => {
               const wp = workplaces.find(w => w.name === shift.position);
-              const pct = (wp?.work_time_percentage ?? 100) / 100;
+              const ts = shift.timeslot_id
+                ? timeslots.find(t => t.id === shift.timeslot_id)
+                : null;
 
-              if (shift.timeslot_id) {
-                const ts = timeslots.find(t => t.id === shift.timeslot_id);
-                if (ts && ts.start_time && ts.end_time) {
-                  const start = timeToMin(ts.start_time);
-                  let end = timeToMin(ts.end_time);
-                  if (end <= start) end += 24 * 60;
-                  dayMinutes += (end - start) * pct;
-                  return;
-                }
-              }
-              // Default 8h
-              dayMinutes += 480 * pct;
+              intervals.push(shiftToInterval(shift, ts, wp));
             });
 
+            const dayMinutes = mergeTimeIntervals(intervals);
+            if (dayMinutes <= 0) return;
+
+            workDays++;
             totalMinutes += dayMinutes;
           });
 
