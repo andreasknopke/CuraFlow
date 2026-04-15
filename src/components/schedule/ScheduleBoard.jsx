@@ -4452,38 +4452,6 @@ export default function ScheduleBoard() {
                     <span className="bg-indigo-100 text-indigo-700 w-6 h-6 rounded-full flex items-center justify-center text-xs mr-2">{sidebarDoctors.length}</span>
                     Verfügbares Personal
                 </h3>
-                {/* Wochen-Stundenbilanz */}
-                {viewMode === 'week' && (() => {
-                  const DEFAULT_FT = 38.5;
-                  const getTargetHours = (d) => {
-                    if (d.target_weekly_hours) return Number(d.target_weekly_hours);
-                    const model = d.work_time_model_id ? workTimeModelMap.get(d.work_time_model_id) : null;
-                    if (model) return Number(model.hours_per_week);
-                    if (d.fte && Number(d.fte) > 0) return Math.round(Number(d.fte) * DEFAULT_FT * 10) / 10;
-                    return null;
-                  };
-                  const withHours = sidebarDoctors.filter(d => getTargetHours(d) !== null);
-                  const overplanned = withHours.filter(d => {
-                    const target = getTargetHours(d);
-                    const planned = weeklyPlannedHours.get(d.id) || 0;
-                    return planned > target;
-                  });
-                  if (withHours.length === 0) return null;
-                  return (
-                    <div className="mb-3 p-2 rounded-md bg-slate-50 border border-slate-200 text-xs">
-                      <div className="flex items-center justify-between text-slate-600 mb-1">
-                        <span className="flex items-center gap-1"><Clock size={11} /> Wochenstunden</span>
-                        <span className="text-slate-400">{withHours.length} Mitarbeiter</span>
-                      </div>
-                      {overplanned.length > 0 && (
-                        <div className="flex items-center gap-1 text-red-600 font-medium mt-1">
-                          <AlertTriangle size={11} />
-                          <span>{overplanned.length} überplant</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
                 <Droppable 
                     droppableId="sidebar" 
                     isDropDisabled={isReadOnly}
