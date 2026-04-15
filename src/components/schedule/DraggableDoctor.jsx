@@ -2,7 +2,7 @@ import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { User, Clock } from 'lucide-react';
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, plannedHours }) {
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, plannedHours, showTimeAccount = false }) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
   // Wochenstunden-Priorität: 1) Doctor.target_weekly_hours, 2) WorkTimeModel, 3) FTE * 38.5
   const DEFAULT_FULLTIME_HOURS = 38.5;
@@ -65,7 +65,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                 </div>
                 <div className="flex-1 min-w-0 px-2 py-1.5">
                   <span className="text-sm font-medium truncate block">{doctor.name}</span>
-                  {targetWeekly !== null && (
+                  {showTimeAccount && targetWeekly !== null && (
                     <div className="flex items-center gap-1 text-[10px] leading-tight mt-0.5">
                       <Clock size={9} className="text-slate-400 flex-shrink-0" />
                       <span className={

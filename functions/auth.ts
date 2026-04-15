@@ -106,7 +106,7 @@ function sanitizeUser(user) {
     }
     
     // Convert boolean fields
-    const boolFields = ['schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active'];
+    const boolFields = ['schedule_show_sidebar', 'schedule_show_time_account', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active'];
     for (const field of boolFields) {
         if (safe[field] !== undefined) {
             safe[field] = !!safe[field];
@@ -292,7 +292,7 @@ Deno.serve(async (req) => {
             // Whitelist allowed fields for self-update
             const allowedFields = [
                 'full_name', 'theme', 'section_config', 'collapsed_sections',
-                'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
+                'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_show_time_account', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
                 'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
             ];
             
@@ -406,7 +406,7 @@ Deno.serve(async (req) => {
             const allowedFields = [
                 'full_name', 'role', 'doctor_id', 'is_active',
                 'theme', 'section_config', 'collapsed_sections',
-                'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
+                'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_show_time_account', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name',
                 'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
             ];
             

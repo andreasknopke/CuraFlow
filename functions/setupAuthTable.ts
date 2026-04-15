@@ -52,6 +52,7 @@ Deno.serve(async (req) => {
                     collapsed_sections JSON,
                     schedule_hidden_rows JSON,
                     schedule_show_sidebar BOOLEAN DEFAULT TRUE,
+                    schedule_show_time_account BOOLEAN DEFAULT FALSE,
                     schedule_initials_only BOOLEAN DEFAULT FALSE,
                     schedule_sort_doctors_alphabetically BOOLEAN DEFAULT FALSE,
                     highlight_my_name BOOLEAN DEFAULT TRUE,

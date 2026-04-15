@@ -581,6 +581,14 @@ export default function ScheduleBoard() {
     } catch { return false; }
   });
 
+    const [showSidebarTimeAccount, setShowSidebarTimeAccount] = useState(() => {
+            if (user?.schedule_show_time_account !== undefined) return user.schedule_show_time_account;
+            try {
+                    const saved = localStorage.getItem('radioplan_showSidebarTimeAccount');
+                    return saved ? JSON.parse(saved) : false;
+        } catch { return false; }
+    });
+
   // Sync with user profile when it loads/updates
   useEffect(() => {
       if (user?.collapsed_sections && Array.isArray(user.collapsed_sections)) {
@@ -600,6 +608,9 @@ export default function ScheduleBoard() {
       }
       if (user?.schedule_sort_doctors_alphabetically !== undefined) {
           setSortDoctorsAlphabetically(user.schedule_sort_doctors_alphabetically);
+      }
+      if (user?.schedule_show_time_account !== undefined) {
+          setShowSidebarTimeAccount(user.schedule_show_time_account);
       }
   }, [user]);
 
@@ -623,6 +634,13 @@ export default function ScheduleBoard() {
           updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch(e => console.error("Pref save failed", e));
       }
   }, [sortDoctorsAlphabetically, updateMe, user]);
+
+  useEffect(() => {
+      localStorage.setItem('radioplan_showSidebarTimeAccount', JSON.stringify(showSidebarTimeAccount));
+      if (user && user.schedule_show_time_account !== showSidebarTimeAccount) {
+          updateMe({ schedule_show_time_account: showSidebarTimeAccount }).catch(e => console.error("Pref save failed", e));
+      }
+  }, [showSidebarTimeAccount, updateMe, user]);
 
   const sortDoctorsForDisplay = (doctorList = []) => {
       if (!sortDoctorsAlphabetically) {
@@ -4292,6 +4310,12 @@ export default function ScheduleBoard() {
                        >
                            Mitarbeiter alphabetisch sortieren
                        </DropdownMenuCheckboxItem>
+                       <DropdownMenuCheckboxItem 
+                           checked={showSidebarTimeAccount}
+                           onCheckedChange={setShowSidebarTimeAccount}
+                       >
+                           Seitenleiste mit Zeitkonto
+                       </DropdownMenuCheckboxItem>
                        <DropdownMenuSeparator />
 
                        <DropdownMenuLabel className="flex justify-between items-center">
@@ -4513,6 +4537,7 @@ export default function ScheduleBoard() {
                                     isBeingDragged={draggingDoctorId === doctor.id}
                                     workTimeModel={doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null}
                                     plannedHours={weeklyPlannedHours.get(doctor.id) || 0}
+                                    showTimeAccount={showSidebarTimeAccount}
                                 />
                             ))}
                             {provided.placeholder}

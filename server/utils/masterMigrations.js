@@ -48,6 +48,10 @@ export async function runMasterMigrations(dbPool) {
     await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS schedule_sort_doctors_alphabetically TINYINT(1) DEFAULT 0`);
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
 
+  await run('add_schedule_show_time_account', async () => {
+    await dbPool.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS schedule_show_time_account TINYINT(1) DEFAULT 0`);
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+
   await run('create_email_verification_table', async () => {
     await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS EmailVerification (
