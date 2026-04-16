@@ -189,6 +189,10 @@ function applyCorrections(apiSchool, apiPublic, customHolidays) {
   };
 }
 
+// ===== In-memory cache for holiday responses (avoids redundant external API calls) =====
+const holidayCache = new Map(); // key: `${year}` → { data, timestamp }
+const HOLIDAY_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 // ===== GET HOLIDAYS (now centralized) =====
 // The state parameter from the query is IGNORED - we always use the central setting
 router.get('/', async (req, res, next) => {
@@ -197,6 +201,13 @@ router.get('/', async (req, res, next) => {
     
     if (!year) {
       return res.status(400).json({ error: 'Year parameter required' });
+    }
+
+    // Check cache first
+    const cacheKey = String(year);
+    const cached = holidayCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < HOLIDAY_CACHE_TTL) {
+      return res.json(cached.data);
     }
 
     // Read central settings from master DB
@@ -257,13 +268,18 @@ router.get('/', async (req, res, next) => {
     // Apply central corrections
     const resolved = applyCorrections(apiSchool, apiPublic, customHolidays);
     
-    res.json({
+    const responseData = {
       school: resolved.school,
       public: resolved.public,
       schoolRemovals: resolved.schoolRemovals,
       stateCode, // Tell frontend which state is configured centrally
       centralized: true // Flag so frontend knows corrections are already applied
-    });
+    };
+
+    // Store in cache
+    holidayCache.set(cacheKey, { data: responseData, timestamp: Date.now() });
+
+    res.json(responseData);
   } catch (error) {
     next(error);
   }
@@ -362,5 +378,10 @@ async function getPublicHolidayDatesForYear(year) {
   return dateSet;
 }
 
+/** Clear the in-memory holiday cache (call after holiday settings/custom changes) */
+function clearHolidayCache() {
+  holidayCache.clear();
+}
+
 export default router;
-export { calculateGermanHolidays, getPublicHolidayDatesForYear };
+export { calculateGermanHolidays, getPublicHolidayDatesForYear, clearHolidayCache };

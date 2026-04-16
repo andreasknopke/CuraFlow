@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Clock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Clock, Settings2 } from 'lucide-react';
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,7 @@ import DraggableShift from './DraggableShift';
 import DroppableCell from './DroppableCell';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { generateSuggestions } from './autoFillEngine';
+import AutoFillSettingsDialog from './AutoFillSettingsDialog';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
@@ -4235,6 +4236,17 @@ export default function ScheduleBoard() {
                                  Nur {name}
                              </DropdownMenuItem>
                          ))}
+                         {user?.role === 'admin' && (
+                           <>
+                             <DropdownMenuSeparator />
+                             <AutoFillSettingsDialog trigger={
+                               <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                 <Settings2 className="w-4 h-4 mr-2 text-slate-500" />
+                                 Einstellungen
+                               </DropdownMenuItem>
+                             } />
+                           </>
+                         )}
                          {/* KI-Optimierung temporarily hidden
                          <DropdownMenuSeparator />
                          <DropdownMenuLabel className="flex items-center gap-1">

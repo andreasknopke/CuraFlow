@@ -15,7 +15,7 @@ import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
-import { getPublicHolidayDatesForYear } from './holidays.js';
+import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -992,6 +992,7 @@ router.put('/holidays/settings', async (req, res, next) => {
       [key, String(value)]
     );
     console.log(`[Master holidays] Setting updated: ${key} = ${value} by user ${req.user.sub}`);
+    clearHolidayCache();
     res.json({ success: true });
   } catch (error) {
     console.error('[Master holidays] Update setting error:', error);
@@ -1034,6 +1035,7 @@ router.post('/holidays/custom', async (req, res, next) => {
     );
 
     console.log(`[Master holidays] Custom holiday created: ${name} (${type}/${action}) by user ${req.user.sub}`);
+    clearHolidayCache();
     res.json({ id, name, start_date, end_date, type, action });
   } catch (error) {
     console.error('[Master holidays] Create custom error:', error);
@@ -1051,6 +1053,7 @@ router.delete('/holidays/custom/:id', async (req, res, next) => {
     await ensureCentralHolidayTables();
     await db.execute('DELETE FROM custom_holidays WHERE id = ?', [id]);
     console.log(`[Master holidays] Custom holiday deleted: ${id} by user ${req.user.sub}`);
+    clearHolidayCache();
     res.json({ success: true });
   } catch (error) {
     console.error('[Master holidays] Delete custom error:', error);

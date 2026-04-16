@@ -259,6 +259,11 @@ export function generateSuggestions({
         const s = systemSettings?.find(x => x.key === key);
         return parseInt(s?.value || def);
     };
+    const getSettingBool = (key, def = false) => {
+        const s = systemSettings?.find(x => x.key === key);
+        if (!s) return def;
+        return s.value === 'true' || s.value === '1';
+    };
     const limitFG = getSetting('limit_fore_services', '4');
     const limitBG = getSetting('limit_back_services', '12');
     const limitWeekend = getSetting('limit_weekend_services', '1');
@@ -501,6 +506,16 @@ export function generateSuggestions({
         return targets.includes(wpName);
     };
 
+    /** Does this doctor have any active rotation on this date? */
+    const hasActiveRotation = (doctorId, dateStr) => {
+        return getActiveRotationTargets(doctorId, dateStr).length > 0;
+    };
+
+    // Strict rotation mode: when enabled, doctors with active rotations are excluded from
+    // services and non-rotation positions. Default false (= soft penalty only, traditional behavior).
+    // Needed for departments like Anesthesia (KAI) where rotation trainees must stay on their rotation.
+    const strictRotationMode = getSettingBool('rotation_restricts_other_assignments', false);
+
     /** Get consecutive days mode for a workplace: 'forbidden' | 'allowed' | 'preferred' */
     const getConsecutiveMode = (wp) => {
         if (wp.consecutive_days_mode) return wp.consecutive_days_mode;
@@ -711,6 +726,7 @@ export function generateSuggestions({
                 // Build candidate pool for this service
                 // Exclude doctors who would exceed their 4-week limit
                 // Also exclude doctors already assigned to a service today
+                // In strict rotation mode: exclude doctors with active rotations
                 // EXCEPTION: Allow dual-service if doctor has a specific wish for THIS service
                 // (e.g. wishes for both Spätdienst and Hintergrunddienst on the same day)
                 const allCandidates = doctors.filter(d => {
@@ -718,6 +734,7 @@ export function generateSuggestions({
                     return (
                         (!usedToday.has(d.id) || hasWishForThis) &&
                         (!serviceAssignedToday.has(d.id) || hasWishForThis) &&
+                        (!strictRotationMode || !hasActiveRotation(d.id, dateStr) || hasWishForThis) &&
                         !isExcluded(d.id, svc.id) &&
                         !hasApprovedNoService(d.id, dateStr) &&
                         isQualified(d.id, svc.id) &&
@@ -763,6 +780,7 @@ export function generateSuggestions({
                         return (
                             (!usedToday.has(d.id) || hasWishForThis) &&
                             (!serviceAssignedToday.has(d.id) || hasWishForThis) &&
+                            (!strictRotationMode || !hasActiveRotation(d.id, dateStr) || hasWishForThis) &&
                             !isExcluded(d.id, svc.id) &&
                             !hasApprovedNoService(d.id, dateStr) &&
                             isQualified(d.id, svc.id) &&
@@ -871,6 +889,12 @@ export function generateSuggestions({
                 let eligible = doctors
                     .filter(d => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
 
+                // Strict rotation mode: prefer non-rotating doctors for non-rotation workplaces
+                if (strictRotationMode && !isRotationWp(wp)) {
+                    const nonRotating = eligible.filter(d => !hasActiveRotation(d.id, dateStr));
+                    if (nonRotating.length > 0) eligible = nonRotating;
+                }
+
                 {
                     const nonDiscouraged = eligible.filter(d => !isDiscouraged(d.id, wp.id));
                     if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
@@ -968,13 +992,22 @@ export function generateSuggestions({
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                 let eligible = unassigned.filter(doc => !isExcluded(doc.id, targetWp.id));
 
-                // Rotation rule for second+ occupancy: restrict to active rotation trainees.
-                if (isRotationWp(targetWp) && targetCurrentCount >= 1) {
-                    const traineeOnly = eligible.filter(doc =>
-                        isRotationTraineeForWp(doc.id, targetWp.name, dateStr)
-                    );
-                    if (traineeOnly.length > 0) {
-                        eligible = traineeOnly;
+                // Rotation restriction (configurable per tenant):
+                if (isRotationWp(targetWp)) {
+                    // For rotation workplaces: restrict 2nd+ slot to active trainees
+                    if (targetCurrentCount >= 1) {
+                        const traineeOnly = eligible.filter(doc =>
+                            isRotationTraineeForWp(doc.id, targetWp.name, dateStr)
+                        );
+                        if (traineeOnly.length > 0) {
+                            eligible = traineeOnly;
+                        }
+                    }
+                } else if (strictRotationMode) {
+                    // Strict mode: exclude doctors who have an active rotation elsewhere
+                    const nonRotating = eligible.filter(doc => !hasActiveRotation(doc.id, dateStr));
+                    if (nonRotating.length > 0) {
+                        eligible = nonRotating;
                     }
                 }
 
@@ -1076,6 +1109,16 @@ export function generateSuggestions({
                 for (const doc of remaining) {
                     // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
                     let eligibleWps = options.filter(o => !isExcluded(doc.id, o.wp.id));
+
+                    // Strict rotation mode: doctors with active rotations should only go to their rotation wp
+                    if (strictRotationMode && hasActiveRotation(doc.id, dateStr)) {
+                        const rotOnly = eligibleWps.filter(o => isRotationTraineeForWp(doc.id, o.wp.name, dateStr));
+                        if (rotOnly.length > 0) {
+                            eligibleWps = rotOnly;
+                        } else {
+                            eligibleWps = []; // no suitable rotation wp available → skip this doctor
+                        }
+                    }
 
                     // Deficit-first: while any deficit exists, only consider deficit slots
                     if (hasAnyDeficitOption) {
