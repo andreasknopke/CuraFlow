@@ -4451,7 +4451,6 @@ export default function ScheduleBoard() {
                   onDragStart={handleDragStart} 
                                     onDragUpdate={handleDragUpdate}
                   onDragEnd={handleDragEnd}
-                  autoScrollerOptions={{ disabled: true }}
                 >
 
                   <div className="flex flex-col lg:flex-row gap-6 items-start relative min-h-[500px]">
