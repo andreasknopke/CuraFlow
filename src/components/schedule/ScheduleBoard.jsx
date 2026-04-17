@@ -3846,7 +3846,7 @@ export default function ScheduleBoard() {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
 
       return (
-          <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
+          <div className="w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 max-h-[calc(100vh-180px)] z-0 overflow-x-auto overflow-y-auto">
               <div className="min-w-[800px]">
                   <div className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm`}>
                       <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
@@ -4530,7 +4530,7 @@ export default function ScheduleBoard() {
                             )}
 
                             {/* Matrix */}
-                            <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 ${draggingDoctorId ? 'overflow-hidden' : 'overflow-x-auto overflow-y-auto'}`}>
+                            <div className={`w-full lg:flex-1 bg-white rounded-lg shadow-sm border border-slate-200 ${isEmbeddedSchedule ? 'max-h-[calc(100vh-120px)]' : 'max-h-[calc(100vh-180px)]'} z-0 overflow-x-auto overflow-y-auto`}>
                                                         <div style={{ minWidth: `${matrixMinWidth}px` }}>
                                                             <div className="grid border-b border-slate-200 bg-slate-50 sticky top-0 z-30 shadow-sm" style={matrixGridStyle}>
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
