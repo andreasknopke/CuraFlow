@@ -720,8 +720,7 @@ export default function ScheduleBoard() {
           return [];
       }
   });
-  const savedCollapsedGroupsRef = useRef(null);
-  const savedCollapsedSectionsRef = useRef(null);
+    const savedCollapsedGroupsRef = useRef(null);
   const droppedInTimeslotGroupRef = useRef(null);
     const dragAutoScrollerOptions = useMemo(() => ({
             startFromPercentage: 0.3,
@@ -2330,20 +2329,12 @@ export default function ScheduleBoard() {
             docId = shift.doctor_id;
         }
     }
-    // Use flushSync to ensure DOM updates before measurement
-    // This is critical for correct drag clone dimensions
-    // Alle eingeklappten Sektionen und Timeslot-Gruppen VOR der Messung expandieren,
-    // damit @hello-pangea/dnd korrekte Droppable-Positionen cached.
+        // Use flushSync to ensure DOM updates before measurement.
+        // Only collapsed timeslot groups are expanded here so their nested droppables
+        // are measurable during drag; collapsed sections must remain untouched.
     flushSync(() => {
       if (docId) setDraggingDoctorId(docId);
       if (shiftId) setDraggingShiftId(shiftId);
-      setCollapsedSections(prev => {
-        if (prev.length > 0) {
-          savedCollapsedSectionsRef.current = prev;
-          return [];
-        }
-        return prev;
-      });
       setCollapsedTimeslotGroups(prev => {
         if (prev.length > 0) {
           savedCollapsedGroupsRef.current = prev;
@@ -2400,28 +2391,6 @@ export default function ScheduleBoard() {
 
   const handleDragEnd = async (result) => {
     setIsDraggingFromGrid(false);
-        // Gespeicherte Collapsed-Sektionen wiederherstellen
-        const savedSections = savedCollapsedSectionsRef.current;
-        if (savedSections) {
-            // Sektion offen lassen, in die gedroppt wurde
-            const droppedWp = result.destination
-                ? getWorkplaceNameFromDroppableId(result.destination.droppableId)
-                : null;
-            if (droppedWp) {
-                // Finde die Sektion, die diesen Arbeitsplatz enthält
-                const droppedSection = allSections.find(s =>
-                    s.rows.some(r => (typeof r === 'string' ? r : r.name) === droppedWp)
-                );
-                if (droppedSection) {
-                    setCollapsedSections(savedSections.filter(t => t !== droppedSection.title));
-                } else {
-                    setCollapsedSections(savedSections);
-                }
-            } else {
-                setCollapsedSections(savedSections);
-            }
-            savedCollapsedSectionsRef.current = null;
-        }
         // Gespeicherte Collapsed-Gruppen wiederherstellen
         const saved = savedCollapsedGroupsRef.current;
         if (saved) {
