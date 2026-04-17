@@ -64,8 +64,20 @@ const queryData = async (base44, entity, action, options = {}) => {
 };
 
 Deno.serve(async (req) => {
+    let base44 = null;
+
+    const writeSystemLog = async (payload) => {
+        if (!base44?.asServiceRole?.entities?.SystemLog) return;
+
+        try {
+            await base44.asServiceRole.entities.SystemLog.create(payload);
+        } catch (e) {
+            console.error("Log failed", e);
+        }
+    };
+
     try {
-        const base44 = createClientFromRequest(req);
+        base44 = createClientFromRequest(req);
         const user = await base44.auth.me();
         if (!user) {
             return Response.json({ error: 'Unauthorized' }, { status: 401 });
@@ -260,26 +272,24 @@ Deno.serve(async (req) => {
         const buffer = await workbook.xlsx.writeBuffer();
         const base64 = Buffer.from(buffer).toString('base64');
 
-        try {
-            await base44.asServiceRole.entities.SystemLog.create({
-                level: 'info',
-                source: 'ExcelExport',
-                message: 'Schedule exported successfully',
-                details: JSON.stringify({ startDate, endDate, user: user.email })
-            });
-        } catch (e) { console.error("Log failed", e); }
+        await writeSystemLog({
+            level: 'info',
+            source: 'ExcelExport',
+            message: 'Schedule exported successfully',
+            details: JSON.stringify({ startDate, endDate, user: user.email })
+        });
 
         return Response.json({ file: base64 });
 
     } catch (error) {
-        try {
-            await base44.asServiceRole.entities.SystemLog.create({
-                level: 'error',
-                source: 'ExcelExport',
-                message: 'Export failed',
-                details: JSON.stringify({ error: error.message })
-            });
-        } catch (e) { console.error("Log failed", e); }
+        console.error('Export Error:', error);
+
+        await writeSystemLog({
+            level: 'error',
+            source: 'ExcelExport',
+            message: 'Export failed',
+            details: JSON.stringify({ error: error.message })
+        });
 
         return Response.json({ error: error.message }, { status: 500 });
     }
