@@ -2060,11 +2060,11 @@ export default function ScheduleBoard() {
           const startDate = weekDays[0];
           const endDate = weekDays[weekDays.length - 1];
           
-          const { data } = await base44.functions.invoke('exportScheduleToExcel', {
-              startDate: format(startDate, 'yyyy-MM-dd'),
-              endDate: format(endDate, 'yyyy-MM-dd'),
-              hiddenRows: hiddenRows
-          });
+          const data = await api.exportScheduleToExcel(
+              format(startDate, 'yyyy-MM-dd'),
+              format(endDate, 'yyyy-MM-dd'),
+              hiddenRows
+          );
           
           // Decode base64
           const byteCharacters = atob(data.file);
