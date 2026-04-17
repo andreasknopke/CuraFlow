@@ -723,6 +723,12 @@ export default function ScheduleBoard() {
   const savedCollapsedGroupsRef = useRef(null);
   const savedCollapsedSectionsRef = useRef(null);
   const droppedInTimeslotGroupRef = useRef(null);
+    const dragAutoScrollerOptions = useMemo(() => ({
+            startFromPercentage: 0.3,
+            maxScrollAtPercentage: 0.1,
+            maxPixelScroll: 16,
+            ease: (value) => value,
+    }), []);
 
   useEffect(() => {
       localStorage.setItem('radioplan_collapsedTimeslotGroups', JSON.stringify(collapsedTimeslotGroups));
@@ -4451,6 +4457,7 @@ export default function ScheduleBoard() {
                   onDragStart={handleDragStart} 
                                     onDragUpdate={handleDragUpdate}
                   onDragEnd={handleDragEnd}
+                                    autoScrollerOptions={dragAutoScrollerOptions}
                 >
 
                   <div className="flex flex-col lg:flex-row gap-6 items-start relative min-h-[500px]">
