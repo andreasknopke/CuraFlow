@@ -14,11 +14,19 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
-    
-    // Get value: explicit entry > doctor default > 1.0
-    let val = entry ? entry.value : (doctor.fte !== undefined ? String(doctor.fte) : "1.0");
-    
-    if (!val) val = "0"; // Treat empty/null as 0? Or 1.0? 
+
+    // Keep availability aligned with the staffing table: empty monthly values fall back to the doctor's default FTE.
+    const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
+    let val;
+
+    if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
+        val = String(entryValue);
+    } else if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
+        val = String(doctor.fte);
+    } else {
+        val = "1.0";
+    }
+
     // In StaffingPlanTable we said: "If monthStart > endDate -> ''". 
     // If contract ends, we handle it above.
     // If no entry and no contract end issue, we use doctor.fte.

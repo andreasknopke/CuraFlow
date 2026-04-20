@@ -238,6 +238,16 @@ export default function TransferToSchedulerDialog({
         return summary;
     }, [transferPreview.entries]);
 
+    const skippedReasonSummary = useMemo(() => {
+        const summary = new Map();
+        transferPreview.skipped.forEach(item => {
+            summary.set(item.reason, (summary.get(item.reason) || 0) + 1);
+        });
+
+        return Array.from(summary.entries())
+            .sort((a, b) => b[1] - a[1]);
+    }, [transferPreview.skipped]);
+
     const modeLabels = {
         day: 'Einen Tag',
         week: 'Eine Woche',
@@ -438,7 +448,18 @@ export default function TransferToSchedulerDialog({
 
                         {/* Skipped entries (collapsible) */}
                         {transferPreview.skipped.length > 0 && (
-                            <details className="border rounded-lg">
+                            <div className="space-y-3">
+                                <div className="border rounded-lg bg-slate-50 p-3">
+                                    <h4 className="text-sm font-medium text-slate-700 mb-2">Häufigste Gründe für übersprungene Einträge</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {skippedReasonSummary.map(([reason, count]) => (
+                                            <span key={reason} className="px-2 py-1 rounded border bg-white text-xs text-slate-600">
+                                                {count}x {reason}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                                <details className="border rounded-lg">
                                 <summary className="p-3 cursor-pointer hover:bg-slate-50 flex items-center gap-2 text-sm font-medium text-slate-600">
                                     <XCircle className="w-4 h-4 text-slate-400" />
                                     {transferPreview.skipped.length} übersprungene Einträge anzeigen
@@ -465,7 +486,8 @@ export default function TransferToSchedulerDialog({
                                         </TableBody>
                                     </Table>
                                 </div>
-                            </details>
+                                </details>
+                            </div>
                         )}
 
                         {/* Doctor Summary */}
