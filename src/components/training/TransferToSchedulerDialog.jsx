@@ -155,11 +155,11 @@ export default function TransferToSchedulerDialog({
                     return;
                 }
                 
-                // Check for existing rotation entry
-                const hasExistingRotation = existingShifts.some(s => s.position === rot.modality);
-                const hasOtherEntry = existingShifts.filter(s => !absenceTypes.includes(s.position));
-                
-                if (hasExistingRotation) {
+                // Existing non-absence entries can optionally be replaced.
+                const existingAssignableEntries = existingShifts.filter(s => !absenceTypes.includes(s.position));
+                const hasExistingRotation = existingAssignableEntries.some(s => s.position === rot.modality);
+
+                if (hasExistingRotation && !overwriteExisting) {
                     skipped.push({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
@@ -169,15 +169,15 @@ export default function TransferToSchedulerDialog({
                     });
                     return;
                 }
-                
-                if (hasOtherEntry.length > 0 && !overwriteExisting) {
+
+                if (existingAssignableEntries.length > 0 && !overwriteExisting) {
                     skipped.push({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
                         doctorName: doctor.name,
                         modality: rot.modality,
-                        reason: `Bereits belegt (${hasOtherEntry[0].position})`,
-                        existingShiftIds: hasOtherEntry.map(s => s.id)
+                        reason: `Bereits belegt (${existingAssignableEntries[0].position})`,
+                        existingShiftIds: existingAssignableEntries.map(s => s.id)
                     });
                     return;
                 }
@@ -188,9 +188,9 @@ export default function TransferToSchedulerDialog({
                     doctorName: doctor.name,
                     position: rot.modality,
                     modality: rot.modality,
-                    overwrite: hasOtherEntry.length > 0,
-                    existingShiftIds: hasOtherEntry.map(s => s.id),
-                    existingPosition: hasOtherEntry.length > 0 ? hasOtherEntry[0].position : null
+                    overwrite: existingAssignableEntries.length > 0,
+                    existingShiftIds: existingAssignableEntries.map(s => s.id),
+                    existingPosition: existingAssignableEntries.length > 0 ? existingAssignableEntries[0].position : null
                 });
             });
         });
