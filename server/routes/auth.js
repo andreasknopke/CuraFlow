@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from '../index.js';
+import { buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -19,6 +20,29 @@ function verifyToken(token) {
   } catch (e) {
     return null;
   }
+}
+
+function resolveAuthPayload(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return verifyToken(authHeader.substring(7));
+  }
+
+  if (typeof req.query?.access_token === 'string' && req.query.access_token) {
+    return verifyToken(req.query.access_token);
+  }
+
+  return null;
+}
+
+function streamAuthMiddleware(req, res, next) {
+  const payload = resolveAuthPayload(req);
+  if (!payload) {
+    return res.status(401).json({ error: 'Nicht autorisiert' });
+  }
+
+  req.user = payload;
+  next();
 }
 
 // Middleware to verify authentication
@@ -467,6 +491,47 @@ router.get('/verify', (req, res) => {
   const payload = verifyToken(token);
   
   res.json({ valid: !!payload, payload });
+});
+
+router.post('/presence', authMiddleware, async (req, res) => {
+  res.json({
+    success: true,
+    receivedAt: new Date().toISOString(),
+  });
+});
+
+router.get('/events/stream', streamAuthMiddleware, async (req, res) => {
+  const dbToken = typeof req.query?.db_token === 'string' ? req.query.db_token : null;
+  const scope = buildRealtimeScope(dbToken);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  const unregister = registerRealtimeClient({
+    scope,
+    res,
+    userId: req.user?.sub || null,
+  });
+
+  req.on('close', unregister);
+  req.on('end', unregister);
+});
+
+router.get('/cowork/contacts', authMiddleware, async (req, res) => {
+  res.json([]);
+});
+
+router.get('/cowork/invites', authMiddleware, async (req, res) => {
+  res.json({
+    incoming: [],
+    outgoing: [],
+  });
 });
 
 export default router;

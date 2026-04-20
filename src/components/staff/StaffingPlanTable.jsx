@@ -74,6 +74,20 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
 export default function StaffingPlanTable({ doctors, isReadOnly }) {
     const queryClient = useQueryClient();
     const [year, setYear] = useState(new Date().getFullYear());
+
+    const getDoctorDisplayName = (doctor) => {
+        const name = doctor?.name;
+        return typeof name === 'string' && name.trim() ? name : 'Unbenannt';
+    };
+
+    const getDoctorRoleBadge = (doctor) => {
+        const role = doctor?.role;
+        if (typeof role !== 'string' || !role.trim()) {
+            return '--';
+        }
+
+        return role.substring(0, 2).toUpperCase();
+    };
     
     // Dialog state for cell editing
     const [editDialog, setEditDialog] = useState({
@@ -100,7 +114,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     });
 
     const rawTarget = systemSettings.find(s => s.key === `staffing_target_${year}`)?.value || "0";
-    const targetFTE = parseFloat(rawTarget.replace(',', '.'));
+    const targetFTE = parseFloat(String(rawTarget).replace(',', '.')) || 0;
 
     // --- Mutations ---
     const updateEntryMutation = useMutation({
@@ -176,7 +190,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         }
 
         // Default to doctor's FTE (rounded to 2 decimal places)
-        const defaultFte = doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0;
+        const parsedFte = parseFloat(doctor.fte);
+        const defaultFte = !isNaN(parsedFte) ? Math.round(parsedFte * 100) / 100 : 1.0;
         return formatNumber(defaultFte);
     };
 
@@ -313,12 +328,13 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                         <TableBody>
                             {visibleDoctors.map(doc => {
                                 const avg = getDoctorAverage(doc.id);
+                                const doctorName = getDoctorDisplayName(doc);
                                 return (
                                     <TableRow key={doc.id} className="hover:bg-slate-50">
                                         <TableCell className="font-medium border-r sticky left-0 bg-white z-10">
                                             <div className="flex items-center justify-between">
-                                                <span className="truncate max-w-[150px]" title={doc.name}>{doc.name}</span>
-                                                <span className="text-[10px] text-slate-400 bg-slate-100 px-1 rounded">{doc.role.substring(0, 2).toUpperCase()}</span>
+                                                <span className="truncate max-w-[150px]" title={doctorName}>{doctorName}</span>
+                                                <span className="text-[10px] text-slate-400 bg-slate-100 px-1 rounded">{getDoctorRoleBadge(doc)}</span>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-center font-bold bg-slate-100/50 border-r text-slate-700">
@@ -351,7 +367,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                                         cellBg,
                                                         isReadOnly && "cursor-default hover:bg-transparent"
                                                     )}
-                                                    onClick={() => openEditDialog(doc.id, doc.name, month, val)}
+                                                    onClick={() => openEditDialog(doc.id, doctorName, month, val)}
                                                 >
                                                     <div className={cn(
                                                         "h-8 w-full flex items-center justify-center text-xs",

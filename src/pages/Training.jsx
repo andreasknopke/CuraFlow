@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear, addDays, subDays } from 'date-fns';
+import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear } from 'date-fns';
 import { ChevronLeft, ChevronRight, GraduationCap, Eraser, ArrowRightToLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,7 +18,8 @@ import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@
 
 export default function TrainingPage() {
   const { isReadOnly, user } = useAuth();
-    const { getSectionName } = useSectionConfig();
+    const { toast } = useToast();
+        const { getSectionName } = useSectionConfig();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [activeModality, setActiveModality] = useState('CT');
@@ -150,19 +151,28 @@ export default function TrainingPage() {
       return result;
   }, [rotations, selectedDoctorId, selectedYear]);
 
-  const createRotationMutation = useMutation({
-    mutationFn: (data) => db.TrainingRotation.create(data),
+    const replaceRotationRangeMutation = useMutation({
+        mutationFn: ({ doctorId, startDate, endDate, modality }) => api.atomicOperation(
+            'replaceTrainingRotationRange',
+            'TrainingRotation',
+            {
+                data: {
+                    doctor_id: doctorId,
+                    start_date: startDate,
+                    end_date: endDate,
+                    modality,
+                },
+            }
+        ),
     onSuccess: () => queryClient.invalidateQueries(['trainingRotations']),
-  });
-
-  const deleteRotationMutation = useMutation({
-    mutationFn: (id) => db.TrainingRotation.delete(id),
-    onSuccess: () => queryClient.invalidateQueries(['trainingRotations']),
-  });
-
-  const updateRotationMutation = useMutation({
-    mutationFn: ({ id, data }) => db.TrainingRotation.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries(['trainingRotations']),
+        onError: (error) => {
+            toast({
+                variant: 'destructive',
+                title: 'Rotation konnte nicht gespeichert werden',
+                description: error.message || 'Die Aenderung konnte nicht vollstaendig verarbeitet werden.',
+            });
+            queryClient.invalidateQueries(['trainingRotations']);
+        },
   });
 
   // Bulk operations for transferring training to scheduler
@@ -183,6 +193,20 @@ export default function TrainingPage() {
   });
 
   const isTransferPending = bulkCreateShiftMutation.isPending || bulkDeleteShiftMutation.isPending;
+
+  const applyRotationRange = (start, end, doctorId, modality) => {
+      if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+
+      const startDate = start < end ? start : end;
+      const endDate = start < end ? end : start;
+
+      replaceRotationRangeMutation.mutate({
+          doctorId,
+          startDate: format(startDate, 'yyyy-MM-dd'),
+          endDate: format(endDate, 'yyyy-MM-dd'),
+          modality: modality || null,
+      });
+  };
 
   const handleTransferToScheduler = ({ entries, overwriteExisting }) => {
       if (entries.length === 0) return;
@@ -225,32 +249,24 @@ export default function TrainingPage() {
 
   // Handler for overview: toggle rotation for a specific doctor
   const handleOverviewToggle = (date, currentStatus, doctorId, event) => {
-      if (!doctorId || isReadOnly) return;
-      
-      const dateStr = format(date, 'yyyy-MM-dd');
+      if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
       
       if (activeModality === 'DELETE') {
           if (currentStatus) {
-              handleOverviewRangeDelete(date, date, doctorId);
+              applyRotationRange(date, date, doctorId, null);
           }
           return;
       }
       
       // Same type → Delete
       if (currentStatus === activeModality) {
-          handleOverviewRangeDelete(date, date, doctorId);
+          applyRotationRange(date, date, doctorId, null);
           return;
       }
       
       // Different type → Overwrite
       if (currentStatus && currentStatus !== activeModality) {
-          handleOverviewRangeDelete(date, date, doctorId);
-          createRotationMutation.mutate({
-              doctor_id: doctorId,
-              modality: activeModality,
-              start_date: dateStr,
-              end_date: dateStr
-          });
+          applyRotationRange(date, date, doctorId, activeModality);
           return;
       }
 
@@ -272,71 +288,22 @@ export default function TrainingPage() {
       const end = rangeStart < date ? date : rangeStart;
       setRangeStart(null);
 
-      createRotationMutation.mutate({
-          doctor_id: doctorId,
-          modality: activeModality,
-          start_date: format(start, 'yyyy-MM-dd'),
-          end_date: format(end, 'yyyy-MM-dd')
-      });
-  };
-
-  const handleOverviewRangeDelete = (start, end, doctorId) => {
-      const rangeStartStr = format(start, 'yyyy-MM-dd');
-      const rangeEndStr = format(end, 'yyyy-MM-dd');
-
-      const overlapping = rotations.filter(r => {
-          if (r.doctor_id !== doctorId) return false;
-          return r.start_date <= rangeEndStr && r.end_date >= rangeStartStr;
-      });
-
-      overlapping.forEach(rot => {
-          if (rot.start_date >= rangeStartStr && rot.end_date <= rangeEndStr) {
-              deleteRotationMutation.mutate(rot.id);
-          } else if (rot.start_date < rangeStartStr && rot.end_date <= rangeEndStr) {
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
-              });
-          } else if (rot.start_date >= rangeStartStr && rot.end_date > rangeEndStr) {
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { start_date: format(addDays(end, 1), 'yyyy-MM-dd') }
-              });
-          } else if (rot.start_date < rangeStartStr && rot.end_date > rangeEndStr) {
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
-              });
-              createRotationMutation.mutate({
-                  doctor_id: rot.doctor_id,
-                  modality: rot.modality,
-                  start_date: format(addDays(end, 1), 'yyyy-MM-dd'),
-                  end_date: rot.end_date
-              });
-          }
-      });
+      applyRotationRange(start, end, doctorId, activeModality);
   };
 
   const handleOverviewRangeSelect = (start, end, doctorId) => {
-      if (!doctorId || isReadOnly) return;
-      const startDate = start < end ? start : end;
-      const endDate = start < end ? end : start;
+      if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
       
       if (activeModality === 'DELETE') {
-          handleOverviewRangeDelete(startDate, endDate, doctorId);
+          applyRotationRange(start, end, doctorId, null);
           return;
       }
       
-      createRotationMutation.mutate({
-          doctor_id: doctorId,
-          modality: activeModality,
-          start_date: format(startDate, 'yyyy-MM-dd'),
-          end_date: format(endDate, 'yyyy-MM-dd')
-      });
+      applyRotationRange(start, end, doctorId, activeModality);
   };
 
   const handleToggle = (date, currentStatus, event) => {
-      if (!selectedDoctorId || isReadOnly) return;
+      if (!selectedDoctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
       
       // Only CTRL click for ranges logic or single click
       // But for Training, we probably ALWAYS want ranges.
@@ -370,97 +337,36 @@ export default function TrainingPage() {
       // But we should probably clean up.
       
       if (activeModality === 'DELETE') {
-          handleRangeDelete(start, end);
+          applyRotationRange(start, end, selectedDoctorId, null);
           return;
       }
 
-      createRotationMutation.mutate({
-          doctor_id: selectedDoctorId,
-          modality: activeModality,
-          start_date: startStr,
-          end_date: endStr
-      });
+      applyRotationRange(start, end, selectedDoctorId, activeModality);
   };
 
   const handleRangeDelete = (start, end) => {
-      const rangeStartStr = format(start, 'yyyy-MM-dd');
-      const rangeEndStr = format(end, 'yyyy-MM-dd');
-
-      // Find overlapping rotations
-      const overlapping = rotations.filter(r => {
-          if (r.doctor_id !== selectedDoctorId) return false;
-          return r.start_date <= rangeEndStr && r.end_date >= rangeStartStr;
-      });
-
-      overlapping.forEach(rot => {
-          // Case 1: Fully contained -> Delete
-          if (rot.start_date >= rangeStartStr && rot.end_date <= rangeEndStr) {
-              deleteRotationMutation.mutate(rot.id);
-          }
-          // Case 2: Range overlaps end of rotation (Shorten from right)
-          // Rotation: [---]
-          // Delete:      [---]
-          else if (rot.start_date < rangeStartStr && rot.end_date <= rangeEndStr) {
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
-              });
-          }
-          // Case 3: Range overlaps start of rotation (Shorten from left)
-          // Rotation:      [---]
-          // Delete:   [---]
-          else if (rot.start_date >= rangeStartStr && rot.end_date > rangeEndStr) {
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { start_date: format(addDays(end, 1), 'yyyy-MM-dd') }
-              });
-          }
-          // Case 4: Range in middle of rotation (Split)
-          // Rotation: [-------]
-          // Delete:     [---] 
-          else if (rot.start_date < rangeStartStr && rot.end_date > rangeEndStr) {
-              // 1. Shorten original to end before delete range
-              updateRotationMutation.mutate({
-                  id: rot.id,
-                  data: { end_date: format(subDays(start, 1), 'yyyy-MM-dd') }
-              });
-              // 2. Create new rotation starting after delete range
-              createRotationMutation.mutate({
-                  doctor_id: rot.doctor_id,
-                  modality: rot.modality,
-                  start_date: format(addDays(end, 1), 'yyyy-MM-dd'),
-                  end_date: rot.end_date
-              });
-          }
-      });
+      applyRotationRange(start, end, selectedDoctorId, null);
   };
 
   const handleRangeSelect = (start, end) => {
-      if (!selectedDoctorId || isReadOnly) return;
-      const startDate = start < end ? start : end;
-      const endDate = start < end ? end : start;
+      if (!selectedDoctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
       
       if (activeModality === 'DELETE') {
-          handleRangeDelete(startDate, endDate);
+          applyRotationRange(start, end, selectedDoctorId, null);
           return;
       }
       
-      createRotationMutation.mutate({
-          doctor_id: selectedDoctorId,
-          modality: activeModality,
-          start_date: format(startDate, 'yyyy-MM-dd'),
-          end_date: format(endDate, 'yyyy-MM-dd')
-      });
+      applyRotationRange(start, end, selectedDoctorId, activeModality);
   };
 
   const handleInteraction = (date, currentStatus, event) => {
-      if (isReadOnly) return;
+      if (isReadOnly || replaceRotationRangeMutation.isPending) return;
 
       // DELETE Mode Logic
       if (activeModality === 'DELETE') {
           if (currentStatus) {
               // If clicking on existing in delete mode -> Delete (Shorten/Split logic applied to single day)
-              handleRangeDelete(date, date);
+              applyRotationRange(date, date, selectedDoctorId, null);
           }
           return;
       }
@@ -480,7 +386,7 @@ export default function TrainingPage() {
           
           // Same Type -> Toggle Off (Delete logic for this day)
           if (currentStatus === activeModality && clickedDay) {
-              handleRangeDelete(date, date);
+              applyRotationRange(date, date, selectedDoctorId, null);
               return;
           }
           
@@ -489,17 +395,7 @@ export default function TrainingPage() {
           // We should split the MRT rotation and insert a 1-day CT rotation?
           // That seems appropriate for "Align with Vacation Planner".
           if (currentStatus && currentStatus !== activeModality && clickedDay) {
-              // 1. Delete/Split old
-              handleRangeDelete(date, date);
-              // 2. Create new (handled by fallthrough to createRotationMutation if we called create here)
-              // But handleRangeDelete is async in effect (mutations).
-              // We can just fire both mutations.
-              createRotationMutation.mutate({
-                  doctor_id: selectedDoctorId,
-                  modality: activeModality,
-                  start_date: dateStr,
-                  end_date: dateStr
-              });
+              applyRotationRange(date, date, selectedDoctorId, activeModality);
               return;
           }
       }
