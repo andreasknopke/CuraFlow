@@ -3578,6 +3578,30 @@ export default function ScheduleBoard() {
         return lines.join('\n');
     }, []);
 
+    const getAvailableDoctorWishPresentation = useMemo(() => (doctor, dateStr) => {
+        const doctorWishes = getDoctorDayWishes(doctor.id, dateStr);
+        const wish = doctorWishes[0];
+        let style = getRoleColor(doctor.role);
+        let wishClass = '';
+
+        if (wish) {
+            if (wish.type === 'service') {
+                style = { backgroundColor: '#dcfce7', color: '#166534' };
+                wishClass = 'ring-1 ring-green-500';
+            } else if (wish.type === 'no_service') {
+                style = { backgroundColor: '#fee2e2', color: '#991b1b' };
+                wishClass = 'ring-1 ring-red-500';
+            }
+        }
+
+        return {
+            doctorWishes,
+            style,
+            wishClass,
+            tooltipText: buildWishTooltip(doctor, doctorWishes),
+        };
+    }, [buildWishTooltip, getDoctorDayWishes, getRoleColor]);
+
     const getShiftWishMarker = useMemo(() => (shift) => {
         if (!shift) return null;
 
@@ -3998,17 +4022,21 @@ export default function ScheduleBoard() {
                                                                       >
                                                                           {availableDocs.map((doc, idx) => (
                                                                               <Draggable key={`split-available-${doc.id}-${dateStr}`} draggableId={`${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
-                                                                                  {(provided, snapshot) => (
-                                                                                      <div
-                                                                                          ref={provided.innerRef}
-                                                                                          {...provided.draggableProps}
-                                                                                          {...provided.dragHandleProps}
-                                                                                          style={{ ...provided.draggableProps.style, ...getRoleColor(doc.role) }}
-                                                                                          className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
-                                                                                      >
-                                                                                          {getDoctorChipLabel(doc)}
-                                                                                      </div>
-                                                                                  )}
+                                                                                  {(provided, snapshot) => {
+                                                                                      const { style, wishClass, tooltipText } = getAvailableDoctorWishPresentation(doc, dateStr);
+                                                                                      return (
+                                                                                          <div
+                                                                                              ref={provided.innerRef}
+                                                                                              {...provided.draggableProps}
+                                                                                              {...provided.dragHandleProps}
+                                                                                              style={{ ...provided.draggableProps.style, ...style }}
+                                                                                              className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''} ${wishClass}`}
+                                                                                              title={tooltipText}
+                                                                                          >
+                                                                                              {getDoctorChipLabel(doc)}
+                                                                                          </div>
+                                                                                      );
+                                                                                  }}
                                                                               </Draggable>
                                                                           ))}
                                                                           {provided.placeholder}
@@ -4853,23 +4881,12 @@ export default function ScheduleBoard() {
                                                                     isDragDisabled={isReadOnly}
                                                                 >
                                                                     {(provided, snapshot) => {
-                                                                        let style = getRoleColor(doc.role);
-                                                                        const doctorWishes = getDoctorDayWishes(doc.id, dateStr);
-                                                                        const wish = doctorWishes[0];
+                                                                        const { style, wishClass: baseWishClass, tooltipText } = getAvailableDoctorWishPresentation(doc, dateStr);
                                                                         let wishClass = "";
                                                                         const isCurrentUser = user?.doctor_id && doc.id === user.doctor_id;
                                                                         if (isCurrentUser && highlightMyName) wishClass = "ring-2 ring-red-500 ring-offset-1 z-10";
-
-                                                                        let tooltipText = buildWishTooltip(doc, doctorWishes);
-
-                                                                        if (wish) {
-                                                                            if (wish.type === 'service') {
-                                                                                style = { backgroundColor: '#dcfce7', color: '#166534' }; // Green
-                                                                                wishClass = "ring-1 ring-green-500";
-                                                                            } else if (wish.type === 'no_service') {
-                                                                                style = { backgroundColor: '#fee2e2', color: '#991b1b' }; // Red
-                                                                                wishClass = "ring-1 ring-red-500";
-                                                                            }
+                                                                        if (!wishClass) {
+                                                                            wishClass = baseWishClass;
                                                                         }
 
                                                                         return (
@@ -4998,29 +5015,29 @@ export default function ScheduleBoard() {
                   onClick={handleUnblockCell}
                   className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-green-50 text-green-700 flex items-center gap-2"
                 >
-                  <Unlock className="w-3.5 h-3.5" />
-                  Sperrung aufheben
+                                    <Unlock className="w-3.5 h-3.5" />
+                                    Sperrung aufheben
                 </button>
               </>
-            ) : (
-              <>
-                <input
-                  type="text"
-                  placeholder="Begründung (z.B. Wartung)"
-                  value={blockReasonInput}
-                  onChange={(e) => setBlockReasonInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
-                  className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-red-300"
-                  autoFocus
-                />
-                <button
-                  onClick={handleBlockCell}
-                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-red-50 text-red-700 flex items-center gap-2"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  Zelle sperren
-                </button>
-              </>
+                        ) : (
+                            <>
+                                <input
+                                    type="text"
+                                    placeholder="Begründung (z.B. Wartung)"
+                                    value={blockReasonInput}
+                                    onChange={(e) => setBlockReasonInput(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
+                                    className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-red-300"
+                                    autoFocus
+                                />
+                                <button
+                                    onClick={handleBlockCell}
+                                    className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-red-50 text-red-700 flex items-center gap-2"
+                                >
+                                    <Lock className="w-3.5 h-3.5" />
+                                    Zelle sperren
+                                </button>
+                            </>
             )}
           </div>
         </>
