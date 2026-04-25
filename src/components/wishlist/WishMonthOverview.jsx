@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, base44 } from "@/api/client";
+import { isWishOnDate } from '@/utils/wishRange';
 
 export default function WishMonthOverview({ 
     year, 
@@ -87,7 +88,7 @@ export default function WishMonthOverview({
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.find(w => 
             w.doctor_id === doctor.id && 
-            w.date === dateStr &&
+            isWishOnDate(w, dateStr) &&
             (w.type === 'no_service' || !activeType || w.position === activeType)
         );
     };
@@ -95,7 +96,7 @@ export default function WishMonthOverview({
     const hasAnyWish = (date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return wishes.some(w => 
-            w.date === dateStr &&
+            isWishOnDate(w, dateStr) &&
             w.type === 'service' &&
             w.position === activeType
         );

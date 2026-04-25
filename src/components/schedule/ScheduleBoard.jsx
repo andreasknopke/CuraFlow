@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Clock, Settings2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2 } from 'lucide-react';
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ import { generateSuggestions } from './autoFillEngine';
 import AutoFillSettingsDialog from './AutoFillSettingsDialog';
 import ColorSettingsDialog, { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import FreeTextCell from './FreeTextCell';
+import { isWishOnDate } from '@/utils/wishRange';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
@@ -3530,7 +3531,7 @@ export default function ScheduleBoard() {
     // Check wishes for this date+doctor
     const shiftWishes = wishes.filter(w =>
       w.doctor_id === shift.doctor_id &&
-      w.date === shift.date
+            isWishOnDate(w, shift.date)
     );
 
     const wishTexts = [];
@@ -3552,7 +3553,7 @@ export default function ScheduleBoard() {
     const getDoctorDayWishes = useMemo(() => (doctorId, dateStr) => {
         return wishes.filter(w =>
             w.doctor_id === doctorId &&
-            w.date === dateStr &&
+            isWishOnDate(w, dateStr) &&
             w.status !== 'rejected'
         );
     }, [wishes]);

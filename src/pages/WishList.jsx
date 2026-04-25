@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear } from 'date-fns';
-import { ChevronLeft, ChevronRight, Eraser, CheckCircle2, XCircle } from 'lucide-react';
+import { addDays, format, parseISO } from 'date-fns';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import WishYearView from '@/components/wishlist/WishYearView';
@@ -16,9 +16,45 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar as CalendarIcon, Table2 } from 'lucide-react';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
+import { isWishOnDate } from '@/utils/wishRange';
+
+const getDateRangeDays = (startDate, endDate) => {
+    if (!startDate || !endDate) return [];
+
+    const start = parseISO(startDate);
+    const end = parseISO(endDate);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+        return [];
+    }
+
+    const dates = [];
+    for (let current = start; current <= end; current = addDays(current, 1)) {
+        dates.push(format(current, 'yyyy-MM-dd'));
+    }
+    return dates;
+};
+
+const buildDailyWishPayload = (wish) => {
+    const {
+        id: _id,
+        date: _date,
+        range_start: _rangeStart,
+        range_end: _rangeEnd,
+        created_date: _createdDate,
+        updated_date: _updatedDate,
+        ...rest
+    } = wish;
+
+    return {
+        ...rest,
+        range_start: null,
+        range_end: null,
+        range_enabled: false,
+    };
+};
 
 export default function WishListPage() {
-  const { isReadOnly, isAuthenticated, user } = useAuth();
+    const { isAuthenticated, user } = useAuth();
   // WishList is editable by all authenticated users, so we override isReadOnly for this page
   const canEdit = isAuthenticated;
   const isAdmin = user?.role === 'admin';
@@ -45,6 +81,7 @@ export default function WishListPage() {
   });
 
   const queryClient = useQueryClient();
+    const migratedLegacyWishIdsRef = useRef(new Set());
 
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
@@ -127,6 +164,80 @@ export default function WishListPage() {
   const doctorWishes = allWishes.filter(w => w.doctor_id === selectedDoctorId);
   const doctorShifts = allShifts.filter(s => s.doctor_id === selectedDoctorId);
 
+  useEffect(() => {
+      const accessibleDoctorId = user?.doctor_id || null;
+      const legacyRangeWishes = allWishes.filter((wish) => {
+          if (wish.type !== 'no_service' || !wish.range_start || !wish.range_end) {
+              return false;
+          }
+
+          if (!isAdmin && accessibleDoctorId && wish.doctor_id !== accessibleDoctorId) {
+              return false;
+          }
+
+          return !migratedLegacyWishIdsRef.current.has(wish.id);
+      });
+
+      if (legacyRangeWishes.length === 0) {
+          return undefined;
+      }
+
+      let cancelled = false;
+
+      for (const wish of legacyRangeWishes) {
+          migratedLegacyWishIdsRef.current.add(wish.id);
+      }
+
+      const migrateLegacyRanges = async () => {
+          try {
+              let migratedCount = 0;
+
+              for (const legacyWish of legacyRangeWishes) {
+                  if (cancelled) return;
+
+                  const rangeDates = getDateRangeDays(legacyWish.range_start, legacyWish.range_end);
+                  if (rangeDates.length === 0) {
+                      continue;
+                  }
+
+                  const dailyPayload = buildDailyWishPayload(legacyWish);
+                  for (const rangeDate of rangeDates) {
+                      const existingDailyWish = allWishes.find((wish) =>
+                          wish.id !== legacyWish.id
+                          && wish.doctor_id === legacyWish.doctor_id
+                          && wish.type === 'no_service'
+                          && wish.date === rangeDate
+                      );
+
+                      if (!existingDailyWish) {
+                          await db.WishRequest.create({
+                              ...dailyPayload,
+                              date: rangeDate,
+                          });
+                      }
+                  }
+
+                  await db.WishRequest.delete(legacyWish.id);
+                  migratedCount += 1;
+              }
+
+              if (migratedCount > 0) {
+                  trackDbChange();
+                  queryClient.invalidateQueries(['wishes']);
+              }
+          } catch (error) {
+              legacyRangeWishes.forEach((wish) => migratedLegacyWishIdsRef.current.delete(wish.id));
+              console.error('Legacy no-service wish migration failed:', error);
+          }
+      };
+
+      migrateLegacyRanges();
+
+      return () => {
+          cancelled = true;
+      };
+  }, [allWishes, isAdmin, queryClient, user?.doctor_id]);
+
   const filteredDoctorWishes = React.useMemo(() => {
       if (!activeTab) return [];
       return doctorWishes.filter(w => {
@@ -185,7 +296,7 @@ export default function WishListPage() {
         }
         return db.WishRequest.delete(id);
     },
-    onSuccess: (data, id) => {
+    onSuccess: () => {
         trackDbChange();
         queryClient.invalidateQueries(['wishes']);
         queryClient.invalidateQueries(['shifts']);
@@ -204,7 +315,7 @@ export default function WishListPage() {
         return;
     }
 
-    const existingWish = doctorWishes.find(w => w.date === dateStr);
+    const existingWish = doctorWishes.find(w => isWishOnDate(w, dateStr));
     
     setDialogState({
         isOpen: true,
@@ -235,6 +346,59 @@ export default function WishListPage() {
   const handleDialogSave = async (formData) => {
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
+      const isNoServiceRange = dataToSave.type === 'no_service'
+          && dataToSave.range_enabled
+          && dataToSave.range_start
+          && dataToSave.range_end;
+
+      if (isNoServiceRange) {
+          const rangeDates = getDateRangeDays(dataToSave.range_start, dataToSave.range_end);
+          const existingWishesByDate = new Map(
+              doctorWishes
+                  .filter(w => w.type === 'no_service' && rangeDates.includes(w.date))
+                  .map(w => [w.date, w])
+          );
+          const baseWishData = {
+              ...dataToSave,
+              doctor_id: selectedDoctorId,
+              user_viewed: false,
+              range_start: null,
+              range_end: null,
+              range_enabled: false,
+          };
+
+          for (const rangeDate of rangeDates) {
+              const existingWish = existingWishesByDate.get(rangeDate)
+                  || (dialogState.wish?.date === rangeDate ? dialogState.wish : null);
+
+              if (existingWish) {
+                  await db.WishRequest.update(existingWish.id, {
+                      ...baseWishData,
+                      date: rangeDate,
+                  });
+              } else {
+                  await db.WishRequest.create({
+                      ...baseWishData,
+                      date: rangeDate,
+                  });
+              }
+          }
+
+          if (dialogState.wish && !rangeDates.includes(dialogState.wish.date)) {
+              await db.WishRequest.delete(dialogState.wish.id);
+          }
+
+          trackDbChange();
+          queryClient.invalidateQueries(['wishes']);
+          if (selectedDoctor) {
+              const logDate = `${rangeDates[0]} bis ${rangeDates[rangeDates.length - 1]}`;
+              const actionLabel = dialogState.wish
+                  ? `Eintrag aktualisiert (${rangeDates.length} Tage)`
+                  : `Eintrag erstellt (${rangeDates.length} Tage)`;
+              logWishAction(actionLabel, selectedDoctor.name, logDate, dataToSave.type);
+          }
+          return;
+      }
       
       if (dialogState.wish) {
           // Update
