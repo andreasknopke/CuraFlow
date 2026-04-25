@@ -903,7 +903,10 @@ export default function ScheduleBoard() {
   const { data: wishes = [] } = useQuery({
     queryKey: ['wishes', fetchRange.start, fetchRange.end],
     queryFn: () => db.WishRequest.filter({
-        date: { $gte: fetchRange.start, $lte: fetchRange.end }
+                date: {
+                    $gte: format(subDays(new Date(`${fetchRange.start}T00:00:00`), 370), 'yyyy-MM-dd'),
+                    $lte: format(addDays(new Date(`${fetchRange.end}T00:00:00`), 370), 'yyyy-MM-dd')
+                }
     }),
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
