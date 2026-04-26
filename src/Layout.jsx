@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2 } from 'lucide-react';
+import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2, Bug, Lightbulb } from 'lucide-react';
 import { api, db, base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -14,6 +14,7 @@ import ThemeSelector from '@/components/ThemeSelector';
 import { Palette } from 'lucide-react';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import CoWorkWidget from '@/components/CoWorkWidget';
+import TicketDialog from '@/components/TicketDialog';
 
 function LayoutContent({ children }) {
   const { isAuthenticated, isReadOnly, isLoading, mustChangePassword, setMustChangePassword } = useAuth();
@@ -23,6 +24,9 @@ function LayoutContent({ children }) {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [isSidebarHovered, setIsSidebarHovered] = React.useState(false);
   const [isThemeOpen, setIsThemeOpen] = React.useState(false);
+  const [isTicketDialogOpen, setIsTicketDialogOpen] = React.useState(false);
+  const [ticketDialogType, setTicketDialogType] = React.useState('bug');
+  const [ticketDialogError, setTicketDialogError] = React.useState(null);
   const { getSectionName } = useSectionConfig();
   const servicesCaption = getSectionName('Dienste');
   const rotationsCaption = getSectionName('Rotationen');
@@ -39,6 +43,18 @@ function LayoutContent({ children }) {
         initDbToken();
     });
   }, [location]);
+
+  // Global function to open ticket dialog (used by ErrorBoundary)
+  useEffect(() => {
+    window.__openTicketDialog = (type, error) => {
+      setTicketDialogType(type || 'bug');
+      setTicketDialogError(error || null);
+      setIsTicketDialogOpen(true);
+    };
+    return () => {
+      delete window.__openTicketDialog;
+    };
+  }, []);
 
   // Inject Theme CSS
   useEffect(() => {
@@ -236,6 +252,24 @@ function LayoutContent({ children }) {
               <span className="font-medium">Hilfe</span>
             </Link>
 
+            <div className="my-2 border-t border-slate-100 mx-3" />
+
+            <button
+              onClick={() => { setTicketDialogType('bug'); setTicketDialogError(null); setIsTicketDialogOpen(true); }}
+              className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-red-50 hover:text-red-600 group transition-colors text-left"
+            >
+              <Bug className="h-5 w-5 mr-3 text-slate-500 group-hover:text-red-600" />
+              <span className="font-medium">Bug melden</span>
+            </button>
+
+            <button
+              onClick={() => { setTicketDialogType('feature'); setTicketDialogError(null); setIsTicketDialogOpen(true); }}
+              className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-600 group transition-colors text-left"
+            >
+              <Lightbulb className="h-5 w-5 mr-3 text-slate-500 group-hover:text-amber-600" />
+              <span className="font-medium">Feature vorschlagen</span>
+            </button>
+
             <button
               onClick={() => setIsThemeOpen(true)}
               className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 group transition-colors text-left"
@@ -324,6 +358,12 @@ function LayoutContent({ children }) {
       )}
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
       <CoWorkWidget />
+      <TicketDialog
+        open={isTicketDialogOpen}
+        onOpenChange={setIsTicketDialogOpen}
+        initialType={ticketDialogType}
+        initialError={ticketDialogError}
+      />
     </div>
   );
 }

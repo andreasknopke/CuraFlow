@@ -2,6 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from '@/App.jsx'
 import '@/index.css'
+import { initConsoleCapture } from '@/lib/ticketService';
+
+// Console-Logs für Crash-Reports aufzeichnen
+initConsoleCapture();
 
 // Check for db_token in URL BEFORE React renders
 // This ensures the token is set before any API calls are made

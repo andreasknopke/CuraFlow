@@ -7,6 +7,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/components/AuthProvider';
 import PlanUpdateListener from '@/components/PlanUpdateListener';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -57,13 +58,15 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClientInstance}>
-      <AuthProvider>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <PlanUpdateListener />
-        <Toaster />
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <Router>
+            <AuthenticatedApp />
+          </Router>
+          <PlanUpdateListener />
+          <Toaster />
+        </AuthProvider>
+      </ErrorBoundary>
     </QueryClientProvider>
   )
 }
