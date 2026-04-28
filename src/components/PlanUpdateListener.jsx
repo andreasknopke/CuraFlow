@@ -41,6 +41,32 @@ function buildRealtimeUrl() {
   return `${baseUrl}/api/auth/events/stream?${params.toString()}`;
 }
 
+function describeRealtimeConnection(streamUrl) {
+  if (!streamUrl) {
+    return {
+      streamPath: null,
+      usesAccessToken: false,
+      usesDbToken: false,
+    };
+  }
+
+  try {
+    const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const parsedUrl = new URL(streamUrl, baseOrigin);
+    return {
+      streamPath: `${parsedUrl.pathname}${parsedUrl.searchParams.has('db_token') ? '?db_token=present' : ''}`,
+      usesAccessToken: parsedUrl.searchParams.has('access_token'),
+      usesDbToken: parsedUrl.searchParams.has('db_token'),
+    };
+  } catch {
+    return {
+      streamPath: '/api/auth/events/stream',
+      usesAccessToken: true,
+      usesDbToken: streamUrl.includes('db_token='),
+    };
+  }
+}
+
 const COWORK_QUERY_KEYS = [['coworkInvites'], ['coworkContacts']];
 
 export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }) {
@@ -88,8 +114,9 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     }
 
     const eventSource = new EventSource(streamUrl);
+    const streamDebug = describeRealtimeConnection(streamUrl);
     console.info('[PlanUpdateListener] Realtime-Verbindung wird aufgebaut', {
-      streamUrl,
+      ...streamDebug,
       isAuthenticated,
       userEmail: user?.email || null,
       hasDbToken: !!activeDbToken,

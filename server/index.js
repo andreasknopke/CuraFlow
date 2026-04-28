@@ -109,6 +109,14 @@ const getSqlPreview = (sql) => {
   return sql.replace(/\s+/g, ' ').trim().slice(0, 180);
 };
 
+const sanitizeRequestPath = (requestPath) => {
+  if (typeof requestPath !== 'string' || requestPath.length === 0) {
+    return 'n/a';
+  }
+
+  return requestPath.split('?')[0];
+};
+
 const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
   if (!pool || pool.__curaflowRetryWrapped) {
     return pool;
@@ -530,7 +538,7 @@ app.use((err, req, res, next) => {
   if (databaseError) {
     console.error('[DB][HTTP] Request failed', {
       method: req.method,
-      path: req.originalUrl,
+      path: sanitizeRequestPath(req.originalUrl),
       code: err.code || null,
       retryable,
       pool: err.poolLabel || 'unknown',
@@ -564,8 +572,9 @@ app.use((err, req, res, next) => {
 
 // 404 handler
 app.use((req, res) => {
-  console.warn('404 Not Found:', req.method, req.url, 'Body:', JSON.stringify(req.body || {}).substring(0, 200));
-  res.status(404).json({ error: 'Route not found', path: req.url, method: req.method });
+  const safePath = sanitizeRequestPath(req.url);
+  console.warn('404 Not Found:', req.method, safePath, 'Body:', JSON.stringify(req.body || {}).substring(0, 200));
+  res.status(404).json({ error: 'Route not found', path: safePath, method: req.method });
 });
 
 // Start server
