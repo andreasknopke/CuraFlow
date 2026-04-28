@@ -8,8 +8,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
-export default function DoctorYearView({ doctor, year, shifts, onToggle, onRangeSelect, activeType, rangeStart, customColors: propCustomColors, isSchoolHoliday, isPublicHoliday }) {
+export default function DoctorYearView({ doctor, year, shifts, onToggle, onRangeSelect, activeType, rangeStart, contractInfo, customColors: propCustomColors, isSchoolHoliday, isPublicHoliday }) {
   const [dragStart, setDragStart] = useState(null);
   const [dragCurrent, setDragCurrent] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -159,6 +160,8 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
     return shift ? shift.position : null;
   };
 
+    const isDateDisabled = (date) => !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
       <div className="flex items-center justify-between mb-6">
@@ -250,18 +253,23 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
             getShiftStatus={getShiftStatus}
             onDateClick={(date, e) => {
                 // If we were dragging a range, don't trigger click toggle
-                if (isDragging && dragStart && dragCurrent && !isSameDay(dragStart, dragCurrent)) {
+                if (isDateDisabled(date) || (isDragging && dragStart && dragCurrent && !isSameDay(dragStart, dragCurrent))) {
                     return;
                 }
                 onToggle(date, getShiftStatus(date), e);
             }}
-            onMouseDown={handleMouseDown}
-            onMouseEnter={handleMouseEnter}
+            onMouseDown={(date) => {
+                if (!isDateDisabled(date)) handleMouseDown(date);
+            }}
+            onMouseEnter={(date) => {
+                if (!isDateDisabled(date)) handleMouseEnter(date);
+            }}
             dragStart={dragStart}
             dragCurrent={dragCurrent}
             isDragging={isDragging}
             activeType={activeType}
             rangeStart={rangeStart}
+            isDateDisabled={isDateDisabled}
             customColors={propCustomColors}
             getCustomColor={getCustomColor}
             isSchoolHoliday={isSchoolHoliday}
@@ -273,7 +281,7 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday }) {
+function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday }) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -296,6 +304,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
         {Array(emptyDays).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
         {days.map(date => {
           const status = getShiftStatus(date);
+                    const disabled = isDateDisabled ? isDateDisabled(date) : false;
           const isWeekendDay = isWeekend(date);
           // Use passed functions or defaults if missing
           const isHoliday = checkPublicHoliday ? checkPublicHoliday(date) : false;
@@ -313,7 +322,13 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
 
           const dynamicColor = status ? getCustomColor(status) : null;
 
-          if (customColors && customColors[status]) {
+          if (disabled) {
+              style = {
+                  backgroundColor: '#f8fafc',
+                  backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)'
+              };
+              colorClass = "text-slate-300 cursor-not-allowed";
+          } else if (customColors && customColors[status]) {
               const colorVal = customColors[status];
               if (typeof colorVal === 'object' && colorVal.backgroundColor) {
                   // Inline style object (new format from Training & Vacation)
@@ -349,26 +364,32 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
           else if (isWeekendDay) colorClass = "bg-slate-50 text-slate-400 hover:bg-slate-100";
           else colorClass = "hover:bg-slate-100 text-slate-700";
 
-          if (isRangeStart) {
+          if (isRangeStart && !disabled) {
               colorClass += " ring-2 ring-indigo-500 ring-offset-1 z-10";
           }
           
-          if (isDragged) {
+          if (isDragged && !disabled) {
               colorClass += " ring-2 ring-indigo-400 ring-offset-1 z-20 opacity-80";
           }
 
           return (
             <button
               key={date.toString()}
-              onMouseDown={() => onMouseDown(date)}
-              onMouseEnter={() => onMouseEnter(date)}
-              onClick={(e) => onDateClick(date, e)}
+                            onMouseDown={() => {
+                                if (!disabled) onMouseDown(date);
+                            }}
+                            onMouseEnter={() => {
+                                if (!disabled) onMouseEnter(date);
+                            }}
+                            onClick={(e) => {
+                                if (!disabled) onDateClick(date, e);
+                            }}
               className={cn(
                 "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none",
                 colorClass
               )}
               style={style}
-              title={status || (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '') + ' ' + format(date, 'dd.MM.yyyy')}
+                            title={disabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (status || (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '') + ' ' + format(date, 'dd.MM.yyyy'))}
             >
               {format(date, 'd')}
             </button>

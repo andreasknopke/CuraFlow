@@ -10,6 +10,7 @@ import DoctorYearView from '@/components/vacation/DoctorYearView';
 import TrainingOverview from '@/components/training/TrainingOverview';
 import TrainingMultiYearOverview from '@/components/training/TrainingMultiYearOverview';
 import TransferToSchedulerDialog from '@/components/training/TransferToSchedulerDialog';
+import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useHolidays } from '@/components/useHolidays';
 import { useToast } from '@/components/ui/use-toast';
@@ -59,6 +60,20 @@ export default function TrainingPage() {
     queryKey: ['workplaces'],
     queryFn: () => db.Workplace.list(null, 1000),
   });
+
+    const { data: masterEmployees = [] } = useQuery({
+        queryKey: ['master-central-employees-for-training'],
+        queryFn: async () => {
+            try {
+                const result = await api.request('/api/master/employees');
+                return result.employees || [];
+            } catch {
+                return [];
+            }
+        },
+        staleTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
 
   // Select doctor logic - only set initial value, don't override user selection
   React.useEffect(() => {
@@ -251,6 +266,7 @@ export default function TrainingPage() {
   // Handler for overview: toggle rotation for a specific doctor
   const handleOverviewToggle = (date, currentStatus, doctorId, event) => {
       if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+      if (!isDateEditableForDoctor(date, doctorId)) return;
       
       if (activeModality === 'DELETE') {
           if (currentStatus) {
@@ -289,22 +305,28 @@ export default function TrainingPage() {
       const end = rangeStart < date ? date : rangeStart;
       setRangeStart(null);
 
-      applyRotationRange(start, end, doctorId, activeModality);
+      const clampedRange = clampRangeForDoctor(start, end, doctorId);
+      if (!clampedRange) return;
+
+      applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, activeModality);
   };
 
   const handleOverviewRangeSelect = (start, end, doctorId) => {
       if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+      const clampedRange = clampRangeForDoctor(start, end, doctorId);
+      if (!clampedRange) return;
       
       if (activeModality === 'DELETE') {
-          applyRotationRange(start, end, doctorId, null);
+          applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, null);
           return;
       }
       
-      applyRotationRange(start, end, doctorId, activeModality);
+      applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, activeModality);
   };
 
   const handleToggle = (date, currentStatus, event) => {
       if (!selectedDoctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+      if (!isDateEditableForDoctor(date, selectedDoctorId)) return;
       
       // Only CTRL click for ranges logic or single click
       // But for Training, we probably ALWAYS want ranges.
@@ -319,9 +341,6 @@ export default function TrainingPage() {
       const start = rangeStart < date ? rangeStart : date;
       const end = rangeStart < date ? date : rangeStart;
       setRangeStart(null);
-
-      const startStr = format(start, 'yyyy-MM-dd');
-      const endStr = format(end, 'yyyy-MM-dd');
 
       // 1. Check if we overlap with existing rotations for this doctor
       // If we overlap, we should arguably trim or delete the old one, or just block.
@@ -338,30 +357,40 @@ export default function TrainingPage() {
       // But we should probably clean up.
       
       if (activeModality === 'DELETE') {
-          applyRotationRange(start, end, selectedDoctorId, null);
+          const clampedDeleteRange = clampRangeForDoctor(start, end, selectedDoctorId);
+          if (!clampedDeleteRange) return;
+          applyRotationRange(clampedDeleteRange.startDate, clampedDeleteRange.endDate, selectedDoctorId, null);
           return;
       }
 
-      applyRotationRange(start, end, selectedDoctorId, activeModality);
+      const clampedRange = clampRangeForDoctor(start, end, selectedDoctorId);
+      if (!clampedRange) return;
+
+      applyRotationRange(clampedRange.startDate, clampedRange.endDate, selectedDoctorId, activeModality);
   };
 
   const handleRangeDelete = (start, end) => {
-      applyRotationRange(start, end, selectedDoctorId, null);
+      const clampedRange = clampRangeForDoctor(start, end, selectedDoctorId);
+      if (!clampedRange) return;
+      applyRotationRange(clampedRange.startDate, clampedRange.endDate, selectedDoctorId, null);
   };
 
   const handleRangeSelect = (start, end) => {
       if (!selectedDoctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+      const clampedRange = clampRangeForDoctor(start, end, selectedDoctorId);
+      if (!clampedRange) return;
       
       if (activeModality === 'DELETE') {
-          applyRotationRange(start, end, selectedDoctorId, null);
+          applyRotationRange(clampedRange.startDate, clampedRange.endDate, selectedDoctorId, null);
           return;
       }
       
-      applyRotationRange(start, end, selectedDoctorId, activeModality);
+      applyRotationRange(clampedRange.startDate, clampedRange.endDate, selectedDoctorId, activeModality);
   };
 
   const handleInteraction = (date, currentStatus, event) => {
       if (isReadOnly || replaceRotationRangeMutation.isPending) return;
+      if (!selectedDoctorId || !isDateEditableForDoctor(date, selectedDoctorId)) return;
 
       // DELETE Mode Logic
       if (activeModality === 'DELETE') {
@@ -457,6 +486,36 @@ export default function TrainingPage() {
     });
     return colors;
   }, [modalities]);
+
+    const contractInfoByDoctorId = useMemo(() => {
+        const employeesById = new Map(masterEmployees.map((employee) => [employee.id, employee]));
+        const infoByDoctorId = {};
+
+        doctorsForSelection.forEach((doctor) => {
+            const employee = doctor.central_employee_id ? employeesById.get(doctor.central_employee_id) : null;
+            const contractInfo = getTrainingContractInfo(employee?.contract_start, employee?.contract_end);
+
+            if (contractInfo) {
+                infoByDoctorId[doctor.id] = contractInfo;
+            }
+        });
+
+        return infoByDoctorId;
+    }, [doctorsForSelection, masterEmployees]);
+
+    const selectedDoctorContractInfo = selectedDoctor ? contractInfoByDoctorId[selectedDoctor.id] : null;
+
+    const getDoctorContractInfo = (doctorId) => contractInfoByDoctorId[doctorId] || null;
+
+    const isDateEditableForDoctor = (date, doctorId) => {
+        const contractInfo = getDoctorContractInfo(doctorId);
+        return isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+    };
+
+    const clampRangeForDoctor = (start, end, doctorId) => {
+        const contractInfo = getDoctorContractInfo(doctorId);
+        return clampRangeToContract(start, end, contractInfo?.contractStart, contractInfo?.contractEnd);
+    };
 
     const yearLabel = useMemo(() => {
         if (viewMode === 'multi-year') {
@@ -585,6 +644,13 @@ export default function TrainingPage() {
                         <Button variant="ghost" size="sm" className="ml-auto hover:bg-indigo-100" onClick={() => setRangeStart(null)}>Abbrechen</Button>
                     </div>
                 )}
+                {selectedDoctorContractInfo && (
+                    <div className="bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-md flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="font-medium">Vertrag:</span>
+                        <span>{selectedDoctorContractInfo.contractRangeLabel}</span>
+                        <span className={`font-medium ${selectedDoctorContractInfo.remainingTone}`}>{selectedDoctorContractInfo.remainingLabel}</span>
+                    </div>
+                )}
                 <DoctorYearView 
                     doctor={selectedDoctor} 
                     year={selectedYear} 
@@ -593,6 +659,7 @@ export default function TrainingPage() {
                     onRangeSelect={handleRangeSelect}
                     activeType={activeModality}
                     rangeStart={rangeStart}
+                    contractInfo={selectedDoctorContractInfo}
                     customColors={customColors}
                     isSchoolHoliday={isSchoolHoliday}
                     isPublicHoliday={isPublicHoliday}
@@ -609,6 +676,7 @@ export default function TrainingPage() {
             year={selectedYear} 
             doctors={doctorsForSelection} 
             rotations={rotations}
+            contractInfoByDoctorId={contractInfoByDoctorId}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             customColors={customColors}
@@ -623,6 +691,7 @@ export default function TrainingPage() {
                         centerYear={selectedYear}
                     doctors={doctorsForSelection}
                         rotations={rotations}
+                    contractInfoByDoctorId={contractInfoByDoctorId}
                         customColors={customColors}
                         yearsToShow={3}
                 />

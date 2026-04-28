@@ -1,7 +1,7 @@
 import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 // Memoized Cell Component for Training Overview
 const TrainingOverviewCell = memo(({ 
@@ -11,6 +11,7 @@ const TrainingOverviewCell = memo(({
     isWeekend: isWknd, 
     isHoliday, 
     isSchoolHoliday, 
+    isDisabled,
     customColors, 
     dragInfo, 
     onMouseDown, 
@@ -29,7 +30,13 @@ const TrainingOverviewCell = memo(({
     let style = {};
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none";
 
-    if (status && customColors[status]) {
+    if (isDisabled) {
+        style = {
+            backgroundColor: '#f8fafc',
+            backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)',
+        };
+        cellClass = "cursor-not-allowed text-slate-300 select-none";
+    } else if (status && customColors[status]) {
         const colorVal = customColors[status];
         if (typeof colorVal === 'object' && colorVal.backgroundColor) {
             // Inline style object (new format: { backgroundColor, color })
@@ -46,7 +53,7 @@ const TrainingOverviewCell = memo(({
         else cellClass += " hover:bg-slate-100";
     }
 
-    if (isDragged) {
+    if (isDragged && !isDisabled) {
         cellClass += " ring-2 ring-indigo-400 ring-offset-1 z-20 opacity-80 relative";
     }
 
@@ -54,12 +61,16 @@ const TrainingOverviewCell = memo(({
         <td 
             className={`border-b border-r p-0 text-center text-[10px] h-6 ${cellClass}`}
             style={style}
-            title={status ? `${status} - ${doctor.name}` : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.'))}
+            title={isDisabled ? `Außerhalb der Vertragslaufzeit – ${doctor.name}` : (status ? `${status} - ${doctor.name}` : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.')))}
             onMouseDown={(e) => {
-                if(e.button === 0) onMouseDown(date, doctor.id);
+                if (!isDisabled && e.button === 0) onMouseDown(date, doctor.id);
             }}
-            onMouseEnter={() => onMouseEnter(date, doctor.id)}
-            onClick={(e) => onToggle(date, status, doctor.id, e)}
+            onMouseEnter={() => {
+                if (!isDisabled) onMouseEnter(date, doctor.id);
+            }}
+            onClick={(e) => {
+                if (!isDisabled) onToggle(date, status, doctor.id, e);
+            }}
         >
         </td>
     );
@@ -69,7 +80,8 @@ const TrainingOverviewCell = memo(({
         prevProps.isWeekend !== nextProps.isWeekend ||
         prevProps.isHoliday !== nextProps.isHoliday ||
         prevProps.isSchoolHoliday !== nextProps.isSchoolHoliday ||
-        prevProps.customColors !== nextProps.customColors
+        prevProps.customColors !== nextProps.customColors ||
+        prevProps.isDisabled !== nextProps.isDisabled
     ) {
         return false;
     }
@@ -100,6 +112,7 @@ export default function TrainingOverview({
     year, 
     doctors, 
     rotations,
+    contractInfoByDoctorId = {},
     isSchoolHoliday, 
     isPublicHoliday, 
     customColors = {}, 
@@ -212,7 +225,7 @@ export default function TrainingOverview({
                             <thead>
                                 {/* Month Headers */}
                                 <tr>
-                                    <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-2 w-[150px] min-w-[150px] text-left">
+                                    <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-2 w-[220px] min-w-[220px] text-left">
                                         Mitarbeiter
                                     </th>
                                     {months.map(m => {
@@ -251,8 +264,16 @@ export default function TrainingOverview({
                             <tbody>
                                 {doctors.map(doc => (
                                     <tr key={doc.id} className="hover:bg-slate-50">
-                                        <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 font-medium text-slate-700 truncate">
-                                            {doc.name}
+                                        <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
+                                            <div className="truncate font-medium">{doc.name}</div>
+                                            {contractInfoByDoctorId[doc.id] && (
+                                                <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight">
+                                                    <div className="truncate text-slate-500">{contractInfoByDoctorId[doc.id].contractRangeLabel}</div>
+                                                    <div className={`truncate font-medium ${contractInfoByDoctorId[doc.id].remainingTone}`}>
+                                                        {contractInfoByDoctorId[doc.id].remainingLabel}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </td>
                                         {months.map(m => {
                                             const date = setMonth(setYear(new Date(), year), m);
@@ -263,6 +284,8 @@ export default function TrainingOverview({
                                                 const isHol = isPublicHoliday ? isPublicHoliday(d) : false;
                                                 const isSchool = isSchoolHoliday ? isSchoolHoliday(d) : false;
                                                 const status = getStatus(d, doc.id);
+                                                const contractInfo = contractInfoByDoctorId[doc.id];
+                                                const isDisabled = !isDateWithinContract(d, contractInfo?.contractStart, contractInfo?.contractEnd);
 
                                                 return (
                                                     <TrainingOverviewCell
@@ -273,6 +296,7 @@ export default function TrainingOverview({
                                                         isWeekend={isWknd}
                                                         isHoliday={isHol}
                                                         isSchoolHoliday={isSchool}
+                                                        isDisabled={isDisabled}
                                                         customColors={customColors}
                                                         dragInfo={dragInfo}
                                                         onMouseDown={handleMouseDown}

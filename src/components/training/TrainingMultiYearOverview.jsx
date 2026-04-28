@@ -1,10 +1,20 @@
 import React from 'react';
 import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, setMonth, setYear, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 const MONTHS = Array.from({ length: 12 }, (_, monthIndex) => monthIndex);
+const DISABLED_SEGMENT = '__disabled__';
 
 function getSegmentStyle(modality, customColors) {
+  if (modality === DISABLED_SEGMENT) {
+    return {
+      backgroundColor: '#e2e8f0',
+      color: '#94a3b8',
+      backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.28) 0, rgba(148, 163, 184, 0.28) 4px, transparent 4px, transparent 10px)',
+    };
+  }
+
   if (!modality) {
     return {
       backgroundColor: 'rgba(226, 232, 240, 0.7)',
@@ -29,7 +39,7 @@ function getSegmentStyle(modality, customColors) {
 function buildMonthTooltip({ doctorName, year, monthDate, segments, daysInMonth }) {
   const monthLabel = format(monthDate, 'LLLL yyyy', { locale: de });
   const summary = segments
-    .map((segment) => `${segment.modality || 'Frei'}: ${segment.days} ${segment.days === 1 ? 'Tag' : 'Tage'}`)
+    .map((segment) => `${segment.modality === DISABLED_SEGMENT ? 'außer Vertrag' : (segment.modality || 'Frei')}: ${segment.days} ${segment.days === 1 ? 'Tag' : 'Tage'}`)
     .join(' | ');
 
   return `${doctorName} – ${monthLabel}\n${summary || `Frei: ${daysInMonth} Tage`}`;
@@ -39,6 +49,7 @@ export default function TrainingMultiYearOverview({
   centerYear,
   doctors,
   rotations,
+  contractInfoByDoctorId = {},
   customColors = {},
   yearsToShow = 3,
 }) {
@@ -83,10 +94,13 @@ export default function TrainingMultiYearOverview({
           const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
           const daysInMonth = getDaysInMonth(monthDate);
           const segments = [];
+          const contractInfo = contractInfoByDoctorId[doctor.id];
 
           days.forEach((day) => {
             const dateKey = `${doctor.id}_${format(day, 'yyyy-MM-dd')}`;
-            const modality = rotationLookup.get(dateKey) || null;
+            const modality = isDateWithinContract(day, contractInfo?.contractStart, contractInfo?.contractEnd)
+              ? (rotationLookup.get(dateKey) || null)
+              : DISABLED_SEGMENT;
             const lastSegment = segments[segments.length - 1];
 
             if (!lastSegment || lastSegment.modality !== modality) {
@@ -119,7 +133,7 @@ export default function TrainingMultiYearOverview({
         cells,
       };
     });
-  }, [doctors, rotationLookup, visibleYears]);
+  }, [contractInfoByDoctorId, doctors, rotationLookup, visibleYears]);
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -157,8 +171,16 @@ export default function TrainingMultiYearOverview({
           <tbody>
             {monthCells.map(({ doctor, cells }) => (
               <tr key={doctor.id} className="hover:bg-slate-50/60">
-                <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 font-medium text-slate-700">
-                  <div className="truncate">{doctor.name}</div>
+                <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
+                  <div className="truncate font-medium">{doctor.name}</div>
+                  {contractInfoByDoctorId[doctor.id] && (
+                    <div className="mt-1 space-y-0.5 text-[10px] leading-tight">
+                      <div className="truncate text-slate-500">{contractInfoByDoctorId[doctor.id].contractRangeLabel}</div>
+                      <div className={`truncate font-medium ${contractInfoByDoctorId[doctor.id].remainingTone}`}>
+                        {contractInfoByDoctorId[doctor.id].remainingLabel}
+                      </div>
+                    </div>
+                  )}
                 </td>
                 {cells.map((cell) => (
                   <td
@@ -178,6 +200,7 @@ export default function TrainingMultiYearOverview({
                               width,
                               backgroundColor: style.backgroundColor,
                               color: style.color,
+                              backgroundImage: style.backgroundImage,
                             }}
                           />
                         );
