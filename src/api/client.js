@@ -32,7 +32,7 @@ const DATABASE_ERROR_PATTERNS = [
 let lastDatabaseToastAt = 0;
 
 function shouldAttachDbToken(endpoint) {
-  return !endpoint.startsWith('/api/auth/');
+  return !endpoint.startsWith('/api/auth/') && !endpoint.startsWith('/api/master/');
 }
 
 function wait(ms) {
