@@ -4,12 +4,14 @@ import { de } from 'date-fns/locale';
 import { AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 // Memoized Cell Component
 const VacationOverviewCell = memo(({ 
     date, 
     doctor, 
     status, 
+    contractInfo,
     isWeekend, 
     isHoliday, 
     isSchoolHoliday, 
@@ -21,6 +23,8 @@ const VacationOverviewCell = memo(({
     onToggle 
 }) => {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
+    const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo.contractEnd;
 
     // Only calculate isDragged if the drag is happening on this doctor's row
     const isRowInvolved = isDragging && dragDoctorId === doctor.id;
@@ -32,11 +36,17 @@ const VacationOverviewCell = memo(({
 
     let content = "";
     let style = {};
-    let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none";
+    let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none relative";
 
     const isVisible = status && (visibleTypes.length === 0 || visibleTypes.includes(status));
 
-    if (isVisible) {
+    if (isDisabled) {
+        style = {
+            backgroundColor: '#f8fafc',
+            backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)'
+        };
+        cellClass += " text-slate-300 cursor-not-allowed";
+    } else if (isVisible) {
         if (customColors[status]) {
             style = customColors[status];
         } else {
@@ -63,14 +73,21 @@ const VacationOverviewCell = memo(({
         <td 
             className={`border-b border-r p-0 text-center text-[10px] h-6 ${cellClass}`}
             style={style}
-            title={isVisible ? status : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.'))}
+            title={isDisabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (isVisible ? status : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.')))}
             onMouseDown={(e) => {
-                if(e.button === 0) onMouseDown(date, doctor.id);
+                if (!isDisabled && e.button === 0) onMouseDown(date, doctor.id);
             }}
-            onMouseEnter={() => onMouseEnter(date, doctor.id)}
-            onClick={(e) => onToggle(date, status, doctor.id, e)}
+            onMouseEnter={() => {
+                if (!isDisabled) onMouseEnter(date, doctor.id);
+            }}
+            onClick={(e) => {
+                if (!isDisabled) onToggle(date, status, doctor.id, e);
+            }}
         >
             {content}
+            {isContractEnd && (
+                <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
+            )}
         </td>
     );
 }, (prevProps, nextProps) => {
@@ -79,6 +96,7 @@ const VacationOverviewCell = memo(({
     // Check basic props first
     if (
         prevProps.status !== nextProps.status ||
+        prevProps.contractInfo !== nextProps.contractInfo ||
         prevProps.isWeekend !== nextProps.isWeekend ||
         prevProps.isHoliday !== nextProps.isHoliday ||
         prevProps.isSchoolHoliday !== nextProps.isSchoolHoliday ||
@@ -116,7 +134,7 @@ const VacationOverviewCell = memo(({
     return false;
 });
 
-export default function VacationOverview({ year, doctors, shifts, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, minPresentSpecialists = 2, minPresentAssistants = 4 }) {
+export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, minPresentSpecialists = 2, minPresentAssistants = 4 }) {
     // Dynamische Facharzt-Rollen aus DB laden
     const { specialistRoles } = useTeamRoles();
     
@@ -271,10 +289,10 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
                                 <thead>
                                     {/* Month Headers */}
                                     <tr>
-                                        <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-2 w-[150px] min-w-[150px] text-left">
+                                        <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-2 w-[190px] min-w-[190px] text-left">
                                             Mitarbeiter
                                         </th>
-                                        <th className="sticky left-[150px] z-20 bg-slate-100 border-b border-r p-2 w-[50px] min-w-[50px] text-center shadow-[1px_0_0_0_rgba(0,0,0,0.1)]" title="Verplante Urlaubstage (Netto)">
+                                        <th className="sticky left-[190px] z-20 bg-slate-100 border-b border-r p-2 w-[50px] min-w-[50px] text-center shadow-[1px_0_0_0_rgba(0,0,0,0.1)]" title="Verplante Urlaubstage (Netto)">
                                             Urlaub
                                         </th>
                                         {months.map(m => {
@@ -290,7 +308,7 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
                                     {/* Day Headers */}
                                     <tr>
                                         <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-1"></th>
-                                        <th className="sticky left-[150px] z-20 bg-slate-100 border-b border-r p-1 text-center text-[10px] text-slate-500 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">∑</th>
+                                        <th className="sticky left-[190px] z-20 bg-slate-100 border-b border-r p-1 text-center text-[10px] text-slate-500 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">∑</th>
                                         {months.map(m => {
                                             const date = setMonth(setYear(new Date(), year), m);
                                             const daysInMonth = getDaysInMonth(date);
@@ -372,10 +390,16 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
                                 <tbody>
                                     {doctors.map(doc => (
                                         <tr key={doc.id} className="hover:bg-slate-50">
-                                            <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 font-medium text-slate-700 truncate">
-                                                {doc.name}
+                                            <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
+                                                <div className="truncate font-medium">{doc.name}</div>
+                                                {contractInfoByDoctorId[doc.id] && (
+                                                    <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight">
+                                                        <div className="text-slate-500">{contractInfoByDoctorId[doc.id].contractRangeLabel}</div>
+                                                        <div className={contractInfoByDoctorId[doc.id].remainingTone}>{contractInfoByDoctorId[doc.id].remainingLabel}</div>
+                                                    </div>
+                                                )}
                                             </td>
-                                            <td className="sticky left-[150px] z-10 bg-white border-b border-r p-1 text-center text-xs font-bold text-slate-600 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">
+                                            <td className="sticky left-[190px] z-10 bg-white border-b border-r p-1 text-center text-xs font-bold text-slate-600 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">
                                                 {vacationCounts[doc.id]}
                                             </td>
                                             {months.map(m => {
@@ -394,6 +418,7 @@ export default function VacationOverview({ year, doctors, shifts, isSchoolHolida
                                                             date={d}
                                                             doctor={doc}
                                                             status={status}
+                                                            contractInfo={contractInfoByDoctorId[doc.id] || null}
                                                             isWeekend={isWknd}
                                                             isHoliday={isHol}
                                                             isSchoolHoliday={isSchool}

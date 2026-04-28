@@ -172,6 +172,12 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
           <div>
               <h2 className="text-xl font-bold text-slate-900">{doctor.name}</h2>
               <p className="text-slate-500">{doctor.role} • Jahresplanung {year}</p>
+              {contractInfo && (
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      <span className="text-slate-500">Vertrag: {contractInfo.contractRangeLabel}</span>
+                      <span className={contractInfo.remainingTone}>{contractInfo.remainingLabel}</span>
+                  </div>
+              )}
           </div>
         </div>
         
@@ -269,6 +275,7 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
             isDragging={isDragging}
             activeType={activeType}
             rangeStart={rangeStart}
+            contractInfo={contractInfo}
             isDateDisabled={isDateDisabled}
             customColors={propCustomColors}
             getCustomColor={getCustomColor}
@@ -281,7 +288,7 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday }) {
+function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday }) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -305,6 +312,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
         {days.map(date => {
           const status = getShiftStatus(date);
                     const disabled = isDateDisabled ? isDateDisabled(date) : false;
+                    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo.contractEnd;
           const isWeekendDay = isWeekend(date);
           // Use passed functions or defaults if missing
           const isHoliday = checkPublicHoliday ? checkPublicHoliday(date) : false;
@@ -385,13 +393,16 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
                                 if (!disabled) onDateClick(date, e);
                             }}
               className={cn(
-                "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none",
+                                "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none relative",
                 colorClass
               )}
               style={style}
                             title={disabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (status || (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '') + ' ' + format(date, 'dd.MM.yyyy'))}
             >
               {format(date, 'd')}
+                            {isContractEnd && (
+                                <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
+                            )}
             </button>
           );
           })}

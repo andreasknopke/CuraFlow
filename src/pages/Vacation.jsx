@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, db, base44 } from "@/api/client";
@@ -22,6 +22,7 @@ import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
+import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
@@ -55,6 +56,20 @@ export default function VacationPage() {
       return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
   }, [doctors, user]);
 
+  const { data: masterEmployees = [] } = useQuery({
+    queryKey: ['master-central-employees-for-vacation'],
+    queryFn: async () => {
+      try {
+        const result = await api.request('/api/master/employees');
+        return result.employees || [];
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 10 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+
   // Select doctor: prefer user's assigned doctor, otherwise first in list
   React.useEffect(() => {
     if (doctorsForSelection.length > 0 && !selectedDoctorId) {
@@ -67,6 +82,36 @@ export default function VacationPage() {
   }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+
+  const contractInfoByDoctorId = useMemo(() => {
+    const employeesById = new Map(masterEmployees.map((employee) => [employee.id, employee]));
+    const infoByDoctorId = {};
+
+    doctorsForSelection.forEach((doctor) => {
+      const employee = doctor.central_employee_id ? employeesById.get(doctor.central_employee_id) : null;
+      const contractInfo = getTrainingContractInfo(employee?.contract_start, employee?.contract_end);
+
+      if (contractInfo) {
+        infoByDoctorId[doctor.id] = contractInfo;
+      }
+    });
+
+    return infoByDoctorId;
+  }, [doctorsForSelection, masterEmployees]);
+
+  const selectedDoctorContractInfo = selectedDoctor ? contractInfoByDoctorId[selectedDoctor.id] : null;
+
+  const getDoctorContractInfo = (doctorId) => contractInfoByDoctorId[doctorId] || null;
+
+  const isDateEditableForDoctor = (date, doctorId) => {
+    const contractInfo = getDoctorContractInfo(doctorId);
+    return isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+  };
+
+  const clampRangeForDoctor = (start, end, doctorId) => {
+    const contractInfo = getDoctorContractInfo(doctorId);
+    return clampRangeToContract(start, end, contractInfo?.contractStart, contractInfo?.contractEnd);
+  };
 
   // Fetch Shifts for the year (filtering by date range for better performance)
   const { data: allShifts = [] } = useQuery({
@@ -388,11 +433,11 @@ export default function VacationPage() {
   const handleRangeSelection = (start, end, doctorId = null) => {
       const targetDoctorId = doctorId || selectedDoctorId;
       if (!targetDoctorId || isReadOnly) return;
-      
-      const startDate = start < end ? start : end;
-      const endDate = start < end ? end : start;
-      
-      const days = eachDayOfInterval({ start: startDate, end: endDate });
+
+      const clampedRange = clampRangeForDoctor(start, end, targetDoctorId);
+      if (!clampedRange) return;
+
+      const days = eachDayOfInterval({ start: clampedRange.startDate, end: clampedRange.endDate });
       
       // Handle DELETE mode - no conflict check needed
       if (activeType === 'DELETE') {
@@ -470,6 +515,7 @@ export default function VacationPage() {
   const handleToggleShift = (date, currentStatus, doctorId = null, event) => {
     const targetDoctorId = doctorId || selectedDoctorId;
     if (!targetDoctorId || isReadOnly) return;
+    if (!isDateEditableForDoctor(date, targetDoctorId)) return;
     const dateStr = format(date, 'yyyy-MM-dd');
 
     const relevantShifts = doctorId ? allShifts.filter(s => s.doctor_id === targetDoctorId) : yearShifts;
@@ -677,6 +723,7 @@ export default function VacationPage() {
                 onRangeSelect={(s, e) => handleRangeSelection(s, e, selectedDoctorId)}
                 activeType={activeType}
                 rangeStart={rangeStart}
+              contractInfo={selectedDoctorContractInfo}
                 customColors={customColors}
                 isSchoolHoliday={isSchoolHoliday}
                 isPublicHoliday={isPublicHoliday}
@@ -692,6 +739,7 @@ export default function VacationPage() {
             year={selectedYear} 
             doctors={doctors} 
             shifts={overviewShifts} 
+          contractInfoByDoctorId={contractInfoByDoctorId}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             visibleTypes={visibleTypes}

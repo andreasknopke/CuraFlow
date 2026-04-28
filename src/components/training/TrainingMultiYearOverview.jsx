@@ -116,6 +116,9 @@ export default function TrainingMultiYearOverview({
             monthIndex,
             monthDate,
             daysInMonth,
+            contractEndOffsetPercent: contractInfo?.contractEnd && contractInfo.contractEnd.startsWith(`${year}-${String(monthIndex + 1).padStart(2, '0')}-`)
+              ? `${Math.min((Number(contractInfo.contractEnd.slice(-2)) / daysInMonth) * 100, 100)}%`
+              : null,
             segments,
             tooltip: buildMonthTooltip({
               doctorName: doctor.name,
@@ -138,10 +141,18 @@ export default function TrainingMultiYearOverview({
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="overflow-auto">
-        <table className="w-full min-w-[1600px] border-collapse text-xs">
+        <table className="w-full min-w-[1600px] table-fixed border-collapse text-xs">
+          <colgroup>
+            <col className="w-[220px]" />
+            {visibleYears.flatMap((year) =>
+              MONTHS.map((monthIndex) => (
+                <col key={`col-${year}-${monthIndex}`} className="w-[38px]" />
+              )),
+            )}
+          </colgroup>
           <thead>
             <tr>
-              <th className="sticky left-0 z-30 min-w-[220px] border-b border-r border-slate-200 bg-slate-100 p-3 text-left font-semibold text-slate-700">
+              <th className="sticky left-0 z-30 w-[220px] min-w-[220px] border-b border-r border-slate-200 bg-slate-100 p-3 text-left font-semibold text-slate-700">
                 Mitarbeiter
               </th>
               {visibleYears.map((year) => (
@@ -160,7 +171,7 @@ export default function TrainingMultiYearOverview({
                 MONTHS.map((monthIndex) => (
                   <th
                     key={`${year}-${monthIndex}`}
-                    className={`border-b border-r p-2 text-center font-medium text-slate-600 ${monthIndex === 11 ? 'border-r-slate-300' : 'border-r-slate-200'} bg-white`}
+                    className={`w-[38px] border-b border-r p-2 text-center font-medium text-slate-600 ${monthIndex === 11 ? 'border-r-slate-300' : 'border-r-slate-200'} bg-white`}
                   >
                     {format(setMonth(setYear(new Date(), year), monthIndex), 'MMM', { locale: de })}
                   </th>
@@ -185,10 +196,10 @@ export default function TrainingMultiYearOverview({
                 {cells.map((cell) => (
                   <td
                     key={cell.key}
-                    className={`border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''}`}
+                    className={`w-[38px] border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''}`}
                     title={cell.tooltip}
                   >
-                    <div className="flex h-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                    <div className="relative flex h-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
                       {cell.segments.map((segment, index) => {
                         const style = getSegmentStyle(segment.modality, customColors);
                         const width = `${(segment.days / cell.daysInMonth) * 100}%`;
@@ -205,6 +216,13 @@ export default function TrainingMultiYearOverview({
                           />
                         );
                       })}
+                      {cell.contractEndOffsetPercent && (
+                        <span
+                          className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 bg-rose-500"
+                          style={{ left: cell.contractEndOffsetPercent }}
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
                   </td>
                 ))}

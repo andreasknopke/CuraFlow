@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { addDays, format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -17,6 +17,7 @@ import { Calendar as CalendarIcon, Table2 } from 'lucide-react';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import { isWishOnDate } from '@/utils/wishRange';
+import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 const getDateRangeDays = (startDate, endDate) => {
     if (!startDate || !endDate) return [];
@@ -120,6 +121,20 @@ export default function WishListPage() {
             return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
 
+    const { data: masterEmployees = [] } = useQuery({
+        queryKey: ['master-central-employees-for-wishlist'],
+        queryFn: async () => {
+            try {
+                const result = await api.request('/api/master/employees');
+                return result.employees || [];
+            } catch {
+                return [];
+            }
+        },
+        staleTime: 10 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+
   // Select first doctor by default or user's assigned doctor
   React.useEffect(() => {
     if (doctorsForSelection.length > 0 && !selectedDoctorId) {
@@ -144,6 +159,25 @@ export default function WishListPage() {
   }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+
+  const contractInfoByDoctorId = useMemo(() => {
+      const employeesById = new Map(masterEmployees.map((employee) => [employee.id, employee]));
+      const infoByDoctorId = {};
+
+      doctorsForSelection.forEach((doctor) => {
+          const employee = doctor.central_employee_id ? employeesById.get(doctor.central_employee_id) : null;
+          const contractInfo = getTrainingContractInfo(employee?.contract_start, employee?.contract_end);
+
+          if (contractInfo) {
+              infoByDoctorId[doctor.id] = contractInfo;
+          }
+      });
+
+      return infoByDoctorId;
+  }, [doctorsForSelection, masterEmployees]);
+
+  const getDoctorContractInfo = (doctorId) => contractInfoByDoctorId[doctorId] || null;
+  const selectedDoctorContractInfo = selectedDoctor ? getDoctorContractInfo(selectedDoctor.id) : null;
 
   // Fetch Wishes
   const { data: allWishes = [] } = useQuery({
@@ -303,25 +337,34 @@ export default function WishListPage() {
     },
   });
 
-  const handleDateClick = (date) => {
-    if (!selectedDoctorId || !canEdit) return;
+    const handleDateClick = (date, doctorIdOverride = null) => {
+        const targetDoctorId = doctorIdOverride || selectedDoctorId;
+        if (!targetDoctorId || !canEdit) return;
+        const targetContractInfo = getDoctorContractInfo(targetDoctorId);
+        if (!isDateWithinContract(date, targetContractInfo?.contractStart, targetContractInfo?.contractEnd)) return;
     const dateStr = format(date, 'yyyy-MM-dd');
     
     // Check overlap with absence
-    const existingShift = doctorShifts.find(s => s.date === dateStr);
+        const relevantDoctorShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
+        const relevantDoctorWishes = allWishes.filter(w => w.doctor_id === targetDoctorId);
+        const existingShift = relevantDoctorShifts.find(s => s.date === dateStr);
     const absencePositions = ["Urlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"];
     if (existingShift && absencePositions.includes(existingShift.position)) {
         alert(`Am ${format(date, 'dd.MM.yyyy')} ist bereits eine Abwesenheit eingetragen (${existingShift.position}).`);
         return;
     }
 
-    const existingWish = doctorWishes.find(w => isWishOnDate(w, dateStr));
+        const existingWish = relevantDoctorWishes.find(w => isWishOnDate(w, dateStr));
     
     setDialogState({
         isOpen: true,
         date: date,
         wish: existingWish || null
     });
+
+        if (targetDoctorId !== selectedDoctorId) {
+                setSelectedDoctorId(targetDoctorId);
+        }
   };
 
   // Helper: Create shift from approved wish
@@ -344,6 +387,14 @@ export default function WishListPage() {
   };
 
   const handleDialogSave = async (formData) => {
+      if (!selectedDoctorId) return;
+
+      const contractInfo = getDoctorContractInfo(selectedDoctorId);
+      if (!isDateWithinContract(dialogState.date, contractInfo?.contractStart, contractInfo?.contractEnd)) {
+          alert('Das gewählte Datum liegt außerhalb der Vertragslaufzeit.');
+          return;
+      }
+
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
       const isNoServiceRange = dataToSave.type === 'no_service'
@@ -352,7 +403,22 @@ export default function WishListPage() {
           && dataToSave.range_end;
 
       if (isNoServiceRange) {
-          const rangeDates = getDateRangeDays(dataToSave.range_start, dataToSave.range_end);
+          const clampedRange = clampRangeToContract(
+              parseISO(dataToSave.range_start),
+              parseISO(dataToSave.range_end),
+              contractInfo?.contractStart,
+              contractInfo?.contractEnd,
+          );
+
+          if (!clampedRange) {
+              alert('Der ausgewählte Zeitraum liegt vollständig außerhalb der Vertragslaufzeit.');
+              return;
+          }
+
+          const rangeDates = getDateRangeDays(
+              format(clampedRange.startDate, 'yyyy-MM-dd'),
+              format(clampedRange.endDate, 'yyyy-MM-dd')
+          );
           const existingWishesByDate = new Map(
               doctorWishes
                   .filter(w => w.type === 'no_service' && rangeDates.includes(w.date))
@@ -571,6 +637,7 @@ export default function WishListPage() {
                         year={selectedYear} 
                         wishes={filteredDoctorWishes}
                         shifts={doctorShifts}
+                        contractInfo={selectedDoctorContractInfo}
                         occupiedWishDates={occupiedWishDates}
                         onToggle={handleDateClick}
                         isSchoolHoliday={isSchoolHoliday}
@@ -589,13 +656,13 @@ export default function WishListPage() {
                       year={selectedYear}
                       month={viewDate.getMonth()}
                       doctors={doctors}
+                      contractInfoByDoctorId={contractInfoByDoctorId}
                       wishes={allWishes}
                       shifts={allShifts}
                       onDateChange={setViewDate}
                       activeType={activeTab}
                       onToggle={(date, docId) => {
-                          setSelectedDoctorId(docId); // Set context for dialog
-                          handleDateClick(date);
+                          handleDateClick(date, docId);
                       }}
                       isSchoolHoliday={isSchoolHoliday}
                       isPublicHoliday={isPublicHoliday}
@@ -610,6 +677,7 @@ export default function WishListPage() {
                 year={selectedYear} 
                 wishes={filteredDoctorWishes}
                 shifts={doctorShifts}
+                contractInfo={selectedDoctorContractInfo}
                 occupiedWishDates={occupiedWishDates}
                 onToggle={handleDateClick}
                 isSchoolHoliday={isSchoolHoliday}
@@ -629,6 +697,7 @@ export default function WishListPage() {
           date={dialogState.date}
           wish={dialogState.wish}
           doctorName={selectedDoctor?.name}
+          contractInfo={selectedDoctorContractInfo}
           activePosition={activeTab}
           isReadOnly={!canEdit}
           isAdmin={isAdmin}

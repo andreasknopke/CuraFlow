@@ -12,6 +12,7 @@ const TrainingOverviewCell = memo(({
     isHoliday, 
     isSchoolHoliday, 
     isDisabled,
+    isContractEnd,
     customColors, 
     dragInfo, 
     onMouseDown, 
@@ -59,7 +60,7 @@ const TrainingOverviewCell = memo(({
 
     return (
         <td 
-            className={`border-b border-r p-0 text-center text-[10px] h-6 ${cellClass}`}
+            className={`border-b border-r p-0 text-center text-[10px] h-6 relative ${cellClass}`}
             style={style}
             title={isDisabled ? `Außerhalb der Vertragslaufzeit – ${doctor.name}` : (status ? `${status} - ${doctor.name}` : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.')))}
             onMouseDown={(e) => {
@@ -72,6 +73,9 @@ const TrainingOverviewCell = memo(({
                 if (!isDisabled) onToggle(date, status, doctor.id, e);
             }}
         >
+            {isContractEnd && (
+                <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
+            )}
         </td>
     );
 }, (prevProps, nextProps) => {
@@ -81,7 +85,8 @@ const TrainingOverviewCell = memo(({
         prevProps.isHoliday !== nextProps.isHoliday ||
         prevProps.isSchoolHoliday !== nextProps.isSchoolHoliday ||
         prevProps.customColors !== nextProps.customColors ||
-        prevProps.isDisabled !== nextProps.isDisabled
+        prevProps.isDisabled !== nextProps.isDisabled ||
+        prevProps.isContractEnd !== nextProps.isContractEnd
     ) {
         return false;
     }
@@ -286,6 +291,7 @@ export default function TrainingOverview({
                                                 const status = getStatus(d, doc.id);
                                                 const contractInfo = contractInfoByDoctorId[doc.id];
                                                 const isDisabled = !isDateWithinContract(d, contractInfo?.contractStart, contractInfo?.contractEnd);
+                                                const isContractEnd = Boolean(contractInfo?.contractEnd) && format(d, 'yyyy-MM-dd') === contractInfo.contractEnd;
 
                                                 return (
                                                     <TrainingOverviewCell
@@ -297,6 +303,7 @@ export default function TrainingOverview({
                                                         isHoliday={isHol}
                                                         isSchoolHoliday={isSchool}
                                                         isDisabled={isDisabled}
+                                                        isContractEnd={isContractEnd}
                                                         customColors={customColors}
                                                         dragInfo={dragInfo}
                                                         onMouseDown={handleMouseDown}

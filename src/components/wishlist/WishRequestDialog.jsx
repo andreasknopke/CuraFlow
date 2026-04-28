@@ -11,6 +11,7 @@ import { de } from "date-fns/locale";
 import { CheckCircle2, XCircle, Trash2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { api, db, base44 } from "@/api/client";
+import { clampRangeToContract, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 export default function WishRequestDialog({ 
     isOpen, 
@@ -18,6 +19,7 @@ export default function WishRequestDialog({
     wish, 
     date, 
     doctorName, 
+    contractInfo,
     isReadOnly, 
     isAdmin, 
     onSave, 
@@ -55,6 +57,10 @@ export default function WishRequestDialog({
             isBlockedByDeadline = true;
         }
     }
+
+    const isBlockedByContract = !!date && !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+    const contractStartInput = contractInfo?.contractStart || undefined;
+    const contractEndInput = contractInfo?.contractEnd || undefined;
 
     useEffect(() => {
         if (isOpen) {
@@ -126,6 +132,11 @@ export default function WishRequestDialog({
     };
 
     const handleSubmit = () => {
+        if (isBlockedByContract) {
+            alert('Das gewählte Datum liegt außerhalb der Vertragslaufzeit.');
+            return;
+        }
+
         if (formData.type === 'no_service' && formData.range_enabled) {
             if (!formData.range_start || !formData.range_end) {
                 alert('Bitte Start- und Enddatum für den Zeitraum auswählen.');
@@ -133,6 +144,18 @@ export default function WishRequestDialog({
             }
             if (formData.range_end < formData.range_start) {
                 alert('Das Enddatum darf nicht vor dem Startdatum liegen.');
+                return;
+            }
+
+            const clampedRange = clampRangeToContract(
+                new Date(formData.range_start),
+                new Date(formData.range_end),
+                contractInfo?.contractStart,
+                contractInfo?.contractEnd,
+            );
+
+            if (!clampedRange) {
+                alert('Der gewählte Zeitraum liegt vollständig außerhalb der Vertragslaufzeit.');
                 return;
             }
         }
@@ -202,6 +225,16 @@ export default function WishRequestDialog({
                     </div>
                 )}
 
+                {isBlockedByContract && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
+                        <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
+                        <div>
+                            <strong>Außerhalb des Vertrags:</strong> Für dieses Datum können keine Wünsche eingetragen werden.
+                            {contractInfo?.contractRangeLabel ? ` Vertragszeitraum: ${contractInfo.contractRangeLabel}.` : ''}
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid gap-6 py-4">
                     <div className="space-y-3">
                         <Label>Art des Wunsches</Label>
@@ -209,7 +242,7 @@ export default function WishRequestDialog({
                             value={formData.type} 
                             onValueChange={(val) => setFormData({...formData, type: val})}
                             className="flex gap-4"
-                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                         >
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="service" id="r-service" />
@@ -246,7 +279,7 @@ export default function WishRequestDialog({
                                             range_end: checked ? (formData.range_end || dateStr) : dateStr
                                         });
                                     }}
-                                    disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                    disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                                     className="h-4 w-4"
                                 />
                             </div>
@@ -259,7 +292,9 @@ export default function WishRequestDialog({
                                             type="date"
                                             value={formData.range_start || ''}
                                             onChange={(e) => setFormData({ ...formData, range_start: e.target.value })}
-                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                            min={contractStartInput}
+                                            max={contractEndInput}
+                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                                         />
                                     </div>
                                     <div className="space-y-1">
@@ -268,7 +303,9 @@ export default function WishRequestDialog({
                                             type="date"
                                             value={formData.range_end || ''}
                                             onChange={(e) => setFormData({ ...formData, range_end: e.target.value })}
-                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                            min={contractStartInput}
+                                            max={contractEndInput}
+                                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                                         />
                                     </div>
                                 </div>
@@ -289,7 +326,7 @@ export default function WishRequestDialog({
                             <Select 
                                 value={formData.priority} 
                                 onValueChange={(val) => setFormData({...formData, priority: val})}
-                                disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                                disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             >
                                 <SelectTrigger>
                                     <SelectValue />
@@ -309,7 +346,7 @@ export default function WishRequestDialog({
                             placeholder="z.B. Hochzeit, Geburtstag, Fortbildung..." 
                             value={formData.reason}
                             onChange={(e) => setFormData({...formData, reason: e.target.value})}
-                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}
+                            disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             className="resize-none"
                             rows={2}
                         />
@@ -389,7 +426,7 @@ export default function WishRequestDialog({
                         <Button variant="outline" onClick={onClose} type="button">
                             Abbrechen
                         </Button>
-                        <Button onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline}>
+                        <Button onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
                             Speichern
                         </Button>
                     </div>

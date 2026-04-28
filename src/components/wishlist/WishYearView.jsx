@@ -4,8 +4,9 @@ import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { api, db, base44 } from "@/api/client";
 import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
-export default function WishYearView({ doctor, year, wishes, shifts, occupiedWishDates, onToggle, onRangeSelect, minSelectableDate, activeType, isSchoolHoliday, isPublicHoliday }) {
+export default function WishYearView({ doctor, year, wishes, shifts, contractInfo, occupiedWishDates, onToggle, onRangeSelect, minSelectableDate, activeType, isSchoolHoliday, isPublicHoliday }) {
   // Wunschmarkierung ist immer ausgeschaltet
   const showOccupiedDates = false;
   const months = eachMonthOfInterval({
@@ -113,6 +114,12 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
           <div>
               <h2 className="text-xl font-bold text-slate-900">{doctor.name}</h2>
               <p className="text-slate-500">{doctor.role} • Wunschkiste {year}</p>
+              {contractInfo && (
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="text-slate-500">Vertrag: {contractInfo.contractRangeLabel}</span>
+                  <span className={contractInfo.remainingTone}>{contractInfo.remainingLabel}</span>
+                </div>
+              )}
           </div>
         </div>
       </div>
@@ -130,6 +137,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
             onDayMouseUp={handleDayMouseUp}
             dragSelectedDateKeys={dragSelectedDateKeys}
             minSelectableDate={minSelectableDate}
+            contractInfo={contractInfo}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             showOccupiedDates={showOccupiedDates}
@@ -140,7 +148,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, occupiedWis
   );
 }
 
-function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, minSelectableDate, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
+function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, minSelectableDate, contractInfo, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -177,6 +185,8 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           const minSelectableDateStr = minSelectableDate ? format(minSelectableDate, 'yyyy-MM-dd') : null;
           const isBeforeDeadline = !!minSelectableDateStr && dateStr < minSelectableDateStr;
           const isBoundaryDate = !!minSelectableDateStr && dateStr === minSelectableDateStr;
+          const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+          const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo.contractEnd;
           const isOccupied = showOccupiedDates && occupiedWishDates && occupiedWishDates.has(dateStr);
           const borderClass = isOccupied ? "ring-2 ring-emerald-400/60 z-10" : "";
           const isDragSelected = dragSelectedDateKeys?.has(dateStr);
@@ -191,7 +201,14 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           // Wait, `getDayStatus` is defined inside `WishYearView` component in the same file.
           // I need to update `getDayStatus` in `WishYearView` to return the full wish object.
           
-          if (status) {
+            if (isContractDisabled) {
+              colorClass = "text-slate-300 cursor-not-allowed";
+              style = {
+                backgroundColor: '#f8fafc',
+                backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)'
+              };
+              title = 'Außerhalb der Vertragslaufzeit';
+            } else if (status) {
               if (status.type === 'absence') {
                   colorClass = "bg-slate-100 text-slate-400 cursor-not-allowed"; 
                   title = `${status.label} (Abwesenheit)`;
@@ -260,27 +277,31 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           return (
             <button
               key={date.toString()}
-              onMouseDown={(e) => !isBeforeDeadline && onDayMouseDown?.(date, e)}
-              onMouseEnter={() => !isBeforeDeadline && onDayMouseEnter?.(date)}
+              onMouseDown={(e) => !isBeforeDeadline && !isContractDisabled && onDayMouseDown?.(date, e)}
+              onMouseEnter={() => !isBeforeDeadline && !isContractDisabled && onDayMouseEnter?.(date)}
               onMouseUp={() => onDayMouseUp?.()}
               onDragStart={(e) => e.preventDefault()}
               className={cn(
-                "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none",
+                "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none relative",
                 colorClass,
                 !status && borderClass,
-                isDragSelected && "ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900",
+                isDragSelected && !isContractDisabled && "ring-2 ring-indigo-500 bg-indigo-100 text-indigo-900",
                 isBeforeDeadline && "opacity-35 cursor-not-allowed hover:bg-transparent",
                 isBoundaryDate && "ring-2 ring-cyan-500"
               )}
               style={finalStyle}
               title={
                 (isBeforeDeadline ? `Gesperrt bis ${minSelectableDateStr}. ` : '') +
+                (isContractDisabled ? 'Außerhalb der Vertragslaufzeit. ' : '') +
                 title + ' ' + format(date, 'dd.MM.yyyy') +
                 (isBoundaryDate ? ' (ab hier aktiv)' : '') +
                 (isOccupied ? ' (Wunsch vorhanden)' : '')
               }
             >
               {content}
+              {isContractEnd && (
+                  <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
+              )}
             </button>
           );
           })}

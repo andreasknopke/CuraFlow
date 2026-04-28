@@ -8,11 +8,13 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, base44 } from "@/api/client";
 import { isWishOnDate } from '@/utils/wishRange';
+import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 export default function WishMonthOverview({ 
     year, 
     month, 
     doctors, 
+    contractInfoByDoctorId = {},
     wishes, 
     shifts,
     onDateChange,
@@ -143,8 +145,51 @@ export default function WishMonthOverview({
     };
 
     const renderCell = (doctor, date) => {
+        const contractInfo = contractInfoByDoctorId[doctor.id] || null;
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+        const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo.contractEnd;
         const absence = getAbsence(doctor, date);
         const hasOtherWish = showOccupiedDates && hasAnyWish(date);
+
+        if (isContractDisabled) {
+            const disabledContent = absence
+                ? absence.position === 'Urlaub'
+                    ? 'U'
+                    : absence.position === 'Krank'
+                        ? 'K'
+                        : absence.position === 'Dienstreise'
+                            ? 'DR'
+                            : absence.position === 'Nicht verfügbar'
+                                ? 'NV'
+                                : 'F'
+                : null;
+
+            return (
+                <TooltipProvider>
+                    <Tooltip delayDuration={0}>
+                        <TooltipTrigger asChild>
+                            <div
+                                className="relative flex w-full h-full min-h-[40px] items-center justify-center rounded-sm border border-slate-200 text-[10px] font-bold text-slate-300 cursor-not-allowed"
+                                style={{
+                                    backgroundColor: '#f8fafc',
+                                    backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)'
+                                }}
+                            >
+                                {disabledContent}
+                                {isContractEnd && (
+                                    <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
+                                )}
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            <div className="font-bold">{doctor.name}</div>
+                            <div>Außerhalb der Vertragslaufzeit</div>
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            );
+        }
 
         if (absence && showAbsences) {
             let bgColor = 'bg-slate-100';
@@ -310,7 +355,15 @@ export default function WishMonthOverview({
                                         </div>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        <p>{doc.name} ({doc.role})</p>
+                                        <div>
+                                            <p>{doc.name} ({doc.role})</p>
+                                            {contractInfoByDoctorId[doc.id] && (
+                                                <>
+                                                    <p>Vertrag: {contractInfoByDoctorId[doc.id].contractRangeLabel}</p>
+                                                    <p>{contractInfoByDoctorId[doc.id].remainingLabel}</p>
+                                                </>
+                                            )}
+                                        </div>
                                     </TooltipContent>
                                 </Tooltip>
                             </TooltipProvider>
