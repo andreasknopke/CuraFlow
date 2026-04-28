@@ -1,7 +1,7 @@
 import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 // Memoized Cell Component for Training Overview
 const TrainingOverviewCell = memo(({ 
@@ -270,15 +270,7 @@ export default function TrainingOverview({
                                 {doctors.map(doc => (
                                     <tr key={doc.id} className="hover:bg-slate-50">
                                         <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                            <div className="truncate font-medium">{doc.name}</div>
-                                            {contractInfoByDoctorId[doc.id] && (
-                                                <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight">
-                                                    <div className="truncate text-slate-500">{contractInfoByDoctorId[doc.id].contractRangeLabel}</div>
-                                                    <div className={`truncate font-medium ${contractInfoByDoctorId[doc.id].remainingTone}`}>
-                                                        {contractInfoByDoctorId[doc.id].remainingLabel}
-                                                    </div>
-                                                </div>
-                                            )}
+                                            <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
                                         </td>
                                         {months.map(m => {
                                             const date = setMonth(setYear(new Date(), year), m);

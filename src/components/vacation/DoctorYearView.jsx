@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 export default function DoctorYearView({ doctor, year, shifts, onToggle, onRangeSelect, activeType, rangeStart, contractInfo, customColors: propCustomColors, isSchoolHoliday, isPublicHoliday }) {
   const [dragStart, setDragStart] = useState(null);
@@ -170,14 +170,8 @@ export default function DoctorYearView({ doctor, year, shifts, onToggle, onRange
               {doctor.initials}
           </div>
           <div>
-              <h2 className="text-xl font-bold text-slate-900">{doctor.name}</h2>
+              <h2 className="text-xl font-bold text-slate-900" title={getContractTooltipLabel(contractInfo) || undefined}>{doctor.name}</h2>
               <p className="text-slate-500">{doctor.role} • Jahresplanung {year}</p>
-              {contractInfo && (
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      <span className="text-slate-500">Vertrag: {contractInfo.contractRangeLabel}</span>
-                      <span className={contractInfo.remainingTone}>{contractInfo.remainingLabel}</span>
-                  </div>
-              )}
           </div>
         </div>
         

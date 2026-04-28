@@ -113,3 +113,9 @@ export function getTrainingContractInfo(contractStart, contractEnd, referenceDat
     remainingTone,
   };
 }
+
+export function getContractTooltipLabel(contractInfo) {
+  if (!contractInfo) return null;
+
+  return `Vertrag: ${contractInfo.contractRangeLabel}\n${contractInfo.remainingLabel}`;
+}

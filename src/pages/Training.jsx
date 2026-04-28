@@ -644,13 +644,6 @@ export default function TrainingPage() {
                         <Button variant="ghost" size="sm" className="ml-auto hover:bg-indigo-100" onClick={() => setRangeStart(null)}>Abbrechen</Button>
                     </div>
                 )}
-                {selectedDoctorContractInfo && (
-                    <div className="bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-md flex flex-wrap items-center gap-x-4 gap-y-1">
-                        <span className="font-medium">Vertrag:</span>
-                        <span>{selectedDoctorContractInfo.contractRangeLabel}</span>
-                        <span className={`font-medium ${selectedDoctorContractInfo.remainingTone}`}>{selectedDoctorContractInfo.remainingLabel}</span>
-                    </div>
-                )}
                 <DoctorYearView 
                     doctor={selectedDoctor} 
                     year={selectedYear} 

@@ -4,7 +4,7 @@ import { de } from 'date-fns/locale';
 import { AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
-import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 // Memoized Cell Component
 const VacationOverviewCell = memo(({ 
@@ -391,13 +391,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                     {doctors.map(doc => (
                                         <tr key={doc.id} className="hover:bg-slate-50">
                                             <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                                <div className="truncate font-medium">{doc.name}</div>
-                                                {contractInfoByDoctorId[doc.id] && (
-                                                    <div className="mt-0.5 space-y-0.5 text-[10px] leading-tight">
-                                                        <div className="text-slate-500">{contractInfoByDoctorId[doc.id].contractRangeLabel}</div>
-                                                        <div className={contractInfoByDoctorId[doc.id].remainingTone}>{contractInfoByDoctorId[doc.id].remainingLabel}</div>
-                                                    </div>
-                                                )}
+                                                <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
                                             </td>
                                             <td className="sticky left-[190px] z-10 bg-white border-b border-r p-1 text-center text-xs font-bold text-slate-600 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]">
                                                 {vacationCounts[doc.id]}

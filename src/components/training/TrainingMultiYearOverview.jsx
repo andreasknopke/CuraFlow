@@ -1,7 +1,7 @@
 import React from 'react';
 import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, setMonth, setYear, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 const MONTHS = Array.from({ length: 12 }, (_, monthIndex) => monthIndex);
 const DISABLED_SEGMENT = '__disabled__';
@@ -183,15 +183,7 @@ export default function TrainingMultiYearOverview({
             {monthCells.map(({ doctor, cells }) => (
               <tr key={doctor.id} className="hover:bg-slate-50/60">
                 <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
-                  <div className="truncate font-medium">{doctor.name}</div>
-                  {contractInfoByDoctorId[doctor.id] && (
-                    <div className="mt-1 space-y-0.5 text-[10px] leading-tight">
-                      <div className="truncate text-slate-500">{contractInfoByDoctorId[doctor.id].contractRangeLabel}</div>
-                      <div className={`truncate font-medium ${contractInfoByDoctorId[doctor.id].remainingTone}`}>
-                        {contractInfoByDoctorId[doctor.id].remainingLabel}
-                      </div>
-                    </div>
-                  )}
+                  <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id]) || undefined}>{doctor.name}</div>
                 </td>
                 {cells.map((cell) => (
                   <td
