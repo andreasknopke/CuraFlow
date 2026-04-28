@@ -10,9 +10,20 @@ const TICKET_SYSTEM_URL = import.meta.env.VITE_TICKET_SYSTEM_URL
 const TICKET_API_KEY = import.meta.env.VITE_TICKET_API_KEY || '';
 
 /**
+ * @typedef {Object} TicketOptions
+ * @property {string} [urgency]
+ * @property {string} [consoleLogs]
+ * @property {string} [contactEmail]
+ * @property {string} [reporterEmail]
+ * @property {string} [reporterName]
+ * @property {string} [reporterId]
+ * @property {string} [userName]
+ */
+
+/**
  * Sammelt automatisch System-/Umgebungsinformationen
  */
-function collectSystemInfo() {
+function collectSystemInfo(overrides = {}) {
   const info = {
     system: 'CuraFlow',
     url: window.location.origin,
@@ -37,6 +48,30 @@ function collectSystemInfo() {
     // Ignorieren, wenn Token nicht lesbar ist
   }
 
+  if (overrides.reporterId) {
+    info.userId = overrides.reporterId;
+  }
+
+  const resolvedReporterEmail = overrides.reporterEmail || overrides.contactEmail;
+  if (resolvedReporterEmail) {
+    info.userEmail = resolvedReporterEmail;
+    info.reporterEmail = resolvedReporterEmail;
+  }
+
+  const resolvedReporterName = overrides.reporterName || overrides.userName;
+  if (resolvedReporterName) {
+    info.userName = resolvedReporterName;
+    info.reporterName = resolvedReporterName;
+  }
+
+  if (info.userEmail && !info.reporterEmail) {
+    info.reporterEmail = info.userEmail;
+  }
+
+  if (info.userName && !info.reporterName) {
+    info.reporterName = info.userName;
+  }
+
   // Mandant (DB-Token) Informationen
   try {
     const dbToken = localStorage.getItem('db_credentials');
@@ -58,10 +93,9 @@ function collectSystemInfo() {
  */
 function collectConsoleLogs() {
   try {
-    const logs = [];
     // Letzte 50 Console-Einträge sammeln (falls verfügbar)
-    if (window.__capturedLogs && Array.isArray(window.__capturedLogs)) {
-      return window.__capturedLogs.slice(-50).join('\n');
+    if (window['__capturedLogs'] && Array.isArray(window['__capturedLogs'])) {
+      return window['__capturedLogs'].slice(-50).join('\n');
     }
     return '';
   } catch {
@@ -74,27 +108,26 @@ function collectConsoleLogs() {
  * @param {'bug'|'feature'} type - Typ des Tickets
  * @param {string} title - Titel
  * @param {string} description - Beschreibung
- * @param {Object} [options] - Optionale Zusatzinformationen
- * @param {string} [options.urgency] - Dringlichkeit (normal, emergency, safety)
- * @param {string} [options.consoleLogs] - Console-Logs
- * @param {string} [options.contactEmail] - Kontakt-E-Mail
+ * @param {TicketOptions} [options] - Optionale Zusatzinformationen
  * @returns {Promise<Object>} - Ticket-Response
  */
 export async function createTicket(type, title, description, options = {}) {
-  const systemInfo = collectSystemInfo();
+  const systemInfo = collectSystemInfo(options);
   const consoleLogs = options.consoleLogs || collectConsoleLogs();
+  const reporterName = options.reporterName || systemInfo.reporterName || systemInfo.userName || systemInfo.userEmail || 'Unbekannt';
+  const reporterEmail = options.reporterEmail || options.contactEmail || systemInfo.reporterEmail || systemInfo.userEmail || '';
 
   const body = {
     type,
     title,
     description: description + '\n\n--- Automatisch übermittelte Informationen ---\n' +
       JSON.stringify(systemInfo, null, 2),
-    username: systemInfo.userName || systemInfo.userEmail || 'Unbekannt',
+    username: reporterName,
     system_id: 1, // CuraFlow-System-ID (muss ggf. angepasst werden)
     software_info: JSON.stringify(systemInfo),
     console_logs: consoleLogs,
     location: systemInfo.url,
-    contact_email: options.contactEmail || systemInfo.userEmail || '',
+    contact_email: reporterEmail,
     urgency: options.urgency || 'normal',
   };
 
@@ -147,8 +180,8 @@ export async function requestFeature(title, description, options = {}) {
 export function initConsoleCapture() {
   if (typeof window === 'undefined') return;
 
-  if (!window.__capturedLogs) {
-    window.__capturedLogs = [];
+  if (!window['__capturedLogs']) {
+    window['__capturedLogs'] = [];
   }
 
   const originalError = console.error;
@@ -156,28 +189,28 @@ export function initConsoleCapture() {
   const originalLog = console.log;
 
   console.log = function (...args) {
-    window.__capturedLogs.push(`[LOG] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
-    if (window.__capturedLogs.length > 200) window.__capturedLogs.shift();
+    window['__capturedLogs'].push(`[LOG] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+    if (window['__capturedLogs'].length > 200) window['__capturedLogs'].shift();
     return originalLog.apply(console, args);
   };
 
   console.warn = function (...args) {
-    window.__capturedLogs.push(`[WARN] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
-    if (window.__capturedLogs.length > 200) window.__capturedLogs.shift();
+    window['__capturedLogs'].push(`[WARN] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+    if (window['__capturedLogs'].length > 200) window['__capturedLogs'].shift();
     return originalWarn.apply(console, args);
   };
 
   console.error = function (...args) {
-    window.__capturedLogs.push(`[ERROR] ${args.map(a => {
+    window['__capturedLogs'].push(`[ERROR] ${args.map(a => {
       if (a instanceof Error) return `${a.message}\n${a.stack}`;
       return typeof a === 'object' ? JSON.stringify(a) : String(a);
     }).join(' ')}`);
-    if (window.__capturedLogs.length > 200) window.__capturedLogs.shift();
+    if (window['__capturedLogs'].length > 200) window['__capturedLogs'].shift();
     return originalError.apply(console, args);
   };
 
   // Auch unhandled promise rejections aufzeichnen
   window.addEventListener('unhandledrejection', (event) => {
-    window.__capturedLogs.push(`[UNHANDLED] ${event.reason?.message || event.reason}`);
+    window['__capturedLogs'].push(`[UNHANDLED] ${event.reason?.message || event.reason}`);
   });
 }

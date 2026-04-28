@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Bug, Lightbulb, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { reportBug, requestFeature } from '@/lib/ticketService';
+import { useAuth } from '@/components/AuthProvider';
 
 /**
  * Dialog zum Erstellen von Bug-Reports und Feature-Requests
@@ -13,6 +14,7 @@ import { reportBug, requestFeature } from '@/lib/ticketService';
  * System-, Nutzer- und Mandanten-Informationen werden automatisch übermittelt.
  */
 export default function TicketDialog({ open, onOpenChange, initialType = 'bug', initialError = null }) {
+  const { user } = useAuth();
   const [type, setType] = useState(initialType);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -35,18 +37,12 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     }
   }, [initialError]);
 
-  // E-Mail aus Token vorbefüllen
+  // E-Mail aus aktuellem Benutzerkontext vorbefüllen
   React.useEffect(() => {
-    try {
-      const token = localStorage.getItem('radioplan_jwt_token');
-      if (token) {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (payload.email) setContactEmail(payload.email);
-      }
-    } catch {
-      // Ignorieren
+    if (user?.email) {
+      setContactEmail(user.email);
     }
-  }, []);
+  }, [user?.email]);
 
   const resetForm = () => {
     setTitle('');
@@ -68,14 +64,17 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     setStatus('form');
 
     try {
+      const ticketOptions = {
+        contactEmail: contactEmail.trim() || user?.email || undefined,
+        reporterEmail: user?.email || contactEmail.trim() || undefined,
+        reporterName: user?.full_name || user?.name || user?.email || undefined,
+        reporterId: user?.id || undefined,
+      };
+
       if (type === 'bug') {
-        await reportBug(title.trim(), description.trim(), {
-          contactEmail: contactEmail.trim() || undefined,
-        });
+        await reportBug(title.trim(), description.trim(), ticketOptions);
       } else {
-        await requestFeature(title.trim(), description.trim(), {
-          contactEmail: contactEmail.trim() || undefined,
-        });
+        await requestFeature(title.trim(), description.trim(), ticketOptions);
       }
 
       setStatus('success');
