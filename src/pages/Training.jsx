@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import DoctorYearView from '@/components/vacation/DoctorYearView';
 import TrainingOverview from '@/components/training/TrainingOverview';
+import TrainingMultiYearOverview from '@/components/training/TrainingMultiYearOverview';
 import TransferToSchedulerDialog from '@/components/training/TransferToSchedulerDialog';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useHolidays } from '@/components/useHolidays';
@@ -24,7 +25,7 @@ export default function TrainingPage() {
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
   const [activeModality, setActiveModality] = useState('CT');
   const [rangeStart, setRangeStart] = useState(null);
-  const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview'
+    const [viewMode, setViewMode] = useState('single'); // 'single' | 'overview' | 'multi-year'
   const [showTransferDialog, setShowTransferDialog] = useState(false);
     const rotationsCaption = getSectionName('Rotationen');
     const rotationsPageTitle = rotationsCaption === 'Rotationen' ? 'Rotationsplaner' : rotationsCaption;
@@ -457,6 +458,14 @@ export default function TrainingPage() {
     return colors;
   }, [modalities]);
 
+    const yearLabel = useMemo(() => {
+        if (viewMode === 'multi-year') {
+            return `${selectedYear - 1}–${selectedYear + 1}`;
+        }
+
+        return String(selectedYear);
+    }, [selectedYear, viewMode]);
+
   return (
     <div className="container mx-auto max-w-7xl">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -491,6 +500,12 @@ export default function TrainingPage() {
                 >
                     Jahresübersicht
                 </button>
+                <button 
+                    onClick={() => setViewMode('multi-year')}
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-all ${viewMode === 'multi-year' ? 'bg-white shadow text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Mehrjahresübersicht
+                </button>
             </div>
 
             <div className="flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
@@ -498,7 +513,7 @@ export default function TrainingPage() {
                 <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y - 1)}>
                     <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <span className="mx-2 font-bold text-lg w-16 text-center">{selectedYear}</span>
+                <span className={`mx-2 font-bold text-lg text-center ${viewMode === 'multi-year' ? 'w-28' : 'w-16'}`}>{yearLabel}</span>
                 <Button variant="ghost" size="icon" onClick={() => setSelectedYear(y => y + 1)}>
                     <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -559,7 +574,7 @@ export default function TrainingPage() {
           )}
       </div>
 
-      {viewMode === 'single' ? (
+            {viewMode === 'single' ? (
         <>
           {selectedDoctor ? (
             <div className="space-y-4">
@@ -589,10 +604,10 @@ export default function TrainingPage() {
             </div>
           )}
         </>
-      ) : (
+            ) : viewMode === 'overview' ? (
         <TrainingOverview 
             year={selectedYear} 
-            doctors={doctors} 
+            doctors={doctorsForSelection} 
             rotations={rotations}
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
@@ -603,6 +618,14 @@ export default function TrainingPage() {
             isReadOnly={isReadOnly}
             monthsPerRow={monthsPerRow}
         />
+            ) : (
+                <TrainingMultiYearOverview
+                        centerYear={selectedYear}
+                    doctors={doctorsForSelection}
+                        rotations={rotations}
+                        customColors={customColors}
+                        yearsToShow={3}
+                />
       )}
 
       {/* Transfer to Scheduler Dialog */}
