@@ -321,9 +321,8 @@ class APIClient {
   }
 
   async sendPasswordEmail(userId) {
-    return this.request('/api/auth/send-password-email', {
+    return this.request(`/api/auth/users/${userId}/reset-password`, {
       method: 'POST',
-      body: JSON.stringify({ userId }),
     });
   }
 

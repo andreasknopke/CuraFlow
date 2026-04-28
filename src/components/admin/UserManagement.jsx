@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,7 +15,7 @@ import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@
 
 export default function UserManagement() {
     const queryClient = useQueryClient();
-    const { token, user } = useAuth();
+    const { user } = useAuth();
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [showTenantDialog, setShowTenantDialog] = useState(false);
     const [selectedUser, setSelectedUser] = useState(null);
@@ -228,9 +228,15 @@ export default function UserManagement() {
                                     )}
                                 </TableCell>
                                 <TableCell>
-                                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                        Aktiv
-                                    </Badge>
+                                    {user.is_active ? (
+                                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                                            Aktiv
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-300">
+                                            Inaktiv
+                                        </Badge>
+                                    )}
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <div className="flex items-center justify-end gap-2">
@@ -238,7 +244,7 @@ export default function UserManagement() {
                                             variant="outline"
                                             size="sm"
                                             className="gap-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
-                                            disabled={passwordEmailSending[user.id]}
+                                            disabled={passwordEmailSending[user.id] || !user.is_active}
                                             onClick={() => {
                                                 if (confirm(`Neues Passwort generieren und an "${user.email}" senden?`)) {
                                                     handleSendPasswordEmail(user.id);
@@ -269,6 +275,7 @@ export default function UserManagement() {
                                             variant="ghost"
                                             size="icon"
                                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                                            disabled={!user.is_active}
                                             onClick={() => {
                                                 if (confirm(`Benutzer "${user.full_name || user.email}" wirklich löschen?`)) {
                                                     deleteUserMutation.mutate(user.id);

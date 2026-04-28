@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { db } from '../index.js';
 import { buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
+import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
 
 const router = express.Router();
 
@@ -89,7 +90,7 @@ function sanitizeUser(user) {
   }
   
   // Convert boolean fields
-  const boolFields = ['schedule_show_sidebar', 'schedule_show_time_account', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active'];
+  const boolFields = ['schedule_show_sidebar', 'schedule_show_time_account', 'schedule_initials_only', 'schedule_sort_doctors_alphabetically', 'highlight_my_name', 'wish_show_occupied', 'wish_show_absences', 'is_active', 'must_change_password', 'email_verified'];
   for (const field of boolFields) {
     if (safe[field] !== undefined) {
       safe[field] = !!safe[field];
@@ -97,6 +98,46 @@ function sanitizeUser(user) {
   }
   
   return safe;
+}
+
+function generateTemporaryPassword() {
+  return `CF-${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}!`;
+}
+
+async function sendTemporaryPasswordEmail({ email, fullName, tempPassword }) {
+  const providerInfo = getEmailProviderInfo();
+  if (!providerInfo.configured) {
+    const error = new Error('E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.');
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const displayName = fullName?.trim() || email;
+  const appUrl = (process.env.APP_URL || process.env.PUBLIC_APP_URL || '').replace(/\/$/, '');
+  const loginHint = appUrl
+    ? `<p>Login: <a href="${appUrl}">${appUrl}</a></p>`
+    : '<p>Bitte melden Sie sich in CuraFlow mit dem neuen Passwort an.</p>';
+
+  await sendEmail({
+    to: email,
+    subject: 'CuraFlow: Neues temporäres Passwort',
+    text: [
+      `Hallo ${displayName},`,
+      '',
+      'für Ihr CuraFlow-Konto wurde ein neues temporäres Passwort erstellt.',
+      `Temporäres Passwort: ${tempPassword}`,
+      '',
+      'Bitte melden Sie sich damit an und ändern Sie Ihr Passwort direkt anschließend.',
+      appUrl ? `Login: ${appUrl}` : '',
+    ].filter(Boolean).join('\n'),
+    html: `
+      <p>Hallo ${displayName},</p>
+      <p>für Ihr CuraFlow-Konto wurde ein neues temporäres Passwort erstellt.</p>
+      <p><strong>Temporäres Passwort:</strong> ${tempPassword}</p>
+      <p>Bitte melden Sie sich damit an und ändern Sie Ihr Passwort direkt anschließend.</p>
+      ${loginHint}
+    `,
+  });
 }
 
 // ============ LOGIN ============
@@ -279,7 +320,7 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
     
     const newHash = await bcrypt.hash(newPassword, 12);
     await db.execute(
-      'UPDATE app_users SET password_hash = ?, updated_date = NOW() WHERE id = ?',
+      'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
       [newHash, req.user.sub]
     );
     
@@ -289,10 +330,35 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
   }
 });
 
+// ============ FORCE CHANGE PASSWORD ============
+router.post('/force-change-password', authMiddleware, async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+
+    if (!newPassword) {
+      return res.status(400).json({ error: 'Neues Passwort erforderlich' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    await db.execute(
+      'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
+      [newHash, req.user.sub]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============ LIST USERS (Admin only) ============
 router.get('/users', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
-    const [rows] = await db.execute('SELECT * FROM app_users ORDER BY created_date DESC');
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE is_active = 1 ORDER BY created_date DESC');
     res.json(rows.map(sanitizeUser));
   } catch (error) {
     next(error);
@@ -367,6 +433,45 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
     );
     
     res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============ RESET USER PASSWORD (Admin only) ============
+router.post('/users/:userId/reset-password', authMiddleware, adminMiddleware, async (req, res, next) => {
+  try {
+    const { userId } = req.params;
+
+    const [rows] = await db.execute(
+      'SELECT id, email, full_name, is_active FROM app_users WHERE id = ?',
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+    }
+
+    const user = rows[0];
+    if (!user.is_active) {
+      return res.status(400).json({ error: 'Passwort kann nur für aktive Benutzer zurückgesetzt werden' });
+    }
+
+    const tempPassword = generateTemporaryPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+    await sendTemporaryPasswordEmail({
+      email: user.email,
+      fullName: user.full_name,
+      tempPassword,
+    });
+
+    await db.execute(
+      'UPDATE app_users SET password_hash = ?, must_change_password = 1, updated_date = NOW() WHERE id = ?',
+      [passwordHash, userId]
+    );
+
+    res.json({ success: true, message: `Passwort-E-Mail an ${user.email} gesendet` });
   } catch (error) {
     next(error);
   }
