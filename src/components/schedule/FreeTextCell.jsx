@@ -27,7 +27,7 @@ export default function FreeTextCell({ date, rowName, notes, onCreate, onUpdate,
     };
 
     return (
-        <div className={`relative h-full min-h-[60px] transition-colors ${isToday ? 'bg-yellow-50/30 border-x-2 border-yellow-400 border-y border-slate-100' : 'bg-purple-50/20 hover:bg-purple-50/40 border border-transparent'}`}>
+        <div className={`relative h-full min-h-[60px] transition-colors ${isToday ? 'bg-yellow-50/30 border-x-2 border-x-yellow-400 border-y border-y-slate-100' : 'bg-purple-50/20 hover:bg-purple-50/40 border border-transparent'}`}>
             {/* Invisible div to force height expansion */}
             <div className="invisible p-2 text-base whitespace-pre-wrap break-words min-h-[60px]" aria-hidden="true">
                 {value || '...'}

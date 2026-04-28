@@ -9,6 +9,30 @@ const TICKET_SYSTEM_URL = import.meta.env.VITE_TICKET_SYSTEM_URL
 
 const TICKET_API_KEY = import.meta.env.VITE_TICKET_API_KEY || '';
 
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function getEmailLocalPart(email) {
+  if (typeof email !== 'string') return '';
+
+  const normalizedEmail = email.trim();
+  if (!normalizedEmail) return '';
+
+  const atIndex = normalizedEmail.indexOf('@');
+  return atIndex > 0 ? normalizedEmail.slice(0, atIndex) : normalizedEmail;
+}
+
+function resolveUserName(...values) {
+  const directValue = firstNonEmptyString(...values);
+  return directValue ? getEmailLocalPart(directValue) : '';
+}
+
 /**
  * @typedef {Object} TicketOptions
  * @property {string} [urgency]
@@ -40,9 +64,18 @@ function collectSystemInfo(overrides = {}) {
     const token = localStorage.getItem('radioplan_jwt_token');
     if (token) {
       const payload = JSON.parse(atob(token.split('.')[1]));
+      const tokenEmail = firstNonEmptyString(payload.email);
       info.userId = payload.id || payload.sub;
-      info.userEmail = payload.email || payload.username;
-      info.userName = payload.name || payload.email;
+      info.userEmail = tokenEmail || firstNonEmptyString(payload.username, payload.preferred_username, payload.login);
+      info.userName = resolveUserName(
+        payload.username,
+        payload.preferred_username,
+        payload.login,
+        payload.userName,
+        tokenEmail,
+        payload.name,
+      );
+      info.reporterName = firstNonEmptyString(payload.full_name, payload.displayName, payload.name, info.userName);
     }
   } catch {
     // Ignorieren, wenn Token nicht lesbar ist
@@ -58,9 +91,13 @@ function collectSystemInfo(overrides = {}) {
     info.reporterEmail = resolvedReporterEmail;
   }
 
-  const resolvedReporterName = overrides.reporterName || overrides.userName;
+  const resolvedUserName = resolveUserName(overrides.userName, overrides.reporterName);
+  if (resolvedUserName) {
+    info.userName = resolvedUserName;
+  }
+
+  const resolvedReporterName = firstNonEmptyString(overrides.reporterName, overrides.userName);
   if (resolvedReporterName) {
-    info.userName = resolvedReporterName;
     info.reporterName = resolvedReporterName;
   }
 
@@ -114,7 +151,12 @@ function collectConsoleLogs() {
 export async function createTicket(type, title, description, options = {}) {
   const systemInfo = collectSystemInfo(options);
   const consoleLogs = options.consoleLogs || collectConsoleLogs();
-  const reporterName = options.reporterName || systemInfo.reporterName || systemInfo.userName || systemInfo.userEmail || 'Unbekannt';
+  const reporterUserName = resolveUserName(
+    options.userName,
+    systemInfo.userName,
+    systemInfo.reporterName,
+    systemInfo.userEmail,
+  ) || 'Unbekannt';
   const reporterEmail = options.reporterEmail || options.contactEmail || systemInfo.reporterEmail || systemInfo.userEmail || '';
 
   const body = {
@@ -122,7 +164,7 @@ export async function createTicket(type, title, description, options = {}) {
     title,
     description: description + '\n\n--- Automatisch übermittelte Informationen ---\n' +
       JSON.stringify(systemInfo, null, 2),
-    username: reporterName,
+    username: reporterUserName,
     system_id: 1, // CuraFlow-System-ID (muss ggf. angepasst werden)
     software_info: JSON.stringify(systemInfo),
     console_logs: consoleLogs,

@@ -54,7 +54,7 @@ export default function DroppableCell({
           ${isTrainingHighlight && !effectiveDisabled ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 shadow-inner' : ''}
           ${!effectiveDisabled && snapshot.isDraggingOver ? 'border-indigo-300 ring-2 ring-indigo-300 z-10 transition-none' : (
               !effectiveDisabled && !isTrainingHighlight ? (
-                isToday ? 'bg-yellow-50/30 border-x-2 border-yellow-400 border-y border-slate-100' : (
+                isToday ? 'bg-yellow-50/30 border-x-2 border-x-yellow-400 border-y border-y-slate-100' : (
                     isWeekend ? 'bg-orange-50/50 border-slate-100' : (
                         baseClassName ? `${baseClassName} border-slate-100` : (isAlternate ? 'bg-slate-50/80 border-slate-100' : 'bg-white border-slate-100')
                     )

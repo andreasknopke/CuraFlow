@@ -8,6 +8,19 @@ import { Bug, Lightbulb, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { reportBug, requestFeature } from '@/lib/ticketService';
 import { useAuth } from '@/components/AuthProvider';
 
+function resolveUserName(user) {
+  const explicitUserName = user?.username || user?.preferred_username || user?.name || '';
+  if (explicitUserName && explicitUserName.trim()) {
+    return explicitUserName.trim();
+  }
+
+  if (user?.email && user.email.includes('@')) {
+    return user.email.split('@')[0].trim();
+  }
+
+  return user?.email?.trim() || undefined;
+}
+
 /**
  * Dialog zum Erstellen von Bug-Reports und Feature-Requests
  * Öffnet direkt einen Dialog im CuraFlow-Design.
@@ -64,10 +77,12 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     setStatus('form');
 
     try {
+      const resolvedUserName = resolveUserName(user);
       const ticketOptions = {
         contactEmail: contactEmail.trim() || user?.email || undefined,
         reporterEmail: user?.email || contactEmail.trim() || undefined,
-        reporterName: user?.full_name || user?.name || user?.email || undefined,
+        reporterName: user?.full_name || resolvedUserName || user?.email || undefined,
+        userName: resolvedUserName,
         reporterId: user?.id || undefined,
       };
 

@@ -3862,7 +3862,7 @@ export default function ScheduleBoard() {
                           const isSchoolHol = isSchoolHoliday(day);
 
                           let bgClass = '';
-                          if (isToday) bgClass = 'bg-yellow-50/30 border-x-2 border-t-2 border-yellow-400 border-b border-slate-200 text-yellow-900';
+                          if (isToday) bgClass = 'bg-yellow-50/30 border-x-2 border-t-2 border-x-yellow-400 border-t-yellow-400 border-b border-b-slate-200 text-yellow-900';
                           else if (isHoliday) bgClass = 'bg-blue-100 text-blue-900';
                           else if (isSchoolHol) bgClass = 'bg-green-100 text-green-900';
                           else if ([0, 6].includes(day.getDay())) bgClass = 'bg-orange-50/50';
@@ -4553,7 +4553,7 @@ export default function ScheduleBoard() {
                     const isSchoolHol = isSchoolHoliday(day);
 
                     let bgClass = '';
-                    if (isToday) bgClass = 'bg-yellow-50/30 border-x-2 border-t-2 border-yellow-400 border-b border-slate-200 text-yellow-900';
+                    if (isToday) bgClass = 'bg-yellow-50/30 border-x-2 border-t-2 border-x-yellow-400 border-t-yellow-400 border-b border-b-slate-200 text-yellow-900';
                     else if (isHoliday) bgClass = 'bg-blue-100 text-blue-900';
                     else if (isSchoolHol) bgClass = 'bg-green-100 text-green-900';
                     else if ([0,6].includes(day.getDay())) bgClass = 'bg-orange-50/50';
