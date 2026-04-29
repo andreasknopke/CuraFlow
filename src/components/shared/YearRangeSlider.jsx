@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Slider } from '@/components/ui/Slider';
-import { Label } from '@/components/ui/Label';
+import { Slider } from '@/components/ui/slider';
+import { Label } from '@/components/ui/label';
 
 const WINDOW_SIZE = 5; // 6-year window: start .. start+5 (inclusive)
 
