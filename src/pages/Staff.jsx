@@ -1,296 +1,252 @@
-import React, { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { api, db, base44 } from "@/api/client";
-import { useAuth } from '@/components/AuthProvider';
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, User, GripVertical } from "lucide-react";
-import DoctorForm from "@/components/staff/DoctorForm";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import StaffingPlanTable from "@/components/staff/StaffingPlanTable";
-import { trackDbChange } from '@/components/utils/dbTracker';
-import TeamRoleSettings, { useTeamRoles } from '@/components/settings/TeamRoleSettings';
-import QualificationManagement from '@/components/settings/QualificationManagement';
-import { DoctorQualificationBadges } from '@/components/staff/DoctorQualificationEditor';
-import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
-import QualificationOverview from '@/components/staff/QualificationOverview';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { db } from '@/api/client';
+import { suggestAlternativeName, suggestInitials, generateDefaultInitials } from '@/utils/nameUtils';
+import NameSuggestion from '@/components/staff/NameSuggestion';
+import { generateDefaultInitials } from '@/utils/nameUtils';
 
-export default function StaffPage() {
-  const { isReadOnly, user } = useAuth();
-
-  if (!user || user.role !== 'admin') {
-      return (
-          <div className="flex items-center justify-center h-[50vh] text-slate-500">
-              <div className="text-center">
-                  <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <h2 className="text-lg font-semibold">Zugriff verweigert</h2>
-                  <p>Diese Seite ist nur für Administratoren sichtbar.</p>
-              </div>
-          </div>
-      );
-  }
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingDoctor, setEditingDoctor] = useState(null);
+export default function Staff() {
   const queryClient = useQueryClient();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingDoctor, setEditingDoctor] = useState(null);
+  const [formData, setFormData] = useState({ name: '', initials: '', role: '', color: '', order: 0 });
+  const [error, setError] = useState(null);
+  const [suggestion, setSuggestion] = useState(null);
 
-  // Dynamische Rollenprioritäten aus DB laden
-  const { rolePriority } = useTeamRoles();
-
-  // Dynamische Qualifikationen laden
-  const { qualificationMap } = useQualifications();
-  const { byDoctor: doctorQualsByDoctor } = useAllDoctorQualifications();
-
+  // Fetch all doctors
   const { data: doctors = [], isLoading } = useQuery({
-    queryKey: ["doctors"],
-    queryFn: () => db.Doctor.list(),
-    select: (data) => data.sort((a, b) => {
-      const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
-      if (roleDiff !== 0) return roleDiff;
-      return (a.order || 0) - (b.order || 0);
-    }),
+    queryKey: ['doctors'],
+    queryFn: () => db.Doctor.list()
   });
 
-  const { data: colorSettings = [] } = useQuery({
-      queryKey: ['colorSettings'],
-      queryFn: () => db.ColorSetting.list(),
-  });
-
-  const getRoleColor = (role) => {
-      const setting = colorSettings.find(s => s.name === role && s.category === 'role');
-      if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
-      
-      // Defaults matching ScheduleBoard
-      const defaults = {
-          "Chefarzt": { bg: "#fee2e2", text: "#991b1b" },
-          "Oberarzt": { bg: "#dbeafe", text: "#1e40af" },
-          "Facharzt": { bg: "#dcfce7", text: "#166534" },
-          "Assistenzarzt": { bg: "#fef9c3", text: "#854d0e" },
-          "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" }
-      };
-      
-      if (defaults[role]) return { backgroundColor: defaults[role].bg, color: defaults[role].text };
-      return { backgroundColor: "#f3f4f6", color: "#1f2937" };
-  };
-
+  // Create mutation
   const createMutation = useMutation({
-    mutationFn: (data) => db.Doctor.create({...data, order: doctors.length}),
+    mutationFn: (newDoctor) => db.Doctor.create(newDoctor),
     onSuccess: () => {
-      trackDbChange();
-      queryClient.invalidateQueries(["doctors"]);
-      setIsFormOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      closeDialog();
     },
+    onError: (err) => {
+      // Handle 409 conflict
+      if (err.status === 409) {
+        const responseData = err.data;
+        setError(responseData.error || 'Mitarbeiter mit diesem Namen existiert bereits.');
+        if (responseData.suggestions) {
+          setSuggestion(responseData.suggestions);
+        } else {
+          // Fallback: clientseitige Vorschläge generieren
+          const existingNames = doctors.map(d => d.name);
+          const existingInitials = doctors.map(d => d.initials).filter(Boolean);
+          const altName = suggestAlternativeName(formData.name, existingNames);
+          const altInitials = suggestInitials(formData.name, existingInitials);
+          setSuggestion({ name: altName, initials: altInitials });
+        }
+      } else {
+        setError('Ein Fehler ist aufgetreten: ' + (err.message || 'Unbekannter Fehler'));
+      }
+    }
   });
 
+  // Update mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => db.Doctor.update(id, data),
     onSuccess: () => {
-      trackDbChange();
-      queryClient.invalidateQueries(["doctors"]);
-      setIsFormOpen(false);
-      setEditingDoctor(null);
+      queryClient.invalidateQueries({ queryKey: ['doctors'] });
+      closeDialog();
     },
+    onError: (err) => {
+      if (err.status === 409) {
+        const responseData = err.data;
+        setError(responseData.error || 'Mitarbeiter mit diesem Namen existiert bereits.');
+        if (responseData.suggestions) {
+          setSuggestion(responseData.suggestions);
+        } else {
+          const existingNames = doctors.filter(d => d.id !== editingDoctor?.id).map(d => d.name);
+          const existingInitials = doctors.filter(d => d.id !== editingDoctor?.id).map(d => d.initials).filter(Boolean);
+          const altName = suggestAlternativeName(formData.name, existingNames);
+          const altInitials = suggestInitials(formData.name, existingInitials);
+          setSuggestion({ name: altName, initials: altInitials });
+        }
+      } else {
+        setError('Ein Fehler ist aufgetreten: ' + (err.message || 'Unbekannter Fehler'));
+      }
+    }
   });
 
+  // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: (id) => db.Doctor.delete(id),
-    onSuccess: () => {
-      trackDbChange();
-      queryClient.invalidateQueries(["doctors"]);
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['doctors'] })
   });
 
-  const handleSave = (data) => {
+  const openAddDialog = () => {
+    setEditingDoctor(null);
+    setFormData({ name: '', initials: '', role: '', color: '#000000', order: 0 });
+    setError(null);
+    setSuggestion(null);
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (doctor) => {
+    setEditingDoctor(doctor);
+    setFormData({
+      name: doctor.name,
+      initials: doctor.initials || '',
+      role: doctor.role || '',
+      color: doctor.color || '#000000',
+      order: doctor.order || 0
+    });
+    setError(null);
+    setSuggestion(null);
+    setIsDialogOpen(true);
+  };
+
+  const closeDialog = () => {
+    setIsDialogOpen(false);
+    setEditingDoctor(null);
+    setFormData({ name: '', initials: '', role: '', color: '', order: 0 });
+    setError(null);
+    setSuggestion(null);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.name.trim()) {
+      setError('Name darf nicht leer sein.');
+      return;
+    }
+    const payload = { ...formData };
     if (editingDoctor) {
-      updateMutation.mutate({ id: editingDoctor.id, data });
+      updateMutation.mutate({ id: editingDoctor.id, data: payload });
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(payload);
     }
   };
 
-  const handleEdit = (doctor) => {
-    setEditingDoctor(doctor);
-    setIsFormOpen(true);
+  const handleAcceptSuggestion = (suggestion) => {
+    setFormData(prev => ({
+      ...prev,
+      name: suggestion.name,
+      initials: suggestion.initials
+    }));
+    setError(null);
+    setSuggestion(null);
   };
 
-  const handleAddNew = () => {
-    setEditingDoctor(null);
-    setIsFormOpen(true);
-  };
-
-  const handleDragEnd = (result) => {
-    if (!result.destination) return;
-    
-    const items = Array.from(doctors);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-
-    items.forEach((doc, index) => {
-        if (doc.order !== index) {
-            updateMutation.mutate({ id: doc.id, data: { order: index } });
-        }
+  // Automatisches Setzen des Initialen-Feldes, wenn der Name geändert wird und nicht manuell überschrieben wurde
+  const handleNameChange = (e) => {
+    const newName = e.target.value;
+    setFormData(prev => {
+      // Nur autom. generieren, wenn das Kürzel-Feld leer oder dem vorherigen autom. Wert entspricht
+      const prevAuto = prev.name ? generateDefaultInitials(prev.name) : '';
+      const shouldAuto = !prev.initials || prev.initials === prevAuto;
+      return {
+        ...prev,
+        name: newName,
+        initials: shouldAuto ? generateDefaultInitials(newName) : prev.initials
+      };
     });
   };
 
   return (
-    <div className="container mx-auto max-w-6xl">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Team</h1>
-          <p className="text-slate-500 mt-2">Verwaltung der Mitarbeiter und Funktionen</p>
-        </div>
-        <div className="flex gap-2">
-          {!isReadOnly && <QualificationManagement />}
-          {!isReadOnly && <TeamRoleSettings />}
-          {!isReadOnly && (
-          <Button onClick={handleAddNew} className="bg-indigo-600 hover:bg-indigo-700">
-            <Plus className="w-4 h-4 mr-2" />
-            Teammitglied hinzufügen
-          </Button>
-          )}
-        </div>
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Mitarbeiter</h1>
+        <Button onClick={openAddDialog}><Plus className="w-4 h-4 mr-2" /> Neu</Button>
       </div>
 
-      <Tabs defaultValue="list" className="space-y-6">
-          <TabsList>
-              <TabsTrigger value="list">Mitarbeiterliste</TabsTrigger>
-              <TabsTrigger value="qualifications">Qualifikationen</TabsTrigger>
-              <TabsTrigger value="staffing">Stellenplan</TabsTrigger>
-          </TabsList>
+      {isLoading ? (
+        <p>Lade...</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Kürzel</TableHead>
+              <TableHead>Rolle</TableHead>
+              <TableHead>Farbe</TableHead>
+              <TableHead>Reihenfolge</TableHead>
+              <TableHead>Aktionen</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {doctors.map(doc => (
+              <TableRow key={doc.id}>
+                <TableCell>{doc.name}</TableCell>
+                <TableCell>{doc.initials || '-'}</TableCell>
+                <TableCell>{doc.role}</TableCell>
+                <TableCell>
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: doc.color }} />
+                </TableCell>
+                <TableCell>{doc.order}</TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="icon" onClick={() => openEditDialog(doc)}>
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <Button variant="outline" size="icon" onClick={() => deleteMutation.mutate(doc.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
 
-          <TabsContent value="list">
-              {isLoading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {Array(6).fill(0).map((_, i) => (
-                        <Card key={i} className="h-32">
-                          <CardContent className="p-6 flex gap-4">
-                            <Skeleton className="w-12 h-12 rounded-full" />
-                            <div className="space-y-2">
-                              <Skeleton className="w-32 h-4" />
-                              <Skeleton className="w-20 h-4" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                    ))}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingDoctor ? 'Mitarbeiter bearbeiten' : 'Neuer Mitarbeiter'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="name">Name *</Label>
+                <Input id="name" value={formData.name} onChange={handleNameChange} placeholder="Max Mustermann" required />
+              </div>
+              <div>
+                <Label htmlFor="initials">Kürzel</Label>
+                <Input id="initials" value={formData.initials} onChange={e => setFormData({ ...formData, initials: e.target.value })} placeholder="MM" />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="role">Rolle</Label>
+                <Input id="role" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} />
+              </div>
+              <div>
+                <Label htmlFor="color">Farbe</Label>
+                <div className="flex items-center gap-2">
+                  <Input id="color" type="color" value={formData.color} onChange={e => setFormData({ ...formData, color: e.target.value })} className="w-12 h-8 p-0 border-0" />
+                  <Input value={formData.color} onChange={e => setFormData({ ...formData, color: e.target.value })} placeholder="#000000" />
                 </div>
-              ) : (
-                <DragDropContext onDragEnd={handleDragEnd}>
-                    <Droppable droppableId="doctors-list" direction="vertical">
-                        {(provided) => (
-                            <div 
-                                {...provided.droppableProps} 
-                                ref={provided.innerRef}
-                                className="grid grid-cols-1 gap-4"
-                            >
-                                {doctors.map((doctor, index) => (
-                                    <Draggable key={doctor.id} draggableId={doctor.id} index={index} isDragDisabled={isReadOnly}>
-                                        {(provided, snapshot) => (
-                                            <div
-                                                ref={provided.innerRef}
-                                                {...provided.draggableProps}
-                                                className={`transition-shadow ${snapshot.isDragging ? "z-50" : ""}`}
-                                            >
-                                                <Card className={`hover:shadow-md ${snapshot.isDragging ? "shadow-lg ring-2 ring-indigo-500" : ""}`}>
-                                                    <CardContent className="p-4 flex items-center justify-between">
-                                                        <div className="flex items-center gap-4 flex-1">
-                                                            {!isReadOnly && (
-                                                            <div {...provided.dragHandleProps} className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600">
-                                                                <GripVertical className="w-5 h-5" />
-                                                            </div>
-                                                            )}
-                                                            <div 
-                                                                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0"
-                                                                style={getRoleColor(doctor.role)}
-                                                            >
-                                                                {doctor.initials || <User className="w-5 h-5 opacity-50" />}
-                                                            </div>
-                                                            <div className="flex-1">
-                                                                <h3 className="font-semibold text-slate-900">{doctor.name}</h3>
-                                                                <div className="flex items-center flex-wrap gap-1 mt-0.5">
-                                                                    <Badge variant="secondary" className="text-xs font-normal">
-                                                                        {doctor.role}
-                                                                    </Badge>
-                                                                    <DoctorQualificationBadges 
-                                                                        doctorId={doctor.id} 
-                                                                        qualificationMap={qualificationMap}
-                                                                        allDoctorQualifications={doctorQualsByDoctor}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex space-x-1">
-                                                            {!isReadOnly && (
-                                                            <>
-                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-indigo-600" onClick={() => handleEdit(doctor)}>
-                                                                <Pencil className="w-4 h-4" />
-                                                            </Button>
-                                                            <AlertDialog>
-                                                                <AlertDialogTrigger asChild>
-                                                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-600">
-                                                                        <Trash2 className="w-4 h-4" />
-                                                                    </Button>
-                                                                </AlertDialogTrigger>
-                                                                <AlertDialogContent>
-                                                                    <AlertDialogHeader>
-                                                                        <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
-                                                                        <AlertDialogDescription>
-                                                                            Diese Aktion kann nicht rückgängig gemacht werden.
-                                                                        </AlertDialogDescription>
-                                                                    </AlertDialogHeader>
-                                                                    <AlertDialogFooter>
-                                                                        <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                                                                        <AlertDialogAction onClick={() => deleteMutation.mutate(doctor.id)} className="bg-red-600 hover:bg-red-700">
-                                                                            Löschen
-                                                                        </AlertDialogAction>
-                                                                    </AlertDialogFooter>
-                                                                </AlertDialogContent>
-                                                            </AlertDialog>
-                                                            </>
-                                                            )}
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            </div>
-                                        )}
-                                    </Draggable>
-                                ))}
-                                {provided.placeholder}
-                            </div>
-                        )}
-                    </Droppable>
-                </DragDropContext>
-              )}
-          </TabsContent>
-
-          <TabsContent value="qualifications">
-              <QualificationOverview doctors={doctors} isReadOnly={isReadOnly} />
-          </TabsContent>
-
-          <TabsContent value="staffing">
-              <StaffingPlanTable doctors={doctors} isReadOnly={isReadOnly} />
-          </TabsContent>
-
-      </Tabs>
-
-      <DoctorForm
-        open={isFormOpen}
-        onOpenChange={setIsFormOpen}
-        doctor={editingDoctor}
-        onSubmit={handleSave}
-      />
+              </div>
+              <div>
+                <Label htmlFor="order">Reihenfolge</Label>
+                <Input id="order" type="number" value={formData.order} onChange={e => setFormData({ ...formData, order: parseInt(e.target.value) || 0 })} />
+              </div>
+            </div>
+            {error && (
+              <div className="text-sm text-red-600 bg-red-50 p-2 rounded">{error}</div>
+            )}
+            <NameSuggestion suggestion={suggestion} onAccept={handleAcceptSuggestion} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeDialog}>Abbrechen</Button>
+              <Button type="submit" disabled={createMutation.isLoading || updateMutation.isLoading}>
+                {createMutation.isLoading || updateMutation.isLoading ? 'Speichern...' : 'Speichern'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
