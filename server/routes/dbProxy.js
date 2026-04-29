@@ -179,6 +179,73 @@ const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
   }
 };
 
+const findDoctorConflicts = async (dbPool, data, excludeId = null) => {
+  const name = data?.name?.trim();
+  const initials = data?.initials?.trim();
+
+  if (!name && !initials) {
+    return null;
+  }
+
+  const conditions = [];
+  const params = [];
+
+  if (name) {
+    conditions.push('name = ?');
+    params.push(name);
+  }
+
+  if (initials) {
+    conditions.push('initials = ?');
+    params.push(initials);
+  }
+
+  let sql = `SELECT id, name, initials FROM Doctor WHERE (${conditions.join(' OR ')})`;
+  if (excludeId) {
+    sql += ' AND id != ?';
+    params.push(excludeId);
+  }
+  sql += ' LIMIT 20';
+
+  const [rows] = await dbPool.execute(sql, params);
+  const nameConflict = name ? rows.find((row) => row.name === name) : null;
+  const initialsConflict = initials ? rows.find((row) => row.initials === initials) : null;
+
+  return {
+    nameConflict,
+    initialsConflict,
+  };
+};
+
+const buildDoctorConflictResponse = async (dbPool, data, excludeId = null) => {
+  const conflicts = await findDoctorConflicts(dbPool, data, excludeId);
+  if (!conflicts) {
+    return null;
+  }
+
+  if (conflicts.nameConflict) {
+    return {
+      status: 409,
+      payload: {
+        error: `Ein Mitarbeiter mit dem Namen "${data.name.trim()}" existiert bereits. Bitte wählen Sie einen anderen Namen.`,
+        field: 'name'
+      }
+    };
+  }
+
+  if (conflicts.initialsConflict) {
+    return {
+      status: 409,
+      payload: {
+        error: `Das Kürzel "${data.initials.trim()}" wird bereits verwendet. Bitte wählen Sie ein anderes Kürzel.`,
+        field: 'initials'
+      }
+    };
+  }
+
+  return null;
+};
+
 // Handle GET requests with helpful error
 router.get('/', (req, res) => {
   res.status(405).json({ 
@@ -539,6 +606,13 @@ router.post('/', async (req, res, next) => {
       data.created_date = new Date();
       data.updated_date = new Date();
       data.created_by = req.user?.email || 'system';
+
+      if (tableName === 'Doctor') {
+        const conflictResponse = await buildDoctorConflictResponse(dbPool, data);
+        if (conflictResponse) {
+          return res.status(conflictResponse.status).json(conflictResponse.payload);
+        }
+      }
       
       // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
       if (tableName === 'ShiftEntry' && data.date && data.position) {
@@ -650,6 +724,12 @@ router.post('/', async (req, res, next) => {
         return res.json(data);
       } catch (err) {
         console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
+        if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
+          const conflictResponse = await buildDoctorConflictResponse(dbPool, data);
+          if (conflictResponse) {
+            return res.status(conflictResponse.status).json(conflictResponse.payload);
+          }
+        }
         throw err;
       }
     }
@@ -659,6 +739,13 @@ router.post('/', async (req, res, next) => {
       if (!id) return res.status(400).json({ error: "ID required for update" });
       
       data.updated_date = new Date();
+
+      if (tableName === 'Doctor') {
+        const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
+        if (conflictResponse) {
+          return res.status(conflictResponse.status).json(conflictResponse.payload);
+        }
+      }
       
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data).filter(k => k !== 'id');
@@ -675,7 +762,17 @@ router.post('/', async (req, res, next) => {
       
       const sql = `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`;
       const safeValues = values.map(v => v === undefined ? null : v);
-      await dbPool.execute(sql, safeValues);
+      try {
+        await dbPool.execute(sql, safeValues);
+      } catch (err) {
+        if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
+          const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
+          if (conflictResponse) {
+            return res.status(conflictResponse.status).json(conflictResponse.payload);
+          }
+        }
+        throw err;
+      }
       
       const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
       if (isPlanSyncEntity(tableName)) {

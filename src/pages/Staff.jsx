@@ -28,6 +28,7 @@ import QualificationManagement from '@/components/settings/QualificationManageme
 import { DoctorQualificationBadges } from '@/components/staff/DoctorQualificationEditor';
 import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
 import QualificationOverview from '@/components/staff/QualificationOverview';
+import { toast } from 'sonner';
 
 export default function StaffPage() {
   const { isReadOnly, user } = useAuth();
@@ -93,6 +94,9 @@ export default function StaffPage() {
       queryClient.invalidateQueries(["doctors"]);
       setIsFormOpen(false);
     },
+    onError: (error) => {
+      toast.error(error?.message || "Teammitglied konnte nicht gespeichert werden.");
+    },
   });
 
   const updateMutation = useMutation({
@@ -102,6 +106,9 @@ export default function StaffPage() {
       queryClient.invalidateQueries(["doctors"]);
       setIsFormOpen(false);
       setEditingDoctor(null);
+    },
+    onError: (error) => {
+      toast.error(error?.message || "Änderungen konnten nicht gespeichert werden.");
     },
   });
 
