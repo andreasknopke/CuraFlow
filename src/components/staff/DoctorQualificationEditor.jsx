@@ -11,8 +11,14 @@ import { useQualifications } from '@/hooks/useQualifications';
 /**
  * Editor-Komponente zum Zuweisen/Entfernen von Qualifikationen für einen einzelnen Mitarbeiter.
  * Wird im DoctorForm oder als eigenständige Komponente verwendet.
+ * 
+ * @param {Object} props
+ * @param {string|null} props.doctorId - ID des Arztes (null für Neuanlage)
+ * @param {string[]} [props.selectedQualIds] - Kontrollierte Liste ausgewählter Qualifikationen (wenn doctorId null)
+ * @param {Function} [props.onToggle] - Callback beim Aktivieren/Deaktivieren einer Qualifikation (nur bei doctorId null)
+ * @param {boolean} [props.compact] - Kompakte Darstellung (Badges zum Anklicken)
  */
-export default function DoctorQualificationEditor({ doctorId, compact = false }) {
+export default function DoctorQualificationEditor({ doctorId, selectedQualIds = [], onToggle, compact = false }) {
     const queryClient = useQueryClient();
     const { qualifications, qualificationsByCategory, categories, isLoading: qualsLoading } = useQualifications();
 
@@ -41,28 +47,10 @@ export default function DoctorQualificationEditor({ doctorId, compact = false })
         },
     });
 
-    if (!doctorId) {
-        return (
-            <div className="text-xs text-slate-400 italic p-2">
-                Bitte speichern Sie das Teammitglied zuerst, um Qualifikationen zuzuweisen.
-            </div>
-        );
-    }
-
-    const isLoading = qualsLoading || dqLoading;
-    const assignedQualIds = doctorQuals.map(dq => dq.qualification_id);
-
-    const handleToggle = (qualId) => {
-        const existingAssignment = doctorQuals.find(dq => dq.qualification_id === qualId);
-        if (existingAssignment) {
-            removeMutation.mutate(existingAssignment.id);
-        } else {
-            assignMutation.mutate(qualId);
-        }
-    };
-
     // Active qualifications only
     const activeQuals = qualifications.filter(q => q.is_active !== false);
+
+    const isLoading = qualsLoading || (!!doctorId && dqLoading);
 
     if (isLoading) {
         return <div className="text-xs text-slate-400 p-2">Wird geladen...</div>;
@@ -72,6 +60,27 @@ export default function DoctorQualificationEditor({ doctorId, compact = false })
         return (
             <div className="text-xs text-slate-400 italic p-2">
                 Noch keine Qualifikationen angelegt. Verwenden Sie den Qualifikations-Manager, um welche anzulegen.
+            </div>
+        );
+    }
+
+    // Determine assigned IDs: from server if doctor exists, otherwise from controlled props
+    const assignedQualIds = doctorId ? doctorQuals.map(dq => dq.qualification_id) : selectedQualIds;
+    const toggleHandler = doctorId
+        ? (qualId) => {
+            const existingAssignment = doctorQuals.find(dq => dq.qualification_id === qualId);
+            if (existingAssignment) {
+                removeMutation.mutate(existingAssignment.id);
+            } else {
+                assignMutation.mutate(qualId);
+            }
+        }
+        : onToggle;
+
+    if (!doctorId && !onToggle) {
+        return (
+            <div className="text-xs text-slate-400 italic p-2">
+                Bitte speichern Sie das Teammitglied zuerst, um Qualifikationen zuzuweisen.
             </div>
         );
     }
@@ -91,7 +100,7 @@ export default function DoctorQualificationEditor({ doctorId, compact = false })
                             <button
                                 key={qual.id}
                                 type="button"
-                                onClick={() => handleToggle(qual.id)}
+                                onClick={() => toggleHandler(qual.id)}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
                                     isAssigned 
                                         ? 'ring-2 ring-offset-1 ring-indigo-400' 
@@ -135,11 +144,11 @@ export default function DoctorQualificationEditor({ doctorId, compact = false })
                                     <div 
                                         key={qual.id} 
                                         className="flex items-center gap-2.5 py-1 px-2 rounded hover:bg-slate-50 cursor-pointer"
-                                        onClick={() => handleToggle(qual.id)}
+                                        onClick={() => toggleHandler(qual.id)}
                                     >
                                         <Checkbox 
                                             checked={isAssigned}
-                                            onCheckedChange={() => handleToggle(qual.id)}
+                                            onCheckedChange={() => toggleHandler(qual.id)}
                                             className="pointer-events-none"
                                         />
                                         <Badge 
