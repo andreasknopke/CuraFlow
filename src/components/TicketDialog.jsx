@@ -28,7 +28,7 @@ function resolveUserName(user) {
  */
 export default function TicketDialog({ open, onOpenChange, initialType = 'bug', initialError = null }) {
   const { user } = useAuth();
-  const [type, setType] = useState(initialType);
+  const [type, setType] = useState(initialType || 'bug');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [contactEmail, setContactEmail] = useState('');
