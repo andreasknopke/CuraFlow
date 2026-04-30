@@ -45,6 +45,17 @@ function buildMonthTooltip({ doctorName, year, monthDate, segments, daysInMonth 
   return `${doctorName} – ${monthLabel}\n${summary || `Frei: ${daysInMonth} Tage`}`;
 }
 
+function isMonthWithinContract(monthDate, contractInfo) {
+  if (!contractInfo || !contractInfo.contractStart) {
+    return true;
+  }
+  const contractStart = new Date(contractInfo.contractStart);
+  const contractEnd = contractInfo.contractEnd ? new Date(contractInfo.contractEnd) : new Date(contractInfo.contractStart);
+  const monthStart = startOfMonth(monthDate);
+  const monthEnd = endOfMonth(monthDate);
+  return monthStart <= contractEnd && monthEnd >= contractStart;
+}
+
 export default function TrainingMultiYearOverview({
   centerYear,
   doctors,
@@ -52,6 +63,11 @@ export default function TrainingMultiYearOverview({
   contractInfoByDoctorId = {},
   customColors = {},
   yearsToShow = 3,
+  activeModality,
+  onMonthClick,
+  isReadOnly = false,
+  isMutating = false,
+  getDoctorContractInfo,
 }) {
   const visibleYears = React.useMemo(() => {
     const offset = Math.floor(yearsToShow / 2);
@@ -88,7 +104,7 @@ export default function TrainingMultiYearOverview({
     return doctors.map((doctor) => {
       const cells = visibleYears.flatMap((year) => {
         return MONTHS.map((monthIndex) => {
-          const monthDate = setMonth(setYear(new Date(), year), monthIndex);
+          const monthDate = new Date(year, monthIndex);
           const monthStart = startOfMonth(monthDate);
           const monthEnd = endOfMonth(monthDate);
           const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
@@ -173,7 +189,7 @@ export default function TrainingMultiYearOverview({
                     key={`${year}-${monthIndex}`}
                     className={`w-[38px] border-b border-r p-2 text-center font-medium text-slate-600 ${monthIndex === 11 ? 'border-r-slate-300' : 'border-r-slate-200'} bg-white`}
                   >
-                    {format(setMonth(setYear(new Date(), year), monthIndex), 'MMM', { locale: de })}
+                    {format(new Date(year, monthIndex), 'MMM', { locale: de })}
                   </th>
                 )),
               )}
@@ -185,39 +201,45 @@ export default function TrainingMultiYearOverview({
                 <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
                   <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id]) || undefined}>{doctor.name}</div>
                 </td>
-                {cells.map((cell) => (
-                  <td
-                    key={cell.key}
-                    className={`w-[38px] border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''}`}
-                    title={cell.tooltip}
-                  >
-                    <div className="relative flex h-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-                      {cell.segments.map((segment, index) => {
-                        const style = getSegmentStyle(segment.modality, customColors);
-                        const width = `${(segment.days / cell.daysInMonth) * 100}%`;
-                        return (
-                          <div
-                            key={`${cell.key}-${index}`}
-                            className="h-full"
-                            style={{
-                              width,
-                              backgroundColor: style.backgroundColor,
-                              color: style.color,
-                              backgroundImage: style.backgroundImage,
-                            }}
+                {cells.map((cell) => {
+                  const contractInfo = getDoctorContractInfo ? getDoctorContractInfo(doctor.id) : contractInfoByDoctorId[doctor.id];
+                  const monthWithinContract = isMonthWithinContract(cell.monthDate, contractInfo);
+                  const clickable = !isReadOnly && !isMutating && activeModality && monthWithinContract && typeof onMonthClick === 'function';
+                  return (
+                    <td
+                      key={cell.key}
+                      className={`w-[38px] border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''} ${clickable ? 'cursor-pointer hover:bg-slate-100' : ''}`}
+                      title={cell.tooltip}
+                      onClick={clickable ? () => onMonthClick(doctor.id, cell.year, cell.monthIndex) : undefined}
+                    >
+                      <div className="relative flex h-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+                        {cell.segments.map((segment, index) => {
+                          const style = getSegmentStyle(segment.modality, customColors);
+                          const width = `${(segment.days / cell.daysInMonth) * 100}%`;
+                          return (
+                            <div
+                              key={`${cell.key}-${index}`}
+                              className="h-full"
+                              style={{
+                                width,
+                                backgroundColor: style.backgroundColor,
+                                color: style.color,
+                                backgroundImage: style.backgroundImage,
+                              }}
+                            />
+                          );
+                        })}
+                        {cell.contractEndOffsetPercent && (
+                          <span
+                            className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 bg-rose-500"
+                            style={{ left: cell.contractEndOffsetPercent }}
+                            aria-hidden="true"
                           />
-                        );
-                      })}
-                      {cell.contractEndOffsetPercent && (
-                        <span
-                          className="pointer-events-none absolute inset-y-0 z-10 w-[2px] -translate-x-1/2 bg-rose-500"
-                          style={{ left: cell.contractEndOffsetPercent }}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </div>
-                  </td>
-                ))}
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
