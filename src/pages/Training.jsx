@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear } from 'date-fns';
+import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear, startOfMonth, endOfMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, GraduationCap, Eraser, ArrowRightToLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -517,6 +517,17 @@ export default function TrainingPage() {
         return clampRangeToContract(start, end, contractInfo?.contractStart, contractInfo?.contractEnd);
     };
 
+    // New: click handler for multi-year overview month cells
+    const handleMultiYearMonthClick = useCallback((doctorId, year, monthIndex) => {
+        if (!doctorId || isReadOnly || replaceRotationRangeMutation.isPending) return;
+        const monthDate = new Date(year, monthIndex);
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthDate);
+        const clampedRange = clampRangeForDoctor(monthStart, monthEnd, doctorId);
+        if (!clampedRange) return;
+        applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, activeModality === 'DELETE' ? null : activeModality);
+    }, [isReadOnly, replaceRotationRangeMutation.isPending, activeModality, clampRangeForDoctor, applyRotationRange]);
+
     const yearLabel = useMemo(() => {
         if (viewMode === 'multi-year') {
             return `${selectedYear - 1}–${selectedYear + 1}`;
@@ -681,12 +692,17 @@ export default function TrainingPage() {
         />
             ) : (
                 <TrainingMultiYearOverview
-                        centerYear={selectedYear}
+                    centerYear={selectedYear}
                     doctors={doctorsForSelection}
-                        rotations={rotations}
+                    rotations={rotations}
                     contractInfoByDoctorId={contractInfoByDoctorId}
-                        customColors={customColors}
-                        yearsToShow={3}
+                    customColors={customColors}
+                    yearsToShow={3}
+                    activeModality={modalities.length > 0 ? activeModality : undefined}
+                    onMonthClick={modalities.length > 0 ? handleMultiYearMonthClick : undefined}
+                    isReadOnly={isReadOnly}
+                    isMutating={replaceRotationRangeMutation.isPending}
+                    getDoctorContractInfo={modalities.length > 0 ? getDoctorContractInfo : undefined}
                 />
       )}
 
