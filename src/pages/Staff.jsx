@@ -88,10 +88,27 @@ export default function StaffPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: (data) => db.Doctor.create({...data, order: doctors.length}),
+    mutationFn: async (data) => {
+      const { _qualificationIds, ...doctorData } = data;
+      const result = await db.Doctor.create({...doctorData, order: doctors.length});
+      // Direkt nach dem Anlegen die Qualifikationen zuweisen, falls vorhanden
+      if (_qualificationIds && _qualificationIds.length > 0 && result?.id) {
+        try {
+          await Promise.all(_qualificationIds.map(qId => db.DoctorQualification.create({
+            doctor_id: result.id,
+            qualification_id: qId,
+          })));
+        } catch (error) {
+          toast.error("Einige Qualifikationen konnten nicht zugewiesen werden. Bitte manuell ergänzen.");
+        }
+      }
+      return result;
+    },
     onSuccess: () => {
       trackDbChange();
       queryClient.invalidateQueries(["doctors"]);
+      queryClient.invalidateQueries(["doctorQualifications"]);
+      queryClient.invalidateQueries(["allDoctorQualifications"]);
       setIsFormOpen(false);
     },
     onError: (error) => {
@@ -122,7 +139,10 @@ export default function StaffPage() {
 
   const handleSave = (data) => {
     if (editingDoctor) {
-      updateMutation.mutate({ id: editingDoctor.id, data });
+      // Bei Bearbeitung keine Qualifikationen über das Formular senden
+      // (werden weiterhin über den Editor selbst gesteuert)
+      const { _qualificationIds, ...cleanData } = data;
+      updateMutation.mutate({ id: editingDoctor.id, data: cleanData });
     } else {
       createMutation.mutate(data);
     }
