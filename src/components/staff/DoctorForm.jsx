@@ -51,6 +51,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   });
 
   const [sendingTestMail, setSendingTestMail] = useState(false);
+  const [selectedQualIds, setSelectedQualIds] = useState([]);
 
   const handleSendTestMail = async () => {
     const email = formData.email;
@@ -89,8 +90,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         target_weekly_hours: doctor.target_weekly_hours || '',
         central_employee_id: doctor.central_employee_id || '',
       });
+      // Für Bearbeitung keine separaten selectedQualIds – wird über den Editor selbst gesteuert
+      setSelectedQualIds([]);
     } else if (open) {
-      // Nur zurücksetzen wenn Dialog geöffnet wird UND kein doctor
+      // Neuanlage: zurücksetzen
       setFormData({
         name: "",
         initials: "",
@@ -102,8 +105,15 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         exclude_from_staffing_plan: false,
         central_employee_id: '',
       });
+      setSelectedQualIds([]);
     }
-  }, [doctor, open]); // availableRoles entfernt - wird nur beim Öffnen benötigt
+  }, [doctor, open]);
+
+  const handleToggleQual = (qualId) => {
+    setSelectedQualIds(prev =>
+      prev.includes(qualId) ? prev.filter(id => id !== qualId) : [...prev, qualId]
+    );
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -134,6 +144,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
           ? undefined  // Zentral verknüpft → nicht lokal überschreiben
           : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours) : null),
         central_employee_id: formData.central_employee_id || null,
+        _qualificationIds: selectedQualIds,  // für Staff.jsx
     };
     onSubmit(dataToSubmit);
   };
@@ -336,14 +347,15 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
             </p>
           </div>
 
-          {/* Qualifikations-Zuordnung - nur bei bestehenden Mitarbeitern */}
-          {doctor?.id && (
-              <div className="border rounded-lg p-3 bg-slate-50">
-                  <DoctorQualificationEditor doctorId={doctor.id} compact />
-              </div>
-          )}
-
-
+          {/* Qualifikations-Zuordnung immer anzeigen */}
+          <div className="border rounded-lg p-3 bg-slate-50">
+              <DoctorQualificationEditor 
+                doctorId={doctor?.id} 
+                selectedQualIds={selectedQualIds} 
+                onToggle={handleToggleQual} 
+                compact 
+              />
+          </div>
 
           <DialogFooter>
             <Button type="submit">Speichern</Button>
