@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2, Bug, Lightbulb } from 'lucide-react';
+import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2, MessageSquare } from 'lucide-react';
 import { api, db, base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -255,19 +255,11 @@ function LayoutContent({ children }) {
             <div className="my-2 border-t border-slate-100 mx-3" />
 
             <button
-              onClick={() => { setTicketDialogType('bug'); setTicketDialogError(null); setIsTicketDialogOpen(true); }}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-red-50 hover:text-red-600 group transition-colors text-left"
+              onClick={() => { setTicketDialogType(undefined); setTicketDialogError(null); setIsTicketDialogOpen(true); }}
+              className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 group transition-colors text-left"
             >
-              <Bug className="h-5 w-5 mr-3 text-slate-500 group-hover:text-red-600" />
-              <span className="font-medium">Bug melden</span>
-            </button>
-
-            <button
-              onClick={() => { setTicketDialogType('feature'); setTicketDialogError(null); setIsTicketDialogOpen(true); }}
-              className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-amber-50 hover:text-amber-600 group transition-colors text-left"
-            >
-              <Lightbulb className="h-5 w-5 mr-3 text-slate-500 group-hover:text-amber-600" />
-              <span className="font-medium">Feature vorschlagen</span>
+              <MessageSquare className="h-5 w-5 mr-3 text-slate-500 group-hover:text-indigo-600" />
+              <span className="font-medium">Feedback & Verbesserungen</span>
             </button>
 
             <button
