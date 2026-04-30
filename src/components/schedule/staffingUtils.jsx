@@ -44,3 +44,25 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     
     return true;
 }
+
+/**
+ * Calculates the weekly target working hours for a doctor, adjusted for public holidays.
+ * @param {number} fte - Full-time equivalent (e.g., 1.0, 0.75)
+ * @param {Date} weekStart - Monday of the week
+ * @param {string[]} holidays - Array of public holiday dates in 'YYYY-MM-DD' format that fall within the week
+ * @param {number} [fullTimeWeeklyHours=40] - Full-time weekly hours for 1.0 FTE
+ * @param {number} [workDaysPerWeek=5] - Number of working days per week (Mon-Fri)
+ * @returns {number} Adjusted target weekly hours
+ */
+export function calculateWeeklyTargetHours(fte, weekStart, holidays = [], fullTimeWeeklyHours = 40, workDaysPerWeek = 5) {
+  const baseWeeklyHours = fullTimeWeeklyHours * fte;
+  const dailyHours = (fullTimeWeeklyHours / workDaysPerWeek) * fte;
+  // Count holidays that fall on working days (Mon-Fri)
+  const holidayCount = holidays.filter(holidayDate => {
+    const holiday = new Date(holidayDate);
+    const day = holiday.getDay();
+    // Monday=1 ... Friday=5, Sunday=0
+    return day >= 1 && day <= 5;
+  }).length;
+  return baseWeeklyHours - (holidayCount * dailyHours);
+}
