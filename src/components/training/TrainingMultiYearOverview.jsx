@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, setMonth, setYear, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
@@ -65,10 +65,14 @@ export default function TrainingMultiYearOverview({
   yearsToShow = 3,
   activeModality,
   onMonthClick,
+  onRangeSelect,
   isReadOnly = false,
   isMutating = false,
   getDoctorContractInfo,
 }) {
+  const [dragStart, setDragStart] = useState(null);
+  const [dragCurrent, setDragCurrent] = useState(null);
+
   const visibleYears = React.useMemo(() => {
     const offset = Math.floor(yearsToShow / 2);
     return Array.from({ length: yearsToShow }, (_, index) => centerYear - offset + index);
@@ -154,6 +158,58 @@ export default function TrainingMultiYearOverview({
     });
   }, [contractInfoByDoctorId, doctors, rotationLookup, visibleYears]);
 
+  // Drag selection helpers
+  const isCellInDragSelection = useCallback((cell, doctorId, dragStart, dragCurrent) => {
+    if (!dragStart || !dragCurrent) return false;
+    if (dragStart.doctorId !== doctorId) return false;
+    const startIndex = dragStart.year * 12 + dragStart.month;
+    const endIndex = dragCurrent.year * 12 + dragCurrent.month;
+    const cellIndex = cell.year * 12 + cell.monthIndex;
+    const min = Math.min(startIndex, endIndex);
+    const max = Math.max(startIndex, endIndex);
+    return cellIndex >= min && cellIndex <= max;
+  }, []);
+
+  // Global mouse event listeners for drag selection
+  useEffect(() => {
+    if (!dragStart) return;
+
+    const handleMouseMove = (e) => {
+      const target = e.target.closest('td[data-doctor-id]');
+      if (target) {
+        const doctorId = target.dataset.doctorId;
+        const year = parseInt(target.dataset.year, 10);
+        const month = parseInt(target.dataset.month, 10);
+        if (doctorId === dragStart.doctorId) {
+          setDragCurrent({ doctorId, year, month });
+        }
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (dragCurrent && (dragCurrent.year !== dragStart.year || dragCurrent.month !== dragStart.month)) {
+        if (typeof onRangeSelect === 'function') {
+          const startDate = new Date(dragStart.year, dragStart.month);
+          const endDate = new Date(dragCurrent.year, dragCurrent.month);
+          onRangeSelect(dragStart.doctorId, startDate, endDate);
+        }
+      } else {
+        if (typeof onMonthClick === 'function') {
+          onMonthClick(dragStart.doctorId, dragStart.year, dragStart.month);
+        }
+      }
+      setDragStart(null);
+      setDragCurrent(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragStart, dragCurrent, onMonthClick, onRangeSelect]);
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
       <div className="overflow-auto">
@@ -205,12 +261,16 @@ export default function TrainingMultiYearOverview({
                   const contractInfo = getDoctorContractInfo ? getDoctorContractInfo(doctor.id) : contractInfoByDoctorId[doctor.id];
                   const monthWithinContract = isMonthWithinContract(cell.monthDate, contractInfo);
                   const clickable = !isReadOnly && !isMutating && activeModality && monthWithinContract && typeof onMonthClick === 'function';
+                  const selected = isCellInDragSelection(cell, doctor.id, dragStart, dragCurrent);
                   return (
                     <td
                       key={cell.key}
-                      className={`w-[38px] border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''} ${clickable ? 'cursor-pointer hover:bg-slate-100' : ''}`}
+                      data-doctor-id={doctor.id}
+                      data-year={cell.year}
+                      data-month={cell.monthIndex}
+                      className={`w-[38px] border-b border-r border-slate-200 p-1 align-middle ${cell.monthIndex === 11 ? 'border-r-slate-300' : ''} ${clickable ? 'cursor-pointer hover:bg-slate-100' : ''} ${selected ? 'bg-blue-100' : ''}`}
                       title={cell.tooltip}
-                      onClick={clickable ? () => onMonthClick(doctor.id, cell.year, cell.monthIndex) : undefined}
+                      onMouseDown={clickable ? (e) => { e.preventDefault(); setDragStart({ doctorId: doctor.id, year: cell.year, month: cell.monthIndex }); setDragCurrent({ doctorId: doctor.id, year: cell.year, month: cell.monthIndex }); } : undefined}
                     >
                       <div className="relative flex h-8 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
                         {cell.segments.map((segment, index) => {
