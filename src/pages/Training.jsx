@@ -402,7 +402,7 @@ export default function TrainingPage() {
       }
 
       // If SINGLE click (no range pending) AND it hits an existing rotation -> Delete it (Legacy behavior, or maybe overwrite?)
-      // In Vacation planner: Clicking existing = Delete. Clicking empty = Create.
+      // In Vacation planner: Click existing = Delete. Click empty = Create.
       // Here we'll stick to: Click existing -> Confirm delete (if not in Delete mode)
       // BUT, user asked to ALIGN with Vacation planner.
       // Vacation planner:
@@ -527,6 +527,16 @@ export default function TrainingPage() {
         if (!clampedRange) return;
         applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, activeModality === 'DELETE' ? null : activeModality);
     }, [isReadOnly, replaceRotationRangeMutation.isPending, activeModality, clampRangeForDoctor, applyRotationRange]);
+
+    // New: range selection handler for multi-year drag
+    const handleMultiYearRangeSelect = useCallback((doctorId, startDate, endDate) => {
+        if (isReadOnly || replaceRotationRangeMutation.isPending) return;
+        const start = startOfMonth(startDate);
+        const end = endOfMonth(endDate);
+        const clampedRange = clampRangeForDoctor(start, end, doctorId);
+        if (!clampedRange) return;
+        applyRotationRange(clampedRange.startDate, clampedRange.endDate, doctorId, activeModality === 'DELETE' ? null : activeModality);
+    }, [isReadOnly, replaceRotationRangeMutation.isPending, clampRangeForDoctor, applyRotationRange, activeModality]);
 
     const yearLabel = useMemo(() => {
         if (viewMode === 'multi-year') {
@@ -700,6 +710,7 @@ export default function TrainingPage() {
                     yearsToShow={3}
                     activeModality={modalities.length > 0 ? activeModality : undefined}
                     onMonthClick={modalities.length > 0 ? handleMultiYearMonthClick : undefined}
+                    onRangeSelect={modalities.length > 0 ? handleMultiYearRangeSelect : undefined}
                     isReadOnly={isReadOnly}
                     isMutating={replaceRotationRangeMutation.isPending}
                     getDoctorContractInfo={modalities.length > 0 ? getDoctorContractInfo : undefined}
