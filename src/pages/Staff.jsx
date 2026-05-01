@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { api, db, base44 } from "@/api/client";
@@ -6,7 +6,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Pencil, Trash2, User, GripVertical } from "lucide-react";
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Plus, Pencil, Trash2, User, GripVertical, Check, ChevronsUpDown, Loader2, X } from "lucide-react";
 import DoctorForm from "@/components/staff/DoctorForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -46,14 +48,16 @@ export default function StaffPage() {
   }
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedQualificationIds, setSelectedQualificationIds] = useState([]);
   const queryClient = useQueryClient();
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
 
   // Dynamische Qualifikationen laden
-  const { qualificationMap } = useQualifications();
-  const { byDoctor: doctorQualsByDoctor } = useAllDoctorQualifications();
+  const { qualifications = [], qualificationMap, isLoading: isQualificationsLoading } = useQualifications();
+  const { byDoctor: doctorQualsByDoctor, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
 
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
@@ -69,6 +73,24 @@ export default function StaffPage() {
       queryKey: ['colorSettings'],
       queryFn: () => db.ColorSetting.list(),
   });
+
+  const activeQualifications = useMemo(
+    () => qualifications.filter((qualification) => qualification.is_active !== false),
+    [qualifications]
+  );
+
+  const isQualificationDataLoading = isQualificationsLoading || isDoctorQualificationsLoading;
+
+  const filteredDoctors = useMemo(() => {
+    if (selectedQualificationIds.length === 0) {
+      return doctors;
+    }
+
+    return doctors.filter((doctor) => {
+      const doctorQualIds = (doctorQualsByDoctor[doctor.id] || []).map((qualification) => qualification.qualification_id);
+      return selectedQualificationIds.some((qualificationId) => doctorQualIds.includes(qualificationId));
+    });
+  }, [doctors, doctorQualsByDoctor, selectedQualificationIds]);
 
   const getRoleColor = (role) => {
       const setting = colorSettings.find(s => s.name === role && s.category === 'role');
@@ -158,7 +180,16 @@ export default function StaffPage() {
     setIsFormOpen(true);
   };
 
+  const handleQualificationToggle = (qualificationId) => {
+    setSelectedQualificationIds((current) => (
+      current.includes(qualificationId)
+        ? current.filter((id) => id !== qualificationId)
+        : [...current, qualificationId]
+    ));
+  };
+
   const handleDragEnd = (result) => {
+    if (selectedQualificationIds.length > 0) return;
     if (!result.destination) return;
     
     const items = Array.from(doctors);
@@ -199,6 +230,105 @@ export default function StaffPage() {
           </TabsList>
 
           <TabsContent value="list">
+        <div className="mb-4 flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-slate-900">Qualifikationsfilter</div>
+            <p className="text-sm text-slate-500">
+              Zeigt nur Teammitglieder mit mindestens einer der ausgewählten Qualifikationen.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:min-w-80 sm:max-w-md sm:items-end">
+            <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={filterOpen}
+                  className="w-full justify-between sm:w-80"
+                  disabled={isQualificationDataLoading || activeQualifications.length === 0}
+                >
+                  <span className="truncate text-left">
+                    {isQualificationDataLoading
+                      ? "Qualifikationen laden..."
+                      : selectedQualificationIds.length > 0
+                      ? `${selectedQualificationIds.length} Qualifikation${selectedQualificationIds.length === 1 ? '' : 'en'} gewählt`
+                      : "Qualifikationen auswählen"}
+                  </span>
+                  {isQualificationDataLoading ? (
+                    <Loader2 className="ml-2 h-4 w-4 shrink-0 animate-spin text-slate-400" />
+                  ) : (
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[320px] p-0" align="end">
+                <Command>
+                  <CommandInput placeholder="Qualifikation suchen..." aria-label="Qualifikation suchen" />
+                  <CommandList>
+                    <CommandEmpty>Keine Qualifikation gefunden.</CommandEmpty>
+                    {activeQualifications.map((qualification) => {
+                      const isSelected = selectedQualificationIds.includes(qualification.id);
+                      return (
+                        <CommandItem
+                          key={qualification.id}
+                          value={`${qualification.name} ${qualification.short_label || ''}`}
+                          onSelect={() => handleQualificationToggle(qualification.id)}
+                        >
+                          <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 text-transparent'}`}>
+                            <Check className="h-3 w-3" />
+                          </div>
+                          <Badge
+                            style={{
+                              backgroundColor: qualification.color_bg || '#e0e7ff',
+                              color: qualification.color_text || '#3730a3'
+                            }}
+                            className="border-0 text-[10px]"
+                          >
+                            {qualification.short_label || qualification.name.substring(0, 3).toUpperCase()}
+                          </Badge>
+                          <span className="truncate">{qualification.name}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            {selectedQualificationIds.length > 0 && (
+              <div className="flex w-full flex-wrap items-center gap-2 sm:justify-end">
+                {selectedQualificationIds.map((qualificationId) => {
+                  const qualification = qualificationMap[qualificationId];
+                  if (!qualification) return null;
+
+                  return (
+                    <button
+                      key={qualificationId}
+                      type="button"
+                      onClick={() => handleQualificationToggle(qualificationId)}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 transition-colors hover:bg-slate-100"
+                    >
+                      <span>{qualification.short_label || qualification.name}</span>
+                      <X className="h-3 w-3" />
+                    </button>
+                  );
+                })}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs text-slate-500"
+                  onClick={() => setSelectedQualificationIds([])}
+                >
+                  Filter zurücksetzen
+                </Button>
+                <span className="w-full text-[11px] text-slate-400 sm:text-right">
+                  Sortierung kann nach dem Zurücksetzen des Filters per Drag-and-drop geändert werden.
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
               {isLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {Array(6).fill(0).map((_, i) => (
@@ -222,8 +352,15 @@ export default function StaffPage() {
                                 ref={provided.innerRef}
                                 className="grid grid-cols-1 gap-4"
                             >
-                                {doctors.map((doctor, index) => (
-                                    <Draggable key={doctor.id} draggableId={doctor.id} index={index} isDragDisabled={isReadOnly}>
+                        {filteredDoctors.length === 0 && (
+                          <Card>
+                            <CardContent className="py-10 text-center text-sm text-slate-500">
+                              Keine Teammitglieder mit den ausgewählten Qualifikationen gefunden.
+                            </CardContent>
+                          </Card>
+                        )}
+                        {filteredDoctors.map((doctor, index) => (
+                                    <Draggable key={doctor.id} draggableId={doctor.id} index={index} isDragDisabled={isReadOnly || selectedQualificationIds.length > 0}>
                                         {(provided, snapshot) => (
                                             <div
                                                 ref={provided.innerRef}
