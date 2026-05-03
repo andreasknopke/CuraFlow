@@ -13,6 +13,25 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
+function parseAllowedTenants(rawAllowedTenants) {
+    if (rawAllowedTenants === null || rawAllowedTenants === undefined || rawAllowedTenants === '') {
+        return [];
+    }
+
+    const parsed = typeof rawAllowedTenants === 'string'
+        ? (() => {
+            try {
+                return JSON.parse(rawAllowedTenants);
+            } catch (error) {
+                console.error('[UserManagement] Failed to parse allowed_tenants:', rawAllowedTenants, error);
+                return [];
+            }
+        })()
+        : rawAllowedTenants;
+
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+}
+
 export default function UserManagement() {
     const queryClient = useQueryClient();
     const { user } = useAuth();
@@ -50,21 +69,7 @@ export default function UserManagement() {
             return users;
         }
 
-        return users.filter((entry) => {
-            if (!entry.allowed_tenants) {
-                return true;
-            }
-
-            const allowedTenants = typeof entry.allowed_tenants === 'string'
-                ? JSON.parse(entry.allowed_tenants)
-                : entry.allowed_tenants;
-
-            if (!Array.isArray(allowedTenants) || allowedTenants.length === 0) {
-                return true;
-            }
-
-            return allowedTenants.map(String).includes(String(tenantFilter));
-        });
+        return users.filter((entry) => parseAllowedTenants(entry.allowed_tenants).includes(String(tenantFilter)));
     }, [tenantFilter, users]);
 
     // Fetch available tenants (db tokens)
@@ -158,6 +163,31 @@ export default function UserManagement() {
                     <UserPlus className="w-4 h-4 mr-2" />
                     Neuer Benutzer
                 </Button>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 rounded-lg border bg-white p-4 shadow-sm">
+                <div className="flex items-center gap-2">
+                    <Label htmlFor="tenantFilter" className="text-sm">Mandant filtern:</Label>
+                    <Select
+                        value={tenantFilter || "__all__"}
+                        onValueChange={(val) => setTenantFilter(val === "__all__" ? "" : val)}
+                    >
+                        <SelectTrigger id="tenantFilter" className="w-64">
+                            <SelectValue placeholder="Alle Mandanten" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="__all__">Alle Mandanten</SelectItem>
+                            {tenants.map((tenant) => (
+                                <SelectItem key={tenant.id} value={String(tenant.id)}>
+                                    {tenant.name || tenant.id}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div className="text-sm text-slate-500">
+                    {filteredUsers.length} von {users.length} Nutzern sichtbar
+                </div>
             </div>
 
             <div className="bg-white rounded-lg border shadow-sm overflow-x-auto">
@@ -408,27 +438,6 @@ export default function UserManagement() {
                 </DialogContent>
             </Dialog>
 
-            {/* Tenant Filter Dropdown */}
-            <div className="flex items-center gap-2 mb-4">
-                <Label htmlFor="tenantFilter" className="text-sm">Mandant filtern:</Label>
-                <Select
-                    value={tenantFilter || "__all__"}
-                    onValueChange={(val) => setTenantFilter(val === "__all__" ? "" : val)}
-                >
-                    <SelectTrigger id="tenantFilter" className="w-64">
-                        <SelectValue placeholder="Alle Mandanten" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="__all__">Alle Mandanten</SelectItem>
-                        {tenants.map((t) => (
-                            <SelectItem key={t.id} value={String(t.id)}>
-                                {t.name || t.id}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-            </div>
-
             {/* Tenant Assignment Dialog */}
             <Dialog open={showTenantDialog} onOpenChange={(open) => {
                 setShowTenantDialog(open);
@@ -466,9 +475,7 @@ export default function UserManagement() {
 
 // Separate component for tenant selection
 function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, isLoading }) {
-    const currentTenants = user.allowed_tenants ? 
-        (typeof user.allowed_tenants === 'string' ? JSON.parse(user.allowed_tenants) : user.allowed_tenants) 
-        : [];
+    const currentTenants = parseAllowedTenants(user.allowed_tenants);
     
     const [selectedTenants, setSelectedTenants] = useState(currentTenants || []);
     // Only allow "All Access" if admin has full access themselves
