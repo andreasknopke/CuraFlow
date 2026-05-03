@@ -385,6 +385,27 @@ export default function UserManagement() {
                 </DialogContent>
             </Dialog>
 
+            {/* Tenant Filter Dropdown */}
+            <div className="flex items-center gap-2 mb-4">
+                <Label htmlFor="tenantFilter" className="text-sm">Mandant filtern:</Label>
+                <Select
+                    value={tenantFilter || "__all__"}
+                    onValueChange={(val) => setTenantFilter(val === "__all__" ? "" : val)}
+                >
+                    <SelectTrigger id="tenantFilter" className="w-64">
+                        <SelectValue placeholder="Alle Mandanten" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__all__">Alle Mandanten</SelectItem>
+                        {tenants.map((t) => (
+                            <SelectItem key={t.id} value={String(t.id)}>
+                                {t.name || t.id}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
             {/* Tenant Assignment Dialog */}
             <Dialog open={showTenantDialog} onOpenChange={(open) => {
                 setShowTenantDialog(open);
