@@ -18,6 +18,7 @@ export default function UserManagement() {
     const { user } = useAuth();
     const [showCreateDialog, setShowCreateDialog] = useState(false);
     const [showTenantDialog, setShowTenantDialog] = useState(false);
+    const [tenantFilter, setTenantFilter] = useState('');
     const [selectedUser, setSelectedUser] = useState(null);
     const [newUser, setNewUser] = useState({ email: '', full_name: '', password: '', role: 'user' });
     const [createError, setCreateError] = useState('');
@@ -43,6 +44,28 @@ export default function UserManagement() {
     const doctorsForSelection = React.useMemo(() => {
         return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
+
+    const filteredUsers = React.useMemo(() => {
+        if (!tenantFilter) {
+            return users;
+        }
+
+        return users.filter((entry) => {
+            if (!entry.allowed_tenants) {
+                return true;
+            }
+
+            const allowedTenants = typeof entry.allowed_tenants === 'string'
+                ? JSON.parse(entry.allowed_tenants)
+                : entry.allowed_tenants;
+
+            if (!Array.isArray(allowedTenants) || allowedTenants.length === 0) {
+                return true;
+            }
+
+            return allowedTenants.map(String).includes(String(tenantFilter));
+        });
+    }, [tenantFilter, users]);
 
     // Fetch available tenants (db tokens)
     const { data: tenants = [] } = useQuery({
@@ -152,7 +175,7 @@ export default function UserManagement() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {users.map((user) => {
+                        {filteredUsers.map((user) => {
                             const userTenants = user.allowed_tenants ? 
                                 (typeof user.allowed_tenants === 'string' ? JSON.parse(user.allowed_tenants) : user.allowed_tenants) 
                                 : null;
