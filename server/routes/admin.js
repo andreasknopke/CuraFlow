@@ -370,6 +370,44 @@ router.post('/tools', async (req, res, next) => {
 router.use(authMiddleware);
 router.use(adminMiddleware);
 
+// ===== GET USERS (with optional tenant filter) =====
+// Optional query param: tenantId -> filters users whose allowed_tenants JSON array contains this id.
+// Users with allowed_tenants NULL or empty array are treated as having access to all tenants
+// and are therefore always included in the result (backwards compatibility).
+router.get('/users', async (req, res, next) => {
+  try {
+    const dbPool = req.db || db;
+    const { tenantId } = req.query;
+
+    const [rows] = await dbPool.execute('SELECT * FROM app_users ORDER BY email ASC');
+
+    if (!tenantId) {
+      return res.json(rows);
+    }
+
+    // Filter in JS to safely handle JSON column variations (string vs. array, NULL, empty array)
+    const filtered = rows.filter((u) => {
+      const raw = u.allowed_tenants;
+      if (raw === null || raw === undefined || raw === '') return true; // full access
+      let parsed = raw;
+      if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw); } catch (e) { return false; }
+      }
+      if (!Array.isArray(parsed)) return false;
+      if (parsed.length === 0) return true; // empty array = full access
+      // Compare as strings to be tolerant of numeric/string IDs
+      return parsed.map(String).includes(String(tenantId));
+    });
+
+    res.json(filtered);
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') {
+      return res.json([]);
+    }
+    next(error);
+  }
+});
+
 // ===== GET SYSTEM LOGS =====
 router.get('/logs', async (req, res, next) => {
   try {
