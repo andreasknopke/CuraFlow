@@ -1,5 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
+import ical from 'ical-generator';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
@@ -174,37 +175,37 @@ router.post('/schedule-notifications', async (req, res, next) => {
       day: '2-digit'
     });
 
-    // Helper: ICS generation
     const generateICS = (docShifts) => {
-      const events = docShifts.map(shift => {
-        const d = new Date(shift.date);
-        if (isNaN(d.getTime())) return '';
-        const dateStr = d.toISOString().split('T')[0].replace(/-/g, '');
-        const nextDay = new Date(d);
-        nextDay.setDate(nextDay.getDate() + 1);
-        const nextDayStr = nextDay.toISOString().split('T')[0].replace(/-/g, '');
+      const calendar = ical({
+        name: 'CuraFlow Dienstplan',
+        prodId: {
+          company: 'CuraFlow',
+          product: 'Dienstplan',
+          language: 'DE'
+        },
+        method: 'PUBLISH'
+      });
 
-        return [
-          'BEGIN:VEVENT',
-          `UID:${shift.id}@curaflow`,
-          `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
-          `DTSTART;VALUE=DATE:${dateStr}`,
-          `DTEND;VALUE=DATE:${nextDayStr}`,
-          `SUMMARY:${shift.position}`,
-          `DESCRIPTION:Eingeteilter Dienst: ${shift.position}`,
-          'END:VEVENT'
-        ].join('\r\n');
-      }).filter(Boolean).join('\r\n');
+      for (const shift of docShifts) {
+        const date = new Date(shift.date);
+        if (isNaN(date.getTime())) {
+          continue;
+        }
 
-      return [
-        'BEGIN:VCALENDAR',
-        'VERSION:2.0',
-        'PRODID:-//CuraFlow//NONSGML v1.0//EN',
-        'CALSCALE:GREGORIAN',
-        'METHOD:PUBLISH',
-        events,
-        'END:VCALENDAR'
-      ].join('\r\n');
+        const nextDay = new Date(date);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+        calendar.createEvent({
+          id: `${shift.id}@curaflow`,
+          start: date,
+          end: nextDay,
+          allDay: true,
+          summary: shift.position,
+          description: `Eingeteilter Dienst: ${shift.position}`
+        });
+      }
+
+      return `${calendar.toString()}\r\n`;
     };
 
     // 6. Send emails per doctor
