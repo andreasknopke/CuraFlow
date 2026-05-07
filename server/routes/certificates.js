@@ -376,7 +376,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
           analysis_status, analysis_is_certificate, analysis_scope_match,
           analysis_scope_detected, analysis_confidence, analysis_reasoning,
           analysis_detected_granted, analysis_detected_expiry, analyzed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         id,
         tenantKey,
