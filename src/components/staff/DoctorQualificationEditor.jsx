@@ -87,7 +87,10 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
     }
 
     if (compact) {
-        // Compact: Nur Badge-Chips zum anklicken
+        // Compact: Badge-Chips zum Anklicken + Upload-Bereich für zertifikatpflichtige Qualifikationen
+        const certRequiredAssigned = doctorId
+            ? activeQuals.filter(q => q.requires_certificate === true && assignedQualIds.includes(q.id))
+            : [];
         return (
             <div className="space-y-2">
                 <Label className="text-sm font-medium flex items-center gap-1.5">
@@ -97,6 +100,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                 <div className="flex flex-wrap gap-1.5">
                     {activeQuals.map(qual => {
                         const isAssigned = assignedQualIds.includes(qual.id);
+                        const needsCertHint = qual.requires_certificate === true;
                         return (
                             <button
                                 key={qual.id}
@@ -111,14 +115,37 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                                     backgroundColor: qual.color_bg || '#e0e7ff', 
                                     color: qual.color_text || '#3730a3' 
                                 }}
-                                title={qual.description || qual.name}
+                                title={`${qual.description || qual.name}${needsCertHint ? ' (Zertifikat erforderlich)' : ''}`}
                             >
                                 {isAssigned && <Check className="w-3 h-3" />}
                                 {qual.short_label || qual.name.substring(0, 3).toUpperCase()}
+                                {needsCertHint && <FileCheck className="w-3 h-3" />}
                             </button>
                         );
                     })}
                 </div>
+                {certRequiredAssigned.length > 0 && (
+                    <div className="space-y-2 pt-2">
+                        {certRequiredAssigned.map(qual => {
+                            const dqEntry = doctorQuals.find(dq => dq.qualification_id === qual.id);
+                            return (
+                                <CertificateManager
+                                    key={qual.id}
+                                    doctorId={doctorId}
+                                    qualificationId={qual.id}
+                                    qualificationName={qual.name}
+                                    doctorQualificationId={dqEntry?.id || null}
+                                />
+                            );
+                        })}
+                    </div>
+                )}
+                {!doctorId && activeQuals.some(q => q.requires_certificate === true && assignedQualIds.includes(q.id)) && (
+                    <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                        Hinweis: Für Qualifikationen mit Zertifikatspflicht können Sie Dateien hochladen,
+                        sobald das Teammitglied gespeichert ist.
+                    </div>
+                )}
             </div>
         );
     }
