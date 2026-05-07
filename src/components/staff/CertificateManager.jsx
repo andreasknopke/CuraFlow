@@ -48,7 +48,7 @@ function getExpiryStatus(expiry_date) {
 }
 
 function getCertificateDisplayExpiry(cert, summary) {
-    return cert.expiry_date || summary?.certificate_valid_until_by_id?.[cert.id] || null;
+    return summary?.certificate_valid_until_by_id?.[cert.id] || cert.expiry_date || null;
 }
 
 function getRoleLabel(role, baseLabel, refreshLabel) {

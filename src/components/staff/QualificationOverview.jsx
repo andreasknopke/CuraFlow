@@ -160,27 +160,38 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                             </div>
                                         </td>
                                         {activeQuals.map(qual => {
-                                            const hasQual = doctorQualIds.includes(qual.id);
+                                            const dqEntry = (byDoctor[doctor.id] || []).find(dq => dq.qualification_id === qual.id);
+                                            const hasQual = !!dqEntry;
                                             const isPending = assignMutation.isPending || removeMutation.isPending;
                                             const requiresCert = qual.requires_certificate === true;
                                             const hasCert = certKeySet.has(`${doctor.id}:${qual.id}`);
+                                            const certStatus = dqEntry?.certificate_status || null;
+                                            const certValidUntil = dqEntry?.certificate_valid_until || dqEntry?.expiry_date || null;
                                             const missingCert = hasQual && requiresCert && !hasCert;
+                                            const certWarning = hasQual && requiresCert && (
+                                                missingCert
+                                                || certStatus === 'expired'
+                                                || certStatus === 'incomplete'
+                                                || certStatus === 'missing'
+                                            );
                                             const tooltip = !isReadOnly
-                                                ? (missingCert
-                                                    ? `${qual.name}: kein Zertifikat hinterlegt – bitte im Mitarbeiter-Profil hochladen`
+                                                ? (certWarning
+                                                    ? `${qual.name}: ${missingCert ? 'kein Zertifikat hinterlegt' : (certStatus === 'expired' ? `Nachweis abgelaufen${certValidUntil ? ` (${certValidUntil})` : ''}` : 'Nachweise unvollständig')} – bitte im Mitarbeiter-Profil prüfen`
                                                     : (hasQual ? `${qual.name} entfernen` : `${qual.name} zuweisen`))
-                                                : (missingCert ? `${qual.name}: kein Zertifikat hinterlegt` : '');
+                                                : (certWarning
+                                                    ? `${qual.name}: ${missingCert ? 'kein Zertifikat hinterlegt' : (certStatus === 'expired' ? `abgelaufen${certValidUntil ? ` bis ${certValidUntil}` : ''}` : 'Nachweise unvollständig')}`
+                                                    : '');
                                             return (
                                                 <td 
                                                     key={qual.id} 
                                                     className={`text-center py-2 px-2 ${
                                                         !isReadOnly ? 'cursor-pointer hover:bg-slate-100 transition-colors' : ''
-                                                    } ${missingCert ? 'bg-amber-50/60' : ''}`}
+                                                    } ${certWarning ? 'bg-amber-50/60' : ''}`}
                                                     onClick={() => !isPending && handleToggle(doctor.id, qual.id)}
                                                     title={tooltip}
                                                 >
                                                     {hasQual ? (
-                                                        missingCert ? (
+                                                        certWarning ? (
                                                             <span className="inline-flex items-center justify-center gap-0.5" aria-label="Zertifikat fehlt">
                                                                 <Check className="w-4 h-4 text-green-600" />
                                                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
