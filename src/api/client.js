@@ -436,7 +436,7 @@ class APIClient {
     return response.json();
   }
 
-  async uploadCertificate({ file, doctor_id, qualification_id, doctor_qualification_id, granted_date, expiry_date, notes, qualification_name, qualification_description, approval_token }) {
+  async uploadCertificate({ file, doctor_id, qualification_id, doctor_qualification_id, granted_date, expiry_date, notes, evidence_role, qualification_name, qualification_description, approval_token }) {
     if (!file) throw new Error('Datei fehlt');
     const formData = new FormData();
     formData.append('file', file);
@@ -446,6 +446,7 @@ class APIClient {
     if (granted_date) formData.append('granted_date', granted_date);
     if (expiry_date) formData.append('expiry_date', expiry_date);
     if (notes) formData.append('notes', notes);
+    if (evidence_role) formData.append('evidence_role', evidence_role);
     if (qualification_name) formData.append('qualification_name', qualification_name);
     if (qualification_description) formData.append('qualification_description', qualification_description);
     if (approval_token) formData.append('approval_token', approval_token);
@@ -470,10 +471,10 @@ class APIClient {
     return response.json();
   }
 
-  async updateCertificate(id, { granted_date, expiry_date, notes } = {}) {
+  async updateCertificate(id, { granted_date, expiry_date, notes, evidence_role } = {}) {
     return this.request(`/api/certificates/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ granted_date, expiry_date, notes }),
+      body: JSON.stringify({ granted_date, expiry_date, notes, evidence_role }),
     });
   }
 

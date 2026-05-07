@@ -21,6 +21,11 @@ import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { analyzeCertificate, isAnalyzerConfigured } from '../utils/certificateAnalyzer.js';
+import {
+  computeQualificationEvidenceSummary,
+  normalizeEvidenceRole,
+  normalizeRequirementMode,
+} from '../utils/qualificationEvidence.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -154,6 +159,91 @@ function extractPersistedAnalysisFields(payload) {
     analysis_detected_granted: normalizeDateInput(payload?.granted_date),
     analysis_detected_expiry: normalizeDateInput(payload?.expiry_date),
   };
+}
+
+function normalizeEvidenceRoleInput(value, qualification = null) {
+  return normalizeEvidenceRole(value, normalizeRequirementMode(qualification?.certificate_requirement_mode));
+}
+
+async function getQualificationConfig(req, qualificationId) {
+  if (!req.db || !qualificationId) return null;
+  const [rows] = await req.db.execute(
+    `SELECT id, name, description, requires_certificate,
+            certificate_requirement_mode, certificate_validity_months,
+            certificate_refresh_validity_months, certificate_base_label,
+            certificate_refresh_label
+       FROM Qualification
+      WHERE id = ?
+      LIMIT 1`,
+    [qualificationId]
+  );
+  return rows[0] || null;
+}
+
+async function listQualificationCertificates({ tenantKey, doctorId, qualificationId }) {
+  const [rows] = await db.execute(
+    `SELECT id, evidence_role, granted_date, expiry_date, uploaded_at
+       FROM QualificationCertificate
+      WHERE tenant_key = ? AND doctor_id = ? AND qualification_id = ?
+      ORDER BY uploaded_at ASC`,
+    [tenantKey, doctorId, qualificationId]
+  );
+  return rows;
+}
+
+async function recomputeDoctorQualificationStatus({
+  tenantDb,
+  tenantKey,
+  doctorId,
+  qualificationId,
+  doctorQualificationId = null,
+  qualificationConfig = null,
+}) {
+  if (!tenantDb || !doctorId || !qualificationId) return null;
+
+  const qualification = qualificationConfig || await getQualificationConfig({ db: tenantDb }, qualificationId);
+  if (!qualification || qualification.requires_certificate !== 1 && qualification.requires_certificate !== true) {
+    return null;
+  }
+
+  let targetDoctorQualificationId = doctorQualificationId || null;
+  if (!targetDoctorQualificationId) {
+    const [dqRows] = await tenantDb.execute(
+      `SELECT id FROM DoctorQualification WHERE doctor_id = ? AND qualification_id = ? LIMIT 1`,
+      [doctorId, qualificationId]
+    );
+    targetDoctorQualificationId = dqRows[0]?.id || null;
+  }
+  if (!targetDoctorQualificationId) return null;
+
+  const certificates = await listQualificationCertificates({ tenantKey, doctorId, qualificationId });
+  const summary = computeQualificationEvidenceSummary({
+    qualification,
+    certificates,
+  });
+
+  await tenantDb.execute(
+    `UPDATE DoctorQualification
+        SET granted_date = ?,
+            expiry_date = ?,
+            certificate_status = ?,
+            certificate_valid_from = ?,
+            certificate_valid_until = ?,
+            certificate_status_reason = ?,
+            updated_date = CURRENT_TIMESTAMP(3)
+      WHERE id = ?`,
+    [
+      summary.valid_from,
+      summary.valid_until,
+      summary.status,
+      summary.valid_from,
+      summary.valid_until,
+      summary.reason?.slice(0, 500) || null,
+      targetDoctorQualificationId,
+    ]
+  );
+
+  return summary;
 }
 
 function isApprovedPayloadValidForUpload({ payload, buffer, mimeType, qualificationName, qualificationDescription }) {
@@ -331,6 +421,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       granted_date,
       expiry_date,
       notes,
+      evidence_role,
       approval_token,
       qualification_name,
       qualification_description,
@@ -343,6 +434,10 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     }
 
     ensureCanAccessDoctor(req, doctor_id);
+
+  const qualificationConfig = await getQualificationConfig(req, qualification_id);
+  const requirementMode = normalizeRequirementMode(qualificationConfig?.certificate_requirement_mode);
+  const normalizedEvidenceRole = normalizeEvidenceRoleInput(evidence_role, qualificationConfig);
 
     let approvedAnalysis = null;
     if (isAnalyzerConfigured()) {
@@ -367,22 +462,38 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     const finalGrantedDate = normalizeDateInput(granted_date) || approvedFields.analysis_detected_granted || null;
     const finalExpiryDate = normalizeDateInput(expiry_date) || approvedFields.analysis_detected_expiry || null;
 
+    if (requirementMode === 'base_refresh' && normalizedEvidenceRole === 'refresh') {
+      const existingCertificates = await listQualificationCertificates({
+        tenantKey,
+        doctorId: doctor_id,
+        qualificationId: qualification_id,
+      });
+      const hasBaseCertificate = existingCertificates.some((certificate) => ['base', 'recertification', 'single'].includes(normalizeEvidenceRoleInput(certificate.evidence_role, qualificationConfig)));
+      if (!hasBaseCertificate) {
+        return res.status(422).json({
+          error: `${qualificationConfig?.certificate_base_label || 'Grundnachweis'} muss vor einer Verlängerung hochgeladen werden.`,
+        });
+      }
+    }
+
     const id = crypto.randomUUID();
     await db.execute(
       `INSERT INTO QualificationCertificate
          (id, tenant_key, doctor_id, qualification_id, doctor_qualification_id,
+          evidence_role,
           file_name, mime_type, file_size, file_data,
           granted_date, expiry_date, notes, uploaded_by,
           analysis_status, analysis_is_certificate, analysis_scope_match,
           analysis_scope_detected, analysis_confidence, analysis_reasoning,
           analysis_detected_granted, analysis_detected_expiry, analyzed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         id,
         tenantKey,
         doctor_id,
         qualification_id,
         doctor_qualification_id || null,
+        normalizedEvidenceRole,
         req.file.originalname,
         req.file.mimetype,
         req.file.size,
@@ -402,11 +513,21 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       ]
     );
 
+    const summary = await recomputeDoctorQualificationStatus({
+      tenantDb: req.db,
+      tenantKey,
+      doctorId: doctor_id,
+      qualificationId: qualification_id,
+      doctorQualificationId: doctor_qualification_id || null,
+      qualificationConfig,
+    });
+
     res.json({
       id,
       doctor_id,
       qualification_id,
       doctor_qualification_id: doctor_qualification_id || null,
+      evidence_role: normalizedEvidenceRole,
       file_name: req.file.originalname,
       mime_type: req.file.mimetype,
       file_size: req.file.size,
@@ -423,6 +544,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       analysis_reasoning: approvedAnalysis ? approvedAnalysis.reasoning : null,
       analysis_detected_granted: approvedAnalysis ? approvedAnalysis.granted_date : null,
       analysis_detected_expiry: approvedAnalysis ? approvedAnalysis.expiry_date : null,
+      qualification_summary: summary,
     });
   } catch (err) {
     next(err);
@@ -456,6 +578,7 @@ router.get('/', async (req, res, next) => {
 
     const [rows] = await db.execute(
       `SELECT id, doctor_id, qualification_id, doctor_qualification_id,
+              evidence_role,
               file_name, mime_type, file_size,
               granted_date, expiry_date, notes,
               uploaded_by, uploaded_at, updated_at,
@@ -518,7 +641,7 @@ router.patch('/:id', async (req, res, next) => {
     const tenantKey = getTenantKey(req);
     const { id } = req.params;
     const [rows] = await db.execute(
-      `SELECT doctor_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
+      `SELECT doctor_id, qualification_id, doctor_qualification_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
     );
     if (rows.length === 0) {
@@ -526,20 +649,30 @@ router.patch('/:id', async (req, res, next) => {
     }
     ensureCanAccessDoctor(req, rows[0].doctor_id);
 
-    const { granted_date, expiry_date, notes } = req.body || {};
+    const qualificationConfig = await getQualificationConfig(req, rows[0].qualification_id);
+    const { granted_date, expiry_date, notes, evidence_role } = req.body || {};
     await db.execute(
       `UPDATE QualificationCertificate
-          SET granted_date = ?, expiry_date = ?, notes = ?
+          SET granted_date = ?, expiry_date = ?, notes = ?, evidence_role = ?
         WHERE id = ? AND tenant_key = ?`,
       [
         normalizeDateInput(granted_date),
         normalizeDateInput(expiry_date),
         notes ? String(notes).slice(0, 500) : null,
+        normalizeEvidenceRoleInput(evidence_role, qualificationConfig),
         id,
         tenantKey,
       ]
     );
-    res.json({ ok: true });
+    const summary = await recomputeDoctorQualificationStatus({
+      tenantDb: req.db,
+      tenantKey,
+      doctorId: rows[0].doctor_id,
+      qualificationId: rows[0].qualification_id,
+      doctorQualificationId: rows[0].doctor_qualification_id || null,
+      qualificationConfig,
+    });
+    res.json({ ok: true, qualification_summary: summary });
   } catch (err) {
     next(err);
   }
@@ -628,7 +761,7 @@ router.delete('/:id', async (req, res, next) => {
     const tenantKey = getTenantKey(req);
     const { id } = req.params;
     const [rows] = await db.execute(
-      `SELECT doctor_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
+      `SELECT doctor_id, qualification_id, doctor_qualification_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
     );
     if (rows.length === 0) {
@@ -636,11 +769,21 @@ router.delete('/:id', async (req, res, next) => {
     }
     ensureCanAccessDoctor(req, rows[0].doctor_id);
 
+    const qualificationConfig = await getQualificationConfig(req, rows[0].qualification_id);
+
     await db.execute(
       `DELETE FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
     );
-    res.json({ ok: true });
+    const summary = await recomputeDoctorQualificationStatus({
+      tenantDb: req.db,
+      tenantKey,
+      doctorId: rows[0].doctor_id,
+      qualificationId: rows[0].qualification_id,
+      doctorQualificationId: rows[0].doctor_qualification_id || null,
+      qualificationConfig,
+    });
+    res.json({ ok: true, qualification_summary: summary });
   } catch (err) {
     next(err);
   }

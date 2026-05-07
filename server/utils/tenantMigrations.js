@@ -138,6 +138,24 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   // ── 11b. Qualification requires_certificate ──
   await addCol('add_qualification_requires_certificate',
     `ALTER TABLE Qualification ADD COLUMN requires_certificate BOOLEAN NOT NULL DEFAULT FALSE`);
+  await addCol('add_qualification_certificate_requirement_mode',
+    `ALTER TABLE Qualification ADD COLUMN certificate_requirement_mode VARCHAR(32) DEFAULT 'single_document'`);
+  await addCol('add_qualification_certificate_validity_months',
+    `ALTER TABLE Qualification ADD COLUMN certificate_validity_months INT DEFAULT NULL`);
+  await addCol('add_qualification_certificate_refresh_validity_months',
+    `ALTER TABLE Qualification ADD COLUMN certificate_refresh_validity_months INT DEFAULT NULL`);
+  await addCol('add_qualification_certificate_base_label',
+    `ALTER TABLE Qualification ADD COLUMN certificate_base_label VARCHAR(100) DEFAULT 'Grundnachweis'`);
+  await addCol('add_qualification_certificate_refresh_label',
+    `ALTER TABLE Qualification ADD COLUMN certificate_refresh_label VARCHAR(100) DEFAULT 'Verlängerung / Auffrischung'`);
+  await addCol('add_doctorqualification_certificate_status',
+    `ALTER TABLE DoctorQualification ADD COLUMN certificate_status VARCHAR(32) DEFAULT NULL`);
+  await addCol('add_doctorqualification_certificate_valid_from',
+    `ALTER TABLE DoctorQualification ADD COLUMN certificate_valid_from DATE DEFAULT NULL`);
+  await addCol('add_doctorqualification_certificate_valid_until',
+    `ALTER TABLE DoctorQualification ADD COLUMN certificate_valid_until DATE DEFAULT NULL`);
+  await addCol('add_doctorqualification_certificate_status_reason',
+    `ALTER TABLE DoctorQualification ADD COLUMN certificate_status_reason VARCHAR(500) DEFAULT NULL`);
 
   // ── 12. Workplace service_type ──
   try {
@@ -238,7 +256,7 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   // Clear column cache so new columns are recognized immediately
   clearColumnsCache([
     'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',
-    'TeamRole', 'WorkplaceQualification', 'Qualification', 'Doctor', 'ShiftTimeRule'
+    'TeamRole', 'WorkplaceQualification', 'Qualification', 'DoctorQualification', 'Doctor', 'ShiftTimeRule'
   ], cacheKey);
 
   return results;

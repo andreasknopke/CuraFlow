@@ -363,6 +363,12 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         color_text VARCHAR(20) DEFAULT '#3730a3',
         category VARCHAR(50) DEFAULT 'Allgemein',
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        requires_certificate BOOLEAN NOT NULL DEFAULT FALSE,
+        certificate_requirement_mode VARCHAR(32) DEFAULT 'single_document',
+        certificate_validity_months INT DEFAULT NULL,
+        certificate_refresh_validity_months INT DEFAULT NULL,
+        certificate_base_label VARCHAR(100) DEFAULT 'Grundnachweis',
+        certificate_refresh_label VARCHAR(100) DEFAULT 'Verlängerung / Auffrischung',
         \`order\` INT NOT NULL DEFAULT 99,
         created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
         updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
@@ -378,6 +384,10 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         granted_date DATE DEFAULT NULL,
         expiry_date DATE DEFAULT NULL,
         notes VARCHAR(255) DEFAULT NULL,
+        certificate_status VARCHAR(32) DEFAULT NULL,
+        certificate_valid_from DATE DEFAULT NULL,
+        certificate_valid_until DATE DEFAULT NULL,
+        certificate_status_reason VARCHAR(500) DEFAULT NULL,
         created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
         updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
         created_by VARCHAR(255) DEFAULT 'system',
@@ -406,9 +416,23 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
     // Add is_excluded column if table already existed without it
     try {
       await dbPool.execute(`ALTER TABLE WorkplaceQualification ADD COLUMN IF NOT EXISTS is_excluded BOOLEAN NOT NULL DEFAULT FALSE`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS requires_certificate BOOLEAN NOT NULL DEFAULT FALSE`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_requirement_mode VARCHAR(32) DEFAULT 'single_document'`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_validity_months INT DEFAULT NULL`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_refresh_validity_months INT DEFAULT NULL`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_base_label VARCHAR(100) DEFAULT 'Grundnachweis'`);
+      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_refresh_label VARCHAR(100) DEFAULT 'Verlängerung / Auffrischung'`);
+      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_status VARCHAR(32) DEFAULT NULL`);
+      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_valid_from DATE DEFAULT NULL`);
+      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_valid_until DATE DEFAULT NULL`);
+      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_status_reason VARCHAR(500) DEFAULT NULL`);
       // Clear cache so new column is recognized
       const wqCacheKey = `${cacheKey}:WorkplaceQualification`;
+      const qualCacheKey = `${cacheKey}:Qualification`;
+      const dqCacheKey = `${cacheKey}:DoctorQualification`;
       delete COLUMNS_CACHE[wqCacheKey];
+      delete COLUMNS_CACHE[qualCacheKey];
+      delete COLUMNS_CACHE[dqCacheKey];
     } catch (alterErr) {
       // Column might already exist
     }

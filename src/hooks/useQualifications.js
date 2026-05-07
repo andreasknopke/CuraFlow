@@ -44,7 +44,13 @@ export const DEFAULT_QUALIFICATIONS = [
         color_bg: "#fef9c3", 
         color_text: "#854d0e",
         category: "Zertifizierung",
-        order: 3
+        order: 3,
+        requires_certificate: true,
+        certificate_requirement_mode: 'base_refresh',
+        certificate_validity_months: 60,
+        certificate_refresh_validity_months: 60,
+        certificate_base_label: 'Original-Fachkunde',
+        certificate_refresh_label: 'Auffrischung / Aktualisierung',
     },
 ];
 

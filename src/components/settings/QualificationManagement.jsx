@@ -60,6 +60,11 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
         category: 'Allgemein',
         is_active: true,
         requires_certificate: false,
+        certificate_requirement_mode: 'single_document',
+        certificate_validity_months: '',
+        certificate_refresh_validity_months: '',
+        certificate_base_label: 'Grundnachweis',
+        certificate_refresh_label: 'Verlängerung / Auffrischung',
     });
 
     useEffect(() => {
@@ -73,6 +78,11 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                 category: qualification.category || 'Allgemein',
                 is_active: qualification.is_active !== false,
                 requires_certificate: qualification.requires_certificate === true,
+                certificate_requirement_mode: qualification.certificate_requirement_mode || 'single_document',
+                certificate_validity_months: qualification.certificate_validity_months ?? '',
+                certificate_refresh_validity_months: qualification.certificate_refresh_validity_months ?? '',
+                certificate_base_label: qualification.certificate_base_label || 'Grundnachweis',
+                certificate_refresh_label: qualification.certificate_refresh_label || 'Verlängerung / Auffrischung',
             });
         } else {
             setFormData({
@@ -84,6 +94,11 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                 category: 'Allgemein',
                 is_active: true,
                 requires_certificate: false,
+                certificate_requirement_mode: 'single_document',
+                certificate_validity_months: '',
+                certificate_refresh_validity_months: '',
+                certificate_base_label: 'Grundnachweis',
+                certificate_refresh_label: 'Verlängerung / Auffrischung',
             });
         }
     }, [qualification, open]);
@@ -96,6 +111,8 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
             if (!data.short_label) {
                 data.short_label = data.name.substring(0, 3).toUpperCase();
             }
+            data.certificate_validity_months = data.certificate_validity_months === '' ? null : Number(data.certificate_validity_months);
+            data.certificate_refresh_validity_months = data.certificate_refresh_validity_months === '' ? null : Number(data.certificate_refresh_validity_months);
             onSave(data);
         }
     };
@@ -228,6 +245,83 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                             onCheckedChange={(checked) => setFormData({ ...formData, requires_certificate: checked })}
                         />
                     </div>
+
+                    {formData.requires_certificate && (
+                        <div className="grid gap-3 rounded border border-amber-200 bg-amber-50/40 p-3">
+                            <div className="grid gap-2">
+                                <Label className="text-sm font-medium">Nachweis-Modell</Label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { value: 'single_document', label: 'Einzelnachweis' },
+                                        { value: 'base_refresh', label: 'Grundnachweis + Verlängerung' },
+                                    ].map((option) => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => setFormData({ ...formData, certificate_requirement_mode: option.value })}
+                                            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                                formData.certificate_requirement_mode === option.value
+                                                    ? 'bg-amber-600 text-white'
+                                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="grid gap-3 sm:grid-cols-2">
+                                <div className="grid gap-2">
+                                    <Label htmlFor="certificateValidityMonths">Gültigkeit Grundnachweis in Monaten</Label>
+                                    <Input
+                                        id="certificateValidityMonths"
+                                        type="number"
+                                        min="1"
+                                        value={formData.certificate_validity_months}
+                                        onChange={(e) => setFormData({ ...formData, certificate_validity_months: e.target.value })}
+                                        placeholder="z.B. 60"
+                                    />
+                                </div>
+                                {formData.certificate_requirement_mode === 'base_refresh' && (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="certificateRefreshValidityMonths">Verlängerung in Monaten</Label>
+                                        <Input
+                                            id="certificateRefreshValidityMonths"
+                                            type="number"
+                                            min="1"
+                                            value={formData.certificate_refresh_validity_months}
+                                            onChange={(e) => setFormData({ ...formData, certificate_refresh_validity_months: e.target.value })}
+                                            placeholder="z.B. 60"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {formData.certificate_requirement_mode === 'base_refresh' && (
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="certificateBaseLabel">Label Grundnachweis</Label>
+                                        <Input
+                                            id="certificateBaseLabel"
+                                            value={formData.certificate_base_label}
+                                            onChange={(e) => setFormData({ ...formData, certificate_base_label: e.target.value })}
+                                            placeholder="z.B. Original-Fachkunde"
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="certificateRefreshLabel">Label Verlängerung</Label>
+                                        <Input
+                                            id="certificateRefreshLabel"
+                                            value={formData.certificate_refresh_label}
+                                            onChange={(e) => setFormData({ ...formData, certificate_refresh_label: e.target.value })}
+                                            placeholder="z.B. Auffrischung"
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <DialogFooter className="mt-2">
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -363,6 +457,11 @@ export default function QualificationManagement() {
                                                                         <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-300 bg-amber-50 flex items-center gap-1">
                                                                             <FileCheck className="w-2.5 h-2.5" />
                                                                             Nachweis
+                                                                        </Badge>
+                                                                    )}
+                                                                    {qual.requires_certificate === true && qual.certificate_requirement_mode === 'base_refresh' && (
+                                                                        <Badge variant="outline" className="text-[10px] text-sky-700 border-sky-300 bg-sky-50">
+                                                                            Grundnachweis + Verlängerung
                                                                         </Badge>
                                                                     )}
                                                                 </div>

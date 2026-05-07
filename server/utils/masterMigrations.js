@@ -215,6 +215,7 @@ export async function runMasterMigrations(dbPool) {
         doctor_id VARCHAR(255) NOT NULL,
         qualification_id VARCHAR(255) NOT NULL,
         doctor_qualification_id VARCHAR(255) DEFAULT NULL,
+        evidence_role VARCHAR(32) DEFAULT 'single',
         file_name VARCHAR(255) NOT NULL,
         mime_type VARCHAR(100) NOT NULL,
         file_size INT NOT NULL,
@@ -235,6 +236,7 @@ export async function runMasterMigrations(dbPool) {
 
   // Add LLM analysis columns to QualificationCertificate (idempotent)
   await run('add_qc_analysis_columns', async () => {
+    await dbPool.execute(`ALTER TABLE QualificationCertificate ADD COLUMN IF NOT EXISTS evidence_role VARCHAR(32) DEFAULT 'single'`);
     await dbPool.execute(`ALTER TABLE QualificationCertificate ADD COLUMN IF NOT EXISTS analysis_status ENUM('pending','passed','warning','failed','skipped','error') DEFAULT 'pending'`);
     await dbPool.execute(`ALTER TABLE QualificationCertificate ADD COLUMN IF NOT EXISTS analysis_is_certificate TINYINT(1) DEFAULT NULL`);
     await dbPool.execute(`ALTER TABLE QualificationCertificate ADD COLUMN IF NOT EXISTS analysis_scope_match TINYINT(1) DEFAULT NULL`);

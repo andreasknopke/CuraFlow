@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS QualificationCertificate (
     doctor_id VARCHAR(255) NOT NULL,
     qualification_id VARCHAR(255) NOT NULL,
     doctor_qualification_id VARCHAR(255) DEFAULT NULL,
+    evidence_role VARCHAR(32) DEFAULT 'single',
     file_name VARCHAR(255) NOT NULL,
     mime_type VARCHAR(100) NOT NULL,
     file_size INT NOT NULL,
