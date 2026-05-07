@@ -233,30 +233,28 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                             <FileCheck className="w-5 h-5" />
                             Zertifikat-Upload erforderlich
                         </AlertDialogTitle>
-                        <AlertDialogDescription asChild>
-                            <div className="space-y-2 text-sm text-slate-600">
-                                <p>
-                                    Für die Qualifikation <strong>{pendingAssign?.qual?.name}</strong> ist ein
-                                    Nachweis (PDF, JPEG oder PNG, max. 5 MB) erforderlich.
-                                </p>
-                                <p>
-                                    Nach dem Bestätigen wird die Qualifikation zugewiesen.
-                                    Bitte laden Sie das Zertifikat anschließend hoch:
-                                </p>
-                                <ol className="list-decimal list-inside space-y-1 text-xs bg-slate-50 p-3 rounded">
-                                    <li>Mitarbeiter öffnen (Stift-Symbol in der Liste).</li>
-                                    <li>Im Bereich <em>Qualifikationen &amp; Berechtigungen</em> erscheint unter
-                                        „{pendingAssign?.qual?.name}“ ein gelbes Upload-Feld.</li>
-                                    <li>Datei auswählen, optional Ausstellungs- und Ablaufdatum eintragen,
-                                        dann <em>Hochladen</em>.</li>
-                                </ol>
-                                <p className="text-xs text-amber-700">
-                                    Solange kein Zertifikat hinterlegt ist, wird die Qualifikation in dieser
-                                    Matrix mit einem Warn-Symbol markiert.
-                                </p>
-                            </div>
+                        <AlertDialogDescription>
+                            Für die Qualifikation <strong>{pendingAssign?.qual?.name}</strong> ist ein
+                            Nachweis (PDF, JPEG oder PNG, max. 5 MB) erforderlich.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
+                    <div className="space-y-2 text-sm text-slate-600">
+                        <p>
+                            Nach dem Bestätigen wird die Qualifikation zugewiesen.
+                            Bitte laden Sie das Zertifikat anschließend hoch:
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1 text-xs bg-slate-50 p-3 rounded">
+                            <li>Mitarbeiter öffnen (Stift-Symbol in der Liste).</li>
+                            <li>Im Bereich <em>Qualifikationen &amp; Berechtigungen</em> erscheint unter
+                                „{pendingAssign?.qual?.name}" ein gelbes Upload-Feld.</li>
+                            <li>Datei auswählen, optional Ausstellungs- und Ablaufdatum eintragen,
+                                dann <em>Hochladen</em>.</li>
+                        </ol>
+                        <p className="text-xs text-amber-700">
+                            Solange kein Zertifikat hinterlegt ist, wird die Qualifikation in dieser
+                            Matrix mit einem Warn-Symbol markiert.
+                        </p>
+                    </div>
                     <AlertDialogFooter>
                         <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                         <AlertDialogAction onClick={confirmAssign} className="bg-amber-600 hover:bg-amber-700">

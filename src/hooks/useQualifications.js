@@ -1,3 +1,4 @@
+import { useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/client';
 
@@ -193,17 +194,19 @@ export function useAllDoctorQualifications() {
         queryFn: () => db.DoctorQualification.list(),
     });
 
-    // Group by doctor_id for fast lookup
-    const byDoctor = allDoctorQualifications.reduce((acc, dq) => {
-        if (!acc[dq.doctor_id]) acc[dq.doctor_id] = [];
-        acc[dq.doctor_id].push(dq);
-        return acc;
-    }, {});
+    // Group by doctor_id for fast lookup (memoized – stabile Referenz für Konsumenten)
+    const byDoctor = useMemo(() => {
+        return allDoctorQualifications.reduce((acc, dq) => {
+            if (!acc[dq.doctor_id]) acc[dq.doctor_id] = [];
+            acc[dq.doctor_id].push(dq);
+            return acc;
+        }, {});
+    }, [allDoctorQualifications]);
 
     // Get qualification IDs for a specific doctor
-    const getQualificationIds = (doctorId) => {
+    const getQualificationIds = useCallback((doctorId) => {
         return (byDoctor[doctorId] || []).map(dq => dq.qualification_id);
-    };
+    }, [byDoctor]);
 
     return {
         allDoctorQualifications,
