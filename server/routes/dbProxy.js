@@ -79,7 +79,7 @@ const fromSqlRow = (row) => {
       'acknowledged', 'is_active', 'is_specialist',
       'timeslots_enabled', 'spans_midnight', 'affects_availability',
       'can_do_foreground_duty', 'can_do_background_duty', 'excluded_from_statistics',
-      'is_mandatory'
+      'is_mandatory', 'requires_certificate'
     ];
     if (boolFields.includes(key)) {
       res[key] = !!res[key];

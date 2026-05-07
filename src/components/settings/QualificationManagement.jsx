@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { 
-    Award, Plus, Trash2, GripVertical, Pencil, Shield, ChevronDown, ChevronUp
+    Award, Plus, Trash2, GripVertical, Pencil, Shield, ChevronDown, ChevronUp, FileCheck
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
@@ -59,6 +59,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
         color_text: '#3730a3',
         category: 'Allgemein',
         is_active: true,
+        requires_certificate: false,
     });
 
     useEffect(() => {
@@ -71,6 +72,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                 color_text: qualification.color_text || '#3730a3',
                 category: qualification.category || 'Allgemein',
                 is_active: qualification.is_active !== false,
+                requires_certificate: qualification.requires_certificate === true,
             });
         } else {
             setFormData({
@@ -81,6 +83,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                 color_text: '#3730a3',
                 category: 'Allgemein',
                 is_active: true,
+                requires_certificate: false,
             });
         }
     }, [qualification, open]);
@@ -206,6 +209,23 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                         <Switch
                             checked={formData.is_active}
                             onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 border rounded bg-amber-50/60">
+                        <div className="space-y-0.5 pr-3">
+                            <Label className="text-sm font-medium flex items-center gap-1.5">
+                                <FileCheck className="w-4 h-4 text-amber-700" />
+                                Zertifikat erforderlich
+                            </Label>
+                            <div className="text-xs text-slate-500">
+                                Mitarbeiter müssen einen Nachweis (PDF/JPEG/PNG, max. 5 MB) hochladen.
+                                Optional mit Ausstellungs- und Ablaufdatum; Ablauf wird im Dashboard gewarnt.
+                            </div>
+                        </div>
+                        <Switch
+                            checked={formData.requires_certificate}
+                            onCheckedChange={(checked) => setFormData({ ...formData, requires_certificate: checked })}
                         />
                     </div>
 
@@ -337,6 +357,12 @@ export default function QualificationManagement() {
                                                                     {qual.is_active === false && (
                                                                         <Badge variant="outline" className="text-[10px] text-slate-400">
                                                                             inaktiv
+                                                                        </Badge>
+                                                                    )}
+                                                                    {qual.requires_certificate === true && (
+                                                                        <Badge variant="outline" className="text-[10px] text-amber-700 border-amber-300 bg-amber-50 flex items-center gap-1">
+                                                                            <FileCheck className="w-2.5 h-2.5" />
+                                                                            Nachweis
                                                                         </Badge>
                                                                     )}
                                                                 </div>

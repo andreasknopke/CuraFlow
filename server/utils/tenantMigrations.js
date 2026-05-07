@@ -135,6 +135,10 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   await addCol('add_workplace_qualification_is_excluded',
     `ALTER TABLE WorkplaceQualification ADD COLUMN is_excluded BOOLEAN NOT NULL DEFAULT FALSE`);
 
+  // ── 11b. Qualification requires_certificate ──
+  await addCol('add_qualification_requires_certificate',
+    `ALTER TABLE Qualification ADD COLUMN requires_certificate BOOLEAN NOT NULL DEFAULT FALSE`);
+
   // ── 12. Workplace service_type ──
   try {
     await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN service_type INT DEFAULT NULL`);
@@ -234,7 +238,7 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   // Clear column cache so new columns are recognized immediately
   clearColumnsCache([
     'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',
-    'TeamRole', 'WorkplaceQualification', 'Doctor', 'ShiftTimeRule'
+    'TeamRole', 'WorkplaceQualification', 'Qualification', 'Doctor', 'ShiftTimeRule'
   ], cacheKey);
 
   return results;

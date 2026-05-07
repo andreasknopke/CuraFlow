@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import WishReminderStatus from '@/components/wishlist/WishReminderStatus';
 import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, XCircle, Loader2, Check, X, ClipboardList, Mail, Trash2, ChevronDown } from "lucide-react";
+import CertificateExpiryWidget from '@/components/dashboard/CertificateExpiryWidget';
 import { Switch } from "@/components/ui/switch";
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from "@/components/ui/use-toast";
@@ -634,6 +635,9 @@ export default function MyDashboardPage() {
                     </div>
                 );
             })()}
+
+            {/* Certificate expiry warnings (admins: all; users: own) */}
+            <CertificateExpiryWidget doctors={doctors} isAdmin={isAdmin} />
 
             {!selectedDoctorId ? (
                 <Card>

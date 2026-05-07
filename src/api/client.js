@@ -393,6 +393,80 @@ class APIClient {
     return this.request(`/api/holidays?year=${year}&state=${state}`);
   }
 
+  // ==================== Qualification Certificates ====================
+
+  async listCertificates(params = {}) {
+    const search = new URLSearchParams();
+    if (params.doctor_id) search.set('doctor_id', params.doctor_id);
+    if (params.qualification_id) search.set('qualification_id', params.qualification_id);
+    const qs = search.toString();
+    return this.request(`/api/certificates${qs ? `?${qs}` : ''}`);
+  }
+
+  async listExpiringCertificates(days = 60) {
+    return this.request(`/api/certificates/expiring?days=${encodeURIComponent(days)}`);
+  }
+
+  async uploadCertificate({ file, doctor_id, qualification_id, doctor_qualification_id, granted_date, expiry_date, notes }) {
+    if (!file) throw new Error('Datei fehlt');
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('doctor_id', doctor_id);
+    formData.append('qualification_id', qualification_id);
+    if (doctor_qualification_id) formData.append('doctor_qualification_id', doctor_qualification_id);
+    if (granted_date) formData.append('granted_date', granted_date);
+    if (expiry_date) formData.append('expiry_date', expiry_date);
+    if (notes) formData.append('notes', notes);
+
+    const token = this.getToken();
+    const dbToken = this.getDbToken();
+    const headers = {
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(dbToken && { 'X-DB-Token': dbToken }),
+    };
+
+    const response = await fetch(`${this.baseURL}/api/certificates/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Upload fehlgeschlagen (HTTP ${response.status})`);
+    }
+    return response.json();
+  }
+
+  async updateCertificate(id, { granted_date, expiry_date, notes } = {}) {
+    return this.request(`/api/certificates/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ granted_date, expiry_date, notes }),
+    });
+  }
+
+  async deleteCertificate(id) {
+    return this.request(`/api/certificates/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async fetchCertificateBlob(id) {
+    const token = this.getToken();
+    const dbToken = this.getDbToken();
+    const headers = {
+      ...(token && { Authorization: `Bearer ${token}` }),
+      ...(dbToken && { 'X-DB-Token': dbToken }),
+    };
+    const response = await fetch(`${this.baseURL}/api/certificates/${encodeURIComponent(id)}/download`, {
+      headers,
+    });
+    if (!response.ok) {
+      throw new Error(`Download fehlgeschlagen (HTTP ${response.status})`);
+    }
+    return response.blob();
+  }
+
   // ==================== Staff ====================
 
   async notifyStaff(params) {

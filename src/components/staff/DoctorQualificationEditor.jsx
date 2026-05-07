@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Award, Check, X } from 'lucide-react';
+import { Award, Check, X, FileCheck } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
+import CertificateManager from '@/components/staff/CertificateManager';
 
 /**
  * Editor-Komponente zum Zuweisen/Entfernen von Qualifikationen für einen einzelnen Mitarbeiter.
@@ -140,33 +141,49 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                         <div className="space-y-1">
                             {catQuals.map(qual => {
                                 const isAssigned = assignedQualIds.includes(qual.id);
+                                const dqEntry = doctorId ? doctorQuals.find(dq => dq.qualification_id === qual.id) : null;
+                                const showCertManager = !!doctorId && isAssigned && qual.requires_certificate === true;
                                 return (
-                                    <div 
-                                        key={qual.id} 
-                                        className="flex items-center gap-2.5 py-1 px-2 rounded hover:bg-slate-50 cursor-pointer"
-                                        onClick={() => toggleHandler(qual.id)}
-                                    >
-                                        <Checkbox 
-                                            checked={isAssigned}
-                                            onCheckedChange={() => toggleHandler(qual.id)}
-                                            className="pointer-events-none"
-                                        />
-                                        <Badge 
-                                            style={{ 
-                                                backgroundColor: qual.color_bg || '#e0e7ff', 
-                                                color: qual.color_text || '#3730a3' 
-                                            }}
-                                            className="border-0 text-xs"
+                                    <React.Fragment key={qual.id}>
+                                        <div
+                                            className="flex items-center gap-2.5 py-1 px-2 rounded hover:bg-slate-50 cursor-pointer"
+                                            onClick={() => toggleHandler(qual.id)}
                                         >
-                                            {qual.short_label || qual.name.substring(0, 3).toUpperCase()}
-                                        </Badge>
-                                        <span className="text-sm">{qual.name}</span>
-                                        {qual.description && (
-                                            <span className="text-xs text-slate-400 ml-auto hidden sm:block">
-                                                {qual.description}
-                                            </span>
+                                            <Checkbox 
+                                                checked={isAssigned}
+                                                onCheckedChange={() => toggleHandler(qual.id)}
+                                                className="pointer-events-none"
+                                            />
+                                            <Badge 
+                                                style={{ 
+                                                    backgroundColor: qual.color_bg || '#e0e7ff', 
+                                                    color: qual.color_text || '#3730a3' 
+                                                }}
+                                                className="border-0 text-xs"
+                                            >
+                                                {qual.short_label || qual.name.substring(0, 3).toUpperCase()}
+                                            </Badge>
+                                            <span className="text-sm">{qual.name}</span>
+                                            {qual.requires_certificate === true && (
+                                                <FileCheck className="w-3.5 h-3.5 text-amber-600" title="Zertifikat erforderlich" />
+                                            )}
+                                            {qual.description && (
+                                                <span className="text-xs text-slate-400 ml-auto hidden sm:block">
+                                                    {qual.description}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {showCertManager && (
+                                            <div className="ml-7 my-2" onClick={(e) => e.stopPropagation()}>
+                                                <CertificateManager
+                                                    doctorId={doctorId}
+                                                    qualificationId={qual.id}
+                                                    qualificationName={qual.name}
+                                                    doctorQualificationId={dqEntry?.id || null}
+                                                />
+                                            </div>
                                         )}
-                                    </div>
+                                    </React.Fragment>
                                 );
                             })}
                         </div>
