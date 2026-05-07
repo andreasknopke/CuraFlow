@@ -92,12 +92,22 @@ async function runAnalysisAndPersist({
   qualificationDescription,
   fillDatesIfMissing,
 }) {
+  console.info('[certificates] Starte Analyse', { certificateId, qualificationName, mimeType, size: buffer?.length });
   try {
     const result = await analyzeCertificate({
       buffer,
       mimeType,
       qualificationName,
       qualificationDescription,
+    });
+
+    console.info('[certificates] Analyse abgeschlossen', {
+      certificateId,
+      status: result.status,
+      is_certificate: result.is_certificate,
+      scope_match: result.scope_match,
+      reasoning: result.reasoning?.slice(0, 200),
+      error: result.error,
     });
 
     const fields = [
@@ -222,6 +232,12 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         qualificationName: qualification_name,
         qualificationDescription: qualification_description,
         fillDatesIfMissing,
+      });
+    } else {
+      console.info('[certificates] Analyse übersprungen', {
+        certificateId: id,
+        configured: isAnalyzerConfigured(),
+        hasQualificationName: !!qualification_name,
       });
     }
 

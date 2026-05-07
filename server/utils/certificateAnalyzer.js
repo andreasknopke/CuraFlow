@@ -194,6 +194,15 @@ export async function analyzeCertificate({
   const { buffer: visionBuffer, mimeType: visionMime } = await downscaleForVision(buffer, mimeType);
   const dataUrl = bufferToDataUrl(visionBuffer, visionMime);
 
+  console.info('[certificateAnalyzer] LLM-Aufruf', {
+    baseUrl,
+    model,
+    qualificationName,
+    originalSize: buffer.length,
+    visionSize: visionBuffer.length,
+    visionMime,
+  });
+
   const body = {
     model,
     max_tokens: RESPONSE_MAX_TOKENS,
@@ -212,6 +221,7 @@ export async function analyzeCertificate({
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const startedAt = Date.now();
 
   try {
     const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -223,6 +233,8 @@ export async function analyzeCertificate({
 
     if (!response.ok) {
       const text = await response.text().catch(() => '');
+      const errMsg = `LLM HTTP ${response.status}: ${text.slice(0, 400)}`;
+      console.error('[certificateAnalyzer] HTTP-Fehler vom LLM', { status: response.status, body: text.slice(0, 1000) });
       return {
         status: 'error',
         is_certificate: null,
@@ -231,9 +243,9 @@ export async function analyzeCertificate({
         granted_date: null,
         expiry_date: null,
         confidence: null,
-        reasoning: null,
+        reasoning: errMsg,
         raw: null,
-        error: `LLM HTTP ${response.status}: ${text.slice(0, 200)}`,
+        error: errMsg,
       };
     }
 
@@ -241,7 +253,16 @@ export async function analyzeCertificate({
     const content = data?.choices?.[0]?.message?.content;
     const parsed = tryParseJson(typeof content === 'string' ? content : '');
 
+    console.info('[certificateAnalyzer] LLM-Antwort', {
+      durationMs: Date.now() - startedAt,
+      finishReason: data?.choices?.[0]?.finish_reason,
+      usage: data?.usage,
+      parsed: !!parsed,
+    });
+
     if (!parsed) {
+      const rawSnippet = typeof content === 'string' ? content.slice(0, 2000) : '';
+      console.error('[certificateAnalyzer] JSON-Parse fehlgeschlagen', { rawSnippet });
       return {
         status: 'error',
         is_certificate: null,
@@ -250,8 +271,8 @@ export async function analyzeCertificate({
         granted_date: null,
         expiry_date: null,
         confidence: null,
-        reasoning: null,
-        raw: typeof content === 'string' ? content.slice(0, 2000) : null,
+        reasoning: `LLM-Antwort war kein gültiges JSON: ${rawSnippet.slice(0, 300)}`,
+        raw: rawSnippet,
         error: 'Antwort des LLM konnte nicht als JSON geparst werden.',
       };
     }
@@ -269,6 +290,15 @@ export async function analyzeCertificate({
       error: null,
     };
   } catch (err) {
+    const errMsg = err.name === 'AbortError'
+      ? `LLM-Anfrage Timeout nach ${REQUEST_TIMEOUT_MS / 1000}s`
+      : (err.message || 'Unbekannter Fehler beim LLM-Aufruf');
+    console.error('[certificateAnalyzer] Aufruf fehlgeschlagen', {
+      durationMs: Date.now() - startedAt,
+      name: err.name,
+      message: err.message,
+      cause: err.cause?.message || err.cause?.code,
+    });
     return {
       status: 'error',
       is_certificate: null,
@@ -277,11 +307,9 @@ export async function analyzeCertificate({
       granted_date: null,
       expiry_date: null,
       confidence: null,
-      reasoning: null,
+      reasoning: errMsg,
       raw: null,
-      error: err.name === 'AbortError'
-        ? `LLM-Anfrage Timeout nach ${REQUEST_TIMEOUT_MS / 1000}s`
-        : (err.message || 'Unbekannter Fehler beim LLM-Aufruf'),
+      error: errMsg,
     };
   } finally {
     clearTimeout(timer);

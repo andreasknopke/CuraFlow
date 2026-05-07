@@ -69,7 +69,7 @@ function AnalysisBadge({ cert }) {
                 {cfg.icon}
                 {cfg.label}
             </Badge>
-            {(status === 'warning' || status === 'failed') && cert.analysis_reasoning && (
+            {(status === 'warning' || status === 'failed' || status === 'error') && cert.analysis_reasoning && (
                 <div className="text-[11px] text-slate-600 mt-1 italic">{cert.analysis_reasoning}</div>
             )}
         </div>
