@@ -1,26 +1,61 @@
 /**
- * Certificate Analyzer – nutzt ein lokales Vision-LLM (vLLM, OpenAI-kompatible
- * API, ohne Authentifizierung) um Zertifikat-Uploads zu prüfen.
+ * Certificate Analyzer – nutzt OCR (Tesseract) + ein lokales Text-LLM
+ * (vLLM, OpenAI-kompatible API, ohne Authentifizierung) um Zertifikat-
+ * Uploads zu prüfen.
+ *
+ * Ablauf:
+ *   1. Bild wird mit `sharp` für OCR aufbereitet (Rotation, Grayscale, Normalize)
+ *   2. Tesseract extrahiert Text (deutsch + englisch)
+ *   3. Reiner Text + Qualifikationsname gehen ans LLM (kein Bild!)
+ *
+ * Vorteile:
+ *   - Funktioniert mit jedem reinen Text-LLM (z.B. gemma-4 ohne Vision-Encoder)
+ *   - Deutlich weniger Tokens und GPU-Last als ein Vision-Modell
+ *   - OCR liefert oft sauberere Strukturhinweise als ein heruntergerechnetes JPEG
  *
  * Konfiguration über zwei ENV-Variablen:
- *   - LLM_VISION_BASE_URL  z.B. http://localhost:8000/v1
- *   - LLM_VISION_MODEL     z.B. Qwen2.5-VL-7B-Instruct
+ *   - LLM_VISION_BASE_URL  z.B. http://10.10.199.29:9000/v1
+ *   - LLM_VISION_MODEL     z.B. gemma-4
+ *   (Variablennamen aus historischen Gründen mit "VISION" – Inhalt ist nun Text.)
  *
  * Wenn eine der Variablen fehlt, ist die Analyse deaktiviert (Status 'skipped').
  */
 
 import sharp from 'sharp';
+import { createWorker } from 'tesseract.js';
 
-const MAX_TOKENS = 32768; // Modell-Kontext-Limit (vLLM)
-const REQUEST_TIMEOUT_MS = 90_000; // 90s – große Bilder + lokales LLM
+const REQUEST_TIMEOUT_MS = 60_000;
 const RESPONSE_MAX_TOKENS = 800;
 
-// Bild-Downscaling: Vision-Modelle (z.B. Qwen2.5-VL) erzeugen pro 28x28-Patch
-// einen Token. Ein 4000x3000-Foto produziert >15k Vision-Tokens und sprengt
-// schnell das 32k-Kontext-Limit. 1600px Längskante ist ein guter Kompromiss
-// zwischen Lesbarkeit kleiner Schrift und Token-Budget (~3000 Vision-Tokens).
-const TARGET_LONG_EDGE = 1600;
-const JPEG_QUALITY = 80;
+// OCR-Vorverarbeitung: hohe Auflösung hilft Tesseract bei kleiner Schrift,
+// aber > 2000px bringt kaum Mehrwert und kostet Zeit. Grayscale + Normalize
+// verbessert die Erkennung bei flauen Scans / Foto-Beleuchtung deutlich.
+const OCR_TARGET_LONG_EDGE = 2000;
+const OCR_LANGUAGES = ['deu', 'eng'];
+
+// Auf wie viele Zeichen wir den OCR-Text vor dem LLM-Call trimmen.
+// Zertifikate haben selten mehr als 2-3 KB Text; das hält die Prompt-Größe
+// klein und schützt vor riesigen OCR-Outputs (Logos, Wasserzeichen, Fehler).
+const MAX_OCR_CHARS = 6000;
+
+let _ocrWorkerPromise = null;
+
+/**
+ * Lazy-initialisierter Singleton-Worker. Tesseract lädt die Sprachmodelle
+ * beim ersten Aufruf herunter (~10 MB pro Sprache), danach wird gecached.
+ */
+async function getOcrWorker() {
+  if (!_ocrWorkerPromise) {
+    _ocrWorkerPromise = createWorker(OCR_LANGUAGES, undefined, {
+      logger: () => {},
+      errorHandler: (err) => console.error('[certificateAnalyzer] Tesseract-Fehler:', err),
+    }).catch((err) => {
+      _ocrWorkerPromise = null;
+      throw err;
+    });
+  }
+  return _ocrWorkerPromise;
+}
 
 export function isAnalyzerConfigured() {
   return !!(process.env.LLM_VISION_BASE_URL && process.env.LLM_VISION_MODEL);
@@ -29,13 +64,13 @@ export function isAnalyzerConfigured() {
 function buildSystemPrompt() {
   return [
     'Du bist ein Prüfer für medizinische Fortbildungs- und Qualifikationszertifikate.',
-    'Du erhältst ein Bild eines Dokuments und den Namen einer Qualifikation.',
-    'Beurteile ausschließlich auf Basis des sichtbaren Dokuments.',
+    'Du erhältst den per OCR aus einem hochgeladenen Zertifikat extrahierten Text und den Namen einer geforderten Qualifikation.',
+    'Beurteile ausschließlich auf Basis des OCR-Texts. OCR-Text kann Tipp- und Erkennungsfehler enthalten – sei tolerant bei kleinen Abweichungen.',
     'Antworte AUSSCHLIESSLICH mit einem JSON-Objekt im definierten Schema – ohne Erklärtext, ohne Markdown-Codeblöcke.',
   ].join(' ');
 }
 
-function buildUserPrompt({ qualificationName, qualificationDescription }) {
+function buildUserPrompt({ qualificationName, qualificationDescription, ocrText }) {
   const descLine = qualificationDescription
     ? `Beschreibung: "${qualificationDescription}"`
     : '';
@@ -43,67 +78,81 @@ function buildUserPrompt({ qualificationName, qualificationDescription }) {
     `Geforderte Qualifikation: "${qualificationName}"`,
     descLine,
     '',
+    'OCR-Text des hochgeladenen Dokuments (zwischen den Markern):',
+    '<<<OCR',
+    ocrText || '(kein Text erkannt)',
+    'OCR>>>',
+    '',
     'Prüfe folgende Punkte und antworte als JSON:',
     '{',
-    '  "is_certificate": boolean,            // Ist das Dokument plausibel ein offizielles Zertifikat / eine Bescheinigung?',
-    '  "scope_match": boolean,               // Bestätigt das Zertifikat genau die geforderte Qualifikation (Thema/Scope passt)?',
+    '  "is_certificate": boolean,            // Wirkt der Text plausibel wie ein offizielles Zertifikat / eine Bescheinigung (Aussteller, Empfänger, Thema, Datum)?',
+    '  "scope_match": boolean,               // Bestätigt das Zertifikat die geforderte Qualifikation (Thema/Scope passt – Synonyme und Fachbegriffe akzeptieren)?',
     '  "scope_detected": string,             // Welche Qualifikation/welches Thema bescheinigt das Dokument tatsächlich? (kurz, max 120 Zeichen)',
-    '  "granted_date": "YYYY-MM-DD"|null,    // Ausstellungsdatum, wenn auf dem Dokument lesbar',
+    '  "granted_date": "YYYY-MM-DD"|null,    // Ausstellungsdatum, wenn aus dem Text ableitbar (deutsche Datumsformate wie "12.03.2024" konvertieren)',
     '  "expiry_date":  "YYYY-MM-DD"|null,    // Ablauf-/Gültigkeitsdatum, wenn vorhanden – sonst null',
-    '  "confidence": number,                 // 0.0 – 1.0 wie sicher die Gesamtbewertung ist',
-    '  "reasoning": string                   // 1-3 Sätze auf Deutsch, was du auf dem Dokument siehst',
+    '  "confidence": number,                 // 0.0 – 1.0 wie sicher die Gesamtbewertung ist (niedrig wenn OCR-Text wirr/unvollständig)',
+    '  "reasoning": string                   // 1-3 Sätze auf Deutsch, was du im Text erkannt hast und warum du so entschieden hast',
     '}',
     '',
     'Wenn etwas nicht eindeutig erkennbar ist, setze den entsprechenden Wert auf null bzw. false und erkläre dies kurz im Feld "reasoning".',
   ].filter(Boolean).join('\n');
 }
 
-function bufferToDataUrl(buffer, mimeType) {
-  const base64 = Buffer.isBuffer(buffer) ? buffer.toString('base64') : Buffer.from(buffer).toString('base64');
-  return `data:${mimeType};base64,${base64}`;
-}
-
 /**
- * Skaliert große Bilder herunter, damit sie das Vision-Token-Budget nicht
- * sprengen. Bilder, deren Längskante bereits klein genug ist, werden
- * unverändert zurückgegeben (kein Re-Encoding).
+ * Bereitet ein Bild für OCR auf: EXIF-Rotation, auf max 2000px skalieren,
+ * Graustufen + Normalize für besseren Kontrast.
  */
-async function downscaleForVision(buffer, mimeType) {
+async function preprocessForOcr(buffer, mimeType) {
   if (!mimeType?.startsWith('image/')) {
-    return { buffer, mimeType };
+    return buffer;
   }
   try {
     const image = sharp(buffer, { failOn: 'none' });
     const meta = await image.metadata();
     const longEdge = Math.max(meta.width || 0, meta.height || 0);
-    if (!longEdge || longEdge <= TARGET_LONG_EDGE) {
-      return { buffer, mimeType };
-    }
-    const resized = await image
-      .rotate() // EXIF-Orientierung anwenden
-      .resize({
-        width: meta.width >= meta.height ? TARGET_LONG_EDGE : null,
-        height: meta.height > meta.width ? TARGET_LONG_EDGE : null,
+    let pipeline = image.rotate();
+    if (longEdge > OCR_TARGET_LONG_EDGE) {
+      pipeline = pipeline.resize({
+        width: meta.width >= meta.height ? OCR_TARGET_LONG_EDGE : null,
+        height: meta.height > meta.width ? OCR_TARGET_LONG_EDGE : null,
         fit: 'inside',
         withoutEnlargement: true,
-      })
-      .jpeg({ quality: JPEG_QUALITY, mozjpeg: true })
+      });
+    }
+    return await pipeline
+      .grayscale()
+      .normalize()
+      .png()
       .toBuffer();
-    return { buffer: resized, mimeType: 'image/jpeg' };
   } catch (err) {
-    console.warn('[certificateAnalyzer] Downscale fehlgeschlagen, sende Original:', err.message);
-    return { buffer, mimeType };
+    console.warn('[certificateAnalyzer] OCR-Preprocessing fehlgeschlagen, sende Original:', err.message);
+    return buffer;
   }
+}
+
+async function runOcr(buffer, mimeType) {
+  const prepped = await preprocessForOcr(buffer, mimeType);
+  const worker = await getOcrWorker();
+  const { data } = await worker.recognize(prepped);
+  const text = (data?.text || '')
+    .replace(/\f/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return {
+    text: text.slice(0, MAX_OCR_CHARS),
+    confidence: typeof data?.confidence === 'number' ? data.confidence : null,
+    truncated: text.length > MAX_OCR_CHARS,
+    fullLength: text.length,
+  };
 }
 
 function tryParseJson(text) {
   if (!text || typeof text !== 'string') return null;
-  // Strip optional ```json ... ``` fences
   const cleaned = text.trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/```\s*$/i, '')
     .trim();
-  // Find first { and last }
   const start = cleaned.indexOf('{');
   const end = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1 || end <= start) return null;
@@ -130,25 +179,13 @@ function classifyStatus(parsed) {
 }
 
 /**
- * Analysiert eine Datei mit dem konfigurierten Vision-LLM.
+ * Analysiert eine Datei mit OCR + Text-LLM.
  *
  * @param {object} args
  * @param {Buffer} args.buffer        Datei-Inhalt
  * @param {string} args.mimeType      z.B. image/jpeg, application/pdf
  * @param {string} args.qualificationName
  * @param {string} [args.qualificationDescription]
- * @returns {Promise<{
- *   status: 'passed'|'warning'|'failed'|'skipped'|'error',
- *   is_certificate: boolean|null,
- *   scope_match: boolean|null,
- *   scope_detected: string|null,
- *   granted_date: string|null,
- *   expiry_date: string|null,
- *   confidence: number|null,
- *   reasoning: string|null,
- *   raw: string|null,
- *   error: string|null,
- * }>}
  */
 export async function analyzeCertificate({
   buffer,
@@ -165,15 +202,12 @@ export async function analyzeCertificate({
       granted_date: null,
       expiry_date: null,
       confidence: null,
-      reasoning: 'Vision-LLM nicht konfiguriert (LLM_VISION_BASE_URL / LLM_VISION_MODEL).',
+      reasoning: 'LLM nicht konfiguriert (LLM_VISION_BASE_URL / LLM_VISION_MODEL).',
       raw: null,
       error: null,
     };
   }
 
-  // PDFs werden vom Bild-Modell typischerweise nicht direkt unterstützt.
-  // In diesem Fall überspringen wir mit Hinweis – eine spätere Erweiterung
-  // könnte PDFs serverseitig in PNG konvertieren (z.B. via pdf-poppler).
   if (mimeType === 'application/pdf') {
     return {
       status: 'skipped',
@@ -189,39 +223,93 @@ export async function analyzeCertificate({
     };
   }
 
+  if (!mimeType?.startsWith('image/')) {
+    return {
+      status: 'skipped',
+      is_certificate: null,
+      scope_match: null,
+      scope_detected: null,
+      granted_date: null,
+      expiry_date: null,
+      confidence: null,
+      reasoning: `Dateityp ${mimeType || 'unbekannt'} wird nicht automatisch geprüft.`,
+      raw: null,
+      error: null,
+    };
+  }
+
   const baseUrl = process.env.LLM_VISION_BASE_URL.replace(/\/$/, '');
   const model = process.env.LLM_VISION_MODEL;
-  const { buffer: visionBuffer, mimeType: visionMime } = await downscaleForVision(buffer, mimeType);
-  const dataUrl = bufferToDataUrl(visionBuffer, visionMime);
 
-  console.info('[certificateAnalyzer] LLM-Aufruf', {
-    baseUrl,
-    model,
-    qualificationName,
-    originalSize: buffer.length,
-    visionSize: visionBuffer.length,
-    visionMime,
+  // ---- OCR ----
+  let ocrResult;
+  const ocrStartedAt = Date.now();
+  try {
+    ocrResult = await runOcr(buffer, mimeType);
+  } catch (err) {
+    const errMsg = `OCR fehlgeschlagen: ${err.message || err}`;
+    console.error('[certificateAnalyzer] OCR-Fehler', { name: err.name, message: err.message });
+    return {
+      status: 'error',
+      is_certificate: null,
+      scope_match: null,
+      scope_detected: null,
+      granted_date: null,
+      expiry_date: null,
+      confidence: null,
+      reasoning: errMsg,
+      raw: null,
+      error: errMsg,
+    };
+  }
+
+  console.info('[certificateAnalyzer] OCR fertig', {
+    durationMs: Date.now() - ocrStartedAt,
+    chars: ocrResult.text.length,
+    fullChars: ocrResult.fullLength,
+    truncated: ocrResult.truncated,
+    ocrConfidence: ocrResult.confidence,
   });
 
-  const userText = buildUserPrompt({ qualificationName, qualificationDescription });
+  if (!ocrResult.text || ocrResult.text.length < 10) {
+    const errMsg = 'OCR konnte keinen lesbaren Text aus dem Bild extrahieren (zu unscharf, zu klein oder kein Text-Dokument?).';
+    return {
+      status: 'error',
+      is_certificate: null,
+      scope_match: null,
+      scope_detected: null,
+      granted_date: null,
+      expiry_date: null,
+      confidence: null,
+      reasoning: errMsg,
+      raw: ocrResult.text || null,
+      error: errMsg,
+    };
+  }
 
-  // vLLM OpenAI-Endpoint erwartet `type: "image_url"` mit `image_url.url`
-  // als Data-URL. Bild MUSS vor dem Text stehen.
+  // ---- LLM ----
+  const userText = buildUserPrompt({
+    qualificationName,
+    qualificationDescription,
+    ocrText: ocrResult.text,
+  });
+
   const body = {
     model,
     max_tokens: RESPONSE_MAX_TOKENS,
     temperature: 0.1,
     messages: [
       { role: 'system', content: buildSystemPrompt() },
-      {
-        role: 'user',
-        content: [
-          { type: 'image_url', image_url: { url: dataUrl } },
-          { type: 'text', text: userText },
-        ],
-      },
+      { role: 'user', content: userText },
     ],
   };
+
+  console.info('[certificateAnalyzer] LLM-Aufruf', {
+    baseUrl,
+    model,
+    qualificationName,
+    promptChars: userText.length,
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -248,7 +336,7 @@ export async function analyzeCertificate({
         expiry_date: null,
         confidence: null,
         reasoning: errMsg,
-        raw: null,
+        raw: ocrResult.text,
         error: errMsg,
       };
     }
@@ -319,5 +407,3 @@ export async function analyzeCertificate({
     clearTimeout(timer);
   }
 }
-
-export const ANALYZER_MAX_TOKENS = MAX_TOKENS;
