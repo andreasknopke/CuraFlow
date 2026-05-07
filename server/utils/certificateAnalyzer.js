@@ -21,8 +21,15 @@
  * Wenn eine der Variablen fehlt, ist die Analyse deaktiviert (Status 'skipped').
  */
 
+import { execFile } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { createWorker } from 'tesseract.js';
+
+const execFileAsync = promisify(execFile);
 
 const REQUEST_TIMEOUT_MS = 60_000;
 const RESPONSE_MAX_TOKENS = 800;
@@ -32,6 +39,7 @@ const RESPONSE_MAX_TOKENS = 800;
 // verbessert die Erkennung bei flauen Scans / Foto-Beleuchtung deutlich.
 const OCR_TARGET_LONG_EDGE = 2000;
 const OCR_LANGUAGES = ['deu', 'eng'];
+const PDF_RENDER_DPI = 200;
 
 // Auf wie viele Zeichen wir den OCR-Text vor dem LLM-Call trimmen.
 // Zertifikate haben selten mehr als 2-3 KB Text; das hält die Prompt-Größe
@@ -96,6 +104,51 @@ function buildUserPrompt({ qualificationName, qualificationDescription, ocrText 
     '',
     'Wenn etwas nicht eindeutig erkennbar ist, setze den entsprechenden Wert auf null bzw. false und erkläre dies kurz im Feld "reasoning".',
   ].filter(Boolean).join('\n');
+}
+
+async function renderPdfFirstPageToPng(buffer) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'curaflow-pdf-'));
+  const inputPath = path.join(tempDir, 'document.pdf');
+  const outputBase = path.join(tempDir, 'page');
+  const outputPath = `${outputBase}.png`;
+
+  try {
+    await fs.writeFile(inputPath, buffer);
+    await execFileAsync('pdftoppm', [
+      '-png',
+      '-singlefile',
+      '-f', '1',
+      '-l', '1',
+      '-r', String(PDF_RENDER_DPI),
+      inputPath,
+      outputBase,
+    ]);
+    return await fs.readFile(outputPath);
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      throw new Error('PDF-Prüfung nicht verfügbar: pdftoppm fehlt im Server-Image');
+    }
+    throw new Error(`PDF-Konvertierung fehlgeschlagen: ${err.stderr?.slice(0, 300) || err.message || err}`);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function prepareFileForOcr(buffer, mimeType) {
+  if (mimeType === 'application/pdf') {
+    const pngBuffer = await renderPdfFirstPageToPng(buffer);
+    return {
+      buffer: pngBuffer,
+      mimeType: 'image/png',
+      sourceType: 'pdf',
+    };
+  }
+
+  return {
+    buffer,
+    mimeType,
+    sourceType: 'image',
+  };
 }
 
 /**
@@ -208,22 +261,7 @@ export async function analyzeCertificate({
     };
   }
 
-  if (mimeType === 'application/pdf') {
-    return {
-      status: 'skipped',
-      is_certificate: null,
-      scope_match: null,
-      scope_detected: null,
-      granted_date: null,
-      expiry_date: null,
-      confidence: null,
-      reasoning: 'PDF kann nicht automatisch geprüft werden – bitte Daten manuell eintragen.',
-      raw: null,
-      error: null,
-    };
-  }
-
-  if (!mimeType?.startsWith('image/')) {
+  if (mimeType !== 'application/pdf' && !mimeType?.startsWith('image/')) {
     return {
       status: 'skipped',
       is_certificate: null,
@@ -243,9 +281,11 @@ export async function analyzeCertificate({
 
   // ---- OCR ----
   let ocrResult;
+  let ocrInput;
   const ocrStartedAt = Date.now();
   try {
-    ocrResult = await runOcr(buffer, mimeType);
+    ocrInput = await prepareFileForOcr(buffer, mimeType);
+    ocrResult = await runOcr(ocrInput.buffer, ocrInput.mimeType);
   } catch (err) {
     const errMsg = `OCR fehlgeschlagen: ${err.message || err}`;
     console.error('[certificateAnalyzer] OCR-Fehler', { name: err.name, message: err.message });
@@ -265,6 +305,7 @@ export async function analyzeCertificate({
 
   console.info('[certificateAnalyzer] OCR fertig', {
     durationMs: Date.now() - ocrStartedAt,
+    sourceType: ocrInput?.sourceType,
     chars: ocrResult.text.length,
     fullChars: ocrResult.fullLength,
     truncated: ocrResult.truncated,
