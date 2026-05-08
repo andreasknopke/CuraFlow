@@ -189,7 +189,7 @@ const JWTAuthProviderInner = ({ children }) => {
             console.error('Failed to disable DB token on logout:', e);
         }
         
-        window.location.href = '/AuthLogin';
+        window.location.href = '/authlogin';
     };
 
     const refreshUser = async () => {

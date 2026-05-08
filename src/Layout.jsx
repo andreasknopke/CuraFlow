@@ -105,7 +105,8 @@ function LayoutContent({ children }) {
     return () => clearTimeout(timeout);
   }, [isSidebarOpen, isSidebarHovered, location.pathname]);
 
-  const isAuthPage = location.pathname === '/AuthLogin';
+  const authLoginPath = createPageUrl('AuthLogin');
+  const isAuthPage = location.pathname.toLowerCase() === authLoginPath.toLowerCase();
   const isEmbeddedSchedule = React.useMemo(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('embeddedSchedule') !== '1') return false;
@@ -117,10 +118,10 @@ function LayoutContent({ children }) {
     // If not authenticated and not on login page, redirect to login
     if (!isLoading && !isAuthenticated && !isAuthPage) {
         const redirectTarget = `${location.pathname}${location.search}${location.hash}`;
-        const loginUrl = `${createPageUrl('AuthLogin')}?redirect=${encodeURIComponent(redirectTarget)}`;
+        const loginUrl = `${authLoginPath}?redirect=${encodeURIComponent(redirectTarget)}`;
         navigate(loginUrl, { replace: true });
     }
-  }, [isAuthenticated, isLoading, isAuthPage, location.hash, location.pathname, location.search, navigate]);
+  }, [authLoginPath, isAuthenticated, isLoading, isAuthPage, location.hash, location.pathname, location.search, navigate]);
 
   const { logout } = useAuth();
 

@@ -33,7 +33,11 @@ export default function AuthLoginPage() {
     const redirectTarget = useMemo(() => {
         const params = new URLSearchParams(location.search);
         const target = params.get('redirect');
+        const authLoginPath = createPageUrl('AuthLogin').toLowerCase();
         if (!target || !target.startsWith('/')) {
+            return createPageUrl('MyDashboard');
+        }
+        if (target.toLowerCase().startsWith(authLoginPath)) {
             return createPageUrl('MyDashboard');
         }
         return target;
