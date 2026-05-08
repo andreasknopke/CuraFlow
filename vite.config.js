@@ -4,6 +4,15 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
+  test: {
+    environment: 'node',
+    include: ['src/**/__tests__/**/*.test.{js,jsx}'],
+    coverage: {
+      provider: 'v8',
+      include: ['src/utils/**', 'src/components/schedule/costFunction.js', 'src/components/schedule/staffingUtils.jsx'],
+      reporter: ['text', 'lcov'],
+    },
+  },
   logLevel: 'error', // Suppress warnings, only show errors
   cacheDir: '.vite',
   plugins: [
