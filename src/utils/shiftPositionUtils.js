@@ -18,7 +18,7 @@ const NON_WORKING_SHIFT_POSITIONS = new Set([
 ]);
 
 export function normalizeShiftPosition(position) {
-    return String(position || '')
+    return String(position ?? '')
         .trim()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
