@@ -459,14 +459,15 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                             ) : eligibleReminderCandidates.map((candidate) => {
                                 const isSelected = selectedReminderDoctorIds.includes(candidate.doctor_id);
                                 return (
-                                    <label
+                                    <button
+                                        type="button"
                                         key={candidate.doctor_id}
+                                        onClick={() => toggleReminderDoctor(candidate.doctor_id)}
                                         className="flex gap-3 rounded-md border border-slate-200 px-3 py-3 hover:bg-slate-50"
                                     >
                                         <Checkbox
                                             checked={isSelected}
-                                            onCheckedChange={() => toggleReminderDoctor(candidate.doctor_id)}
-                                            className="mt-0.5"
+                                            className="mt-0.5 pointer-events-none"
                                         />
                                         <div className="min-w-0 flex-1 space-y-1">
                                             <div className="flex flex-wrap items-center gap-2">
@@ -486,7 +487,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                                 ))}
                                             </div>
                                         </div>
-                                    </label>
+                                    </button>
                                 );
                             })}
                         </div>
