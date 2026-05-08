@@ -45,6 +45,12 @@ const OCR_DESKEW_FALLBACK_OFFSETS = [-12, -8, -4, 4, 8, 12];
 const OCR_MIN_CONFIDENCE_FOR_SINGLE_PASS = 45;
 const OCR_MIN_TEXT_LENGTH_FOR_SINGLE_PASS = 80;
 const PDF_TEXT_MIN_LENGTH = 80;
+const OCR_DOCUMENT_KEYWORDS = [
+  'urkunde', 'zertifikat', 'bescheinigung', 'anerkennung', 'weiterbildung',
+  'facharzt', 'fachärztin', 'fachaerztin', 'radiologie', 'ärztekammer', 'aerztekammer',
+  'prüfung', 'pruefung', 'geboren', 'ausgesprochen', 'gültig', 'gueltig',
+  'mecklenburg', 'vorpommern', 'rostock', 'präsident', 'praesident',
+];
 
 // Auf wie viele Zeichen wir den OCR-Text vor dem LLM-Call trimmen.
 // Zertifikate haben selten mehr als 2-3 KB Text; das hält die Prompt-Größe
@@ -248,7 +254,36 @@ function normalizeOcrText(text) {
 function scoreOcrResult(result) {
   const confidence = typeof result?.confidence === 'number' ? result.confidence : 0;
   const textLength = result?.fullLength || result?.text?.length || 0;
-  return (confidence * 20) + Math.min(textLength, 4000);
+  const keywordHits = countDocumentKeywordHits(result?.text || '');
+  const dateHits = countDateLikeHits(result?.text || '');
+  const readableWords = countReadableWords(result?.text || '');
+  return (confidence * 20)
+    + Math.min(textLength, 4000)
+    + (keywordHits * 1200)
+    + (dateHits * 250)
+    + Math.min(readableWords * 12, 1200);
+}
+
+function normalizeComparableText(text) {
+  return String(text || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function countDocumentKeywordHits(text) {
+  const normalized = normalizeComparableText(text);
+  return OCR_DOCUMENT_KEYWORDS.reduce((count, keyword) => (
+    normalized.includes(normalizeComparableText(keyword)) ? count + 1 : count
+  ), 0);
+}
+
+function countDateLikeHits(text) {
+  return (String(text || '').match(/\b\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\b/g) || []).length;
+}
+
+function countReadableWords(text) {
+  return (String(text || '').match(/\b[A-Za-zÄÖÜäöüß]{4,}\b/g) || []).length;
 }
 
 function shouldTryRotatedOcr(result) {
@@ -289,13 +324,6 @@ async function runOcrWithRotationFallback(buffer, mimeType) {
 
     if (!bestResult || scoreOcrResult(candidate) > scoreOcrResult(bestResult)) {
       bestResult = candidate;
-    }
-
-    if (angle === 0 && !shouldTryRotatedOcr(candidate)) {
-      return {
-        ...candidate,
-        attemptedAngles,
-      };
     }
   }
 
