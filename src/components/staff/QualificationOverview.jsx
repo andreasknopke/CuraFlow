@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db, api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
@@ -161,12 +161,6 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
 
     const excludedReminderCandidates = reminderCandidates.length - eligibleReminderCandidates.length;
 
-    useEffect(() => {
-        if (isReminderDialogOpen) {
-            setSelectedReminderDoctorIds(eligibleReminderCandidates.map((candidate) => candidate.doctor_id));
-        }
-    }, [eligibleReminderCandidates, isReminderDialogOpen]);
-
     const toggleReminderDoctor = useCallback((doctorId) => {
         setSelectedReminderDoctorIds((current) => (
             current.includes(doctorId)
@@ -253,7 +247,10 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                             variant="outline"
                             className="gap-2"
                             disabled={usersLoading || eligibleReminderCandidates.length === 0}
-                            onClick={() => setIsReminderDialogOpen(true)}
+                            onClick={() => {
+                                setSelectedReminderDoctorIds(eligibleReminderCandidates.map((candidate) => candidate.doctor_id));
+                                setIsReminderDialogOpen(true);
+                            }}
                         >
                             {usersLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                             Zertifikats-Erinnerung
@@ -421,7 +418,12 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                 </AlertDialogContent>
             </AlertDialog>
 
-            <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
+            <Dialog open={isReminderDialogOpen} onOpenChange={(open) => {
+                setIsReminderDialogOpen(open);
+                if (!open) {
+                    setSelectedReminderDoctorIds([]);
+                }
+            }}>
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
