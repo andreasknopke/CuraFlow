@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/components/AuthProvider';
 import EnvironmentMigrationNotice from '@/components/EnvironmentMigrationNotice';
@@ -12,6 +12,7 @@ import TenantSelectionDialog from '@/components/auth/TenantSelectionDialog';
 
 export default function AuthLoginPage() {
     const navigate = useNavigate();
+    const location = useLocation();
     const { 
         isAuthenticated, 
         isLoading, 
@@ -29,6 +30,14 @@ export default function AuthLoginPage() {
     const [error, setError] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loginComplete, setLoginComplete] = useState(false);
+    const redirectTarget = useMemo(() => {
+        const params = new URLSearchParams(location.search);
+        const target = params.get('redirect');
+        if (!target || !target.startsWith('/')) {
+            return createPageUrl('MyDashboard');
+        }
+        return target;
+    }, [location.search]);
 
     // Redirect if already authenticated (and no tenant selection needed)
     useEffect(() => {
@@ -38,10 +47,10 @@ export default function AuthLoginPage() {
         // 2. Authentifiziert
         // 3. Keine Tenant-Auswahl nötig
         if (loginComplete && isAuthenticated && !needsTenantSelection) {
-            console.log('[AuthLogin] Redirecting to dashboard');
-            navigate(createPageUrl('MyDashboard'), { replace: true });
+            console.log('[AuthLogin] Redirecting to target', redirectTarget);
+            navigate(redirectTarget, { replace: true });
         }
-    }, [isAuthenticated, isLoading, needsTenantSelection, loginComplete, navigate]);
+    }, [isAuthenticated, isLoading, needsTenantSelection, loginComplete, navigate, redirectTarget]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();

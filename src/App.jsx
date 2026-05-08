@@ -8,6 +8,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/components/AuthProvider';
 import PlanUpdateListener from '@/components/PlanUpdateListener';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import CertificateUploadPage from '@/pages/CertificateUpload';
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey = mainPage ?? Object.keys(Pages)[0];
@@ -48,6 +49,11 @@ const AuthenticatedApp = () => {
           }
         />
       ))}
+      <Route path="/certificate-upload" element={
+        <LayoutWrapper currentPageName={null}>
+          <CertificateUploadPage />
+        </LayoutWrapper>
+      } />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

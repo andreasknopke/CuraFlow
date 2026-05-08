@@ -116,9 +116,11 @@ function LayoutContent({ children }) {
   useEffect(() => {
     // If not authenticated and not on login page, redirect to login
     if (!isLoading && !isAuthenticated && !isAuthPage) {
-        navigate(createPageUrl('AuthLogin'), { replace: true });
+        const redirectTarget = `${location.pathname}${location.search}${location.hash}`;
+        const loginUrl = `${createPageUrl('AuthLogin')}?redirect=${encodeURIComponent(redirectTarget)}`;
+        navigate(loginUrl, { replace: true });
     }
-  }, [isAuthenticated, isLoading, isAuthPage, navigate]);
+  }, [isAuthenticated, isLoading, isAuthPage, location.hash, location.pathname, location.search, navigate]);
 
   const { logout } = useAuth();
 

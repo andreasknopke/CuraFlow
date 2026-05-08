@@ -507,6 +507,13 @@ class APIClient {
     return response.blob();
   }
 
+  async sendCertificateReminderEmails(recipients) {
+    return this.request('/api/certificates/reminders/send', {
+      method: 'POST',
+      body: JSON.stringify({ recipients }),
+    });
+  }
+
   // ==================== Staff ====================
 
   async notifyStaff(params) {

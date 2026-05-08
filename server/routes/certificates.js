@@ -21,6 +21,7 @@ import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { analyzeCertificate, isAnalyzerConfigured } from '../utils/certificateAnalyzer.js';
+import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
 import {
   computeQualificationEvidenceSummary,
   normalizeEvidenceRole,
@@ -257,6 +258,93 @@ function isApprovedPayloadValidForUpload({ payload, buffer, mimeType, qualificat
   if (payload.is_certificate !== true) return false;
   if (payload.scope_match !== true) return false;
   return true;
+}
+
+function buildAppBaseUrl(req) {
+  const configuredBase = (process.env.APP_URL || process.env.PUBLIC_APP_URL || '').trim();
+  if (configuredBase) {
+    return configuredBase.replace(/\/$/, '');
+  }
+
+  return `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
+}
+
+function buildCertificateReminderLink(req, qualificationIds = []) {
+  const url = new URL('/certificate-upload', buildAppBaseUrl(req));
+  if (qualificationIds.length === 1) {
+    url.searchParams.set('qualification_id', qualificationIds[0]);
+  }
+  if (req.dbToken) {
+    url.searchParams.set('db_token', req.dbToken);
+  }
+  return url.toString();
+}
+
+function formatReminderStatusLabel({ hasCertificates, summary, validUntil }) {
+  if (!hasCertificates) return 'kein Zertifikat hinterlegt';
+  if (summary?.status === 'expired') {
+    return validUntil ? `Nachweis abgelaufen seit ${validUntil}` : 'Nachweis abgelaufen';
+  }
+  if (summary?.status === 'incomplete') return 'Nachweise unvollstaendig';
+  return 'Nachweis ungueltig';
+}
+
+async function getReminderRecipientsForDoctor(doctorId) {
+  const [rows] = await db.execute(
+    `SELECT id, email, full_name, doctor_id
+       FROM app_users
+      WHERE is_active = 1
+        AND doctor_id = ?
+        AND email IS NOT NULL
+        AND email != ''
+      ORDER BY created_date ASC`,
+    [doctorId]
+  );
+  return rows;
+}
+
+async function computeReminderQualificationEntry({ req, tenantKey, doctorId, qualificationId }) {
+  const qualification = await getQualificationConfig(req, qualificationId);
+  if (!qualification || (qualification.requires_certificate !== 1 && qualification.requires_certificate !== true)) {
+    return null;
+  }
+
+  const [dqRows] = await req.db.execute(
+    `SELECT id, certificate_status, certificate_valid_until, expiry_date
+       FROM DoctorQualification
+      WHERE doctor_id = ? AND qualification_id = ?
+      LIMIT 1`,
+    [doctorId, qualificationId]
+  );
+  const doctorQualification = dqRows[0] || null;
+  if (!doctorQualification) {
+    return null;
+  }
+
+  const certificates = await listQualificationCertificates({
+    tenantKey,
+    doctorId,
+    qualificationId,
+  });
+  const summary = computeQualificationEvidenceSummary({
+    qualification,
+    certificates,
+  });
+  const hasCertificates = certificates.length > 0;
+  const isPending = !hasCertificates || summary.status !== 'valid';
+
+  if (!isPending) {
+    return null;
+  }
+
+  const validUntil = summary.valid_until || doctorQualification.certificate_valid_until || doctorQualification.expiry_date || null;
+
+  return {
+    id: qualification.id,
+    name: qualification.name,
+    status: summary.status,
+    reason: formatReminderStatusLabel({ hasCertificates, summary, validUntil }),
+  };
 }
 
 /**
@@ -629,6 +717,138 @@ router.get('/expiring', async (req, res, next) => {
     );
 
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ============ POST /api/certificates/reminders/send ============
+// Body: { recipients: [{ doctor_id, qualification_ids: [] }] }
+router.post('/reminders/send', express.json(), async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({ error: 'Nur Administratoren duerfen Erinnerungen senden' });
+    }
+
+    if (!getEmailProviderInfo().configured) {
+      return res.status(503).json({
+        error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
+      });
+    }
+
+    const recipients = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+    if (recipients.length === 0) {
+      return res.status(400).json({ error: 'Mindestens ein Empfaenger ist erforderlich' });
+    }
+
+    const tenantKey = getTenantKey(req);
+    const results = [];
+    let sentCount = 0;
+
+    for (const recipient of recipients) {
+      const doctorId = recipient?.doctor_id;
+      const requestedQualificationIds = Array.isArray(recipient?.qualification_ids)
+        ? Array.from(new Set(recipient.qualification_ids.filter(Boolean)))
+        : [];
+
+      if (!doctorId || requestedQualificationIds.length === 0) {
+        results.push({ doctor_id: doctorId || null, status: 'skipped', reason: 'Fehlende Pflichtdaten' });
+        continue;
+      }
+
+      const [doctorRows] = await req.db.execute(
+        `SELECT id, name, central_employee_id
+           FROM Doctor
+          WHERE id = ?
+          LIMIT 1`,
+        [doctorId]
+      );
+      const doctor = doctorRows[0] || null;
+      if (!doctor) {
+        results.push({ doctor_id: doctorId, status: 'skipped', reason: 'Mitarbeiter nicht gefunden' });
+        continue;
+      }
+
+      if (!doctor.central_employee_id) {
+        results.push({ doctor_id: doctorId, doctor_name: doctor.name, status: 'skipped', reason: 'Keine Verknuepfung zur zentralen Datenbank' });
+        continue;
+      }
+
+      const linkedUsers = await getReminderRecipientsForDoctor(doctorId);
+      if (linkedUsers.length === 0) {
+        results.push({ doctor_id: doctorId, doctor_name: doctor.name, status: 'skipped', reason: 'Kein aktiver Benutzer mit regularem Login verknuepft' });
+        continue;
+      }
+
+      const pendingQualifications = [];
+      for (const qualificationId of requestedQualificationIds) {
+        const entry = await computeReminderQualificationEntry({
+          req,
+          tenantKey,
+          doctorId,
+          qualificationId,
+        });
+        if (entry) {
+          pendingQualifications.push(entry);
+        }
+      }
+
+      if (pendingQualifications.length === 0) {
+        results.push({ doctor_id: doctorId, doctor_name: doctor.name, status: 'skipped', reason: 'Keine offenen oder ungueltigen Nachweise mehr' });
+        continue;
+      }
+
+      const reminderLink = buildCertificateReminderLink(req, pendingQualifications.map((item) => item.id));
+      const qualificationLines = pendingQualifications
+        .map((item) => `<li><strong>${item.name}</strong>: ${item.reason}</li>`)
+        .join('');
+      const plainQualificationLines = pendingQualifications
+        .map((item) => `- ${item.name}: ${item.reason}`)
+        .join('\n');
+
+      for (const linkedUser of linkedUsers) {
+        await sendEmail({
+          to: linkedUser.email,
+          subject: 'CuraFlow: Zertifikatsnachweise hochladen',
+          text: [
+            `Hallo ${linkedUser.full_name || doctor.name},`,
+            '',
+            'fuer folgende Qualifikationen fehlt ein gueltiger Nachweis oder er ist ungueltig:',
+            plainQualificationLines,
+            '',
+            `Bitte melden Sie sich ueber diesen Link an und laden Sie die Nachweise hoch: ${reminderLink}`,
+            '',
+            'Der Link fuehrt in Ihren persoenlichen Upload-Bereich in CuraFlow.',
+          ].join('\n'),
+          html: `
+            <p>Hallo ${linkedUser.full_name || doctor.name},</p>
+            <p>fuer folgende Qualifikationen fehlt ein gueltiger Nachweis oder er ist ungueltig:</p>
+            <ul>${qualificationLines}</ul>
+            <p>
+              <a href="${reminderLink}" style="display:inline-block;padding:10px 16px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;">
+                Nachweise in CuraFlow hochladen
+              </a>
+            </p>
+            <p>Der Link fuehrt in Ihren persoenlichen Upload-Bereich in CuraFlow.</p>
+          `,
+        });
+        sentCount += 1;
+      }
+
+      results.push({
+        doctor_id: doctorId,
+        doctor_name: doctor.name,
+        status: 'sent',
+        sent_to: linkedUsers.map((user) => user.email),
+        qualification_ids: pendingQualifications.map((item) => item.id),
+      });
+    }
+
+    res.json({
+      success: true,
+      sent_count: sentCount,
+      results,
+    });
   } catch (err) {
     next(err);
   }
