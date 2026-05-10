@@ -10,6 +10,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/utils/**', 'src/components/schedule/costFunction.js', 'src/components/schedule/staffingUtils.jsx'],
+      exclude: ['src/**/__tests__/**', '**/*.test.*'],
       reporter: ['text', 'lcov'],
     },
   },
