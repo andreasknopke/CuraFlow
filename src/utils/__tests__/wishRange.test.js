@@ -80,7 +80,7 @@ describe('isWishOnDate', () => {
   });
 
   it('accepts a Date object as dateValue', () => {
-    expect(isWishOnDate(singleWish, new Date('2024-03-05'))).toBe(true);
+    expect(isWishOnDate(singleWish, new Date(2024, 2, 5))).toBe(true);
   });
 });
 
