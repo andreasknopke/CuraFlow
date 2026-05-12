@@ -653,7 +653,7 @@ async function main() {
     await seedTenantData(tenantPool);
 
     console.log('[seed] Done');
-    console.log('  test users seeded: admin@test.local, user@test.local, readonly@test.local');
+    console.log('  test users seeded: 3 (roles: admin, user, readonly)');
     console.log(`[seed] Tenant token id: ${TENANT_ID}`);
   } finally {
     await Promise.all([
