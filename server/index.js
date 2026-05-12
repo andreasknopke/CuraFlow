@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { createPool } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
 import { runMasterMigrations } from './utils/masterMigrations.js';
+import { ensureColumns } from './utils/schema.js';
 
 // Import routes
 import authRouter from './routes/auth.js';
@@ -712,10 +713,12 @@ async function ensureTablesExist() {
       // Add new columns if they don't exist (migration for existing DBs)
       if (table.name === 'TeamRole') {
         try {
-          await db.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS can_do_foreground_duty BOOLEAN NOT NULL DEFAULT TRUE`);
-          await db.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS can_do_background_duty BOOLEAN NOT NULL DEFAULT FALSE`);
-          await db.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS excluded_from_statistics BOOLEAN NOT NULL DEFAULT FALSE`);
-          await db.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS description VARCHAR(255) DEFAULT NULL`);
+          await ensureColumns(db, 'TeamRole', [
+            ['can_do_foreground_duty', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+            ['can_do_background_duty', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+            ['excluded_from_statistics', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+            ['description', 'VARCHAR(255) DEFAULT NULL'],
+          ]);
         } catch (alterErr) {
           // Columns might already exist or syntax not supported
         }
@@ -750,9 +753,11 @@ async function ensureTablesExist() {
   // Add email_verified columns to app_users if they don't exist
   // Note: This can also be triggered manually via Admin Panel > Migrationen
   try {
-    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified TINYINT(1) DEFAULT 0`);
-    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS email_verified_date DATETIME DEFAULT NULL`);
-    await db.execute(`ALTER TABLE app_users ADD COLUMN IF NOT EXISTS last_seen_at DATETIME DEFAULT NULL`);
+    await ensureColumns(db, 'app_users', [
+      ['email_verified', 'TINYINT(1) DEFAULT 0'],
+      ['email_verified_date', 'DATETIME DEFAULT NULL'],
+      ['last_seen_at', 'DATETIME DEFAULT NULL'],
+    ]);
   } catch (err) {
     // Columns may already exist - that's fine, migration is also available in Admin Panel
   }
