@@ -28,6 +28,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: test
+      CONFIRM_SEED_TEST_DATA: "1"
       PORT: 3000
       JWT_SECRET: ${TEST_JWT_SECRET:?TEST_JWT_SECRET is required}
       MYSQL_HOST: mysql

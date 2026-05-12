@@ -5,6 +5,8 @@
  *  - POST /api/admin/run-timeslot-migrations (manual trigger)
  *  - tenantDbMiddleware (auto-trigger on first tenant access)
  */
+import { clearColumnsCache } from './schema.js';
+
 export async function runTenantMigrations(dbPool, cacheKey = 'default') {
   const results = [];
 
@@ -246,20 +248,21 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     );
     results.push({ migration: 'add_uk_shortcode_model', status: 'applied' });
   } catch (e) {
-    if (e.code !== 'ER_DUP_KEYNAME') {
-      results.push({ migration: 'add_uk_shortcode_model', status: 'skipped', reason: e.message });
+    if (e.code === 'ER_DUP_KEYNAME') {
+      results.push({ migration: 'add_uk_shortcode_model', status: 'skipped', reason: 'Unique key already exists' });
+    } else {
+      results.push({ migration: 'add_uk_shortcode_model', status: 'error', error: e.message });
     }
   }
 
   // Clear column cache so new columns are recognized immediately when running inside the server.
   try {
-    const { clearColumnsCache } = await import('../routes/dbProxy.js');
     clearColumnsCache([
       'Workplace', 'WorkplaceTimeslot', 'ShiftEntry', 'TimeslotTemplate',
       'TeamRole', 'WorkplaceQualification', 'Qualification', 'DoctorQualification', 'Doctor', 'ShiftTimeRule'
     ], cacheKey);
   } catch (error) {
-    results.push({ migration: 'clear_columns_cache', status: 'skipped', reason: error.message });
+    results.push({ migration: 'clear_columns_cache', status: 'error', error: error.message });
   }
 
   return results;

@@ -3,6 +3,7 @@ import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
 import crypto from 'crypto';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
+import { COLUMNS_CACHE, clearColumnsCache, ensureColumns } from '../utils/schema.js';
 
 const router = express.Router();
 
@@ -18,31 +19,7 @@ const PUBLIC_READ_TABLES = [
   'WorkplaceQualification'
 ];
 
-// Cache for table columns to avoid "Unknown column" errors
-// Key format: "dbToken:tableName" to support multi-tenant
-const COLUMNS_CACHE = {};
-
-// Clear cache for specific tables (used after migrations)
-export const clearColumnsCache = (tableNames = null, cacheKey = null) => {
-  if (!tableNames) {
-    // Clear entire cache
-    for (const key in COLUMNS_CACHE) {
-      delete COLUMNS_CACHE[key];
-    }
-    console.log('[dbProxy] Cleared entire columns cache');
-    return;
-  }
-  
-  // Clear specific tables
-  for (const key in COLUMNS_CACHE) {
-    const matchesTable = tableNames.some(t => key.endsWith(`:${t}`));
-    const matchesCacheKey = !cacheKey || key.startsWith(`${cacheKey}:`);
-    if (matchesTable && matchesCacheKey) {
-      delete COLUMNS_CACHE[key];
-      console.log(`[dbProxy] Cleared cache for: ${key}`);
-    }
-  }
-};
+export { clearColumnsCache };
 
 // HELPER: Convert JS value to MySQL value
 const toSqlValue = (val) => {
@@ -302,10 +279,12 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
     
     // Add new columns if table exists but lacks them (migration)
     try {
-      await dbPool.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS can_do_foreground_duty BOOLEAN NOT NULL DEFAULT TRUE`);
-      await dbPool.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS can_do_background_duty BOOLEAN NOT NULL DEFAULT FALSE`);
-      await dbPool.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS excluded_from_statistics BOOLEAN NOT NULL DEFAULT FALSE`);
-      await dbPool.execute(`ALTER TABLE TeamRole ADD COLUMN IF NOT EXISTS description VARCHAR(255) DEFAULT NULL`);
+      await ensureColumns(dbPool, 'TeamRole', [
+        ['can_do_foreground_duty', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+        ['can_do_background_duty', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+        ['excluded_from_statistics', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+        ['description', 'VARCHAR(255) DEFAULT NULL'],
+      ]);
     } catch (alterErr) {
       // Columns might already exist
     }
@@ -415,24 +394,29 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
 
     // Add is_excluded column if table already existed without it
     try {
-      await dbPool.execute(`ALTER TABLE WorkplaceQualification ADD COLUMN IF NOT EXISTS is_excluded BOOLEAN NOT NULL DEFAULT FALSE`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS requires_certificate BOOLEAN NOT NULL DEFAULT FALSE`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_requirement_mode VARCHAR(32) DEFAULT 'single_document'`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_validity_months INT DEFAULT NULL`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_refresh_validity_months INT DEFAULT NULL`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_base_label VARCHAR(100) DEFAULT 'Grundnachweis'`);
-      await dbPool.execute(`ALTER TABLE Qualification ADD COLUMN IF NOT EXISTS certificate_refresh_label VARCHAR(100) DEFAULT 'Verlängerung / Auffrischung'`);
-      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_status VARCHAR(32) DEFAULT NULL`);
-      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_valid_from DATE DEFAULT NULL`);
-      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_valid_until DATE DEFAULT NULL`);
-      await dbPool.execute(`ALTER TABLE DoctorQualification ADD COLUMN IF NOT EXISTS certificate_status_reason VARCHAR(500) DEFAULT NULL`);
-      // Clear cache so new column is recognized
-      const wqCacheKey = `${cacheKey}:WorkplaceQualification`;
-      const qualCacheKey = `${cacheKey}:Qualification`;
-      const dqCacheKey = `${cacheKey}:DoctorQualification`;
-      delete COLUMNS_CACHE[wqCacheKey];
-      delete COLUMNS_CACHE[qualCacheKey];
-      delete COLUMNS_CACHE[dqCacheKey];
+      const changed = await Promise.all([
+        ensureColumns(dbPool, 'WorkplaceQualification', [
+          ['is_excluded', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+        ]),
+        ensureColumns(dbPool, 'Qualification', [
+          ['requires_certificate', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+          ['certificate_requirement_mode', "VARCHAR(32) DEFAULT 'single_document'"],
+          ['certificate_validity_months', 'INT DEFAULT NULL'],
+          ['certificate_refresh_validity_months', 'INT DEFAULT NULL'],
+          ['certificate_base_label', "VARCHAR(100) DEFAULT 'Grundnachweis'"],
+          ['certificate_refresh_label', "VARCHAR(100) DEFAULT 'Verlängerung / Auffrischung'"],
+        ]),
+        ensureColumns(dbPool, 'DoctorQualification', [
+          ['certificate_status', 'VARCHAR(32) DEFAULT NULL'],
+          ['certificate_valid_from', 'DATE DEFAULT NULL'],
+          ['certificate_valid_until', 'DATE DEFAULT NULL'],
+          ['certificate_status_reason', 'VARCHAR(500) DEFAULT NULL'],
+        ]),
+      ]);
+
+      if (changed.some(Boolean)) {
+        clearColumnsCache(['WorkplaceQualification', 'Qualification', 'DoctorQualification'], cacheKey);
+      }
     } catch (alterErr) {
       // Column might already exist
     }
@@ -451,15 +435,17 @@ const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
   if (COLUMNS_CACHE[checkKey]) return;
 
   try {
-    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS min_staff INT DEFAULT 1`);
-    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS optimal_staff INT DEFAULT 1`);
-    // consecutive_days_mode: 'forbidden' | 'allowed' | 'preferred' (replaces boolean allows_consecutive_days)
-    await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN IF NOT EXISTS consecutive_days_mode VARCHAR(20) DEFAULT 'allowed'`);
+    const changed = await ensureColumns(dbPool, 'Workplace', [
+      ['min_staff', 'INT DEFAULT 1'],
+      ['optimal_staff', 'INT DEFAULT 1'],
+      ['consecutive_days_mode', "VARCHAR(20) DEFAULT 'allowed'"],
+    ]);
+
     // Migrate legacy boolean values if the new column was just added
     await dbPool.execute(`UPDATE Workplace SET consecutive_days_mode = 'forbidden' WHERE consecutive_days_mode = 'allowed' AND allows_consecutive_days = 0`).catch(() => {});
-    // Clear cached columns so the new columns are recognized
-    const colCacheKey = `${cacheKey}:Workplace`;
-    delete COLUMNS_CACHE[colCacheKey];
+    if (changed) {
+      clearColumnsCache(['Workplace'], cacheKey);
+    }
   } catch (err) {
     // Columns might already exist or table might not exist yet — both are fine
     if (err.code !== 'ER_DUP_FIELDNAME') {

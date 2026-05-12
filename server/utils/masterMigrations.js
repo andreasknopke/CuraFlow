@@ -1,5 +1,6 @@
 export async function runMasterMigrations(dbPool) {
   const results = [];
+  const SKIPPED = Symbol('skipped');
 
   const hasColumn = async (tableName, columnName) => {
     const [rows] = await dbPool.execute(
@@ -21,10 +22,18 @@ export async function runMasterMigrations(dbPool) {
   };
 
   const run = async (migration, execute, options = {}) => {
-    const { duplicateCodes = [], duplicateReason = 'Bereits vorhanden' } = options;
+    const {
+      duplicateCodes = [],
+      duplicateReason = 'Bereits vorhanden',
+      skippedReason = 'Bereits vorhanden',
+    } = options;
 
     try {
-      await execute();
+      const outcome = await execute();
+      if (outcome === SKIPPED || outcome === false) {
+        results.push({ migration, status: 'skipped', reason: skippedReason });
+        return;
+      }
       results.push({ migration, status: 'success' });
     } catch (err) {
       if (duplicateCodes.includes(err.code)) {
@@ -37,33 +46,40 @@ export async function runMasterMigrations(dbPool) {
   };
 
   await run('add_allowed_tenants', async () => {
-    await addColumnIfMissing('app_users', 'allowed_tenants', 'JSON DEFAULT NULL');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'allowed_tenants', 'JSON DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('add_must_change_password', async () => {
-    await addColumnIfMissing('app_users', 'must_change_password', 'BOOLEAN DEFAULT FALSE');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'must_change_password', 'BOOLEAN DEFAULT FALSE');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('add_email_verified', async () => {
-    await addColumnIfMissing('app_users', 'email_verified', 'TINYINT(1) DEFAULT 0');
-    await addColumnIfMissing('app_users', 'email_verified_date', 'DATETIME DEFAULT NULL');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden' });
+    const addedEmailVerified = await addColumnIfMissing('app_users', 'email_verified', 'TINYINT(1) DEFAULT 0');
+    const addedEmailVerifiedDate = await addColumnIfMissing('app_users', 'email_verified_date', 'DATETIME DEFAULT NULL');
+    return addedEmailVerified || addedEmailVerifiedDate || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden', skippedReason: 'Spalten bereits vorhanden' });
 
   await run('add_last_seen_at', async () => {
-    await addColumnIfMissing('app_users', 'last_seen_at', 'DATETIME DEFAULT NULL');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'last_seen_at', 'DATETIME DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('add_schedule_initials_only', async () => {
-    await addColumnIfMissing('app_users', 'schedule_initials_only', 'TINYINT(1) DEFAULT 0');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'schedule_initials_only', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('add_schedule_sort_doctors_alphabetically', async () => {
-    await addColumnIfMissing('app_users', 'schedule_sort_doctors_alphabetically', 'TINYINT(1) DEFAULT 0');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'schedule_sort_doctors_alphabetically', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('add_schedule_show_time_account', async () => {
-    await addColumnIfMissing('app_users', 'schedule_show_time_account', 'TINYINT(1) DEFAULT 0');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden' });
+    const changed = await addColumnIfMissing('app_users', 'schedule_show_time_account', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   await run('create_email_verification_table', async () => {
     await dbPool.execute(`
@@ -249,17 +265,20 @@ export async function runMasterMigrations(dbPool) {
 
   // Add LLM analysis columns to QualificationCertificate (idempotent)
   await run('add_qc_analysis_columns', async () => {
-    await addColumnIfMissing('QualificationCertificate', 'evidence_role', `VARCHAR(32) DEFAULT 'single'`);
-    await addColumnIfMissing('QualificationCertificate', 'analysis_status', `ENUM('pending','passed','warning','failed','skipped','error') DEFAULT 'pending'`);
-    await addColumnIfMissing('QualificationCertificate', 'analysis_is_certificate', 'TINYINT(1) DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_scope_match', 'TINYINT(1) DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_scope_detected', 'VARCHAR(255) DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_confidence', 'FLOAT DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_reasoning', 'TEXT DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_detected_granted', 'DATE DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analysis_detected_expiry', 'DATE DEFAULT NULL');
-    await addColumnIfMissing('QualificationCertificate', 'analyzed_at', 'DATETIME DEFAULT NULL');
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden' });
+    const changes = await Promise.all([
+      addColumnIfMissing('QualificationCertificate', 'evidence_role', `VARCHAR(32) DEFAULT 'single'`),
+      addColumnIfMissing('QualificationCertificate', 'analysis_status', `ENUM('pending','passed','warning','failed','skipped','error') DEFAULT 'pending'`),
+      addColumnIfMissing('QualificationCertificate', 'analysis_is_certificate', 'TINYINT(1) DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_scope_match', 'TINYINT(1) DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_scope_detected', 'VARCHAR(255) DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_confidence', 'FLOAT DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_reasoning', 'TEXT DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_detected_granted', 'DATE DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analysis_detected_expiry', 'DATE DEFAULT NULL'),
+      addColumnIfMissing('QualificationCertificate', 'analyzed_at', 'DATETIME DEFAULT NULL'),
+    ]);
+    return changes.some(Boolean) || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden', skippedReason: 'Spalten bereits vorhanden' });
 
 
   await run('create_time_account_table', async () => {

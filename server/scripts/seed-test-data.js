@@ -14,6 +14,7 @@ const MYSQL_PORT = Number(process.env.MYSQL_PORT || '3306');
 const MYSQL_USER = process.env.MYSQL_USER || 'curaflow';
 const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
 const MYSQL_ROOT_PASSWORD = process.env.MYSQL_ROOT_PASSWORD || '';
+const CONFIRM_SEED_TEST_DATA = process.env.CONFIRM_SEED_TEST_DATA;
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -162,6 +163,27 @@ async function executeStatements(pool, statements) {
 function assertSafeIdentifier(value, label) {
   if (!/^[A-Za-z0-9_]+$/.test(value)) {
     throw new Error(`${label} contains unsupported characters: ${value}`);
+  }
+}
+
+function assertSafeTestEnvironment() {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('seed-test-data.js may only run with NODE_ENV=test');
+  }
+
+  if (CONFIRM_SEED_TEST_DATA !== '1') {
+    throw new Error('CONFIRM_SEED_TEST_DATA=1 is required to run seed-test-data.js');
+  }
+
+  const requiredTestPatterns = [
+    { label: 'MYSQL_DATABASE', value: MASTER_DB_NAME },
+    { label: 'TEST_TENANT_DATABASE', value: TENANT_DB_NAME },
+  ];
+
+  for (const entry of requiredTestPatterns) {
+    if (!/test/i.test(entry.value)) {
+      throw new Error(`${entry.label} must clearly target a test database. Received: ${entry.value}`);
+    }
   }
 }
 
@@ -525,7 +547,7 @@ async function upsertDbToken(masterPool) {
     })
   );
 
-  await masterPool.execute('UPDATE db_tokens SET is_active = 0');
+  await masterPool.execute('UPDATE db_tokens SET is_active = 0 WHERE id != ? AND is_active = 1', [TENANT_ID]);
   await upsertRows(
     masterPool,
     'db_tokens',
@@ -631,6 +653,7 @@ async function main() {
   console.log('[seed] Starting deterministic test data seed');
   console.log(`[seed] Master DB: ${MASTER_DB_NAME}`);
   console.log(`[seed] Tenant DB: ${TENANT_DB_NAME}`);
+  assertSafeTestEnvironment();
 
   let rootPool;
   let masterPool;
