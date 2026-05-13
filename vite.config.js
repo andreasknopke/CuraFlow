@@ -13,7 +13,7 @@ const unitProject = defineProject({
   test: {
     name: 'unit',
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.{js,jsx}'],
+    include: ['src/**/__tests__/**/*.test.{js,jsx}', 'server/**/__tests__/**/*.test.js'],
     exclude: ['src/**/__component_tests__/**'],
     coverage: {
       provider: 'v8',

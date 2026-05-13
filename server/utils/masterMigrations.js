@@ -265,19 +265,26 @@ export async function runMasterMigrations(dbPool) {
 
   // Add LLM analysis columns to QualificationCertificate (idempotent)
   await run('add_qc_analysis_columns', async () => {
-    const changes = await Promise.all([
-      addColumnIfMissing('QualificationCertificate', 'evidence_role', `VARCHAR(32) DEFAULT 'single'`),
-      addColumnIfMissing('QualificationCertificate', 'analysis_status', `ENUM('pending','passed','warning','failed','skipped','error') DEFAULT 'pending'`),
-      addColumnIfMissing('QualificationCertificate', 'analysis_is_certificate', 'TINYINT(1) DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_scope_match', 'TINYINT(1) DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_scope_detected', 'VARCHAR(255) DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_confidence', 'FLOAT DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_reasoning', 'TEXT DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_detected_granted', 'DATE DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analysis_detected_expiry', 'DATE DEFAULT NULL'),
-      addColumnIfMissing('QualificationCertificate', 'analyzed_at', 'DATETIME DEFAULT NULL'),
-    ]);
-    return changes.some(Boolean) || SKIPPED;
+    const columns = [
+      ['evidence_role', `VARCHAR(32) DEFAULT 'single'`],
+      ['analysis_status', `ENUM('pending','passed','warning','failed','skipped','error') DEFAULT 'pending'`],
+      ['analysis_is_certificate', 'TINYINT(1) DEFAULT NULL'],
+      ['analysis_scope_match', 'TINYINT(1) DEFAULT NULL'],
+      ['analysis_scope_detected', 'VARCHAR(255) DEFAULT NULL'],
+      ['analysis_confidence', 'FLOAT DEFAULT NULL'],
+      ['analysis_reasoning', 'TEXT DEFAULT NULL'],
+      ['analysis_detected_granted', 'DATE DEFAULT NULL'],
+      ['analysis_detected_expiry', 'DATE DEFAULT NULL'],
+      ['analyzed_at', 'DATETIME DEFAULT NULL'],
+    ];
+    let changed = false;
+
+    for (const [columnName, definition] of columns) {
+      const added = await addColumnIfMissing('QualificationCertificate', columnName, definition);
+      changed = changed || added;
+    }
+
+    return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden', skippedReason: 'Spalten bereits vorhanden' });
 
 

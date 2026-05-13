@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
 import mysql from 'mysql2/promise';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { encryptToken } from '../utils/crypto.js';
 import { runMasterMigrations } from '../utils/masterMigrations.js';
 import { runTenantMigrations } from '../utils/tenantMigrations.js';
@@ -15,6 +17,7 @@ const MYSQL_USER = process.env.MYSQL_USER || 'curaflow';
 const MYSQL_PASSWORD = process.env.MYSQL_PASSWORD || '';
 const MYSQL_ROOT_PASSWORD = process.env.MYSQL_ROOT_PASSWORD || '';
 const CONFIRM_SEED_TEST_DATA = process.env.CONFIRM_SEED_TEST_DATA;
+const LOCAL_TEST_HOSTS = new Set(['127.0.0.1', '::1', 'localhost', 'mysql']);
 
 function requiredEnv(name) {
   const value = process.env[name];
@@ -160,13 +163,20 @@ async function executeStatements(pool, statements) {
   }
 }
 
-function assertSafeIdentifier(value, label) {
+export function assertSafeIdentifier(value, label) {
   if (!/^[A-Za-z0-9_]+$/.test(value)) {
     throw new Error(`${label} contains unsupported characters: ${value}`);
   }
 }
 
-function assertSafeTestEnvironment() {
+export function assertSafeHost(value, label) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (!LOCAL_TEST_HOSTS.has(normalizedValue)) {
+    throw new Error(`${label} must be local for test seeding. Received: ${value}`);
+  }
+}
+
+export function assertSafeTestEnvironment() {
   if (process.env.NODE_ENV !== 'test') {
     throw new Error('seed-test-data.js may only run with NODE_ENV=test');
   }
@@ -185,6 +195,8 @@ function assertSafeTestEnvironment() {
       throw new Error(`${entry.label} must clearly target a test database. Received: ${entry.value}`);
     }
   }
+
+  assertSafeHost(MYSQL_HOST, 'MYSQL_HOST');
 }
 
 async function ensureMasterBaseTables(masterPool) {
@@ -231,6 +243,12 @@ async function ensureMasterBaseTables(masterPool) {
       created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+  ]);
+
+  await executeStatements(masterPool, [
+    `ALTER TABLE SystemLog ADD COLUMN IF NOT EXISTS details TEXT AFTER message`,
+    `ALTER TABLE SystemLog ADD COLUMN IF NOT EXISTS updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_date`,
+    `ALTER TABLE SystemLog ADD COLUMN IF NOT EXISTS created_by VARCHAR(255) AFTER updated_date`,
   ]);
 }
 
@@ -415,8 +433,10 @@ async function ensureTenantBaseTables(tenantPool) {
       level VARCHAR(20) DEFAULT NULL,
       source VARCHAR(100) DEFAULT NULL,
       message TEXT DEFAULT NULL,
-      context JSON DEFAULT NULL,
-      created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3)
+        details TEXT,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        created_by VARCHAR(255)
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS VoiceAlias (
       id VARCHAR(36) PRIMARY KEY,
@@ -687,7 +707,12 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('[seed] Failed:', error);
-  process.exitCode = 1;
-});
+const currentFilePath = fileURLToPath(import.meta.url);
+const isDirectRun = process.argv[1] ? path.resolve(process.argv[1]) === currentFilePath : false;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    console.error('[seed] Failed:', error);
+    process.exitCode = 1;
+  });
+}
