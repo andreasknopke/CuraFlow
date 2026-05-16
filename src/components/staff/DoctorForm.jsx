@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
@@ -52,6 +53,29 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
 
   const [sendingTestMail, setSendingTestMail] = useState(false);
   const [selectedQualIds, setSelectedQualIds] = useState([]);
+
+  const centralEmployeeOptions = React.useMemo(() => (
+    [
+      {
+        value: '__none__',
+        label: 'Nicht verknupft (lokaler Mitarbeiter)',
+        triggerLabel: 'Nicht verknupft (lokaler Mitarbeiter)',
+        sortLabel: '',
+        keywords: ['lokal', 'keine zentrale verknupfung'],
+      },
+      ...centralEmployees.map((employee) => {
+        const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
+        return {
+          value: employee.id,
+          label: fullName,
+          triggerLabel: fullName,
+          description: employee.work_time_model_name || undefined,
+          searchText: [employee.first_name, employee.last_name, employee.work_time_model_name].filter(Boolean).join(' '),
+          sortLabel: fullName,
+        };
+      }),
+    ]
+  ), [centralEmployees]);
 
   const handleSendTestMail = async () => {
     const email = formData.email;
@@ -312,36 +336,26 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                 </Button>
               )}
             </div>
-            <Select
+            <EmployeeSelect
               value={formData.central_employee_id || '__none__'}
               onValueChange={(value) => {
                 const empId = value === '__none__' ? '' : value;
                 setFormData({ ...formData, central_employee_id: empId });
-                // Auto-fill name from central employee if linking
                 if (empId) {
-                  const emp = centralEmployees.find(e => e.id === empId);
+                  const emp = centralEmployees.find((employee) => employee.id === empId);
                   if (emp) {
                     const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
                     if (fullName && !formData.name) {
-                      setFormData(prev => ({ ...prev, central_employee_id: empId, name: fullName }));
+                      setFormData((prev) => ({ ...prev, central_employee_id: empId, name: fullName }));
                     }
                   }
                 }
               }}
-            >
-              <SelectTrigger className="bg-white">
-                <SelectValue placeholder="Nicht verknüpft (lokaler Mitarbeiter)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Nicht verknüpft (lokaler Mitarbeiter)</SelectItem>
-                {centralEmployees.map((emp) => (
-                  <SelectItem key={emp.id} value={emp.id}>
-                    {[emp.first_name, emp.last_name].filter(Boolean).join(' ') || emp.last_name}
-                    {emp.work_time_model_name ? ` — ${emp.work_time_model_name}` : ''}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              options={centralEmployeeOptions}
+              placeholder="Nicht verknüpft (lokaler Mitarbeiter)"
+              searchPlaceholder="Zentralen Mitarbeiter suchen..."
+              triggerClassName="bg-white"
+            />
             <p className="text-[11px] text-slate-400">
               Verknüpfte Mitarbeiter erben Vertragsdaten (Arbeitszeit, Urlaub) aus der Zentrale.
             </p>

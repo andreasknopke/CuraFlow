@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, isAfter, parseISO, startOfDay, addMonths, isSameDay, isValid, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import WishReminderStatus from '@/components/wishlist/WishReminderStatus';
 import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, XCircle, Loader2, Check, X, ClipboardList, Mail, Trash2, ChevronDown } from "lucide-react";
 import CertificateExpiryWidget from '@/components/dashboard/CertificateExpiryWidget';
@@ -240,6 +239,17 @@ export default function MyDashboardPage() {
     const doctorsForSelection = useMemo(() => {
         return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
+
+    const doctorSelectOptions = useMemo(() => (
+        doctorsForSelection.map((doctor) => ({
+            value: doctor.id,
+            label: doctor.name,
+            triggerLabel: doctor.name,
+            description: doctor.role || undefined,
+            searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
+            sortLabel: doctor.name,
+        }))
+    ), [doctorsForSelection]);
 
     // Determine initial doctor selection
     useEffect(() => {
@@ -590,18 +600,14 @@ export default function MyDashboardPage() {
                         <div className="flex items-center gap-2 bg-white p-2 rounded-lg border shadow-sm">
                             <User className="w-4 h-4 text-slate-400 hidden sm:block" />
                             <span className="text-sm font-medium text-slate-700 mr-2 hidden sm:inline">Ansicht für:</span>
-                            <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
-                                <SelectTrigger className="w-full sm:w-[250px]">
-                                    <SelectValue placeholder="Person wählen..." />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {doctorsForSelection.map(doc => (
-                                        <SelectItem key={doc.id} value={doc.id}>
-                                            {doc.name} ({doc.role})
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <EmployeeSelect
+                                value={selectedDoctorId || ''}
+                                onValueChange={setSelectedDoctorId}
+                                options={doctorSelectOptions}
+                                placeholder="Person wählen..."
+                                searchPlaceholder="Person suchen..."
+                                triggerClassName="w-full sm:w-[250px]"
+                            />
                         </div>
                     )}
                 </div>

@@ -5,7 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { addDays, format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import WishYearView from '@/components/wishlist/WishYearView';
 import WishRequestDialog from '@/components/wishlist/WishRequestDialog';
 import WishMonthOverview from '@/components/wishlist/WishMonthOverview';
@@ -120,6 +120,17 @@ export default function WishListPage() {
     const doctorsForSelection = React.useMemo(() => {
             return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
+
+    const doctorSelectOptions = React.useMemo(() => (
+        doctorsForSelection.map((doctor) => ({
+            value: doctor.id,
+            label: doctor.name,
+            triggerLabel: doctor.name,
+            description: doctor.role || undefined,
+            searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
+            sortLabel: doctor.name,
+        }))
+    ), [doctorsForSelection]);
 
     const { data: masterEmployees = [] } = useQuery({
         queryKey: ['master-central-employees-for-wishlist'],
@@ -542,16 +553,14 @@ export default function WishListPage() {
                <div className="w-px h-8 bg-slate-200 mx-2" />
 
                {user?.role === 'admin' ? (
-                   <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
-                    <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Person auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {doctorsForSelection.map(d => (
-                            <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                   </Select>
+                   <EmployeeSelect
+                    value={selectedDoctorId || ''}
+                    onValueChange={setSelectedDoctorId}
+                    options={doctorSelectOptions}
+                    placeholder="Person auswählen"
+                    searchPlaceholder="Person suchen..."
+                    triggerClassName="w-[200px]"
+                   />
                ) : (
                    <div className="px-3 font-medium text-slate-700">
                        {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}

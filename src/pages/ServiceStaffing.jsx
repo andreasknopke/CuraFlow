@@ -1,20 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isSameDay, isWeekend, addDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Printer, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { useHolidays } from '@/components/useHolidays';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 import { trackDbChange } from '@/components/utils/dbTracker';
-import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
-import { AlertTriangle } from 'lucide-react';
 import { isWishOnDate } from '@/utils/wishRange';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
@@ -82,14 +80,13 @@ export default function ServiceStaffingPage() {
         requestOverride,
         confirmOverride,
         cancelOverride,
-        setOverrideDialogOpen
-    } = useOverrideValidation({ user, doctors });
+        setOverrideDialogOpen,
+    } = useOverrideValidation();
 
     const serviceTypes = useMemo(() => {
         const dynamicServices = workplaces
             .filter(w => w.category === 'Dienste' || (w.category === 'Demonstrationen & Konsile' && w.show_in_service_plan))
             .sort((a, b) => {
-                // Sort priority: Dienste first, then Demos, then by order
                 if (a.category !== b.category) {
                     return a.category === 'Dienste' ? -1 : 1;
                 }
@@ -98,11 +95,11 @@ export default function ServiceStaffingPage() {
             .map(w => {
                 let color = 'bg-slate-100 text-slate-900';
                 if (w.category === 'Demonstrationen & Konsile') color = 'bg-purple-50 text-purple-900 border-purple-100';
-                else if (w.service_type === 1) color = 'bg-blue-100 text-blue-900'; // Bereitschaftsdienst
-                else if (w.service_type === 2) color = 'bg-indigo-100 text-indigo-900'; // Rufbereitschaftsdienst
-                else if (w.service_type === 3) color = 'bg-amber-100 text-amber-900'; // Schichtdienst
+                else if (w.service_type === 1) color = 'bg-blue-100 text-blue-900';
+                else if (w.service_type === 2) color = 'bg-indigo-100 text-indigo-900';
+                else if (w.service_type === 3) color = 'bg-amber-100 text-amber-900';
                 else if (w.name.includes('Spät')) color = 'bg-amber-100 text-amber-900';
-                
+
                 return {
                     id: w.name,
                     workplace_id: w.id,
@@ -113,49 +110,43 @@ export default function ServiceStaffingPage() {
                     active_days: w.active_days
                 };
             });
-            
+
         return [...dynamicServices, ...STATIC_SERVICE_TYPES];
     }, [workplaces]);
 
-    // Filter shifts for current month and relevant positions
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
     const relevantPositions = serviceTypes.map(t => t.id);
 
-    // Dynamische Facharzt-Rollen aus DB laden
     const { foregroundDutyRoles, backgroundDutyRoles, statisticsExcludedRoles } = useTeamRoles();
 
-    // ALLOWED_ROLES dynamisch aufbauen basierend auf service_type der Arbeitsplätze
     const ALLOWED_ROLES = useMemo(() => {
         const roles = {};
         workplaces.filter(w => w.category === 'Dienste').forEach(w => {
-            // service_type 1 = Bereitschaftsdienst (Vordergrund) -> foreground roles
-            // service_type 2 = Rufbereitschaftsdienst (Hintergrund) -> background roles
             if (w.service_type === 1) {
                 roles[w.name] = foregroundDutyRoles;
             } else {
                 roles[w.name] = backgroundDutyRoles;
             }
         });
-        // Demos get background roles
+
         workplaces.filter(w => w.category === 'Demonstrationen & Konsile' && w.show_in_service_plan).forEach(w => {
             roles[w.name] = backgroundDutyRoles;
         });
         return roles;
     }, [workplaces, foregroundDutyRoles, backgroundDutyRoles]);
 
-    // Dynamische Qualifikationen laden
     const { qualificationMap } = useQualifications();
     const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();
     const { byWorkplace: wpQualsByWorkplace } = useAllWorkplaceQualifications();
 
     const absencesByDate = useMemo(() => {
         const map = {};
-        const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+        const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
         allShifts.forEach(shift => {
-            if (ABSENCE_POSITIONS.includes(shift.position)) {
+            if (absencePositions.includes(shift.position)) {
                 if (!map[shift.date]) map[shift.date] = new Set();
                 map[shift.date].add(shift.doctor_id);
             }
@@ -605,60 +596,62 @@ export default function ServiceStaffingPage() {
                                         return (
                                             <td key={type.id} className="px-4 py-1">
                                                 <div className="print:hidden">
-                                                    <Select 
+                                                    <EmployeeSelect
                                                         disabled={isReadOnly}
-                                                        value={assignedDoctorId || "unassigned"} 
-                                                        onValueChange={(val) => handleAssignment(day, type.id, val === "unassigned" ? "DELETE" : val)}
-                                                    >
-                                                        <SelectTrigger className={`h-8 w-full ${assignedDoctorId ? 'border-indigo-200 bg-indigo-50/50 text-indigo-900' : 'text-slate-400'}`}>
-                                                            <SelectValue placeholder="-" />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                        <SelectItem value="unassigned">-</SelectItem>
-                                                        {availableDoctors.map(doc => {
-                                                            const dateStr = format(day, 'yyyy-MM-dd');
-                                                            const wish = wishes.find(w => w.doctor_id === doc.id && isWishOnDate(w, dateStr) && w.status !== 'rejected');
-                                                            let className = "";
-                                                            if (wish) {
-                                                                if (wish.type === 'service') className = "text-green-600 font-medium bg-green-50";
-                                                                else if (wish.type === 'no_service') className = "text-red-600 font-medium bg-red-50";
-                                                            }
+                                                        value={assignedDoctorId || 'unassigned'}
+                                                        onValueChange={(val) => handleAssignment(day, type.id, val === 'unassigned' ? 'DELETE' : val)}
+                                                        placeholder="-"
+                                                        searchPlaceholder="Mitarbeiter suchen..."
+                                                        emptyText="Keine passenden Mitarbeiter gefunden."
+                                                        triggerClassName={`h-8 w-full ${assignedDoctorId ? 'border-indigo-200 bg-indigo-50/50 text-indigo-900' : 'text-slate-400'}`}
+                                                        contentClassName="w-[380px]"
+                                                        options={[
+                                                            {
+                                                                value: 'unassigned',
+                                                                label: '-',
+                                                                triggerLabel: '-',
+                                                                sortLabel: '',
+                                                                keywords: ['leer', 'nicht zugewiesen'],
+                                                            },
+                                                            ...availableDoctors.map((doc) => {
+                                                                const dateStr = format(day, 'yyyy-MM-dd');
+                                                                const wish = wishes.find((entry) => entry.doctor_id === doc.id && isWishOnDate(entry, dateStr) && entry.status !== 'rejected');
+                                                                let itemClassName = '';
+                                                                if (wish) {
+                                                                    if (wish.type === 'service') itemClassName = 'text-green-600 font-medium bg-green-50';
+                                                                    else if (wish.type === 'no_service') itemClassName = 'text-red-600 font-medium bg-red-50';
+                                                                }
 
-                                                            // Check if doctor is missing preferred qualifications ("Sollte")
-                                                            const docQualIds = getDoctorQualIds(doc.id);
-                                                            const missingPreferred = preferredQualIds.filter(qid => !docQualIds.includes(qid));
-                                                            const hasPreferredWarning = missingPreferred.length > 0 && doc.id !== assignedDoctorId;
-                                                            const missingPreferredNames = missingPreferred.map(qid => qualificationMap[qid]?.name || '?').join(', ');
+                                                                const docQualIds = getDoctorQualIds(doc.id);
+                                                                const missingPreferred = preferredQualIds.filter((qualificationId) => !docQualIds.includes(qualificationId));
+                                                                const hasPreferredWarning = missingPreferred.length > 0 && doc.id !== assignedDoctorId;
+                                                                const missingPreferredNames = missingPreferred.map((qualificationId) => qualificationMap[qualificationId]?.name || '?').join(', ');
 
-                                                            // Check if doctor has discouraged qualifications ("Sollte nicht")
-                                                            const hasDiscouragedQual = discouragedQualIds.some(qid => docQualIds.includes(qid));
-                                                            const hasDiscouragedWarning = hasDiscouragedQual && doc.id !== assignedDoctorId;
-                                                            const discouragedNames = discouragedQualIds.filter(qid => docQualIds.includes(qid)).map(qid => qualificationMap[qid]?.name || '?').join(', ');
+                                                                const hasDiscouragedQual = discouragedQualIds.some((qualificationId) => docQualIds.includes(qualificationId));
+                                                                const hasDiscouragedWarning = hasDiscouragedQual && doc.id !== assignedDoctorId;
+                                                                const discouragedNames = discouragedQualIds
+                                                                    .filter((qualificationId) => docQualIds.includes(qualificationId))
+                                                                    .map((qualificationId) => qualificationMap[qualificationId]?.name || '?')
+                                                                    .join(', ');
 
-                                                            const hasWarning = hasPreferredWarning || hasDiscouragedWarning;
-                                                            const warningText = [hasPreferredWarning ? missingPreferredNames : '', hasDiscouragedWarning ? `⚠ ${discouragedNames}` : ''].filter(Boolean).join(', ');
-                                                            
-                                                            return (
-                                                                <SelectItem key={doc.id} value={doc.id} className={`${className} ${hasWarning ? 'text-amber-700' : ''}`}>
-                                                                    <span className="flex items-center gap-1">
-                                                                        {hasWarning && <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0" />}
-                                                                        {doc.name}
-                                                                        {wish && (
-                                                                            <span className="ml-1 text-xs opacity-75">
-                                                                                {wish.type === 'service' ? '(Dienst)' : '(Kein Dienst)'}
-                                                                            </span>
-                                                                        )}
-                                                                        {hasWarning && (
-                                                                            <span className="ml-1 text-[10px] text-amber-500">
-                                                                                ({warningText})
-                                                                            </span>
-                                                                        )}
-                                                                    </span>
-                                                                </SelectItem>
-                                                            );
-                                                        })}
-                                                        </SelectContent>
-                                                    </Select>
+                                                                const warningText = [
+                                                                    wish ? (wish.type === 'service' ? 'Dienstwunsch' : 'Kein-Dienst-Wunsch') : '',
+                                                                    hasPreferredWarning ? `Fehlt: ${missingPreferredNames}` : '',
+                                                                    hasDiscouragedWarning ? `Warnung: ${discouragedNames}` : '',
+                                                                ].filter(Boolean).join(' · ');
+
+                                                                return {
+                                                                    value: doc.id,
+                                                                    label: doc.name,
+                                                                    triggerLabel: doc.name,
+                                                                    description: warningText || undefined,
+                                                                    searchText: [doc.initials, doc.role, warningText].filter(Boolean).join(' '),
+                                                                    sortLabel: doc.name,
+                                                                    itemClassName: `${itemClassName} ${(hasPreferredWarning || hasDiscouragedWarning) ? 'text-amber-700' : ''}`.trim(),
+                                                                };
+                                                            }),
+                                                        ]}
+                                                    />
                                                 </div>
                                                 <div className="hidden print:block text-sm">
                                                     {assignedDoctor ? (

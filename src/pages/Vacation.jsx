@@ -3,12 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear, startOfYear, endOfYear, eachDayOfInterval, isSameDay } from 'date-fns';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Eraser, Wand2 } from 'lucide-react';
+import { format, getYear, startOfYear, endOfYear, eachDayOfInterval } from 'date-fns';
+import { ChevronLeft, ChevronRight, Eraser, Wand2 } from 'lucide-react';
 import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, Info, Trash2, Plus } from 'lucide-react';
@@ -55,6 +54,17 @@ export default function VacationPage() {
   const doctorsForSelection = React.useMemo(() => {
       return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
   }, [doctors, user]);
+
+  const doctorSelectOptions = React.useMemo(() => (
+    doctorsForSelection.map((doctor) => ({
+      value: doctor.id,
+      label: doctor.name,
+      triggerLabel: doctor.name,
+      description: doctor.role || undefined,
+      searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
+      sortLabel: doctor.name,
+    }))
+  ), [doctorsForSelection]);
 
   const { data: masterEmployees = [] } = useQuery({
     queryKey: ['master-central-employees-for-vacation'],
@@ -680,16 +690,14 @@ export default function VacationPage() {
                <>
                    <div className="w-px h-8 bg-slate-200 mx-2" />
 
-                   <Select value={selectedDoctorId || ''} onValueChange={setSelectedDoctorId}>
-                    <SelectTrigger className="w-[200px]">
-                        <SelectValue placeholder="Person auswählen" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {doctorsForSelection.map(d => (
-                            <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
-                        ))}
-                    </SelectContent>
-                   </Select>
+                     <EmployeeSelect
+                    value={selectedDoctorId || ''}
+                    onValueChange={setSelectedDoctorId}
+                    options={doctorSelectOptions}
+                    placeholder="Person auswählen"
+                    searchPlaceholder="Person suchen..."
+                    triggerClassName="w-[200px]"
+                     />
                </>
                )}
             </div>

@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear, eachDayOfInterval, isSameDay, startOfYear, endOfYear, startOfMonth, endOfMonth } from 'date-fns';
+import { format, getYear, eachDayOfInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { ChevronLeft, ChevronRight, GraduationCap, Eraser, ArrowRightToLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import DoctorYearView from '@/components/vacation/DoctorYearView';
 import TrainingOverview from '@/components/training/TrainingOverview';
 import TrainingMultiYearOverview from '@/components/training/TrainingMultiYearOverview';
@@ -54,6 +54,17 @@ export default function TrainingPage() {
     const doctorsForSelection = useMemo(() => {
         return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
+
+    const doctorSelectOptions = useMemo(() => (
+        doctorsForSelection.map((doctor) => ({
+            value: doctor.id,
+            label: doctor.name,
+            triggerLabel: doctor.name,
+            description: doctor.role === 'Assistenzarzt' ? 'Assistenzarzt' : doctor.role,
+            searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
+            sortLabel: doctor.name,
+        }))
+    ), [doctorsForSelection]);
 
   // Fetch Workplaces for dynamic modalities
   const { data: workplaces = [] } = useQuery({
@@ -604,21 +615,14 @@ export default function TrainingPage() {
                    <div className="w-px h-8 bg-slate-200 mx-2" />
 
                    {user?.role === 'admin' ? (
-                       <Select 
-                        value={selectedDoctorId || ''} 
+                       <EmployeeSelect
+                        value={selectedDoctorId || ''}
                         onValueChange={setSelectedDoctorId}
-                       >
-                        <SelectTrigger className="w-[200px]">
-                            <SelectValue placeholder="Person auswählen" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {doctorsForSelection.map(d => (
-                                <SelectItem key={d.id} value={d.id}>
-                                    {d.name} {d.role === 'Assistenzarzt' ? '(Ass.)' : ''}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                       </Select>
+                        options={doctorSelectOptions}
+                        placeholder="Person auswählen"
+                        searchPlaceholder="Person suchen..."
+                        triggerClassName="w-[200px]"
+                       />
                    ) : (
                        <div className="px-3 font-medium text-slate-700">
                            {selectedDoctor ? selectedDoctor.name : (user?.doctor_id ? 'Person nicht gefunden' : 'Keine Person zugeordnet')}

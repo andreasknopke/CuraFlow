@@ -11,6 +11,7 @@ import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Chec
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 
 function parseAllowedTenants(rawAllowedTenants) {
@@ -63,6 +64,26 @@ export default function UserManagement() {
     const doctorsForSelection = React.useMemo(() => {
         return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
+
+    const doctorSelectOptions = React.useMemo(() => (
+        [
+            {
+                value: 'none',
+                label: 'Keine Person',
+                triggerLabel: 'Keine Person',
+                sortLabel: '',
+                keywords: ['leer', 'nicht zugeordnet'],
+            },
+            ...doctorsForSelection.map((doctor) => ({
+                value: doctor.id,
+                label: doctor.name,
+                triggerLabel: doctor.name,
+                description: doctor.initials ? `${doctor.initials}${doctor.role ? ` · ${doctor.role}` : ''}` : doctor.role,
+                searchText: [doctor.initials, doctor.role].filter(Boolean).join(' '),
+                sortLabel: doctor.name,
+            })),
+        ]
+    ), [doctorsForSelection]);
 
     const filteredUsers = React.useMemo(() => {
         if (!tenantFilter) {
@@ -229,25 +250,17 @@ export default function UserManagement() {
                                     </div>
                                 </TableCell>
                                 <TableCell>
-                                    <Select 
-                                        defaultValue={user.doctor_id || "none"} 
-                                        onValueChange={(val) => updateUserMutation.mutate({ 
-                                            id: user.id, 
-                                            data: { doctor_id: val === 'none' ? null : val } 
+                                    <EmployeeSelect
+                                        value={user.doctor_id || 'none'}
+                                        onValueChange={(val) => updateUserMutation.mutate({
+                                            id: user.id,
+                                            data: { doctor_id: val === 'none' ? null : val }
                                         })}
-                                    >
-                                        <SelectTrigger className="w-48">
-                                            <SelectValue placeholder="Keine Person" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="none">Keine Person</SelectItem>
-                                            {doctorsForSelection.map(doc => (
-                                                <SelectItem key={doc.id} value={doc.id}>
-                                                    {doc.name} ({doc.initials})
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
+                                        options={doctorSelectOptions}
+                                        placeholder="Keine Person"
+                                        searchPlaceholder="Person suchen..."
+                                        triggerClassName="w-48"
+                                    />
                                 </TableCell>
                                 <TableCell>
                                     <Button
