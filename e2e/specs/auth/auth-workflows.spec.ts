@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from '@playwright/test';
 
-import { backendURL, storageStatePaths } from '../../support/config';
+import { backendURL, getUserPassword, storageStatePaths } from '../../support/config';
 import { expect, test } from '../../fixtures/auth';
 
 function capturePageErrors(page: Page) {
@@ -55,10 +55,10 @@ test.describe('auth workflows', () => {
     expect(clearedState.jwtToken).toBeNull();
     expect(clearedState.dbTokenEnabled).toBe('false');
     expect(clearedState.activeTokenId).toBeNull();
-    expect(clearedState.dbCredentials).toBeTruthy();
+    expect(clearedState.dbCredentials).toBeNull();
   });
 
-  test.describe('read-only user', () => {
+  test.describe('restricted user', () => {
     test.use({ storageState: storageStatePaths.user });
 
     test('shows read-only mode and blocks admin access', async ({ appShell, page, request }) => {
@@ -88,21 +88,41 @@ test.describe('auth workflows', () => {
   }) => {
     test.skip(browserName !== 'chromium', 'This flow mutates shared seeded credentials across browser projects.');
     const updatedPassword = 'readonly-updated-123';
+    const seededReadonlyPassword = getUserPassword('readonly');
 
     await loginPage.goto();
     await loginPage.signInAsReadonly();
 
     const forcePasswordDialog = page.getByTestId('force-password-dialog');
     await expect(forcePasswordDialog).toBeVisible();
-    await page.getByTestId('force-password-new').fill(updatedPassword);
-    await page.getByTestId('force-password-confirm').fill(updatedPassword);
-    await page.getByTestId('force-password-submit').click();
 
-    await expect(forcePasswordDialog).not.toBeVisible();
-    await expect(appShell.readonlyBadge).toBeVisible();
+    try {
+      await page.getByTestId('force-password-new').fill(updatedPassword);
+      await page.getByTestId('force-password-confirm').fill(updatedPassword);
+      await page.getByTestId('force-password-submit').click();
 
-    const me = await fetchCurrentUser(page, request);
-    expect(me.role).toBe('readonly');
-    expect(me.must_change_password).toBe(false);
+      await expect(forcePasswordDialog).not.toBeVisible();
+      await expect(appShell.readonlyBadge).toBeVisible();
+
+      const me = await fetchCurrentUser(page, request);
+      expect(me.role).toBe('readonly');
+      expect(me.must_change_password).toBe(false);
+    } finally {
+      const token = await page.evaluate(() => localStorage.getItem('radioplan_jwt_token'));
+
+      if (token) {
+        const resetResponse = await request.post(`${backendURL}/api/auth/change-password`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          data: {
+            currentPassword: updatedPassword,
+            newPassword: seededReadonlyPassword,
+          },
+        });
+
+        expect(resetResponse.ok()).toBe(true);
+      }
+    }
   });
 });

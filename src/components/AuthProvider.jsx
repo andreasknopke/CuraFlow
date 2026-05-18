@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import { disableDbToken } from '@/components/dbTokenStorage';
+import { clearActiveDbToken } from '@/components/dbTokenStorage';
 
 // Configuration: Set to true to use custom JWT auth, false for Base44 auth
 const USE_CUSTOM_AUTH = true; // Custom JWT auth enabled
@@ -115,13 +115,9 @@ const JWTAuthProviderInner = ({ children }) => {
         
         // Zuerst alten DB-Token lokal sofort zurücksetzen (wichtig bei User-Wechsel)
         try {
-            localStorage.setItem('db_token_enabled', 'false');
-            localStorage.removeItem('active_token_id');
-            localStorage.removeItem('db_credentials');
-
             // IndexedDB-Write nicht blockierend ausführen, damit Login nicht verzögert.
-            disableDbToken().catch((e) => {
-                console.error('[Auth] Failed to persist disabled DB token state:', e);
+            clearActiveDbToken().catch((e) => {
+                console.error('[Auth] Failed to clear old DB token state:', e);
             });
             console.log('[Auth] Cleared old DB tokens');
         } catch (e) {
@@ -175,18 +171,12 @@ const JWTAuthProviderInner = ({ children }) => {
         setIsAuthenticated(false);
         queryClient.clear();
         
-        // DB-Token beim Logout lokal sofort zurücksetzen.
-        // Persistenz nach IndexedDB erfolgt bewusst ohne await, damit Redirect nicht hängt.
+        // DB-Token beim Logout vollständig zurücksetzen, bevor die Login-Seite
+        // durch IndexedDB-Sync erneut lokale Tenant-Credentials herstellen kann.
         try {
-            localStorage.setItem('db_token_enabled', 'false');
-            localStorage.removeItem('active_token_id');
-            localStorage.removeItem('db_credentials');
-
-            disableDbToken().catch((e) => {
-                console.error('Failed to persist disabled DB token on logout:', e);
-            });
+            await clearActiveDbToken();
         } catch (e) {
-            console.error('Failed to disable DB token on logout:', e);
+            console.error('Failed to clear DB token on logout:', e);
         }
         
         window.location.href = '/authlogin';

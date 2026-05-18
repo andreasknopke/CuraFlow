@@ -6,7 +6,7 @@ import { renderWithProviders } from '@/test-utils/renderWithProviders';
 import { createAuthHandlers, createRouteHandler, server } from '@/test-utils/server';
 
 vi.mock('@/components/dbTokenStorage', () => ({
-  disableDbToken: vi.fn(() => Promise.resolve()),
+  clearActiveDbToken: vi.fn(() => Promise.resolve()),
 }));
 
 function AuthProbe() {
