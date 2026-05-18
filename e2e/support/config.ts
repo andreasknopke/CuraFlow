@@ -48,16 +48,34 @@ export const seededUsers = {
   },
 } as const;
 
+const seededTargetMonth = process.env.TEST_TARGET_MONTH || '2026-05';
+const seededTargetMonthMatch = seededTargetMonth.match(/^(\d{4})-(\d{2})$/);
+
+if (!seededTargetMonthMatch) {
+  throw new Error(`TEST_TARGET_MONTH must use YYYY-MM format, received "${seededTargetMonth}"`);
+}
+
+const seededTargetYear = Number(seededTargetMonthMatch[1]);
+const seededTargetMonthNumber = Number(seededTargetMonthMatch[2]);
+
+if (seededTargetMonthNumber < 1 || seededTargetMonthNumber > 12) {
+  throw new Error(`TEST_TARGET_MONTH must contain a valid month, received "${seededTargetMonth}"`);
+}
+
+const seededMonthLastDay = new Date(Date.UTC(seededTargetYear, seededTargetMonthNumber, 0)).getUTCDate();
+const formatSeededMonthDay = (day: number) => `${seededTargetMonth}-${String(day).padStart(2, '0')}`;
+
 export const seededSchedule = {
-  targetMonth: process.env.TEST_TARGET_MONTH || '2026-05',
-  focusDate: `${process.env.TEST_TARGET_MONTH || '2026-05'}-05`,
-  rangeStart: `${process.env.TEST_TARGET_MONTH || '2026-05'}-01`,
-  rangeEnd: `${process.env.TEST_TARGET_MONTH || '2026-05'}-31`,
+  targetMonth: seededTargetMonth,
+  focusDate: formatSeededMonthDay(5),
+  rangeStart: formatSeededMonthDay(1),
+  rangeEnd: formatSeededMonthDay(seededMonthLastDay),
   shiftIds: {
-    foreground: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-05-foreground`,
-    background: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-05-background`,
-    ct: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-06-ct`,
-    mrt: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-06-mrt`,
+    // These IDs are fixed by the deterministic seed script even when TEST_TARGET_MONTH changes.
+    foreground: 'shift-2026-05-05-foreground',
+    background: 'shift-2026-05-05-background',
+    ct: 'shift-2026-05-06-ct',
+    mrt: 'shift-2026-05-06-mrt',
   },
 } as const;
 
