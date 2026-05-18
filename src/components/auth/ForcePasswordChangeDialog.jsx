@@ -60,6 +60,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
   return (
     <Dialog open={isOpen} onOpenChange={() => {}}>
       <DialogContent 
+        data-testid="force-password-dialog"
         className="sm:max-w-[500px]" 
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
@@ -85,6 +86,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
           <div>
             <Label htmlFor="newPassword">Neues Passwort</Label>
             <Input
+              data-testid="force-password-new"
               id="newPassword"
               type="password"
               value={form.newPassword}
@@ -99,6 +101,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
           <div>
             <Label htmlFor="confirmPassword">Neues Passwort bestätigen</Label>
             <Input
+              data-testid="force-password-confirm"
               id="confirmPassword"
               type="password"
               value={form.confirmPassword}
@@ -110,7 +113,12 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
             />
           </div>
           <div className="flex justify-end pt-2">
-            <Button type="submit" disabled={isChanging} className="w-full sm:w-auto">
+            <Button
+              data-testid="force-password-submit"
+              type="submit"
+              disabled={isChanging}
+              className="w-full sm:w-auto"
+            >
               {isChanging ? 'Wird geändert...' : 'Passwort ändern'}
             </Button>
           </div>

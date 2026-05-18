@@ -124,6 +124,7 @@ export default function AccountMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button 
+            data-testid="account-menu-trigger"
             variant="ghost" 
             size="sm"
             className="flex items-center gap-2 hover:bg-slate-100"
@@ -149,7 +150,11 @@ export default function AccountMenu() {
             Passwort ändern
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={logout} className="text-red-600 focus:text-red-600">
+          <DropdownMenuItem
+            data-testid="account-menu-logout"
+            onClick={logout}
+            className="text-red-600 focus:text-red-600"
+          >
             <LogOut className="mr-2 h-4 w-4" />
             Abmelden
           </DropdownMenuItem>

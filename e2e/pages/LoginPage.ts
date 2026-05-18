@@ -44,4 +44,12 @@ export class LoginPage {
   async signInAsAdmin() {
     await this.signIn(seededUsers.admin.email, getUserPassword('admin'));
   }
+
+  async signInAsUser() {
+    await this.signIn(seededUsers.user.email, getUserPassword('user'));
+  }
+
+  async signInAsReadonly() {
+    await this.signIn(seededUsers.readonly.email, getUserPassword('readonly'));
+  }
 }

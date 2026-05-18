@@ -7,6 +7,10 @@ export class AppShellPage {
   readonly adminLink: Locator;
   readonly schedulePage: Locator;
   readonly adminPage: Locator;
+  readonly readonlyBadge: Locator;
+  readonly accountMenuTrigger: Locator;
+  readonly logoutButton: Locator;
+  readonly adminAccessDenied: Locator;
 
   constructor(private readonly page: Page) {
     this.shell = page.getByTestId('app-shell');
@@ -15,6 +19,10 @@ export class AppShellPage {
     this.adminLink = page.getByTestId('nav-link-admin');
     this.schedulePage = page.getByTestId('schedule-page');
     this.adminPage = page.getByTestId('admin-page');
+    this.readonlyBadge = page.getByTestId('readonly-mode-badge');
+    this.accountMenuTrigger = page.getByTestId('account-menu-trigger');
+    this.logoutButton = page.getByTestId('account-menu-logout');
+    this.adminAccessDenied = page.getByTestId('admin-access-denied');
   }
 
   async expectReady() {
@@ -40,5 +48,11 @@ export class AppShellPage {
     await this.adminLink.click();
     await expect(this.page).toHaveURL(/\/admin(?:\?|$)/);
     await expect(this.adminPage).toBeVisible();
+  }
+
+  async logout() {
+    await this.accountMenuTrigger.click();
+    await this.logoutButton.click();
+    await expect(this.page).toHaveURL(/\/authlogin(?:\?|$)/);
   }
 }
