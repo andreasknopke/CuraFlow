@@ -4120,13 +4120,17 @@ export default function ScheduleBoard() {
         <div className={`flex flex-col h-full ${isEmbeddedSchedule ? '' : 'space-y-4'}`}>
 
             {!isEmbeddedSchedule && (
-            <div className="flex flex-wrap gap-2 items-center bg-white p-2 sm:p-4 rounded-lg shadow-sm border border-slate-200">
+            <div
+                className="flex flex-wrap gap-2 items-center bg-white p-2 sm:p-4 rounded-lg shadow-sm border border-slate-200"
+                data-testid="schedule-toolbar"
+            >
         <div className="flex flex-wrap items-center gap-2">
         {/* VoiceControl removed - moved to Layout */}
 
         <Button 
             variant="outline" 
             size="icon"
+            data-testid="schedule-undo"
             onClick={handleUndo}
             disabled={undoStack.length === 0}
             title="Rückgängig (Ctrl+Z)"
@@ -4137,6 +4141,7 @@ export default function ScheduleBoard() {
 
         <Button 
             variant="outline" 
+            data-testid="schedule-today"
                         onClick={() => setCurrentDate(viewMode === 'week' ? startOfWeek(new Date(), { weekStartsOn: 1 }) : viewMode === 'month' ? startOfMonth(new Date()) : new Date())}
             className="h-9"
             disabled={!!previewShifts}
@@ -4145,10 +4150,20 @@ export default function ScheduleBoard() {
             Heute
         </Button>
           <div className="flex items-center bg-slate-100 rounded-md p-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid="schedule-nav-prev"
+                            className="h-7 w-7"
+                            disabled={!!previewShifts}
+                            onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}
+                        >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="px-2 sm:px-4 font-medium w-[180px] sm:w-[280px] text-center block truncate text-sm">
+            <span
+                className="px-2 sm:px-4 font-medium w-[180px] sm:w-[280px] text-center block truncate text-sm"
+                data-testid="schedule-current-period"
+            >
               {viewMode === 'week' ? (
                   `${format(weekDays[0], 'd. MMM', { locale: de })} - ${format(weekDays[6], 'd. MMM', { locale: de })}`
                             ) : viewMode === 'month' ? (
@@ -4157,15 +4172,24 @@ export default function ScheduleBoard() {
                   format(currentDate, 'EEE, d. MMM yyyy', { locale: de })
               )}
             </span>
-                        <Button variant="ghost" size="icon" className="h-7 w-7" disabled={!!previewShifts} onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid="schedule-nav-next"
+                            className="h-7 w-7"
+                            disabled={!!previewShifts}
+                            onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}
+                        >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
           
           <div className="flex bg-slate-100 rounded-lg p-1">
-              <button 
-                  disabled={!!previewShifts}
-                  onClick={() => {
+               <button 
+                  data-testid="schedule-view-month"
+                  data-state={viewMode === 'month' ? 'active' : 'inactive'}
+                   disabled={!!previewShifts}
+                   onClick={() => {
                     setViewMode('month');
                     setCurrentDate(d => startOfMonth(d));
                   }}
@@ -4174,9 +4198,11 @@ export default function ScheduleBoard() {
                   <Layout className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">Monat</span>
               </button>
-              <button 
-                  disabled={!!previewShifts}
-                  onClick={() => {
+               <button 
+                  data-testid="schedule-view-week"
+                  data-state={viewMode === 'week' ? 'active' : 'inactive'}
+                   disabled={!!previewShifts}
+                   onClick={() => {
                     setViewMode('week');
                     setCurrentDate(d => startOfWeek(d, { weekStartsOn: 1 }));
                   }}
@@ -4185,9 +4211,11 @@ export default function ScheduleBoard() {
                   <Calendar className="w-4 h-4 sm:mr-1" />
                   <span className="hidden sm:inline">Woche</span>
               </button>
-              <button 
-                  disabled={!!previewShifts}
-                  onClick={() => setViewMode('day')}
+               <button 
+                  data-testid="schedule-view-day"
+                  data-state={viewMode === 'day' ? 'active' : 'inactive'}
+                   disabled={!!previewShifts}
+                   onClick={() => setViewMode('day')}
                   className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'day' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
                   <LayoutList className="w-4 h-4 sm:mr-1" />

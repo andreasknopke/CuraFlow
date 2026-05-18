@@ -48,6 +48,19 @@ export const seededUsers = {
   },
 } as const;
 
+export const seededSchedule = {
+  targetMonth: process.env.TEST_TARGET_MONTH || '2026-05',
+  focusDate: `${process.env.TEST_TARGET_MONTH || '2026-05'}-05`,
+  rangeStart: `${process.env.TEST_TARGET_MONTH || '2026-05'}-01`,
+  rangeEnd: `${process.env.TEST_TARGET_MONTH || '2026-05'}-31`,
+  shiftIds: {
+    foreground: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-05-foreground`,
+    background: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-05-background`,
+    ct: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-06-ct`,
+    mrt: `shift-${process.env.TEST_TARGET_MONTH || '2026-05'}-06-mrt`,
+  },
+} as const;
+
 export function getHarnessEnv() {
   const env = { ...process.env };
 

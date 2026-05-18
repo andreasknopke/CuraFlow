@@ -2,10 +2,12 @@ import { test as base, expect } from '@playwright/test';
 
 import { AppShellPage } from '../pages/AppShellPage';
 import { LoginPage } from '../pages/LoginPage';
+import { SchedulePage } from '../pages/SchedulePage';
 
 type E2EFixtures = {
   appShell: AppShellPage;
   loginPage: LoginPage;
+  schedulePage: SchedulePage;
 };
 
 const e2eTest = base.extend<E2EFixtures>({
@@ -14,6 +16,9 @@ const e2eTest = base.extend<E2EFixtures>({
   },
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
+  },
+  schedulePage: async ({ page }, use) => {
+    await use(new SchedulePage(page));
   },
 });
 
