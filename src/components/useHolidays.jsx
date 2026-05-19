@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { HolidayCalculator } from '@/components/schedule/holidayUtils';
 
 export function useHolidays(yearOverride) {

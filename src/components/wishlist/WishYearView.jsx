@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
+import { useEffect, useMemo, useState } from 'react';
+import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
-import { api, db, base44 } from "@/api/client";
 import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 

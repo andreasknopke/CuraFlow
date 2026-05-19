@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import {
-  Timer, Plus, Pencil, Trash2, Loader2, Clock, Users, Check,
+  Timer, Plus, Pencil, Trash2, Loader2, Clock, Check,
 } from 'lucide-react';
 
 const EMPTY_MODEL = { name: '', hours_per_week: '', hours_per_day: '', is_default: false, description: '' };

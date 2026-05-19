@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { db } from "@/api/client";
 import { 
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
 } from '@/components/ui/dialog';
@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Palette, RefreshCcw, Save } from 'lucide-react';
+import { Palette, RefreshCcw } from 'lucide-react';
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from './TeamRoleSettings';
 
 // Default color palette for rotations (used when no custom color is set)

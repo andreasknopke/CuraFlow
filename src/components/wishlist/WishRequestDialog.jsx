@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,7 @@ import { format, addMonths, isBefore, startOfDay, startOfMonth } from "date-fns"
 import { de } from "date-fns/locale";
 import { CheckCircle2, XCircle, Trash2, AlertCircle, AlertTriangle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { api, db, base44 } from "@/api/client";
+import { db } from "@/api/client";
 import { clampRangeToContract, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
 export default function WishRequestDialog({ 

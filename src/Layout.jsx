@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { CalendarDays, Users, Activity, LogOut, GraduationCap, LogIn, Eye, Lock, BarChart3, HelpCircle, LayoutDashboard, Flower2, MessageSquare } from 'lucide-react';
-import { api, db, base44 } from "@/api/client";
+import { db, base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import AccountMenu from '@/components/auth/AccountMenu';

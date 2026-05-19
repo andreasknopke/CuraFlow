@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { api, db, base44 } from "@/api/client";
+import { api } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { THEMES, COLOR_PALETTES } from '@/components/themeConfig';
 import { Palette, Check } from 'lucide-react';

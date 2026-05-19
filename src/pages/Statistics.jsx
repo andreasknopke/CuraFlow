@@ -1,10 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, startOfYear, endOfYear, eachMonthOfInterval, getMonth } from 'date-fns';
-import { de } from 'date-fns/locale';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -42,6 +40,7 @@ const MONTHS = [
 
 export default function StatisticsPage() {
     const { user } = useAuth();
+    const isAdmin = user?.role === 'admin';
     const [year, setYear] = useState(new Date().getFullYear().toString());
     const [month, setMonth] = useState("all");
     const [activeTab, setActiveTab] = useState("overview");
@@ -50,16 +49,19 @@ export default function StatisticsPage() {
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors'],
         queryFn: () => db.Doctor.list(),
+        enabled: isAdmin,
         select: (data) => data.sort((a, b) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
         queryKey: ['workplaces'],
         queryFn: () => db.Workplace.list(null, 1000),
+        enabled: isAdmin,
     });
 
     const { data: shifts = [], isLoading: isLoadingShifts } = useQuery({
         queryKey: ['shifts', year],
+        enabled: isAdmin,
         queryFn: async () => {
             try {
                 return await db.ShiftEntry.filter({
@@ -74,24 +76,13 @@ export default function StatisticsPage() {
 
     const { data: wishes = [], isLoading: isLoadingWishes } = useQuery({
         queryKey: ['wishes', year],
+        enabled: isAdmin,
         queryFn: () => db.WishRequest.filter({
              date: { "$gte": `${year}-01-01`, "$lte": `${year}-12-31` }
         }),
     });
 
     const isLoading = isLoadingDocs || isLoadingShifts || isLoadingWorkplaces || isLoadingWishes;
-
-    if (!user || user.role !== 'admin') {
-        return (
-            <div className="flex items-center justify-center h-[50vh] text-slate-500">
-                <div className="text-center">
-                    <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                    <h2 className="text-lg font-semibold">Zugriff verweigert</h2>
-                    <p>Diese Seite ist nur für Administratoren sichtbar.</p>
-                </div>
-            </div>
-        );
-    }
 
     // 3. Aggregation Logic
     const stats = useMemo(() => {
@@ -176,6 +167,18 @@ export default function StatisticsPage() {
 
         return { byDoctor, byMonth: monthlyStats, totals, rotationItems, serviceItems };
     }, [doctors, shifts, workplaces, isLoading, month]);
+
+    if (!isAdmin) {
+        return (
+            <div className="flex items-center justify-center h-[50vh] text-slate-500">
+                <div className="text-center">
+                    <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                    <h2 className="text-lg font-semibold">Zugriff verweigert</h2>
+                    <p>Diese Seite ist nur für Administratoren sichtbar.</p>
+                </div>
+            </div>
+        );
+    }
 
     const handleExport = () => {
         const headers = ["Name", "Rolle", "Gesamt Dienste", "Gesamt Arbeitsplätze", ...stats.serviceItems, ...stats.rotationItems];

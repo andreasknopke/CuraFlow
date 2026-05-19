@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { api } from '@/api/client';
@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import {
   ArrowLeft, User, Save, Loader2, Hash, Mail, Phone, MapPin,
-  CalendarDays, Clock, FileText,
+  CalendarDays, Clock,
 } from 'lucide-react';
 
 export default function MasterEmployeeCreate() {

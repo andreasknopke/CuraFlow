@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Radio, Bot } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuCheckboxItem, ContextMenuSeparator } from "@/components/ui/context-menu";
-import { api, db, base44 } from "@/api/client";
+import { base44 } from "@/api/client";
 import { format, startOfWeek, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import VoiceTrainingDialog from './VoiceTrainingDialog';

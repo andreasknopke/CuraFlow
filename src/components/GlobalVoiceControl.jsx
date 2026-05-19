@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Radio, Bot } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuCheckboxItem, ContextMenuSeparator } from "@/components/ui/context-menu";
-import { api, db, base44 } from "@/api/client";
-import { format, startOfWeek, addDays, startOfMonth, endOfMonth, addMonths, isWeekend } from 'date-fns';
+import { api, db } from "@/api/client";
+import { format, startOfWeek, addDays, startOfMonth, endOfMonth, addMonths } from 'date-fns';
 import { de } from 'date-fns/locale';
 import VoiceTrainingDialog from './schedule/VoiceTrainingDialog';
 import { useElevenLabsConversation } from '@/components/useElevenLabsConversation';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { useStaffingCheck } from '@/components/useStaffingCheck';
 import { useShiftLimitCheck } from '@/components/useShiftLimitCheck';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
-import { isHolidayMV } from '@/components/schedule/holidayUtils';
 import { useAuth } from '@/components/AuthProvider';
 
 // CONFIG: Set your Agent ID here or via Environment Variable if possible

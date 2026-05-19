@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
-  Menu, ChevronLeft, Building2, Shield,
+  Menu, ChevronLeft, Shield,
   Users, CalendarX2, Clock, CalendarDays, Timer,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

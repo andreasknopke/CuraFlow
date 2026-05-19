@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -9,10 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/components/ui/use-toast';
 import {
   CalendarDays, Plus, Trash2, MapPin, Eye,
-  ChevronLeft, ChevronRight, Sun, Flag, AlertTriangle,
-  Info, Shield
+  ChevronLeft, ChevronRight, Sun, Flag, AlertTriangle, Shield
 } from 'lucide-react';
-import { format, parseISO, isWithinInterval } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 
 /**

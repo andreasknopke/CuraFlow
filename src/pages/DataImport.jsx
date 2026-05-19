@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { api, db, base44 } from "@/api/client";
+import { useState } from 'react';
+import { base44 } from "@/api/client";
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';

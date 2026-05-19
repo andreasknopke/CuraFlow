@@ -1,4 +1,4 @@
-import { addDays, subDays, isSameDay, startOfDay, parseISO, isWithinInterval } from 'date-fns';
+import { addDays, subDays, parseISO, isWithinInterval } from 'date-fns';
 
 // German Holidays Calculation
 // Easter Date (Gaussian algorithm)

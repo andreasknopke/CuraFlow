@@ -6,10 +6,17 @@ import pluginUnusedImports from "eslint-plugin-unused-imports";
 
 export default [
   {
+    ignores: [
+      'server/**',
+      'functions/**',
+      'src/components/**/*.md.jsx',
+      '.copilot-logs/**',
+      'pr22-finalize.log',
+    ],
+  },
+  {
     files: [
-      "src/components/**/*.{js,mjs,cjs,jsx}",
-      "src/pages/**/*.{js,mjs,cjs,jsx}",
-      "src/Layout.jsx",
+      "src/**/*.{js,mjs,cjs,jsx}",
     ],
     ...pluginJs.configs.recommended,
     ...pluginReact.configs.flat.recommended,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { api } from "@/api/client";
@@ -10,8 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { 
-    Key, Plus, Trash2, Edit2, Check, X, Database, Power, PowerOff, 
+import { Plus, Trash2, Edit2, Check, X, Database, Power, PowerOff, 
     Building2, Copy, RefreshCw, AlertTriangle, TestTube, Server, Loader2
 } from 'lucide-react';
 import {

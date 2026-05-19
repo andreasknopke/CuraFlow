@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { format, addDays, eachDayOfInterval, startOfWeek, endOfWeek, isBefore, startOfDay } from 'date-fns';
+import { useState, useMemo } from 'react';
+import { format, eachDayOfInterval, startOfWeek, endOfWeek, isBefore, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { CalendarDays, AlertTriangle, Info, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
+import { CalendarDays, Info, CheckCircle2, XCircle, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { 
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
@@ -11,9 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { 
-    Award, Plus, Trash2, GripVertical, Pencil, Shield, ChevronDown, ChevronUp, FileCheck
+    Award, Plus, Trash2, Pencil, Shield, ChevronDown, ChevronUp, FileCheck
 } from 'lucide-react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import {
   AlertDialog,
   AlertDialogAction,

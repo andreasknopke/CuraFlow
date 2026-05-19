@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, setMonth, setYear, startOfMonth, startOfYear } from 'date-fns';
+import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 

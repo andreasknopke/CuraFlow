@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { api, db, base44 } from "@/api/client";
+import { db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,18 +34,8 @@ import { toast } from 'sonner';
 
 export default function StaffPage() {
   const { isReadOnly, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
-  if (!user || user.role !== 'admin') {
-      return (
-          <div className="flex items-center justify-center h-[50vh] text-slate-500">
-              <div className="text-center">
-                  <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                  <h2 className="text-lg font-semibold">Zugriff verweigert</h2>
-                  <p>Diese Seite ist nur für Administratoren sichtbar.</p>
-              </div>
-          </div>
-      );
-  }
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState(null);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -62,6 +52,7 @@ export default function StaffPage() {
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
     queryFn: () => db.Doctor.list(),
+    enabled: isAdmin,
     select: (data) => data.sort((a, b) => {
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
       if (roleDiff !== 0) return roleDiff;
@@ -72,6 +63,7 @@ export default function StaffPage() {
   const { data: colorSettings = [] } = useQuery({
       queryKey: ['colorSettings'],
       queryFn: () => db.ColorSetting.list(),
+      enabled: isAdmin,
   });
 
   const activeQualifications = useMemo(
@@ -209,6 +201,18 @@ export default function StaffPage() {
         }
     });
   };
+
+      if (!isAdmin) {
+        return (
+          <div className="flex items-center justify-center h-[50vh] text-slate-500">
+            <div className="text-center">
+              <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
+              <h2 className="text-lg font-semibold">Zugriff verweigert</h2>
+              <p>Diese Seite ist nur für Administratoren sichtbar.</p>
+            </div>
+          </div>
+        );
+      }
 
   return (
     <div className="container mx-auto flex h-[calc(100dvh-5rem)] max-w-6xl flex-col overflow-hidden sm:h-[calc(100dvh-6rem)] lg:h-[calc(100dvh-8rem)]" data-testid="staff-page">

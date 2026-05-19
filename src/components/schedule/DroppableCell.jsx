@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
 
 export default function DroppableCell({ 

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { isTestEnvironmentOrigin, PRODUCTION_ENVIRONMENT_URL } from '@/lib/environment';

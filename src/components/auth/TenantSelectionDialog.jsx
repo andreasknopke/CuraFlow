@@ -1,11 +1,10 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/api/client';
 import { saveDbToken, enableDbToken, disableDbToken, getActiveTokenId } from '@/components/dbTokenStorage';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Database, Building2, Check } from 'lucide-react';
+import { Loader2, Database, Building2 } from 'lucide-react';
 
 /**
  * TenantSelectionDialog - Zeigt nach dem Login eine Mandanten-Auswahl an

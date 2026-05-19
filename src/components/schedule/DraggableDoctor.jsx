@@ -1,4 +1,3 @@
-import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { User, Clock } from 'lucide-react';
 

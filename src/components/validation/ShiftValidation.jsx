@@ -1,5 +1,5 @@
 import { format, addDays, isWeekend, parseISO } from 'date-fns';
-import { timeslotsOverlap, createFullDayTimeslot, formatTimeslotShort } from '@/utils/timeslotUtils';
+import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
 import { getAutoFreiDate } from '@/utils/autoFrei';
 import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 

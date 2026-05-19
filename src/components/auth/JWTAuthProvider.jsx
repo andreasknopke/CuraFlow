@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { api, db, base44 } from "@/api/client";
+import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { base44 } from "@/api/client";
 
 const AuthContext = createContext({
     isAuthenticated: false,

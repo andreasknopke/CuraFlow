@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { format, isSameDay } from 'date-fns';
 
 export default function FreeTextCell({ date, rowName, notes, onCreate, onUpdate, onDelete }) {
