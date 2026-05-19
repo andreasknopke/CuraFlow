@@ -12,7 +12,13 @@ export default function AdminPage() {
     const [activeTab, setActiveTab] = React.useState('users');
 
     if (!isAuthenticated) return <div>Bitte anmelden.</div>;
-    if (user?.role !== 'admin') return <div className="p-8 text-center text-red-600">Zugriff verweigert. Nur für Administratoren.</div>;
+    if (user?.role !== 'admin') {
+        return (
+            <div className="p-8 text-center text-red-600" data-testid="admin-access-denied">
+                Zugriff verweigert. Nur für Administratoren.
+            </div>
+        );
+    }
 
     return (
         <div className="container mx-auto max-w-6xl py-8" data-testid="admin-page">

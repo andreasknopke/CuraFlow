@@ -205,6 +205,28 @@ export const disableDbToken = async () => {
     }
 };
 
+// Clear the active tenant token while keeping token usage disabled.
+export const clearActiveDbToken = async () => {
+    localStorage.setItem(TOKEN_ENABLED_KEY, 'false');
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('active_token_id');
+
+    try {
+        const db = await openDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(TOKEN_KEY);
+        store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        db.close();
+    } catch (e) {
+        console.warn('Failed to clear active DB token:', e);
+    }
+};
+
 // Get active token (only if enabled)
 export const getActiveDbToken = () => {
     if (!isDbTokenEnabled()) return null;

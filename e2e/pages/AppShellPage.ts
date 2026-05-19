@@ -9,6 +9,10 @@ export class AppShellPage {
   readonly schedulePage: Locator;
   readonly adminPage: Locator;
   readonly staffPage: Locator;
+  readonly readonlyBadge: Locator;
+  readonly accountMenuTrigger: Locator;
+  readonly logoutButton: Locator;
+  readonly adminAccessDenied: Locator;
 
   constructor(private readonly page: Page) {
     this.shell = page.getByTestId('app-shell');
@@ -19,6 +23,10 @@ export class AppShellPage {
     this.schedulePage = page.getByTestId('schedule-page');
     this.adminPage = page.getByTestId('admin-page');
     this.staffPage = page.getByTestId('staff-page');
+    this.readonlyBadge = page.getByTestId('readonly-mode-badge');
+    this.accountMenuTrigger = page.getByTestId('account-menu-trigger');
+    this.logoutButton = page.getByTestId('account-menu-logout');
+    this.adminAccessDenied = page.getByTestId('admin-access-denied');
   }
 
   async expectReady() {
@@ -51,5 +59,11 @@ export class AppShellPage {
     await this.staffLink.click();
     await expect(this.page).toHaveURL(/\/staff(?:\?|$)/);
     await expect(this.staffPage).toBeVisible();
+  }
+
+  async logout() {
+    await this.accountMenuTrigger.click();
+    await this.logoutButton.click();
+    await expect(this.page).toHaveURL(/\/authlogin(?:\?|$)/);
   }
 }
