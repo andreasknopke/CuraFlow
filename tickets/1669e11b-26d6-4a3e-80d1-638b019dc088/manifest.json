@@ -1,0 +1,76 @@
+{
+  "ticket_id": "1669e11b-26d6-4a3e-80d1-638b019dc088",
+  "title": "Symbol für halbe Tage",
+  "type": "feature",
+  "urgency": "normal",
+  "system": {
+    "id": 1,
+    "name": "CuraFlow",
+    "repo": "andreasknopke/CuraFlow"
+  },
+  "run": {
+    "id": 138,
+    "started_at": "2026-05-08 13:23:19",
+    "current_stage": "triage",
+    "recommended_executor": null
+  },
+  "steps": [
+    {
+      "id": 850,
+      "stage": "triage",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 5,
+      "staff_name": "Triage-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 2615
+    },
+    {
+      "id": 851,
+      "stage": "security",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 7,
+      "staff_name": "Security-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 4934
+    },
+    {
+      "id": 852,
+      "stage": "planning",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 6,
+      "staff_name": "Architect-Bot",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "duration_ms": 373
+    },
+    {
+      "id": 855,
+      "stage": "integration",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 8,
+      "staff_name": "Integration-Bot",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "duration_ms": 14728
+    },
+    {
+      "id": 856,
+      "stage": "approval",
+      "status": "waiting_human",
+      "executor_kind": "human",
+      "staff_id": 2,
+      "staff_name": "Andreas",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    }
+  ],
+  "exported_at": "2026-05-19T18:31:16.844Z",
+  "dispatch_note": null
+}
