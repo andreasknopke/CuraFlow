@@ -384,6 +384,40 @@ const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
     return timeRange ? `${label} ${timeRange}` : label;
 };
 
+const getRowLabelPresentation = (label, isCompactMode = false) => {
+    const normalizedLabel = String(label || '').trim();
+    const words = normalizedLabel.split(/\s+/).filter(Boolean);
+    const longestWordLength = words.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
+
+    let fontSizePx = isCompactMode ? 11 : 14;
+    if (normalizedLabel.length > (isCompactMode ? 18 : 24)) fontSizePx -= 1;
+    if (normalizedLabel.length > (isCompactMode ? 24 : 32)) fontSizePx -= 1;
+    if (longestWordLength > (isCompactMode ? 12 : 18)) fontSizePx -= 1;
+
+    const allowWrap = !isCompactMode && (normalizedLabel.length > 18 || longestWordLength > 14);
+    const minFontSizePx = isCompactMode ? 9 : 11;
+    const safeFontSizePx = Math.max(fontSizePx, minFontSizePx);
+
+    return {
+        className: allowWrap
+            ? 'min-w-0 overflow-hidden break-words [overflow-wrap:anywhere]'
+            : 'min-w-0 truncate whitespace-nowrap',
+        style: allowWrap
+            ? {
+                fontSize: `${safeFontSizePx}px`,
+                lineHeight: 1.1,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                maxHeight: '2.2em',
+              }
+            : {
+                fontSize: `${safeFontSizePx}px`,
+                lineHeight: 1.1,
+              }
+    };
+};
+
 const getDoctorTargetDailyHours = (doctor, workTimeModelMap) => {
     if (!doctor) return null;
 
@@ -3927,6 +3961,7 @@ export default function ScheduleBoard() {
                                       ? `rowHeader__${rowName}__allTimeslots__`
                                       : `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
                                   const headerDroppableId = withPanelPrefix(rawHeaderDroppableId, SPLIT_PANEL_PREFIX);
+                                  const rowLabelPresentation = getRowLabelPresentation(rowDisplayName, isMonthView);
 
                                   return (
                                       <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
@@ -3940,7 +3975,7 @@ export default function ScheduleBoard() {
                                                       onClick={isGroupHeader ? () => toggleTimeslotGroup(rowName) : undefined}
                                                   >
                                                       <div className="flex flex-col min-w-0">
-                                                          <span className="truncate flex items-center gap-1" title={rowDisplayName}>
+                                                          <span className="flex min-w-0 items-center gap-1" title={rowDisplayName}>
                                                               {isGroupHeader && (
                                                                   <span className="text-slate-500">
                                                                       {isGroupCollapsed ? <ChevronRight className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />}
@@ -3948,7 +3983,12 @@ export default function ScheduleBoard() {
                                                               )}
                                                               {rowObj.isTimeslotRow && !rowObj.isUnassignedRow && <span className="text-slate-400 mr-1">↳</span>}
                                                               {rowObj.isUnassignedRow && <span className="text-amber-500 mr-1">⚠</span>}
-                                                              <span className={rowObj.isUnassignedRow ? 'text-amber-700' : ''}>{rowDisplayName}</span>
+                                                              <span
+                                                                  className={`${rowLabelPresentation.className} ${rowObj.isUnassignedRow ? 'text-amber-700' : ''}`}
+                                                                  style={rowLabelPresentation.style}
+                                                              >
+                                                                  {rowDisplayName}
+                                                              </span>
                                                           </span>
                                                       </div>
                                                       <div className="hidden">{provided.placeholder}</div>
@@ -4738,6 +4778,8 @@ export default function ScheduleBoard() {
                         const isGroupHeader = rowObj.isTimeslotGroupHeader;
                         const isGroupCollapsed = collapsedTimeslotGroups.includes(rowName);
                         const rowStyle = getRowStyle(rowName, customStyle);
+                        const expandedRowLabel = getExpandedTimeslotRowLabel(rowObj, rowDisplayName);
+                        const rowLabelPresentation = getRowLabelPresentation(expandedRowLabel, isMonthView);
                         
                         // Gruppen-Header: droppableId mit spezieller Markierung "__allTimeslots__"
                         const headerDroppableId = isGroupHeader 
@@ -4756,7 +4798,7 @@ export default function ScheduleBoard() {
                                         onClick={isGroupHeader ? () => toggleTimeslotGroup(rowName) : undefined}
                                     >
                                         <div className="flex flex-col min-w-0">
-                                            <span className="truncate flex items-center gap-1" title={getExpandedTimeslotRowLabel(rowObj, rowDisplayName)}>
+                                            <span className="flex min-w-0 items-center gap-1" title={expandedRowLabel}>
                                                 {isGroupHeader && (
                                                     <span className="text-slate-500">
                                                         {isGroupCollapsed ? <ChevronRight className="w-3 h-3 inline" /> : <ChevronDown className="w-3 h-3 inline" />}
@@ -4764,8 +4806,11 @@ export default function ScheduleBoard() {
                                                 )}
                                                 {rowObj.isTimeslotRow && !rowObj.isUnassignedRow && <span className="text-slate-400 mr-1">↳</span>}
                                                 {rowObj.isUnassignedRow && <span className="text-amber-500 mr-1">⚠</span>}
-                                                <span className={rowObj.isUnassignedRow ? 'text-amber-700' : ''}>
-                                                    {getExpandedTimeslotRowLabel(rowObj, rowDisplayName)}
+                                                <span
+                                                    className={`${rowLabelPresentation.className} ${rowObj.isUnassignedRow ? 'text-amber-700' : ''}`}
+                                                    style={rowLabelPresentation.style}
+                                                >
+                                                    {expandedRowLabel}
                                                 </span>
                                                 {isGroupHeader && rowObj.timeslotCount && (
                                                     <span className="text-[10px] text-slate-400 ml-1">({rowObj.timeslotCount})</span>
