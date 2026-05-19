@@ -17,6 +17,7 @@ import {
   DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { db, api } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -499,6 +500,26 @@ const getLateRotationIndicator = (shift, workplace, workplaceTimeslots) => {
             : 'Später Dienst mit Rotationsmöglichkeit — Mitarbeiter ist nicht von Anfang an da.'
     };
 };
+
+const LateAvailabilityBadge = ({ tooltip, compact = false }) => (
+    <TooltipProvider delayDuration={0}>
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span
+                    className={compact
+                        ? 'absolute -top-1 -left-1 z-20 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-900/80 text-[9px] leading-none text-white cursor-help'
+                        : 'ml-1 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white cursor-help'}
+                    aria-label={tooltip}
+                >
+                    🌙
+                </span>
+            </TooltipTrigger>
+            <TooltipContent side={compact ? 'top' : 'bottom'}>
+                {tooltip}
+            </TooltipContent>
+        </Tooltip>
+    </TooltipProvider>
+);
 
 export default function ScheduleBoard() {
     const initialState = useMemo(() => getInitialScheduleState(), []);
@@ -2223,6 +2244,21 @@ export default function ScheduleBoard() {
     return dbShifts;
   }, [allShifts, currentDate, previewShifts]);
 
+    const lateRotationIndicatorByDoctorDay = useMemo(() => {
+        const indicatorMap = new Map();
+
+        currentWeekShifts.forEach((shift) => {
+                if (!shift?.doctor_id || !shift?.date) return;
+                const workplace = workplaces.find((entry) => entry.name === shift.position);
+                const indicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
+                if (!indicator.show) return;
+
+                indicatorMap.set(`${shift.doctor_id}__${shift.date}`, indicator.tooltip);
+        });
+
+        return indicatorMap;
+    }, [currentWeekShifts, workplaces, workplaceTimeslots]);
+
   // Pro Arzt: Geplante Stunden in der aktuellen Woche berechnen
   const weeklyPlannedHours = useMemo(() => {
     if (!weekDays.length || !currentWeekShifts.length) return new Map();
@@ -3783,7 +3819,7 @@ export default function ScheduleBoard() {
             shiftTimeslotLabel = badgeInfo.label;
             shiftTimeslotLabelTone = badgeInfo.tone;
         }
-        const lateRotationIndicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
+        const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${dateStr}`) || null;
         
         // Qualifikations-Indikator
         // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
@@ -3853,13 +3889,13 @@ export default function ScheduleBoard() {
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={shiftTimeslotLabel}
                     timeslotLabelTone={shiftTimeslotLabelTone}
-                    showLateStartIndicator={lateRotationIndicator.show}
-                    lateStartTooltip={lateRotationIndicator.tooltip}
+                    showLateStartIndicator={Boolean(lateRotationTooltip)}
+                    lateStartTooltip={lateRotationTooltip}
                 />
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, workTimeModelMap]);
+    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, workTimeModelMap, lateRotationIndicatorByDoctorDay]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -3873,8 +3909,7 @@ export default function ScheduleBoard() {
     const doctor = doctors.find(d => d.id === shift.doctor_id);
     if (!doctor) return null;
     const compactLabel = getDoctorChipLabel(doctor);
-    const workplace = workplaces.find(w => w.name === shift.position);
-    const lateRotationIndicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
+    const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${shift.date}`) || null;
     
     const roleColor = getRoleColor(doctor.role);
     const cloneSize = shiftBoxSize;
@@ -3906,18 +3941,11 @@ export default function ScheduleBoard() {
           }}
         >
                                                                                 <span>{compactLabel}</span>
-                    {lateRotationIndicator.show && (
-                        <span
-                            className="absolute -top-1 -left-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white"
-                            aria-label={lateRotationIndicator.tooltip}
-                        >
-                            🌙
-                        </span>
-                    )}
+                    {lateRotationTooltip && <LateAvailabilityBadge tooltip={lateRotationTooltip} compact />}
         </div>
       </div>
     );
-                }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, workplaces, workplaceTimeslots]);
+                                }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
 
   const renderSplitMatrix = () => {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
@@ -4110,10 +4138,13 @@ export default function ScheduleBoard() {
                                                                                               {...provided.draggableProps}
                                                                                               {...provided.dragHandleProps}
                                                                                               style={{ ...provided.draggableProps.style, ...style }}
-                                                                                              className={`${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''} ${wishClass}`}
+                                                                                              className={`relative ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''} ${wishClass}`}
                                                                                               title={tooltipText}
                                                                                           >
                                                                                               {getDoctorChipLabel(doc)}
+                                                                                              {lateRotationIndicatorByDoctorDay.get(`${doc.id}__${dateStr}`) && (
+                                                                                                  <LateAvailabilityBadge tooltip={lateRotationIndicatorByDoctorDay.get(`${doc.id}__${dateStr}`)} compact />
+                                                                                              )}
                                                                                           </div>
                                                                                       );
                                                                                   }}
@@ -5009,13 +5040,16 @@ export default function ScheduleBoard() {
                                                                                 {...provided.dragHandleProps}
                                                                                 style={{ ...provided.draggableProps.style, ...style }}
                                                                                 className={`
-                                                                                    ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none
+                                                                                    relative ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none
                                                                                     ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}
                                                                                     ${wishClass}
                                                                                 `}
                                                                                 title={tooltipText}
                                                                             >
                                                                                 {getDoctorChipLabel(doc)}
+                                                                                {lateRotationIndicatorByDoctorDay.get(`${doc.id}__${dateStr}`) && (
+                                                                                    <LateAvailabilityBadge tooltip={lateRotationIndicatorByDoctorDay.get(`${doc.id}__${dateStr}`)} compact />
+                                                                                )}
                                                                             </div>
                                                                         );
                                                                     }}
