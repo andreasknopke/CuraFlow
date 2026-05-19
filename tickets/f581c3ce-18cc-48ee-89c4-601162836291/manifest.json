@@ -1,0 +1,76 @@
+{
+  "ticket_id": "f581c3ce-18cc-48ee-89c4-601162836291",
+  "title": "Wochenplan Text Einträge in Bereich/Datum werden abgeschnitten",
+  "type": "bug",
+  "urgency": "normal",
+  "system": {
+    "id": 1,
+    "name": "CuraFlow",
+    "repo": "andreasknopke/CuraFlow"
+  },
+  "run": {
+    "id": 142,
+    "started_at": "2026-05-11 05:54:41",
+    "current_stage": "triage",
+    "recommended_executor": null
+  },
+  "steps": [
+    {
+      "id": 880,
+      "stage": "triage",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 5,
+      "staff_name": "Triage-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 3016
+    },
+    {
+      "id": 881,
+      "stage": "security",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 7,
+      "staff_name": "Security-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 9743
+    },
+    {
+      "id": 882,
+      "stage": "planning",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 6,
+      "staff_name": "Architect-Bot",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "duration_ms": 445
+    },
+    {
+      "id": 883,
+      "stage": "integration",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 8,
+      "staff_name": "Integration-Bot",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "duration_ms": 14927
+    },
+    {
+      "id": 884,
+      "stage": "approval",
+      "status": "waiting_human",
+      "executor_kind": "human",
+      "staff_id": 2,
+      "staff_name": "Andreas",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    }
+  ],
+  "exported_at": "2026-05-19T18:14:41.411Z",
+  "dispatch_note": null
+}
