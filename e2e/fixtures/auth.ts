@@ -10,7 +10,6 @@ type E2EFixtures = {
   loginPage: LoginPage;
   staffPage: StaffPage;
   schedulePage: SchedulePage;
-  staffPage: StaffPage;
 };
 
 const e2eTest = base.extend<E2EFixtures>({
