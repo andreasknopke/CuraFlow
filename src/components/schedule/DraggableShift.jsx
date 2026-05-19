@@ -1,5 +1,6 @@
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
@@ -20,7 +21,29 @@ const getTimeLabel = (shift) => {
   return `${start}–${end}`;
 };
 
-export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', ...props }) {
+function LateStartIndicator({ tooltip, compact = false }) {
+  return (
+    <TooltipProvider delayDuration={0}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={compact
+              ? 'absolute -top-1 -left-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white cursor-help'
+              : 'inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-900/80 text-xs leading-none text-white cursor-help'}
+            aria-label={tooltip}
+          >
+            🌙
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side={compact ? 'top' : 'bottom'}>
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+export default function DraggableShift({ shift, doctor, index, onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
@@ -180,6 +203,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                   <span className="whitespace-nowrap leading-none">
                    {chipLabel}
                     </span>
+                    {showLateStartIndicator && <LateStartIndicator tooltip={lateStartTooltip} compact />}
                 </div>
             ) : isFullWidth ? (
                 <>
@@ -198,6 +222,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     >
                         {displayText}
                     </span>
+                    {showLateStartIndicator && <LateStartIndicator tooltip={lateStartTooltip} />}
                     {timeslotLabel && (
                       <span
                         className={`flex-shrink-0 rounded px-1 font-semibold mr-1 whitespace-nowrap ${timeslotBadgeClasses}`}
@@ -247,6 +272,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
                     </span>
                   )}
                 </div>
+                {showLateStartIndicator && <LateStartIndicator tooltip={lateStartTooltip} compact />}
                 {fairnessInfo && (
                     <div
                         className="absolute -bottom-1 -right-1 z-20 rounded-full px-1 text-white font-bold leading-none"

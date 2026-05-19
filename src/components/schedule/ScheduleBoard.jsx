@@ -287,10 +287,17 @@ const formatTimeslotTimeRange = (startTime, endTime) => {
 };
 
 const DEFAULT_FULLTIME_DAILY_HOURS = 7.7;
+const ROUTINE_SERVICE_START_MINUTES = 7 * 60;
+const LATE_ROTATION_THRESHOLD_MINUTES = ROUTINE_SERVICE_START_MINUTES + (4 * 60);
 
 const formatTimeslotEndTime = (endTime) => {
     if (!endTime) return null;
     return endTime.substring(0, 5);
+};
+
+const formatTimeslotStartTime = (startTime) => {
+    if (!startTime) return null;
+    return startTime.substring(0, 5);
 };
 
 const parseTimeToMinutes = (timeStr) => {
@@ -470,6 +477,26 @@ const getShiftTimeslotBadge = (shift, doctor, workplaceTimeslots, workTimeModelM
     return {
         label: formatMinutesAsTime(startMinutes + allowedMinutes),
         tone: 'warning'
+    };
+};
+
+const getLateRotationIndicator = (shift, workplace, workplaceTimeslots) => {
+    if (!shift?.timeslot_id || workplace?.allows_rotation_concurrently !== true) {
+        return { show: false, tooltip: null };
+    }
+
+    const timeslot = workplaceTimeslots.find((entry) => entry.id === shift.timeslot_id);
+    const startMinutes = parseTimeToMinutes(timeslot?.start_time);
+    if (startMinutes === null || startMinutes < LATE_ROTATION_THRESHOLD_MINUTES) {
+        return { show: false, tooltip: null };
+    }
+
+    const startLabel = formatTimeslotStartTime(timeslot.start_time);
+    return {
+        show: true,
+        tooltip: startLabel
+            ? `Später Dienst mit Rotationsmöglichkeit ab ${startLabel} — Mitarbeiter ist nicht von Anfang an da.`
+            : 'Später Dienst mit Rotationsmöglichkeit — Mitarbeiter ist nicht von Anfang an da.'
     };
 };
 
@@ -3756,6 +3783,7 @@ export default function ScheduleBoard() {
             shiftTimeslotLabel = badgeInfo.label;
             shiftTimeslotLabelTone = badgeInfo.tone;
         }
+        const lateRotationIndicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
         
         // Qualifikations-Indikator
         // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
@@ -3825,6 +3853,8 @@ export default function ScheduleBoard() {
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={shiftTimeslotLabel}
                     timeslotLabelTone={shiftTimeslotLabelTone}
+                    showLateStartIndicator={lateRotationIndicator.show}
+                    lateStartTooltip={lateRotationIndicator.tooltip}
                 />
             </div>
         );
@@ -3843,6 +3873,8 @@ export default function ScheduleBoard() {
     const doctor = doctors.find(d => d.id === shift.doctor_id);
     if (!doctor) return null;
     const compactLabel = getDoctorChipLabel(doctor);
+    const workplace = workplaces.find(w => w.name === shift.position);
+    const lateRotationIndicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
     
     const roleColor = getRoleColor(doctor.role);
     const cloneSize = shiftBoxSize;
@@ -3863,7 +3895,7 @@ export default function ScheduleBoard() {
         }}
       >
         <div 
-          className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
+                    className="relative flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
           style={{
             backgroundColor: roleColor?.backgroundColor || '#f1f5f9',
             color: roleColor?.color || '#0f172a',
@@ -3873,11 +3905,19 @@ export default function ScheduleBoard() {
             zIndex: 9999,
           }}
         >
-                                        <span>{compactLabel}</span>
+                                                                                <span>{compactLabel}</span>
+                    {lateRotationIndicator.show && (
+                        <span
+                            className="absolute -top-1 -left-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white"
+                            aria-label={lateRotationIndicator.tooltip}
+                        >
+                            🌙
+                        </span>
+                    )}
         </div>
       </div>
     );
-        }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel]);
+                }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, workplaces, workplaceTimeslots]);
 
   const renderSplitMatrix = () => {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
