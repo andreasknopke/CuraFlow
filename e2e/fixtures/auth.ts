@@ -3,10 +3,13 @@ import { test as base, expect } from '@playwright/test';
 import { AppShellPage } from '../pages/AppShellPage';
 import { LoginPage } from '../pages/LoginPage';
 import { StaffPage } from '../pages/StaffPage';
+import { SchedulePage } from '../pages/SchedulePage';
 
 type E2EFixtures = {
   appShell: AppShellPage;
   loginPage: LoginPage;
+  staffPage: StaffPage;
+  schedulePage: SchedulePage;
   staffPage: StaffPage;
 };
 
@@ -16,6 +19,9 @@ const e2eTest = base.extend<E2EFixtures>({
   },
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
+  },
+  schedulePage: async ({ page }, use) => {
+    await use(new SchedulePage(page));
   },
   staffPage: async ({ page }, use) => {
     await use(new StaffPage(page));

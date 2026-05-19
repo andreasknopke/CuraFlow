@@ -51,6 +51,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
   // Qualification warning/error indicator
   const QualWarning = qualificationStatus === 'excluded' ? (
     <div 
+      data-testid={`schedule-shift-qualification-warning-${shift.id}`}
       className="absolute -top-0.5 -right-0.5 z-20 text-red-600"
       style={{ fontSize: Math.max(fontSize * 0.7, 8) }}
       title="NOT-Qualifikation: Arzt darf hier nicht eingeteilt werden!"
@@ -59,6 +60,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
     </div>
   ) : qualificationStatus === 'unqualified' ? (
     <div 
+      data-testid={`schedule-shift-qualification-warning-${shift.id}`}
       className="absolute -top-0.5 -right-0.5 z-20 text-amber-600"
       style={{ fontSize: Math.max(fontSize * 0.7, 8) }}
       title="Fehlende Pflicht-Qualifikation (Override)"
@@ -157,6 +159,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove, display
             ref={provided.innerRef}
             {...provided.draggableProps}
             {...(isFullWidth ? {} : provided.dragHandleProps)}
+            data-testid={`schedule-shift-${shift.id}`}
             className={containerClass}
             style={containerStyle}
             title={combinedTooltip || (isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined)}
