@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { APIRequestContext, Page } from '@playwright/test';
 
 import { backendURL, storageStatePaths } from '../../support/config';
@@ -53,6 +54,10 @@ async function deactivateUser(request: APIRequestContext, authHeaders: DbAuthHea
   }
 }
 
+function generateUserPassword() {
+  return `Pw!A1-${randomBytes(12).toString('base64url')}`;
+}
+
 test.describe('admin workflows', () => {
   test.use({ storageState: storageStatePaths.admin });
 
@@ -68,7 +73,7 @@ test.describe('admin workflows', () => {
     const uniqueSuffix = Date.now().toString().slice(-6);
     const email = `playwright-admin-${uniqueSuffix}@test.local`;
     const fullName = `Playwright Admin ${uniqueSuffix}`;
-    const password = 'Playwright-admin-123';
+    const password = generateUserPassword();
     let authHeaders: DbAuthHeaders | null = null;
     let createdUserId: string | null = null;
 

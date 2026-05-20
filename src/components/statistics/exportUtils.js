@@ -20,12 +20,21 @@ function downloadBlob(blob, fileName) {
     URL.revokeObjectURL(url);
 }
 
-function escapeCsvCell(value) {
-    return `"${String(value ?? '').replaceAll('"', '""')}"`;
+const DANGEROUS_SPREADSHEET_PREFIX = /^[=+\-@]/;
+
+export function sanitizeSpreadsheetCell(value) {
+    const normalizedValue = String(value ?? '');
+    return DANGEROUS_SPREADSHEET_PREFIX.test(normalizedValue)
+        ? `'${normalizedValue}`
+        : normalizedValue;
 }
 
-function escapeHtmlCell(value) {
-    return String(value ?? '')
+export function escapeCsvCell(value) {
+    return `"${sanitizeSpreadsheetCell(value).replaceAll('"', '""')}"`;
+}
+
+export function escapeHtmlCell(value) {
+    return sanitizeSpreadsheetCell(value)
         .replaceAll('&', '&amp;')
         .replaceAll('<', '&lt;')
         .replaceAll('>', '&gt;')
