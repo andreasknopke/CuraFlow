@@ -19,7 +19,14 @@ export default function WishFulfillmentReport({ doctors, wishes, shifts }) {
                 if (wish.status === 'approved') approved++;
                 if (wish.status === 'rejected') rejected++;
 
-                const shiftOnDate = shifts.find(s => s.date === wish.date && s.doctor_id === doc.id);
+                const wishStartDate = wish.start_date || wish.date;
+                const wishEndDate = wish.end_date || wishStartDate;
+                const shiftsInRange = shifts.filter((shift) => (
+                    shift.doctor_id === doc.id
+                    && wishStartDate
+                    && shift.date >= wishStartDate
+                    && shift.date <= wishEndDate
+                ));
                 
                 // Logic: Did reality match wish?
                 let isFulfilled = false;
@@ -29,19 +36,19 @@ export default function WishFulfillmentReport({ doctors, wishes, shifts }) {
                     // Assuming positions in "Dienste" category or specific known service names.
                     // Since we don't have the category map easily here, we rely on naming conventions or passed props.
                     // For now, let's assume "Dienst" in name or specific list.
-                    const isServiceShift = shiftOnDate && (
-                        shiftOnDate.position.includes("Dienst") || 
-                        shiftOnDate.position === "Spätdienst"
-                    );
+                    const isServiceShift = shiftsInRange.some((shift) => (
+                        shift.position.includes("Dienst")
+                        || shift.position === "Spätdienst"
+                    ));
                     if (isServiceShift) isFulfilled = true;
                 } else {
                     // Wanted NO service. 
                     // Fulfilled if they have NO shift, OR a non-service shift (like Rotation, Free, Vacation)
                     // Basically, failed if they HAVE a service shift.
-                    const isServiceShift = shiftOnDate && (
-                        shiftOnDate.position.includes("Dienst") || 
-                        shiftOnDate.position === "Spätdienst"
-                    );
+                    const isServiceShift = shiftsInRange.some((shift) => (
+                        shift.position.includes("Dienst")
+                        || shift.position === "Spätdienst"
+                    ));
                     if (!isServiceShift) isFulfilled = true;
                 }
 
