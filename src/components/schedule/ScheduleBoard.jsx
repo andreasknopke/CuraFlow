@@ -87,6 +87,7 @@ const SPLIT_DRAG_PREFIX = 'split-';
 const withPanelPrefix = (id, prefix = '') => `${prefix}${id}`;
 const stripPanelPrefix = (id = '') => (id.startsWith(SPLIT_PANEL_PREFIX) ? id.slice(SPLIT_PANEL_PREFIX.length) : id);
 const normalizeDraggableId = (id = '') => (id.startsWith(SPLIT_DRAG_PREFIX) ? id.slice(SPLIT_DRAG_PREFIX.length) : id);
+const encodeScheduleTargetId = (value = '') => encodeURIComponent(String(value));
 const parseAvailableDoctorId = (draggableId = '') => {
     const normalized = normalizeDraggableId(draggableId);
     if (!normalized.startsWith('available-doc-')) return null;
@@ -1801,7 +1802,7 @@ export default function ScheduleBoard() {
             // Find matching approved wish
             const matchingWish = wishes.find(w => 
                 w.doctor_id === shiftToDelete.doctor_id && 
-                w.date === shiftToDelete.date && 
+                w.date === shiftToDelete.date &&
                 w.status === 'approved' && 
                 w.type === 'service' &&
                 (!w.position || w.position === shiftToDelete.position)
@@ -4789,6 +4790,7 @@ export default function ScheduleBoard() {
                             {hasShifts && (
                                 <button
                                     onClick={() => handleClearDay(day)}
+                                    data-testid={`schedule-day-clear-${dateStr}`}
                                     className="absolute top-1 right-1 p-1 rounded-full bg-white/80 text-red-400 hover:text-red-600 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                                     title="Tag leeren"
                                 >
@@ -4877,6 +4879,7 @@ export default function ScheduleBoard() {
                                     <div 
                                         ref={provided.innerRef}
                                         {...provided.droppableProps}
+                                        data-testid={`schedule-row-header-${encodeScheduleTargetId(headerDroppableId)}`}
                                         className={`p-2 text-sm font-medium border-r border-slate-200 flex items-center justify-between transition-colors ${!customStyle ? section.headerColor : ''} ${snapshot.isDraggingOver ? 'ring-2 ring-inset ring-indigo-400 bg-indigo-50' : ''} ${isGroupHeader ? 'cursor-pointer' : ''}`}
                                         style={customStyle ? customStyle.header : {}}
                                         onClick={isGroupHeader ? () => toggleTimeslotGroup(rowName) : undefined}
@@ -4916,6 +4919,7 @@ export default function ScheduleBoard() {
                                                 <Button 
                                                     variant="ghost" 
                                                     size="icon" 
+                                                    data-testid={`schedule-row-clear-${encodeScheduleTargetId(headerDroppableId)}`}
                                                     className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600"
                                                     onClick={() => handleClearRow(rowName, rowTimeslotId)}
                                                     title="Zeile leeren"
@@ -5051,6 +5055,7 @@ export default function ScheduleBoard() {
                                                                                 ref={provided.innerRef}
                                                                                 {...provided.draggableProps}
                                                                                 {...provided.dragHandleProps}
+                                                                                data-testid={`schedule-available-doctor-${doc.id}-${dateStr}`}
                                                                                 style={{ ...provided.draggableProps.style, ...style }}
                                                                                 className={`
                                                                                     relative ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none
@@ -5102,6 +5107,7 @@ export default function ScheduleBoard() {
                                         ) : (
                                             <DroppableCell 
                                                 id={cellId}
+                                                testId={`schedule-cell-${encodeScheduleTargetId(cellId)}`}
                                                 isCompact={isMonthView}
                                                 isToday={isToday}
                                                 isWeekend={isWeekend}
