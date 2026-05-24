@@ -62,6 +62,7 @@ Deno.serve(async (req) => {
                     wish_show_occupied BOOLEAN DEFAULT TRUE,
                     wish_show_absences BOOLEAN DEFAULT TRUE,
                     wish_hidden_doctors JSON,
+                    wish_default_position VARCHAR(255) DEFAULT NULL,
                     
                     -- Metadata
                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -133,8 +134,8 @@ Deno.serve(async (req) => {
                     await connection.execute(
                         `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active,
                          theme, section_config, collapsed_sections, schedule_hidden_rows, schedule_show_sidebar,
-                         schedule_initials_only, schedule_sort_doctors_alphabetically, highlight_my_name, grid_font_size, wish_show_occupied, wish_show_absences, wish_hidden_doctors)
-                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                         schedule_initials_only, schedule_sort_doctors_alphabetically, highlight_my_name, grid_font_size, wish_show_occupied, wish_show_absences, wish_hidden_doctors, wish_default_position)
+                         VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                         [
                             b44User.id,
                             b44User.email.toLowerCase().trim(),
@@ -153,7 +154,8 @@ Deno.serve(async (req) => {
                             b44User.grid_font_size || 14,
                             b44User.wish_show_occupied !== false,
                             b44User.wish_show_absences !== false,
-                            b44User.wish_hidden_doctors ? JSON.stringify(b44User.wish_hidden_doctors) : null
+                            b44User.wish_hidden_doctors ? JSON.stringify(b44User.wish_hidden_doctors) : null,
+                            b44User.wish_default_position || null
                         ]
                     );
 

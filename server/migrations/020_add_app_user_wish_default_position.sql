@@ -1,0 +1,2 @@
+ALTER TABLE app_users
+ADD COLUMN IF NOT EXISTS wish_default_position VARCHAR(255) DEFAULT NULL;

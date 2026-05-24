@@ -19,6 +19,28 @@ function createMockDbPool() {
 }
 
 describe('runMasterMigrations', () => {
+  it('checks app_users.wish_default_position before altering the app_users table', async () => {
+    const dbPool = createMockDbPool();
+
+    await runMasterMigrations(dbPool);
+
+    const appUsersCalls = dbPool.calls.filter(
+      ({ sql, params }) =>
+        sql.includes('ALTER TABLE `app_users` ADD COLUMN `wish_default_position`') ||
+        (sql.includes('FROM information_schema.COLUMNS') && params[0] === 'app_users' && params[1] === 'wish_default_position')
+    );
+
+    expect(appUsersCalls).toEqual([
+      expect.objectContaining({
+        sql: expect.stringContaining('FROM information_schema.COLUMNS'),
+        params: ['app_users', 'wish_default_position'],
+      }),
+      expect.objectContaining({
+        sql: expect.stringContaining('ALTER TABLE `app_users` ADD COLUMN `wish_default_position` VARCHAR(255) DEFAULT NULL'),
+      }),
+    ]);
+  });
+
   it('checks Employee.work_time_model_id before altering the Employee table', async () => {
     const dbPool = createMockDbPool();
 

@@ -30,6 +30,7 @@ async function migrate() {
         wish_show_occupied BOOLEAN DEFAULT TRUE,
         wish_show_absences BOOLEAN DEFAULT TRUE,
         wish_hidden_doctors JSON,
+        wish_default_position VARCHAR(255) DEFAULT NULL,
         settings JSON,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

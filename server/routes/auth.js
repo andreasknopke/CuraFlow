@@ -391,7 +391,7 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     const allowedFields = [
       'full_name', 'theme', 'section_config', 'collapsed_sections',
       'schedule_hidden_rows', 'schedule_show_sidebar', 'schedule_show_time_account', 'highlight_my_name',
-      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
+      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position'
     ];
     
     const updates = [];
@@ -515,7 +515,7 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
       'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants',
       'theme', 'section_config', 'collapsed_sections',
       'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
-      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors'
+      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position'
     ];
     
     const updates = [];

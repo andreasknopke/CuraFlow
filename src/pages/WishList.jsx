@@ -18,6 +18,7 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import { isWishOnDate } from '@/utils/wishRange';
 import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { resolveWishDefaultPosition } from '@/components/wishlist/wishPreferences';
 
 const getDateRangeDays = (startDate, endDate) => {
     if (!startDate || !endDate) return [];
@@ -98,10 +99,38 @@ export default function WishListPage() {
   }, [workplaces]);
 
   React.useEffect(() => {
-      if (serviceTypes.length > 0 && !activeTab) {
-          setActiveTab(serviceTypes[0]);
+      if (serviceTypes.length === 0) {
+          if (activeTab !== null) {
+              setActiveTab(null);
+          }
+          return;
       }
-  }, [serviceTypes, activeTab]);
+
+      if (activeTab && serviceTypes.includes(activeTab)) {
+          return;
+      }
+
+      const preferredPosition = resolveWishDefaultPosition(serviceTypes, user?.wish_default_position);
+      if (preferredPosition && preferredPosition !== activeTab) {
+          setActiveTab(preferredPosition);
+      }
+  }, [serviceTypes, activeTab, user?.wish_default_position]);
+
+  const saveWishDefaultPosition = async (position) => {
+      try {
+          await api.updateMe({ data: { wish_default_position: position } });
+      } catch (error) {
+          console.error('Could not save default wish position', error);
+      }
+  };
+
+  const handleActiveTabChange = (position) => {
+      setActiveTab(position);
+
+      if (position && position !== user?.wish_default_position) {
+          saveWishDefaultPosition(position);
+      }
+  };
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
@@ -619,7 +648,7 @@ export default function WishListPage() {
                        key={type}
                        data-testid={`wishlist-service-tab-${type.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
                        variant={activeTab === type ? "default" : "outline"}
-                      onClick={() => setActiveTab(type)}
+                      onClick={() => handleActiveTabChange(type)}
                       className="whitespace-nowrap"
                       size="sm"
                   >

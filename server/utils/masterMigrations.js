@@ -81,6 +81,11 @@ export async function runMasterMigrations(dbPool) {
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
+  await run('add_wish_default_position', async () => {
+    const changed = await addColumnIfMissing('app_users', 'wish_default_position', 'VARCHAR(255) DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
   await run('create_email_verification_table', async () => {
     await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS EmailVerification (
