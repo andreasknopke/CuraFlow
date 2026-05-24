@@ -4081,11 +4081,6 @@ export default function ScheduleBoard() {
                                                               >
                                                                   {rowDisplayName}
                                                               </span>
-                                                              {rowObj.isAlwaysVisibleRow && (
-                                                                  <span className="text-[9px] font-semibold text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded" title={`Zusätzlich sichtbar aus ${getSectionName(rowObj.sourceSectionTitle || '')}`}>
-                                                                      immer
-                                                                  </span>
-                                                              )}
                                                           </span>
                                                           {rowObj.isAlwaysVisibleRow && rowObj.sourceSectionTitle && (
                                                               <span className="text-[10px] font-normal text-indigo-600">
@@ -4921,11 +4916,6 @@ export default function ScheduleBoard() {
                                                 </span>
                                                 {isGroupHeader && rowObj.timeslotCount && (
                                                     <span className="text-[10px] text-slate-400 ml-1">({rowObj.timeslotCount})</span>
-                                                )}
-                                                {rowObj.isAlwaysVisibleRow && (
-                                                    <span className="text-[9px] font-semibold text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded" title={`Zusätzlich sichtbar aus ${getSectionName(rowObj.sourceSectionTitle || '')}`}>
-                                                        immer
-                                                    </span>
                                                 )}
                                             </span>
                                             {rowObj.isAlwaysVisibleRow && rowObj.sourceSectionTitle && (
