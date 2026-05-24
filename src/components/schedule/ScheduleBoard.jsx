@@ -43,6 +43,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
+import { applyAlwaysVisibleRowsToSection, getSectionWithAlwaysVisibleRows, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -1034,6 +1035,11 @@ export default function ScheduleBoard() {
         return parseSectionTabs(tabSetting?.value);
     }, [systemSettings]);
 
+    const alwaysVisibleRows = useMemo(() => {
+        const setting = systemSettings.find(s => s.key === ALWAYS_VISIBLE_ROWS_KEY);
+        return parseAlwaysVisibleRows(setting?.value);
+    }, [systemSettings]);
+
   // Stellenplan-Einträge für die Sidebar-Filterung laden
   const staffingYear = useMemo(() => currentDate ? new Date(currentDate).getFullYear() : new Date().getFullYear(), [currentDate]);
   const { data: staffingPlanEntries = [] } = useQuery({
@@ -1300,12 +1306,12 @@ export default function ScheduleBoard() {
         if (!isSplitViewEnabled || !effectiveSplitTabId) return [];
         const activeTab = availableSectionTabs.find(t => t.id === effectiveSplitTabId);
         if (!activeTab) return [];
-        const activeSection = allSections.find(section => section.title === activeTab.sectionTitle);
+        const activeSection = getSectionWithAlwaysVisibleRows(allSections, activeTab.sectionTitle, alwaysVisibleRows);
         const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
         if (!activeSection) return [];
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
-    }, [isSplitViewEnabled, effectiveSplitTabId, availableSectionTabs, allSections]);
+    }, [isSplitViewEnabled, effectiveSplitTabId, availableSectionTabs, allSections, alwaysVisibleRows]);
 
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
@@ -1314,12 +1320,13 @@ export default function ScheduleBoard() {
         }
         const activeTab = availableSectionTabs.find(t => t.id === activeSectionTabId);
         if (!activeTab) return allSections;
-        const activeSection = allSections.find(section => section.title === activeTab.sectionTitle);
+        const tabSections = applyAlwaysVisibleRowsToSection(allSections, activeTab.sectionTitle, alwaysVisibleRows);
+        const activeSection = tabSections.find(section => section.title === activeTab.sectionTitle);
         const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
         if (!activeSection) return allSections;
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
-    }, [activeSectionTabId, availableSectionTabs, allSections]);
+    }, [activeSectionTabId, availableSectionTabs, allSections, alwaysVisibleRows]);
 
     const persistSectionTabs = async (tabs) => {
         await updateSystemSettingMutation.mutateAsync({
@@ -4071,7 +4078,17 @@ export default function ScheduleBoard() {
                                                               >
                                                                   {rowDisplayName}
                                                               </span>
+                                                              {rowObj.isAlwaysVisibleRow && (
+                                                                  <span className="text-[9px] font-semibold text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded" title={`Zusätzlich sichtbar aus ${getSectionName(rowObj.sourceSectionTitle || '')}`}>
+                                                                      immer
+                                                                  </span>
+                                                              )}
                                                           </span>
+                                                          {rowObj.isAlwaysVisibleRow && rowObj.sourceSectionTitle && (
+                                                              <span className="text-[10px] font-normal text-indigo-600">
+                                                                  aus {getSectionName(rowObj.sourceSectionTitle)}
+                                                              </span>
+                                                          )}
                                                       </div>
                                                       <div className="hidden">{provided.placeholder}</div>
                                                   </div>
@@ -4902,7 +4919,17 @@ export default function ScheduleBoard() {
                                                 {isGroupHeader && rowObj.timeslotCount && (
                                                     <span className="text-[10px] text-slate-400 ml-1">({rowObj.timeslotCount})</span>
                                                 )}
+                                                {rowObj.isAlwaysVisibleRow && (
+                                                    <span className="text-[9px] font-semibold text-indigo-700 bg-indigo-100 px-1 py-0.5 rounded" title={`Zusätzlich sichtbar aus ${getSectionName(rowObj.sourceSectionTitle || '')}`}>
+                                                        immer
+                                                    </span>
+                                                )}
                                             </span>
+                                            {rowObj.isAlwaysVisibleRow && rowObj.sourceSectionTitle && (
+                                                <span className="text-[10px] font-normal text-indigo-600">
+                                                    aus {getSectionName(rowObj.sourceSectionTitle)}
+                                                </span>
+                                            )}
                                             {rowObj.isUnassignedRow && (
                                                 <span className="text-[10px] font-normal text-amber-600">
                                                     Bitte Zeitfenster zuweisen

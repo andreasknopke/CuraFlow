@@ -9,6 +9,7 @@ import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getWorkplaceCategoryNames } from '@/utils/workplaceCategoryUtils';
+import { ALWAYS_VISIBLE_ROWS_KEY, parseAlwaysVisibleRows } from '@/components/schedule/sectionVisibility';
 
 const DEFAULT_SECTIONS = [
     { id: 'absences', defaultName: 'Abwesenheiten', order: 0 },
@@ -20,6 +21,14 @@ const DEFAULT_SECTIONS = [
 ];
 
 const SECTION_CONFIG_KEY = 'section_config';
+const STATIC_ROW_OPTIONS = [
+    { rowName: 'Frei', sectionTitle: 'Abwesenheiten' },
+    { rowName: 'Krank', sectionTitle: 'Abwesenheiten' },
+    { rowName: 'Urlaub', sectionTitle: 'Abwesenheiten' },
+    { rowName: 'Dienstreise', sectionTitle: 'Abwesenheiten' },
+    { rowName: 'Nicht verfügbar', sectionTitle: 'Abwesenheiten' },
+    { rowName: 'Sonstiges', sectionTitle: 'Sonstiges' },
+];
 
 const parseSectionConfig = (rawValue) => {
     if (!rawValue) return null;
@@ -66,6 +75,7 @@ export default function SectionConfigDialog() {
     const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
     const [sections, setSections] = useState([]);
+    const [alwaysVisibleRows, setAlwaysVisibleRows] = useState([]);
     const [isSaving, setIsSaving] = useState(false);
 
     // Lade Custom-Kategorien und Workplaces, um leere Sections zu filtern
@@ -136,8 +146,43 @@ export default function SectionConfigDialog() {
         return parseSectionConfig(savedSetting?.value);
     }, [systemSettings]);
 
+    const savedAlwaysVisibleRows = useMemo(() => {
+        const savedSetting = systemSettings.find(s => s.key === ALWAYS_VISIBLE_ROWS_KEY);
+        return parseAlwaysVisibleRows(savedSetting?.value);
+    }, [systemSettings]);
+
+    const availableRowOptions = useMemo(() => {
+        const rows = [
+            ...STATIC_ROW_OPTIONS,
+            ...workplaces.map((workplace) => ({
+                rowName: workplace.name,
+                sectionTitle: workplace.category,
+                order: workplace.order || 0,
+            })),
+        ];
+
+        const sectionNames = new Set(allAvailableSections.map((section) => section.defaultName));
+        const seen = new Set();
+
+        return rows
+            .filter((row) => row.rowName && sectionNames.has(row.sectionTitle))
+            .sort((a, b) => {
+                const sectionDiff = (a.sectionTitle || '').localeCompare(b.sectionTitle || '', 'de');
+                if (sectionDiff !== 0) return sectionDiff;
+                return (a.order || 0) - (b.order || 0) || a.rowName.localeCompare(b.rowName, 'de');
+            })
+            .filter((row) => {
+                const key = `${row.sectionTitle}__${row.rowName}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+    }, [allAvailableSections, workplaces]);
+
     useEffect(() => {
         if (open) {
+            setAlwaysVisibleRows(savedAlwaysVisibleRows);
+
             // Load from tenant config or build from available sections
             if (savedConfig?.sections) {
                 // Merge: Behalte gespeicherte Einträge, füge neue hinzu, entferne nicht mehr relevante
@@ -169,7 +214,7 @@ export default function SectionConfigDialog() {
                 order: idx
             })));
         }
-    }, [open, savedConfig, allAvailableSections]);
+    }, [open, savedConfig, savedAlwaysVisibleRows, allAvailableSections]);
 
     const handleDragEnd = (result) => {
         if (!result.destination) return;
@@ -199,6 +244,21 @@ export default function SectionConfigDialog() {
             customName: '',
             order: idx
         })));
+        setAlwaysVisibleRows([]);
+    };
+
+    const isAlwaysVisible = (rowName, targetSectionTitle) => {
+        return alwaysVisibleRows.some((entry) => entry.rowName === rowName && entry.targetSectionTitle === targetSectionTitle);
+    };
+
+    const toggleAlwaysVisible = (rowName, targetSectionTitle, checked) => {
+        setAlwaysVisibleRows((prev) => {
+            const withoutEntry = prev.filter((entry) => !(entry.rowName === rowName && entry.targetSectionTitle === targetSectionTitle));
+            if (!checked) return withoutEntry;
+
+            return [...withoutEntry, { rowName, targetSectionTitle }]
+                .sort((a, b) => a.targetSectionTitle.localeCompare(b.targetSectionTitle, 'de') || a.rowName.localeCompare(b.rowName, 'de'));
+        });
     };
 
     const handleSave = async () => {
@@ -206,6 +266,7 @@ export default function SectionConfigDialog() {
         try {
             const configData = JSON.stringify({ sections });
             await updateSettingMutation.mutateAsync({ key: SECTION_CONFIG_KEY, value: configData });
+            await updateSettingMutation.mutateAsync({ key: ALWAYS_VISIBLE_ROWS_KEY, value: JSON.stringify(alwaysVisibleRows) });
             toast.success('Konfiguration gespeichert');
             setOpen(false);
         } catch (e) {
@@ -222,7 +283,7 @@ export default function SectionConfigDialog() {
                     <Settings2 className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>Panel-Konfiguration</DialogTitle>
                 </DialogHeader>
@@ -285,6 +346,55 @@ export default function SectionConfigDialog() {
                             )}
                         </Droppable>
                     </DragDropContext>
+
+                    <div className="border-t pt-4 space-y-3">
+                        <div>
+                            <h3 className="text-sm font-semibold text-slate-900">Zeilen immer anzeigen</h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Wählen Sie Zeilen aus anderen Bereichen, die zusätzlich im jeweiligen Reiter sichtbar bleiben sollen. Beispiel: „Spätdienst“ zusätzlich im Reiter „Rotationen“ anzeigen.
+                            </p>
+                        </div>
+
+                        {sections
+                            .filter((targetSection) => targetSection.defaultName !== 'Anwesenheiten')
+                            .map((targetSection) => {
+                                const targetRows = availableRowOptions.filter((row) => row.sectionTitle !== targetSection.defaultName);
+                                const selectedCount = alwaysVisibleRows.filter((entry) => entry.targetSectionTitle === targetSection.defaultName).length;
+
+                                if (targetRows.length === 0) return null;
+
+                                return (
+                                    <details key={`always-visible-${targetSection.id}`} className="rounded-lg border bg-slate-50/60" open={selectedCount > 0}>
+                                        <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-800">
+                                            In „{targetSection.customName || targetSection.defaultName}“ zusätzlich anzeigen
+                                            {selectedCount > 0 && <span className="ml-2 text-xs text-indigo-700">({selectedCount})</span>}
+                                        </summary>
+                                        <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2">
+                                            {targetRows.map((row) => {
+                                                const checked = isAlwaysVisible(row.rowName, targetSection.defaultName);
+                                                const inputId = `always-${targetSection.id}-${row.sectionTitle}-${row.rowName}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+                                                return (
+                                                    <label key={`${targetSection.id}-${row.sectionTitle}-${row.rowName}`} htmlFor={inputId} className="flex items-start gap-2 rounded border bg-white p-2 text-sm hover:bg-indigo-50/40">
+                                                        <input
+                                                            id={inputId}
+                                                            type="checkbox"
+                                                            checked={checked}
+                                                            onChange={(event) => toggleAlwaysVisible(row.rowName, targetSection.defaultName, event.target.checked)}
+                                                            className="mt-0.5 h-4 w-4"
+                                                        />
+                                                        <span className="min-w-0">
+                                                            <span className="block font-medium text-slate-800">{row.rowName}</span>
+                                                            <span className="block text-xs text-slate-500">aus {row.sectionTitle}</span>
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </details>
+                                );
+                            })}
+                    </div>
                 </div>
 
                 <DialogFooter className="flex justify-between">
