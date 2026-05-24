@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyAlwaysVisibleRowsToSection, parseAlwaysVisibleRows } from '@/components/schedule/sectionVisibility';
+import { applyAlwaysVisibleRowsToSection, applyAlwaysVisibleRowsToSections, parseAlwaysVisibleRows } from '@/components/schedule/sectionVisibility';
 
 describe('parseAlwaysVisibleRows', () => {
     it('returns unique valid row visibility entries', () => {
@@ -54,5 +54,23 @@ describe('applyAlwaysVisibleRowsToSection', () => {
         ]);
 
         expect(result.find((section) => section.title === 'Rotationen').rows).toHaveLength(1);
+    });
+});
+
+describe('applyAlwaysVisibleRowsToSections', () => {
+    it('adds configured rows to every target section', () => {
+        const sections = [
+            { title: 'Dienste', rows: [{ name: 'Spätdienst', displayName: 'Spätdienst' }] },
+            { title: 'Rotationen', rows: [{ name: 'CT', displayName: 'CT' }] },
+            { title: 'Demonstrationen & Konsile', rows: [{ name: 'Konsil', displayName: 'Konsil' }] },
+        ];
+
+        const result = applyAlwaysVisibleRowsToSections(sections, [
+            { rowName: 'Spätdienst', targetSectionTitle: 'Rotationen' },
+            { rowName: 'Spätdienst', targetSectionTitle: 'Demonstrationen & Konsile' },
+        ]);
+
+        expect(result.find((section) => section.title === 'Rotationen').rows.map((row) => row.name)).toEqual(['CT', 'Spätdienst']);
+        expect(result.find((section) => section.title === 'Demonstrationen & Konsile').rows.map((row) => row.name)).toEqual(['Konsil', 'Spätdienst']);
     });
 });

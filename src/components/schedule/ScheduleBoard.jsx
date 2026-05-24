@@ -43,7 +43,7 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
-import { applyAlwaysVisibleRowsToSection, getSectionWithAlwaysVisibleRows, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
+import { applyAlwaysVisibleRowsToSections, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -1259,6 +1259,10 @@ export default function ScheduleBoard() {
         return sectionTabs.filter(tab => knownTitles.has(tab.sectionTitle) && tab.sectionTitle !== PINNED_SECTION_TITLE);
     }, [sectionTabs, allSections]);
 
+    const renderedSections = useMemo(() => {
+        return applyAlwaysVisibleRowsToSections(allSections, alwaysVisibleRows);
+    }, [allSections, alwaysVisibleRows]);
+
     useEffect(() => {
         if (isLoadingSystemSettings) return;
         if (activeSectionTabId === 'main') return;
@@ -1306,27 +1310,26 @@ export default function ScheduleBoard() {
         if (!isSplitViewEnabled || !effectiveSplitTabId) return [];
         const activeTab = availableSectionTabs.find(t => t.id === effectiveSplitTabId);
         if (!activeTab) return [];
-        const activeSection = getSectionWithAlwaysVisibleRows(allSections, activeTab.sectionTitle, alwaysVisibleRows);
-        const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
+        const activeSection = renderedSections.find(section => section.title === activeTab.sectionTitle);
+        const pinnedSection = renderedSections.find(section => section.title === PINNED_SECTION_TITLE);
         if (!activeSection) return [];
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
-    }, [isSplitViewEnabled, effectiveSplitTabId, availableSectionTabs, allSections, alwaysVisibleRows]);
+    }, [isSplitViewEnabled, effectiveSplitTabId, availableSectionTabs, renderedSections]);
 
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
             const assigned = new Set(availableSectionTabs.map(t => t.sectionTitle));
-            return allSections.filter(section => section.title === PINNED_SECTION_TITLE || !assigned.has(section.title));
+            return renderedSections.filter(section => section.title === PINNED_SECTION_TITLE || !assigned.has(section.title));
         }
         const activeTab = availableSectionTabs.find(t => t.id === activeSectionTabId);
-        if (!activeTab) return allSections;
-        const tabSections = applyAlwaysVisibleRowsToSection(allSections, activeTab.sectionTitle, alwaysVisibleRows);
-        const activeSection = tabSections.find(section => section.title === activeTab.sectionTitle);
-        const pinnedSection = allSections.find(section => section.title === PINNED_SECTION_TITLE);
-        if (!activeSection) return allSections;
+        if (!activeTab) return renderedSections;
+        const activeSection = renderedSections.find(section => section.title === activeTab.sectionTitle);
+        const pinnedSection = renderedSections.find(section => section.title === PINNED_SECTION_TITLE);
+        if (!activeSection) return renderedSections;
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
-    }, [activeSectionTabId, availableSectionTabs, allSections, alwaysVisibleRows]);
+    }, [activeSectionTabId, availableSectionTabs, renderedSections]);
 
     const persistSectionTabs = async (tabs) => {
         await updateSystemSettingMutation.mutateAsync({

@@ -84,6 +84,14 @@ export function applyAlwaysVisibleRowsToSection(allSections = [], targetSectionT
     });
 }
 
+export function applyAlwaysVisibleRowsToSections(allSections = [], alwaysVisibleRows = []) {
+    const targetSectionTitles = Array.from(new Set(alwaysVisibleRows.map((entry) => entry.targetSectionTitle).filter(Boolean)));
+    return targetSectionTitles.reduce(
+        (sections, targetSectionTitle) => applyAlwaysVisibleRowsToSection(sections, targetSectionTitle, alwaysVisibleRows),
+        allSections
+    );
+}
+
 export function getSectionWithAlwaysVisibleRows(allSections = [], targetSectionTitle, alwaysVisibleRows = []) {
     return applyAlwaysVisibleRowsToSection(allSections, targetSectionTitle, alwaysVisibleRows)
         .find((section) => section.title === targetSectionTitle);
