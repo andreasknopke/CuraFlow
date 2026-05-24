@@ -320,6 +320,23 @@ export async function runMasterMigrations(dbPool) {
   // See docs/features/TENANT_GROUPS.md
   // A tenant_group bundles several db_tokens (departments) so that
   // cross-department admins can manage shared pool shifts (AD, KWE, OD, ...).
+  //
+  // FK note: db_tokens.id was originally created without an explicit
+  // collation, so it inherits whatever the schema default is (commonly
+  // utf8mb4_0900_ai_ci on MySQL 8). InnoDB FKs require referencing and
+  // referenced VARCHAR columns to share charset+collation. We therefore
+  // detect db_tokens.id's actual collation and clone it onto every new
+  // table that needs to FK against it.
+  const [collRows] = await dbPool.execute(
+    `SELECT CHARACTER_SET_NAME AS cs, COLLATION_NAME AS co
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'db_tokens'
+        AND COLUMN_NAME = 'id'`
+  );
+  const dbTokensCharset = collRows[0]?.cs || 'utf8mb4';
+  const dbTokensCollation = collRows[0]?.co || 'utf8mb4_0900_ai_ci';
+  const fkTableSuffix = `CHARACTER SET ${dbTokensCharset} COLLATE ${dbTokensCollation}`;
 
   await run('create_tenant_group_table', async () => {
     await dbPool.execute(`
@@ -331,9 +348,32 @@ export async function runMasterMigrations(dbPool) {
         created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
         updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
         UNIQUE KEY uk_tenant_group_name (name)
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  // Idempotent fix-up: if any of these tables were created in a previous
+  // deploy with the wrong collation (utf8mb4_unicode_ci), convert them to
+  // db_tokens' collation so the FKs below can be (re)created.
+  await run('fix_tenant_group_tables_collation', async () => {
+    const tables = ['tenant_group', 'tenant_group_member', 'shared_workplace', 'shared_shift_entry', 'shared_workplace_quota'];
+    let changed = false;
+    for (const t of tables) {
+      const [rows] = await dbPool.execute(
+        `SELECT TABLE_COLLATION AS co FROM information_schema.TABLES
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+        [t]
+      );
+      const current = rows[0]?.co;
+      if (current && current !== dbTokensCollation) {
+        await dbPool.query(
+          `ALTER TABLE \`${t}\` CONVERT TO CHARACTER SET ${dbTokensCharset} COLLATE ${dbTokensCollation}`
+        );
+        changed = true;
+      }
+    }
+    return changed || SKIPPED;
+  }, { skippedReason: 'Collation bereits korrekt' });
 
   await run('create_tenant_group_member_table', async () => {
     await dbPool.execute(`
@@ -346,7 +386,7 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_tgm_tenant (tenant_id),
         CONSTRAINT fk_tgm_group FOREIGN KEY (group_id) REFERENCES tenant_group(id) ON DELETE CASCADE,
         CONSTRAINT fk_tgm_tenant FOREIGN KEY (tenant_id) REFERENCES db_tokens(id) ON DELETE CASCADE
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
@@ -370,7 +410,7 @@ export async function runMasterMigrations(dbPool) {
         created_by VARCHAR(255) DEFAULT NULL,
         INDEX idx_shared_workplace_group (group_id, is_active),
         CONSTRAINT fk_swp_group FOREIGN KEY (group_id) REFERENCES tenant_group(id) ON DELETE CASCADE
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
@@ -394,7 +434,7 @@ export async function runMasterMigrations(dbPool) {
         INDEX idx_sse_workplace_date (shared_workplace_id, date),
         CONSTRAINT fk_sse_workplace FOREIGN KEY (shared_workplace_id) REFERENCES shared_workplace(id) ON DELETE CASCADE,
         CONSTRAINT fk_sse_billing FOREIGN KEY (billing_tenant_id) REFERENCES db_tokens(id)
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
@@ -410,7 +450,7 @@ export async function runMasterMigrations(dbPool) {
         weight DECIMAL(4,2) NOT NULL DEFAULT 1.00,
         PRIMARY KEY (shared_workplace_id, scope, scope_key, period),
         CONSTRAINT fk_swq_workplace FOREIGN KEY (shared_workplace_id) REFERENCES shared_workplace(id) ON DELETE CASCADE
-      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+      ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
