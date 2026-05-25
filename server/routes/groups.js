@@ -294,16 +294,20 @@ router.get('/visible-shifts', async (req, res) => {
               w.affects_availability,
               w.auto_off,
               e.first_name,
-                  e.last_name
+                  e.last_name,
+              eta.tenant_doctor_id AS local_doctor_id
          FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
           LEFT JOIN Employee e
             ON e.id COLLATE utf8mb4_general_ci = s.employee_id COLLATE utf8mb4_general_ci
+          LEFT JOIN EmployeeTenantAssignment eta
+            ON eta.employee_id COLLATE utf8mb4_general_ci = s.employee_id COLLATE utf8mb4_general_ci
+           AND eta.tenant_id = ?
         WHERE w.group_id IN (${placeholders})
           AND w.is_active = 1
           ${dateWhere}
         ORDER BY s.date ASC, w.name ASC`,
-      [...accessibleGroupIds, ...dateParams]
+      [activeTenantId, ...accessibleGroupIds, ...dateParams]
     );
 
     const shifts = shiftRows.map((r) => {
@@ -316,6 +320,7 @@ router.get('/visible-shifts', async (req, res) => {
         date: r.date,
         employee_id: r.employee_id,
         employee_name: employeeName,
+        local_doctor_id: r.local_doctor_id != null ? Number(r.local_doctor_id) : null,
         billing_tenant_id: r.billing_tenant_id ? String(r.billing_tenant_id) : null,
         belongs_to_active_tenant: r.billing_tenant_id != null && String(r.billing_tenant_id) === activeTenantId,
         workplace_name: r.workplace_name,

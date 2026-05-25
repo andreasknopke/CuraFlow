@@ -210,16 +210,37 @@ export default function ServiceStaffingPage() {
         // tenant, the Frei is invisible here. So we derive blocks from the
         // pool shifts directly to keep the dropdown consistent with validation.
         const doctorByCentral = new Map();
-        const doctorByName = new Map();
+        const doctorByNameTokens = new Map();
+        const tokenize = (str) => {
+            if (!str) return '';
+            return String(str)
+                .toLowerCase()
+                .normalize('NFKD')
+                .replace(/[^\p{L}\p{N}]+/gu, ' ')
+                .trim()
+                .split(/\s+/)
+                .sort()
+                .join(' ');
+        };
+        const doctorIds = new Set(doctors.map(d => d.id));
         for (const doc of doctors) {
             if (doc.central_employee_id) doctorByCentral.set(String(doc.central_employee_id), doc.id);
-            if (doc.name) doctorByName.set(doc.name.trim().toLowerCase(), doc.id);
+            const key = tokenize(doc.name);
+            if (key) doctorByNameTokens.set(key, doc.id);
         }
         const resolveLocalDoctorId = (shift) => {
+            // Authoritative: server-side join to EmployeeTenantAssignment for the
+            // active tenant. Falls back to local Doctor.central_employee_id and
+            // finally to a token-set name match (handles "First Last" vs
+            // "Last, First" formatting differences).
+            if (shift.local_doctor_id != null && doctorIds.has(shift.local_doctor_id)) {
+                return shift.local_doctor_id;
+            }
             const byCentral = doctorByCentral.get(String(shift.employee_id));
             if (byCentral) return byCentral;
-            if (shift.employee_name) {
-                const byName = doctorByName.get(String(shift.employee_name).trim().toLowerCase());
+            const key = tokenize(shift.employee_name);
+            if (key) {
+                const byName = doctorByNameTokens.get(key);
                 if (byName) return byName;
             }
             return null;
