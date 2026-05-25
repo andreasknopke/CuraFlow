@@ -91,10 +91,18 @@ describe('TenantGroupManagement', () => {
     await user.click(screen.getByTestId('admin-group-workplace-create-button'));
     await user.type(screen.getByTestId('admin-group-workplace-name-input'), 'Interner Hintergrunddienst');
     await user.type(screen.getByLabelText('Kategorie'), 'Bereitschaft');
+    await user.click(screen.getByTestId('admin-group-workplace-service-type'));
+    await user.click(await screen.findByRole('option', { name: /Rufbereitschaftsdienst/i }));
+    await user.click(screen.getByTestId('admin-group-workplace-auto-off'));
+    await user.click(screen.getByTestId('admin-group-workplace-day-6'));
     await user.clear(screen.getByLabelText('Mindestbesetzung'));
     await user.type(screen.getByLabelText('Mindestbesetzung'), '2');
     await user.clear(screen.getByLabelText('Soll-Besetzung'));
     await user.type(screen.getByLabelText('Soll-Besetzung'), '3');
+    await user.clear(screen.getByLabelText(/Pause \/ Toleranz/));
+    await user.type(screen.getByLabelText(/Pause \/ Toleranz/), '20');
+    await user.clear(screen.getByLabelText(/Arbeitszeit-Anteil/));
+    await user.type(screen.getByLabelText(/Arbeitszeit-Anteil/), '70');
     await user.click(screen.getByTestId('admin-group-workplace-save-button'));
 
     await waitFor(() => {
@@ -103,9 +111,19 @@ describe('TenantGroupManagement', () => {
         category: 'Bereitschaft',
         start_time: null,
         end_time: null,
+        active_days: [1, 2, 3, 4, 5, 6],
+        service_type: 2,
+        auto_off: true,
+        allows_rotation_concurrently: false,
+        allows_absence_overlap: false,
+        consecutive_days_mode: 'allowed',
+        allows_multiple: false,
         min_staff: 2,
         optimal_staff: 3,
+        default_overlap_tolerance_minutes: 20,
+        work_time_percentage: 70,
         affects_availability: true,
+        timeslots_enabled: false,
         is_active: true,
       });
     });

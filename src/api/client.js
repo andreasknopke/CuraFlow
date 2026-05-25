@@ -403,6 +403,30 @@ class APIClient {
     });
   }
 
+  async listSharedWorkplaceTimeslots(groupId, workplaceId) {
+    return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots`);
+  }
+
+  async createSharedWorkplaceTimeslot(groupId, workplaceId, data) {
+    return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSharedWorkplaceTimeslot(groupId, workplaceId, timeslotId, data) {
+    return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots/${encodeURIComponent(timeslotId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSharedWorkplaceTimeslot(groupId, workplaceId, timeslotId) {
+    return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots/${encodeURIComponent(timeslotId)}`, {
+      method: 'DELETE',
+    });
+  }
+
   async getWorkplaceQuotas(groupId, workplaceId) {
     return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/quotas`);
   }

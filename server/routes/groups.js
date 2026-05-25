@@ -307,14 +307,37 @@ router.get('/:groupId/workplaces', async (req, res) => {
     if (!ctx) return;
     await requireGroupReadAccess(db, ctx, req.params.groupId);
     const [rows] = await db.execute(
-      `SELECT id, name, category, start_time, end_time, min_staff, optimal_staff,
-              affects_availability, consecutive_days_mode, constraints_json, is_active
+      `SELECT id, name, category, start_time, end_time, active_days,
+              allows_multiple, min_staff, optimal_staff, default_overlap_tolerance_minutes,
+              work_time_percentage, service_type, auto_off, allows_rotation_concurrently,
+              affects_availability, allows_absence_overlap, timeslots_enabled,
+              consecutive_days_mode, constraints_json, is_active
          FROM shared_workplace
         WHERE group_id = ?
         ORDER BY name ASC`,
       [req.params.groupId]
     );
-    res.json({ workplaces: rows });
+    res.json({
+      workplaces: rows.map((row) => ({
+        ...row,
+        allows_multiple: row.allows_multiple == null ? null : Boolean(row.allows_multiple),
+        auto_off: Boolean(row.auto_off),
+        allows_rotation_concurrently: Boolean(row.allows_rotation_concurrently),
+        affects_availability: Boolean(row.affects_availability),
+        allows_absence_overlap: Boolean(row.allows_absence_overlap),
+        timeslots_enabled: Boolean(row.timeslots_enabled),
+        is_active: Boolean(row.is_active),
+        active_days: typeof row.active_days === 'string'
+          ? (() => {
+              try {
+                return JSON.parse(row.active_days);
+              } catch {
+                return null;
+              }
+            })()
+          : row.active_days,
+      })),
+    });
   } catch (err) {
     handleError(res, err);
   }
@@ -327,22 +350,35 @@ router.post('/:groupId/workplaces', async (req, res) => {
     requireGroupWriteAccess(ctx, req.params.groupId);
     const {
       name, category, start_time, end_time,
-      min_staff, optimal_staff, affects_availability,
+      active_days, allows_multiple, min_staff, optimal_staff, default_overlap_tolerance_minutes,
+      work_time_percentage, service_type, auto_off, allows_rotation_concurrently,
+      affects_availability, allows_absence_overlap, timeslots_enabled,
       consecutive_days_mode, constraints_json,
     } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name ist erforderlich' });
     const id = crypto.randomUUID();
     await db.execute(
       `INSERT INTO shared_workplace
-         (id, group_id, name, category, start_time, end_time, min_staff, optimal_staff,
-          affects_availability, consecutive_days_mode, constraints_json, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, group_id, name, category, start_time, end_time, active_days, allows_multiple,
+          min_staff, optimal_staff, default_overlap_tolerance_minutes, work_time_percentage,
+          service_type, auto_off, allows_rotation_concurrently, affects_availability,
+          allows_absence_overlap, timeslots_enabled, consecutive_days_mode, constraints_json, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id, Number(req.params.groupId), name, category || null,
         start_time || null, end_time || null,
+        Array.isArray(active_days) ? JSON.stringify(active_days) : null,
+        typeof allows_multiple === 'boolean' ? (allows_multiple ? 1 : 0) : 0,
         Number.isInteger(min_staff) ? min_staff : 1,
         Number.isInteger(optimal_staff) ? optimal_staff : 1,
+        Number.isInteger(default_overlap_tolerance_minutes) ? default_overlap_tolerance_minutes : 15,
+        typeof work_time_percentage === 'number' ? work_time_percentage : 100,
+        Number.isInteger(service_type) ? service_type : null,
+        auto_off ? 1 : 0,
+        allows_rotation_concurrently ? 1 : 0,
         affects_availability === false ? 0 : 1,
+        allows_absence_overlap ? 1 : 0,
+        timeslots_enabled ? 1 : 0,
         consecutive_days_mode || 'allowed',
         constraints_json ? JSON.stringify(constraints_json) : null,
         req.user.email || req.user.sub,
@@ -360,17 +396,22 @@ router.patch('/:groupId/workplaces/:workplaceId', async (req, res) => {
     if (!ctx) return;
     requireGroupWriteAccess(ctx, req.params.groupId);
     const allowed = ['name', 'category', 'start_time', 'end_time',
-      'min_staff', 'optimal_staff', 'affects_availability',
+      'active_days', 'allows_multiple', 'min_staff', 'optimal_staff', 'default_overlap_tolerance_minutes',
+      'work_time_percentage', 'service_type', 'auto_off', 'allows_rotation_concurrently',
+      'affects_availability', 'allows_absence_overlap', 'timeslots_enabled',
       'consecutive_days_mode', 'constraints_json', 'is_active'];
     const fields = [];
     const values = [];
     for (const key of allowed) {
       if (req.body[key] === undefined) continue;
       let val = req.body[key];
+      if (key === 'active_days' && Array.isArray(val)) {
+        val = JSON.stringify(val);
+      }
       if (key === 'constraints_json' && val && typeof val !== 'string') {
         val = JSON.stringify(val);
       }
-      if (key === 'affects_availability' || key === 'is_active') {
+      if (['allows_multiple', 'auto_off', 'allows_rotation_concurrently', 'affects_availability', 'allows_absence_overlap', 'timeslots_enabled', 'is_active'].includes(key)) {
         val = val ? 1 : 0;
       }
       fields.push(`${key} = ?`);
@@ -396,6 +437,110 @@ router.delete('/:groupId/workplaces/:workplaceId', async (req, res) => {
     await db.execute(
       'DELETE FROM shared_workplace WHERE id = ? AND group_id = ?',
       [req.params.workplaceId, req.params.groupId]
+    );
+    res.status(204).end();
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+router.get('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    const [rows] = await db.execute(
+      `SELECT id, shared_workplace_id, label, start_time, end_time,
+              \`order\` AS sort_order, overlap_tolerance_minutes, spans_midnight
+         FROM shared_workplace_timeslot
+        WHERE shared_workplace_id = ?
+        ORDER BY COALESCE(\`order\`, 0) ASC, start_time ASC`,
+      [req.params.workplaceId]
+    );
+    res.json({
+      timeslots: rows.map((row) => ({
+        ...row,
+        order: row.sort_order ?? 0,
+        spans_midnight: Boolean(row.spans_midnight),
+      })),
+    });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+router.post('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+    requireGroupWriteAccess(ctx, req.params.groupId);
+    const { label, start_time, end_time, order, overlap_tolerance_minutes, spans_midnight } = req.body || {};
+    if (!label || !start_time || !end_time) {
+      return res.status(400).json({ error: 'label, start_time und end_time sind erforderlich' });
+    }
+    const id = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO shared_workplace_timeslot
+        (id, shared_workplace_id, label, start_time, end_time,
+         \`order\`, overlap_tolerance_minutes, spans_midnight, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        req.params.workplaceId,
+        label,
+        start_time,
+        end_time,
+        Number.isInteger(order) ? order : 0,
+        Number.isInteger(overlap_tolerance_minutes) ? overlap_tolerance_minutes : 0,
+        spans_midnight ? 1 : 0,
+        req.user.email || req.user.sub,
+      ]
+    );
+    res.status(201).json({ id });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+router.patch('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+    requireGroupWriteAccess(ctx, req.params.groupId);
+    const allowed = ['label', 'start_time', 'end_time', 'order', 'overlap_tolerance_minutes', 'spans_midnight'];
+    const fields = [];
+    const values = [];
+    for (const key of allowed) {
+      if (req.body[key] === undefined) continue;
+      let val = req.body[key];
+      if (key === 'spans_midnight') {
+        val = val ? 1 : 0;
+      }
+      const columnName = key === 'order' ? '\`order\`' : key;
+      fields.push(`${columnName} = ?`);
+      values.push(val);
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'Keine Änderungen' });
+    values.push(req.params.timeslotId, req.params.workplaceId);
+    await db.execute(
+      `UPDATE shared_workplace_timeslot SET ${fields.join(', ')}
+        WHERE id = ? AND shared_workplace_id = ?`,
+      values
+    );
+    res.json({ success: true });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+router.delete('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+    requireGroupWriteAccess(ctx, req.params.groupId);
+    await db.execute(
+      'DELETE FROM shared_workplace_timeslot WHERE id = ? AND shared_workplace_id = ?',
+      [req.params.timeslotId, req.params.workplaceId]
     );
     res.status(204).end();
   } catch (err) {

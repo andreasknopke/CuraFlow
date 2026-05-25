@@ -413,9 +413,18 @@ export async function runMasterMigrations(dbPool) {
         category VARCHAR(100) DEFAULT NULL,
         start_time TIME DEFAULT NULL,
         end_time TIME DEFAULT NULL,
+        active_days JSON DEFAULT NULL,
+        allows_multiple TINYINT(1) DEFAULT 0,
         min_staff INT NOT NULL DEFAULT 1,
         optimal_staff INT NOT NULL DEFAULT 1,
+        default_overlap_tolerance_minutes INT DEFAULT 15,
+        work_time_percentage DECIMAL(5,2) DEFAULT 100.00,
+        service_type INT DEFAULT NULL,
+        auto_off TINYINT(1) DEFAULT 0,
+        allows_rotation_concurrently TINYINT(1) DEFAULT 0,
         affects_availability TINYINT(1) NOT NULL DEFAULT 1,
+        allows_absence_overlap TINYINT(1) DEFAULT 0,
+        timeslots_enabled TINYINT(1) DEFAULT 0,
         consecutive_days_mode VARCHAR(20) DEFAULT 'allowed',
         constraints_json JSON DEFAULT NULL,
         is_active TINYINT(1) NOT NULL DEFAULT 1,
@@ -424,6 +433,26 @@ export async function runMasterMigrations(dbPool) {
         created_by VARCHAR(255) DEFAULT NULL,
         INDEX idx_shared_workplace_group (group_id, is_active),
         CONSTRAINT fk_swp_group FOREIGN KEY (group_id) REFERENCES tenant_group(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_shared_workplace_timeslot_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS shared_workplace_timeslot (
+        id VARCHAR(36) PRIMARY KEY,
+        shared_workplace_id VARCHAR(36) NOT NULL,
+        label VARCHAR(100) NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        \`order\` INT DEFAULT 0,
+        overlap_tolerance_minutes INT DEFAULT 0,
+        spans_midnight TINYINT(1) DEFAULT 0,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT NULL,
+        INDEX idx_swt_workplace (shared_workplace_id),
+        CONSTRAINT fk_swt_workplace FOREIGN KEY (shared_workplace_id) REFERENCES shared_workplace(id) ON DELETE CASCADE
       ) ${fkTableSuffix}
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
@@ -475,6 +504,51 @@ export async function runMasterMigrations(dbPool) {
 
   await run('add_app_users_group_admin_groups', async () => {
     const changed = await addColumnIfMissing('app_users', 'group_admin_groups', 'JSON DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_active_days', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'active_days', 'JSON DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_allows_multiple', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'allows_multiple', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_overlap_tolerance', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'default_overlap_tolerance_minutes', 'INT DEFAULT 15');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_work_time_percentage', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'work_time_percentage', 'DECIMAL(5,2) DEFAULT 100.00');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_service_type', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'service_type', 'INT DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_auto_off', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'auto_off', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_allows_rotation_concurrently', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'allows_rotation_concurrently', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_allows_absence_overlap', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'allows_absence_overlap', 'TINYINT(1) DEFAULT 0');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_shared_workplace_timeslots_enabled', async () => {
+    const changed = await addColumnIfMissing('shared_workplace', 'timeslots_enabled', 'TINYINT(1) DEFAULT 0');
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 

@@ -12,7 +12,10 @@ import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Building2, Globe2, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import SharedTimeslotEditor from '@/components/admin/SharedTimeslotEditor';
+import { SERVICE_TYPES } from '@/components/settings/serviceTypes';
+import { Building2, Clock, Globe2, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react';
 
 const DEFAULT_GROUP_FORM = {
     name: '',
@@ -25,9 +28,19 @@ const DEFAULT_WORKPLACE_FORM = {
     category: '',
     start_time: '',
     end_time: '',
+    active_days: [1, 2, 3, 4, 5],
+    service_type: '1',
+    auto_off: false,
+    allows_rotation_concurrently: false,
+    allows_absence_overlap: false,
+    consecutive_days_mode: 'allowed',
+    allows_multiple: false,
     min_staff: '1',
     optimal_staff: '1',
+    default_overlap_tolerance_minutes: '15',
+    work_time_percentage: '100',
     affects_availability: true,
+    timeslots_enabled: false,
     is_active: true,
 };
 
@@ -42,13 +55,29 @@ function normalizeGroup(group) {
 function normalizeWorkplace(workplace) {
     return {
         ...workplace,
+        allows_multiple: workplace.allows_multiple == null ? null : Boolean(workplace.allows_multiple),
+        auto_off: Boolean(workplace.auto_off),
+        allows_rotation_concurrently: Boolean(workplace.allows_rotation_concurrently),
         affects_availability: Boolean(workplace.affects_availability),
+        allows_absence_overlap: Boolean(workplace.allows_absence_overlap),
+        timeslots_enabled: Boolean(workplace.timeslots_enabled),
         is_active: Boolean(workplace.is_active),
+        active_days: Array.isArray(workplace.active_days) ? workplace.active_days : [1, 2, 3, 4, 5],
     };
 }
 
 function toTimeField(value) {
     return typeof value === 'string' ? value.slice(0, 5) : '';
+}
+
+function serviceTypeLabel(value) {
+    return SERVICE_TYPES.find((entry) => entry.value === Number(value))?.label || 'Kein Typ';
+}
+
+function toggleDay(days, dayIndex) {
+    return days.includes(dayIndex)
+        ? days.filter((entry) => entry !== dayIndex)
+        : [...days, dayIndex].sort((left, right) => left - right);
 }
 
 export default function TenantGroupManagement() {
@@ -283,25 +312,45 @@ export default function TenantGroupManagement() {
             category: workplace.category || '',
             start_time: toTimeField(workplace.start_time),
             end_time: toTimeField(workplace.end_time),
+            active_days: Array.isArray(workplace.active_days) ? workplace.active_days : [1, 2, 3, 4, 5],
+            service_type: workplace.service_type ? String(workplace.service_type) : '1',
+            auto_off: Boolean(workplace.auto_off),
+            allows_rotation_concurrently: Boolean(workplace.allows_rotation_concurrently),
+            allows_absence_overlap: Boolean(workplace.allows_absence_overlap),
+            consecutive_days_mode: workplace.consecutive_days_mode || 'allowed',
+            allows_multiple: workplace.allows_multiple ?? false,
             min_staff: String(workplace.min_staff ?? 1),
             optimal_staff: String(workplace.optimal_staff ?? 1),
+            default_overlap_tolerance_minutes: String(workplace.default_overlap_tolerance_minutes ?? 15),
+            work_time_percentage: String(workplace.work_time_percentage ?? 100),
             affects_availability: Boolean(workplace.affects_availability),
+            timeslots_enabled: Boolean(workplace.timeslots_enabled),
             is_active: Boolean(workplace.is_active),
         });
         setShowWorkplaceDialog(true);
     };
 
     const buildWorkplacePayload = () => {
-        const minStaff = Math.max(1, Number.parseInt(workplaceForm.min_staff, 10) || 1);
-        const optimalStaff = Math.max(minStaff, Number.parseInt(workplaceForm.optimal_staff, 10) || minStaff);
+        const minStaff = Math.max(0, Number.parseInt(workplaceForm.min_staff, 10) || 0);
+        const optimalStaff = Math.max(minStaff, Number.parseInt(workplaceForm.optimal_staff, 10) || Math.max(minStaff, 1));
         return {
             name: workplaceForm.name.trim(),
             category: workplaceForm.category.trim() || null,
             start_time: workplaceForm.start_time || null,
             end_time: workplaceForm.end_time || null,
+            active_days: Array.isArray(workplaceForm.active_days) ? workplaceForm.active_days : [1, 2, 3, 4, 5],
+            service_type: Number.parseInt(workplaceForm.service_type, 10) || null,
+            auto_off: Boolean(workplaceForm.auto_off),
+            allows_rotation_concurrently: Boolean(workplaceForm.allows_rotation_concurrently),
+            allows_absence_overlap: Boolean(workplaceForm.allows_absence_overlap),
+            consecutive_days_mode: workplaceForm.consecutive_days_mode || 'allowed',
+            allows_multiple: Boolean(workplaceForm.allows_multiple),
             min_staff: minStaff,
             optimal_staff: optimalStaff,
+            default_overlap_tolerance_minutes: Math.max(0, Number.parseInt(workplaceForm.default_overlap_tolerance_minutes, 10) || 0),
+            work_time_percentage: Math.min(100, Math.max(0, Number.parseFloat(workplaceForm.work_time_percentage) || 100)),
             affects_availability: Boolean(workplaceForm.affects_availability),
+            timeslots_enabled: Boolean(workplaceForm.timeslots_enabled),
             is_active: Boolean(workplaceForm.is_active),
         };
     };
@@ -548,7 +597,12 @@ export default function TenantGroupManagement() {
                                             <TableRow key={workplace.id} data-testid={`admin-group-workplace-${workplace.id}`}>
                                                 <TableCell>
                                                     <div className="font-medium">{workplace.name}</div>
-                                                    <div className="text-xs text-slate-500">{workplace.category || 'Keine Kategorie'}</div>
+                                                    <div className="mt-1 flex flex-wrap gap-1">
+                                                        <Badge variant="secondary" className="text-[10px] font-normal">{serviceTypeLabel(workplace.service_type)}</Badge>
+                                                        {workplace.auto_off ? <Badge variant="secondary" className="bg-blue-100 text-[10px] font-normal text-blue-700">Auto-Frei</Badge> : null}
+                                                        {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
+                                                        {workplace.allows_multiple ? <Badge variant="secondary" className="bg-teal-100 text-[10px] font-normal text-teal-700">Mehrfachbesetzung</Badge> : null}
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell className="text-slate-500">
                                                     {workplace.start_time && workplace.end_time ? `${toTimeField(workplace.start_time)}–${toTimeField(workplace.end_time)}` : 'Offen'}
@@ -640,7 +694,7 @@ export default function TenantGroupManagement() {
                         <DialogTitle>{editingWorkplace ? 'Gemeinsamen Dienst bearbeiten' : 'Gemeinsamen Dienst anlegen'}</DialogTitle>
                         <DialogDescription>Dieser Dienst erscheint später im Cross-Department-Pool des Dienstplans.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-4 py-2 md:grid-cols-2">
+                    <div className="max-h-[75vh] space-y-4 overflow-y-auto py-2 pr-1">
                         <div className="space-y-2 md:col-span-2">
                             <Label htmlFor="workplace-name">Name</Label>
                             <Input
@@ -659,44 +713,190 @@ export default function TenantGroupManagement() {
                                 placeholder="z. B. Hintergrunddienst"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="workplace-start">Beginn</Label>
-                            <Input
-                                id="workplace-start"
-                                type="time"
-                                value={workplaceForm.start_time}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, start_time: event.target.value }))}
-                            />
+                        <div className="rounded-lg border bg-indigo-50 p-3 space-y-2">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Diensttyp</Label>
+                                <div className="text-xs text-slate-500">Bestimmt die Limit-Prüfung und Verteilung wie bei Tenant-Diensten.</div>
+                            </div>
+                            <Select value={workplaceForm.service_type} onValueChange={(value) => setWorkplaceForm((current) => ({ ...current, service_type: value }))}>
+                                <SelectTrigger className="bg-white" data-testid="admin-group-workplace-service-type">
+                                    <SelectValue placeholder="Diensttyp wählen" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {SERVICE_TYPES.map((serviceType) => (
+                                        <SelectItem key={serviceType.value} value={String(serviceType.value)}>
+                                            <span className="font-medium">{serviceType.label}</span>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="workplace-end">Ende</Label>
-                            <Input
-                                id="workplace-end"
-                                type="time"
-                                value={workplaceForm.end_time}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, end_time: event.target.value }))}
-                            />
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-start">Beginn</Label>
+                                <Input
+                                    id="workplace-start"
+                                    type="time"
+                                    value={workplaceForm.start_time}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, start_time: event.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-end">Ende</Label>
+                                <Input
+                                    id="workplace-end"
+                                    type="time"
+                                    value={workplaceForm.end_time}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, end_time: event.target.value }))}
+                                />
+                            </div>
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="workplace-min">Mindestbesetzung</Label>
-                            <Input
-                                id="workplace-min"
-                                type="number"
-                                min="1"
-                                value={workplaceForm.min_staff}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, min_staff: event.target.value }))}
-                            />
+
+                        <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
+                            <div>
+                                <div className="font-medium text-slate-900">Autom. Freistellen</div>
+                                <div className="text-sm text-slate-500">Mitarbeiter erhält am folgenden Werktag automatisch „Frei“.</div>
+                            </div>
+                            <Switch checked={workplaceForm.auto_off} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, auto_off: checked }))} data-testid="admin-group-workplace-auto-off" />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="workplace-optimal">Soll-Besetzung</Label>
-                            <Input
-                                id="workplace-optimal"
-                                type="number"
-                                min="1"
-                                value={workplaceForm.optimal_staff}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, optimal_staff: event.target.value }))}
-                            />
+
+                        <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
+                            <div>
+                                <div className="font-medium text-slate-900">Rotation erlaubt</div>
+                                <div className="text-sm text-slate-500">Kann parallel zu einer Tagesrotation zugewiesen werden.</div>
+                            </div>
+                            <Switch checked={workplaceForm.allows_rotation_concurrently} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_rotation_concurrently: checked }))} data-testid="admin-group-workplace-rotation" />
                         </div>
+
+                        <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
+                            <div>
+                                <div className="font-medium text-slate-900">Gleichzeitige Abwesenheit erlauben</div>
+                                <div className="text-sm text-slate-500">Dieser Dienst darf trotz Abwesenheit am selben Tag zugewiesen werden.</div>
+                            </div>
+                            <Switch checked={workplaceForm.allows_absence_overlap} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_absence_overlap: checked }))} data-testid="admin-group-workplace-absence-overlap" />
+                        </div>
+
+                        <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Aufeinanderfolgende Tage</Label>
+                                <div className="text-xs text-slate-500">Darf derselbe Arzt an aufeinanderfolgenden Tagen eingeteilt werden?</div>
+                            </div>
+                            <ToggleGroup
+                                type="single"
+                                value={workplaceForm.consecutive_days_mode}
+                                onValueChange={(value) => {
+                                    if (value) {
+                                        setWorkplaceForm((current) => ({ ...current, consecutive_days_mode: value }));
+                                    }
+                                }}
+                                className="justify-start"
+                            >
+                                <ToggleGroupItem value="forbidden" className="px-3 text-xs data-[state=on]:bg-red-100 data-[state=on]:text-red-700">Verboten</ToggleGroupItem>
+                                <ToggleGroupItem value="allowed" className="px-3 text-xs data-[state=on]:bg-green-100 data-[state=on]:text-green-700">Erlaubt</ToggleGroupItem>
+                                <ToggleGroupItem value="preferred" className="px-3 text-xs data-[state=on]:bg-blue-100 data-[state=on]:text-blue-700">Bevorzugt</ToggleGroupItem>
+                            </ToggleGroup>
+                        </div>
+
+                        <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Aktive Tage</Label>
+                                <div className="text-xs text-slate-500">An welchen Wochentagen kann dieser Dienst besetzt werden?</div>
+                            </div>
+                            <div className="flex gap-1">
+                                {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, index) => (
+                                    <button
+                                        key={day}
+                                        type="button"
+                                        onClick={() => setWorkplaceForm((current) => ({ ...current, active_days: toggleDay(current.active_days || [], index) }))}
+                                        data-testid={`admin-group-workplace-day-${index}`}
+                                        className={`h-8 w-8 rounded-full text-xs font-medium transition-colors ${(workplaceForm.active_days || []).includes(index) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                    >
+                                        {day[0]}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
+                            <div>
+                                <div className="font-medium text-slate-900">Mehrfachbesetzung</div>
+                                <div className="text-sm text-slate-500">Mehrere Mitarbeiter können gleichzeitig eingeteilt werden.</div>
+                            </div>
+                            <Switch checked={workplaceForm.allows_multiple} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_multiple: checked }))} data-testid="admin-group-workplace-allows-multiple" />
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-min">Mindestbesetzung</Label>
+                                <Input
+                                    id="workplace-min"
+                                    type="number"
+                                    min="0"
+                                    value={workplaceForm.min_staff}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, min_staff: event.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-optimal">Soll-Besetzung</Label>
+                                <Input
+                                    id="workplace-optimal"
+                                    type="number"
+                                    min="0"
+                                    value={workplaceForm.optimal_staff}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, optimal_staff: event.target.value }))}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-tolerance">Pause / Toleranz (Min.)</Label>
+                                <Input
+                                    id="workplace-tolerance"
+                                    type="number"
+                                    min="0"
+                                    max="60"
+                                    value={workplaceForm.default_overlap_tolerance_minutes}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, default_overlap_tolerance_minutes: event.target.value }))}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="workplace-work-time">Arbeitszeit-Anteil (%)</Label>
+                                <Input
+                                    id="workplace-work-time"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="5"
+                                    value={workplaceForm.work_time_percentage}
+                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, work_time_percentage: event.target.value }))}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between rounded-lg border bg-indigo-50 p-3">
+                            <div>
+                                <div className="flex items-center gap-2 font-medium text-slate-900"><Clock className="h-4 w-4" /> Zeitfenster aktivieren</div>
+                                <div className="text-sm text-slate-500">Ermöglicht wechselnde Teams über den Tag, z. B. Früh-/Spätdienst.</div>
+                            </div>
+                            <Switch checked={workplaceForm.timeslots_enabled} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, timeslots_enabled: checked }))} data-testid="admin-group-workplace-timeslots-enabled" />
+                        </div>
+
+                        {workplaceForm.timeslots_enabled ? (
+                            editingWorkplace ? (
+                                <div className="rounded-lg border p-3">
+                                    <SharedTimeslotEditor
+                                        groupId={selectedGroupId}
+                                        workplaceId={editingWorkplace.id}
+                                        defaultTolerance={Number.parseInt(workplaceForm.default_overlap_tolerance_minutes, 10) || 15}
+                                    />
+                                </div>
+                            ) : (
+                                <div className="rounded bg-amber-50 p-2 text-xs text-amber-700">Speichern Sie zuerst, um Zeitfenster hinzuzufügen.</div>
+                            )
+                        ) : null}
+
                         <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
                             <div>
                                 <div className="font-medium text-slate-900">Verfügbarkeit blockieren</div>
@@ -705,6 +905,7 @@ export default function TenantGroupManagement() {
                             <Switch
                                 checked={workplaceForm.affects_availability}
                                 onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, affects_availability: checked }))}
+                                data-testid="admin-group-workplace-affects-availability"
                             />
                         </div>
                         <div className="flex items-center justify-between rounded-lg border p-3 md:col-span-2">
@@ -715,6 +916,7 @@ export default function TenantGroupManagement() {
                             <Switch
                                 checked={workplaceForm.is_active}
                                 onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, is_active: checked }))}
+                                data-testid="admin-group-workplace-is-active"
                             />
                         </div>
                     </div>
