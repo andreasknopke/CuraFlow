@@ -14,6 +14,7 @@ import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
+import { deleteEmployeeDependentRecords } from '../utils/masterEmployees.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
 
@@ -1498,11 +1499,7 @@ router.delete('/employees/:id', async (req, res, next) => {
       }
     }
 
-    // Delete assignments
-    await db.execute('DELETE FROM EmployeeTenantAssignment WHERE employee_id = ?', [id]);
-
-    // Delete time accounts
-    await db.execute('DELETE FROM TimeAccount WHERE employee_id = ?', [id]);
+    await deleteEmployeeDependentRecords(db, id);
 
     // Delete employee
     await db.execute('DELETE FROM Employee WHERE id = ?', [id]);

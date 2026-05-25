@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import TenantGroupManagement from '@/components/admin/TenantGroupManagement';
@@ -47,7 +47,10 @@ vi.mock('sonner', () => ({
 }));
 
 describe('TenantGroupManagement', () => {
+  let originalConfirm;
+
   beforeEach(() => {
+    originalConfirm = window.confirm;
     Object.values(mocks).forEach((mock) => mock.mockReset());
 
     mocks.listGroups.mockResolvedValue({
@@ -78,6 +81,11 @@ describe('TenantGroupManagement', () => {
     mocks.updateSharedWorkplace.mockResolvedValue({ success: true });
     mocks.deleteSharedWorkplace.mockResolvedValue({});
     mocks.removeGroupMember.mockResolvedValue({});
+    window.confirm = vi.fn(() => true);
+  });
+
+  afterEach(() => {
+    window.confirm = originalConfirm;
   });
 
   it('loads the selected group and creates a shared workplace from the UI', async () => {
@@ -123,6 +131,66 @@ describe('TenantGroupManagement', () => {
         timeslots_enabled: false,
         is_active: true,
       });
+    });
+  });
+
+  it('removes a tenant member from the table immediately after deletion', async () => {
+    const user = userEvent.setup();
+
+    mocks.listGroupMembers
+      .mockResolvedValueOnce({
+        members: [
+          { tenant_id: 'tenant-a', name: 'Innere Nord', host: 'db-a', db_name: 'inner_nord' },
+        ],
+      })
+      .mockResolvedValueOnce({ members: [] });
+
+    renderWithProviders(<TenantGroupManagement />, { withAuthProvider: false, withToaster: false });
+
+    expect(await screen.findByTestId('admin-group-member-tenant-a')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /entfernen/i }));
+
+    await waitFor(() => {
+      expect(mocks.removeGroupMember).toHaveBeenCalledWith(1, 'tenant-a');
+      expect(screen.queryByTestId('admin-group-member-tenant-a')).not.toBeInTheDocument();
+    });
+  });
+
+  it('removes a shared workplace from the table immediately after deletion', async () => {
+    const user = userEvent.setup();
+
+    mocks.listSharedWorkplaces
+      .mockResolvedValueOnce({
+        workplaces: [
+          {
+            id: 'wp-1',
+            name: 'Interner Hintergrunddienst',
+            service_type: 2,
+            auto_off: true,
+            allows_rotation_concurrently: false,
+            affects_availability: true,
+            allows_absence_overlap: false,
+            timeslots_enabled: false,
+            allows_multiple: false,
+            min_staff: 1,
+            optimal_staff: 1,
+            active_days: [1, 2, 3, 4, 5],
+            is_active: true,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ workplaces: [] });
+
+    renderWithProviders(<TenantGroupManagement />, { withAuthProvider: false, withToaster: false });
+
+    const workplaceRow = await screen.findByTestId('admin-group-workplace-wp-1');
+
+    await user.click(within(workplaceRow).getByRole('button', { name: /^löschen$/i }));
+
+    await waitFor(() => {
+      expect(mocks.deleteSharedWorkplace).toHaveBeenCalledWith(1, 'wp-1');
+      expect(screen.queryByTestId('admin-group-workplace-wp-1')).not.toBeInTheDocument();
     });
   });
 });

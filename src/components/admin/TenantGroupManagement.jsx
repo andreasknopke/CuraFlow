@@ -154,6 +154,26 @@ export default function TenantGroupManagement() {
         queryClient.invalidateQueries({ queryKey: ['users'] });
     };
 
+    const removeMemberFromCache = (groupId, tenantId) => {
+        queryClient.setQueryData(['admin', 'tenant-group-members', groupId], (current) => {
+            const membersList = Array.isArray(current?.members) ? current.members : [];
+            return {
+                ...current,
+                members: membersList.filter((member) => String(member.tenant_id) !== String(tenantId)),
+            };
+        });
+    };
+
+    const removeWorkplaceFromCache = (groupId, workplaceId) => {
+        queryClient.setQueryData(['admin', 'tenant-group-workplaces', groupId], (current) => {
+            const workplaceList = Array.isArray(current?.workplaces) ? current.workplaces : [];
+            return {
+                ...current,
+                workplaces: workplaceList.filter((workplace) => String(workplace.id) !== String(workplaceId)),
+            };
+        });
+    };
+
     const createGroupMutation = useMutation({
         mutationFn: (payload) => api.createGroup(payload),
         onSuccess: (response) => {
@@ -204,7 +224,8 @@ export default function TenantGroupManagement() {
 
     const removeMemberMutation = useMutation({
         mutationFn: ({ groupId, tenantId }) => api.removeGroupMember(groupId, tenantId),
-        onSuccess: () => {
+        onSuccess: (_, variables) => {
+            removeMemberFromCache(variables.groupId, variables.tenantId);
             invalidateSelectedGroup();
             toast.success('Mandant entfernt');
         },
@@ -237,7 +258,13 @@ export default function TenantGroupManagement() {
 
     const deleteWorkplaceMutation = useMutation({
         mutationFn: ({ groupId, workplaceId }) => api.deleteSharedWorkplace(groupId, workplaceId),
-        onSuccess: () => {
+        onSuccess: (_, variables) => {
+            removeWorkplaceFromCache(variables.groupId, variables.workplaceId);
+            if (editingWorkplace && String(editingWorkplace.id) === String(variables.workplaceId)) {
+                setShowWorkplaceDialog(false);
+                setEditingWorkplace(null);
+                setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
+            }
             invalidateSelectedGroup();
             toast.success('Gemeinsamer Dienst gelöscht');
         },
