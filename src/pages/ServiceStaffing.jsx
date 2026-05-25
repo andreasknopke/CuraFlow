@@ -56,6 +56,12 @@ export default function ServiceStaffingPage() {
         keepPreviousData: true,
     });
 
+    const { data: visiblePoolData } = useQuery({
+        queryKey: ['pool', 'visible-shifts', fetchRange.start, fetchRange.end],
+        queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }),
+        keepPreviousData: true,
+    });
+
     const { data: wishes = [] } = useQuery({
         queryKey: ['wishes', fetchRange.start, fetchRange.end],
         queryFn: () => db.WishRequest.filter({
@@ -74,7 +80,10 @@ export default function ServiceStaffingPage() {
         queryFn: () => db.Workplace.list(null, 1000),
     });
 
-    const { validateWithUI, validate, shouldCreateAutoFrei, findAutoFreiToCleanup } = useShiftValidation(allShifts, { workplaces });
+    const { validateWithUI, validate, shouldCreateAutoFrei, findAutoFreiToCleanup } = useShiftValidation(allShifts, {
+        workplaces,
+        sharedShifts: visiblePoolData?.shifts || [],
+    });
 
     // Override-Validierung mit Dialog
     const {

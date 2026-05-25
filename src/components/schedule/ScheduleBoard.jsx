@@ -963,6 +963,15 @@ export default function ScheduleBoard() {
     staleTime: 30 * 1000, // 30 seconds cache
   });
 
+    const { data: visiblePoolData } = useQuery({
+        queryKey: ['pool', 'visible-shifts', fetchRange.start, fetchRange.end],
+        queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }),
+        staleTime: 30 * 1000,
+        refetchOnWindowFocus: false,
+    });
+
+    const visiblePoolShifts = visiblePoolData?.shifts || [];
+
   // Query to fetch shifts for the 4-week fairness window relative to the planning period.
   // The autoFill engine uses 3 weeks before firstPlanDate → lastPlanDate.
   // We mirror that: 21 days before fetchRange.start through fetchRange.end.
@@ -1467,7 +1476,11 @@ export default function ScheduleBoard() {
     return scheduleBlocksMap.get(`${dateStr}|${position}`);
   };
 
-    const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, { workplaces, timeslots: workplaceTimeslots });
+        const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, {
+            workplaces,
+            timeslots: workplaceTimeslots,
+            sharedShifts: visiblePoolShifts,
+        });
 
   // Qualifikationsdaten für visuelle Indikatoren
     const { getQualificationIds: getDoctorQualIds } = useAllDoctorQualifications();

@@ -52,6 +52,7 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
     const systemSettings = customOptions.systemSettings || settingsData;
     const staffingEntries = customOptions.staffingEntries || staffingData;
     const timeslots = customOptions.timeslots || timeslotsData;
+    const sharedShifts = customOptions.sharedShifts || [];
 
     const validator = useMemo(() => {
         return new ShiftValidator({
@@ -61,12 +62,13 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
             systemSettings,
             staffingEntries,
             timeslots,
+            sharedShifts,
             qualificationMap,
             getDoctorQualIds,
             wpQualsByWorkplace,
             ...customOptions
         });
-    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
+    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, sharedShifts, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
 
     /**
      * Validiert eine geplante Shift-Operation

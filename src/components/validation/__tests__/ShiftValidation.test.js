@@ -46,4 +46,37 @@ describe('ShiftValidator absence overlap setting', () => {
     expect(result.blockers).toEqual([]);
     expect(result.warnings).toEqual([]);
   });
+
+  it('blocks a tenant rotation when an exclusive cross-tenant service already exists for the linked employee', () => {
+    const validator = createShiftValidator({
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' }],
+      shifts: [],
+      sharedShifts: [
+        {
+          id: 'shared-1',
+          date: '2026-05-19',
+          employee_id: 'employee-1',
+          workplace_name: 'Pool Hintergrund',
+          workplace_category: 'Dienste',
+          allows_rotation_concurrently: false,
+          affects_availability: true,
+        },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'CT Rotation', category: 'Rotationen', affects_availability: true },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+    });
+
+    const result = validator.validate('doctor-1', '2026-05-19', 'CT Rotation');
+
+    expect(result.canProceed).toBe(false);
+    expect(result.blockers).toContain('Konflikt: "Pool Hintergrund" blockiert Rotation.');
+  });
 });

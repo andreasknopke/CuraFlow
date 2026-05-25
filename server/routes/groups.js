@@ -255,6 +255,7 @@ router.get('/visible-shifts', async (req, res) => {
     // Load all active workplaces in the accessible groups (independent of shift presence)
     const [workplaceRows] = await db.execute(
       `SELECT id, group_id, name, category, start_time, end_time, affects_availability,
+              allows_rotation_concurrently,
               min_staff, optimal_staff
          FROM shared_workplace
         WHERE group_id IN (${placeholders})
@@ -270,6 +271,7 @@ router.get('/visible-shifts', async (req, res) => {
       start_time: r.start_time,
       end_time: r.end_time,
       affects_availability: Boolean(r.affects_availability),
+      allows_rotation_concurrently: Boolean(r.allows_rotation_concurrently),
       min_staff: r.min_staff,
       optimal_staff: r.optimal_staff,
       canWrite: canWriteShiftInGroup(ctx, r.group_id),
@@ -287,6 +289,7 @@ router.get('/visible-shifts', async (req, res) => {
               w.group_id,
               w.name AS workplace_name,
               w.category AS workplace_category,
+                w.allows_rotation_concurrently,
               w.affects_availability,
               e.first_name,
                   e.last_name
@@ -315,6 +318,7 @@ router.get('/visible-shifts', async (req, res) => {
         belongs_to_active_tenant: r.billing_tenant_id != null && String(r.billing_tenant_id) === activeTenantId,
         workplace_name: r.workplace_name,
         workplace_category: r.workplace_category,
+        allows_rotation_concurrently: Boolean(r.allows_rotation_concurrently),
         affects_availability: Boolean(r.affects_availability),
         start_time: r.start_time,
         end_time: r.end_time,

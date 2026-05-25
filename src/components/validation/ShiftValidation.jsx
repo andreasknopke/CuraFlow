@@ -21,9 +21,10 @@ export const DEFAULT_ASSISTANT_ROLES = ["Assistenzarzt"];
  */
 
 export class ShiftValidator {
-    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace }) {
+    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, sharedShifts }) {
         this.doctors = doctors || [];
         this.shifts = shifts || [];
+        this.sharedShifts = sharedShifts || [];
         this.workplaces = workplaces || [];
         this.wishes = wishes || [];
         this.systemSettings = systemSettings || [];
@@ -392,12 +393,26 @@ export class ShiftValidator {
         return {};
     }
 
+    _getDoctorSharedShifts(doctorId, dateStr) {
+        const doctor = this.doctors.find((entry) => entry.id === doctorId);
+        const centralEmployeeId = doctor?.central_employee_id;
+        if (!centralEmployeeId) {
+            return [];
+        }
+
+        return this.sharedShifts.filter((shift) =>
+            String(shift.employee_id) === String(centralEmployeeId)
+            && String(shift.date).slice(0, 10) === dateStr
+        );
+    }
+
     _checkServiceRotationConflicts(doctorId, dateStr, newPosition, excludeShiftId) {
         const doctorShifts = this.shifts.filter(s => 
             s.doctor_id === doctorId && 
             s.date === dateStr &&
             s.id !== excludeShiftId
         );
+        const doctorSharedShifts = this._getDoctorSharedShifts(doctorId, dateStr);
 
         // Check if new position is a non-availability-affecting workplace
         const newWorkplace = this.workplaces.find(w => w.name === newPosition);
@@ -422,6 +437,15 @@ export class ShiftValidator {
             const conflict = doctorShifts.find(s => exclusiveServices.includes(s.position));
             if (conflict) {
                 return { blocker: `Konflikt: "${conflict.position}" blockiert Rotation.` };
+            }
+
+            const sharedConflict = doctorSharedShifts.find((shift) =>
+                shift.workplace_category === 'Dienste'
+                && shift.affects_availability !== false
+                && shift.allows_rotation_concurrently === false
+            );
+            if (sharedConflict) {
+                return { blocker: `Konflikt: "${sharedConflict.workplace_name}" blockiert Rotation.` };
             }
         }
 
