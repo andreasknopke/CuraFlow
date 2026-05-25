@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Printer, Send } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Printer, Send, Globe2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { useHolidays } from '@/components/useHolidays';
@@ -17,6 +17,7 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
 import { isWishOnDate } from '@/utils/wishRange';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
+import PoolShiftEditDialog from '@/components/schedule/PoolShiftEditDialog';
 
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
@@ -59,8 +60,27 @@ export default function ServiceStaffingPage() {
     const { data: visiblePoolData } = useQuery({
         queryKey: ['pool', 'visible-shifts', fetchRange.start, fetchRange.end],
         queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }),
-        keepPreviousData: true,
+        placeholderData: keepPreviousData,
     });
+
+    // Build cross-tenant rows + shift lookup map (mirrors ScheduleBoard).
+    const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
+    const crossTenantShifts = visiblePoolData?.shifts || [];
+    const crossTenantShiftsByCell = useMemo(() => {
+        const map = new Map();
+        for (const shift of crossTenantShifts) {
+            const key = `${shift.shared_workplace_id}|${String(shift.date).slice(0, 10)}`;
+            const list = map.get(key) || [];
+            list.push(shift);
+            map.set(key, list);
+        }
+        return map;
+    }, [crossTenantShifts]);
+
+    const [poolEditDialog, setPoolEditDialog] = useState({ open: false, workplace: null, date: null, shift: null });
+    const openPoolEditDialog = (workplace, dateStr, shift = null) => {
+        setPoolEditDialog({ open: true, workplace, date: dateStr, shift });
+    };
 
     const { data: wishes = [] } = useQuery({
         queryKey: ['wishes', fetchRange.start, fetchRange.end],
@@ -124,6 +144,25 @@ export default function ServiceStaffingPage() {
 
         return [...dynamicServices, ...STATIC_SERVICE_TYPES];
     }, [workplaces]);
+
+    // Cross-tenant (group) workplaces appended as additional columns.
+    // They reuse PoolShiftEditDialog (which already does qualification-based filtering
+    // via the eligible-staff endpoint), so they are not booked through the local
+    // doctor select but via the dedicated dialog.
+    const crossTenantServiceTypes = useMemo(() => {
+        return crossTenantWorkplaces.map((wp) => ({
+            id: `__cross_${wp.id}`,
+            label: `${wp.name} (Gruppendienst)`,
+            color: 'bg-indigo-50 text-indigo-900 border-indigo-100',
+            isCrossTenant: true,
+            crossTenantWorkplace: wp,
+        }));
+    }, [crossTenantWorkplaces]);
+
+    const allServiceTypes = useMemo(
+        () => [...serviceTypes, ...crossTenantServiceTypes],
+        [serviceTypes, crossTenantServiceTypes],
+    );
 
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
@@ -439,9 +478,14 @@ export default function ServiceStaffingPage() {
                     <thead className="bg-slate-50 border-b border-slate-200 print:bg-slate-100">
                         <tr>
                             <th className="px-4 py-3 font-semibold text-slate-700 w-[120px]">Datum</th>
-                            {serviceTypes.map(type => (
+                            {allServiceTypes.map(type => (
                                 <th key={type.id} className="px-4 py-3 font-semibold text-slate-700">
-                                    {type.label}
+                                    {type.isCrossTenant ? (
+                                        <span className="inline-flex items-center gap-1">
+                                            <Globe2 className="w-3.5 h-3.5 text-indigo-500" />
+                                            {type.label}
+                                        </span>
+                                    ) : type.label}
                                 </th>
                             ))}
                         </tr>
@@ -466,12 +510,51 @@ export default function ServiceStaffingPage() {
                                             {isHoliday && <span className="block text-[10px] leading-none">Feiertag</span>}
                                         </div>
                                     </td>
-                                    {serviceTypes.map(type => {
+                                    {allServiceTypes.map(type => {
+                                        const dateStr = format(day, 'yyyy-MM-dd');
+
+                                        // Cross-tenant column: render chip(s) + click → PoolShiftEditDialog
+                                        if (type.isCrossTenant) {
+                                            const wp = type.crossTenantWorkplace;
+                                            const shifts = crossTenantShiftsByCell.get(`${wp.id}|${dateStr}`) || [];
+                                            const canWrite = !isReadOnly && (wp.canWrite !== false);
+                                            return (
+                                                <td key={type.id} className="px-4 py-1">
+                                                    <div className="flex flex-wrap items-center gap-1 min-h-[32px]">
+                                                        {shifts.map((shift) => (
+                                                            <button
+                                                                key={shift.id}
+                                                                type="button"
+                                                                onClick={() => canWrite && openPoolEditDialog(wp, dateStr, shift)}
+                                                                disabled={!canWrite}
+                                                                className={`text-xs px-2 py-1 rounded border shadow-sm max-w-full truncate ${shift.belongs_to_active_tenant ? 'bg-indigo-100 border-indigo-200 text-indigo-900' : 'bg-slate-100 border-slate-200 text-slate-700'} ${canWrite ? 'hover:brightness-95' : ''}`}
+                                                                title={`${shift.employee_name} · ${shift.workplace_name}`}
+                                                            >
+                                                                {shift.employee_name}
+                                                            </button>
+                                                        ))}
+                                                        {canWrite && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openPoolEditDialog(wp, dateStr, null)}
+                                                                className="text-xs px-1.5 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-400 inline-flex items-center"
+                                                                title="Pool-Dienst anlegen"
+                                                            >
+                                                                <Plus className="w-3 h-3" />
+                                                            </button>
+                                                        )}
+                                                        {shifts.length === 0 && !canWrite && (
+                                                            <span className="text-slate-300 text-xs">-</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            );
+                                        }
+
                                         const assignedDoctorId = getAssignedDoctorId(day, type.id);
                                         const assignedDoctor = doctors.find(d => d.id === assignedDoctorId);
-                                        
+
                                         // Filter available doctors (exclude absent ones, but keep currently assigned)
-                                        const dateStr = format(day, 'yyyy-MM-dd');
                                         const absentIds = absencesByDate[dateStr] || new Set();
                                         // Qualifikationsanforderungen für diesen Arbeitsplatz/Dienst
                                         const wpQuals = type.workplace_id ? (wpQualsByWorkplace[type.workplace_id] || []) : [];
@@ -694,6 +777,15 @@ export default function ServiceStaffingPage() {
                 context={overrideDialog.context}
                 onConfirm={confirmOverride}
                 onCancel={cancelOverride}
+            />
+
+            {/* Cross-tenant (group/pool) shift editor */}
+            <PoolShiftEditDialog
+                open={poolEditDialog.open}
+                onOpenChange={(open) => setPoolEditDialog((prev) => ({ ...prev, open }))}
+                workplace={poolEditDialog.workplace}
+                date={poolEditDialog.date}
+                shift={poolEditDialog.shift}
             />
 
             <style>{`
