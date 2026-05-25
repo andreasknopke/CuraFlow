@@ -135,8 +135,7 @@ router.get('/visible-shifts', async (req, res) => {
               w.category AS workplace_category,
               w.affects_availability,
               e.first_name,
-              e.last_name,
-              e.display_name
+                  e.last_name
          FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
          LEFT JOIN Employee e ON e.id = s.employee_id
@@ -148,8 +147,7 @@ router.get('/visible-shifts', async (req, res) => {
     );
 
     const shifts = shiftRows.map((r) => {
-      const employeeName = r.display_name
-        || [r.first_name, r.last_name].filter(Boolean).join(' ')
+      const employeeName = [r.first_name, r.last_name].filter(Boolean).join(' ')
         || `#${r.employee_id}`;
       return {
         id: r.id,
