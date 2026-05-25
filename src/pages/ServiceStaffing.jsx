@@ -210,9 +210,20 @@ export default function ServiceStaffingPage() {
         // tenant, the Frei is invisible here. So we derive blocks from the
         // pool shifts directly to keep the dropdown consistent with validation.
         const doctorByCentral = new Map();
+        const doctorByName = new Map();
         for (const doc of doctors) {
             if (doc.central_employee_id) doctorByCentral.set(String(doc.central_employee_id), doc.id);
+            if (doc.name) doctorByName.set(doc.name.trim().toLowerCase(), doc.id);
         }
+        const resolveLocalDoctorId = (shift) => {
+            const byCentral = doctorByCentral.get(String(shift.employee_id));
+            if (byCentral) return byCentral;
+            if (shift.employee_name) {
+                const byName = doctorByName.get(String(shift.employee_name).trim().toLowerCase());
+                if (byName) return byName;
+            }
+            return null;
+        };
         const addBlock = (dateStr, docId) => {
             if (!map[dateStr]) map[dateStr] = new Set();
             map[dateStr].add(docId);
@@ -223,20 +234,26 @@ export default function ServiceStaffingPage() {
             const day = next.getUTCDay();
             if (day === 0 || day === 6) return null;
             const iso = next.toISOString().slice(0, 10);
-            // Treat public holidays like Sunday → no auto-frei.
             try {
                 if (isPublicHoliday(next)) return null;
-            } catch { /* isPublicHoliday may not handle UTC date; ignore */ }
+            } catch { /* ignore */ }
             return iso;
         };
         for (const shift of crossTenantShifts) {
-            const localDocId = doctorByCentral.get(String(shift.employee_id));
+            const localDocId = resolveLocalDoctorId(shift);
             if (!localDocId) continue;
             const dateStr = String(shift.date).slice(0, 10);
+            // Same-day block when the pool workplace affects availability.
             if (shift.affects_availability !== false) {
                 addBlock(dateStr, localDocId);
             }
-            if (shift.auto_off) {
+            // Next workday auto-frei: explicit auto_off flag, or — as a fallback
+            // when the server has not yet been redeployed to expose auto_off —
+            // category 'Dienste' (the historical default for shifts that imply
+            // a rest day).
+            const impliesAutoFrei = shift.auto_off === true
+                || (shift.auto_off == null && shift.workplace_category === 'Dienste');
+            if (impliesAutoFrei) {
                 const next = nextWorkday(dateStr);
                 if (next) addBlock(next, localDocId);
             }
