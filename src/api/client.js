@@ -83,6 +83,23 @@ function createRequestError(message, extras = {}) {
   return error;
 }
 
+async function parseSuccessResponse(response) {
+  if (response.status === 204) {
+    return null;
+  }
+
+  const rawBody = await response.text();
+  if (!rawBody) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    return rawBody;
+  }
+}
+
 export function resolveRequestRetryable({ status, errorData, databaseError }) {
   if (!databaseError) {
     return false;
@@ -161,7 +178,7 @@ class APIClient {
           });
         }
 
-        return response.json();
+        return parseSuccessResponse(response);
       } catch (error) {
         const databaseError = isDatabaseProblem({ status: error.status, errorData: error.details, error });
         const networkError = error instanceof TypeError || /Failed to fetch/i.test(error.message || '');

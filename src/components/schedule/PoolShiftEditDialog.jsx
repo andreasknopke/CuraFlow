@@ -22,6 +22,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { invalidatePoolShiftQueries } from './poolShiftQueries';
 
 /**
  * Edit (or create) a single pool shift entry.
@@ -86,8 +87,8 @@ export default function PoolShiftEditDialog({
         }
     }, [billingOptions, billingTenantId]);
 
-    const invalidateVisibleShifts = () => {
-        queryClient.invalidateQueries({ queryKey: ['pool', 'visible-shifts'] });
+    const refreshAfterShiftChange = async () => {
+        await invalidatePoolShiftQueries(queryClient);
     };
 
     const saveMutation = useMutation({
@@ -103,8 +104,8 @@ export default function PoolShiftEditDialog({
             }
             return api.createGroupShift(groupId, payload, { force: forceOverride });
         },
-        onSuccess: () => {
-            invalidateVisibleShifts();
+        onSuccess: async () => {
+            await refreshAfterShiftChange();
             onOpenChange(false);
         },
         onError: (err) => {
@@ -120,8 +121,8 @@ export default function PoolShiftEditDialog({
 
     const deleteMutation = useMutation({
         mutationFn: () => api.deleteGroupShift(groupId, shift.id),
-        onSuccess: () => {
-            invalidateVisibleShifts();
+        onSuccess: async () => {
+            await refreshAfterShiftChange();
             onOpenChange(false);
         },
     });

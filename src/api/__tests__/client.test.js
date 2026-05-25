@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { resolveRequestRetryable } from '../client';
+import { api, resolveRequestRetryable } from '../client';
 
 describe('resolveRequestRetryable', () => {
   it('does not mark non-database failures as retryable', () => {
@@ -41,5 +41,31 @@ describe('resolveRequestRetryable', () => {
       },
       databaseError: true,
     })).toBe(true);
+  });
+});
+
+describe('api.request', () => {
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('returns null for successful 204 responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, {
+        status: 204,
+      })
+    );
+
+    await expect(api.request('/api/groups/1/shifts/shift-1', { method: 'DELETE' })).resolves.toBeNull();
   });
 });
