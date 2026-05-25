@@ -11,8 +11,10 @@
  */
 import express from 'express';
 import crypto from 'crypto';
+import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
+import { parseDbToken } from '../utils/crypto.js';
 import {
   loadUserGroupContext,
   listUserGroups,
@@ -24,6 +26,11 @@ import {
   canWriteShiftInGroup,
 } from '../utils/tenantGroups.js';
 import { validateProposedShift } from '../utils/poolConstraints.js';
+import {
+  buildSharedShiftAutoFreiMarker,
+  validateSharedShiftTenantRules,
+} from '../utils/sharedShiftTenantRules.js';
+import { getPublicHolidayDatesForYear } from './holidays.js';
 
 const router = express.Router();
 
@@ -38,6 +45,153 @@ function handleError(res, error) {
   }
   console.error('[groups]', error);
   return res.status(500).json({ error: 'Interner Fehler' });
+}
+
+function createHttpError(status, message, details) {
+  const error = new Error(message);
+  error.status = status;
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+}
+
+async function loadTenantTokenById(tenantId) {
+  const [rows] = await db.execute('SELECT * FROM db_tokens WHERE id = ? LIMIT 1', [String(tenantId)]);
+  return rows[0] || null;
+}
+
+async function withTenantDb(token, callback) {
+  let pool = null;
+  try {
+    const config = parseDbToken(token.token);
+    if (!config || !config.host || !config.database) {
+      throw createHttpError(422, `Ungültige Mandanten-Konfiguration für ${token.name || token.id}`);
+    }
+
+    pool = createPool({
+      host: config.host,
+      port: parseInt(config.port || '3306', 10),
+      user: config.user,
+      password: config.password,
+      database: config.database,
+      ssl: config.ssl || undefined,
+      waitForConnections: true,
+      connectionLimit: 2,
+      queueLimit: 0,
+      dateStrings: true,
+      timezone: '+00:00',
+      connectTimeout: 10000,
+    });
+
+    return await callback(pool, token);
+  } finally {
+    if (pool) {
+      await pool.end().catch(() => {});
+    }
+  }
+}
+
+async function loadTenantDoctorAssignment(employeeId, tenantId) {
+  const [rows] = await db.execute(
+    'SELECT tenant_doctor_id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ? LIMIT 1',
+    [String(employeeId), String(tenantId)]
+  );
+  return rows[0]?.tenant_doctor_id || null;
+}
+
+async function loadHolidayDatesAround(dateStr) {
+  const currentYear = Number(String(dateStr).slice(0, 4));
+  const nextDate = new Date(`${dateStr}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const nextYear = nextDate.getUTCFullYear();
+
+  const dates = new Set(await getPublicHolidayDatesForYear(currentYear));
+  if (nextYear !== currentYear) {
+    const nextYearDates = await getPublicHolidayDatesForYear(nextYear);
+    nextYearDates.forEach((date) => dates.add(date));
+  }
+  return dates;
+}
+
+async function loadTenantRuleContext({ employeeId, billingTenantId, dateStr }) {
+  const tenantToken = await loadTenantTokenById(billingTenantId);
+  if (!tenantToken) {
+    throw createHttpError(422, 'Abrechnungsmandant nicht gefunden');
+  }
+
+  const tenantDoctorId = await loadTenantDoctorAssignment(employeeId, billingTenantId);
+  if (!tenantDoctorId) {
+    throw createHttpError(422, 'Mitarbeiter ist im Abrechnungsmandanten nicht verknüpft');
+  }
+
+  const holidayDates = await loadHolidayDatesAround(dateStr);
+  const nextDate = new Date(`${dateStr}T00:00:00Z`);
+  nextDate.setUTCDate(nextDate.getUTCDate() + 1);
+  const nextDateStr = nextDate.toISOString().slice(0, 10);
+
+  const tenantData = await withTenantDb(tenantToken, async (pool) => {
+    const [shiftRows] = await pool.execute(
+      `SELECT id, date, doctor_id, position, created_by
+         FROM ShiftEntry
+        WHERE doctor_id = ? AND date BETWEEN ? AND ?`,
+      [String(tenantDoctorId), dateStr, nextDateStr]
+    );
+
+    const [workplaceRows] = await pool.execute(
+      `SELECT name, category, affects_availability
+         FROM Workplace`
+    ).catch(() => [[[]]]);
+
+    return {
+      tenantShifts: Array.isArray(shiftRows) ? shiftRows : [],
+      tenantWorkplaces: Array.isArray(workplaceRows) ? workplaceRows : [],
+    };
+  });
+
+  return {
+    tenantToken,
+    tenantDoctorId,
+    holidayDates,
+    tenantShifts: tenantData.tenantShifts,
+    tenantWorkplaces: tenantData.tenantWorkplaces,
+  };
+}
+
+async function ensureTenantAutoFreiEntry({ shiftId, workplace, tenantToken, tenantDoctorId, autoFreiDate, tenantShifts }) {
+  if (!workplace?.auto_off || !autoFreiDate) {
+    return;
+  }
+
+  const existingNextDayShift = tenantShifts.find(
+    (shift) => String(shift.doctor_id) === String(tenantDoctorId) && String(shift.date).slice(0, 10) === autoFreiDate
+  );
+  if (existingNextDayShift) {
+    return;
+  }
+
+  const marker = buildSharedShiftAutoFreiMarker(shiftId);
+  await withTenantDb(tenantToken, async (pool) => {
+    await pool.execute(
+      `INSERT INTO ShiftEntry (id, date, doctor_id, position, created_by)
+       VALUES (?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), autoFreiDate, String(tenantDoctorId), 'Frei', marker]
+    );
+  });
+}
+
+async function cleanupTenantAutoFreiEntry({ shiftId, tenantId }) {
+  if (!tenantId) {
+    return;
+  }
+  const tenantToken = await loadTenantTokenById(tenantId);
+  if (!tenantToken) {
+    return;
+  }
+  const marker = buildSharedShiftAutoFreiMarker(shiftId);
+  await withTenantDb(tenantToken, async (pool) => {
+    await pool.execute('DELETE FROM ShiftEntry WHERE created_by = ?', [marker]);
+  });
 }
 
 async function loadCtx(req, res) {
@@ -724,7 +878,11 @@ router.post('/:groupId/shifts', async (req, res) => {
 
     // Verify workplace belongs to the group
     const [wpRows] = await db.execute(
-      'SELECT id, name, min_staff, optimal_staff, constraints_json FROM shared_workplace WHERE id = ? AND group_id = ? AND is_active = 1',
+      `SELECT id, name, category, min_staff, optimal_staff, constraints_json,
+              auto_off, allows_rotation_concurrently, allows_absence_overlap,
+              affects_availability, consecutive_days_mode
+         FROM shared_workplace
+        WHERE id = ? AND group_id = ? AND is_active = 1`,
       [shared_workplace_id, req.params.groupId]
     );
     if (wpRows.length === 0) return res.status(404).json({ error: 'Workplace nicht gefunden' });
@@ -737,9 +895,28 @@ router.post('/:groupId/shifts', async (req, res) => {
       proposed: { date, employee_id, employee_role: req.body.employee_role || null },
       existingForWorkplace: existing,
     });
+    const tenantRuleContext = await loadTenantRuleContext({
+      employeeId: employee_id,
+      billingTenantId: billing_tenant_id,
+      dateStr: date,
+    });
+    const tenantRuleResult = validateSharedShiftTenantRules({
+      workplace,
+      dateStr: date,
+      centralEmployeeId: employee_id,
+      tenantDoctorId: tenantRuleContext.tenantDoctorId,
+      tenantShifts: tenantRuleContext.tenantShifts,
+      tenantWorkplaces: tenantRuleContext.tenantWorkplaces,
+      existingSharedShiftsForWorkplace: existing,
+      holidayDates: tenantRuleContext.holidayDates,
+    });
     // Hard violations (max_per_person_month, max_consecutive, rest_after) block the save.
     const hardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
     const hard = violations.filter((v) => hardRules.has(v.rule));
+    const tenantHard = tenantRuleResult.blockers;
+    if (tenantHard.length > 0) {
+      return res.status(422).json({ error: 'constraint_violation', details: tenantHard });
+    }
     if (hard.length > 0 && req.query.force !== '1') {
       return res.status(422).json({ error: 'constraint_violation', details: hard });
     }
@@ -753,7 +930,21 @@ router.post('/:groupId/shifts', async (req, res) => {
        start_time || null, end_time || null, note || null,
        req.user.email || req.user.sub]
     );
-    res.status(201).json({ id, warnings: violations.filter((v) => !hardRules.has(v.rule)) });
+    await ensureTenantAutoFreiEntry({
+      shiftId: id,
+      workplace,
+      tenantToken: tenantRuleContext.tenantToken,
+      tenantDoctorId: tenantRuleContext.tenantDoctorId,
+      autoFreiDate: tenantRuleResult.autoFreiDate,
+      tenantShifts: tenantRuleContext.tenantShifts,
+    });
+    res.status(201).json({
+      id,
+      warnings: [
+        ...violations.filter((v) => !hardRules.has(v.rule)),
+        ...tenantRuleResult.warnings,
+      ],
+    });
   } catch (err) {
     handleError(res, err);
   }
@@ -780,16 +971,80 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
 
     // Verify shift belongs to a workplace in this group
     const [rows] = await db.execute(
-      `SELECT s.id FROM shared_shift_entry s
+      `SELECT s.id, s.shared_workplace_id, s.date, s.employee_id, s.billing_tenant_id,
+              w.name, w.category, w.auto_off, w.allows_rotation_concurrently,
+              w.allows_absence_overlap, w.affects_availability, w.consecutive_days_mode,
+              w.min_staff, w.optimal_staff, w.constraints_json
+         FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
         WHERE s.id = ? AND w.group_id = ?`,
       [req.params.shiftId, req.params.groupId]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
 
+    const currentShift = rows[0];
+    const nextState = {
+      date: req.body.date ?? String(currentShift.date).slice(0, 10),
+      employee_id: req.body.employee_id ?? currentShift.employee_id,
+      billing_tenant_id: req.body.billing_tenant_id ?? currentShift.billing_tenant_id,
+      start_time: req.body.start_time ?? currentShift.start_time,
+      end_time: req.body.end_time ?? currentShift.end_time,
+      note: req.body.note ?? currentShift.note,
+    };
+
+    const existingForWorkplace = (await loadShiftsWindow(currentShift.shared_workplace_id, nextState.date))
+      .filter((shift) => String(shift.id) !== String(req.params.shiftId));
+    const poolViolations = validateProposedShift({
+      workplace: currentShift,
+      proposed: { date: nextState.date, employee_id: nextState.employee_id, employee_role: req.body.employee_role || null },
+      existingForWorkplace,
+    });
+    const poolHardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
+    const poolHard = poolViolations.filter((violation) => poolHardRules.has(violation.rule));
+    if (poolHard.length > 0 && req.query.force !== '1') {
+      return res.status(422).json({ error: 'constraint_violation', details: poolHard });
+    }
+
+    const tenantRuleContext = await loadTenantRuleContext({
+      employeeId: nextState.employee_id,
+      billingTenantId: nextState.billing_tenant_id,
+      dateStr: nextState.date,
+    });
+    const tenantRuleResult = validateSharedShiftTenantRules({
+      workplace: currentShift,
+      dateStr: nextState.date,
+      centralEmployeeId: nextState.employee_id,
+      tenantDoctorId: tenantRuleContext.tenantDoctorId,
+      tenantShifts: tenantRuleContext.tenantShifts,
+      tenantWorkplaces: tenantRuleContext.tenantWorkplaces,
+      existingSharedShiftsForWorkplace: existingForWorkplace,
+      holidayDates: tenantRuleContext.holidayDates,
+    });
+    if (tenantRuleResult.blockers.length > 0) {
+      return res.status(422).json({ error: 'constraint_violation', details: tenantRuleResult.blockers });
+    }
+
     values.push(req.params.shiftId);
     await db.execute(`UPDATE shared_shift_entry SET ${fields.join(', ')} WHERE id = ?`, values);
-    res.json({ success: true });
+    await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: currentShift.billing_tenant_id });
+    if (String(nextState.billing_tenant_id) !== String(currentShift.billing_tenant_id)) {
+      await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: nextState.billing_tenant_id });
+    }
+    await ensureTenantAutoFreiEntry({
+      shiftId: req.params.shiftId,
+      workplace: currentShift,
+      tenantToken: tenantRuleContext.tenantToken,
+      tenantDoctorId: tenantRuleContext.tenantDoctorId,
+      autoFreiDate: tenantRuleResult.autoFreiDate,
+      tenantShifts: tenantRuleContext.tenantShifts,
+    });
+    res.json({
+      success: true,
+      warnings: [
+        ...poolViolations.filter((violation) => !poolHardRules.has(violation.rule)),
+        ...tenantRuleResult.warnings,
+      ],
+    });
   } catch (err) {
     handleError(res, err);
   }
@@ -800,6 +1055,16 @@ router.delete('/:groupId/shifts/:shiftId', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireGroupWriteAccess(ctx, req.params.groupId);
+    const [rows] = await db.execute(
+      `SELECT s.id, s.billing_tenant_id
+         FROM shared_shift_entry s
+         JOIN shared_workplace w ON w.id = s.shared_workplace_id
+        WHERE s.id = ? AND w.group_id = ?`,
+      [req.params.shiftId, req.params.groupId]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
+
+    await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: rows[0].billing_tenant_id });
     const [result] = await db.execute(
       `DELETE s FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
