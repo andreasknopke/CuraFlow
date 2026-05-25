@@ -423,20 +423,31 @@ export class ShiftValidator {
             return {};
         }
 
+        const isAvailabilityBlockingNonService = (workplace) => (
+            workplace
+            && workplace.category !== 'Dienste'
+            && workplace.affects_availability !== false
+        );
+
         const rotationPositions = this.workplaces.filter(w => w.category === 'Rotationen').map(w => w.name);
         const exclusiveServices = this.workplaces
             .filter(w => w.category === 'Dienste' && w.allows_rotation_concurrently === false)
             .map(w => w.name);
 
         const isNewRotation = rotationPositions.includes(newPosition);
+        const isNewAvailabilityBlockingNonService = isAvailabilityBlockingNonService(newWorkplace);
         const newServiceWorkplace = this.workplaces.find(w => w.name === newPosition && w.category === 'Dienste');
         const isNewService = !!newServiceWorkplace;
 
-        // Neue Rotation + existierender exklusiver Dienst
-        if (isNewRotation) {
+        // Neuer availability-relevanter Nicht-Dienst-Bereich + existierender exklusiver Dienst
+        if (isNewAvailabilityBlockingNonService) {
             const conflict = doctorShifts.find(s => exclusiveServices.includes(s.position));
             if (conflict) {
-                return { blocker: `Konflikt: "${conflict.position}" blockiert Rotation.` };
+                return {
+                    blocker: isNewRotation
+                        ? `Konflikt: "${conflict.position}" blockiert Rotation.`
+                        : `Konflikt: "${conflict.position}" blockiert diesen Bereich.`
+                };
             }
 
             const sharedConflict = doctorSharedShifts.find((shift) =>
@@ -445,23 +456,27 @@ export class ShiftValidator {
                 && shift.allows_rotation_concurrently === false
             );
             if (sharedConflict) {
-                return { blocker: `Konflikt: "${sharedConflict.workplace_name}" blockiert Rotation.` };
+                return {
+                    blocker: isNewRotation
+                        ? `Konflikt: "${sharedConflict.workplace_name}" blockiert Rotation.`
+                        : `Konflikt: "${sharedConflict.workplace_name}" blockiert diesen Bereich.`
+                };
             }
         }
 
-        // Neuer exklusiver Dienst + existierende Rotation
+        // Neuer exklusiver Dienst + existierender availability-relevanter Nicht-Dienst-Bereich
         if (isNewService && newServiceWorkplace.allows_rotation_concurrently === false) {
-            // Check if existing shift is a non-availability-affecting position
-            // If so, it doesn't block the new service
             const conflict = doctorShifts.find(s => {
-                if (!rotationPositions.includes(s.position)) return false;
                 const existingWorkplace = this.workplaces.find(w => w.name === s.position);
-                // Non-availability-affecting positions don't block
-                if (existingWorkplace?.affects_availability === false) return false;
-                return true;
+                return isAvailabilityBlockingNonService(existingWorkplace);
             });
             if (conflict) {
-                return { blocker: `Konflikt: Rotation "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.` };
+                const existingWorkplace = this.workplaces.find(w => w.name === conflict.position);
+                return {
+                    blocker: existingWorkplace?.category === 'Rotationen'
+                        ? `Konflikt: Rotation "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.`
+                        : `Konflikt: Bereich "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.`
+                };
             }
         }
 
