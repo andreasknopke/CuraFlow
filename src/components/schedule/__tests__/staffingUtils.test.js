@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isDoctorAvailable, calculateWeeklyTargetHours } from '../staffingUtils';
+import { isDoctorAvailable, calculateWeeklyTargetHours, getAvailabilityBlockingDoctorIdsByDate } from '../staffingUtils';
 
 // ---------------------------------------------------------------------------
 // isDoctorAvailable
@@ -86,5 +86,77 @@ describe('calculateWeeklyTargetHours', () => {
     expect(calculateWeeklyTargetHours(1.0, monday, [], 38, 5)).toBe(38);
     const holidays = ['2024-03-11'];
     expect(calculateWeeklyTargetHours(1.0, monday, holidays, 38, 5)).toBeCloseTo(38 - 38 / 5);
+  });
+});
+
+describe('getAvailabilityBlockingDoctorIdsByDate', () => {
+  it('includes local blocking shifts and exclusive cross-tenant shifts for linked doctors', () => {
+    const result = getAvailabilityBlockingDoctorIdsByDate({
+      localShifts: [
+        { doctor_id: 1, date: '2025-02-12', position: 'Rotation CT' },
+        { doctor_id: 2, date: '2025-02-12', position: 'Dienst A' },
+        { doctor_id: 4, date: '2025-02-12', position: 'Demo A' },
+      ],
+      sharedShifts: [
+        {
+          employee_id: 200,
+          date: '2025-02-12',
+          workplace_category: 'Dienste',
+          workplace_name: 'Pool Dienst',
+          affects_availability: true,
+          allows_rotation_concurrently: false,
+        },
+        {
+          employee_id: 300,
+          date: '2025-02-12',
+          workplace_category: 'Dienste',
+          workplace_name: 'Pool Demo',
+          affects_availability: true,
+          allows_rotation_concurrently: true,
+        },
+      ],
+      workplaces: [
+        { name: 'Rotation CT', category: 'Rotationen' },
+        { name: 'Dienst A', category: 'Dienste', allows_rotation_concurrently: false },
+        { name: 'Demo A', category: 'Demonstrationen & Konsile' },
+      ],
+      doctors: [
+        { id: 1, central_employee_id: 100 },
+        { id: 2, central_employee_id: 101 },
+        { id: 3, central_employee_id: 200 },
+        { id: 4, central_employee_id: 300 },
+      ],
+    });
+
+    expect(Array.from(result.get('2025-02-12') || []).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+  });
+
+  it('skips non-blocking workplaces and non-availability-affecting shared shifts', () => {
+    const result = getAvailabilityBlockingDoctorIdsByDate({
+      localShifts: [
+        { doctor_id: 1, date: '2025-02-13', position: 'Service With Concurrency' },
+        { doctor_id: 2, date: '2025-02-13', position: 'Non Blocking Role' },
+      ],
+      sharedShifts: [
+        {
+          employee_id: 100,
+          date: '2025-02-13',
+          workplace_category: 'Rotationen',
+          workplace_name: 'Pool Role',
+          affects_availability: false,
+          allows_rotation_concurrently: false,
+        },
+      ],
+      workplaces: [
+        { name: 'Service With Concurrency', category: 'Dienste', allows_rotation_concurrently: true },
+        { name: 'Non Blocking Role', category: 'Rotationen', affects_availability: false },
+      ],
+      doctors: [
+        { id: 1, central_employee_id: 100 },
+        { id: 2, central_employee_id: 200 },
+      ],
+    });
+
+    expect(result.get('2025-02-13')).toBeUndefined();
   });
 });

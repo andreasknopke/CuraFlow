@@ -36,7 +36,7 @@ import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hoo
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
-import { isDoctorAvailable } from './staffingUtils';
+import { getAvailabilityBlockingDoctorIdsByDate, isDoctorAvailable } from './staffingUtils';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -2281,6 +2281,13 @@ export default function ScheduleBoard() {
     return dbShifts;
   }, [allShifts, currentDate, previewShifts]);
 
+    const availabilityBlockingDoctorIdsByDate = useMemo(() => getAvailabilityBlockingDoctorIdsByDate({
+            localShifts: currentWeekShifts,
+            sharedShifts: visiblePoolShifts,
+            workplaces,
+            doctors,
+    }), [currentWeekShifts, visiblePoolShifts, workplaces, doctors]);
+
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
 
@@ -4150,16 +4157,7 @@ export default function ScheduleBoard() {
                                                       {rowName === 'Verfügbar' ? (
                                                           <Droppable droppableId={withPanelPrefix(`available__${dateStr}`, SPLIT_PANEL_PREFIX)} isDropDisabled={isReadOnly}>
                                                               {(provided, snapshot) => {
-                                                                  const blockingShifts = currentWeekShifts.filter(s => {
-                                                                      if (s.date !== dateStr) return false;
-                                                                      const wp = workplaces.find(w => w.name === s.position);
-                                                                      if (wp?.affects_availability === false) return false;
-                                                                      if (wp?.allows_rotation_concurrently === true) return false;
-                                                                      if (wp?.allows_rotation_concurrently === false) return true;
-                                                                      if (wp && ['Dienste', 'Demonstrationen & Konsile'].includes(wp.category)) return false;
-                                                                      return true;
-                                                                  });
-                                                                  const assignedDocIds = new Set(blockingShifts.map(s => s.doctor_id));
+                                                                  const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
                                                                   const availableDocs = sortDoctorsForDisplay(
                                                                       doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
                                                                   );
@@ -4742,7 +4740,7 @@ export default function ScheduleBoard() {
                     // Validation Logic
                     const dateStr = format(day, 'yyyy-MM-dd');
                     const dayShifts = currentWeekShifts.filter(s => s.date === dateStr);
-                    const assignedDocIds = new Set(dayShifts.map(s => s.doctor_id));
+                    const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
                     const unassignedDocs = sortDoctorsForDisplay(
                         doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
                     );
@@ -5034,29 +5032,7 @@ export default function ScheduleBoard() {
                                                 {(provided, snapshot) => {
                                                     // Calculate available doctors
                                                     // Filter out doctors who are already assigned to a BLOCKING position
-                                                    const blockingShifts = currentWeekShifts.filter(s => {
-                                                        if (s.date !== dateStr) return false;
-
-                                                        const wp = workplaces.find(w => w.name === s.position);
-
-                                                        // NEW: If workplace doesn't affect availability, it's never blocking
-                                                        // (except for absences which have no workplace entry)
-                                                        if (wp?.affects_availability === false) return false;
-
-                                                        // Explicit permission for rotation concurrency
-                                                        if (wp?.allows_rotation_concurrently === true) return false;
-
-                                                        // Explicit prohibition
-                                                        if (wp?.allows_rotation_concurrently === false) return true;
-
-                                                        // Default behavior based on category (Dienste/Demos don't block by default)
-                                                        if (wp && ['Dienste', 'Demonstrationen & Konsile'].includes(wp.category)) return false;
-
-                                                        // Default blocking (Absences, Rotations, Unknowns)
-                                                        return true;
-                                                    });
-
-                                                    const assignedDocIds = new Set(blockingShifts.map(s => s.doctor_id));
+                                                    const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
                                                     const availableDocs = sortDoctorsForDisplay(
                                                         doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
                                                     );

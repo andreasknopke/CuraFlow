@@ -45,6 +45,64 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     return true;
 }
 
+function blocksAvailability({ category, affectsAvailability, allowsRotationConcurrently }) {
+    if (affectsAvailability === false) return false;
+    if (allowsRotationConcurrently === true) return false;
+    if (allowsRotationConcurrently === false) return true;
+    if (['Dienste', 'Demonstrationen & Konsile'].includes(category)) return false;
+    return true;
+}
+
+export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], sharedShifts = [], workplaces = [], doctors = [] }) {
+    const workplaceByName = new Map(workplaces.map((workplace) => [workplace.name, workplace]));
+    const doctorIdsByCentralEmployeeId = new Map();
+
+    doctors.forEach((doctor) => {
+        if (!doctor?.central_employee_id) return;
+        const key = String(doctor.central_employee_id);
+        const existingDoctorIds = doctorIdsByCentralEmployeeId.get(key) || [];
+        existingDoctorIds.push(doctor.id);
+        doctorIdsByCentralEmployeeId.set(key, existingDoctorIds);
+    });
+
+    const blockingDoctorIdsByDate = new Map();
+
+    const addDoctorId = (dateStr, doctorId) => {
+        if (!dateStr || doctorId === undefined || doctorId === null) return;
+        const existingDoctorIds = blockingDoctorIdsByDate.get(dateStr) || new Set();
+        existingDoctorIds.add(doctorId);
+        blockingDoctorIdsByDate.set(dateStr, existingDoctorIds);
+    };
+
+    localShifts.forEach((shift) => {
+        const workplace = workplaceByName.get(shift?.position);
+        if (!blocksAvailability({
+            category: workplace?.category,
+            affectsAvailability: workplace?.affects_availability,
+            allowsRotationConcurrently: workplace?.allows_rotation_concurrently,
+        })) {
+            return;
+        }
+
+        addDoctorId(String(shift?.date).slice(0, 10), shift?.doctor_id);
+    });
+
+    sharedShifts.forEach((shift) => {
+        if (!blocksAvailability({
+            category: shift?.workplace_category,
+            affectsAvailability: shift?.affects_availability,
+            allowsRotationConcurrently: shift?.allows_rotation_concurrently,
+        })) {
+            return;
+        }
+
+        const mappedDoctorIds = doctorIdsByCentralEmployeeId.get(String(shift?.employee_id)) || [];
+        mappedDoctorIds.forEach((doctorId) => addDoctorId(String(shift?.date).slice(0, 10), doctorId));
+    });
+
+    return blockingDoctorIdsByDate;
+}
+
 /**
  * Calculates the weekly target working hours for a doctor, adjusted for public holidays.
  * @param {number} fte - Full-time equivalent (e.g., 1.0, 0.75)
