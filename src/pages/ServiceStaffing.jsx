@@ -201,8 +201,48 @@ export default function ServiceStaffingPage() {
                 map[shift.date].add(shift.doctor_id);
             }
         });
+
+        // Cross-tenant pool shifts also block the local doctor: same day if the
+        // pool workplace affects availability, and the next workday if auto_off
+        // is set (mirrors the server-side ensureTenantAutoFreiEntry logic). The
+        // server inserts a local Frei entry, but that entry lives in the
+        // billing tenant's DB — if the billing tenant differs from the active
+        // tenant, the Frei is invisible here. So we derive blocks from the
+        // pool shifts directly to keep the dropdown consistent with validation.
+        const doctorByCentral = new Map();
+        for (const doc of doctors) {
+            if (doc.central_employee_id) doctorByCentral.set(String(doc.central_employee_id), doc.id);
+        }
+        const addBlock = (dateStr, docId) => {
+            if (!map[dateStr]) map[dateStr] = new Set();
+            map[dateStr].add(docId);
+        };
+        const nextWorkday = (dateStr) => {
+            const next = new Date(`${dateStr}T00:00:00Z`);
+            next.setUTCDate(next.getUTCDate() + 1);
+            const day = next.getUTCDay();
+            if (day === 0 || day === 6) return null;
+            const iso = next.toISOString().slice(0, 10);
+            // Treat public holidays like Sunday → no auto-frei.
+            try {
+                if (isPublicHoliday(next)) return null;
+            } catch { /* isPublicHoliday may not handle UTC date; ignore */ }
+            return iso;
+        };
+        for (const shift of crossTenantShifts) {
+            const localDocId = doctorByCentral.get(String(shift.employee_id));
+            if (!localDocId) continue;
+            const dateStr = String(shift.date).slice(0, 10);
+            if (shift.affects_availability !== false) {
+                addBlock(dateStr, localDocId);
+            }
+            if (shift.auto_off) {
+                const next = nextWorkday(dateStr);
+                if (next) addBlock(next, localDocId);
+            }
+        }
         return map;
-    }, [allShifts]);
+    }, [allShifts, crossTenantShifts, doctors, isPublicHoliday]);
 
     const sendNotificationsMutation = useMutation({
         mutationFn: async () => {
