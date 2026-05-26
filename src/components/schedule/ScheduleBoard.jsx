@@ -45,6 +45,7 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
 import { applyAlwaysVisibleRowsToSections, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
+import { createScheduleShiftLookup, getShiftsForScheduleCell } from '@/components/schedule/scheduleShiftLookup';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -2318,6 +2319,16 @@ export default function ScheduleBoard() {
             : `${rowLabelWidth}px repeat(${weekDays.length}, minmax(${isMonthView ? 38 : 0}px, 1fr))`
     }), [viewMode, rowLabelWidth, weekDays.length, isMonthView]);
 
+    const matrixRowVisibilityStyle = useMemo(() => ({
+        contentVisibility: 'auto',
+        containIntrinsicSize: isMonthView ? '48px' : '72px',
+    }), [isMonthView]);
+
+    const matrixRowStyle = useMemo(() => ({
+        ...matrixGridStyle,
+        ...matrixRowVisibilityStyle,
+    }), [matrixGridStyle, matrixRowVisibilityStyle]);
+
     const matrixMinWidth = useMemo(() => {
         if (viewMode === 'day') return rowLabelWidth + 480;
         return rowLabelWidth + (weekDays.length * (isMonthView ? 38 : 90));
@@ -2363,12 +2374,57 @@ export default function ScheduleBoard() {
     return dbShifts;
   }, [allShifts, currentDate, previewShifts]);
 
+        const currentWeekShiftLookup = useMemo(() => createScheduleShiftLookup(currentWeekShifts), [currentWeekShifts]);
+
+        const currentWeekShiftDates = useMemo(() => new Set(currentWeekShifts.map((shift) => shift.date)), [currentWeekShifts]);
+
+        const currentWeekShiftPositionsByDate = useMemo(() => {
+            const map = new Map();
+
+            currentWeekShifts.forEach((shift) => {
+                if (!shift?.date || !shift?.position) return;
+
+                if (!map.has(shift.date)) {
+                    map.set(shift.date, new Set());
+                }
+                map.get(shift.date).add(shift.position);
+            });
+
+            return map;
+        }, [currentWeekShifts]);
+
+        const unassignedShiftPositions = useMemo(() => new Set(
+            currentWeekShifts
+                .filter((shift) => !shift.timeslot_id)
+                .map((shift) => shift.position)
+        ), [currentWeekShifts]);
+
+        const doctorById = useMemo(() => new Map(doctors.map((doctor) => [doctor.id, doctor])), [doctors]);
+
+        const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
+
     const availabilityBlockingDoctorIdsByDate = useMemo(() => getAvailabilityBlockingDoctorIdsByDate({
             localShifts: currentWeekShifts,
             sharedShifts: visiblePoolShifts,
             workplaces,
             doctors,
     }), [currentWeekShifts, visiblePoolShifts, workplaces, doctors]);
+
+    const availableDoctorsByDate = useMemo(() => {
+        const map = new Map();
+
+        weekDays.forEach((day) => {
+            if (!isValid(day)) return;
+
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
+            map.set(dateStr, sortDoctorsForDisplay(
+                doctors.filter((doctor) => !assignedDocIds.has(doctor.id) && doctor.role !== 'Nicht-Radiologe')
+            ));
+        });
+
+        return map;
+    }, [availabilityBlockingDoctorIdsByDate, doctors, sortDoctorsAlphabetically, weekDays]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
@@ -3906,62 +3962,22 @@ export default function ScheduleBoard() {
     if (!isValid(date)) return null;
     const dateStr = format(date, 'yyyy-MM-dd');
     
-    // Filter shifts by position and optionally by timeslot_id
-    let shifts = currentWeekShifts.filter(s => {
-      if (s.date !== dateStr || s.position !== rowName) return false;
-      
-      // Fall 0: Einzelner Timeslot - zeige nur Shifts dieses Timeslots + Shifts ohne Timeslot
-      // Verhält sich wie normale Zeile, aber inkludiert Shifts des einzigen Timeslots
-      if (singleTimeslotId) {
-        return s.timeslot_id === singleTimeslotId || !s.timeslot_id;
-      }
-      
-      // Fall 1: Eingeklappte Gruppe - zeige ALLE Shifts aus allen Timeslots + Shifts ohne Timeslot
-      if (allTimeslotIds && allTimeslotIds.length > 0) {
-        return allTimeslotIds.includes(s.timeslot_id) || !s.timeslot_id;
-      }
-      
-      // Fall 2: "Nicht zugewiesen" Zeile - zeige nur Shifts ohne timeslot_id
-      if (timeslotId === '__unassigned__') {
-        return !s.timeslot_id;
-      }
-      
-      // Fall 3: Spezifische timeslotId angegeben (Timeslot-Unterzeile)
-      if (timeslotId !== null) {
-        return s.timeslot_id === timeslotId;
-      }
-      
-      // Fall 4: Gruppen-Header (isTimeslotGroupHeader mit timeslotId === null)
-      // Zeigt nichts direkt an - Shifts werden in Unterzeilen oder "Nicht zugewiesen" angezeigt
-      const workplace = workplaces.find(w => w.name === rowName);
-      if (workplace?.timeslots_enabled) {
-        // Bei aktivierten Timeslots: Header-Zeile zeigt keine Shifts (werden in Unterzeilen gezeigt)
-        return false;
-      }
-      
-      // Arbeitsplatz hat keine Timeslots - zeige alle Shifts
-      return true;
-    }).sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    // Bei eingeklappter Gruppe: Dedupliziere Ärzte, die in mehreren Timeslots eingetragen sind
-    // Zeige jeden Arzt nur EINMAL an, auch wenn er in allen Timeslots ist
-    if (allTimeslotIds && allTimeslotIds.length > 0) {
-      const seenDoctorIds = new Set();
-      shifts = shifts.filter(shift => {
-        if (seenDoctorIds.has(shift.doctor_id)) {
-          return false; // Duplikat überspringen
-        }
-        seenDoctorIds.add(shift.doctor_id);
-        return true;
-      });
-    }
+        const workplace = workplaceByName.get(rowName);
+        const shifts = getShiftsForScheduleCell({
+                shiftLookup: currentWeekShiftLookup,
+                dateStr,
+                rowName,
+                timeslotId,
+                allTimeslotIds,
+                singleTimeslotId,
+                timeslotsEnabled: Boolean(workplace?.timeslots_enabled),
+        });
 
     const isSingleShift = shifts.length === 1;
     const isSplitModeActive = isEmbeddedSchedule || isSplitViewEnabled;
     const boxSize = shiftBoxSize;
 
     // Qualifikations-Status für diese Position ermitteln
-    const workplace = workplaces.find(w => w.name === rowName);
     const wpRequiredQuals = workplace ? getWpRequiredQualIds(workplace.id) : [];
     const wpExcludedQuals = workplace ? getWpExcludedQualIds(workplace.id) : [];
     const hasQualRequirements = wpRequiredQuals.length > 0;
@@ -3976,7 +3992,7 @@ export default function ScheduleBoard() {
     }
 
     return shifts.map((shift, index) => {
-        const doctor = doctors.find(d => d.id === shift.doctor_id);
+        const doctor = doctorById.get(shift.doctor_id);
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
@@ -4064,7 +4080,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-    }, [currentWeekShifts, doctors, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaces, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, workTimeModelMap, lateRotationIndicatorByDoctorDay]);
+    }, [currentWeekShiftLookup, doctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, workTimeModelMap, lateRotationIndicatorByDoctorDay]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -4072,10 +4088,10 @@ export default function ScheduleBoard() {
         if (!draggableId.startsWith('shift-')) return null;
     
     const shiftId = draggableId.replace('shift-', '');
-    const shift = currentWeekShifts.find(s => s.id === shiftId);
+    const shift = currentWeekShiftLookup.byId.get(shiftId);
     if (!shift) return null;
     
-    const doctor = doctors.find(d => d.id === shift.doctor_id);
+    const doctor = doctorById.get(shift.doctor_id);
     if (!doctor) return null;
     const compactLabel = getDoctorChipLabel(doctor);
     const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${shift.date}`) || null;
@@ -4114,7 +4130,7 @@ export default function ScheduleBoard() {
         </div>
       </div>
     );
-                                }, [currentWeekShifts, doctors, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
+                                }, [currentWeekShiftLookup, doctorById, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
 
   const renderSplitMatrix = () => {
       if (!canUseSplitView || !isSplitViewEnabled || splitSections.length === 0) return null;
@@ -4201,7 +4217,7 @@ export default function ScheduleBoard() {
                                   const rowLabelPresentation = getRowLabelPresentation(rowDisplayName, isMonthView);
 
                                   return (
-                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
+                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixRowVisibilityStyle}>
                                           <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
                                               {(provided, snapshot) => (
                                                   <div
@@ -4855,7 +4871,6 @@ export default function ScheduleBoard() {
                     if (!isValid(day)) return <div key={Math.random()} className="p-2 text-center text-red-500">Invalid Date</div>;
 
                     const isToday = isSameDay(day, new Date());
-                    const hasShifts = currentWeekShifts.some(s => s.date === format(day, 'yyyy-MM-dd'));
                     const isHoliday = isPublicHoliday(day);
                     const isSchoolHol = isSchoolHoliday(day);
 
@@ -4867,18 +4882,15 @@ export default function ScheduleBoard() {
 
                     // Validation Logic
                     const dateStr = format(day, 'yyyy-MM-dd');
-                    const dayShifts = currentWeekShifts.filter(s => s.date === dateStr);
-                    const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
-                    const unassignedDocs = sortDoctorsForDisplay(
-                        doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
-                    );
+                    const hasShifts = currentWeekShiftDates.has(dateStr);
+                    const unassignedDocs = availableDoctorsByDate.get(dateStr) || [];
                     
                     // Rotations are in sections[2] (if structure maintained)
                     // Better: find section by title
                     const rotationSection = sections.find(s => s.title === "Rotationen");
                     const rotationRows = rotationSection ? rotationSection.rows : [];
-                    const filledPositions = new Set(dayShifts.map(s => s.position));
-                    const allRotationsFilled = rotationRows.length > 0 && rotationRows.every(r => filledPositions.has(r));
+                    const dayShiftPositions = currentWeekShiftPositionsByDate.get(dateStr) || new Set();
+                    const allRotationsFilled = rotationRows.length > 0 && rotationRows.every(r => dayShiftPositions.has(typeof r === 'string' ? r : r.name));
 
                     const showWarning = allRotationsFilled && unassignedDocs.length > 0 && !isHoliday && ![0,6].includes(day.getDay());
 
@@ -4969,10 +4981,7 @@ export default function ScheduleBoard() {
                     if (hiddenRows.includes(r.name)) return false;
                     if (r.isTimeslotRow && collapsedTimeslotGroups.includes(r.name)) return false;
                     if (r.isUnassignedRow) {
-                        const hasUnassignedShifts = currentWeekShifts.some(s => 
-                            s.position === r.name && !s.timeslot_id
-                        );
-                        if (!hasUnassignedShifts) return false;
+                        if (!unassignedShiftPositions.has(r.name)) return false;
                     }
                     return true;
                 });
@@ -5018,6 +5027,7 @@ export default function ScheduleBoard() {
                         const isGroupHeader = rowObj.isTimeslotGroupHeader;
                         const isGroupCollapsed = collapsedTimeslotGroups.includes(rowName);
                         const rowStyle = getRowStyle(rowName, customStyle);
+                        const rowWorkplace = workplaceByName.get(rowName);
                         const expandedRowLabel = getExpandedTimeslotRowLabel(rowObj, rowDisplayName);
                         const rowLabelPresentation = getRowLabelPresentation(expandedRowLabel, isMonthView);
                         
@@ -5027,7 +5037,7 @@ export default function ScheduleBoard() {
                             : `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
                         
                         return (
-                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixGridStyle}>
+                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixRowStyle}>
                             <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
                                 {(provided, snapshot) => (
                                     <div 
@@ -5068,9 +5078,9 @@ export default function ScheduleBoard() {
                                                     Bitte Zeitfenster zuweisen
                                                 </span>
                                             )}
-                                            {!rowObj.isTimeslotRow && workplaces.find(s => s.name === rowName)?.time && (
+                                            {!rowObj.isTimeslotRow && rowWorkplace?.time && (
                                                 <span className="text-[10px] font-normal opacity-80">
-                                                    {workplaces.find(s => s.name === rowName).time} Uhr
+                                                    {rowWorkplace.time} Uhr
                                                 </span>
                                                 )}
                                                 </div>
@@ -5140,7 +5150,7 @@ export default function ScheduleBoard() {
                                 // Default active_days (wenn nicht gesetzt): Mo-Fr [1,2,3,4,5]
                                 {
                                     if (rowName !== 'Verfügbar') {
-                                        const setting = workplaces.find(s => s.name === rowName);
+                                        const setting = workplaceByName.get(rowName);
                                         if (setting) {
                                             const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
                                             // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
@@ -5163,10 +5173,7 @@ export default function ScheduleBoard() {
                                                 {(provided, snapshot) => {
                                                     // Calculate available doctors
                                                     // Filter out doctors who are already assigned to a BLOCKING position
-                                                    const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
-                                                    const availableDocs = sortDoctorsForDisplay(
-                                                        doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
-                                                    );
+                                                    const availableDocs = availableDoctorsByDate.get(dateStr) || [];
 
                                                     return (
                                                         <div
