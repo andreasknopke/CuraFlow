@@ -43,7 +43,7 @@ function LateStartIndicator({ tooltip, compact = false }) {
   );
 }
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
@@ -93,6 +93,13 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
   ) : null;
 
   const wishMarkerColor = wishMarker?.color === 'green' ? '#22c55e' : '#ef4444';
+  const handleTimeLabelMouseDown = React.useCallback((event) => {
+    event.stopPropagation();
+  }, []);
+  const handleTimeLabelClick = React.useCallback((event) => {
+    event.stopPropagation();
+    onTimeLabelClick?.(event);
+  }, [onTimeLabelClick]);
 
   const dynamicStyle = {
       fontSize: `${fontSize}px`,
@@ -233,12 +240,24 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                       </span>
                     )}
                     {timeLabel && (
-                        <span
-                            className="flex-shrink-0 text-slate-500 font-normal mr-1 whitespace-nowrap"
-                            style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
+                      onTimeLabelClick ? (
+                        <button
+                          type="button"
+                          className="flex-shrink-0 mr-1 whitespace-nowrap text-slate-500 font-normal underline decoration-dotted underline-offset-2 hover:text-indigo-700"
+                          style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
+                          onMouseDown={handleTimeLabelMouseDown}
+                          onClick={handleTimeLabelClick}
                         >
-                            {timeLabel}
+                          {timeLabel}
+                        </button>
+                      ) : (
+                        <span
+                          className="flex-shrink-0 text-slate-500 font-normal mr-1 whitespace-nowrap"
+                          style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
+                        >
+                          {timeLabel}
                         </span>
+                      )
                     )}
                     {fairnessInfo && (
                         <span
@@ -264,12 +283,24 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                       {displayText}
                   </span>
                   {timeLabel && (
-                    <span 
-                      className="leading-none text-center whitespace-nowrap opacity-60"
-                      style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}
-                    >
-                      {timeLabel}
-                    </span>
+                    onTimeLabelClick ? (
+                      <button
+                        type="button"
+                        className="leading-none text-center whitespace-nowrap opacity-60 underline decoration-dotted underline-offset-2 hover:opacity-100 hover:text-indigo-700"
+                        style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}
+                        onMouseDown={handleTimeLabelMouseDown}
+                        onClick={handleTimeLabelClick}
+                      >
+                        {timeLabel}
+                      </button>
+                    ) : (
+                      <span 
+                        className="leading-none text-center whitespace-nowrap opacity-60"
+                        style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}
+                      >
+                        {timeLabel}
+                      </span>
+                    )
                   )}
                 </div>
                 {showLateStartIndicator && <LateStartIndicator tooltip={lateStartTooltip} compact />}

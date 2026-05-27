@@ -599,11 +599,24 @@ const normalizeTimeslotSelection = (selection) => {
     };
 };
 
-const getInitialCustomTimeslotState = (options = []) => {
+const getInitialCustomTimeslotState = (options = [], initialSelection = null) => {
     const customOption = options.find((option) => option.canCustomize);
+    const customOptions = options.filter((option) => option.canCustomize);
+    const defaultCustomDurationMinutes = customOptions.length > 0
+        ? Math.max(...customOptions.map((option) => Math.max(0, Number(option.effectivePresenceMinutes) || 0)))
+        : null;
+    const initialStartMinutes = initialSelection?.isCustom ? parseTimeToMinutes(initialSelection.startTime) : null;
+    let initialEndMinutes = initialSelection?.isCustom ? parseTimeToMinutes(initialSelection.endTime) : null;
+
+    if (initialStartMinutes !== null && initialEndMinutes !== null && initialEndMinutes <= initialStartMinutes) {
+        initialEndMinutes += 24 * 60;
+    }
 
     return {
-        customStartMinutes: customOption?.defaultCustomStartMinutes ?? null,
+        customStartMinutes: initialStartMinutes ?? customOption?.defaultCustomStartMinutes ?? null,
+        customDurationMinutes: initialStartMinutes !== null && initialEndMinutes !== null
+            ? Math.max(0, initialEndMinutes - initialStartMinutes)
+            : defaultCustomDurationMinutes,
     };
 };
 
@@ -1161,6 +1174,7 @@ export default function ScheduleBoard() {
         description: '',
         options: [],
         customStartMinutes: null,
+        customDurationMinutes: null,
     });
 
     const openPoolEditDialog = (workplace, dateStr, shift = null) => {
@@ -1175,6 +1189,7 @@ export default function ScheduleBoard() {
             description: '',
             options: [],
             customStartMinutes: null,
+            customDurationMinutes: null,
         });
     };
 
@@ -2615,9 +2630,9 @@ export default function ScheduleBoard() {
         }));
     };
 
-    const resolveTimeslotSelection = ({ positionName, dateStr = null, requestedTimeslotId = null, onResolved, doctorId = null }) => {
+    const resolveTimeslotSelection = ({ positionName, dateStr = null, requestedTimeslotId = null, onResolved, doctorId = null, initialSelection = null, forceDialog = false }) => {
         const normalizedTimeslotId = requestedTimeslotId === '__unassigned__' ? null : requestedTimeslotId;
-        if (normalizedTimeslotId) {
+        if (normalizedTimeslotId && !forceDialog) {
             onResolved(normalizedTimeslotId);
             return true;
         }
@@ -2628,13 +2643,13 @@ export default function ScheduleBoard() {
             return true;
         }
 
-        if (options.length === 1) {
+        if (options.length === 1 && !options[0].canCustomize && !forceDialog) {
             onResolved(options[0].id);
             return true;
         }
 
         const formattedDate = dateStr ? format(new Date(`${dateStr}T00:00:00`), 'dd.MM.yyyy') : null;
-        const initialCustomState = getInitialCustomTimeslotState(options);
+        const initialCustomState = getInitialCustomTimeslotState(options, initialSelection);
         pendingTimeslotSelectionRef.current = onResolved;
         setTimeslotSelectionDialog({
             open: true,
@@ -2646,6 +2661,79 @@ export default function ScheduleBoard() {
             ...initialCustomState,
         });
         return false;
+    };
+
+    const handleShiftTimeslotEdit = (shift, doctor, workplace) => {
+        if (!shift || shift.isPreview || !doctor || !workplace?.timeslots_enabled || isReadOnly) return;
+
+        const options = getPositionTimeslotOptions(shift.position, doctor.id);
+        const canOpenDialog = options.length > 1 || options.some((option) => option.canCustomize);
+        if (!canOpenDialog) return;
+
+        const initialSelection = shift.start_time && shift.end_time
+            ? {
+                timeslotId: shift.timeslot_id ?? null,
+                startTime: shift.start_time,
+                endTime: shift.end_time,
+                breakMinutes: shift.break_minutes ?? null,
+                isCustom: true,
+            }
+            : {
+                timeslotId: shift.timeslot_id ?? null,
+                startTime: null,
+                endTime: null,
+                breakMinutes: null,
+                isCustom: false,
+            };
+
+        resolveTimeslotSelection({
+            positionName: shift.position,
+            dateStr: shift.date,
+            doctorId: doctor.id,
+            initialSelection,
+            forceDialog: true,
+            onResolved: (selection) => {
+                const normalizedSelection = normalizeTimeslotSelection(selection);
+                const nextTimeslotId = normalizedSelection.timeslotId;
+
+                const duplicate = currentWeekShifts.some((entry) => {
+                    if (entry.id === shift.id) return false;
+                    if (entry.date !== shift.date || entry.position !== shift.position || entry.doctor_id !== shift.doctor_id) return false;
+                    if (nextTimeslotId) return entry.timeslot_id === nextTimeslotId;
+                    return !entry.timeslot_id;
+                });
+                if (duplicate) {
+                    toast.error('Mitarbeiter ist in diesem Zeitfenster bereits eingeteilt.');
+                    return;
+                }
+
+                const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
+                const allowsMultiple = workplaceAllowsMultiple(workplace, customCategories);
+                if (!allowsMultiple) {
+                    const occupyingShift = currentWeekShifts.find((entry) => {
+                        if (entry.id === shift.id) return false;
+                        if (entry.date !== shift.date || entry.position !== shift.position) return false;
+                        if (workplace.timeslots_enabled) {
+                            if (nextTimeslotId) return entry.timeslot_id === nextTimeslotId;
+                            return !entry.timeslot_id;
+                        }
+                        return true;
+                    });
+
+                    if (occupyingShift) {
+                        toast.error('Dieses Zeitfenster ist bereits besetzt.');
+                        return;
+                    }
+                }
+
+                const updateData = applyTimeslotSelectionToUpdateData(
+                    { date: shift.date, position: shift.position, order: shift.order },
+                    normalizedSelection
+                );
+
+                updateShiftMutation.mutate({ id: shift.id, data: updateData });
+            },
+        });
     };
 
     const availabilityBlockingDoctorIdsByDate = useMemo(() => getAvailabilityBlockingDoctorIdsByDate({
@@ -4265,13 +4353,14 @@ export default function ScheduleBoard() {
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={null}
                     timeLabelOverride={shiftTimeLabel}
+                    onTimeLabelClick={shiftTimeLabel && !shift.isPreview && !isReadOnly ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
                 />
             </div>
         );
     });
-    }, [currentWeekShiftLookup, doctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
+    }, [currentWeekShiftLookup, doctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -5521,7 +5610,7 @@ export default function ScheduleBoard() {
                   const customizableOptions = timeslotSelectionDialog.options.filter((option) => option.canCustomize);
                   const globalBounds = getTimeslotSelectionBounds(timeslotSelectionDialog.options);
                   const customDurationMinutes = customizableOptions.length > 0
-                      ? Math.max(...customizableOptions.map((option) => Math.max(0, Number(option.effectivePresenceMinutes) || 0)))
+                      ? Math.max(0, Number(timeslotSelectionDialog.customDurationMinutes) || 0)
                       : null;
                   const defaultCustomStartMinutes = customizableOptions[0]?.defaultCustomStartMinutes ?? globalBounds.minStartMinutes;
                   const sliderMinMinutes = globalBounds.minStartMinutes ?? 0;
