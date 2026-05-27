@@ -599,6 +599,15 @@ const normalizeTimeslotSelection = (selection) => {
     };
 };
 
+const getInitialCustomTimeslotState = (options = []) => {
+    const customOption = options.find((option) => option.canCustomize);
+
+    return {
+        customOptionId: customOption?.id ?? null,
+        customStartMinutes: customOption?.defaultCustomStartMinutes ?? null,
+    };
+};
+
 const applyTimeslotSelectionToCreateData = (data, selection) => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
     const nextData = { ...data };
@@ -1131,13 +1140,15 @@ export default function ScheduleBoard() {
         callback?.(timeslotId);
     };
 
-    const openTimeslotCustomEditor = (option) => {
+    const selectTimeslotCustomOption = (option) => {
         if (!option?.canCustomize) return;
 
         setTimeslotSelectionDialog((current) => ({
             ...current,
             customOptionId: option.id,
-            customStartMinutes: option.defaultCustomStartMinutes,
+            customStartMinutes: current.customOptionId === option.id && current.customStartMinutes !== null
+                ? current.customStartMinutes
+                : option.defaultCustomStartMinutes,
         }));
     };
 
@@ -2594,6 +2605,7 @@ export default function ScheduleBoard() {
         }
 
         const formattedDate = dateStr ? format(new Date(`${dateStr}T00:00:00`), 'dd.MM.yyyy') : null;
+        const initialCustomState = getInitialCustomTimeslotState(options);
         pendingTimeslotSelectionRef.current = onResolved;
         setTimeslotSelectionDialog({
             open: true,
@@ -2602,8 +2614,7 @@ export default function ScheduleBoard() {
                 ? `${positionName} am ${formattedDate} hat mehrere Zeitfenster.`
                 : `${positionName} hat mehrere Zeitfenster.`,
             options,
-            customOptionId: null,
-            customStartMinutes: null,
+            ...initialCustomState,
         });
         return false;
     };
@@ -5477,133 +5488,158 @@ export default function ScheduleBoard() {
                   <DialogTitle>Zeitfenster wählen</DialogTitle>
                   <DialogDescription>{timeslotSelectionDialog.description}</DialogDescription>
               </DialogHeader>
-              <div className="space-y-3">
-                  {timeslotSelectionDialog.options.map((timeslot) => {
-                      const isCustomOpen = timeslotSelectionDialog.customOptionId === timeslot.id;
-                      const customStartMinutes = isCustomOpen
-                          ? (timeslotSelectionDialog.customStartMinutes ?? timeslot.defaultCustomStartMinutes)
-                          : timeslot.defaultCustomStartMinutes;
-                      const customEndMinutes = customStartMinutes + (timeslot.effectivePresenceMinutes || 0);
-                      const slotDuration = Math.max(timeslot.slotDurationMinutes || 1, 1);
-                      const customLeftPercent = ((customStartMinutes - timeslot.slotStartMinutes) / slotDuration) * 100;
-                      const customWidthPercent = ((timeslot.effectivePresenceMinutes || 0) / slotDuration) * 100;
+              {(() => {
+                  const customizableOptions = timeslotSelectionDialog.options.filter((option) => option.canCustomize);
+                  const selectedCustomOption = customizableOptions.find((option) => option.id === timeslotSelectionDialog.customOptionId)
+                      || customizableOptions[0]
+                      || null;
+                  const customStartMinutes = selectedCustomOption
+                      ? Math.min(
+                          selectedCustomOption.maxCustomStartMinutes,
+                          Math.max(
+                              selectedCustomOption.minCustomStartMinutes,
+                              Math.round(Number(timeslotSelectionDialog.customStartMinutes) || selectedCustomOption.defaultCustomStartMinutes)
+                          )
+                      )
+                      : null;
+                  const customEndMinutes = selectedCustomOption && customStartMinutes !== null
+                      ? customStartMinutes + (selectedCustomOption.effectivePresenceMinutes || 0)
+                      : null;
+                  const slotDuration = Math.max(selectedCustomOption?.slotDurationMinutes || 1, 1);
+                  const customLeftPercent = selectedCustomOption && customStartMinutes !== null
+                      ? ((customStartMinutes - selectedCustomOption.slotStartMinutes) / slotDuration) * 100
+                      : 0;
+                  const customWidthPercent = selectedCustomOption
+                      ? ((selectedCustomOption.effectivePresenceMinutes || 0) / slotDuration) * 100
+                      : 0;
 
-                      return (
-                          <div
-                              key={timeslot.id}
-                              className={cn(
-                                  'rounded-xl border p-4 transition-colors',
-                                  timeslot.leavesEarly
-                                      ? 'border-amber-200 bg-amber-50/70'
-                                      : 'border-slate-200 bg-white'
-                              )}
-                          >
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                  <div className="space-y-1">
-                                      <div className="flex items-center gap-2">
-                                          <div className="font-medium text-slate-900">{timeslot.label || 'Zeitfenster'}</div>
-                                          {timeslot.leavesEarly && (
-                                              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                                                  <AlertTriangle className="h-3.5 w-3.5" />
-                                                  Verkürzter Einsatz
-                                              </span>
-                                          )}
-                                      </div>
-                                      {timeslot.timeRange && (
-                                          <div className="text-sm text-slate-500">Slot: {timeslot.timeRange}</div>
+                  return (
+                      <div className="space-y-4">
+                          <div className="space-y-3">
+                              {timeslotSelectionDialog.options.map((timeslot) => (
+                                  <div
+                                      key={timeslot.id}
+                                      className={cn(
+                                          'rounded-xl border p-4 transition-colors',
+                                          timeslot.leavesEarly
+                                              ? 'border-amber-200 bg-amber-50/70'
+                                              : 'border-slate-200 bg-white'
                                       )}
-                                      {timeslot.effectiveTimeRange && timeslot.effectiveTimeRange !== timeslot.timeRange && (
-                                          <div className="text-sm font-medium text-indigo-700">Geplanter Einsatz: {timeslot.effectiveTimeRange}</div>
-                                      )}
-                                      {timeslot.earlyLeaveLabel && (
-                                          <div className="text-sm font-medium text-amber-800">{timeslot.earlyLeaveLabel}</div>
-                                      )}
-                                      {timeslot.shorterShiftNote && (
-                                          <div className="text-xs text-amber-700">{timeslot.shorterShiftNote}</div>
-                                      )}
-                                  </div>
-                                  <div className="flex shrink-0 flex-wrap gap-2">
-                                      <Button
-                                          type="button"
-                                          size="sm"
-                                          onClick={() => handleTimeslotDialogSelect(timeslot.id)}
-                                          data-testid={`schedule-timeslot-option-${timeslot.id}`}
-                                      >
-                                          Standard
-                                      </Button>
-                                      {timeslot.canCustomize && (
-                                          <Button
-                                              type="button"
-                                              size="sm"
-                                              variant={isCustomOpen ? 'default' : 'outline'}
-                                              onClick={() => openTimeslotCustomEditor(timeslot)}
-                                              data-testid={`schedule-timeslot-custom-${timeslot.id}`}
-                                          >
-                                              Custom
-                                          </Button>
-                                      )}
-                                  </div>
-                              </div>
-
-                              {timeslot.canCustomize && isCustomOpen && (
-                                  <div className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-4">
-                                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                                          <div>
-                                              <div className="text-sm font-medium text-slate-900">Custom Startzeit</div>
-                                              <div className="text-xs text-slate-600">Verschiebe den Einsatz innerhalb des gewählten Zeitfensters.</div>
+                                  >
+                                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                          <div className="space-y-1">
+                                              <div className="flex items-center gap-2">
+                                                  <div className="font-medium text-slate-900">{timeslot.label || 'Zeitfenster'}</div>
+                                                  {timeslot.leavesEarly && (
+                                                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                                                          <AlertTriangle className="h-3.5 w-3.5" />
+                                                          Verkürzter Einsatz
+                                                      </span>
+                                                  )}
+                                              </div>
+                                              {timeslot.timeRange && (
+                                                  <div className="text-sm text-slate-500">Slot: {timeslot.timeRange}</div>
+                                              )}
+                                              {timeslot.effectiveTimeRange && timeslot.effectiveTimeRange !== timeslot.timeRange && (
+                                                  <div className="text-sm font-medium text-indigo-700">Geplanter Einsatz: {timeslot.effectiveTimeRange}</div>
+                                              )}
+                                              {timeslot.earlyLeaveLabel && (
+                                                  <div className="text-sm font-medium text-amber-800">{timeslot.earlyLeaveLabel}</div>
+                                              )}
+                                              {timeslot.shorterShiftNote && (
+                                                  <div className="text-xs text-amber-700">{timeslot.shorterShiftNote}</div>
+                                              )}
                                           </div>
-                                          <div className="rounded-md bg-white px-3 py-1 text-sm font-medium text-indigo-700 shadow-sm">
-                                              {formatMinutesAsTime(customStartMinutes)}-{formatMinutesAsTime(customEndMinutes)}
-                                          </div>
-                                      </div>
-
-                                      <div className="space-y-3">
-                                          <div className="relative overflow-hidden rounded-full bg-slate-200/90 h-4">
-                                              <div className="absolute inset-y-0 left-0 right-0 bg-slate-300/80" />
-                                              <div
-                                                  className="absolute inset-y-0 rounded-full bg-indigo-500 shadow-sm"
-                                                  style={{
-                                                      left: `${customLeftPercent}%`,
-                                                      width: `${Math.min(customWidthPercent, 100)}%`,
-                                                  }}
-                                              />
-                                          </div>
-                                          <div className="flex justify-between text-[11px] text-slate-500">
-                                              <span>{formatMinutesAsTime(timeslot.slotStartMinutes)}</span>
-                                              <span>{formatMinutesAsTime(timeslot.slotEndMinutes)}</span>
-                                          </div>
-                                          <Slider
-                                              value={[customStartMinutes]}
-                                              min={timeslot.minCustomStartMinutes}
-                                              max={timeslot.maxCustomStartMinutes}
-                                              step={5}
-                                              onValueChange={(value) => handleTimeslotCustomStartChange(timeslot, value)}
-                                              data-testid={`schedule-timeslot-custom-slider-${timeslot.id}`}
-                                          />
-                                          <div className="flex items-center justify-between text-xs text-slate-600">
-                                              <span>Dauer inkl. Pause: {formatDurationMinutes(timeslot.effectivePresenceMinutes)}</span>
-                                              <span>Einsatz endet innerhalb des Slots</span>
-                                          </div>
-                                          <div className="flex justify-end gap-2 pt-1">
-                                              <Button type="button" size="sm" variant="outline" onClick={closeTimeslotSelectionDialog}>
-                                                  Abbrechen
-                                              </Button>
+                                          <div className="flex shrink-0 flex-wrap gap-2">
                                               <Button
                                                   type="button"
                                                   size="sm"
-                                                  onClick={() => handleTimeslotCustomApply(timeslot)}
-                                                  data-testid={`schedule-timeslot-custom-apply-${timeslot.id}`}
+                                                  onClick={() => handleTimeslotDialogSelect(timeslot.id)}
+                                                  data-testid={`schedule-timeslot-option-${timeslot.id}`}
                                               >
-                                                  Custom übernehmen
+                                                  Standard übernehmen
                                               </Button>
                                           </div>
                                       </div>
                                   </div>
-                              )}
+                              ))}
                           </div>
-                      );
-                  })}
-              </div>
+
+                          {selectedCustomOption && customStartMinutes !== null && customEndMinutes !== null && (
+                              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
+                                  <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                      <div>
+                                          <div className="text-sm font-medium text-slate-900">Custom</div>
+                                          <div className="text-xs text-slate-600">Lege die Startzeit direkt per Slider fest.</div>
+                                      </div>
+                                      <div className="rounded-md bg-white px-3 py-1 text-sm font-medium text-indigo-700 shadow-sm">
+                                          {formatMinutesAsTime(customStartMinutes)}-{formatMinutesAsTime(customEndMinutes)}
+                                      </div>
+                                  </div>
+
+                                  {customizableOptions.length > 1 && (
+                                      <div className="mb-4 flex flex-wrap gap-2">
+                                          {customizableOptions.map((option) => (
+                                              <Button
+                                                  key={option.id}
+                                                  type="button"
+                                                  size="sm"
+                                                  variant={selectedCustomOption.id === option.id ? 'default' : 'outline'}
+                                                  onClick={() => selectTimeslotCustomOption(option)}
+                                                  data-testid={`schedule-timeslot-custom-${option.id}`}
+                                              >
+                                                  {option.label || option.timeRange || 'Zeitfenster'}
+                                              </Button>
+                                          ))}
+                                      </div>
+                                  )}
+
+                                  <div className="space-y-3">
+                                      <div className="relative h-4 overflow-hidden rounded-full bg-slate-200/90">
+                                          <div className="absolute inset-y-0 left-0 right-0 bg-slate-300/80" />
+                                          <div
+                                              className="absolute inset-y-0 rounded-full bg-indigo-500 shadow-sm"
+                                              style={{
+                                                  left: `${customLeftPercent}%`,
+                                                  width: `${Math.min(customWidthPercent, 100)}%`,
+                                              }}
+                                          />
+                                      </div>
+                                      <div className="flex justify-between text-[11px] text-slate-500">
+                                          <span>{formatMinutesAsTime(selectedCustomOption.slotStartMinutes)}</span>
+                                          <span>{formatMinutesAsTime(selectedCustomOption.slotEndMinutes)}</span>
+                                      </div>
+                                      <Slider
+                                          value={[customStartMinutes]}
+                                          min={selectedCustomOption.minCustomStartMinutes}
+                                          max={selectedCustomOption.maxCustomStartMinutes}
+                                          step={5}
+                                          onValueChange={(value) => handleTimeslotCustomStartChange(selectedCustomOption, value)}
+                                          data-testid={`schedule-timeslot-custom-slider-${selectedCustomOption.id}`}
+                                      />
+                                      <div className="flex items-center justify-between text-xs text-slate-600">
+                                          <span>Dauer inkl. Pause: {formatDurationMinutes(selectedCustomOption.effectivePresenceMinutes)}</span>
+                                          <span>Einsatz endet innerhalb des Slots</span>
+                                      </div>
+                                      {selectedCustomOption.earlyLeaveLabel && (
+                                          <div className="text-xs font-medium text-amber-800">{selectedCustomOption.earlyLeaveLabel}</div>
+                                      )}
+                                      <div className="flex justify-end gap-2 pt-1">
+                                          <Button
+                                              type="button"
+                                              size="sm"
+                                              onClick={() => handleTimeslotCustomApply(selectedCustomOption)}
+                                              data-testid={`schedule-timeslot-custom-apply-${selectedCustomOption.id}`}
+                                          >
+                                              Custom übernehmen
+                                          </Button>
+                                      </div>
+                                  </div>
+                              </div>
+                          )}
+                      </div>
+                  );
+              })()}
               <DialogFooter>
                   <Button variant="outline" onClick={closeTimeslotSelectionDialog}>Abbrechen</Button>
               </DialogFooter>
