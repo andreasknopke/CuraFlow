@@ -2639,79 +2639,72 @@ export default function ScheduleBoard() {
         const rawNewTimeslotId = destParts[2] || null;
         if (!newDateStr || !newPosition) return;
 
-        let resolvedPreviewTimeslotId = null;
+        const executePreviewMove = (resolvedPreviewTimeslotId) => {
+            const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+            if (!absencePositions.includes(newPosition)) {
+                const wp = workplaces.find(w => w.name === newPosition);
+                if (wp) {
+                    const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
+                    const date = new Date(newDateStr + 'T00:00:00');
+                    const dayOfWeek = date.getDay();
+                    const isActive = isPublicHoliday(date)
+                        ? activeDays.some(d => Number(d) === 0)
+                        : activeDays.some(d => Number(d) === dayOfWeek);
+                    if (!isActive) {
+                        toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                        return;
+                    }
+                }
+            }
+
+            const previewBlock = getScheduleBlock(newDateStr, newPosition, resolvedPreviewTimeslotId);
+            if (previewBlock) {
+                toast.error('Zelle gesperrt' + (previewBlock.reason ? `: ${previewBlock.reason}` : ''));
+                return;
+            }
+
+            const allMerged = [...(currentWeekShifts || [])];
+            const duplicate = allMerged.find(s => 
+                s.id !== shiftId &&
+                s.date === newDateStr && 
+                s.position === newPosition && 
+                s.doctor_id === previewShift.doctor_id &&
+                (resolvedPreviewTimeslotId ? s.timeslot_id === resolvedPreviewTimeslotId : !s.timeslot_id)
+            );
+            if (duplicate) {
+                toast.error('Arzt ist dort bereits eingeteilt.');
+                return;
+            }
+
+            let updated = previewShifts.map(s => {
+                if (s.id !== shiftId) return s;
+                const nextShift = { ...s, date: newDateStr, position: newPosition };
+                if (resolvedPreviewTimeslotId) {
+                    nextShift.timeslot_id = resolvedPreviewTimeslotId;
+                } else {
+                    delete nextShift.timeslot_id;
+                }
+                return nextShift;
+            });
+
+            if (isAutoOffPosition(previewShift.position)) {
+                updated = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, updated);
+            }
+            if (isAutoOffPosition(newPosition)) {
+                updated = addPreviewAutoFrei(previewShift.doctor_id, newDateStr, newPosition, updated);
+            }
+
+            setPreviewShifts(updated);
+        };
+
         if (!resolveTimeslotSelection({
             positionName: newPosition,
             dateStr: newDateStr,
             requestedTimeslotId: rawNewTimeslotId,
-            onResolved: (timeslotId) => {
-                resolvedPreviewTimeslotId = timeslotId;
-            },
+            onResolved: executePreviewMove,
         })) {
             return;
         }
-
-        // Validate: workplace active on that date?
-        const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
-        if (!absencePositions.includes(newPosition)) {
-            const wp = workplaces.find(w => w.name === newPosition);
-            if (wp) {
-                const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
-                const date = new Date(newDateStr + 'T00:00:00');
-                const dayOfWeek = date.getDay();
-                // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
-                const isActive = isPublicHoliday(date)
-                    ? activeDays.some(d => Number(d) === 0)
-                    : activeDays.some(d => Number(d) === dayOfWeek);
-                if (!isActive) {
-                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-                    return;
-                }
-            }
-        }
-
-        const previewBlock = getScheduleBlock(newDateStr, newPosition, resolvedPreviewTimeslotId);
-        if (previewBlock) {
-            toast.error('Zelle gesperrt' + (previewBlock.reason ? `: ${previewBlock.reason}` : ''));
-            return;
-        }
-
-        // Check duplicate: is this doctor already on this position+date in preview or DB?
-        const allMerged = [...(currentWeekShifts || [])];
-        const duplicate = allMerged.find(s => 
-            s.id !== shiftId &&
-            s.date === newDateStr && 
-            s.position === newPosition && 
-            s.doctor_id === previewShift.doctor_id &&
-            (resolvedPreviewTimeslotId ? s.timeslot_id === resolvedPreviewTimeslotId : !s.timeslot_id)
-        );
-        if (duplicate) {
-            toast.error('Arzt ist dort bereits eingeteilt.');
-            return;
-        }
-
-        // Apply the move in previewShifts state
-        let updated = previewShifts.map(s => {
-            if (s.id !== shiftId) return s;
-            const nextShift = { ...s, date: newDateStr, position: newPosition };
-            if (resolvedPreviewTimeslotId) {
-                nextShift.timeslot_id = resolvedPreviewTimeslotId;
-            } else {
-                delete nextShift.timeslot_id;
-            }
-            return nextShift;
-        });
-
-        // Auto-Frei: if old position was auto-off → remove old auto-frei
-        if (isAutoOffPosition(previewShift.position)) {
-            updated = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, updated);
-        }
-        // Auto-Frei: if new position is auto-off → add new auto-frei
-        if (isAutoOffPosition(newPosition)) {
-            updated = addPreviewAutoFrei(previewShift.doctor_id, newDateStr, newPosition, updated);
-        }
-
-        setPreviewShifts(updated);
         return;
     }
 
@@ -2936,18 +2929,15 @@ export default function ScheduleBoard() {
             if (blockedCount > 0) toast.warning(`${blockedCount} Tage übersprungen wegen Konflikten`);
         };
 
-        let resolvedHeaderTimeslotId = null;
         if (!resolveTimeslotSelection({
             positionName: rowName,
             requestedTimeslotId: rowHeaderTimeslotId,
             onResolved: (timeslotId) => {
-                resolvedHeaderTimeslotId = timeslotId;
+                void assignWeekdaysToTimeslot(timeslotId);
             },
         })) {
             return;
         }
-
-        await assignWeekdaysToTimeslot(resolvedHeaderTimeslotId);
 
         return;
     }
@@ -3032,237 +3022,210 @@ export default function ScheduleBoard() {
 
         // PREVIEW MODE: Add to previewShifts instead of creating DB entry
         if (previewShifts) {
-            let resolvedPreviewTimeslotId = null;
+            const executePreviewCreate = (resolvedPreviewTimeslotId) => {
+                const duplicate = currentWeekShifts.find((shift) => {
+                    if (shift.date !== dateStr || shift.position !== position || shift.doctor_id !== doctorId) return false;
+                    if (resolvedPreviewTimeslotId) return shift.timeslot_id === resolvedPreviewTimeslotId;
+                    return !shift.timeslot_id;
+                });
+                if (duplicate) {
+                    toast.error('Arzt ist dort bereits eingeteilt.');
+                    return;
+                }
+
+                const newId = `preview-add-${Date.now()}`;
+                const newPreviewShift = { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true };
+                if (resolvedPreviewTimeslotId) {
+                    newPreviewShift.timeslot_id = resolvedPreviewTimeslotId;
+                }
+
+                let updatedPreviews = [...previewShifts, newPreviewShift];
+                if (isAutoOffPosition(position)) {
+                    updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews);
+                }
+                setPreviewShifts(updatedPreviews);
+                toast.info('Vorschlag hinzugefügt');
+            };
+
             if (!resolveTimeslotSelection({
                 positionName: position,
                 dateStr,
                 requestedTimeslotId: rawTimeslotId,
-                onResolved: (timeslotId) => {
-                    resolvedPreviewTimeslotId = timeslotId;
-                },
+                onResolved: executePreviewCreate,
             })) {
                 return;
             }
-
-            const duplicate = currentWeekShifts.find((shift) => {
-                if (shift.date !== dateStr || shift.position !== position || shift.doctor_id !== doctorId) return false;
-                if (resolvedPreviewTimeslotId) return shift.timeslot_id === resolvedPreviewTimeslotId;
-                return !shift.timeslot_id;
-            });
-            if (duplicate) {
-                toast.error('Arzt ist dort bereits eingeteilt.');
-                return;
-            }
-
-            const newId = `preview-add-${Date.now()}`;
-            const newPreviewShift = { id: newId, date: dateStr, position, doctor_id: doctorId, isPreview: true };
-            if (resolvedPreviewTimeslotId) {
-                newPreviewShift.timeslot_id = resolvedPreviewTimeslotId;
-            }
-
-            let updatedPreviews = [...previewShifts, newPreviewShift];
-            if (isAutoOffPosition(position)) {
-                updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews);
-            }
-            setPreviewShifts(updatedPreviews);
-            toast.info('Vorschlag hinzugefügt');
             return;
         }
 
-        let resolvedCreateTimeslotId = null;
+        const executeCreateDrop = (timeslotId) => {
+            console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
+
+            const dropBlock = getScheduleBlock(dateStr, position, timeslotId);
+            if (dropBlock) {
+                toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
+                return;
+            }
+
+            if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, dateStr)) {
+                toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                return;
+            }
+
+            if (absencePositions.includes(position)) {
+                const executeAbsenceCreation = () => {
+                    cleanupOtherShifts(doctorId, dateStr);
+
+                    const existing = currentWeekShifts.find(s => 
+                        s.date === dateStr && s.doctor_id === doctorId && s.position === position
+                    );
+                    if (existing) {
+                        console.log('DEBUG: Absence already exists');
+                        return;
+                    }
+
+                    const existingInCell = currentWeekShifts.filter(s => s.date === dateStr && s.position === position);
+                    const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const newOrder = maxOrder + 1;
+
+                    createShiftMutation.mutate({ date: dateStr, position, doctor_id: doctorId, order: newOrder });
+                };
+
+                const hasConflicts = checkAbsenceDropConflicts(doctorId, dateStr, position, executeAbsenceCreation);
+                if (hasConflicts) {
+                    console.log('Absence drop conflicts - waiting for override decision');
+                    return;
+                }
+
+                executeAbsenceCreation();
+                return;
+            }
+
+            const limitWarning = checkLimits(doctorId, dateStr, position);
+            if (limitWarning) alert(limitWarning);
+
+            {
+                const effectiveTimeslotId = timeslotId === '__unassigned__' ? null : timeslotId;
+                const exists = currentWeekShifts.some(s => {
+                    if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
+                    if (effectiveTimeslotId) return s.timeslot_id === effectiveTimeslotId;
+                    return !s.timeslot_id;
+                });
+
+                if (exists) {
+                    console.log('DEBUG: Blocked - Shift already exists for this doctor/date/position/timeslot');
+                    alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
+                    return;
+                }
+            }
+
+            const occupyingShift = findOccupyingShift(dateStr, position, null, timeslotId);
+
+            if (!occupyingShift) {
+                const effectiveLockTs = timeslotId === '__unassigned__' ? null : timeslotId;
+                if (!lockCell(dateStr, position, effectiveLockTs)) {
+                    console.warn('[CellLock] Blocked rapid duplicate drop:', dateStr, position);
+                    return;
+                }
+            }
+
+            const executeShiftCreation = () => {
+                if (occupyingShift) {
+                    deleteShiftWithCleanup(occupyingShift);
+                }
+
+                const shiftsToCreate = [];
+                const slotsToProcess = [timeslotId];
+
+                for (const tsId of slotsToProcess) {
+                    const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
+
+                    const existsForSlot = currentWeekShifts.some(s => {
+                        if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
+                        if (effectiveTsId) return s.timeslot_id === effectiveTsId;
+                        return !s.timeslot_id;
+                    });
+                    if (existsForSlot) {
+                        console.log('DEBUG: Skipping - Shift already exists for timeslot:', effectiveTsId);
+                        continue;
+                    }
+
+                    const existingInCell = currentWeekShifts.filter(s => {
+                        if (s.date !== dateStr || s.position !== position) return false;
+                        if (effectiveTsId) return s.timeslot_id === effectiveTsId;
+                        return !s.timeslot_id;
+                    });
+                    const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const newOrder = maxOrder + 1;
+
+                    const newShiftData = { date: dateStr, position, doctor_id: doctorId, order: newOrder };
+                    if (effectiveTsId) newShiftData.timeslot_id = effectiveTsId;
+                    shiftsToCreate.push(newShiftData);
+                }
+
+                const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
+                let updateAutoFreiNeeded = false;
+                let existingAutoFreiShift = null;
+
+                if (autoFreiDateStr) {
+                    const warning = checkStaffing(autoFreiDateStr, doctorId);
+                    if (warning) {
+                        toast.warning(`${warning}\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
+                    }
+
+                    existingAutoFreiShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+
+                    if (!existingAutoFreiShift) {
+                        shiftsToCreate.push({
+                            date: autoFreiDateStr,
+                            position: 'Frei',
+                            doctor_id: doctorId,
+                            note: 'Autom. Freizeitausgleich'
+                        });
+                    } else if (existingAutoFreiShift.position !== 'Frei') {
+                        updateAutoFreiNeeded = true;
+                    }
+                }
+
+                console.log('DEBUG: Creating shifts (Bulk)', shiftsToCreate);
+
+                if (shiftsToCreate.length > 0) {
+                    bulkCreateShiftsMutation.mutate(shiftsToCreate, {
+                        onSuccess: () => {
+                            console.log('DEBUG: Bulk Create Success');
+                            if (updateAutoFreiNeeded && existingAutoFreiShift) {
+                                if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
+                                    updateAutoFreiMutation.mutate({
+                                        id: existingAutoFreiShift.id,
+                                        data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
+                                    });
+                                }
+                            }
+                        },
+                        onError: (err) => {
+                            console.error('DEBUG: Error creating shifts:', err);
+                            toast.error('Fehler beim Erstellen: ' + err.message);
+                        }
+                    });
+                }
+            };
+
+            const hasConflict = checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
+            if (hasConflict) {
+                console.log('Conflict detected - waiting for override decision');
+                return;
+            }
+
+            executeShiftCreation();
+        };
+
         if (!resolveTimeslotSelection({
             positionName: position,
             dateStr,
             requestedTimeslotId: rawTimeslotId,
-            onResolved: (timeslotId) => {
-                resolvedCreateTimeslotId = timeslotId;
-            },
+            onResolved: executeCreateDrop,
         })) {
             return;
-        }
-
-        const timeslotId = resolvedCreateTimeslotId;
-
-        console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
-
-        // Check ScheduleBlock
-        const dropBlock = getScheduleBlock(dateStr, position, timeslotId);
-        if (dropBlock) {
-            toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
-            return;
-        }
-
-        // Check active_days before processing drop
-        if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, dateStr)) {
-            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-            return;
-        }
-
-        if (absencePositions.includes(position)) {
-             // Hilfsfunktion für das Erstellen der Abwesenheit
-             const executeAbsenceCreation = () => {
-                 cleanupOtherShifts(doctorId, dateStr);
-                 
-                 // Prüfe ob bereits ein Eintrag existiert
-                 const existing = currentWeekShifts.find(s => 
-                     s.date === dateStr && s.doctor_id === doctorId && s.position === position
-                 );
-                 if (existing) {
-                     console.log('DEBUG: Absence already exists');
-                     return;
-                 }
-                 
-                 const existingInCell = currentWeekShifts.filter(s => s.date === dateStr && s.position === position);
-                 const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                 const newOrder = maxOrder + 1;
-
-                 createShiftMutation.mutate({ date: dateStr, position, doctor_id: doctorId, order: newOrder });
-             };
-
-             // Staffing- und Konfliktprüfung mit Override-Möglichkeit
-             const hasConflicts = checkAbsenceDropConflicts(doctorId, dateStr, position, executeAbsenceCreation);
-             if (hasConflicts) {
-                 console.log('Absence drop conflicts - waiting for override decision');
-                 return;
-             }
-
-             // Keine Warnung - direkt ausführen
-             executeAbsenceCreation();
-             return;
-        } else {
-             // Check limits for services
-             const limitWarning = checkLimits(doctorId, dateStr, position);
-             if (limitWarning) alert(limitWarning);
-
-             // WICHTIG: Duplikat-Prüfung VOR dem Löschen des bestehenden Shifts
-             // Bei Timeslot-Zeilen auch timeslot_id prüfen
-             // '__unassigned__' = Zeile für Shifts ohne Timeslot
-             {
-                 const effectiveTimeslotId = timeslotId === '__unassigned__' ? null : timeslotId;
-                 const exists = currentWeekShifts.some(s => {
-                     if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
-                     if (effectiveTimeslotId) return s.timeslot_id === effectiveTimeslotId;
-                     return !s.timeslot_id; // Für normale Zeilen ohne Timeslot
-                 });
-
-                 if (exists) {
-                     console.log('DEBUG: Blocked - Shift already exists for this doctor/date/position/timeslot');
-                     alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
-                     return;
-                 }
-             }
-
-             const occupyingShift = findOccupyingShift(dateStr, position, null, timeslotId);
-
-             // Cell-Lock: prevent duplicate creates from rapid drag-drops
-             // Only for positions that don't allow multiple assignments
-             if (!occupyingShift) {
-                 const effectiveLockTs = timeslotId === '__unassigned__' ? null : timeslotId;
-                 if (!lockCell(dateStr, position, effectiveLockTs)) {
-                     console.warn('[CellLock] Blocked rapid duplicate drop:', dateStr, position);
-                     return;
-                 }
-             }
-
-             // Hilfsfunktion für das Erstellen der Shifts
-             const executeShiftCreation = () => {
-                 // Bestehenden Eintrag erst hier löschen (nach Konfliktprüfung/Override-Bestätigung)
-                 if (occupyingShift) {
-                     deleteShiftWithCleanup(occupyingShift);
-                 }
-
-                 // Shift erstellen (exists-Prüfung ist jetzt bereits weiter oben erfolgt)
-                 // Bei Timeslot-Rows: Filter auch nach timeslot_id
-                 // '__unassigned__' = Zeile für Shifts ohne Timeslot
-                 const shiftsToCreate = [];
-                 
-                 const slotsToProcess = [timeslotId];
-                 
-                 for (const tsId of slotsToProcess) {
-                     const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
-                     
-                     // Duplikat-Prüfung pro Timeslot
-                     const existsForSlot = currentWeekShifts.some(s => {
-                         if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
-                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
-                         return !s.timeslot_id;
-                     });
-                     if (existsForSlot) {
-                         console.log('DEBUG: Skipping - Shift already exists for timeslot:', effectiveTsId);
-                         continue;
-                     }
-                     
-                     const existingInCell = currentWeekShifts.filter(s => {
-                         if (s.date !== dateStr || s.position !== position) return false;
-                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
-                         return !s.timeslot_id;
-                     });
-                     const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                     const newOrder = maxOrder + 1;
-
-                     const newShiftData = { date: dateStr, position, doctor_id: doctorId, order: newOrder };
-                     if (effectiveTsId) newShiftData.timeslot_id = effectiveTsId;
-                     shiftsToCreate.push(newShiftData);
-                 }
-                 
-                 // Check Auto-Frei immediately to bundle operations
-                 const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
-                 let updateAutoFreiNeeded = false;
-                 let existingAutoFreiShift = null;
-
-                 if (autoFreiDateStr) {
-                     const warning = checkStaffing(autoFreiDateStr, doctorId);
-                     if (warning) {
-                         toast.warning(`${warning}\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
-                     }
-
-                     existingAutoFreiShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
-                     
-                     if (!existingAutoFreiShift) {
-                         shiftsToCreate.push({
-                             date: autoFreiDateStr,
-                             position: 'Frei',
-                             doctor_id: doctorId,
-                             note: 'Autom. Freizeitausgleich'
-                         });
-                     } else if (existingAutoFreiShift.position !== 'Frei') {
-                         updateAutoFreiNeeded = true;
-                     }
-                 }
-
-                 console.log('DEBUG: Creating shifts (Bulk)', shiftsToCreate);
-
-                 if (shiftsToCreate.length > 0) {
-                     bulkCreateShiftsMutation.mutate(shiftsToCreate, {
-                         onSuccess: () => {
-                             console.log('DEBUG: Bulk Create Success');
-                             // Handle update case if needed (rare case)
-                             if (updateAutoFreiNeeded && existingAutoFreiShift) {
-                                  if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
-                                      updateAutoFreiMutation.mutate({
-                                          id: existingAutoFreiShift.id,
-                                          data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
-                                      });
-                                  }
-                             }
-                         },
-                         onError: (err) => {
-                             console.error('DEBUG: Error creating shifts:', err);
-                             toast.error('Fehler beim Erstellen: ' + err.message);
-                         }
-                     });
-                 }
-             };
-
-             // Konfliktprüfung mit Override-Möglichkeit
-             const hasConflict = checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
-             if (hasConflict) {
-                 console.log('Conflict detected - waiting for override decision');
-                 return;
-             }
-
-             // Kein Konflikt - direkt ausführen
-             executeShiftCreation();
         }
 
         return;
@@ -3276,256 +3239,225 @@ export default function ScheduleBoard() {
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         const rawNewTimeslotId = destParts[2] || null;
-        let newTimeslotId = null;
+        const executeGridDrop = (newTimeslotId) => {
+            if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
+                toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                return;
+            }
+
+            const moveBlock = getScheduleBlock(newDateStr, newPosition, newTimeslotId);
+            if (moveBlock) {
+                toast.error('Zelle gesperrt' + (moveBlock.reason ? `: ${moveBlock.reason}` : ''));
+                return;
+            }
+
+            if (sourceDroppableId === destinationDroppableId) {
+                if (source.index === destination.index) return;
+
+                const targetWorkplace = workplaceByName.get(newPosition);
+                const targetAllTimeslotIds = targetWorkplace?.timeslots_enabled
+                    ? (workplaceTimeslotsByWorkplaceId.get(targetWorkplace.id) || []).map((timeslot) => timeslot.id)
+                    : [];
+                const cellShifts = currentWeekShifts
+                    .filter(s => {
+                        if (s.date !== newDateStr || s.position !== newPosition) return false;
+                        if (!newTimeslotId && targetAllTimeslotIds.length > 1) {
+                            return targetAllTimeslotIds.includes(s.timeslot_id) || !s.timeslot_id;
+                        }
+                        if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                        return !s.timeslot_id;
+                    })
+                    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                const newShifts = Array.from(cellShifts);
+                const [movedShift] = newShifts.splice(source.index, 1);
+                newShifts.splice(destination.index, 0, movedShift);
+
+                newShifts.forEach((s, index) => {
+                    if (s.order !== index) {
+                        updateShiftMutation.mutate({ id: s.id, data: { order: index } });
+                    }
+                });
+                return;
+            }
+
+            const shift = currentWeekShifts.find(s => s.id === shiftId);
+            if (!shift) return;
+
+            if (isCtrlPressed && sourceDroppableId !== destinationDroppableId) {
+                const alreadyInTarget = currentWeekShifts.some(s => {
+                    if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id) return false;
+                    if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                    return !s.timeslot_id;
+                });
+                if (alreadyInTarget) {
+                    alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
+                    return;
+                }
+
+                if (absencePositions.includes(newPosition)) {
+                    const executeCopyAbsence = () => {
+                        cleanupOtherShifts(shift.doctor_id, newDateStr);
+
+                        const existingInNewCell = currentWeekShifts.filter(s => {
+                            if (s.date !== newDateStr || s.position !== newPosition) return false;
+                            if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                            return !s.timeslot_id;
+                        });
+                        const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                        const newOrder = maxOrder + 1;
+
+                        const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
+                        if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
+
+                        createShiftMutation.mutate(copyData, {
+                            onSuccess: () => {
+                                handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                            }
+                        });
+                    };
+
+                    const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeCopyAbsence);
+                    if (hasConflicts) return;
+
+                    executeCopyAbsence();
+                    return;
+                }
+
+                const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
+                if (limitWarning) toast.warning(limitWarning);
+
+                const occupyingShift = findOccupyingShift(newDateStr, newPosition, null, newTimeslotId);
+                if (occupyingShift) {
+                    if (isAutoOffPosition(occupyingShift.position)) {
+                        cleanupAutoFrei(occupyingShift.doctor_id, occupyingShift.date, occupyingShift.position);
+                    }
+                    deleteShiftMutation.mutate(occupyingShift.id);
+                }
+
+                const executeCopy = () => {
+                    const existingInNewCell = currentWeekShifts.filter(s => {
+                        if (s.date !== newDateStr || s.position !== newPosition) return false;
+                        if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                        return !s.timeslot_id;
+                    });
+                    const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const newOrder = maxOrder + 1;
+
+                    const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
+                    if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
+
+                    createShiftMutation.mutate(copyData, {
+                        onSuccess: () => {
+                            handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                        }
+                    });
+                };
+
+                const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeCopy);
+                if (hasConflict) return;
+
+                executeCopy();
+                return;
+            }
+
+            const wasAutoOff = isAutoOffPosition(shift.position);
+            if (wasAutoOff && (newPosition !== shift.position || newDateStr !== shift.date)) {
+                cleanupAutoFreiOnly(shift.doctor_id, shift.date, shift.position);
+            }
+
+            const positionOrTimeslotChanged = newPosition !== shift.position || newTimeslotId !== shift.timeslot_id;
+            if (positionOrTimeslotChanged) {
+                const alreadyInTarget = currentWeekShifts.some(s => {
+                    if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id || s.id === shiftId) return false;
+                    if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                    return !s.timeslot_id;
+                });
+                if (alreadyInTarget) {
+                    alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
+                    return;
+                }
+            }
+
+            if (absencePositions.includes(newPosition)) {
+                const executeMoveToAbsence = () => {
+                    cleanupOtherShifts(shift.doctor_id, newDateStr, shiftId);
+
+                    const existingInNewCell = currentWeekShifts.filter(s => {
+                        if (s.date !== newDateStr || s.position !== newPosition) return false;
+                        if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                        return !s.timeslot_id;
+                    });
+                    const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const newOrder = maxOrder + 1;
+
+                    const updateData = { date: newDateStr, position: newPosition, order: newOrder };
+                    if (newTimeslotId !== undefined) {
+                        updateData.timeslot_id = newTimeslotId;
+                    }
+
+                    updateShiftMutation.mutate(
+                        { id: shiftId, data: updateData },
+                        {
+                            onSuccess: () => {
+                                handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                            }
+                        }
+                    );
+                };
+
+                const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeMoveToAbsence, shiftId);
+                if (hasConflicts) return;
+
+                executeMoveToAbsence();
+                return;
+            }
+
+            const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
+            if (limitWarning) toast.warning(limitWarning);
+
+            const occupyingShift = findOccupyingShift(newDateStr, newPosition, shiftId, newTimeslotId);
+            if (occupyingShift) {
+                deleteShiftWithCleanup(occupyingShift);
+            }
+
+            const executeMove = () => {
+                const existingInNewCell = currentWeekShifts.filter(s => {
+                    if (s.date !== newDateStr || s.position !== newPosition) return false;
+                    if (newTimeslotId) return s.timeslot_id === newTimeslotId;
+                    return !s.timeslot_id;
+                });
+                const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                const newOrder = maxOrder + 1;
+
+                const updateData = { date: newDateStr, position: newPosition, order: newOrder };
+                if (newTimeslotId !== undefined) {
+                    updateData.timeslot_id = newTimeslotId;
+                }
+
+                updateShiftMutation.mutate(
+                    { id: shiftId, data: updateData },
+                    {
+                        onSuccess: () => {
+                            handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
+                        }
+                    }
+                );
+            };
+
+            const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, shiftId, executeMove);
+            if (hasConflict) return;
+
+            executeMove();
+        };
+
         if (!resolveTimeslotSelection({
             positionName: newPosition,
             dateStr: newDateStr,
             requestedTimeslotId: rawNewTimeslotId,
-            onResolved: (timeslotId) => {
-                newTimeslotId = timeslotId;
-            },
+            onResolved: executeGridDrop,
         })) {
             return;
-        }
-        
-        // Check active_days for grid-to-grid moves to different position/date
-        if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
-            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-            return;
-        }
-
-        // Check ScheduleBlock for grid-to-grid moves
-        const moveBlock = getScheduleBlock(newDateStr, newPosition, newTimeslotId);
-        if (moveBlock) {
-            toast.error('Zelle gesperrt' + (moveBlock.reason ? `: ${moveBlock.reason}` : ''));
-            return;
-        }
-
-        if (sourceDroppableId === destinationDroppableId) {
-            if (source.index === destination.index) return;
-
-            // Bei Reordering innerhalb derselben Zelle: auch Timeslot-ID berücksichtigen
-            const targetWorkplace = workplaceByName.get(newPosition);
-            const targetAllTimeslotIds = targetWorkplace?.timeslots_enabled
-                ? (workplaceTimeslotsByWorkplaceId.get(targetWorkplace.id) || []).map((timeslot) => timeslot.id)
-                : [];
-            const cellShifts = currentWeekShifts
-                .filter(s => {
-                    if (s.date !== newDateStr || s.position !== newPosition) return false;
-                    if (!newTimeslotId && targetAllTimeslotIds.length > 1) {
-                        return targetAllTimeslotIds.includes(s.timeslot_id) || !s.timeslot_id;
-                    }
-                    if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                    return !s.timeslot_id;
-                })
-                .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-            const newShifts = Array.from(cellShifts);
-            const [movedShift] = newShifts.splice(source.index, 1);
-            newShifts.splice(destination.index, 0, movedShift);
-
-            newShifts.forEach((s, index) => {
-                if (s.order !== index) {
-                    updateShiftMutation.mutate({ id: s.id, data: { order: index } });
-                }
-            });
-            return;
-        }
-
-        const shift = currentWeekShifts.find(s => s.id === shiftId);
-        if (!shift) return;
-
-        // Check for Copy Mode (CTRL pressed)
-        if (isCtrlPressed && sourceDroppableId !== destinationDroppableId) {
-             // Check duplicate in target (mit Timeslot-Berücksichtigung)
-             const alreadyInTarget = currentWeekShifts.some(s => {
-                 if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id) return false;
-                 if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                 return !s.timeslot_id;
-             });
-             if (alreadyInTarget) {
-                 alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
-                 return;
-             }
-
-             if (absencePositions.includes(newPosition)) {
-                 // Hilfsfunktion für die Kopie-Erstellung bei Abwesenheit
-                 const executeCopyAbsence = () => {
-                     cleanupOtherShifts(shift.doctor_id, newDateStr);
-                     
-                     const existingInNewCell = currentWeekShifts.filter(s => {
-                         if (s.date !== newDateStr || s.position !== newPosition) return false;
-                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                         return !s.timeslot_id;
-                     });
-                     const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                     const newOrder = maxOrder + 1;
-
-                     const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
-                     if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
-
-                     createShiftMutation.mutate(copyData, {
-                         onSuccess: () => {
-                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
-                         }
-                     });
-                 };
-
-                 // Staffing- und Konfliktprüfung mit Override-Möglichkeit
-                 const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeCopyAbsence);
-                 if (hasConflicts) return;
-                 
-                 // Keine Warnung - direkt ausführen
-                 executeCopyAbsence();
-                 return;
-             } else {
-                 // Check limits for services
-                 const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
-                 if (limitWarning) toast.warning(limitWarning);
-
-                 const occupyingShift = findOccupyingShift(newDateStr, newPosition, null, newTimeslotId);
-                 if (occupyingShift) {
-                     if (isAutoOffPosition(occupyingShift.position)) {
-                         cleanupAutoFrei(occupyingShift.doctor_id, occupyingShift.date, occupyingShift.position);
-                     }
-                     deleteShiftMutation.mutate(occupyingShift.id);
-                 }
-                 
-                 // Hilfsfunktion für die Kopie-Erstellung
-                 const executeCopy = () => {
-                     const existingInNewCell = currentWeekShifts.filter(s => {
-                         if (s.date !== newDateStr || s.position !== newPosition) return false;
-                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                         return !s.timeslot_id;
-                     });
-                     const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                     const newOrder = maxOrder + 1;
-
-                     const copyData = { date: newDateStr, position: newPosition, doctor_id: shift.doctor_id, order: newOrder };
-                     if (newTimeslotId) copyData.timeslot_id = newTimeslotId;
-
-                     createShiftMutation.mutate(copyData, {
-                         onSuccess: () => {
-                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
-                         }
-                     });
-                 };
-
-                 // Konfliktprüfung mit Override-Möglichkeit
-                 const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeCopy);
-                 if (hasConflict) return;
-                 
-                 // Kein Konflikt - direkt ausführen
-                 executeCopy();
-             }
-
-             return;
-        }
-
-        // Check if moving FROM an Auto-Off position
-        const wasAutoOff = isAutoOffPosition(shift.position);
-        
-        if (wasAutoOff && (newPosition !== shift.position || newDateStr !== shift.date)) {
-            cleanupAutoFreiOnly(shift.doctor_id, shift.date, shift.position);
-        }
-
-        // Check duplicate in target (excluding self) - only if position or timeslot changed
-        const positionOrTimeslotChanged = newPosition !== shift.position || newTimeslotId !== shift.timeslot_id;
-        if (positionOrTimeslotChanged) {
-            const alreadyInTarget = currentWeekShifts.some(s => {
-                if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id || s.id === shiftId) return false;
-                if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                return !s.timeslot_id;
-            });
-            if (alreadyInTarget) {
-                alert('Mitarbeiter ist in dieser Position bereits eingeteilt.');
-                return;
-            }
-        }
-
-        if (absencePositions.includes(newPosition)) {
-             // Moving TO absence -> Staffing-Prüfung mit Override
-             
-             // Hilfsfunktion für das Verschieben zur Abwesenheit
-             const executeMoveToAbsence = () => {
-                 cleanupOtherShifts(shift.doctor_id, newDateStr, shiftId);
-                 
-                 const existingInNewCell = currentWeekShifts.filter(s => {
-                     if (s.date !== newDateStr || s.position !== newPosition) return false;
-                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                     return !s.timeslot_id;
-                 });
-                 const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                 const newOrder = maxOrder + 1;
-
-                 const updateData = { date: newDateStr, position: newPosition, order: newOrder };
-                 if (newTimeslotId !== undefined) {
-                     updateData.timeslot_id = newTimeslotId;
-                 }
-
-                 updateShiftMutation.mutate(
-                     { id: shiftId, data: updateData },
-                     {
-                         onSuccess: () => {
-                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
-                         }
-                     }
-                 );
-             };
-
-             // Staffing- und Konfliktprüfung mit Override-Möglichkeit
-             const hasConflicts = checkAbsenceDropConflicts(shift.doctor_id, newDateStr, newPosition, executeMoveToAbsence, shiftId);
-             if (hasConflicts) return;
-             
-             // Keine Warnung - direkt ausführen
-             executeMoveToAbsence();
-             return;
-        } else {
-             // Moving TO work -> check conflicts
-             
-             // Check limits for services
-             const limitWarning = checkLimits(shift.doctor_id, newDateStr, newPosition);
-             if (limitWarning) toast.warning(limitWarning);
-
-             const occupyingShift = findOccupyingShift(newDateStr, newPosition, shiftId, newTimeslotId);
-             if (occupyingShift) {
-                 deleteShiftWithCleanup(occupyingShift);
-             }
-
-             // Hilfsfunktion für das Update
-             const executeMove = () => {
-                 const existingInNewCell = currentWeekShifts.filter(s => {
-                     if (s.date !== newDateStr || s.position !== newPosition) return false;
-                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                     return !s.timeslot_id;
-                 });
-                 const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                 const newOrder = maxOrder + 1;
-
-                 const updateData = { date: newDateStr, position: newPosition, order: newOrder };
-                 if (newTimeslotId !== undefined) {
-                     updateData.timeslot_id = newTimeslotId;
-                 }
-
-                 updateShiftMutation.mutate(
-                     { id: shiftId, data: updateData },
-                     {
-                         onSuccess: () => {
-                             handlePostShiftOff(shift.doctor_id, newDateStr, newPosition);
-                         }
-                     }
-                 );
-             };
-
-             // Konfliktprüfung mit Override-Möglichkeit
-             // shiftId als excludeShiftId übergeben: Wenn der Shift selbst eine Abwesenheit ist
-             // und verschoben wird, soll diese nicht als Konflikt gewertet werden
-             const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, shiftId, executeMove);
-             if (hasConflict) return;
-             
-             // Kein Konflikt - direkt ausführen
-             executeMove();
-             return;
         }
         return;
     }
