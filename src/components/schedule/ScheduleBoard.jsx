@@ -1007,6 +1007,23 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
+        const workplaceTimeslotsByWorkplaceId = useMemo(() => {
+                const map = new Map();
+
+                workplaceTimeslots.forEach((timeslot) => {
+                        const key = timeslot.workplace_id;
+                        const list = map.get(key) || [];
+                        list.push(timeslot);
+                        map.set(key, list);
+                });
+
+                map.forEach((list, key) => {
+                        map.set(key, [...list].sort((a, b) => (a.order || 0) - (b.order || 0)));
+                });
+
+                return map;
+        }, [workplaceTimeslots]);
+
     const updateSystemSettingMutation = useMutation({
         mutationFn: async ({ key, value }) => {
             const existing = systemSettings.find(s => s.key === key);
@@ -2275,23 +2292,6 @@ export default function ScheduleBoard() {
         const doctorById = useMemo(() => new Map(doctors.map((doctor) => [doctor.id, doctor])), [doctors]);
 
         const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
-
-    const workplaceTimeslotsByWorkplaceId = useMemo(() => {
-        const map = new Map();
-
-        workplaceTimeslots.forEach((timeslot) => {
-            const key = timeslot.workplace_id;
-            const list = map.get(key) || [];
-            list.push(timeslot);
-            map.set(key, list);
-        });
-
-        map.forEach((list, key) => {
-            map.set(key, [...list].sort((a, b) => (a.order || 0) - (b.order || 0)));
-        });
-
-        return map;
-    }, [workplaceTimeslots]);
 
     const getPositionTimeslotOptions = (positionName) => {
         const workplace = workplaceByName.get(positionName);
