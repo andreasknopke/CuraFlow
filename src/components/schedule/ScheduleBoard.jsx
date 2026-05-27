@@ -603,7 +603,6 @@ const getInitialCustomTimeslotState = (options = []) => {
     const customOption = options.find((option) => option.canCustomize);
 
     return {
-        customOptionId: customOption?.id ?? null,
         customStartMinutes: customOption?.defaultCustomStartMinutes ?? null,
     };
 };
@@ -624,6 +623,41 @@ const getTimeslotSelectionBounds = (options = []) => {
         minStartMinutes: Math.min(...validOptions.map((option) => option.slotStartMinutes)),
         maxEndMinutes: Math.max(...validOptions.map((option) => option.slotEndMinutes)),
     };
+};
+
+const resolveAutomaticCustomTimeslotOption = (options = [], startMinutes, endMinutes) => {
+    const validOptions = options.filter(
+        (option) => option.canCustomize && Number.isFinite(option?.slotStartMinutes) && Number.isFinite(option?.slotEndMinutes)
+    );
+
+    if (!validOptions.length) return null;
+
+    const totalGapScore = (option) => {
+        const startGap = Math.abs(startMinutes - option.slotStartMinutes);
+        const endGap = Math.abs(endMinutes - option.slotEndMinutes);
+        return startGap + endGap;
+    };
+
+    const containingOptions = validOptions.filter(
+        (option) => startMinutes >= option.slotStartMinutes && endMinutes <= option.slotEndMinutes
+    );
+    if (containingOptions.length > 0) {
+        return [...containingOptions].sort((left, right) => totalGapScore(left) - totalGapScore(right))[0];
+    }
+
+    const overlappingOptions = validOptions
+        .map((option) => ({
+            option,
+            overlapMinutes: Math.min(endMinutes, option.slotEndMinutes) - Math.max(startMinutes, option.slotStartMinutes),
+        }))
+        .filter((entry) => entry.overlapMinutes > 0)
+        .sort((left, right) => right.overlapMinutes - left.overlapMinutes || totalGapScore(left.option) - totalGapScore(right.option));
+
+    if (overlappingOptions.length > 0) {
+        return overlappingOptions[0].option;
+    }
+
+    return [...validOptions].sort((left, right) => totalGapScore(left) - totalGapScore(right))[0];
 };
 
 const applyTimeslotSelectionToCreateData = (data, selection) => {
@@ -1126,7 +1160,6 @@ export default function ScheduleBoard() {
         workplaceName: '',
         description: '',
         options: [],
-        customOptionId: null,
         customStartMinutes: null,
     });
 
@@ -1141,7 +1174,6 @@ export default function ScheduleBoard() {
             workplaceName: '',
             description: '',
             options: [],
-            customOptionId: null,
             customStartMinutes: null,
         });
     };
@@ -1158,48 +1190,27 @@ export default function ScheduleBoard() {
         callback?.(timeslotId);
     };
 
-    const selectTimeslotCustomOption = (option) => {
-        if (!option?.canCustomize) return;
-
-        setTimeslotSelectionDialog((current) => ({
-            ...current,
-            customOptionId: option.id,
-            customStartMinutes: current.customOptionId === option.id && current.customStartMinutes !== null
-                ? current.customStartMinutes
-                : option.defaultCustomStartMinutes,
-        }));
-    };
-
-    const handleTimeslotCustomStartChange = (option, value) => {
+    const handleTimeslotCustomStartChange = (value, minStartMinutes, maxStartMinutes, fallbackStartMinutes) => {
         const nextStartMinutes = Array.isArray(value) ? value[0] : value;
         const clampedStartMinutes = Math.min(
-            option.maxCustomStartMinutes,
-            Math.max(option.minCustomStartMinutes, Math.round(Number(nextStartMinutes) || option.defaultCustomStartMinutes))
+            maxStartMinutes,
+            Math.max(minStartMinutes, Math.round(Number(nextStartMinutes) || fallbackStartMinutes))
         );
 
         setTimeslotSelectionDialog((current) => ({
             ...current,
-            customOptionId: option.id,
             customStartMinutes: clampedStartMinutes,
         }));
     };
 
-    const handleTimeslotCustomApply = (option) => {
+    const handleTimeslotCustomApply = (options, customStartMinutes, customEndMinutes) => {
         const callback = pendingTimeslotSelectionRef.current;
-        if (!callback || !option) return;
-
-        const customStartMinutes = Math.min(
-            option.maxCustomStartMinutes,
-            Math.max(
-                option.minCustomStartMinutes,
-                Math.round(Number(timeslotSelectionDialog.customStartMinutes) || option.defaultCustomStartMinutes)
-            )
-        );
-        const customEndMinutes = customStartMinutes + option.effectivePresenceMinutes;
+        const resolvedOption = resolveAutomaticCustomTimeslotOption(options, customStartMinutes, customEndMinutes);
+        if (!callback || !resolvedOption) return;
 
         closeTimeslotSelectionDialog();
         callback({
-            timeslotId: option.id,
+            timeslotId: resolvedOption.id,
             startTime: formatMinutesAsTime(customStartMinutes),
             endTime: formatMinutesAsTime(customEndMinutes),
             breakMinutes: DEFAULT_BREAK_MINUTES,
@@ -5509,29 +5520,33 @@ export default function ScheduleBoard() {
               {(() => {
                   const customizableOptions = timeslotSelectionDialog.options.filter((option) => option.canCustomize);
                   const globalBounds = getTimeslotSelectionBounds(timeslotSelectionDialog.options);
-                  const selectedCustomOption = customizableOptions.find((option) => option.id === timeslotSelectionDialog.customOptionId)
-                      || customizableOptions[0]
-                      || null;
-                  const customStartMinutes = selectedCustomOption
+                  const customDurationMinutes = customizableOptions.length > 0
+                      ? Math.max(...customizableOptions.map((option) => Math.max(0, Number(option.effectivePresenceMinutes) || 0)))
+                      : null;
+                  const defaultCustomStartMinutes = customizableOptions[0]?.defaultCustomStartMinutes ?? globalBounds.minStartMinutes;
+                  const sliderMinMinutes = globalBounds.minStartMinutes ?? 0;
+                  const sliderAbsoluteMaxMinutes = globalBounds.maxEndMinutes ?? sliderMinMinutes + 1;
+                  const sliderMaxStartMinutes = customDurationMinutes !== null
+                      ? Math.max(sliderMinMinutes, sliderAbsoluteMaxMinutes - customDurationMinutes)
+                      : sliderAbsoluteMaxMinutes;
+                  const customStartMinutes = customDurationMinutes !== null
                       ? Math.min(
-                          selectedCustomOption.maxCustomStartMinutes,
+                          sliderMaxStartMinutes,
                           Math.max(
-                              selectedCustomOption.minCustomStartMinutes,
-                              Math.round(Number(timeslotSelectionDialog.customStartMinutes) || selectedCustomOption.defaultCustomStartMinutes)
+                              sliderMinMinutes,
+                              Math.round(Number(timeslotSelectionDialog.customStartMinutes) || defaultCustomStartMinutes)
                           )
                       )
                       : null;
-                  const customEndMinutes = selectedCustomOption && customStartMinutes !== null
-                      ? customStartMinutes + (selectedCustomOption.effectivePresenceMinutes || 0)
+                  const customEndMinutes = customDurationMinutes !== null && customStartMinutes !== null
+                      ? customStartMinutes + customDurationMinutes
                       : null;
-                  const sliderMinMinutes = globalBounds.minStartMinutes ?? selectedCustomOption?.slotStartMinutes ?? 0;
-                  const sliderMaxMinutes = globalBounds.maxEndMinutes ?? selectedCustomOption?.slotEndMinutes ?? sliderMinMinutes + 1;
-                  const sliderDuration = Math.max(sliderMaxMinutes - sliderMinMinutes, 1);
-                  const customLeftPercent = selectedCustomOption && customStartMinutes !== null
+                  const sliderDuration = Math.max(sliderAbsoluteMaxMinutes - sliderMinMinutes, 1);
+                  const customLeftPercent = customStartMinutes !== null
                       ? ((customStartMinutes - sliderMinMinutes) / sliderDuration) * 100
                       : 0;
-                  const customWidthPercent = selectedCustomOption
-                      ? ((selectedCustomOption.effectivePresenceMinutes || 0) / sliderDuration) * 100
+                  const customWidthPercent = customDurationMinutes !== null
+                      ? (customDurationMinutes / sliderDuration) * 100
                       : 0;
 
                   return (
@@ -5580,7 +5595,7 @@ export default function ScheduleBoard() {
                               ))}
                           </div>
 
-                          {selectedCustomOption && customStartMinutes !== null && customEndMinutes !== null && (
+                          {customDurationMinutes !== null && customStartMinutes !== null && customEndMinutes !== null && (
                               <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
                                   <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                                       <div>
@@ -5591,23 +5606,6 @@ export default function ScheduleBoard() {
                                           {formatMinutesAsTime(customStartMinutes)}-{formatMinutesAsTime(customEndMinutes)}
                                       </div>
                                   </div>
-
-                                  {customizableOptions.length > 1 && (
-                                      <div className="mb-4 flex flex-wrap gap-2">
-                                          {customizableOptions.map((option) => (
-                                              <Button
-                                                  key={option.id}
-                                                  type="button"
-                                                  size="sm"
-                                                  variant={selectedCustomOption.id === option.id ? 'default' : 'outline'}
-                                                  onClick={() => selectTimeslotCustomOption(option)}
-                                                  data-testid={`schedule-timeslot-custom-${option.id}`}
-                                              >
-                                                  {option.label || option.timeRange || 'Zeitfenster'}
-                                              </Button>
-                                          ))}
-                                      </div>
-                                  )}
 
                                   <div className="space-y-3">
                                       <div className="relative h-4 overflow-hidden rounded-full bg-slate-200/90">
@@ -5622,26 +5620,26 @@ export default function ScheduleBoard() {
                                       </div>
                                       <div className="flex justify-between text-[11px] text-slate-500">
                                           <span>{formatMinutesAsTime(sliderMinMinutes)}</span>
-                                          <span>{formatMinutesAsTime(sliderMaxMinutes)}</span>
+                                          <span>{formatMinutesAsTime(sliderAbsoluteMaxMinutes)}</span>
                                       </div>
                                       <Slider
                                           value={[customStartMinutes]}
                                           min={sliderMinMinutes}
-                                          max={sliderMaxMinutes}
+                                          max={sliderMaxStartMinutes}
                                           step={5}
-                                          onValueChange={(value) => handleTimeslotCustomStartChange(selectedCustomOption, value)}
-                                          data-testid={`schedule-timeslot-custom-slider-${selectedCustomOption.id}`}
+                                          onValueChange={(value) => handleTimeslotCustomStartChange(value, sliderMinMinutes, sliderMaxStartMinutes, defaultCustomStartMinutes)}
+                                          data-testid="schedule-timeslot-custom-slider"
                                       />
                                       <div className="flex items-center justify-between text-xs text-slate-600">
-                                          <span>Dauer inkl. Pause: {formatDurationMinutes(selectedCustomOption.effectivePresenceMinutes)}</span>
+                                          <span>Dauer inkl. Pause: {formatDurationMinutes(customDurationMinutes)}</span>
                                           <span>Einsatz endet innerhalb des Slots</span>
                                       </div>
                                       <div className="flex justify-end gap-2 pt-1">
                                           <Button
                                               type="button"
                                               size="sm"
-                                              onClick={() => handleTimeslotCustomApply(selectedCustomOption)}
-                                              data-testid={`schedule-timeslot-custom-apply-${selectedCustomOption.id}`}
+                                              onClick={() => handleTimeslotCustomApply(customizableOptions, customStartMinutes, customEndMinutes)}
+                                              data-testid="schedule-timeslot-custom-apply"
                                           >
                                               Custom übernehmen
                                           </Button>
