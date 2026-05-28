@@ -15,6 +15,8 @@ import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { deleteEmployeeDependentRecords } from '../utils/masterEmployees.js';
+import { syncEmployeeWorkSettingsToTenantDoctors } from '../utils/masterEmployeeWorkSettings.js';
+import { broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
 
@@ -1386,6 +1388,39 @@ router.put('/employees/:id', async (req, res, next) => {
 
     values.push(id);
     await db.execute(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    const [employeeRows] = await db.execute(
+      'SELECT id, target_hours_per_week, work_time_model_id FROM Employee WHERE id = ?',
+      [id]
+    );
+    const [assignmentRows] = await db.execute(
+      `SELECT tenant_id, tenant_doctor_id
+       FROM EmployeeTenantAssignment
+       WHERE employee_id = ?
+         AND tenant_doctor_id IS NOT NULL
+         AND tenant_doctor_id != ''`,
+      [id]
+    );
+
+    if (employeeRows.length > 0 && assignmentRows.length > 0) {
+      const tokens = await getAllTenantTokens(req.user.sub);
+      const syncResult = await syncEmployeeWorkSettingsToTenantDoctors({
+        employee: employeeRows[0],
+        assignments: assignmentRows,
+        tokens,
+        withTenantDb,
+        actor: {
+          id: req.user.sub,
+          email: req.user.email || null,
+        },
+        buildRealtimeScope,
+        broadcastPlanUpdate,
+      });
+
+      if (syncResult.failedAssignments.length > 0) {
+        console.warn(`[Master employees] Tenant work-setting sync partially failed for ${id}`, syncResult.failedAssignments);
+      }
+    }
 
     console.log(`[Master employees] Updated employee ${id} (fields: ${updates.map(u => u.split(' =')[0]).join(', ')}) by user ${req.user.sub}`);
     res.json({ success: true });
