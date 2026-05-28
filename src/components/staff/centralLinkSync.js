@@ -19,10 +19,10 @@ export async function syncTenantDoctorCentralLink({
   }
 
   if (nextId) {
-    await apiClient.request(`/api/master/employees/${nextId}/link-tenant`, {
+    await apiClient.request('/api/staff/central-link', {
       method: 'POST',
       body: JSON.stringify({
-        tenant_id: tenantId,
+        employee_id: nextId,
         doctor_id: doctorId,
       }),
     });
@@ -30,10 +30,9 @@ export async function syncTenantDoctorCentralLink({
   }
 
   if (previousId) {
-    await apiClient.request('/api/master/employees/unlink-tenant', {
+    await apiClient.request('/api/staff/central-unlink', {
       method: 'POST',
       body: JSON.stringify({
-        tenant_id: tenantId,
         doctor_id: doctorId,
       }),
     });

@@ -3,7 +3,7 @@ import { HttpResponse } from 'msw';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import DoctorForm from '@/components/staff/DoctorForm';
+import DoctorForm, { getCentralWeeklyHours } from '@/components/staff/DoctorForm';
 import { renderWithProviders } from '@/test-utils/renderWithProviders';
 import { createDbHandlers, createRouteHandler, server } from '@/test-utils/server';
 import { toast } from 'sonner';
@@ -45,7 +45,7 @@ function renderDoctorForm({ doctors = [], qualifications = [], onSubmit = vi.fn(
         TeamRole: [],
       },
     }),
-    createRouteHandler('get', '*/api/master/employees', () =>
+    createRouteHandler('get', '*/api/staff/central-employees', () =>
       HttpResponse.json({
         employees: [],
       })
@@ -146,5 +146,11 @@ describe('DoctorForm', () => {
         expect.stringContaining('Das Kürzel "aa" wird bereits von Anna Adler verwendet.')
       );
     });
+  });
+
+  it('prefers central target weekly hours over model hours fallback', () => {
+    expect(getCentralWeeklyHours({ target_hours_per_week: 40, model_hours_per_week: null }, '')).toBe(40);
+    expect(getCentralWeeklyHours({ target_hours_per_week: null, model_hours_per_week: 38.5 }, '')).toBe(38.5);
+    expect(getCentralWeeklyHours(null, '')).toBe('');
   });
 });

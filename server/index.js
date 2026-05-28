@@ -113,6 +113,14 @@ const getSqlPreview = (sql) => {
   return sql.replace(/\s+/g, ' ').trim().slice(0, 180);
 };
 
+const isExpectedSchemaDuplicateError = (error, sql) => {
+  if (!error || typeof sql !== 'string') return false;
+  if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(error.code)) return false;
+
+  const normalizedSql = sql.replace(/\s+/g, ' ').trim().toUpperCase();
+  return normalizedSql.startsWith('ALTER TABLE') || normalizedSql.startsWith('CREATE INDEX');
+};
+
 const sanitizeRequestPath = (requestPath) => {
   if (typeof requestPath !== 'string' || requestPath.length === 0) {
     return 'n/a';
@@ -159,15 +167,17 @@ const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
           });
 
           const logPrefix = canRetry ? '[DB][Retry]' : '[DB][Failure]';
-          const logger = canRetry ? console.warn : console.error;
-          logger(
-            `${logPrefix} ${poolLabel || 'default'} ${methodName} attempt ${attempt}/${DB_RETRY_DELAYS_MS.length + 1} failed`,
-            {
-              code: error.code || null,
-              message: error.message,
-              sql: getSqlPreview(args[0]),
-            }
-          );
+          if (!isExpectedSchemaDuplicateError(error, args[0])) {
+            const logger = canRetry ? console.warn : console.error;
+            logger(
+              `${logPrefix} ${poolLabel || 'default'} ${methodName} attempt ${attempt}/${DB_RETRY_DELAYS_MS.length + 1} failed`,
+              {
+                code: error.code || null,
+                message: error.message,
+                sql: getSqlPreview(args[0]),
+              }
+            );
+          }
 
           if (canRetry) {
             await sleep(DB_RETRY_DELAYS_MS[attempt - 1]);

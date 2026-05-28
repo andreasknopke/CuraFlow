@@ -4,9 +4,19 @@ import ical from 'ical-generator';
 import { db } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
+import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
+import { resolveEmployeeTargetWeeklyHours } from '../utils/masterEmployeeWorkSettings.js';
 
 const router = express.Router();
 router.use(authMiddleware);
+
+function requireAdminRole(req, res) {
+  if (req.user?.role !== 'admin') {
+    res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+    return false;
+  }
+  return true;
+}
 
 // ===== GET STAFF LIST =====
 router.get('/', async (req, res, next) => {
@@ -14,6 +24,148 @@ router.get('/', async (req, res, next) => {
     const dbPool = req.db || db;
     const [rows] = await dbPool.execute('SELECT * FROM Doctor ORDER BY name');
     res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/central-employees', async (req, res, next) => {
+  try {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+    }
+
+    const [rows] = await db.execute(
+      `SELECT e.id, e.first_name, e.last_name, e.target_hours_per_week, e.work_time_model_id,
+              wtm.name AS work_time_model_name,
+              wtm.hours_per_week AS model_hours_per_week,
+              eta.tenant_doctor_id
+         FROM Employee e
+         LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+         LEFT JOIN EmployeeTenantAssignment eta
+           ON eta.employee_id COLLATE utf8mb4_general_ci = e.id COLLATE utf8mb4_general_ci
+          AND eta.tenant_id = ?
+        WHERE e.is_active = 1
+        ORDER BY e.last_name ASC, e.first_name ASC`,
+      [tenantId]
+    );
+
+    res.json({
+      employees: rows.map((row) => ({
+        ...row,
+        target_hours_per_week: resolveEmployeeTargetWeeklyHours(row),
+        is_linked_to_current_tenant: !!row.tenant_doctor_id,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/central-link', async (req, res, next) => {
+  try {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+    }
+
+    const dbPool = req.db || db;
+    const { employee_id, doctor_id } = req.body || {};
+
+    if (!employee_id || !doctor_id) {
+      return res.status(400).json({ error: 'employee_id und doctor_id sind erforderlich' });
+    }
+
+    const [employeeRows] = await db.execute(
+      `SELECT e.id, e.target_hours_per_week, e.work_time_model_id, wtm.hours_per_week AS model_hours_per_week
+         FROM Employee e
+         LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+        WHERE e.id = ? AND e.is_active = 1`,
+      [employee_id]
+    );
+    if (employeeRows.length === 0) {
+      return res.status(404).json({ error: 'Zentraler Mitarbeiter nicht gefunden' });
+    }
+
+    const employee = employeeRows[0];
+    const resolvedWeeklyHours = resolveEmployeeTargetWeeklyHours(employee);
+
+    const [doctorRows] = await dbPool.execute('SELECT id FROM Doctor WHERE id = ? LIMIT 1', [doctor_id]);
+    if (doctorRows.length === 0) {
+      return res.status(404).json({ error: 'Teammitglied nicht gefunden' });
+    }
+
+    await dbPool.execute(
+      'UPDATE Doctor SET central_employee_id = ?, target_weekly_hours = ?, work_time_model_id = ? WHERE id = ?',
+      [employee_id, resolvedWeeklyHours, employee.work_time_model_id || null, doctor_id]
+    );
+
+    await db.execute(
+      'DELETE FROM EmployeeTenantAssignment WHERE tenant_id = ? AND tenant_doctor_id = ? AND employee_id != ?',
+      [tenantId, doctor_id, employee_id]
+    );
+
+    const [existingAssign] = await db.execute(
+      'SELECT id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ? LIMIT 1',
+      [employee_id, tenantId]
+    );
+    if (existingAssign.length > 0) {
+      await db.execute(
+        'UPDATE EmployeeTenantAssignment SET tenant_doctor_id = ? WHERE id = ?',
+        [doctor_id, existingAssign[0].id]
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO EmployeeTenantAssignment (id, employee_id, tenant_id, tenant_doctor_id, fte_share, is_primary, assigned_since)
+         VALUES (?, ?, ?, ?, 1.00, FALSE, CURDATE())`,
+        [crypto.randomUUID(), employee_id, tenantId, doctor_id]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/central-unlink', async (req, res, next) => {
+  try {
+    if (!requireAdminRole(req, res)) {
+      return;
+    }
+
+    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    if (!tenantId) {
+      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+    }
+
+    const dbPool = req.db || db;
+    const { doctor_id } = req.body || {};
+
+    if (!doctor_id) {
+      return res.status(400).json({ error: 'doctor_id ist erforderlich' });
+    }
+
+    await dbPool.execute(
+      'UPDATE Doctor SET central_employee_id = NULL WHERE id = ?',
+      [doctor_id]
+    );
+
+    await db.execute(
+      'DELETE FROM EmployeeTenantAssignment WHERE tenant_id = ? AND tenant_doctor_id = ?',
+      [tenantId, doctor_id]
+    );
+
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

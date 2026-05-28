@@ -24,6 +24,14 @@ const COLORS = [
   { label: "Grau", value: "bg-gray-100 text-gray-800" },
 ];
 
+export function getCentralWeeklyHours(employee, fallbackValue = '') {
+  if (!employee) {
+    return fallbackValue;
+  }
+
+  return employee.target_hours_per_week ?? employee.model_hours_per_week ?? fallbackValue;
+}
+
 export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   // Dynamisch Rollen aus DB laden
   const { roleNames, isLoading: rolesLoading } = useTeamRoles();
@@ -43,7 +51,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     queryKey: ["central-employees-for-linking"],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/master/employees?active=true');
+        const res = await api.request('/api/staff/central-employees');
         return res.employees || [];
       } catch {
         return [];
@@ -281,7 +289,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                       type="number"
                       value={(() => {
                         const emp = centralEmployees.find(e => e.id === formData.central_employee_id);
-                        return emp?.model_hours_per_week || formData.target_weekly_hours || '';
+                        return getCentralWeeklyHours(emp, formData.target_weekly_hours || '');
                       })()}
                       disabled
                       className="bg-slate-100"

@@ -28,9 +28,9 @@ describe('syncTenantDoctorCentralLink', () => {
       apiClient,
     });
 
-    expect(apiClient.request).toHaveBeenCalledWith('/api/master/employees/employee-2/link-tenant', {
+    expect(apiClient.request).toHaveBeenCalledWith('/api/staff/central-link', {
       method: 'POST',
-      body: JSON.stringify({ tenant_id: 'tenant-1', doctor_id: 'doctor-1' }),
+      body: JSON.stringify({ employee_id: 'employee-2', doctor_id: 'doctor-1' }),
     });
   });
 
@@ -45,9 +45,9 @@ describe('syncTenantDoctorCentralLink', () => {
       apiClient,
     });
 
-    expect(apiClient.request).toHaveBeenCalledWith('/api/master/employees/unlink-tenant', {
+    expect(apiClient.request).toHaveBeenCalledWith('/api/staff/central-unlink', {
       method: 'POST',
-      body: JSON.stringify({ tenant_id: 'tenant-1', doctor_id: 'doctor-1' }),
+      body: JSON.stringify({ doctor_id: 'doctor-1' }),
     });
   });
 });
