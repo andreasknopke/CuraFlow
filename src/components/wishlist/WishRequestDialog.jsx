@@ -187,15 +187,11 @@ export default function WishRequestDialog({
     };
 
     const handleDelete = () => {
-        if (!isAdmin && wish?.status === 'approved') {
-            if (window.confirm("Für genehmigte Wünsche muss eine Stornierung angefragt werden. Anfrage jetzt senden?")) {
-                onSave({ ...formData, status: 'cancellation_requested' });
-                onClose();
-            }
-            return;
-        }
-
-        if (window.confirm("Möchten Sie diesen Eintrag wirklich löschen?")) {
+        if (window.confirm(
+            wish?.status === 'approved'
+                ? "Möchten Sie diesen genehmigten Eintrag wirklich löschen? Der zugehörige Dienst wird ebenfalls entfernt."
+                : "Möchten Sie diesen Eintrag wirklich löschen?"
+        )) {
             onDelete();
             onClose();
         }
@@ -410,20 +406,10 @@ export default function WishRequestDialog({
                             data-testid="wish-delete-button"
                             variant="destructive" 
                             onClick={handleDelete}
-                            disabled={isReadOnly && !isAdmin}
                             type="button"
                         >
-                            {(!isAdmin && wish.status === 'approved') ? (
-                                <>
-                                    <AlertCircle className="w-4 h-4 mr-2" />
-                                    Stornierung anfragen
-                                </>
-                            ) : (
-                                <>
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Löschen
-                                </>
-                            )}
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Löschen
                         </Button>
                     ) : (
                         <div />
