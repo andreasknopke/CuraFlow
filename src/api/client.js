@@ -32,7 +32,11 @@ const DATABASE_ERROR_PATTERNS = [
 let lastDatabaseToastAt = 0;
 
 function shouldAttachDbToken(endpoint) {
-  return !endpoint.startsWith('/api/auth/') && !endpoint.startsWith('/api/master/');
+  return !endpoint.startsWith('/api/auth/')
+    && !endpoint.startsWith('/api/master/')
+    && !endpoint.startsWith('/api/admin/db-tokens')
+    && endpoint !== '/api/admin/migration-status'
+    && endpoint !== '/api/admin/run-migrations';
 }
 
 function wait(ms) {
@@ -138,7 +142,8 @@ class APIClient {
 
   async request(endpoint, options = {}) {
     const token = this.getToken();
-    const dbToken = shouldAttachDbToken(endpoint) ? this.getDbToken() : null;
+    const { skipDbToken = false, ...requestOptions } = options;
+    const dbToken = !skipDbToken && shouldAttachDbToken(endpoint) ? this.getDbToken() : null;
     
     const headers = {
       'Content-Type': 'application/json',
@@ -148,7 +153,7 @@ class APIClient {
     };
 
     const config = {
-      ...options,
+      ...requestOptions,
       headers,
     };
 

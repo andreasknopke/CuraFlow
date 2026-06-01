@@ -68,4 +68,46 @@ describe('api.request', () => {
 
     await expect(api.request('/api/groups/1/shifts/shift-1', { method: 'DELETE' })).resolves.toBeNull();
   });
+
+  it('does not attach tenant DB token to master-admin token management routes', async () => {
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'radioplan_jwt_token') return 'jwt-token';
+      if (key === 'db_token_enabled') return 'true';
+      if (key === 'db_credentials') return 'tenant-token';
+      return null;
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('[]', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await api.request('/api/admin/db-tokens');
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.not.objectContaining({ 'X-DB-Token': 'tenant-token' }),
+    }));
+  });
+
+  it('keeps attaching tenant DB token to tenant data routes', async () => {
+    localStorage.getItem.mockImplementation((key) => {
+      if (key === 'radioplan_jwt_token') return 'jwt-token';
+      if (key === 'db_token_enabled') return 'true';
+      if (key === 'db_credentials') return 'tenant-token';
+      return null;
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('[]', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await api.request('/api/db', { method: 'POST', body: JSON.stringify({ action: 'list', table: 'Doctor' }) });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ 'X-DB-Token': 'tenant-token' }),
+    }));
+  });
 });

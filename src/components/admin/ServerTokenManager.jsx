@@ -45,7 +45,7 @@ export default function ServerTokenManager() {
     const { data: tokens = [], isLoading, refetch } = useQuery({
         queryKey: ['serverDbTokens'],
         queryFn: async () => {
-            const response = await api.request('/api/admin/db-tokens');
+            const response = await api.request('/api/admin/db-tokens', { skipDbToken: true });
             return response;
         },
         staleTime: 30000
@@ -56,6 +56,7 @@ export default function ServerTokenManager() {
         mutationFn: async (data) => {
             return await api.request('/api/admin/db-tokens', {
                 method: 'POST',
+                skipDbToken: true,
                 body: JSON.stringify({
                     name: data.name,
                     description: data.description,
@@ -86,6 +87,7 @@ export default function ServerTokenManager() {
         mutationFn: async ({ id, data }) => {
             return await api.request(`/api/admin/db-tokens/${id}`, {
                 method: 'PUT',
+                skipDbToken: true,
                 body: JSON.stringify({
                     name: data.name,
                     description: data.description,
@@ -115,7 +117,8 @@ export default function ServerTokenManager() {
     const deleteMutation = useMutation({
         mutationFn: async (id) => {
             return await api.request(`/api/admin/db-tokens/${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                skipDbToken: true
             });
         },
         onSuccess: () => {
@@ -131,7 +134,8 @@ export default function ServerTokenManager() {
     const activateMutation = useMutation({
         mutationFn: async (id) => {
             return await api.request(`/api/admin/db-tokens/${id}/activate`, {
-                method: 'POST'
+                method: 'POST',
+                skipDbToken: true
             });
         },
         onSuccess: async (data) => {
@@ -156,7 +160,8 @@ export default function ServerTokenManager() {
     const deactivateMutation = useMutation({
         mutationFn: async () => {
             return await api.request('/api/admin/db-tokens/deactivate-all', {
-                method: 'POST'
+                method: 'POST',
+                skipDbToken: true
             });
         },
         onSuccess: async () => {
@@ -184,7 +189,7 @@ export default function ServerTokenManager() {
         setTestingId(tokenId);
         setTestResult(null);
         try {
-            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`);
+            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true });
             
             if (!tokenData || !tokenData.token) {
                 setTestResult({ success: false, tokenId, message: 'Token-Daten nicht gefunden' });
@@ -194,6 +199,7 @@ export default function ServerTokenManager() {
             
             const result = await api.request('/api/admin/db-tokens/test', {
                 method: 'POST',
+                skipDbToken: true,
                 body: JSON.stringify({ token: tokenData.token })
             });
             
@@ -221,6 +227,7 @@ export default function ServerTokenManager() {
         try {
             const result = await api.request('/api/admin/db-tokens/test', {
                 method: 'POST',
+                skipDbToken: true,
                 body: JSON.stringify({
                     credentials: {
                         host: formData.host,
@@ -301,7 +308,7 @@ export default function ServerTokenManager() {
     
     const copyTokenToClipboard = async (tokenId) => {
         try {
-            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`);
+            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true });
             await navigator.clipboard.writeText(tokenData.token);
             toast.success('Token in Zwischenablage kopiert');
         } catch (err) {
@@ -314,7 +321,7 @@ export default function ServerTokenManager() {
         queryKey: ['migrationStatus'],
         queryFn: async () => {
             try {
-                return await api.request('/api/admin/migration-status');
+                return await api.request('/api/admin/migration-status', { skipDbToken: true });
             } catch (e) {
                 console.error('Failed to load migration status:', e);
                 return { migrations: [], allApplied: true };
@@ -326,7 +333,7 @@ export default function ServerTokenManager() {
     // Run migrations mutation
     const runMigrationsMutation = useMutation({
         mutationFn: async () => {
-            return await api.request('/api/admin/run-migrations', { method: 'POST' });
+            return await api.request('/api/admin/run-migrations', { method: 'POST', skipDbToken: true });
         },
         onSuccess: (data) => {
             refetchMigrations();
