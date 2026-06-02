@@ -84,12 +84,12 @@ function createMigrationTenantDb() {
       }
 
       if (sql.startsWith('DELETE FROM ShiftEntry')) {
-        // Migration deletes only the rows that were actually imported. In
-        // the fixture only 'absence-1' gets imported (absence-2 already
-        // exists centrally, duty-1 is not an absence). Other DELETE shapes
-        // (e.g. the seed-back path) are handled by their own tests.
-        expect(params).toEqual(['absence-1']);
-        return [{ affectedRows: 1 }, []];
+        // Migration removes the newly imported row ('absence-1') AND the
+        // redundant leftover whose exact central duplicate already exists
+        // ('absence-2'). 'duty-1' is not an absence and stays. Other DELETE
+        // shapes (e.g. the seed-back path) are handled by their own tests.
+        expect([...params].sort()).toEqual(['absence-1', 'absence-2']);
+        return [{ affectedRows: 2 }, []];
       }
 
       throw new Error(`Unexpected tenant SQL: ${sql}`);
@@ -101,7 +101,7 @@ function createMigrationMasterDb() {
   const calls = [];
   const existingDates = new Map([
     ['2026-02-10', []],
-    ['2026-02-11', [{ id: 'already-central' }]],
+    ['2026-02-11', [{ id: 'already-central', position: 'Krank' }]],
   ]);
 
   return {
@@ -113,7 +113,7 @@ function createMigrationMasterDb() {
         return [[], []];
       }
 
-      if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+      if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
         return [existingDates.get(params[1]) ?? [], []];
       }
 
@@ -244,11 +244,12 @@ describe('central absences', () => {
 
     expect(result).toEqual({
       imported: 1,
-      removedLocal: 1,
+      removedLocal: 2,
       skippedInvalidDate: [],
       localAbsences: 2,
       existingCentral: 1,
       centralTotal: 5,
+      conflicts: 0,
       linkStatus: 'ok',
       linkRepaired: false,
     });
@@ -280,7 +281,7 @@ describe('central absences', () => {
         if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
           return [[], []];
         }
-        if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
         if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
@@ -318,6 +319,8 @@ describe('central absences', () => {
       ],
       localAbsences: 3,
       existingCentral: 0,
+      centralTotal: null,
+      conflicts: 0,
       linkStatus: 'ok',
       linkRepaired: false,
     });
@@ -351,7 +354,7 @@ describe('central absences', () => {
         if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
           return [[], []];
         }
-        if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
         if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
@@ -387,6 +390,7 @@ describe('central absences', () => {
       localAbsences: 3,
       existingCentral: 0,
       centralTotal: 3,
+      conflicts: 0,
       linkStatus: 'ok',
       linkRepaired: false,
     });
@@ -478,7 +482,7 @@ describe('central absences', () => {
         if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
           return [[], []];
         }
-        if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
         if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
@@ -516,6 +520,7 @@ describe('central absences', () => {
       localAbsences: 1,
       existingCentral: 0,
       centralTotal: 1,
+      conflicts: 0,
       linkStatus: 'repaired',
       linkRepaired: true,
     });
@@ -579,7 +584,7 @@ describe('central absences', () => {
         if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
           return [[{ total: 0 }], []];
         }
-        if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
         throw new Error(`Unexpected master SQL: ${sql}`);
@@ -599,6 +604,7 @@ describe('central absences', () => {
       localAbsences: 1,
       existingCentral: 0,
       centralTotal: 0,
+      conflicts: 0,
       skippedInvalidDate: [],
       linkStatus: 'repair_needed',
     });
@@ -649,6 +655,86 @@ describe('central absences', () => {
     });
   });
 
+  it('cleans up redundant local rows and reports same-day conflicts', async () => {
+    const deleted = [];
+    const tenantDb = {
+      async execute(sql, params = []) {
+        if (sql.startsWith('SELECT central_employee_id FROM Doctor')) {
+          return [[{ central_employee_id: 'emp-3' }], []];
+        }
+        if (sql.startsWith('SELECT * FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            // Exact central duplicate → redundant, must be deleted.
+            { id: 'dup', doctor_id: 'doc-3', date: '2026-08-01', position: 'Urlaub' },
+            // Same day, different position → conflict, must stay local.
+            { id: 'conflict', doctor_id: 'doc-3', date: '2026-08-02', position: 'Krank' },
+            // No central row → newly imported.
+            { id: 'new', doctor_id: 'doc-3', date: '2026-08-03', position: 'Frei' },
+          ], []];
+        }
+        if (sql.startsWith('DELETE FROM ShiftEntry')) {
+          deleted.push(...params);
+          return [{ affectedRows: params.length }, []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const central = new Map([
+      ['2026-08-01', [{ id: 'c1', position: 'Urlaub' }]],
+      ['2026-08-02', [{ id: 'c2', position: 'Dienstreise' }]],
+      ['2026-08-03', []],
+    ]);
+    const masterDb = {
+      async execute(sql, params = []) {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
+          return [[], []];
+        }
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+          return [central.get(params[1]) ?? [], []];
+        }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 2 }], []];
+        }
+        if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
+          return [{ affectedRows: 1 }, []];
+        }
+        if (sql.startsWith('SELECT `id`, `employee_id`, `date`, `position`')) {
+          return [[{
+            id: params[0], employee_id: params[1], date: '2026-08-03', position: 'Frei',
+            note: null, start_time: null, end_time: null, break_minutes: null,
+            timeslot_id: null, order: null,
+            created_date: '2026-08-03 09:00:00', updated_date: '2026-08-03 09:00:00',
+            created_by: null, source_tenant_id: 'tenant-1', source_tenant_doctor_id: 'doc-3',
+          }], []];
+        }
+        throw new Error(`Unexpected master SQL: ${sql}`);
+      },
+    };
+
+    const result = await migrateTenantDoctorAbsencesToCentral({
+      tenantDb,
+      masterDb,
+      tenantId: 'tenant-1',
+      doctorId: 'doc-3',
+      employeeId: 'emp-3',
+    });
+
+    // 'new' is imported, 'dup' is a redundant leftover — both deleted locally.
+    // 'conflict' stays because a different central absence holds that day.
+    expect([...deleted].sort()).toEqual(['dup', 'new']);
+    expect(result).toEqual({
+      imported: 1,
+      removedLocal: 2,
+      skippedInvalidDate: [],
+      localAbsences: 3,
+      existingCentral: 1,
+      centralTotal: 2,
+      conflicts: 1,
+      linkStatus: 'ok',
+      linkRepaired: false,
+    });
+  });
+
   it('previews how many local absences would move to central storage', async () => {
     const tenantDb = createMigrationTenantDb();
     const masterDb = createMigrationMasterDb();
@@ -665,6 +751,7 @@ describe('central absences', () => {
       localAbsences: 2,
       existingCentral: 1,
       centralTotal: 5,
+      conflicts: 0,
       skippedInvalidDate: [],
       linkStatus: 'ok',
     });

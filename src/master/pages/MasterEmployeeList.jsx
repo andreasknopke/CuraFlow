@@ -50,6 +50,10 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     'local_absences',
     'would_import',
     'already_central',
+    'central_total',
+    'would_remove_local',
+    'conflicts',
+    'needs_action',
     'reason',
     'error',
   ];
@@ -71,6 +75,10 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     row.localAbsences ?? 0,
     row.imported ?? 0,
     row.existingCentral ?? 0,
+    row.centralTotal ?? 0,
+    row.removedLocal ?? 0,
+    row.conflicts ?? 0,
+    row.needsAction ? 'yes' : 'no',
     row.reason || '',
     row.error || '',
   ]));
@@ -102,6 +110,7 @@ export default function MasterEmployeeList() {
   const [sortDir, setSortDir] = useState('asc');
   const [showInactive, setShowInactive] = useState(false); // 'central' | 'legacy'
   const [dryRunReport, setDryRunReport] = useState(null);
+  const [showOnlyOpen, setShowOnlyOpen] = useState(false);
 
   // Mandanten laden
   const { data: tenants = [] } = useQuery({
@@ -785,10 +794,21 @@ export default function MasterEmployeeList() {
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <ReportStat label="Verknüpfungen" value={dryRunReport.totalAssignments} />
-                <ReportStat label="Prüfbar" value={dryRunReport.migratedAssignments} />
+                <ReportStat label="Offen" value={dryRunReport.assignmentsNeedingAction ?? 0} tone={dryRunReport.assignmentsNeedingAction ? 'amber' : 'green'} />
                 <ReportStat label="Würden importiert" value={dryRunReport.importedAbsences} />
-                <ReportStat label="Schon zentral" value={dryRunReport.existingCentralAbsences || 0} />
+                <ReportStat label="Konflikte" value={dryRunReport.conflictAssignments || 0} tone={dryRunReport.conflictAssignments ? 'amber' : undefined} />
                 <ReportStat label="Fehler" value={dryRunReport.failedAssignments} tone="red" />
+              </div>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={showOnlyOpen}
+                    onChange={(event) => setShowOnlyOpen(event.target.checked)}
+                  />
+                  Nur offene anzeigen
+                </label>
               </div>
 
               <ScrollArea className="h-[360px] border rounded-md">
@@ -799,29 +819,36 @@ export default function MasterEmployeeList() {
                       <TableHead>Mitarbeiter</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Lokal</TableHead>
-                      <TableHead>Neu zentral</TableHead>
-                      <TableHead>Schon zentral</TableHead>
+                      <TableHead>Würde bereinigt</TableHead>
                       <TableHead>Zentral gesamt</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {dryRunReport.results?.map((row, index) => (
+                    {dryRunReport.results?.filter((row) => !showOnlyOpen || row.needsAction || Number(row.conflicts || 0) > 0).map((row, index) => (
                       <TableRow key={`${row.tenant_id}-${row.tenant_doctor_id}-${index}`}>
                         <TableCell>{row.tenant_name || row.tenant_id || '–'}</TableCell>
                         <TableCell>{row.employee_name || row.employee_id || '–'}</TableCell>
                         <TableCell>
-                          <Badge variant={row.status === 'error' ? 'destructive' : 'outline'}>
-                            {row.status === 'success' ? 'OK' : row.status === 'skipped' ? 'Übersprungen' : 'Fehler'}
-                          </Badge>
+                          {row.status === 'success' ? (
+                            <Badge variant="outline" className={row.needsAction ? 'text-amber-700 border-amber-300' : 'text-green-700 border-green-300'}>
+                              {row.needsAction ? 'Aktion nötig' : 'Fertig'}
+                            </Badge>
+                          ) : (
+                            <Badge variant={row.status === 'error' ? 'destructive' : 'outline'}>
+                              {row.status === 'skipped' ? 'Übersprungen' : 'Fehler'}
+                            </Badge>
+                          )}
                           {row.error ? <span className="ml-2 text-xs text-red-600">{row.error}</span> : null}
                           {row.reason ? <span className="ml-2 text-xs text-slate-500">{row.reason}</span> : null}
                           {row.linkStatus && row.linkStatus !== 'ok' ? (
                             <span className="ml-2 text-xs text-amber-600">{LINK_STATUS_LABELS[row.linkStatus] || row.linkStatus}</span>
                           ) : null}
+                          {Number(row.conflicts || 0) > 0 ? (
+                            <span className="ml-2 text-xs text-amber-600">{row.conflicts} Konflikt(e) am selben Tag</span>
+                          ) : null}
                         </TableCell>
                         <TableCell>{row.localAbsences ?? 0}</TableCell>
-                        <TableCell>{row.imported ?? 0}</TableCell>
-                        <TableCell>{row.existingCentral ?? 0}</TableCell>
+                        <TableCell>{row.removedLocal ?? 0}</TableCell>
                         <TableCell>{row.centralTotal ?? 0}</TableCell>
                       </TableRow>
                     ))}
@@ -861,6 +888,8 @@ function ReportStat({ label, value, tone = 'slate' }) {
   const toneMap = {
     slate: 'bg-slate-50 text-slate-700 border-slate-200',
     red: 'bg-red-50 text-red-700 border-red-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    green: 'bg-green-50 text-green-700 border-green-200',
   };
 
   return (

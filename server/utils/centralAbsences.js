@@ -491,7 +491,9 @@ export async function migrateTenantDoctorAbsencesToCentral({
   let imported = 0;
   let existingCentral = 0;
   const skippedInvalidDate = [];
+  const conflicts = [];
   const migratedIds = [];
+  const redundantIds = [];
   for (const row of absenceRows) {
     const date = toDateString(row.date);
     // CentralAbsenceEntry.date is NOT NULL. Skip rows that have a null/empty
@@ -502,11 +504,29 @@ export async function migrateTenantDoctorAbsencesToCentral({
       continue;
     }
     const [existingRows] = await masterDb.execute(
-      'SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+      'SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
       [employeeId, date]
     );
     if (existingRows.length > 0) {
-      existingCentral += 1;
+      const sameAbsence = normalizeShiftPosition(existingRows[0].position) === normalizeShiftPosition(row.position);
+      if (sameAbsence) {
+        // The central store already holds the exact same absence (employee +
+        // date + normalized position). The read-merge already hides this local
+        // row, so it is a redundant leftover from an earlier migration. Clean
+        // it up so it stops lingering and inflating the local count.
+        existingCentral += 1;
+        redundantIds.push(row.id);
+      } else {
+        // A different absence already occupies this day. The central unique
+        // key is (employee_id, date), so we cannot move ours without
+        // overwriting. Keep the local row and report the conflict.
+        conflicts.push({
+          id: row.id,
+          date,
+          localPosition: row.position,
+          centralPosition: existingRows[0].position,
+        });
+      }
       continue;
     }
 
@@ -537,18 +557,22 @@ export async function migrateTenantDoctorAbsencesToCentral({
       skippedInvalidDate,
       localAbsences: absenceRows.length,
       existingCentral,
+      centralTotal: null,
+      conflicts: conflicts.length,
       linkStatus: linkRepaired ? 'repaired' : 'ok',
       linkRepaired,
     };
   }
 
   // Delete by id list so we cover position-spelling variants (PascalCase,
-  // lowercase, umlaut-stripped) and only remove rows that were actually
-  // imported — never rows that are still skipped or unchanged.
-  if (migratedIds.length > 0) {
+  // lowercase, umlaut-stripped). We remove both the rows we just imported AND
+  // the redundant leftovers whose exact central duplicate already exists —
+  // never the conflict rows (a different central absence occupies that day).
+  const removableIds = [...migratedIds, ...redundantIds];
+  if (removableIds.length > 0) {
     await tenantDb.execute(
-      `DELETE FROM ShiftEntry WHERE id IN (${migratedIds.map(() => '?').join(', ')})`,
-      migratedIds
+      `DELETE FROM ShiftEntry WHERE id IN (${removableIds.map(() => '?').join(', ')})`,
+      removableIds
     );
   }
 
@@ -562,11 +586,12 @@ export async function migrateTenantDoctorAbsencesToCentral({
 
   return {
     imported,
-    removedLocal: imported,
+    removedLocal: removableIds.length,
     skippedInvalidDate: [],
     localAbsences: absenceRows.length,
     existingCentral,
     centralTotal,
+    conflicts: conflicts.length,
     linkStatus: linkRepaired ? 'repaired' : 'ok',
     linkRepaired,
   };
@@ -640,6 +665,7 @@ export async function previewTenantDoctorAbsenceMigration({
   let imported = 0;
   let existingCentral = 0;
   const skippedInvalidDate = [];
+  let conflicts = 0;
   for (const row of absenceRows) {
     const date = toDateString(row.date);
     if (!date) {
@@ -647,22 +673,34 @@ export async function previewTenantDoctorAbsenceMigration({
       continue;
     }
     const [existingRows] = await masterDb.execute(
-      'SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+      'SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
       [employeeId, date]
     );
     if (existingRows.length > 0) {
-      existingCentral += 1;
+      const sameAbsence = normalizeShiftPosition(existingRows[0].position) === normalizeShiftPosition(row.position);
+      if (sameAbsence) {
+        existingCentral += 1;
+      } else {
+        conflicts += 1;
+      }
       continue;
     }
     imported += 1;
   }
 
+  // A real run would remove every local row that is now safely represented
+  // centrally: the ones it imports plus the redundant duplicates. Conflict
+  // rows stay local. This tells the admin how many local leftovers would be
+  // cleaned up, so "Lokal" going to zero means "nothing left to do".
+  const removableLocal = imported + existingCentral;
+
   return {
     imported,
-    removedLocal: absenceRows.length,
+    removedLocal: removableLocal,
     localAbsences: absenceRows.length,
     existingCentral,
     centralTotal,
+    conflicts,
     skippedInvalidDate,
     linkStatus: linkRepairNeeded ? 'repair_needed' : 'ok',
   };
@@ -800,6 +838,17 @@ export async function migrateLinkedAssignmentsToCentral({
       importedAbsences += Number(migrationResult.imported || 0);
       removedLocalAbsences += Number(migrationResult.removedLocal || 0);
       existingCentralAbsences += Number(migrationResult.existingCentral || 0);
+      const removedLocal = Number(migrationResult.removedLocal || 0);
+      const importedCount = Number(migrationResult.imported || 0);
+      const conflicts = Number(migrationResult.conflicts || 0);
+      // A doctor still needs attention when a run would move/clean up local
+      // rows (import new ones or delete redundant leftovers). Once everything
+      // is centrally stored and the local leftovers are gone, there is nothing
+      // left to do — only unresolved conflicts remain, which are flagged
+      // separately.
+      const needsAction = dryRun
+        ? removedLocal > 0
+        : (importedCount > 0 || removedLocal > 0);
       results.push({
         employee_id: assignment.employee_id,
         employee_name: assignment.employee_name || null,
@@ -807,11 +856,13 @@ export async function migrateLinkedAssignmentsToCentral({
         tenant_name: assignment.tenant_name || null,
         tenant_doctor_id: assignment.tenant_doctor_id,
         status: 'success',
-        imported: Number(migrationResult.imported || 0),
-        removedLocal: Number(migrationResult.removedLocal || 0),
+        imported: importedCount,
+        removedLocal,
         localAbsences: Number(migrationResult.localAbsences || migrationResult.removedLocal || 0),
         existingCentral: Number(migrationResult.existingCentral || 0),
         centralTotal: Number(migrationResult.centralTotal || 0),
+        conflicts,
+        needsAction,
         linkStatus: migrationResult.linkStatus || 'ok',
         dry_run: dryRun,
       });
@@ -837,6 +888,8 @@ export async function migrateLinkedAssignmentsToCentral({
     existingCentralAbsences,
     skippedAssignments,
     failedAssignments,
+    assignmentsNeedingAction: results.filter((row) => row.needsAction).length,
+    conflictAssignments: results.filter((row) => Number(row.conflicts || 0) > 0).length,
     totalAssignments: results.length,
     dryRun,
   };
