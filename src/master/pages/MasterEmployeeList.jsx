@@ -53,6 +53,7 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     'central_total',
     'would_remove_local',
     'remaining_local',
+    'purged_empty',
     'skipped_invalid_date',
     'skipped_invalid_date_detail',
     'conflicts',
@@ -81,6 +82,7 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     row.centralTotal ?? 0,
     row.removedLocal ?? 0,
     row.remainingLocal ?? 0,
+    row.purgedEmpty ?? 0,
     row.skippedInvalidDate ?? 0,
     row.skippedInvalidDateSummary || '',
     row.conflicts ?? 0,
@@ -357,10 +359,11 @@ export default function MasterEmployeeList() {
   });
 
   const linkedAbsenceMigrationMutation = useMutation({
-    mutationFn: () => api.request('/api/master/employees/migrate-linked-absences', {
+    mutationFn: ({ purgeEmptyDates = false } = {}) => api.request('/api/master/employees/migrate-linked-absences', {
       method: 'POST',
       body: JSON.stringify({
         tenant_id: selectedTenant !== 'all' ? selectedTenant : null,
+        purge_empty_dates: purgeEmptyDates,
       }),
     }),
     onSuccess: async (result) => {
@@ -370,6 +373,9 @@ export default function MasterEmployeeList() {
           `${result.importedAbsences} neu zentral`,
           `${result.removedLocalAbsences} lokal bereinigt`,
         ];
+        if (Number(result.purgedEmptyAbsences || 0) > 0) {
+          parts.push(`${result.purgedEmptyAbsences} leere Einträge gelöscht`);
+        }
         if (result.failedAssignments > 0) {
           parts.push(`${result.failedAssignments} fehlgeschlagen`);
         }
@@ -442,7 +448,16 @@ export default function MasterEmployeeList() {
     if (!window.confirm(`Bestehende Verknüpfungen für ${scopeLabel} migrieren?\n\nDabei werden lokale Abwesenheiten bereits verknüpfter Mitarbeiter in die zentrale Speicherung übernommen und lokal entfernt.`)) {
       return;
     }
-    linkedAbsenceMigrationMutation.mutate();
+    linkedAbsenceMigrationMutation.mutate({ purgeEmptyDates: false });
+  };
+
+  const handleMigrateAndPurgeLinkedAbsences = () => {
+    const scopeLabel = selectedTenant === 'all' ? 'alle Mandanten' : 'den ausgewählten Mandanten';
+    const message = `Bestehende Verknüpfungen für ${scopeLabel} migrieren UND leere Einträge löschen?\n\nSchritt 1: Lokale Abwesenheiten werden in die zentrale Speicherung übernommen.\nSchritt 2: Lokale Abwesenheitszeilen mit LEEREM Datum (null/leer) und bekannter Abwesenheitsposition werden dauerhaft gelöscht – diese Zeilen haben keinen Tag und können nirgends angezeigt werden.\n\nZeilen mit fehlerhaftem Datumsformat (z. B. 'not-a-date', '2026-13-40') werden NICHT gelöscht – bitte im Mandanten korrigieren.`;
+    if (!window.confirm(message)) {
+      return;
+    }
+    linkedAbsenceMigrationMutation.mutate({ purgeEmptyDates: true });
   };
 
   const handleDryRunLinkedAbsences = () => {
@@ -495,6 +510,18 @@ export default function MasterEmployeeList() {
               ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               : <Upload className="w-4 h-4 mr-2" />}
             Verknüpfungen migrieren ({linkedAssignmentCount})
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleMigrateAndPurgeLinkedAbsences}
+            disabled={linkedAbsenceMigrationMutation.isPending || linkedAssignmentCount === 0}
+            title="Migriert und löscht zusätzlich lokale Abwesenheitszeilen mit leerem Datum"
+          >
+            {linkedAbsenceMigrationMutation.isPending
+              ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              : <Trash2 className="w-4 h-4 mr-2" />}
+            Migrieren + leere Einträge löschen
           </Button>
           <Button
             variant="outline"
@@ -872,6 +899,9 @@ export default function MasterEmployeeList() {
                               {row.skippedInvalidDate} Eintrag/Einträge mit ungültigem Datum
                               {row.skippedInvalidDateSummary ? ` (${row.skippedInvalidDateSummary})` : ''}
                             </span>
+                          ) : null}
+                          {Number(row.purgedEmpty || 0) > 0 ? (
+                            <span className="ml-2 text-xs text-slate-500">{row.purgedEmpty} leere(r) Eintrag/Einträge gelöscht</span>
                           ) : null}
                         </TableCell>
                         <TableCell>{row.localAbsences ?? 0}</TableCell>

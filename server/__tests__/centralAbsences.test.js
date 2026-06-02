@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   migrateLinkedAssignmentsToCentral,
   listShiftEntriesWithCentralAbsences,
   migrateTenantDoctorAbsencesToCentral,
   previewTenantDoctorAbsenceMigration,
+  purgeEmptyDateAbsences,
 } from '../utils/centralAbsences.js';
 
 function createListTenantDb() {
@@ -811,6 +812,105 @@ describe('central absences', () => {
     });
   });
 
+  it('purges only null/empty-date absence rows and never garbage string dates', async () => {
+    const deleted = [];
+    const warnLogs = [];
+    const originalWarn = console.warn;
+    console.warn = (...args) => warnLogs.push(args.join(' '));
+    try {
+      const tenantDb = {
+        async execute(sql, params = []) {
+          if (sql.startsWith('SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?')) {
+            return [[
+              // Eligible: null date, known absence position.
+              { id: 'row-null', doctor_id: 'doc-p', date: null, position: 'Urlaub' },
+              // Eligible: empty-string date.
+              { id: 'row-empty', doctor_id: 'doc-p', date: '', position: 'Krank' },
+              // NOT eligible: working shift with null date (would never happen,
+              // but proves the safety filter works).
+              { id: 'row-duty-null', doctor_id: 'doc-p', date: null, position: 'Dienst A' },
+              // NOT eligible: garbage string date.
+              { id: 'row-garbage', doctor_id: 'doc-p', date: 'not-a-date', position: 'Urlaub' },
+              // NOT eligible: invalid calendar date.
+              { id: 'row-bad-day', doctor_id: 'doc-p', date: '2026-13-40', position: 'Frei' },
+              // NOT eligible: already a valid date.
+              { id: 'row-valid', doctor_id: 'doc-p', date: '2026-04-01', position: 'Frei' },
+            ], []];
+          }
+          if (sql.startsWith('DELETE FROM ShiftEntry')) {
+            deleted.push(...params);
+            return [{ affectedRows: params.length }, []];
+          }
+          throw new Error(`Unexpected tenant SQL: ${sql}`);
+        },
+      };
+
+      const result = await purgeEmptyDateAbsences({ tenantDb, doctorId: 'doc-p' });
+
+      expect([...deleted].sort()).toEqual(['row-empty', 'row-null']);
+      expect(result.purged).toBe(2);
+      expect(result.skipped.map((row) => row.id).sort()).toEqual(['row-bad-day', 'row-garbage']);
+      expect(result.skipped.find((row) => row.id === 'row-garbage').reason).toMatch(/unerwartetes Datumsformat/);
+      expect(result.skipped.find((row) => row.id === 'row-bad-day').reason).toMatch(/kein gültiges Kalenderdatum/);
+      expect(warnLogs).toHaveLength(2);
+      expect(warnLogs[0]).toMatch(/Purged empty-date absence row: doctor=doc-p row_id=row-null/);
+      expect(warnLogs[0]).toMatch(/raw_date=null/);
+      expect(warnLogs[1]).toMatch(/row_id=row-empty/);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  it('purges zero rows when every absence has a valid date', async () => {
+    const deleted = [];
+    const tenantDb = {
+      async execute(sql, params = []) {
+        if (sql.startsWith('SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            { id: 'a-1', doctor_id: 'doc-q', date: '2026-04-01', position: 'Urlaub' },
+          ], []];
+        }
+        if (sql.startsWith('DELETE FROM ShiftEntry')) {
+          deleted.push(...params);
+          return [{ affectedRows: params.length }, []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const result = await purgeEmptyDateAbsences({ tenantDb, doctorId: 'doc-q' });
+    expect(result).toEqual({ purged: 0, skipped: [] });
+    expect(deleted).toEqual([]);
+  });
+
+  it('never deletes a row whose doctor_id does not match the requested doctor', async () => {
+    const deleted = [];
+    const tenantDb = {
+      async execute(sql, params = []) {
+        if (sql.startsWith('SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            { id: 'mismatch', doctor_id: 'doc-other', date: null, position: 'Urlaub' },
+          ], []];
+        }
+        if (sql.startsWith('DELETE FROM ShiftEntry')) {
+          deleted.push(...params);
+          return [{ affectedRows: params.length }, []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const result = await purgeEmptyDateAbsences({ tenantDb, doctorId: 'doc-p' });
+    expect(deleted).toEqual([]);
+    expect(result.purged).toBe(0);
+    expect(result.skipped).toEqual([
+      {
+        id: 'mismatch',
+        position: 'Urlaub',
+        raw_date: null,
+        reason: 'doctor_id stimmt nicht (übersprungen)',
+      },
+    ]);
+  });
+
   it('previews how many local absences would move to central storage', async () => {
     const tenantDb = createMigrationTenantDb();
     const masterDb = createMigrationMasterDb();
@@ -909,5 +1009,148 @@ describe('central absences', () => {
       }),
     ]);
     expect(masterDb.calls.filter(({ sql }) => sql.startsWith('INSERT INTO CentralAbsenceEntry'))).toHaveLength(0);
+  });
+
+  it('runs the purge pass end-to-end when purgeEmptyDates is enabled', async () => {
+    const existingDates = new Map([
+      ['2026-02-11', [{ id: 'already-central', position: 'Krank' }]],
+    ]);
+    const masterDb = {
+      async execute(sql, params = []) {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) return [[], []];
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
+          return [existingDates.get(params[1]) ?? [], []];
+        }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) return [[{ total: 1 }], []];
+        if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) return [{ affectedRows: 1 }, []];
+        if (sql.startsWith('SELECT `id`, `employee_id`, `date`, `position`')) return [[{
+          id: params[0], employee_id: params[1], date: params[2], position: params[3],
+          note: null, start_time: null, end_time: null, break_minutes: null, timeslot_id: null, order: null,
+          created_date: '2026-02-10 09:00:00', updated_date: '2026-02-10 09:00:00',
+          created_by: 'u', source_tenant_id: 'tenant-1', source_tenant_doctor_id: 'doc-1',
+        }], []];
+        throw new Error(`Unexpected master SQL: ${sql}`);
+      },
+    };
+    const deletedIds = [];
+    const tenantDb = {
+      async execute(sql, params = []) {
+        if (sql.startsWith('SELECT central_employee_id FROM Doctor')) {
+          return [[{ central_employee_id: 'emp-1' }], []];
+        }
+        if (sql.startsWith('SELECT * FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            { id: 'valid-1', doctor_id: 'doc-1', date: '2026-02-10', position: 'Urlaub', created_by: 'u' },
+            { id: 'valid-2', doctor_id: 'doc-1', date: '2026-02-11', position: 'Krank', created_by: 'u' },
+            { id: 'empty-null', doctor_id: 'doc-1', date: null, position: 'Frei', created_by: 'u' },
+            { id: 'duty-1', doctor_id: 'doc-1', date: '2026-02-12', position: 'Frühdienst', created_by: 'u' },
+          ], []];
+        }
+        if (sql.startsWith('SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            { id: 'empty-null', doctor_id: 'doc-1', date: null, position: 'Frei' },
+          ], []];
+        }
+        if (sql.startsWith('DELETE FROM ShiftEntry')) {
+          deletedIds.push(...params);
+          return [{ affectedRows: params.length }, []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const withTenantDb = async (_token, callback) => await callback(tenantDb);
+
+    const result = await migrateLinkedAssignmentsToCentral({
+      assignments: [{
+        employee_id: 'emp-1',
+        employee_name: 'Max',
+        tenant_id: 'tenant-1',
+        tenant_name: 'Notaufnahme',
+        tenant_doctor_id: 'doc-1',
+      }],
+      tokensById: new Map([['tenant-1', { id: 'tenant-1' }]]),
+      withTenantDb,
+      masterDb,
+      dryRun: false,
+      purgeEmptyDates: true,
+    });
+
+    // Migration: valid-1 imported + valid-2 redundant → both removed.
+    // Purge: empty-null removed.
+    // duty-1 stays.
+    expect([...deletedIds].sort()).toEqual(['empty-null', 'valid-1', 'valid-2']);
+    expect(result.purgedEmptyAbsences).toBe(1);
+    expect(result.results[0]).toEqual(expect.objectContaining({
+      tenant_id: 'tenant-1',
+      status: 'success',
+      imported: 1,
+      removedLocal: 2,
+      purgedEmpty: 1,
+      localAbsences: 3,
+      existingCentral: 1,
+      centralTotal: 1,
+      remainingLocal: 0,
+      // The empty-null row is reported by the regular migration as an
+      // invalid-date skip; the purge pass then removes it.
+      skippedInvalidDate: 1,
+      needsAction: false,
+    }));
+  });
+
+  it('never runs the purge pass without an explicit opt-in', async () => {
+    const masterDb = {
+      async execute(sql, params = []) {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) return [[], []];
+        if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) return [[], []];
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) return [[{ total: 0 }], []];
+        if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) return [{ affectedRows: 1 }, []];
+        if (sql.startsWith('SELECT `id`, `employee_id`, `date`, `position`')) return [[{
+          id: params[0], employee_id: params[1], date: params[2], position: params[3],
+          note: null, start_time: null, end_time: null, break_minutes: null, timeslot_id: null, order: null,
+          created_date: '2026-02-10 09:00:00', updated_date: '2026-02-10 09:00:00',
+          created_by: 'u', source_tenant_id: 'tenant-1', source_tenant_doctor_id: 'doc-1',
+        }], []];
+        throw new Error(`Unexpected master SQL: ${sql}`);
+      },
+    };
+    const tenantDb = {
+      async execute(sql, params = []) {
+        if (sql.startsWith('SELECT central_employee_id FROM Doctor')) {
+          return [[{ central_employee_id: 'emp-1' }], []];
+        }
+        if (sql.startsWith('SELECT * FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[
+            { id: 'valid-1', doctor_id: 'doc-1', date: '2026-02-10', position: 'Urlaub', created_by: 'u' },
+            { id: 'valid-2', doctor_id: 'doc-1', date: '2026-02-11', position: 'Krank', created_by: 'u' },
+          ], []];
+        }
+        if (sql.startsWith('SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?')) {
+          throw new Error('Purge SELECT must not run when purgeEmptyDates is not opted in');
+        }
+        if (sql.startsWith('DELETE FROM ShiftEntry')) {
+          return [{ affectedRows: params.length }, []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const withTenantDb = async (_token, callback) => await callback(tenantDb);
+
+    const result = await migrateLinkedAssignmentsToCentral({
+      assignments: [{
+        employee_id: 'emp-1',
+        employee_name: 'Max',
+        tenant_id: 'tenant-1',
+        tenant_name: 'Notaufnahme',
+        tenant_doctor_id: 'doc-1',
+      }],
+      tokensById: new Map([['tenant-1', { id: 'tenant-1' }]]),
+      withTenantDb,
+      masterDb,
+      dryRun: false,
+      // purgeEmptyDates omitted on purpose
+    });
+
+    expect(result.purgedEmptyAbsences).toBe(0);
+    expect(result.results[0].purgedEmpty).toBe(0);
   });
 });

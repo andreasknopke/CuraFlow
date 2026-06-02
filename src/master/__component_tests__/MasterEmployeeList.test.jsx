@@ -84,12 +84,13 @@ describe('MasterEmployeeList', () => {
             dryRun: true,
           };
         }
-        expect(body).toEqual({ tenant_id: null });
+        expect(body).toEqual({ tenant_id: null, purge_empty_dates: false });
         return {
           totalAssignments: 1,
           migratedAssignments: 1,
           importedAbsences: 3,
           removedLocalAbsences: 5,
+          purgedEmptyAbsences: 0,
           failedAssignments: 0,
         };
       }
@@ -106,7 +107,7 @@ describe('MasterEmployeeList', () => {
     await waitFor(() => {
       expect(mocks.apiRequest).toHaveBeenCalledWith('/api/master/employees/migrate-linked-absences', {
         method: 'POST',
-        body: JSON.stringify({ tenant_id: null }),
+        body: JSON.stringify({ tenant_id: null, purge_empty_dates: false }),
       });
     });
 

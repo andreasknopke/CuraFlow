@@ -1237,7 +1237,12 @@ router.post('/employees/sync-time-accounts', async (req, res, next) => {
  */
 router.post('/employees/migrate-linked-absences', async (req, res, next) => {
   try {
-    const { tenant_id = null, employee_id = null, dry_run = false } = req.body || {};
+    const { tenant_id = null, employee_id = null, dry_run = false, purge_empty_dates = false } = req.body || {};
+    // Opt-in only: never delete empty-date tenant absence rows during the
+    // regular migration. The admin must confirm a second pass to clean up
+    // rows whose date is genuinely empty (null/empty string). Garbage string
+    // dates are NEVER deleted — the admin must fix them in the tenant first.
+    const purgeEmptyDates = Boolean(purge_empty_dates) && !dry_run;
     const tokens = await getAllTenantTokens(req.user.sub);
     const tokenMap = new Map(tokens.map((token) => [String(token.id), token]));
 
@@ -1289,10 +1294,11 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
       withTenantDb,
       masterDb: db,
       dryRun: Boolean(dry_run),
+      purgeEmptyDates,
     });
 
     console.log(
-      `[Master employees] ${migrationResult.dryRun ? 'Previewed' : 'Migrated'} linked absences for ${migrationResult.migratedAssignments}/${migrationResult.totalAssignments} assignment(s) by user ${req.user.sub}`
+      `[Master employees] ${migrationResult.dryRun ? 'Previewed' : 'Migrated'} linked absences for ${migrationResult.migratedAssignments}/${migrationResult.totalAssignments} assignment(s)${purgeEmptyDates ? ` (purged ${migrationResult.purgedEmptyAbsences} empty-date row(s))` : ''} by user ${req.user.sub}`
     );
 
     res.json(migrationResult);

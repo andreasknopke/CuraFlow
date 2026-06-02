@@ -628,6 +628,84 @@ export async function migrateTenantDoctorAbsencesToCentral({
   };
 }
 
+// Permanent opt-in cleanup of tenant absence rows whose date is genuinely
+// empty (null, undefined, empty/whitespace string). These rows are data
+// garbage — they have no day to attribute the absence to, so neither the
+// read-merge nor the central migration can represent them. The admin
+// confirmed the reports: a handful of doctors still show "1 Eintrag mit
+// ungültigem Datum" because of exactly these zero-value rows. After the
+// regular migration runs and reports them, the admin invokes a SECOND
+// "Leere Einträge löschen" pass to clear them out.
+//
+// Safety: we only delete rows where ALL conditions hold:
+//   - position is a known central absence (isCentralAbsencePosition), so
+//     we never touch a working shift that just happens to have a null date.
+//   - reason is one of { "leer (null/undefined)", "leerer String",
+//     "leere Zeichenkette" } — i.e. the date is genuinely empty. A row with
+//     a garbage string date ("not-a-date") or a non-string/non-Date type is
+//     NEVER deleted, because we cannot prove the date was never there.
+//   - doctor_id matches the row's actual doctor_id (defence-in-depth).
+// Each deletion is logged so a server grep gives a full audit trail.
+const EMPTY_DATE_REASONS = new Set([
+  'leer (null/undefined)',
+  'leerer String',
+]);
+
+export async function purgeEmptyDateAbsences({ tenantDb, doctorId }) {
+  const [rows] = await tenantDb.execute(
+    'SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?',
+    [doctorId]
+  );
+
+  const candidates = [];
+  const skipped = [];
+  for (const row of rows) {
+    if (!isCentralAbsencePosition(row.position)) {
+      continue;
+    }
+    const classified = classifyInvalidDate(row.date);
+    if (classified.normalized) {
+      continue;
+    }
+    if (!EMPTY_DATE_REASONS.has(classified.reason)) {
+      skipped.push({
+        id: row.id,
+        position: row.position,
+        raw_date: row.date,
+        reason: classified.reason,
+      });
+      continue;
+    }
+    if (String(row.doctor_id) !== String(doctorId)) {
+      // Defence-in-depth: a SQL mix-up must never delete the wrong doctor's
+      // row. Skip and report.
+      skipped.push({
+        id: row.id,
+        position: row.position,
+        raw_date: row.date,
+        reason: 'doctor_id stimmt nicht (übersprungen)',
+      });
+      continue;
+    }
+    candidates.push(row);
+  }
+
+  if (candidates.length > 0) {
+    const ids = candidates.map((row) => row.id);
+    await tenantDb.execute(
+      `DELETE FROM ShiftEntry WHERE id IN (${ids.map(() => '?').join(', ')})`,
+      ids
+    );
+    for (const row of candidates) {
+      console.warn(
+        `[Master absences] Purged empty-date absence row: doctor=${doctorId} row_id=${row.id} position=${JSON.stringify(row.position)} raw_date=${JSON.stringify(row.date)}`
+      );
+    }
+  }
+
+  return { purged: candidates.length, skipped };
+}
+
 export async function previewTenantDoctorAbsenceMigration({
   tenantDb,
   masterDb,
@@ -811,6 +889,7 @@ export async function migrateLinkedAssignmentsToCentral({
   withTenantDb,
   masterDb,
   dryRun = false,
+  purgeEmptyDates = false,
 }) {
   const results = [];
   let migratedAssignments = 0;
@@ -819,6 +898,7 @@ export async function migrateLinkedAssignmentsToCentral({
   let skippedAssignments = 0;
   let failedAssignments = 0;
   let existingCentralAbsences = 0;
+  let purgedEmptyAbsences = 0;
 
   for (const assignment of assignments || []) {
     const tenantId = String(assignment.tenant_id || '');
@@ -840,8 +920,8 @@ export async function migrateLinkedAssignmentsToCentral({
     }
 
     try {
-      const migrationResult = await withTenantDb(token, async (tenantDb) => (
-        dryRun
+      const migrationResult = await withTenantDb(token, async (tenantDb) => {
+        const baseResult = dryRun
           ? await previewTenantDoctorAbsenceMigration({
               tenantDb,
               masterDb,
@@ -854,8 +934,18 @@ export async function migrateLinkedAssignmentsToCentral({
               tenantId,
               doctorId,
               employeeId: assignment.employee_id || null,
-            })
-      ));
+            });
+        // Opt-in second pass: delete tenant absence rows whose date is
+        // genuinely empty (null/empty string) and whose position is a known
+        // central absence. Only run on a real (non-dry-run) pass and only
+        // when the admin explicitly opted in — the regular migration must
+        // never delete data the admin did not authorise.
+        if (!dryRun && purgeEmptyDates) {
+          const purgeResult = await purgeEmptyDateAbsences({ tenantDb, doctorId });
+          return { ...baseResult, purgeResult };
+        }
+        return { ...baseResult, purgeResult: { purged: 0, skipped: [] } };
+      });
 
       if (!migrationResult) {
         skippedAssignments += 1;
@@ -889,13 +979,13 @@ export async function migrateLinkedAssignmentsToCentral({
         .slice(0, 5)
         .map((entry) => `${entry.id}: ${entry.reason}`)
         .join('; ') + (skippedInvalidDateList.length > 5 ? ` (+${skippedInvalidDateList.length - 5} weitere)` : '');
+      const purgeResult = migrationResult.purgeResult || { purged: 0, skipped: [] };
+      const purgedForRow = Number(purgeResult.purged || 0);
+      purgedEmptyAbsences += purgedForRow;
       // "Not yet fully migrated" means the doctor still has local absence rows.
-      // In a dry-run any remaining local row counts (a run would clean the
-      // cleanable ones; conflicts and invalid-date rows stay and need manual
-      // attention). In a real run we look at what is still local after the
-      // delete (localAbsences minus the rows we just removed). Either way,
-      // zero local leftovers means the doctor is fully migrated.
-      const remainingLocal = Math.max(0, localAbsencesCount - removedLocal);
+      // The purge pass ran AFTER the local-count snapshot from the migration,
+      // so subtract both the regular removals and the purged empties.
+      const remainingLocal = Math.max(0, localAbsencesCount - removedLocal - purgedForRow);
       const needsAction = dryRun
         ? localAbsencesCount > 0
         : remainingLocal > 0;
@@ -908,6 +998,7 @@ export async function migrateLinkedAssignmentsToCentral({
         status: 'success',
         imported: importedCount,
         removedLocal,
+        purgedEmpty: purgedForRow,
         localAbsences: localAbsencesCount,
         remainingLocal,
         skippedInvalidDate,
@@ -938,6 +1029,7 @@ export async function migrateLinkedAssignmentsToCentral({
     migratedAssignments,
     importedAbsences,
     removedLocalAbsences,
+    purgedEmptyAbsences,
     existingCentralAbsences,
     skippedAssignments,
     failedAssignments,
