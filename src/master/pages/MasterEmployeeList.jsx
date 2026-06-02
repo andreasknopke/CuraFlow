@@ -52,6 +52,8 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     'already_central',
     'central_total',
     'would_remove_local',
+    'remaining_local',
+    'skipped_invalid_date',
     'conflicts',
     'needs_action',
     'reason',
@@ -77,6 +79,8 @@ function buildDryRunCsv(report, tenantScopeLabel) {
     row.existingCentral ?? 0,
     row.centralTotal ?? 0,
     row.removedLocal ?? 0,
+    row.remainingLocal ?? 0,
+    row.skippedInvalidDate ?? 0,
     row.conflicts ?? 0,
     row.needsAction ? 'yes' : 'no',
     row.reason || '',
@@ -396,7 +400,7 @@ export default function MasterEmployeeList() {
       setDryRunReport(result);
       toast.success(
         result.totalAssignments > 0
-          ? `Dry-Run fertig: ${result.importedAbsences} Abwesenheiten würden zentral übernommen`
+          ? `Dry-Run fertig: ${result.assignmentsNeedingAction ?? 0} von ${result.totalAssignments} noch nicht migriert`
           : 'Dry-Run: keine bestehenden Verknüpfungen gefunden'
       );
     },
@@ -809,7 +813,7 @@ export default function MasterEmployeeList() {
 
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <ReportStat label="Verknüpfungen" value={dryRunReport.totalAssignments} />
-                <ReportStat label="Offen" value={dryRunReport.assignmentsNeedingAction ?? 0} tone={dryRunReport.assignmentsNeedingAction ? 'amber' : 'green'} />
+                <ReportStat label="Noch nicht migriert" value={dryRunReport.assignmentsNeedingAction ?? 0} tone={dryRunReport.assignmentsNeedingAction ? 'amber' : 'green'} />
                 <ReportStat label="Würden importiert" value={dryRunReport.importedAbsences} />
                 <ReportStat label="Konflikte" value={dryRunReport.conflictAssignments || 0} tone={dryRunReport.conflictAssignments ? 'amber' : undefined} />
                 <ReportStat label="Fehler" value={dryRunReport.failedAssignments} tone="red" />
@@ -822,7 +826,7 @@ export default function MasterEmployeeList() {
                     checked={showOnlyOpen}
                     onChange={(event) => setShowOnlyOpen(event.target.checked)}
                   />
-                  Nur offene anzeigen
+                  Nur noch nicht migrierte anzeigen
                 </label>
               </div>
 
@@ -846,7 +850,7 @@ export default function MasterEmployeeList() {
                         <TableCell>
                           {row.status === 'success' ? (
                             <Badge variant="outline" className={row.needsAction ? 'text-amber-700 border-amber-300' : 'text-green-700 border-green-300'}>
-                              {row.needsAction ? 'Aktion nötig' : 'Fertig'}
+                              {row.needsAction ? 'Noch nicht migriert' : 'Fertig'}
                             </Badge>
                           ) : (
                             <Badge variant={row.status === 'error' ? 'destructive' : 'outline'}>
@@ -860,6 +864,9 @@ export default function MasterEmployeeList() {
                           ) : null}
                           {Number(row.conflicts || 0) > 0 ? (
                             <span className="ml-2 text-xs text-amber-600">{row.conflicts} Konflikt(e) am selben Tag</span>
+                          ) : null}
+                          {Number(row.skippedInvalidDate || 0) > 0 ? (
+                            <span className="ml-2 text-xs text-amber-600">{row.skippedInvalidDate} Eintrag/Einträge mit ungültigem Datum</span>
                           ) : null}
                         </TableCell>
                         <TableCell>{row.localAbsences ?? 0}</TableCell>

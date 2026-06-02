@@ -833,14 +833,20 @@ export async function migrateLinkedAssignmentsToCentral({
       const removedLocal = Number(migrationResult.removedLocal || 0);
       const importedCount = Number(migrationResult.imported || 0);
       const conflicts = Number(migrationResult.conflicts || 0);
-      // A doctor still needs attention when a run would move/clean up local
-      // rows (import new ones or delete redundant leftovers). Once everything
-      // is centrally stored and the local leftovers are gone, there is nothing
-      // left to do — only unresolved conflicts remain, which are flagged
-      // separately.
+      const localAbsencesCount = Number(migrationResult.localAbsences || 0);
+      const skippedInvalidDate = Array.isArray(migrationResult.skippedInvalidDate)
+        ? migrationResult.skippedInvalidDate.length
+        : Number(migrationResult.skippedInvalidDate || 0);
+      // "Not yet fully migrated" means the doctor still has local absence rows.
+      // In a dry-run any remaining local row counts (a run would clean the
+      // cleanable ones; conflicts and invalid-date rows stay and need manual
+      // attention). In a real run we look at what is still local after the
+      // delete (localAbsences minus the rows we just removed). Either way,
+      // zero local leftovers means the doctor is fully migrated.
+      const remainingLocal = Math.max(0, localAbsencesCount - removedLocal);
       const needsAction = dryRun
-        ? removedLocal > 0
-        : (importedCount > 0 || removedLocal > 0);
+        ? localAbsencesCount > 0
+        : remainingLocal > 0;
       results.push({
         employee_id: assignment.employee_id,
         employee_name: assignment.employee_name || null,
@@ -850,7 +856,9 @@ export async function migrateLinkedAssignmentsToCentral({
         status: 'success',
         imported: importedCount,
         removedLocal,
-        localAbsences: Number(migrationResult.localAbsences || migrationResult.removedLocal || 0),
+        localAbsences: localAbsencesCount,
+        remainingLocal,
+        skippedInvalidDate,
         existingCentral: Number(migrationResult.existingCentral || 0),
         centralTotal: Number(migrationResult.centralTotal || 0),
         conflicts,

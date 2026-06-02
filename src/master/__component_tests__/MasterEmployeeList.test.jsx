@@ -151,6 +151,7 @@ describe('MasterEmployeeList', () => {
           migratedAssignments: 1,
           importedAbsences: 2,
           existingCentralAbsences: 1,
+          assignmentsNeedingAction: 1,
           failedAssignments: 0,
           results: [
             {
@@ -161,6 +162,7 @@ describe('MasterEmployeeList', () => {
               localAbsences: 3,
               imported: 2,
               existingCentral: 1,
+              needsAction: true,
             },
           ],
         };
@@ -182,7 +184,7 @@ describe('MasterEmployeeList', () => {
     expect(within(dialog).getByText('Würden importiert')).toBeInTheDocument();
     expect(within(dialog).getAllByText('2').length).toBeGreaterThan(0);
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
-      'Dry-Run fertig: 2 Abwesenheiten würden zentral übernommen'
+      'Dry-Run fertig: 1 von 1 noch nicht migriert'
     );
   });
 
