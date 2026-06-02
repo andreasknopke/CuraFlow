@@ -1257,13 +1257,17 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
     }
 
     const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    // db_tokens was created before the master schema adopted utf8mb4_unicode_ci
+    // and still uses the server's default (utf8mb4_general_ci on this MySQL
+    // instance). Force the join column to match EmployeeTenantAssignment's
+    // collation so the query plan can use the PK index on db_tokens.id.
     const [assignmentRows] = await db.execute(
       `SELECT eta.employee_id, eta.tenant_id, eta.tenant_doctor_id,
               e.first_name, e.last_name,
               dt.name AS tenant_name
          FROM EmployeeTenantAssignment eta
          LEFT JOIN Employee e ON e.id = eta.employee_id
-         LEFT JOIN db_tokens dt ON dt.id = eta.tenant_id
+         LEFT JOIN db_tokens dt ON dt.id COLLATE utf8mb4_unicode_ci = eta.tenant_id
          ${whereClause}
         ORDER BY dt.name ASC, e.last_name ASC, e.first_name ASC`,
       params
