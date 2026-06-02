@@ -542,32 +542,24 @@ export async function migrateTenantDoctorAbsencesToCentral({
     imported += 1;
   }
 
-  // Never partially migrate: if any local absence could not be moved (bad
-  // date, write failure that we caught, etc.) we keep the local rows in
-  // place so the user does not silently lose data. The admin can fix the
-  // offending row and re-run.
+  // Rows with an invalid/empty date are left untouched (they were never added
+  // to migratedIds or redundantIds), so the admin can fix the source. This
+  // must NOT block cleaning up the rows that are already safely represented
+  // centrally — deleting an exact central duplicate or a freshly imported row
+  // is not data loss. Blocking the whole doctor here was the bug that made
+  // "Migrieren" appear to do nothing while the dry-run kept reporting work.
   if (skippedInvalidDate.length > 0) {
     console.warn(
       `[Master absences] Skipped ${skippedInvalidDate.length} tenant absence row(s) for doctor ${doctorId} (employee ${employeeId}) due to invalid date:`,
       skippedInvalidDate
     );
-    return {
-      imported,
-      removedLocal: 0,
-      skippedInvalidDate,
-      localAbsences: absenceRows.length,
-      existingCentral,
-      centralTotal: null,
-      conflicts: conflicts.length,
-      linkStatus: linkRepaired ? 'repaired' : 'ok',
-      linkRepaired,
-    };
   }
 
   // Delete by id list so we cover position-spelling variants (PascalCase,
   // lowercase, umlaut-stripped). We remove both the rows we just imported AND
   // the redundant leftovers whose exact central duplicate already exists —
-  // never the conflict rows (a different central absence occupies that day).
+  // never the conflict rows (a different central absence occupies that day)
+  // and never the invalid-date rows (kept for the admin to fix).
   const removableIds = [...migratedIds, ...redundantIds];
   if (removableIds.length > 0) {
     await tenantDb.execute(
@@ -587,7 +579,7 @@ export async function migrateTenantDoctorAbsencesToCentral({
   return {
     imported,
     removedLocal: removableIds.length,
-    skippedInvalidDate: [],
+    skippedInvalidDate,
     localAbsences: absenceRows.length,
     existingCentral,
     centralTotal,

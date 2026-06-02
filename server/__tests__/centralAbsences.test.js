@@ -256,10 +256,11 @@ describe('central absences', () => {
     expect(masterDb.calls.filter(({ sql }) => sql.startsWith('INSERT INTO CentralAbsenceEntry'))).toHaveLength(1);
   });
 
-  it('skips absence rows with invalid dates and never deletes local data partially', async () => {
+  it('skips invalid-date rows but still cleans up the rows it migrated', async () => {
     const inserts = [];
+    const deleted = [];
     const tenantDb = {
-      async execute(sql) {
+      async execute(sql, params = []) {
         if (sql.startsWith('SELECT central_employee_id FROM Doctor')) {
           return [[{ central_employee_id: 'emp-1' }], []];
         }
@@ -271,7 +272,8 @@ describe('central absences', () => {
           ], []];
         }
         if (sql.startsWith('DELETE FROM ShiftEntry')) {
-          throw new Error('Should not delete any local rows when invalid-date rows exist');
+          deleted.push(...params);
+          return [{ affectedRows: params.length }, []];
         }
         throw new Error(`Unexpected tenant SQL: ${sql}`);
       },
@@ -283,6 +285,9 @@ describe('central absences', () => {
         }
         if (sql.startsWith('SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
+        }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 1 }], []];
         }
         if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
           inserts.push(params);
@@ -308,23 +313,25 @@ describe('central absences', () => {
       doctorId: 'doc-1',
     });
 
-    // Valid rows are migrated; invalid-date rows are skipped. The local DELETE
-    // is suppressed because we must never partially migrate.
+    // Valid rows are migrated AND their local copies are removed. Invalid-date
+    // rows are reported and left in place for the admin to fix — they must NOT
+    // block cleaning up the rows that are now safely stored centrally.
     expect(result).toEqual({
       imported: 1,
-      removedLocal: 0,
+      removedLocal: 1,
       skippedInvalidDate: [
         { id: 'absence-bad', position: 'Urlaub' },
         { id: 'absence-empty', position: 'Krank' },
       ],
       localAbsences: 3,
       existingCentral: 0,
-      centralTotal: null,
+      centralTotal: 1,
       conflicts: 0,
       linkStatus: 'ok',
       linkRepaired: false,
     });
     expect(inserts.map((params) => params[0])).toEqual(['absence-good']);
+    expect(deleted).toEqual(['absence-good']);
   });
 
   it('treats lowercase and umlaut-stripped positions as absences', async () => {

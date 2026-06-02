@@ -70,14 +70,27 @@ describe('MasterEmployeeList', () => {
         return { staff: [] };
       }
       if (url === '/api/master/employees/migrate-linked-absences') {
-        expect(options).toEqual({
-          method: 'POST',
-          body: JSON.stringify({ tenant_id: null }),
-        });
+        const body = JSON.parse(options.body);
+        // The real migration fires first, then the component re-runs a dry-run
+        // to refresh the remaining-work list. Distinguish the two by dry_run.
+        if (body.dry_run) {
+          return {
+            totalAssignments: 1,
+            migratedAssignments: 1,
+            importedAbsences: 0,
+            removedLocalAbsences: 0,
+            failedAssignments: 0,
+            results: [],
+            dryRun: true,
+          };
+        }
+        expect(body).toEqual({ tenant_id: null });
         return {
           totalAssignments: 1,
           migratedAssignments: 1,
           importedAbsences: 3,
+          removedLocalAbsences: 5,
+          failedAssignments: 0,
         };
       }
       throw new Error(`Unexpected URL: ${url}`);
@@ -98,7 +111,7 @@ describe('MasterEmployeeList', () => {
     });
 
     expect(mocks.toastSuccess).toHaveBeenCalledWith(
-      'Verknüpfungen geprüft: 1/1, 3 Abwesenheiten zentral übernommen'
+      'Verknüpfungen geprüft: 1/1, 3 neu zentral, 5 lokal bereinigt'
     );
   });
 

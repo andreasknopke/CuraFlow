@@ -358,11 +358,26 @@ export default function MasterEmployeeList() {
       }),
     }),
     onSuccess: async (result) => {
-      toast.success(
-        result.totalAssignments > 0
-          ? `Verknüpfungen geprüft: ${result.migratedAssignments}/${result.totalAssignments}, ${result.importedAbsences} Abwesenheiten zentral übernommen`
-          : 'Keine bestehenden Verknüpfungen für die Migration gefunden'
-      );
+      if (result.totalAssignments > 0) {
+        const parts = [
+          `Verknüpfungen geprüft: ${result.migratedAssignments}/${result.totalAssignments}`,
+          `${result.importedAbsences} neu zentral`,
+          `${result.removedLocalAbsences} lokal bereinigt`,
+        ];
+        if (result.failedAssignments > 0) {
+          parts.push(`${result.failedAssignments} fehlgeschlagen`);
+        }
+        if (result.failedAssignments > 0) {
+          toast.error(parts.join(', '));
+        } else {
+          toast.success(parts.join(', '));
+        }
+      } else {
+        toast.success('Keine bestehenden Verknüpfungen für die Migration gefunden');
+      }
+      // Refresh the dry-run report so the "offen" list reflects the cleanup
+      // we just performed instead of showing the stale pre-migration state.
+      linkedAbsenceDryRunMutation.mutate();
       await queryClient.invalidateQueries({ queryKey: ['master-central-employees'] });
       await queryClient.invalidateQueries({ queryKey: ['master-legacy-staff'] });
     },
