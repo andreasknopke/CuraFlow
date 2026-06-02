@@ -552,12 +552,21 @@ export async function migrateTenantDoctorAbsencesToCentral({
     );
   }
 
+  // Diagnostic: total central absences for this employee after the run, so the
+  // report can confirm where the absences now live.
+  const [centralCountRows] = await masterDb.execute(
+    'SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?',
+    [employeeId]
+  );
+  const centralTotal = Number(centralCountRows[0]?.total || 0);
+
   return {
     imported,
     removedLocal: imported,
     skippedInvalidDate: [],
     localAbsences: absenceRows.length,
     existingCentral,
+    centralTotal,
     linkStatus: linkRepaired ? 'repaired' : 'ok',
     linkRepaired,
   };
@@ -602,6 +611,16 @@ export async function previewTenantDoctorAbsenceMigration({
 
   await ensureCentralAbsenceTables(masterDb);
 
+  // Diagnostic: how many central absences already exist for this employee,
+  // independent of any local rows. This distinguishes "already fully migrated"
+  // (0 local, N central) from "nothing anywhere" (0 local, 0 central). Without
+  // it a fully-migrated doctor and a truly-empty doctor both look like 0/0/0.
+  const [centralCountRows] = await masterDb.execute(
+    'SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?',
+    [employeeId]
+  );
+  const centralTotal = Number(centralCountRows[0]?.total || 0);
+
   const [tenantRows] = await tenantDb.execute(
     'SELECT * FROM ShiftEntry WHERE doctor_id = ?',
     [doctorId]
@@ -613,6 +632,7 @@ export async function previewTenantDoctorAbsenceMigration({
       removedLocal: 0,
       localAbsences: 0,
       existingCentral: 0,
+      centralTotal,
       linkStatus: linkRepairNeeded ? 'repair_needed' : 'ok',
     };
   }
@@ -642,6 +662,7 @@ export async function previewTenantDoctorAbsenceMigration({
     removedLocal: absenceRows.length,
     localAbsences: absenceRows.length,
     existingCentral,
+    centralTotal,
     skippedInvalidDate,
     linkStatus: linkRepairNeeded ? 'repair_needed' : 'ok',
   };
@@ -790,6 +811,7 @@ export async function migrateLinkedAssignmentsToCentral({
         removedLocal: Number(migrationResult.removedLocal || 0),
         localAbsences: Number(migrationResult.localAbsences || migrationResult.removedLocal || 0),
         existingCentral: Number(migrationResult.existingCentral || 0),
+        centralTotal: Number(migrationResult.centralTotal || 0),
         linkStatus: migrationResult.linkStatus || 'ok',
         dry_run: dryRun,
       });

@@ -801,6 +801,7 @@ export default function MasterEmployeeList() {
                       <TableHead>Lokal</TableHead>
                       <TableHead>Neu zentral</TableHead>
                       <TableHead>Schon zentral</TableHead>
+                      <TableHead>Zentral gesamt</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -821,6 +822,7 @@ export default function MasterEmployeeList() {
                         <TableCell>{row.localAbsences ?? 0}</TableCell>
                         <TableCell>{row.imported ?? 0}</TableCell>
                         <TableCell>{row.existingCentral ?? 0}</TableCell>
+                        <TableCell>{row.centralTotal ?? 0}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

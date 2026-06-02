@@ -117,6 +117,10 @@ function createMigrationMasterDb() {
         return [existingDates.get(params[1]) ?? [], []];
       }
 
+      if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+        return [[{ total: 5 }], []];
+      }
+
       if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
         expect(params[0]).toBe('absence-1');
         expect(params[1]).toBe('emp-1');
@@ -244,6 +248,7 @@ describe('central absences', () => {
       skippedInvalidDate: [],
       localAbsences: 2,
       existingCentral: 1,
+      centralTotal: 5,
       linkStatus: 'ok',
       linkRepaired: false,
     });
@@ -349,6 +354,9 @@ describe('central absences', () => {
         if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 3 }], []];
+        }
         if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
           return [{ affectedRows: 1 }, []];
         }
@@ -378,6 +386,7 @@ describe('central absences', () => {
       skippedInvalidDate: [],
       localAbsences: 3,
       existingCentral: 0,
+      centralTotal: 3,
       linkStatus: 'ok',
       linkRepaired: false,
     });
@@ -472,6 +481,9 @@ describe('central absences', () => {
         if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 1 }], []];
+        }
         if (sql.startsWith('INSERT INTO CentralAbsenceEntry')) {
           expect(params[1]).toBe('emp-9');
           return [{ affectedRows: 1 }, []];
@@ -503,6 +515,7 @@ describe('central absences', () => {
       skippedInvalidDate: [],
       localAbsences: 1,
       existingCentral: 0,
+      centralTotal: 1,
       linkStatus: 'repaired',
       linkRepaired: true,
     });
@@ -563,6 +576,9 @@ describe('central absences', () => {
         if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
           return [[], []];
         }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 0 }], []];
+        }
         if (sql.startsWith('SELECT id FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ?')) {
           return [[], []];
         }
@@ -582,8 +598,54 @@ describe('central absences', () => {
       removedLocal: 1,
       localAbsences: 1,
       existingCentral: 0,
+      centralTotal: 0,
       skippedInvalidDate: [],
       linkStatus: 'repair_needed',
+    });
+  });
+
+  it('reports centralTotal when a doctor is already fully migrated (0 local)', async () => {
+    // Reproduces the "0/0/0 but absences exist" case: the local rows were
+    // already moved to central in a prior run, so there is nothing left
+    // locally — but the doctor still has central absences that the tenant
+    // shows via the read-merge.
+    const tenantDb = {
+      async execute(sql) {
+        if (sql.startsWith('SELECT central_employee_id FROM Doctor')) {
+          return [[{ central_employee_id: 'emp-7' }], []];
+        }
+        if (sql.startsWith('SELECT * FROM ShiftEntry WHERE doctor_id = ?')) {
+          return [[], []];
+        }
+        throw new Error(`Unexpected tenant SQL: ${sql}`);
+      },
+    };
+    const masterDb = {
+      async execute(sql) {
+        if (sql.includes('CREATE TABLE IF NOT EXISTS CentralAbsenceEntry')) {
+          return [[], []];
+        }
+        if (sql.startsWith('SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?')) {
+          return [[{ total: 47 }], []];
+        }
+        throw new Error(`Unexpected master SQL: ${sql}`);
+      },
+    };
+
+    const result = await previewTenantDoctorAbsenceMigration({
+      tenantDb,
+      masterDb,
+      doctorId: 'doc-7',
+      employeeId: 'emp-7',
+    });
+
+    expect(result).toEqual({
+      imported: 0,
+      removedLocal: 0,
+      localAbsences: 0,
+      existingCentral: 0,
+      centralTotal: 47,
+      linkStatus: 'ok',
     });
   });
 
@@ -602,6 +664,7 @@ describe('central absences', () => {
       removedLocal: 2,
       localAbsences: 2,
       existingCentral: 1,
+      centralTotal: 5,
       skippedInvalidDate: [],
       linkStatus: 'ok',
     });
