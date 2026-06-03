@@ -573,7 +573,7 @@ export default function MasterCentralEmployeeDetail() {
 
         {/* Tab: Zertifikate */}
         <TabsContent value="zertifikate" className="mt-6">
-          <CertificatesTab employeeId={id} />
+          <CertificatesTab employeeId={employeeId} />
         </TabsContent>
       </Tabs>
     </div>
