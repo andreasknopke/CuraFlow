@@ -223,12 +223,34 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                     >
                       {chipLabel}
                     </div>
-                    <span 
-                      className="block min-w-0 basis-0 flex-1 truncate px-1 leading-tight text-center" 
-                        style={{ fontSize: `${displayFontSize}px` }}
-                    >
-                        {displayText}
-                    </span>
+                    <div className="flex flex-col items-center justify-center min-w-0 basis-0 flex-1 leading-tight">
+                      <span 
+                        className="block min-w-0 w-full truncate px-1 text-center" 
+                          style={{ fontSize: `${displayFontSize}px` }}
+                      >
+                          {displayText}
+                      </span>
+                      {timeLabel && (
+                        onTimeLabelClick ? (
+                          <button
+                            type="button"
+                            className="block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal underline decoration-dotted underline-offset-2 hover:text-indigo-700"
+                            style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.2', marginTop: '1px' }}
+                            onMouseDown={handleTimeLabelMouseDown}
+                            onClick={handleTimeLabelClick}
+                          >
+                            {timeLabel}
+                          </button>
+                        ) : (
+                          <span
+                            className="block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal"
+                            style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.2', marginTop: '1px' }}
+                          >
+                            {timeLabel}
+                          </span>
+                        )
+                      )}
+                    </div>
                     {showLateStartIndicator && <LateStartIndicator tooltip={lateStartTooltip} />}
                     {timeslotLabel && (
                       <span
@@ -238,26 +260,6 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                       >
                         {timeslotLabel}
                       </span>
-                    )}
-                    {timeLabel && (
-                      onTimeLabelClick ? (
-                        <button
-                          type="button"
-                          className="flex-shrink-0 mr-1 whitespace-nowrap text-slate-500 font-normal underline decoration-dotted underline-offset-2 hover:text-indigo-700"
-                          style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
-                          onMouseDown={handleTimeLabelMouseDown}
-                          onClick={handleTimeLabelClick}
-                        >
-                          {timeLabel}
-                        </button>
-                      ) : (
-                        <span
-                          className="flex-shrink-0 text-slate-500 font-normal mr-1 whitespace-nowrap"
-                          style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.4' }}
-                        >
-                          {timeLabel}
-                        </span>
-                      )
                     )}
                     {fairnessInfo && (
                         <span
