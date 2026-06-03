@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, isWithinInterval, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Loader2, Mail } from 'lucide-react';
+import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from "@/lib/utils";
 import { useQuery } from '@tanstack/react-query';
-import { db, base44 } from "@/api/client";
+import { api, db, base44 } from "@/api/client";
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { computeVacationBalance } from './vacationBalance';
 
 export default function DoctorYearView({
   doctor,
@@ -167,6 +168,72 @@ export default function DoctorYearView({
     end: endOfYear(new Date(year, 0, 1))
   });
 
+  // Fetch central absences for the active doctor. The endpoint
+  // (`/api/vacation/central-absences`) is the authoritative source for
+  // employees that have been linked to the central Employee database
+  // and migrated to CentralAbsenceEntry — their absence rows no longer
+  // exist in the local ShiftEntry table.
+  //
+  // We only fire the request when we have a doctor.id (i.e. the year
+  // view is showing a specific employee) and skip silently on error so
+  // the box degrades gracefully for unlinked doctors.
+  const { data: centralAbsencePayload } = useQuery({
+    queryKey: ['central-absences', year, doctor?.id],
+    queryFn: async () => {
+      if (!doctor?.id) return { absences: [] };
+      const result = await api.request(
+        `/api/vacation/central-absences?year=${year}&doctorId=${encodeURIComponent(doctor.id)}`
+      );
+      return result || { absences: [] };
+    },
+    enabled: Boolean(doctor?.id),
+    staleTime: 60 * 1000,
+    retry: 0,
+  });
+
+  // Build a Set of `yyyy-MM-dd` strings for all public holidays in the
+  // displayed year. The `isPublicHoliday` prop is a function; we evaluate
+  // it once per day to build the set, then hand it to the pure balance
+  // helper. Memoised by year + holiday-impl so toggling years refetches.
+  const publicHolidayDates = useMemo(() => {
+    const set = new Set();
+    const start = startOfYear(new Date(year, 0, 1));
+    const end = endOfYear(new Date(year, 0, 1));
+    for (const d of eachDayOfInterval({ start, end })) {
+      if (isPublicHoliday && isPublicHoliday(d)) {
+        set.add(format(d, 'yyyy-MM-dd'));
+      }
+    }
+    return set;
+  }, [year, isPublicHoliday]);
+
+  // Live vacation balance for the year. Combines two sources:
+  //   1. The `shifts` prop (tenant ShiftEntry — local rows that haven't
+  //      been migrated to the central table yet, plus any non-absence
+  //      context the caller already passes).
+  //   2. The central absences fetched above, which are authoritative for
+  //      doctors that have been linked + migrated.
+  // Dedup is by `date` — a date that exists in both sources counts once.
+  const vacationBalance = useMemo(() => {
+    if (!doctor) return null;
+
+    const localShifts = (shifts || []).filter(
+      (s) => s.doctor_id === doctor.id || !s.doctor_id
+    );
+    const localDates = new Set(localShifts.map((s) => s.date));
+
+    const centralShifts = (centralAbsencePayload?.absences || []).filter(
+      (a) => !localDates.has(a.date) // dedup against local
+    );
+
+    return computeVacationBalance({
+      shifts: [...localShifts, ...centralShifts],
+      year,
+      annualVacationDays: doctor.vacation_days,
+      publicHolidayDates,
+    });
+  }, [doctor, shifts, centralAbsencePayload, year, publicHolidayDates]);
+
   const getShiftStatus = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const shift = shifts.find(s => s.date === dateStr);
@@ -187,10 +254,10 @@ export default function DoctorYearView({
               <p className="text-slate-500">{doctor.role} • Jahresplanung {year}</p>
           </div>
         </div>
-        
+
         {doctorEmail && futureAbsences.length > 0 && (
-            <Button 
-                variant="outline" 
+            <Button
+                variant="outline"
                 size="sm"
                 onClick={() => setEmailDialogOpen(true)}
                 className="gap-2"
@@ -200,7 +267,12 @@ export default function DoctorYearView({
             </Button>
         )}
       </div>
-      
+
+      {vacationBalance && (
+        <VacationBalanceBox balance={vacationBalance} />
+      )}
+
+
       {/* Email Confirmation Dialog */}
       <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
           <DialogContent className="max-w-md">
@@ -416,6 +488,81 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
           );
           })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Compact 4-card vacation balance overview.
+ * Shown above the year calendar. Highlights overshoot with a warning
+ * banner + AlertTriangle so planers immediately see when a Mitarbeiter
+ * has been overbooked.
+ */
+function VacationBalanceBox({ balance }) {
+  const colorMap = {
+    slate: 'text-slate-900',
+    blue: 'text-blue-700',
+    emerald: 'text-emerald-700',
+    red: 'text-red-700',
+    amber: 'text-amber-700',
+  };
+
+  const cards = [
+    { icon: Sun, label: 'Jahresanspruch', value: balance.total, suffix: 'Tage', color: 'slate' },
+    { icon: CalendarCheck, label: 'Genommen', value: balance.taken, suffix: 'Tage', color: 'blue' },
+    { icon: CalendarDays, label: 'Geplant', value: balance.planned, suffix: 'Tage', color: 'amber' },
+    {
+      icon: balance.overshoot ? AlertTriangle : CalendarDays,
+      label: 'Resturlaub',
+      value: balance.remaining,
+      suffix: 'Tage',
+      color: balance.overshoot ? 'red' : (balance.remaining < 5 ? 'red' : 'emerald'),
+    },
+  ];
+
+  return (
+    <div
+      data-testid="vacation-balance-box"
+      className={cn(
+        'mb-6 rounded-xl border p-3',
+        balance.overshoot
+          ? 'border-red-200 bg-red-50'
+          : 'border-slate-200 bg-slate-50'
+      )}
+    >
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cards.map(({ icon: Icon, label, value, suffix, color }) => (
+          <div
+            key={label}
+            className="p-3 bg-white rounded-lg border border-slate-200"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Icon className={cn('w-4 h-4', balance.overshoot && label === 'Resturlaub' ? 'text-red-500' : 'text-slate-400')} />
+              <span className="text-xs text-slate-500">{label}</span>
+            </div>
+            <p className={cn('text-xl font-bold', colorMap[color])}>
+              {value}
+              {suffix && <span className="text-sm font-normal text-slate-400"> {suffix}</span>}
+            </p>
+          </div>
+        ))}
+      </div>
+      {balance.overshoot && (
+        <div
+          data-testid="vacation-overshoot-warning"
+          className="mt-3 flex items-start gap-2 text-sm text-red-700"
+          role="alert"
+        >
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>
+            <strong>Urlaubskontingent überschritten:</strong> Für diesen Mitarbeiter sind
+            {' '}
+            <strong>{Math.abs(balance.remaining)} Tage</strong> mehr Urlaub geplant als
+            der Jahresanspruch ({balance.total} Tage) erlaubt. Bitte Einträge prüfen und
+            ggf. entfernen.
+          </span>
+        </div>
+      )}
     </div>
   );
 }

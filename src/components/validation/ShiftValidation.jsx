@@ -2,6 +2,7 @@ import { format, addDays, isWeekend, parseISO } from 'date-fns';
 import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
 import { getAutoFreiDate } from '@/utils/autoFrei';
 import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
+import { computeVacationBalance } from '@/components/vacation/vacationBalance';
 
 // Hilfsfunktion für Fehlermeldungen
 function formatTimeRange(slot) {
@@ -21,7 +22,7 @@ export const DEFAULT_ASSISTANT_ROLES = ["Assistenzarzt"];
  */
 
 export class ShiftValidator {
-    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, sharedShifts }) {
+    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, sharedShifts, getPublicHolidayDatesForYear }) {
         this.doctors = doctors || [];
         this.shifts = shifts || [];
         this.sharedShifts = sharedShifts || [];
@@ -38,10 +39,12 @@ export class ShiftValidator {
         this.qualificationMap = qualificationMap || {};
         this.getDoctorQualIds = getDoctorQualIds || (() => []);
         this.wpQualsByWorkplace = wpQualsByWorkplace || {};
-        
+        // Optional holiday hook for vacation-overshoot rule
+        this.getPublicHolidayDatesForYear = getPublicHolidayDatesForYear || (() => null);
+
         // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
         this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
-        
+
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
         this.limits = this._parseLimits();
@@ -170,6 +173,14 @@ export class ShiftValidator {
             const staffingResult = this._checkStaffingMinimums(doctorId, dateStr, excludeShiftId);
             if (staffingResult.warning) {
                 result.warnings.push(staffingResult.warning);
+            }
+        }
+
+        // 5b. Urlaubskontingent-Überschreitung prüfen (nur für "Urlaub")
+        if (position === 'Urlaub') {
+            const overshootResult = this._checkVacationOvershoot(doctorId, dateStr, excludeShiftId);
+            if (overshootResult.warning) {
+                result.warnings.push(overshootResult.warning);
             }
         }
 
@@ -303,6 +314,52 @@ export class ShiftValidator {
     _workplaceHasTimeslots(position) {
         const workplace = this.workplaces.find(w => w.name === position);
         return workplace?.timeslots_enabled === true;
+    }
+
+    /**
+     * Prüft, ob das Eintragen eines weiteren "Urlaub"-Shifts das
+     * Jahreskontingent des Mitarbeiters überschreiten würde.
+     *
+     * - Nur aktiv für position === 'Urlaub'.
+     * - Verwendet denselben Pure-Helper wie das DoctorYearView-Resturlaub-Widget
+     *   und das Master-Backend, damit Tenant- und Master-Sicht niemals
+     *   auseinanderlaufen.
+     * - Wenn die bereits vorhandene Schicht am Tag ein Duplikat ist
+     *   (excludeShiftId), zählt `candidateDate` sie nicht doppelt.
+     * - Feiertage werden über den optionalen `getPublicHolidayDatesForYear`
+     *   bezogen. Ohne diesen Hook werden Wochenenden + Feiertage ignoriert
+     *   und alle "Urlaub"-Tage gezählt — strenger als mit Hook, aber nie
+     *   falsch-negativ (kein stilles Übersehen).
+     */
+    _checkVacationOvershoot(doctorId, dateStr, excludeShiftId) {
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor) return {};
+
+        const year = Number(String(dateStr).slice(0, 4));
+        const holidays = this.getPublicHolidayDatesForYear(year) || null;
+
+        // Filter to the doctor's existing Urlaub shifts, excluding the one
+        // currently being edited (so updates don't count the row twice).
+        const existingUrlaub = this.shifts.filter((s) =>
+            s.doctor_id === doctorId
+            && s.position === 'Urlaub'
+            && s.id !== excludeShiftId
+        );
+
+        const balance = computeVacationBalance({
+            shifts: existingUrlaub,
+            year,
+            annualVacationDays: doctor.vacation_days,
+            publicHolidayDates: holidays,
+            candidateDate: dateStr,
+        });
+
+        if (!balance.overshoot) return {};
+
+        const days = Math.abs(balance.remaining);
+        return {
+            warning: `Urlaubskontingent überschritten: ${days} Tag${days === 1 ? '' : 'e'} über dem Jahresanspruch (${balance.total} Tage).`,
+        };
     }
 
     /**

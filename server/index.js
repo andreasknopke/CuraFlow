@@ -28,6 +28,7 @@ import aiAutofillRouter from './routes/aiAutofill.js';
 import masterRouter from './routes/master.js';
 import certificatesRouter from './routes/certificates.js';
 import groupsRouter from './routes/groups.js';
+import vacationRouter from './routes/vacation.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 
 // Load environment variables
@@ -538,6 +539,7 @@ app.use('/api/db', dbProxyRouter);
 app.use('/api/schedule', scheduleRouter);
 app.use('/api/holidays', holidaysRouter);
 app.use('/api/staff', staffRouter);
+app.use('/api/vacation', vacationRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/voice', voiceRouter);
 app.use('/api/admin', adminRouter);
