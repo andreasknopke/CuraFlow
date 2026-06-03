@@ -223,9 +223,9 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                     >
                       {chipLabel}
                     </div>
-                    <div className="flex flex-col items-center justify-between min-w-0 basis-0 flex-1 h-full leading-tight py-0.5">
+                    <div className="relative flex flex-col items-center min-w-0 basis-0 flex-1 h-full leading-tight py-0.5">
                       <span 
-                        className="block min-w-0 w-full truncate px-1 text-center" 
+                        className="absolute inset-x-0 top-1/2 -translate-y-1/2 block min-w-0 px-1 text-center truncate" 
                           style={{ fontSize: `${displayFontSize}px` }}
                       >
                           {displayText}
@@ -234,7 +234,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                         onTimeLabelClick ? (
                           <button
                             type="button"
-                            className="block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal underline decoration-dotted underline-offset-2 hover:text-indigo-700"
+                            className="mt-auto block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal underline decoration-dotted underline-offset-2 hover:text-indigo-700"
                             style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.2' }}
                             onMouseDown={handleTimeLabelMouseDown}
                             onClick={handleTimeLabelClick}
@@ -243,7 +243,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                           </button>
                         ) : (
                           <span
-                            className="block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal"
+                            className="mt-auto block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal"
                             style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.2' }}
                           >
                             {timeLabel}
