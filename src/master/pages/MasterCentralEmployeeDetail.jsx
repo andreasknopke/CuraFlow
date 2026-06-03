@@ -593,7 +593,10 @@ function CertificatesTab({ employeeId }) {
 
   const certificates = data ?? [];
 
-  const handleDownload = async (cert) => {
+  // Single fetch helper: pulls the certificate file with the JWT in the
+  // Authorization header (window.open cannot set headers, so a query-string
+  // token would be rejected with 401). Returns a Blob or null on error.
+  const fetchCertificateBlob = async (cert) => {
     try {
       const baseURL = import.meta.env.VITE_API_URL || '';
       const token = localStorage.getItem('radioplan_jwt_token') || '';
@@ -602,26 +605,34 @@ function CertificatesTab({ employeeId }) {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = cert.file_name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      return await response.blob();
     } catch (e) {
-      console.error('Download fehlgeschlagen:', e);
+      console.error('Zertifikats-Download fehlgeschlagen:', e);
+      return null;
     }
   };
 
-  const handlePreview = (cert) => {
+  const handleDownload = async (cert) => {
+    const blob = await fetchCertificateBlob(cert);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = cert.file_name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePreview = async (cert) => {
     if (!cert.mime_type?.startsWith('image/') && cert.mime_type !== 'application/pdf') return;
-    const baseURL = import.meta.env.VITE_API_URL || '';
-    const token = localStorage.getItem('radioplan_jwt_token') || '';
-    const url = `${baseURL}/api/master/employees/${employeeId}/certificates/${cert.id}/download?_t=${encodeURIComponent(token)}`;
+    const blob = await fetchCertificateBlob(cert);
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
     window.open(url, '_blank', 'noopener,noreferrer');
+    // Object URLs stay alive until the tab closes; revoke later to free memory.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   const formatSize = (bytes) => {
