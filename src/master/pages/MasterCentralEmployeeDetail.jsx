@@ -20,6 +20,7 @@ import {
   TrendingUp, TrendingDown, Minus, Save, Pencil, AlertCircle,
   Briefcase, Hash, Mail, Phone, MapPin,
   Loader2, UserCheck, UserX, Link2, RefreshCw, Trash2,
+  Download, Eye, Award,
 } from 'lucide-react';
 
 export default function MasterCentralEmployeeDetail() {
@@ -253,7 +254,7 @@ export default function MasterCentralEmployeeDetail() {
 
       {/* Tabs */}
       <Tabs defaultValue="stammdaten" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
           <TabsTrigger value="stammdaten" className="flex items-center gap-2">
             <User className="w-4 h-4" /> Stammdaten
           </TabsTrigger>
@@ -265,6 +266,9 @@ export default function MasterCentralEmployeeDetail() {
           </TabsTrigger>
           <TabsTrigger value="zeitkonto" className="flex items-center gap-2">
             <Clock className="w-4 h-4" /> Zeitkonto
+          </TabsTrigger>
+          <TabsTrigger value="zertifikate" className="flex items-center gap-2">
+            <Award className="w-4 h-4" /> Zertifikate
           </TabsTrigger>
         </TabsList>
 
@@ -566,8 +570,202 @@ export default function MasterCentralEmployeeDetail() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab: Zertifikate */}
+        <TabsContent value="zertifikate" className="mt-6">
+          <CertificatesTab employeeId={id} />
+        </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/* ── Zertifikate-Tab (read-only, mandantenübergreifend) ── */
+
+function CertificatesTab({ employeeId }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['master-central-employee-certificates', employeeId],
+    queryFn: async () => {
+      const result = await api.request(`/api/master/employees/${employeeId}/certificates`);
+      return result?.certificates ?? [];
+    },
+  });
+
+  const certificates = data ?? [];
+
+  const handleDownload = async (cert) => {
+    try {
+      const baseURL = import.meta.env.VITE_API_URL || '';
+      const token = localStorage.getItem('radioplan_jwt_token') || '';
+      const response = await fetch(
+        `${baseURL}/api/master/employees/${employeeId}/certificates/${cert.id}/download`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = cert.file_name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Download fehlgeschlagen:', e);
+    }
+  };
+
+  const handlePreview = (cert) => {
+    if (!cert.mime_type?.startsWith('image/') && cert.mime_type !== 'application/pdf') return;
+    const baseURL = import.meta.env.VITE_API_URL || '';
+    const token = localStorage.getItem('radioplan_jwt_token') || '';
+    const url = `${baseURL}/api/master/employees/${employeeId}/certificates/${cert.id}/download?_t=${encodeURIComponent(token)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const formatSize = (bytes) => {
+    if (!bytes) return '–';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  };
+
+  const formatDate = (s) => {
+    if (!s) return '–';
+    return String(s).substring(0, 10);
+  };
+
+  const analysisBadge = (cert) => {
+    const status = cert.analysis_status;
+    if (!status) return null;
+    const map = {
+      passed: { label: 'Geprüft ✓', className: 'bg-emerald-100 text-emerald-800' },
+      warning: { label: 'Hinweis', className: 'bg-amber-100 text-amber-800' },
+      failed: { label: 'Abgelehnt', className: 'bg-red-100 text-red-800' },
+      pending: { label: 'Ausstehend', className: 'bg-slate-100 text-slate-600' },
+      skipped: { label: 'Übersprungen', className: 'bg-slate-100 text-slate-600' },
+      error: { label: 'Fehler', className: 'bg-red-100 text-red-800' },
+    };
+    const m = map[status] || { label: status, className: 'bg-slate-100 text-slate-600' };
+    return <Badge className={`text-xs ${m.className}`}>{m.label}</Badge>;
+  };
+
+  const isExpiringSoon = (cert) => {
+    if (!cert.expiry_date) return false;
+    const exp = new Date(cert.expiry_date);
+    const now = new Date();
+    const diffDays = Math.floor((exp - now) / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 && diffDays <= 90;
+  };
+
+  const isExpired = (cert) => {
+    if (!cert.expiry_date) return false;
+    return new Date(cert.expiry_date) < new Date();
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Award className="w-5 h-5" />
+          Hochgeladene Zertifikate
+        </CardTitle>
+        <CardDescription>
+          Qualifikations-Nachweise (PDF/Bilder) aus der zentralen Master-Datenbank, aggregiert über alle verknüpften Mandanten. Ansicht ist schreibgeschützt.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10 text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Zertifikate werden geladen…
+          </div>
+        ) : error ? (
+          <div className="text-center py-10 text-slate-400">
+            <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-40 text-red-500" />
+            <p className="text-sm text-red-600">Zertifikate konnten nicht geladen werden.</p>
+            <p className="text-xs mt-1 text-slate-500">{error.message || 'Unbekannter Fehler'}</p>
+          </div>
+        ) : certificates.length === 0 ? (
+          <div className="text-center py-10 text-slate-400">
+            <Award className="w-10 h-10 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">Keine Zertifikate hochgeladen</p>
+            <p className="text-sm mt-1">Hochgeladene Qualifikations-Nachweise erscheinen hier, sobald welche hinterlegt sind.</p>
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Datei</TableHead>
+                <TableHead>Qualifikation</TableHead>
+                <TableHead>Mandant</TableHead>
+                <TableHead>Gültig von</TableHead>
+                <TableHead>Gültig bis</TableHead>
+                <TableHead>Hochgeladen</TableHead>
+                <TableHead>Prüfung</TableHead>
+                <TableHead className="text-right">Aktion</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {certificates.map((cert) => (
+                <TableRow key={`${cert.tenant_id}__${cert.id}`}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate max-w-[200px]" title={cert.file_name}>
+                          {cert.file_name}
+                        </p>
+                        <p className="text-xs text-slate-400">{formatSize(cert.file_size)}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <code className="text-xs text-slate-500">{cert.qualification_id}</code>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className="text-xs">
+                      {cert.tenant_name || cert.tenant_id}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-sm">{formatDate(cert.granted_date)}</TableCell>
+                  <TableCell className="text-sm">
+                    <span className={isExpired(cert) ? 'text-red-600 font-medium' : isExpiringSoon(cert) ? 'text-amber-600 font-medium' : ''}>
+                      {formatDate(cert.expiry_date)}
+                      {isExpired(cert) && ' (abgelaufen)'}
+                      {isExpiringSoon(cert) && ' (läuft bald ab)'}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-sm text-slate-500">{formatDate(cert.uploaded_at)}</TableCell>
+                  <TableCell>{analysisBadge(cert)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handlePreview(cert)}
+                        disabled={!cert.mime_type?.startsWith('image/') && cert.mime_type !== 'application/pdf'}
+                        title={cert.mime_type?.startsWith('image/') || cert.mime_type === 'application/pdf' ? 'Im neuen Tab öffnen' : 'Vorschau nicht verfügbar'}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDownload(cert)}
+                        title="Datei herunterladen"
+                      >
+                        <Download className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

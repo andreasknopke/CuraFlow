@@ -1486,6 +1486,136 @@ router.get('/employees/:id', async (req, res, next) => {
 });
 
 /**
+ * GET /api/master/employees/:id/certificates
+ * Aggregate qualification certificates across all linked tenants for a central
+ * employee. Certificates are stored in the master DB partitioned by tenant_key;
+ * we resolve each assignment's tenant_key from the linked db_token and merge
+ * the rows so the central UI can show everything in one place.
+ */
+router.get('/employees/:id/certificates', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    console.log(`[Master employee-certificates] Request: employeeId=${id}`);
+
+    // 1. Find the central employee
+    const [empRows] = await db.execute(
+      'SELECT id, first_name, last_name FROM Employee WHERE id = ?',
+      [id]
+    );
+    if (empRows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    // 2. Get all linked tenant assignments with their db_token
+    const [assignments] = await db.execute(
+      `SELECT eta.tenant_id, eta.tenant_doctor_id, dt.token, dt.name as tenant_name
+         FROM EmployeeTenantAssignment eta
+         LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
+        WHERE eta.employee_id = ?`,
+      [id]
+    );
+
+    if (assignments.length === 0) {
+      return res.json({ employeeId: id, certificates: [] });
+    }
+
+    // 3. Build tenant_key lookup from db_tokens, then fetch certificates per assignment
+    const certificates = [];
+    for (const a of assignments) {
+      if (!a.token || !a.tenant_doctor_id) continue;
+      const config = parseDbToken(a.token);
+      if (!config?.host || !config?.database) continue;
+      const tenantKey = crypto
+        .createHash('sha256')
+        .update(`${config.host}:${config.database}`)
+        .digest('hex');
+
+      const [rows] = await db.execute(
+        `SELECT id, qualification_id, evidence_role, file_name, mime_type, file_size,
+                granted_date, expiry_date, notes, uploaded_by, uploaded_at, updated_at,
+                analysis_status, analysis_is_certificate, analysis_scope_match,
+                analysis_scope_detected, analysis_confidence, analysis_reasoning,
+                analysis_detected_granted, analysis_detected_expiry, analyzed_at
+           FROM QualificationCertificate
+          WHERE tenant_key = ? AND doctor_id = ?
+          ORDER BY uploaded_at DESC`,
+        [tenantKey, a.tenant_doctor_id]
+      );
+      for (const r of rows) {
+        certificates.push({
+          ...r,
+          tenant_id: a.tenant_id,
+          tenant_name: a.tenant_name,
+          tenant_doctor_id: a.tenant_doctor_id,
+        });
+      }
+    }
+
+    res.json({ employeeId: id, certificates });
+  } catch (error) {
+    console.error('[Master employee-certificates] Route error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/employees/:id/certificates/:certificateId/download
+ * Stream a single certificate file. Resolves the correct tenant_key from the
+ * stored certificate row so we never trust the URL path for tenant scoping.
+ */
+router.get('/employees/:id/certificates/:certificateId/download', async (req, res, next) => {
+  try {
+    const { id, certificateId } = req.params;
+
+    // Confirm the central employee exists
+    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    if (empRows.length === 0) {
+      return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
+    }
+
+    // We don't know the tenant_key from the URL – search across all linked
+    // tenants. A single certificate id is unique per (tenant_key, doctor_id)
+    // so we must scope it to one of the linked tenants to be safe.
+    const [assignments] = await db.execute(
+      `SELECT eta.tenant_id, eta.tenant_doctor_id, dt.token
+         FROM EmployeeTenantAssignment eta
+         LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
+        WHERE eta.employee_id = ?`,
+      [id]
+    );
+
+    for (const a of assignments) {
+      if (!a.token || !a.tenant_doctor_id) continue;
+      const config = parseDbToken(a.token);
+      if (!config?.host || !config?.database) continue;
+      const tenantKey = crypto
+        .createHash('sha256')
+        .update(`${config.host}:${config.database}`)
+        .digest('hex');
+
+      const [rows] = await db.execute(
+        `SELECT id, file_name, mime_type, file_data
+           FROM QualificationCertificate
+          WHERE id = ? AND tenant_key = ? AND doctor_id = ?
+          LIMIT 1`,
+        [certificateId, tenantKey, a.tenant_doctor_id]
+      );
+      if (rows.length > 0) {
+        const cert = rows[0];
+        res.setHeader('Content-Type', cert.mime_type);
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(cert.file_name)}"`);
+        return res.send(cert.file_data);
+      }
+    }
+
+    return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+  } catch (error) {
+    console.error('[Master employee-certificate download] Route error:', error);
+    next(error);
+  }
+});
+
+/**
  * POST /api/master/employees/:id/sync-time-accounts
  * Recalculate time accounts for a linked central employee
  */
