@@ -1920,7 +1920,7 @@ router.put('/employees/:id', async (req, res, next) => {
     await db.execute(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
 
     const [employeeRows] = await db.execute(
-      `SELECT e.id, e.target_hours_per_week, e.work_time_model_id, wtm.hours_per_week as model_hours_per_week
+      `SELECT e.id, e.target_hours_per_week, e.vacation_days_annual, e.work_time_model_id, wtm.hours_per_week as model_hours_per_week
        FROM Employee e
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        WHERE e.id = ?`,
