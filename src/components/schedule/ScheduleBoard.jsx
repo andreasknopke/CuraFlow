@@ -5140,13 +5140,13 @@ export default function ScheduleBoard() {
                         </Command>
                         {selectedQualificationIds.length > 0 && (
                             <div className="border-t p-2 space-y-2">
-                                <div className="flex flex-wrap gap-1">
-                                    {selectedQualificationIds.map((qid) => {
+                                <div className="flex flex-wrap items-center gap-1">
+                                    {selectedQualificationIds.flatMap((qid, idx) => {
                                         const qualification = qualificationMap[qid];
-                                        if (!qualification) return null;
-                                        return (
+                                        if (!qualification) return [];
+                                        const chip = (
                                             <button
-                                                key={qid}
+                                                key={`chip-${qid}`}
                                                 type="button"
                                                 onClick={() => toggleScheduleQualification(qid)}
                                                 className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700 transition-colors hover:bg-slate-100"
@@ -5155,6 +5155,11 @@ export default function ScheduleBoard() {
                                                 <X className="h-2.5 w-2.5" />
                                             </button>
                                         );
+                                        if (idx === 0) return [chip];
+                                        return [
+                                            <span key={`sep-${qid}`} className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">oder</span>,
+                                            chip,
+                                        ];
                                     })}
                                 </div>
                                 <Button
