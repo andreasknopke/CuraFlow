@@ -63,7 +63,7 @@ export default function MasterEmployeeDetail() {
   return (
     <div className="space-y-6">
       {/* Navigation zurück */}
-      <Button variant="ghost" size="sm" onClick={() => navigate('/mitarbeiter')}>
+      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
         <ArrowLeft className="w-4 h-4 mr-2" /> Mitarbeiterübersicht
       </Button>
 
