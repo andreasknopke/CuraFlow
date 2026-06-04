@@ -46,6 +46,27 @@ export default function MasterCentralEmployeeDetail() {
     },
   });
 
+  // Tarifverträge laden
+  const { data: tariffs = [] } = useQuery({
+    queryKey: ['master-payscale-tariffs'],
+    queryFn: async () => {
+      const res = await api.request('/api/master/payscale-tariffs');
+      return res.tariffs || [];
+    },
+  });
+
+  // Entgeltgruppen laden (abhängig vom aktuell ausgewählten Tarif)
+  const selectedTariffId = form.payscale_tariff_id || employee?.payscale_tariff_id;
+  const { data: groups = [] } = useQuery({
+    queryKey: ['master-payscale-groups', selectedTariffId],
+    queryFn: async () => {
+      if (!selectedTariffId) return [];
+      const res = await api.request(`/api/master/payscale-tariffs/${selectedTariffId}/groups`);
+      return res.groups || [];
+    },
+    enabled: !!selectedTariffId,
+  });
+
   // Form initialisieren wenn Employee geladen
   useEffect(() => {
     if (employee) {
@@ -65,6 +86,9 @@ export default function MasterCentralEmployeeDetail() {
         target_hours_per_week: employee.target_hours_per_week ?? '',
         vacation_days_annual: employee.vacation_days_annual ?? '',
         work_time_model_id: employee.work_time_model_id || '',
+        payscale_tariff_id: employee.payscale_tariff_id || '',
+        payscale_group_id: employee.payscale_group_id || '',
+        payscale_level: employee.payscale_level ?? '',
         is_active: employee.is_active ?? true,
         exit_date: employee.exit_date || '',
         exit_reason: employee.exit_reason || '',
@@ -327,7 +351,7 @@ export default function MasterCentralEmployeeDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Vertragsdaten</CardTitle>
-              <CardDescription>Arbeitsvertrag, Arbeitszeitmodell und Urlaubsanspruch</CardDescription>
+              <CardDescription>Arbeitsvertrag, Tarifvertrag, Arbeitszeitmodell und Urlaubsanspruch</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -368,6 +392,91 @@ export default function MasterCentralEmployeeDetail() {
                   )}
                 </div>
               </div>
+
+              {/* Tarifvertrag Bereich */}
+              {editMode && <Separator />}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">Tarifvertrag</Label>
+                  {editMode ? (
+                    <Select value={form.payscale_tariff_id || '__none__'}
+                      onValueChange={(v) => {
+                        const newId = v === '__none__' ? '' : v;
+                        updateField('payscale_tariff_id', newId);
+                        // Reset group and level when tariff changes
+                        updateField('payscale_group_id', '');
+                        updateField('payscale_level', '');
+                        // Auto-fill default weekly hours and vacation days if still on defaults
+                        const selectedTariff = tariffs.find((t) => t.id === newId);
+                        if (selectedTariff) {
+                          const currentHours = form.target_hours_per_week === '' || form.target_hours_per_week === 38.5 || form.target_hours_per_week === '38.5';
+                          const currentVacation = form.vacation_days_annual === '' || form.vacation_days_annual === 30 || form.vacation_days_annual === '30';
+                          if (currentHours && selectedTariff.default_weekly_hours != null) {
+                            updateField('target_hours_per_week', selectedTariff.default_weekly_hours);
+                          }
+                          if (currentVacation && selectedTariff.default_vacation_days != null) {
+                            updateField('vacation_days_annual', selectedTariff.default_vacation_days);
+                          }
+                        }
+                      }}>
+                      <SelectTrigger><SelectValue placeholder="Kein Tarif" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Kein Tarif (AT)</SelectItem>
+                        {tariffs.map((t) => (
+                          <SelectItem key={t.id} value={String(t.id)}>
+                            {t.name} ({t.short_name})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm">
+                      {employee.tariff_name
+                        ? `${employee.tariff_name} (${employee.tariff_short_name || ''})`
+                        : '–'}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">Entgeltgruppe</Label>
+                  {editMode ? (
+                    <Select value={form.payscale_group_id || '__none__'}
+                      onValueChange={(v) => updateField('payscale_group_id', v === '__none__' ? '' : v)}
+                      disabled={!selectedTariffId || selectedTariffId === ''}>
+                      <SelectTrigger><SelectValue placeholder={selectedTariffId ? 'Gruppe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Keine Gruppe</SelectItem>
+                        {groups.map((g) => (
+                          <SelectItem key={g.id} value={String(g.id)}>
+                            {g.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm">{employee.group_name || '–'}</p>
+                  )}
+                </div>
+                <div>
+                  <Label className="text-xs text-slate-500 mb-1 block">Stufe</Label>
+                  {editMode ? (
+                    <Select value={form.payscale_level != null ? String(form.payscale_level) : '__none__'}
+                      onValueChange={(v) => updateField('payscale_level', v === '__none__' ? '' : parseInt(v, 10))}
+                      disabled={!selectedTariffId || selectedTariffId === ''}>
+                      <SelectTrigger><SelectValue placeholder={selectedTariffId ? 'Stufe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Keine Stufe</SelectItem>
+                        {[1, 2, 3, 4, 5, 6].map((s) => (
+                          <SelectItem key={s} value={String(s)}>Stufe {s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <p className="text-sm">{employee.payscale_level ? `Stufe ${employee.payscale_level}` : '–'}</p>
+                  )}
+                </div>
+              </div>
+
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Vertragsbeginn" icon={CalendarDays} value={form.contract_start}

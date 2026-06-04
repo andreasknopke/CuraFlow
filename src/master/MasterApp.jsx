@@ -11,6 +11,7 @@ import MasterAbsences from '@/master/pages/MasterAbsences';
 import MasterTimeTracking from '@/master/pages/MasterTimeTracking';
 import MasterHolidays from '@/master/pages/MasterHolidays';
 import MasterWorkTimeModels from '@/master/pages/MasterWorkTimeModels';
+import MasterPayScaleTariffs from '@/master/pages/MasterPayScaleTariffs';
 import MasterEmployeeCreate from '@/master/pages/MasterEmployeeCreate';
 import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDetail';
 
@@ -67,6 +68,7 @@ export default function MasterApp() {
                       <Route path="/mitarbeiter/central/:employeeId" element={<MasterCentralEmployeeDetail />} />
                       <Route path="/mitarbeiter/:tenantId/:employeeId" element={<MasterEmployeeDetail />} />
                       <Route path="/arbeitszeitmodelle" element={<MasterWorkTimeModels />} />
+                      <Route path="/tarifvertraege" element={<MasterPayScaleTariffs />} />
                       <Route path="/fehlzeiten" element={<MasterAbsences />} />
                       <Route path="/feiertage" element={<MasterHolidays />} />
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />

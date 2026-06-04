@@ -1232,9 +1232,13 @@ router.get('/holidays/preview', async (req, res, next) => {
 router.get('/employees', async (req, res, next) => {
   try {
     const { q, active } = req.query;
-    let sql = `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week
+    let sql = `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week,
+               pst.name as tariff_name, pst.short_name as tariff_short_name, pst.default_weekly_hours as tariff_default_weekly_hours,
+               psg.name as group_name
                FROM Employee e
-               LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id`;
+               LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+               LEFT JOIN PayScaleTariff pst ON e.payscale_tariff_id = pst.id
+               LEFT JOIN PayScaleGroup psg ON e.payscale_group_id = psg.id`;
     const params = [];
     const conditions = [];
 
@@ -1428,9 +1432,14 @@ router.get('/employees/:id', async (req, res, next) => {
     const { id } = req.params;
 
     const [rows] = await db.execute(
-      `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week
+      `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week,
+              pst.name as tariff_name, pst.short_name as tariff_short_name, pst.default_weekly_hours as tariff_default_weekly_hours,
+              pst.default_vacation_days as tariff_default_vacation_days,
+              psg.name as group_name
        FROM Employee e
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+       LEFT JOIN PayScaleTariff pst ON e.payscale_tariff_id = pst.id
+       LEFT JOIN PayScaleGroup psg ON e.payscale_group_id = psg.id
        WHERE e.id = ?`,
       [id]
     );
@@ -1817,7 +1826,8 @@ router.post('/employees', async (req, res, next) => {
     const {
       last_name, first_name, former_name, date_of_birth, email, phone, address,
       contract_type, contract_start, contract_end, probation_end,
-      target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes
+      target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes,
+      payscale_tariff_id, payscale_group_id, payscale_level,
     } = req.body;
 
     if (!last_name || !last_name.trim()) {
@@ -1828,8 +1838,9 @@ router.post('/employees', async (req, res, next) => {
     await db.execute(
       `INSERT INTO Employee (id, last_name, first_name, former_name, date_of_birth, email, phone, address,
         contract_type, contract_start, contract_end, probation_end,
-        target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes, created_by,
+        payscale_tariff_id, payscale_group_id, payscale_level)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         last_name.trim(),
@@ -1849,6 +1860,9 @@ router.post('/employees', async (req, res, next) => {
         work_time_model_id || null,
         notes?.trim() || null,
         req.user.sub,
+        payscale_tariff_id || null,
+        payscale_group_id || null,
+        payscale_level != null ? parseInt(payscale_level, 10) : null,
       ]
     );
 
@@ -1878,7 +1892,8 @@ router.put('/employees/:id', async (req, res, next) => {
       'last_name', 'first_name', 'former_name', 'date_of_birth', 'email', 'phone', 'address',
       'contract_type', 'contract_start', 'contract_end', 'probation_end',
       'target_hours_per_week', 'vacation_days_annual', 'payroll_id', 'work_time_model_id',
-      'is_active', 'exit_date', 'exit_reason', 'notes'
+      'is_active', 'exit_date', 'exit_reason', 'notes',
+      'payscale_tariff_id', 'payscale_group_id', 'payscale_level',
     ];
 
     const updates = [];
@@ -2446,6 +2461,363 @@ router.get('/shift-time-rules', async (req, res, next) => {
     res.json({ rules: enriched });
   } catch (error) {
     console.error('[Master shift-time-rules] List error:', error);
+    next(error);
+  }
+});
+
+// ============ PAY SCALE TARIFFS (Tarifverträge) ============
+
+/**
+ * GET /api/master/payscale-tariffs
+ * List all pay scale tariffs with group counts
+ */
+router.get('/payscale-tariffs', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute(
+      `SELECT pst.*,
+              (SELECT COUNT(*) FROM PayScaleGroup psg WHERE psg.tariff_id = pst.id) AS group_count
+       FROM PayScaleTariff pst
+       ORDER BY pst.sort_order ASC, pst.name ASC`
+    );
+    res.json({ tariffs: rows });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] List error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/payscale-tariffs
+ * Create a new pay scale tariff
+ */
+router.post('/payscale-tariffs', async (req, res, next) => {
+  try {
+    const { name, short_name, default_weekly_hours, default_vacation_days, description } = req.body;
+
+    if (!name?.trim() || !short_name?.trim()) {
+      return res.status(400).json({ error: 'name and short_name are required' });
+    }
+
+    const id = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO PayScaleTariff (id, name, short_name, default_weekly_hours, default_vacation_days, description)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, name.trim(), short_name.trim(), default_weekly_hours ?? null, default_vacation_days ?? null, description?.trim() || null]
+    );
+
+    console.log(`[Master payscale-tariffs] Created tariff ${id} (${name}) by user ${req.user.sub}`);
+    res.status(201).json({ id, name, short_name });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Create error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/payscale-tariffs/:id
+ * Update a pay scale tariff
+ */
+router.put('/payscale-tariffs/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { name, short_name, default_weekly_hours, default_vacation_days, description, is_active, sort_order } = req.body;
+
+    const [existing] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [id]);
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
+    }
+
+    const allowedFields = [
+      'name', 'short_name', 'default_weekly_hours', 'default_vacation_days',
+      'description', 'is_active', 'sort_order',
+    ];
+    const updates = [];
+    const values = [];
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        let val = req.body[field];
+        if (typeof val === 'string') val = val.trim() || null;
+        values.push(val);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Keine Felder zum Aktualisieren' });
+    }
+
+    values.push(id);
+    await db.execute(`UPDATE PayScaleTariff SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    console.log(`[Master payscale-tariffs] Updated tariff ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Update error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/payscale-tariffs/:id
+ * Delete a pay scale tariff (only if no employees assigned)
+ */
+router.delete('/payscale-tariffs/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if any employees use this tariff
+    const [usages] = await db.execute(
+      'SELECT COUNT(*) as cnt FROM Employee WHERE payscale_tariff_id = ?',
+      [id]
+    );
+    if (usages[0].cnt > 0) {
+      return res.status(409).json({
+        error: `Dieser Tarifvertrag wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.`
+      });
+    }
+
+    // Delete associated groups first
+    await db.execute('DELETE FROM PayScaleGroup WHERE tariff_id = ?', [id]);
+    await db.execute('DELETE FROM PayScaleTariff WHERE id = ?', [id]);
+
+    console.log(`[Master payscale-tariffs] Deleted tariff ${id} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Delete error:', error);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/payscale-tariffs/:id/groups
+ * List pay scale groups for a tariff
+ */
+router.get('/payscale-tariffs/:id/groups', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.execute(
+      'SELECT * FROM PayScaleGroup WHERE tariff_id = ? ORDER BY sort_order ASC, name ASC',
+      [id]
+    );
+
+    res.json({ groups: rows });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Groups list error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/payscale-tariffs/:id/groups
+ * Create a new pay scale group for a tariff
+ */
+router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
+  try {
+    const tariffId = req.params.id;
+    const { name, description } = req.body;
+
+    if (!name?.trim()) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+
+    // Check tariff exists
+    const [tariffRows] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [tariffId]);
+    if (tariffRows.length === 0) {
+      return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
+    }
+
+    // Determine next sort_order
+    const [maxOrder] = await db.execute(
+      'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort FROM PayScaleGroup WHERE tariff_id = ?',
+      [tariffId]
+    );
+    const nextSort = maxOrder[0]?.next_sort ?? 0;
+
+    const id = crypto.randomUUID();
+    await db.execute(
+      'INSERT INTO PayScaleGroup (id, tariff_id, name, description, sort_order) VALUES (?, ?, ?, ?, ?)',
+      [id, tariffId, name.trim(), description?.trim() || null, nextSort]
+    );
+
+    console.log(`[Master payscale-tariffs] Created group ${id} (${name}) in tariff ${tariffId} by user ${req.user.sub}`);
+    res.status(201).json({ id, name });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Groups create error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/payscale-tariffs/:tariffId/groups/:groupId
+ * Update a pay scale group
+ */
+router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next) => {
+  try {
+    const { tariffId, groupId } = req.params;
+    const { name, description, sort_order } = req.body;
+
+    const [existing] = await db.execute(
+      'SELECT id FROM PayScaleGroup WHERE id = ? AND tariff_id = ?',
+      [groupId, tariffId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Entgeltgruppe nicht gefunden' });
+    }
+
+    const updates = [];
+    const values = [];
+    if (name !== undefined) { updates.push('name = ?'); values.push(name?.trim() || null); }
+    if (description !== undefined) { updates.push('description = ?'); values.push(description?.trim() || null); }
+    if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(sort_order); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'Keine Felder zum Aktualisieren' });
+    }
+
+    values.push(groupId);
+    await db.execute(`UPDATE PayScaleGroup SET ${updates.join(', ')} WHERE id = ?`, values);
+
+    console.log(`[Master payscale-tariffs] Updated group ${groupId} in tariff ${tariffId} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Groups update error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/payscale-tariffs/:tariffId/groups/:groupId
+ * Delete a pay scale group
+ */
+router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next) => {
+  try {
+    const { tariffId, groupId } = req.params;
+
+    // Check if any employee uses this group
+    const [usages] = await db.execute(
+      'SELECT COUNT(*) as cnt FROM Employee WHERE payscale_group_id = ?',
+      [groupId]
+    );
+    if (usages[0].cnt > 0) {
+      return res.status(409).json({
+        error: `Diese Entgeltgruppe wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.`
+      });
+    }
+
+    await db.execute('DELETE FROM PayScaleGroup WHERE id = ? AND tariff_id = ?', [groupId, tariffId]);
+
+    console.log(`[Master payscale-tariffs] Deleted group ${groupId} from tariff ${tariffId} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Groups delete error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/payscale-tariffs/:id/apply-defaults
+ * Apply tariff defaults to all employees assigned to this tariff.
+ * Only overwrites employees currently on system defaults (38.5h / 30d).
+ */
+router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [tariffRows] = await db.execute(
+      'SELECT id, name, default_weekly_hours, default_vacation_days FROM PayScaleTariff WHERE id = ?',
+      [id]
+    );
+    if (tariffRows.length === 0) {
+      return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
+    }
+    const tariff = tariffRows[0];
+
+    if (tariff.default_weekly_hours == null && tariff.default_vacation_days == null) {
+      return res.status(400).json({ error: 'Dieser Tarif hat keine Default-Werte (AT). Bulk-Apply nicht möglich.' });
+    }
+
+    // Only update employees still on system defaults (38.5 / 30)
+    const [eligibleRows] = await db.execute(
+      `SELECT COUNT(*) as cnt FROM Employee
+       WHERE payscale_tariff_id = ?
+         AND (target_hours_per_week = 38.5 OR target_hours_per_week IS NULL)
+         AND (vacation_days_annual = 30 OR vacation_days_annual IS NULL)`,
+      [id]
+    );
+    const eligibleCount = eligibleRows[0].cnt;
+
+    const [skippedRows] = await db.execute(
+      `SELECT COUNT(*) as cnt FROM Employee
+       WHERE payscale_tariff_id = ?
+         AND target_hours_per_week IS NOT NULL AND target_hours_per_week != 38.5`,
+      [id]
+    );
+    const skippedCount = skippedRows[0].cnt;
+
+    if (eligibleCount === 0) {
+      return res.json({ updated: 0, skipped: skippedCount, message: 'Keine Mitarbeiter mit Standardwerten vorhanden.' });
+    }
+
+    // Bulk update employees
+    const updates = [];
+    const params = [];
+    if (tariff.default_weekly_hours != null) {
+      updates.push('target_hours_per_week = ?');
+      params.push(tariff.default_weekly_hours);
+    }
+    if (tariff.default_vacation_days != null) {
+      updates.push('vacation_days_annual = ?');
+      params.push(tariff.default_vacation_days);
+    }
+    params.push(id);
+    await db.execute(
+      `UPDATE Employee SET ${updates.join(', ')}
+       WHERE payscale_tariff_id = ?
+         AND (target_hours_per_week = 38.5 OR target_hours_per_week IS NULL)
+         AND (vacation_days_annual = 30 OR vacation_days_annual IS NULL)`,
+      params
+    );
+
+    // Sync to tenant doctors for all affected employees
+    const [affectedEmployees] = await db.execute(
+      `SELECT e.id, e.target_hours_per_week, e.work_time_model_id, wtm.hours_per_week as model_hours_per_week
+       FROM Employee e
+       LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+       WHERE e.payscale_tariff_id = ?`,
+      [id]
+    );
+
+    let syncedCount = 0;
+    let syncErrors = 0;
+    for (const emp of affectedEmployees) {
+      try {
+        const [assignmentRows] = await db.execute(
+          `SELECT tenant_id, tenant_doctor_id
+           FROM EmployeeTenantAssignment
+           WHERE employee_id = ? AND tenant_doctor_id IS NOT NULL AND tenant_doctor_id != ''`,
+          [emp.id]
+        );
+        if (assignmentRows.length > 0) {
+          const result = await syncEmployeeWorkSettingsForAssignments(req.user.sub, emp, assignmentRows, {
+            id: req.user.sub,
+            email: req.user.email || null,
+          });
+          if (result.failedAssignments.length > 0) {
+            syncErrors++;
+          }
+          syncedCount++;
+        }
+      } catch (syncError) {
+        console.warn(`[Master payscale-tariffs] Sync failed for employee ${emp.id}: ${syncError.message}`);
+        syncErrors++;
+      }
+    }
+
+    console.log(`[Master payscale-tariffs] Applied defaults for tariff ${id} (${tariff.name}): ${eligibleCount} updated, ${skippedCount} skipped, ${syncedCount} tenants synced, ${syncErrors} errors`);
+    res.json({ updated: eligibleCount, skipped: skippedCount, syncedTenants: syncedCount, syncErrors });
+  } catch (error) {
+    console.error('[Master payscale-tariffs] Apply-defaults error:', error);
     next(error);
   }
 });

@@ -4,7 +4,7 @@ import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
   Menu, ChevronLeft, Shield,
-  Users, CalendarX2, Clock, CalendarDays, Timer,
+  Users, CalendarX2, Clock, CalendarDays, Timer, Scale,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CoWorkWidget from '@/components/CoWorkWidget';
@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { path: '/fehlzeiten', label: 'Fehlzeiten', icon: CalendarX2 },
   { path: '/feiertage', label: 'Feiertage & Ferien', icon: CalendarDays },
   { path: '/arbeitszeitmodelle', label: 'Arbeitszeitmodelle', icon: Timer },
+  { path: '/tarifvertraege', label: 'Tarifverträge', icon: Scale },
   { path: '/zeiterfassung', label: 'Zeiterfassung', icon: Clock },
 ];
 

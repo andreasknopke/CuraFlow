@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import {
   ArrowLeft, User, Save, Loader2, Hash, Mail, Phone, MapPin,
-  CalendarDays, Clock,
+  CalendarDays, Clock, Scale, Layers,
 } from 'lucide-react';
 
 const NO_WORK_TIME_MODEL_VALUE = '__none__';
@@ -35,6 +35,9 @@ export default function MasterEmployeeCreate() {
     target_hours_per_week: '',
     vacation_days_annual: '30',
     work_time_model_id: '',
+    payscale_tariff_id: '',
+    payscale_group_id: '',
+    payscale_level: '',
     notes: '',
   });
 
@@ -44,6 +47,25 @@ export default function MasterEmployeeCreate() {
       const res = await api.request('/api/master/work-time-models');
       return res.models || [];
     },
+  });
+
+  const { data: tariffs = [] } = useQuery({
+    queryKey: ['master-payscale-tariffs'],
+    queryFn: async () => {
+      const res = await api.request('/api/master/payscale-tariffs');
+      return res.tariffs || [];
+    },
+  });
+
+  const selectedTariffId = form.payscale_tariff_id;
+  const { data: groups = [] } = useQuery({
+    queryKey: ['master-payscale-groups', selectedTariffId],
+    queryFn: async () => {
+      if (!selectedTariffId) return [];
+      const res = await api.request(`/api/master/payscale-tariffs/${selectedTariffId}/groups`);
+      return res.groups || [];
+    },
+    enabled: !!selectedTariffId,
   });
 
   const createMutation = useMutation({
@@ -68,6 +90,19 @@ export default function MasterEmployeeCreate() {
     const payload = { ...form };
     if (!payload.work_time_model_id) {
       payload.work_time_model_id = null;
+    }
+    if (!payload.payscale_tariff_id) {
+      payload.payscale_tariff_id = null;
+      payload.payscale_group_id = null;
+      payload.payscale_level = null;
+    }
+    if (!payload.payscale_group_id) {
+      payload.payscale_group_id = null;
+    }
+    if (payload.payscale_level === '' || payload.payscale_level == null) {
+      payload.payscale_level = null;
+    } else {
+      payload.payscale_level = parseInt(payload.payscale_level, 10);
     }
     if (payload.target_hours_per_week !== '') {
       payload.target_hours_per_week = parseFloat(payload.target_hours_per_week);
@@ -125,7 +160,7 @@ export default function MasterEmployeeCreate() {
       <Card>
         <CardHeader>
           <CardTitle>Vertragsdaten</CardTitle>
-          <CardDescription>Arbeitsvertrag und Arbeitszeitmodell</CardDescription>
+          <CardDescription>Arbeitsvertrag, Tarifvertrag und Arbeitszeitmodell</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -156,6 +191,73 @@ export default function MasterEmployeeCreate() {
                     <SelectItem key={m.id} value={String(m.id)}>
                       {m.name} ({m.hours_per_week}h/W)
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Separator />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                <Scale className="w-3.5 h-3.5" /> Tarifvertrag
+              </Label>
+              <Select value={form.payscale_tariff_id || '__none__'}
+                onValueChange={(v) => {
+                  const newId = v === '__none__' ? '' : v;
+                  updateField('payscale_tariff_id', newId);
+                  updateField('payscale_group_id', '');
+                  updateField('payscale_level', '');
+                  // Auto-fill defaults
+                  const selectedTariff = tariffs.find((t) => t.id === newId);
+                  if (selectedTariff) {
+                    const currentHours = form.target_hours_per_week === '' || form.target_hours_per_week === '38.5';
+                    const currentVacation = form.vacation_days_annual === '' || form.vacation_days_annual === '30';
+                    if (currentHours && selectedTariff.default_weekly_hours != null) {
+                      updateField('target_hours_per_week', String(selectedTariff.default_weekly_hours));
+                    }
+                    if (currentVacation && selectedTariff.default_vacation_days != null) {
+                      updateField('vacation_days_annual', String(selectedTariff.default_vacation_days));
+                    }
+                  }
+                }}>
+                <SelectTrigger><SelectValue placeholder="Kein Tarif (AT)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Kein Tarif (AT)</SelectItem>
+                  {tariffs.map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name} ({t.short_name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500 mb-1 flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5" /> Entgeltgruppe
+              </Label>
+              <Select value={form.payscale_group_id || '__none__'}
+                onValueChange={(v) => updateField('payscale_group_id', v === '__none__' ? '' : v)}
+                disabled={!form.payscale_tariff_id}>
+                <SelectTrigger><SelectValue placeholder={form.payscale_tariff_id ? 'Gruppe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Keine Gruppe</SelectItem>
+                  {groups.map((g) => (
+                    <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-500 mb-1 block">Stufe</Label>
+              <Select value={form.payscale_level != null && form.payscale_level !== '' ? String(form.payscale_level) : '__none__'}
+                onValueChange={(v) => updateField('payscale_level', v === '__none__' ? '' : v)}
+                disabled={!form.payscale_tariff_id}>
+                <SelectTrigger><SelectValue placeholder={form.payscale_tariff_id ? 'Stufe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Keine Stufe</SelectItem>
+                  {[1, 2, 3, 4, 5, 6].map((s) => (
+                    <SelectItem key={s} value={String(s)}>Stufe {s}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
