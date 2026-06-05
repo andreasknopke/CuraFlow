@@ -94,6 +94,18 @@ describe('rowQualFilter helpers', () => {
             expect(matchesRowQualFilter(filter, undefined)).toBe(false);
             expect(matchesRowQualFilter(filter, null)).toBe(false);
         });
+
+        it('when no include rule is set, only excludes apply (Nur NOT ausschließen, Rest zeigen)', () => {
+            // Row has only "Nicht" qualifications defined -> includeIds empty,
+            // excludeIds populated. Doctors without the excluded qualification
+            // must remain visible.
+            const filter = { includeIds: [], excludeIds: ['n1'] };
+            expect(matchesRowQualFilter(filter, [])).toBe(true);
+            expect(matchesRowQualFilter(filter, ['a'])).toBe(true);
+            expect(matchesRowQualFilter(filter, ['a', 'b'])).toBe(true);
+            expect(matchesRowQualFilter(filter, ['n1'])).toBe(false);
+            expect(matchesRowQualFilter(filter, ['a', 'n1'])).toBe(false);
+        });
     });
 
     describe('rowKey', () => {
