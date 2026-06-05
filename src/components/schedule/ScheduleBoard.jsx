@@ -46,6 +46,7 @@ import { isWishOnDate } from '@/utils/wishRange';
 import { useShiftValidation } from '@/components/validation/useShiftValidation';
 import { useOverrideValidation } from '@/components/validation/useOverrideValidation';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
+import { buildRowQualSets, matchesRowQualFilter, rowKey as buildRowFilterKey } from '@/components/schedule/rowQualFilter';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
@@ -867,6 +868,10 @@ export default function ScheduleBoard() {
 
     const [selectedQualificationIds, setSelectedQualificationIds] = useState([]);
     const [scheduleFilterOpen, setScheduleFilterOpen] = useState(false);
+    // Single active row-scoped qualification filter. Replacing it on a different
+    // row; clicking the same row's filter icon again clears it.
+    const [rowQualFilter, setRowQualFilter] = useState(null);
+    // { key, sourceName, workplaceId, includeIds, excludeIds } | null
 
   // Sync with user profile when it loads/updates
   useEffect(() => {
@@ -1759,6 +1764,49 @@ export default function ScheduleBoard() {
         return selectedQualificationIds.some((qid) => ids.includes(qid));
     }, [selectedQualificationIds, getDoctorQualIds]);
 
+    // Row-scoped qualification filter: include = Pflicht|Sollte|Sollte-nicht (OR),
+    // exclude = Nicht. AND-combined with the global schedule filter.
+    const matchesRowQualificationFilter = useCallback((doctor) => {
+        if (!rowQualFilter) return true;
+        const ids = getDoctorQualIds(doctor.id);
+        return matchesRowQualFilter(
+            { includeIds: rowQualFilter.includeIds, excludeIds: rowQualFilter.excludeIds },
+            ids,
+        );
+    }, [rowQualFilter, getDoctorQualIds]);
+
+    const matchesAllQualificationFilters = useCallback((doctor) => {
+        return matchesScheduleQualificationFilter(doctor) && matchesRowQualificationFilter(doctor);
+    }, [matchesScheduleQualificationFilter, matchesRowQualificationFilter]);
+
+    // Build (or toggle off) the row-scoped filter for a given row.
+    const applyRowQualificationFilter = useCallback((rowName, rowTimeslotId, rowWorkplace) => {
+        if (!rowWorkplace?.id) return;
+        const key = buildRowFilterKey(rowName, rowTimeslotId);
+        if (rowQualFilter && rowQualFilter.key === key) {
+            setRowQualFilter(null);
+            return;
+        }
+        const { includeIds, excludeIds } = buildRowQualSets({
+            workplaceId: rowWorkplace.id,
+            getRequired: getWpRequiredQualIds,
+            getOptional: getWpOptionalQualIds,
+            getDiscouraged: getWpDiscouragedQualIds,
+            getExcluded: getWpExcludedQualIds,
+        });
+        if (includeIds.length === 0 && excludeIds.length === 0) {
+            // No qualifications defined for this workplace -> nothing to filter on.
+            return;
+        }
+        setRowQualFilter({
+            key,
+            sourceName: rowWorkplace.name || rowName,
+            workplaceId: rowWorkplace.id,
+            includeIds,
+            excludeIds,
+        });
+    }, [rowQualFilter, getWpRequiredQualIds, getWpOptionalQualIds, getWpDiscouragedQualIds, getWpExcludedQualIds]);
+
   // Override-Validierung mit Dialog
   const {
       overrideDialog,
@@ -2528,9 +2576,9 @@ export default function ScheduleBoard() {
         }, [currentDate, doctors, sortDoctorsAlphabetically, staffingPlanEntries, viewMode, weekDays]);
 
     const sidebarDoctors = useMemo(() => {
-        if (selectedQualificationIds.length === 0) return sidebarDoctorsAll;
-        return sidebarDoctorsAll.filter(matchesScheduleQualificationFilter);
-    }, [sidebarDoctorsAll, matchesScheduleQualificationFilter, selectedQualificationIds]);
+        if (selectedQualificationIds.length === 0 && !rowQualFilter) return sidebarDoctorsAll;
+        return sidebarDoctorsAll.filter(matchesAllQualificationFilters);
+    }, [sidebarDoctorsAll, matchesAllQualificationFilters, selectedQualificationIds, rowQualFilter]);
 
     const getDoctorWithEffectiveFte = (doctor, referenceDate) => {
         if (!doctor || !referenceDate) {
@@ -2735,13 +2783,13 @@ export default function ScheduleBoard() {
                 doctors.filter((doctor) =>
                     !assignedDocIds.has(doctor.id) &&
                     doctor.role !== 'Nicht-Radiologe' &&
-                    matchesScheduleQualificationFilter(doctor)
+                    matchesAllQualificationFilters(doctor)
                 )
             ));
         });
 
         return map;
-    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesScheduleQualificationFilter, sortDoctorsAlphabetically, weekDays]);
+    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
@@ -4505,6 +4553,16 @@ export default function ScheduleBoard() {
                                               Filter aktiv
                                           </span>
                                       )}
+                                      {isPinnedSection && rowQualFilter && (
+                                          <span
+                                              data-testid="schedule-anwesenheiten-row-filter-indicator"
+                                              className="inline-flex items-center gap-1 rounded-full bg-amber-300 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-900"
+                                              title={`Zeilen-Filter aktiv für ${rowQualFilter.sourceName}`}
+                                          >
+                                              <Filter className="h-3 w-3" />
+                                              Zeilen-Filter: {rowQualFilter.sourceName}
+                                          </span>
+                                      )}
                                   </div>
                                   <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">{visibleRows.length}</span>
                               </div>
@@ -4515,19 +4573,34 @@ export default function ScheduleBoard() {
                                   const rowTimeslotId = rowObj.timeslotId;
                                   const isGroupHeader = rowObj.isTimeslotGroupHeader;
                                   const rowStyle = getRowStyle(rowName, customStyle);
+                                  const rowWorkplace = workplaceByName.get(rowName);
                                   const useLightweightTimeslotTarget = false;
+                                  const isRowQualFilterSource = !!rowQualFilter
+                                      && rowQualFilter.key === buildRowFilterKey(rowName, rowTimeslotId);
+                                  const hasRowQuals = (() => {
+                                      if (!rowWorkplace?.id) return false;
+                                      const { includeIds, excludeIds } = buildRowQualSets({
+                                          workplaceId: rowWorkplace.id,
+                                          getRequired: getWpRequiredQualIds,
+                                          getOptional: getWpOptionalQualIds,
+                                          getDiscouraged: getWpDiscouragedQualIds,
+                                          getExcluded: getWpExcludedQualIds,
+                                      });
+                                      return includeIds.length > 0 || excludeIds.length > 0;
+                                  })();
 
                                   const rawHeaderDroppableId = `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
                                   const headerDroppableId = withPanelPrefix(rawHeaderDroppableId, SPLIT_PANEL_PREFIX);
                                   const rowLabelPresentation = getRowLabelPresentation(rowDisplayName, isMonthView);
 
                                   return (
-                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`}>
+                                      <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group ${isRowQualFilterSource ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''}`}>
                                           <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
                                               {(provided, snapshot) => (
                                                   <div
                                                       ref={provided.innerRef}
                                                       {...provided.droppableProps}
+                                                      data-testid={`schedule-row-header-${encodeScheduleTargetId(headerDroppableId)}`}
                                                       className={`p-2 text-sm font-medium border-r border-slate-200 flex items-center justify-between transition-colors ${!customStyle ? section.headerColor : ''} ${snapshot.isDraggingOver ? 'ring-2 ring-inset ring-indigo-400 bg-indigo-50' : ''} ${isGroupHeader ? 'cursor-pointer' : ''}`}
                                                       style={customStyle ? customStyle.header : {}}
                                                       onClick={undefined}
@@ -4555,7 +4628,21 @@ export default function ScheduleBoard() {
                                                               />
                                                           )}
                                                       </div>
-                                                      <div className="hidden">{provided.placeholder}</div>
+                                                      <div className="flex items-center gap-0.5">
+                                                          {hasRowQuals && (
+                                                              <Button
+                                                                  variant="ghost"
+                                                                  size="icon"
+                                                                  data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
+                                                                  className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
+                                                                  onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
+                                                                  title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${rowWorkplace?.name || rowName})`}
+                                                              >
+                                                                  <Filter className="h-3 w-3" />
+                                                              </Button>
+                                                          )}
+                                                          <div className="hidden">{provided.placeholder}</div>
+                                                      </div>
                                                   </div>
                                               )}
                                           </Droppable>
@@ -5413,6 +5500,16 @@ export default function ScheduleBoard() {
                                     Filter aktiv
                                 </span>
                             )}
+                            {isPinnedSection && rowQualFilter && (
+                                <span
+                                    data-testid="schedule-anwesenheiten-row-filter-indicator"
+                                    className="inline-flex items-center gap-1 rounded-full bg-amber-300 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-amber-900"
+                                    title={`Zeilen-Filter aktiv für ${rowQualFilter.sourceName}`}
+                                >
+                                    <Filter className="h-3 w-3" />
+                                    Zeilen-Filter: {rowQualFilter.sourceName}
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             {activeSectionTabId === 'main' && section.title !== 'Archiv / Unbekannt' && section.title !== PINNED_SECTION_TITLE && (
@@ -5443,11 +5540,24 @@ export default function ScheduleBoard() {
                         const useLightweightTimeslotTarget = false;
                         const expandedRowLabel = getExpandedTimeslotRowLabel(rowObj, rowDisplayName);
                         const rowLabelPresentation = getRowLabelPresentation(expandedRowLabel, isMonthView);
-                        
+                        const isRowQualFilterSource = !!rowQualFilter
+                            && rowQualFilter.key === buildRowFilterKey(rowName, rowTimeslotId);
+                        const hasRowQuals = (() => {
+                            if (!rowWorkplace?.id) return false;
+                            const { includeIds, excludeIds } = buildRowQualSets({
+                                workplaceId: rowWorkplace.id,
+                                getRequired: getWpRequiredQualIds,
+                                getOptional: getWpOptionalQualIds,
+                                getDiscouraged: getWpDiscouragedQualIds,
+                                getExcluded: getWpExcludedQualIds,
+                            });
+                            return includeIds.length > 0 || excludeIds.length > 0;
+                        })();
+
                         const headerDroppableId = `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
-                        
+
                         return (
-                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group`} style={matrixGridStyle}>
+                        <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group ${isRowQualFilterSource ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''}`} style={matrixGridStyle}>
                             <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
                                 {(provided, snapshot) => (
                                     <div 
@@ -5490,10 +5600,22 @@ export default function ScheduleBoard() {
                                                 )}
                                                 </div>
                                                 <div className="flex items-center gap-0.5">
+                                                {hasRowQuals && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
+                                                    className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
+                                                    onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
+                                                    title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${rowWorkplace?.name || rowName})`}
+                                                >
+                                                    <Filter className="h-3 w-3" />
+                                                </Button>
+                                                )}
                                                 {!isReadOnly && rowName !== 'Verfügbar' && (
-                                                <Button 
-                                                    variant="ghost" 
-                                                    size="icon" 
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
                                                     data-testid={`schedule-row-clear-${encodeScheduleTargetId(headerDroppableId)}`}
                                                     className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600"
                                                     onClick={() => handleClearRow(rowName, rowTimeslotId)}
