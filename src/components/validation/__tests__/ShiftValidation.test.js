@@ -215,8 +215,9 @@ describe('ShiftValidator vacation overshoot', () => {
   });
 
   it('does not double-count the candidate date when updating an existing shift', () => {
-    // 30 past weekdays + 1 future Wednesday (the one we're "editing").
-    const past = buildPastWeekdays(new Date('2026-01-05'), 30);
+    // 29 past weekdays + 1 future Wednesday (the one we're "editing").
+    // 29 + 1 (candidate) = 30 = entitlement → no overshoot when excludeShiftId works.
+    const past = buildPastWeekdays(new Date('2026-01-05'), 29);
     const shifts = [
       ...past.map((date, i) => ({ id: `s-${i}`, doctor_id: 'doctor-1', date, position: 'Urlaub' })),
       { id: 's-edit', doctor_id: 'doctor-1', date: '2026-05-20', position: 'Urlaub' },

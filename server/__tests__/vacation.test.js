@@ -69,7 +69,7 @@ describe('fetchCentralAbsencesForDoctor', () => {
       year: YEAR,
     });
 
-    expect(result).toEqual({ employee_id: null, absences: [] });
+    expect(result).toEqual({ employee_id: null, absences: [], vacation_days_annual: null });
     // Must NOT have hit the central table when there is no link.
     const centralCalls = db.calls.filter((c) => c.sql.includes('FROM CentralAbsenceEntry'));
     expect(centralCalls).toHaveLength(0);

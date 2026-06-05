@@ -66,7 +66,7 @@ describe('runMasterMigrations', () => {
     const employeeCalls = dbPool.calls.filter(
       ({ sql, params }) =>
         sql.includes('ALTER TABLE `Employee` ADD COLUMN `work_time_model_id`') ||
-        (sql.includes('FROM information_schema.COLUMNS') && params[0] === 'Employee')
+        (sql.includes('FROM information_schema.COLUMNS') && params[0] === 'Employee' && params[1] === 'work_time_model_id')
     );
 
     expect(employeeCalls).toEqual([
