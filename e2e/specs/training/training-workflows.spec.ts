@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { addMonths, format, parseISO } from 'date-fns';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/auth';
@@ -104,7 +104,8 @@ test.describe('training workflows', () => {
 
     const doctorId = 'doctor-clara';
     const modality = 'Sono Rotation';
-    const [startDate, transferDate] = getLastBusinessDaysOfMonth(seededSchedule.targetMonth, 2);
+    const nextMonth = format(addMonths(parseISO(`${seededSchedule.targetMonth}-01`), 1), 'yyyy-MM');
+    const [startDate, transferDate] = getLastBusinessDaysOfMonth(nextMonth, 2);
     const startDateString = format(startDate, 'yyyy-MM-dd');
     const transferDateString = format(transferDate, 'yyyy-MM-dd');
     const expectedShiftDate = startDateString;

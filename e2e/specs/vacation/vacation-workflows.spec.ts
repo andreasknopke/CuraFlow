@@ -82,6 +82,9 @@ test.describe('vacation workflows', () => {
         },
       });
 
+      await page.reload();
+      await vacationPage.expectLoaded();
+
       await vacationPage.setDisplayedYear(date.getFullYear());
       await vacationPage.selectDoctor(doctorId);
       await vacationPage.selectAbsenceType('urlaub');

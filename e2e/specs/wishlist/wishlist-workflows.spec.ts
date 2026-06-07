@@ -125,7 +125,7 @@ test.describe('wishlist workflows', () => {
         auto_create_shift_on_approval: true,
       };
 
-      await dbUpdate(request, adminHeaders, 'SystemSetting', originalDeadlineSetting.id, { value: '0' });
+      await dbUpdate(request, adminHeaders, 'SystemSetting', originalDeadlineSetting.id, { value: '' });
       await dbUpdate(request, adminHeaders, 'SystemSetting', originalApprovalSetting.id, {
         value: JSON.stringify(updatedApprovalRules),
       });
