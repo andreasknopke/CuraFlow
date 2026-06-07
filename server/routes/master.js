@@ -2386,6 +2386,125 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
   }
 });
 
+// ============ EMPLOYEE RELATIONSHIPS ============
+
+/**
+ * GET /api/master/employees/:id/relationships
+ * List all relationships for a central employee
+ */
+router.get('/employees/:id/relationships', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const [rows] = await db.execute(
+      `SELECT er.*,
+              e1.last_name as employee_last_name, e1.first_name as employee_first_name,
+              e2.last_name as related_last_name, e2.first_name as related_first_name
+       FROM EmployeeRelationship er
+       JOIN Employee e1 ON er.employee_id = e1.id
+       JOIN Employee e2 ON er.related_employee_id = e2.id
+       WHERE er.employee_id = ? OR er.related_employee_id = ?
+       ORDER BY er.created_at DESC`,
+      [id, id]
+    );
+
+    res.json({ relationships: rows });
+  } catch (error) {
+    console.error('[Master relationships] List error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees/:id/relationships
+ * Create a relationship between two employees
+ * Body: { related_employee_id, relationship_type, shift_conflict }
+ */
+router.post('/employees/:id/relationships', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { related_employee_id, relationship_type, shift_conflict } = req.body;
+
+    if (!related_employee_id) {
+      return res.status(400).json({ error: 'related_employee_id ist erforderlich' });
+    }
+    if (id === related_employee_id) {
+      return res.status(400).json({ error: 'Ein Mitarbeiter kann keine Beziehung zu sich selbst haben' });
+    }
+
+    // Verify both employees exist
+    const [employees] = await db.execute(
+      'SELECT id FROM Employee WHERE id IN (?, ?)',
+      [id, related_employee_id]
+    );
+    if (employees.length !== 2) {
+      return res.status(404).json({ error: 'Einer oder beide Mitarbeiter wurden nicht gefunden' });
+    }
+
+    // Check for existing relationship (bidirectional)
+    const [existing] = await db.execute(
+      `SELECT id FROM EmployeeRelationship
+       WHERE (employee_id = ? AND related_employee_id = ?)
+          OR (employee_id = ? AND related_employee_id = ?)`,
+      [id, related_employee_id, related_employee_id, id]
+    );
+    if (existing.length > 0) {
+      return res.status(409).json({ error: 'Diese Beziehung existiert bereits' });
+    }
+
+    const relId = crypto.randomUUID();
+    await db.execute(
+      `INSERT INTO EmployeeRelationship (id, employee_id, related_employee_id, relationship_type, shift_conflict, created_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [relId, id, related_employee_id, relationship_type || 'lebensgemeinschaft', shift_conflict ?? false, req.user.sub]
+    );
+
+    // Fetch the created row with names
+    const [rows] = await db.execute(
+      `SELECT er.*,
+              e1.last_name as employee_last_name, e1.first_name as employee_first_name,
+              e2.last_name as related_last_name, e2.first_name as related_first_name
+       FROM EmployeeRelationship er
+       JOIN Employee e1 ON er.employee_id = e1.id
+       JOIN Employee e2 ON er.related_employee_id = e2.id
+       WHERE er.id = ?`,
+      [relId]
+    );
+
+    console.log(`[Master relationships] Created relationship ${relId}: ${id} <-> ${related_employee_id} (${relationship_type || 'lebensgemeinschaft'}) by user ${req.user.sub}`);
+    res.status(201).json({ relationship: rows[0] });
+  } catch (error) {
+    console.error('[Master relationships] Create error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/employees/:id/relationships/:relationshipId
+ * Remove a relationship
+ */
+router.delete('/employees/:id/relationships/:relationshipId', async (req, res, next) => {
+  try {
+    const { id, relationshipId } = req.params;
+
+    const [existing] = await db.execute(
+      'SELECT id FROM EmployeeRelationship WHERE id = ? AND (employee_id = ? OR related_employee_id = ?)',
+      [relationshipId, id, id]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Beziehung nicht gefunden' });
+    }
+
+    await db.execute('DELETE FROM EmployeeRelationship WHERE id = ?', [relationshipId]);
+
+    console.log(`[Master relationships] Deleted relationship ${relationshipId} by user ${req.user.sub}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Master relationships] Delete error:', error);
+    next(error);
+  }
+});
+
 // ============ WORK TIME MODELS ============
 
 /**

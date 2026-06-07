@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,7 +21,7 @@ import {
   TrendingUp, TrendingDown, Minus, Save, Pencil, AlertCircle,
   Briefcase, Hash, Mail, Phone, MapPin,
   Loader2, UserCheck, UserX, Link2, RefreshCw, Trash2,
-  Download, Eye, Award, CalendarCheck, CalendarX2,
+  Download, Eye, Award, CalendarCheck, CalendarX2, Heart, UserPlus,
 } from 'lucide-react';
 
 export default function MasterCentralEmployeeDetail() {
@@ -46,27 +47,6 @@ export default function MasterCentralEmployeeDetail() {
     },
   });
 
-  // Tarifverträge laden
-  const { data: tariffs = [] } = useQuery({
-    queryKey: ['master-payscale-tariffs'],
-    queryFn: async () => {
-      const res = await api.request('/api/master/payscale-tariffs');
-      return res.tariffs || [];
-    },
-  });
-
-  // Entgeltgruppen laden (abhängig vom aktuell ausgewählten Tarif)
-  const selectedTariffId = form.payscale_tariff_id || employee?.payscale_tariff_id;
-  const { data: groups = [] } = useQuery({
-    queryKey: ['master-payscale-groups', selectedTariffId],
-    queryFn: async () => {
-      if (!selectedTariffId) return [];
-      const res = await api.request(`/api/master/payscale-tariffs/${selectedTariffId}/groups`);
-      return res.groups || [];
-    },
-    enabled: !!selectedTariffId,
-  });
-
   // Form initialisieren wenn Employee geladen
   useEffect(() => {
     if (employee) {
@@ -86,9 +66,6 @@ export default function MasterCentralEmployeeDetail() {
         target_hours_per_week: employee.target_hours_per_week ?? '',
         vacation_days_annual: employee.vacation_days_annual ?? '',
         work_time_model_id: employee.work_time_model_id || '',
-        payscale_tariff_id: employee.payscale_tariff_id || '',
-        payscale_group_id: employee.payscale_group_id || '',
-        payscale_level: employee.payscale_level ?? '',
         is_active: employee.is_active ?? true,
         exit_date: employee.exit_date || '',
         exit_reason: employee.exit_reason || '',
@@ -213,7 +190,7 @@ export default function MasterCentralEmployeeDetail() {
   return (
     <div className="space-y-6">
       {/* Navigation zurück */}
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+      <Button variant="ghost" size="sm" onClick={() => navigate('/mitarbeiter')}>
         <ArrowLeft className="w-4 h-4 mr-2" /> Mitarbeiterübersicht
       </Button>
 
@@ -278,7 +255,7 @@ export default function MasterCentralEmployeeDetail() {
 
       {/* Tabs */}
       <Tabs defaultValue="stammdaten" className="w-full">
-        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:inline-grid">
+        <TabsList className="grid w-full grid-cols-7 lg:w-auto lg:inline-grid">
           <TabsTrigger value="stammdaten" className="flex items-center gap-2">
             <User className="w-4 h-4" /> Stammdaten
           </TabsTrigger>
@@ -296,6 +273,9 @@ export default function MasterCentralEmployeeDetail() {
           </TabsTrigger>
           <TabsTrigger value="zertifikate" className="flex items-center gap-2">
             <Award className="w-4 h-4" /> Zertifikate
+          </TabsTrigger>
+          <TabsTrigger value="beziehungen" className="flex items-center gap-2">
+            <Heart className="w-4 h-4" /> Beziehungen
           </TabsTrigger>
         </TabsList>
 
@@ -351,7 +331,7 @@ export default function MasterCentralEmployeeDetail() {
           <Card>
             <CardHeader>
               <CardTitle>Vertragsdaten</CardTitle>
-              <CardDescription>Arbeitsvertrag, Tarifvertrag, Arbeitszeitmodell und Urlaubsanspruch</CardDescription>
+              <CardDescription>Arbeitsvertrag, Arbeitszeitmodell und Urlaubsanspruch</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -392,91 +372,6 @@ export default function MasterCentralEmployeeDetail() {
                   )}
                 </div>
               </div>
-
-              {/* Tarifvertrag Bereich */}
-              {editMode && <Separator />}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">Tarifvertrag</Label>
-                  {editMode ? (
-                    <Select value={form.payscale_tariff_id || '__none__'}
-                      onValueChange={(v) => {
-                        const newId = v === '__none__' ? '' : v;
-                        updateField('payscale_tariff_id', newId);
-                        // Reset group and level when tariff changes
-                        updateField('payscale_group_id', '');
-                        updateField('payscale_level', '');
-                        // Auto-fill default weekly hours and vacation days if still on defaults
-                        const selectedTariff = tariffs.find((t) => t.id === newId);
-                        if (selectedTariff) {
-                          const currentHours = form.target_hours_per_week === '' || form.target_hours_per_week === 38.5 || form.target_hours_per_week === '38.5';
-                          const currentVacation = form.vacation_days_annual === '' || form.vacation_days_annual === 30 || form.vacation_days_annual === '30';
-                          if (currentHours && selectedTariff.default_weekly_hours != null) {
-                            updateField('target_hours_per_week', selectedTariff.default_weekly_hours);
-                          }
-                          if (currentVacation && selectedTariff.default_vacation_days != null) {
-                            updateField('vacation_days_annual', selectedTariff.default_vacation_days);
-                          }
-                        }
-                      }}>
-                      <SelectTrigger><SelectValue placeholder="Kein Tarif" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Kein Tarif (AT)</SelectItem>
-                        {tariffs.map((t) => (
-                          <SelectItem key={t.id} value={String(t.id)}>
-                            {t.name} ({t.short_name})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm">
-                      {employee.tariff_name
-                        ? `${employee.tariff_name} (${employee.tariff_short_name || ''})`
-                        : '–'}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">Entgeltgruppe</Label>
-                  {editMode ? (
-                    <Select value={form.payscale_group_id || '__none__'}
-                      onValueChange={(v) => updateField('payscale_group_id', v === '__none__' ? '' : v)}
-                      disabled={!selectedTariffId || selectedTariffId === ''}>
-                      <SelectTrigger><SelectValue placeholder={selectedTariffId ? 'Gruppe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Keine Gruppe</SelectItem>
-                        {groups.map((g) => (
-                          <SelectItem key={g.id} value={String(g.id)}>
-                            {g.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm">{employee.group_name || '–'}</p>
-                  )}
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-500 mb-1 block">Stufe</Label>
-                  {editMode ? (
-                    <Select value={form.payscale_level != null ? String(form.payscale_level) : '__none__'}
-                      onValueChange={(v) => updateField('payscale_level', v === '__none__' ? '' : parseInt(v, 10))}
-                      disabled={!selectedTariffId || selectedTariffId === ''}>
-                      <SelectTrigger><SelectValue placeholder={selectedTariffId ? 'Stufe wählen…' : 'Erst Tarif wählen'} /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__">Keine Stufe</SelectItem>
-                        {[1, 2, 3, 4, 5, 6].map((s) => (
-                          <SelectItem key={s} value={String(s)}>Stufe {s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <p className="text-sm">{employee.payscale_level ? `Stufe ${employee.payscale_level}` : '–'}</p>
-                  )}
-                </div>
-              </div>
-
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Vertragsbeginn" icon={CalendarDays} value={form.contract_start}
@@ -780,6 +675,11 @@ export default function MasterCentralEmployeeDetail() {
         <TabsContent value="zertifikate" className="mt-6">
           <CertificatesTab employeeId={employeeId} />
         </TabsContent>
+
+        {/* Tab: Beziehungen */}
+        <TabsContent value="beziehungen" className="mt-6">
+          <RelationshipsTab employeeId={employeeId} />
+        </TabsContent>
       </Tabs>
     </div>
   );
@@ -982,6 +882,234 @@ function CertificatesTab({ employeeId }) {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/* ── Beziehungen-Tab ── */
+
+function RelationshipsTab({ employeeId }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+  const [relationshipType, setRelationshipType] = useState('lebensgemeinschaft');
+  const [shiftConflict, setShiftConflict] = useState(false);
+
+  const { data: relationships = [], isLoading } = useQuery({
+    queryKey: ['master-employee-relationships', employeeId],
+    queryFn: async () => {
+      const res = await api.request(`/api/master/employees/${employeeId}/relationships`);
+      return res.relationships || [];
+    },
+  });
+
+  const { data: allEmployees = [] } = useQuery({
+    queryKey: ['master-central-employees'],
+    queryFn: async () => {
+      const res = await api.request('/api/master/employees');
+      return (res.employees || []).filter(e => e.is_active && e.id !== employeeId);
+    },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (data) => api.request(`/api/master/employees/${employeeId}/relationships`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['master-employee-relationships', employeeId] });
+      setDialogOpen(false);
+      setSelectedEmployeeId('');
+      setRelationshipType('lebensgemeinschaft');
+      setShiftConflict(false);
+      toast({ title: 'Beziehung hinzugefügt', description: 'Die Mitarbeiterbeziehung wurde gespeichert.' });
+    },
+    onError: (err) => {
+      toast({ title: 'Fehler', description: err.message || 'Beziehung konnte nicht gespeichert werden.', variant: 'destructive' });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (relationshipId) => api.request(`/api/master/employees/${employeeId}/relationships/${relationshipId}`, {
+      method: 'DELETE',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['master-employee-relationships', employeeId] });
+      toast({ title: 'Beziehung gelöscht', description: 'Die Mitarbeiterbeziehung wurde entfernt.' });
+    },
+    onError: (err) => {
+      toast({ title: 'Fehler', description: err.message || 'Beziehung konnte nicht gelöscht werden.', variant: 'destructive' });
+    },
+  });
+
+  const handleAdd = () => {
+    if (!selectedEmployeeId) {
+      toast({ title: 'Fehler', description: 'Bitte wählen Sie einen Mitarbeiter aus.', variant: 'destructive' });
+      return;
+    }
+    addMutation.mutate({
+      related_employee_id: selectedEmployeeId,
+      relationship_type: relationshipType,
+      shift_conflict: shiftConflict,
+    });
+  };
+
+  const handleDelete = (rel) => {
+    const partnerName = rel.employee_id === employeeId
+      ? [rel.related_first_name, rel.related_last_name].filter(Boolean).join(' ')
+      : [rel.employee_first_name, rel.employee_last_name].filter(Boolean).join(' ');
+    if (!window.confirm(`Beziehung zu "${partnerName}" wirklich löschen?`)) return;
+    deleteMutation.mutate(rel.id);
+  };
+
+  const getPartnerName = (rel) => {
+    if (rel.employee_id === employeeId) {
+      return [rel.related_first_name, rel.related_last_name].filter(Boolean).join(' ') || '–';
+    }
+    return [rel.employee_first_name, rel.employee_last_name].filter(Boolean).join(' ') || '–';
+  };
+
+  const getPartnerId = (rel) => {
+    return rel.employee_id === employeeId ? rel.related_employee_id : rel.employee_id;
+  };
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Heart className="w-5 h-5" />
+                Mitarbeiterbeziehungen
+              </CardTitle>
+              <CardDescription>
+                Lebensgemeinschaften und andere Beziehungen zwischen Mitarbeitern. Ein Dienstkonflikt verhindert gleichzeitige Dienste.
+              </CardDescription>
+            </div>
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              <UserPlus className="w-4 h-4 mr-2" />
+              Beziehung hinzufügen
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10 text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Beziehungen werden geladen…
+            </div>
+          ) : relationships.length === 0 ? (
+            <div className="text-center py-10 text-slate-400">
+              <Heart className="w-10 h-10 mx-auto mb-3 opacity-20" />
+              <p className="font-medium">Keine Beziehungen erfasst</p>
+              <p className="text-sm mt-1">Fügen Sie eine Beziehung hinzu, z.B. eine Lebensgemeinschaft mit einem anderen Mitarbeiter.</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Partner</TableHead>
+                  <TableHead>Beziehungstyp</TableHead>
+                  <TableHead>Dienstkonflikt</TableHead>
+                  <TableHead className="w-16" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {relationships.map((rel) => (
+                  <TableRow key={rel.id}>
+                    <TableCell>
+                      <button
+                        className="text-indigo-600 hover:text-indigo-800 hover:underline text-sm font-medium"
+                        onClick={() => window.open(`/mitarbeiter/central/${getPartnerId(rel)}`, '_blank')}
+                      >
+                        {getPartnerName(rel)}
+                      </button>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs capitalize">
+                        {rel.relationship_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {rel.shift_conflict ? (
+                        <Badge className="text-xs bg-red-100 text-red-800">Ja</Badge>
+                      ) : (
+                        <Badge className="text-xs bg-slate-100 text-slate-600">Nein</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => handleDelete(rel)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setDialogOpen(false); setSelectedEmployeeId(''); setRelationshipType('lebensgemeinschaft'); setShiftConflict(false); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Beziehung hinzufügen</DialogTitle>
+            <DialogDescription>
+              Verknüpfen Sie diesen Mitarbeiter mit einem anderen Mitarbeiter, z.B. als Lebensgemeinschaft.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Mitarbeiter</Label>
+              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Mitarbeiter auswählen…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {allEmployees.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {[emp.first_name, emp.last_name].filter(Boolean).join(' ') || emp.payroll_id || emp.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {allEmployees.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  Keine weiteren aktiven Mitarbeiter vorhanden.
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Beziehungstyp</Label>
+              <Input
+                value={relationshipType}
+                onChange={(e) => setRelationshipType(e.target.value)}
+                placeholder="z.B. lebensgemeinschaft"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch checked={shiftConflict} onCheckedChange={setShiftConflict} />
+              <Label className="text-sm">Dienstkonflikt (kein gleichzeitiger Dienst)</Label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setSelectedEmployeeId(''); setRelationshipType('lebensgemeinschaft'); setShiftConflict(false); }}>
+              Abbrechen
+            </Button>
+            <Button onClick={handleAdd} disabled={!selectedEmployeeId || addMutation.isPending}>
+              {addMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+              Hinzufügen
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
