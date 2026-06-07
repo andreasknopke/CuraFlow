@@ -2896,4 +2896,106 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/master/employees/bulk-apply-tariff
+ * Apply a payscale tariff to a list of employees.
+ * Sets target_hours_per_week, vacation_days_annual, and payscale_tariff_id,
+ * then syncs to all linked tenant doctors.
+ */
+router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
+  try {
+    const { tariff_id, employee_ids } = req.body;
+
+    if (!tariff_id) {
+      return res.status(400).json({ error: 'tariff_id ist erforderlich' });
+    }
+    if (!Array.isArray(employee_ids) || employee_ids.length === 0) {
+      return res.status(400).json({ error: 'employee_ids muss ein nicht-leeres Array sein' });
+    }
+
+    // Look up the tariff
+    const [tariffRows] = await db.execute(
+      'SELECT id, name, short_name, default_weekly_hours, default_vacation_days FROM PayScaleTariff WHERE id = ?',
+      [tariff_id]
+    );
+    if (tariffRows.length === 0) {
+      return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
+    }
+    const tariff = tariffRows[0];
+
+    if (tariff.default_weekly_hours == null && tariff.default_vacation_days == null) {
+      return res.status(400).json({ error: 'Dieser Tarif hat keine Default-Werte (AT). Bulk-Apply nicht möglich.' });
+    }
+
+    // Build dynamic UPDATE
+    const updates = [];
+    const params = [];
+    if (tariff.default_weekly_hours != null) {
+      updates.push('target_hours_per_week = ?');
+      params.push(tariff.default_weekly_hours);
+    }
+    if (tariff.default_vacation_days != null) {
+      updates.push('vacation_days_annual = ?');
+      params.push(tariff.default_vacation_days);
+    }
+    updates.push('payscale_tariff_id = ?');
+    params.push(tariff_id);
+
+    const placeholders = employee_ids.map(() => '?').join(', ');
+    params.push(...employee_ids);
+
+    const [result] = await db.execute(
+      `UPDATE Employee SET ${updates.join(', ')} WHERE id IN (${placeholders})`,
+      params
+    );
+    const updatedCount = result.affectedRows;
+
+    // Sync to tenant doctors for all affected employees
+    const [affectedEmployees] = await db.execute(
+      `SELECT e.id, e.target_hours_per_week, e.work_time_model_id, wtm.hours_per_week as model_hours_per_week
+       FROM Employee e
+       LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+       WHERE e.id IN (${placeholders})`,
+      employee_ids
+    );
+
+    let syncedCount = 0;
+    let syncErrors = 0;
+    for (const emp of affectedEmployees) {
+      try {
+        const [assignmentRows] = await db.execute(
+          `SELECT tenant_id, tenant_doctor_id
+           FROM EmployeeTenantAssignment
+           WHERE employee_id = ? AND tenant_doctor_id IS NOT NULL AND tenant_doctor_id != ''`,
+          [emp.id]
+        );
+        if (assignmentRows.length > 0) {
+          const syncResult = await syncEmployeeWorkSettingsForAssignments(req.user.sub, emp, assignmentRows, {
+            id: req.user.sub,
+            email: req.user.email || null,
+          });
+          if (syncResult.failedAssignments.length > 0) {
+            syncErrors++;
+          }
+          syncedCount++;
+        }
+      } catch (syncError) {
+        console.warn(`[Master bulk-apply-tariff] Sync failed for employee ${emp.id}: ${syncError.message}`);
+        syncErrors++;
+      }
+    }
+
+    console.log(`[Master bulk-apply-tariff] Applied tariff ${tariff_id} (${tariff.name}) to ${updatedCount} employees, ${syncedCount} tenants synced, ${syncErrors} errors by user ${req.user.sub}`);
+    res.json({
+      tariff: { id: tariff.id, name: tariff.name },
+      updated: updatedCount,
+      syncedTenants: syncedCount,
+      syncErrors,
+    });
+  } catch (error) {
+    console.error('[Master bulk-apply-tariff] Error:', error);
+    next(error);
+  }
+});
+
 export default router;
