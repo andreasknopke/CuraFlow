@@ -3,7 +3,7 @@ import { format, getDaysInMonth, addMonths, subMonths, isSameDay, isWeekend } fr
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, XCircle, Eye, CheckSquare, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api, base44 } from "@/api/client";
@@ -339,7 +339,7 @@ export default function WishMonthOverview({
                 </div>
             </div>
 
-            <ScrollArea className="flex-1 w-full">
+            <StickyHorizontalScrollbar className="flex-1 w-full">
                 <div className="min-w-fit">
                     {/* Header Row: Doctors */}
                     <div className="flex border-b border-slate-200 sticky top-0 z-20 bg-white shadow-sm">
@@ -428,8 +428,7 @@ export default function WishMonthOverview({
                         })}
                     </div>
                 </div>
-                <ScrollBar orientation="horizontal" />
-            </ScrollArea>
+            </StickyHorizontalScrollbar>
 
             <Dialog open={isConfigOpen} onOpenChange={setIsConfigOpen}>
                 <DialogContent className="max-w-md max-h-[80vh] flex flex-col">

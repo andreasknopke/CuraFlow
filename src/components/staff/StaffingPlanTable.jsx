@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
 
 const FTE_CODES = ["EZ", "KO", "MS"];
@@ -313,7 +314,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                     <Loader2 className="w-8 h-8 animate-spin text-slate-400" />
                 </div>
             ) : (
-                <div className="border rounded-lg overflow-x-auto bg-white shadow-sm">
+                <StickyHorizontalScrollbar className="border rounded-lg bg-white shadow-sm">
                     <Table className="text-xs">
                         <TableHeader>
                             <TableRow className="bg-slate-100 hover:bg-slate-100">
@@ -429,7 +430,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                             </TableRow>
                         </TableBody>
                     </Table>
-                </div>
+                </StickyHorizontalScrollbar>
             )}
 
             {/* Edit Dialog */}

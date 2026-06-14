@@ -84,8 +84,8 @@ export default function SharedWorkplaceQualificationsDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
-                <DialogHeader>
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0">
+                <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                     <DialogTitle>Pflicht-Qualifikationen</DialogTitle>
                     <DialogDescription>
                         {workplace?.name
@@ -94,7 +94,7 @@ export default function SharedWorkplaceQualificationsDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4 py-2">
+                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                     {currentQuery.isLoading ? (
                         <div className="flex items-center gap-2 text-sm text-slate-500">
                             <Loader2 className="h-4 w-4 animate-spin" /> Lade Qualifikationen …
@@ -172,7 +172,7 @@ export default function SharedWorkplaceQualificationsDialog({
                     )}
                 </div>
 
-                <DialogFooter className="gap-2 sm:gap-0">
+                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 gap-2 sm:gap-0">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
                         Abbrechen
                     </Button>

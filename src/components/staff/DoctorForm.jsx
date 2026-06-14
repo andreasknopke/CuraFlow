@@ -185,11 +185,12 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto" data-testid="staff-doctor-form">
-        <DialogHeader>
+      <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 sm:max-w-2xl lg:max-w-3xl" data-testid="staff-doctor-form">
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
           <DialogTitle>{doctor ? "Teammitglied bearbeiten" : "Neues Teammitglied hinzufügen"}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
           <div className="grid gap-2">
             <Label htmlFor="name">Name</Label>
               <Input
@@ -428,8 +429,9 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                 onToggle={handleToggleQual} 
               />
           </div>
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
             <Button type="submit" data-testid="staff-form-submit">Speichern</Button>
           </DialogFooter>
         </form>
