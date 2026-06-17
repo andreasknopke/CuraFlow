@@ -3,13 +3,13 @@
 - Ticket: #1b134fac-132e-4cb9-b3ba-817446ad80d4 — Wunschkiste: Intelligente Filterung
 - Stage: `approval`
 - Status: `done`
-- Bearbeiter: Andreas (human)
-- Gestartet: 2026-06-04 05:40:32
-- Beendet: 2026-06-17 12:08:44
+- Bearbeiter: Christian (human)
+- Gestartet: 2026-06-17 12:08:52
+- Beendet: 2026-06-17 12:15:40
 
 ## Bericht
 
-**Rückfragen vom triage-Bot**
+**Rückfragen vom security-Bot**
 
 > System: CuraFlow (ID 1) · Repo: andreasknopke/CuraFlow
 
@@ -17,23 +17,23 @@
 
 ## Notiz
 
-die dienste wurden im wochenplan definiert, dort wurden die benötigten Qualifikationen als "pflicht", "sollte", "sollte nicht", "nicht" definiert. Jedes Teammitglied hat qualifkationen hinterlegt (reiter "team"). In der Wunschkiste, sollten also nur Dienste auswaehlbar sein, für welche das teammitglied keine qualifikationsverletzung erzeugen würde. 
+alle Qualifikationen die im Team Reiter definiert wurden
 
 ## Vollstaendiges Output-Payload
 
 ```json
 {
   "phase": "questions",
-  "source_stage": "triage",
-  "resume_after_sort_order": 1,
+  "source_stage": "security",
+  "resume_after_sort_order": 2,
   "open_questions": [
-    "Welches Kriterium oder welche Datenquelle definiert die 'fachliche Qualifikation' eines Mitarbeiters?"
+    "Welche spezifischen Qualifikationsmerkmale oder Datensätze dürfen zur Filterung herangezogen werden, um die Einhlichkeitsprüfung (Privacy by Design) zu gewährleisten?"
   ],
-  "created_at": "2026-06-04T05:40:32.478Z",
-  "markdown": "**Rückfragen vom triage-Bot**\n\n> System: CuraFlow (ID 1) · Repo: andreasknopke/CuraFlow",
+  "created_at": "2026-06-17T12:08:52.010Z",
+  "markdown": "**Rückfragen vom security-Bot**\n\n> System: CuraFlow (ID 1) · Repo: andreasknopke/CuraFlow",
   "decision": "answered",
-  "note": "die dienste wurden im wochenplan definiert, dort wurden die benötigten Qualifikationen als \"pflicht\", \"sollte\", \"sollte nicht\", \"nicht\" definiert. Jedes Teammitglied hat qualifkationen hinterlegt (reiter \"team\"). In der Wunschkiste, sollten also nur Dienste auswaehlbar sein, für welche das teammitglied keine qualifikationsverletzung erzeugen würde. ",
+  "note": "alle Qualifikationen die im Team Reiter definiert wurden",
   "decided_by": "CK",
-  "decided_at": "2026-06-17T12:08:44.654Z"
+  "decided_at": "2026-06-17T12:15:40.377Z"
 }
 ```
