@@ -146,8 +146,8 @@ export default function PoolShiftEditDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 sm:max-w-md">
+                <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                     <DialogTitle>
                         {isEdit ? 'Pool-Dienst bearbeiten' : 'Pool-Dienst anlegen'}
                     </DialogTitle>
@@ -157,7 +157,7 @@ export default function PoolShiftEditDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-4 py-2">
+                <div className="flex-1 overflow-y-auto space-y-4 px-6 py-4">
                     <div className="space-y-1.5">
                         <Label htmlFor="pool-shift-employee">Mitarbeiter</Label>
                         {staffQuery.isLoading ? (
@@ -240,7 +240,7 @@ export default function PoolShiftEditDialog({
                     )}
                 </div>
 
-                <DialogFooter className="gap-2 sm:gap-0">
+                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 gap-2 sm:gap-0">
                     {isEdit && (
                         <Button
                             type="button"

@@ -400,7 +400,7 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <DialogFooter className="sm:justify-between">
+                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 sm:justify-between">
                     {wish ? (
                         <Button 
                             data-testid="wish-delete-button"

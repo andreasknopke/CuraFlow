@@ -118,8 +118,8 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 sm:max-w-[500px]">
+                <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                     <DialogTitle>
                         {qualification ? "Qualifikation bearbeiten" : "Neue Qualifikation anlegen"}
                     </DialogTitle>
@@ -127,7 +127,8 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                         Qualifikationen können Mitarbeitern zugeordnet und als Voraussetzung für Arbeitsplätze definiert werden.
                     </DialogDescription>
                 </DialogHeader>
-                <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                     <div className="grid grid-cols-3 gap-4">
                         <div className="col-span-2 grid gap-2">
                             <Label htmlFor="qualName">Name</Label>
@@ -322,12 +323,13 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                         </div>
                     )}
 
-                    <DialogFooter className="mt-2">
+                    <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                             Abbrechen
                         </Button>
                         <Button type="submit">Speichern</Button>
                     </DialogFooter>
+                    </div>
                 </form>
             </DialogContent>
         </Dialog>

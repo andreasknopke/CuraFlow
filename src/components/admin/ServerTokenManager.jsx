@@ -590,8 +590,8 @@ export default function ServerTokenManager() {
                     resetForm();
                 }
             }}>
-                <DialogContent className="max-w-lg">
-                    <DialogHeader>
+                <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-lg">
+                    <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle>
                             {editingToken ? 'Verbindung bearbeiten' : 'Neue Datenbankverbindung'}
                         </DialogTitle>
@@ -603,7 +603,7 @@ export default function ServerTokenManager() {
                         </DialogDescription>
                     </DialogHeader>
                     
-                    <div className="space-y-4 py-4">
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="name">Name / Bezeichnung *</Label>
                             <Input
@@ -702,7 +702,7 @@ export default function ServerTokenManager() {
                         )}
                     </div>
                     
-                    <DialogFooter className="gap-2">
+                    <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 gap-2">
                         {(!editingToken || formData.updateCredentials) && (
                             <Button
                                 variant="outline"

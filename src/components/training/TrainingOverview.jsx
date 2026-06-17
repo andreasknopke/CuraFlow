@@ -2,6 +2,7 @@ import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 
 // Memoized Cell Component for Training Overview
 const TrainingOverviewCell = memo(({ 
@@ -224,9 +225,8 @@ export default function TrainingOverview({
     return (
         <div className="space-y-8">
             {monthChunks.map((months, qIdx) => (
-                <div key={qIdx} className="border rounded-lg overflow-hidden shadow-sm bg-white">
-                    <div className="overflow-x-auto">
-                        <table className="w-full border-collapse text-xs table-fixed">
+                <StickyHorizontalScrollbar key={qIdx} className="border rounded-lg shadow-sm bg-white">
+                    <table className="w-full border-collapse text-xs table-fixed">
                             <thead>
                                 {/* Month Headers */}
                                 <tr>
@@ -309,8 +309,7 @@ export default function TrainingOverview({
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-                </div>
+                </StickyHorizontalScrollbar>
             ))}
         </div>
     );

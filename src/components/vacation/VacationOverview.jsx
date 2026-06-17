@@ -2,6 +2,7 @@ import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { AlertTriangle } from 'lucide-react';
+import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
@@ -284,8 +285,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     return (
         <div className="space-y-8">
             {monthChunks.map((months, qIdx) => (
-                <div key={qIdx} className="border rounded-lg overflow-hidden shadow-sm bg-white">
-                        <div className="overflow-x-auto">
+                <StickyHorizontalScrollbar key={qIdx} className="border rounded-lg shadow-sm bg-white">
                             <table className="w-full border-collapse text-xs table-fixed">
                                 <thead>
                                     {/* Month Headers */}
@@ -432,8 +432,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                     ))}
                                 </tbody>
                             </table>
-                        </div>
-                </div>
+                </StickyHorizontalScrollbar>
             ))}
         </div>
     );

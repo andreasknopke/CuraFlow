@@ -26,15 +26,16 @@ export default function ThemeSelector({ open, onOpenChange }) {
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 sm:max-w-[500px]">
+                <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                     <DialogTitle className="flex items-center gap-2">
                         <Palette className="w-5 h-5" />
                         Design auswählen
                     </DialogTitle>
                 </DialogHeader>
                 
-                <div className="grid grid-cols-2 gap-3 py-4">
+                <div className="flex-1 overflow-y-auto px-6 py-4">
+                <div className="grid grid-cols-2 gap-3">
                     {THEMES.map(theme => {
                         const isSelected = selectedTheme === theme.id;
                         return (
@@ -66,8 +67,9 @@ export default function ThemeSelector({ open, onOpenChange }) {
                         );
                     })}
                 </div>
+                </div>
 
-                <DialogFooter>
+                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
                     <Button onClick={handleSave}>Speichern</Button>
                 </DialogFooter>

@@ -520,8 +520,8 @@ export default function UserManagement() {
                 setShowTenantDialog(open);
                 if (!open) setSelectedUser(null);
             }}>
-                <DialogContent className="max-w-md">
-                    <DialogHeader>
+                <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-md">
+                    <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle className="flex items-center gap-2">
                             <Database className="w-5 h-5" />
                             Mandanten-Zuordnung
@@ -551,8 +551,8 @@ export default function UserManagement() {
                 setShowGroupDialog(open);
                 if (!open) setSelectedUser(null);
             }}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
+                <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-2xl">
+                    <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle className="flex items-center gap-2">
                             <Globe2 className="w-5 h-5" />
                             Verbund-Rechte
@@ -612,7 +612,8 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
     };
 
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="text-sm text-slate-600">
                 Benutzer: <span className="font-medium">{user.full_name || user.email}</span>
             </div>
@@ -684,7 +685,7 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                 </div>
             )}
 
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
                 <Button variant="outline" onClick={onClose}>
                     Abbrechen
                 </Button>
@@ -698,6 +699,7 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                     Speichern
                 </Button>
             </DialogFooter>
+        </div>
         </div>
     );
 }
@@ -735,7 +737,8 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }) {
     };
 
     return (
-        <div className="space-y-4">
+        <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
             <div className="text-sm text-slate-600">
                 Benutzer: <span className="font-medium">{user.full_name || user.email}</span>
             </div>
@@ -788,7 +791,7 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }) {
                 </div>
             )}
 
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
                 <Button variant="outline" onClick={onClose}>Abbrechen</Button>
                 <Button
                     onClick={handleSave}
@@ -800,6 +803,7 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }) {
                     Speichern
                 </Button>
             </DialogFooter>
+        </div>
         </div>
     );
 }
