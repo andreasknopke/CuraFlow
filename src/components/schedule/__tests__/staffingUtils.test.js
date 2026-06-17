@@ -26,9 +26,25 @@ describe('isDoctorAvailable', () => {
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(true);
   });
 
-  it.each(['KO', 'EZ', 'MS'])('returns false when staffing plan value is "%s"', (val) => {
+  it.each(['KO', 'EZ', 'MS', 'BV'])('returns false when staffing plan value is "%s"', (val) => {
     const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: val }];
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
+  });
+
+  it('BV uses the previous numeric FTE for effective FTE calculation', () => {
+    const planEntries = [
+      { doctor_id: 1, year: 2024, month: 1, value: '1,00' },
+      { doctor_id: 1, year: 2024, month: 2, value: '0,80' },
+      { doctor_id: 1, year: 2024, month: 3, value: 'BV' },
+    ];
+    expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
+    expect(getDoctorEffectiveFte(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(0.8);
+  });
+
+  it('BV falls back to doctor.fte when no previous numeric FTE exists', () => {
+    const doctor = { id: 1, fte: '0.5' };
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'BV' }];
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0.5);
   });
 
   it('returns true when staffing plan value is "OU" (OtherUnit)', () => {
@@ -75,6 +91,16 @@ describe('getDoctorEffectiveFte', () => {
     const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value }];
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
+  });
+
+  it('maps staffing code BV to the previous numeric FTE', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [
+      { doctor_id: 1, year: 2024, month: 2, value: '0.6' },
+      { doctor_id: 1, year: 2024, month: 3, value: 'BV' },
+    ];
+
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0.6);
   });
 
   it('maps staffing code OU to 0 fte while remaining available', () => {

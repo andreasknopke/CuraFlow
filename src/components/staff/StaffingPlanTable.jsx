@@ -10,18 +10,21 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
+import { getDoctorEffectiveFte } from "@/components/schedule/staffingUtils";
 
 const FTE_CODES = ["EZ", "KO", "MS", "OU"];
 const FTE_CODE_LABELS = {
     "EZ": "Elternzeit",
     "MS": "Mutterschutz",
     "KO": "Krank ohne Entgelt",
+    "BV": "Beschäftigungsverbot",
     "OU": "Andere Organisationseinheit"
 };
 const FTE_CODE_COLORS = {
     "EZ": { bg: "bg-orange-50", text: "text-orange-700" },
     "MS": { bg: "bg-pink-50", text: "text-pink-700" },
     "KO": { bg: "bg-red-50", text: "text-red-700" },
+    "BV": { bg: "bg-purple-50", text: "text-purple-700" },
     "OU": { bg: "bg-blue-50", text: "text-blue-700" }
 };
 
@@ -202,8 +205,12 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         return formatNumber(defaultFte);
     };
 
-    const parseFTE = (val) => {
+    const parseFTE = (val, doc, month) => {
         if (!val) return 0;
+        if (doc && month !== undefined) {
+            const date = new Date(year, month - 1, 1);
+            return getDoctorEffectiveFte(doc, date, entries);
+        }
         if (FTE_CODES.includes(val)) return 0;
         const num = parseFloat(String(val).replace(',', '.'));
         return isNaN(num) ? 0 : num;
@@ -218,8 +225,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         const totals = Array(12).fill(0);
         visibleDoctors.forEach(doc => {
             for (let m = 1; m <= 12; m++) {
-                const val = getEntryValue(doc.id, m);
-                totals[m-1] += parseFTE(val);
+                totals[m-1] += parseFTE(null, doc, m);
             }
         });
         return totals;
@@ -283,13 +289,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     // "Ges." column per doctor
     const getDoctorAverage = (doctorId) => {
+        const doc = visibleDoctors.find(d => d.id === doctorId);
+        if (!doc) return 0;
         let sum = 0;
         for (let m = 1; m <= 12; m++) {
-            const val = getEntryValue(doctorId, m);
-            if (val && !FTE_CODES.includes(val)) {
-                sum += parseFTE(val);
-            }
-            // Treat codes/empty as 0 for sum, divide by 12
+            sum += parseFTE(null, doc, m);
         }
         return sum / 12;
     };
@@ -311,7 +315,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                 </div>
                 <div className="flex items-center gap-4">
                      <div className="text-sm text-slate-500">
-                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-pink-600">MS</span> = Mutterschutz, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt, <span className="font-medium text-blue-600">OU</span> = Andere Organisationseinheit
+                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-pink-600">MS</span> = Mutterschutz, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt, <span className="font-medium text-purple-600">BV</span> = Beschäftigungsverbot, <span className="font-medium text-blue-600">OU</span> = Andere Organisationseinheit
                      </div>
                 </div>
             </div>
@@ -497,6 +501,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                                     code === "EZ" && "text-orange-600",
                                                     code === "MS" && "text-pink-600",
                                                     code === "KO" && "text-red-600",
+                                                    code === "BV" && "text-purple-600",
                                                     code === "OU" && "text-blue-600"
                                                 )}>{code}</span>
                                                 <span className="text-slate-500 ml-2">– {FTE_CODE_LABELS[code]}</span>
@@ -505,7 +510,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                     ))}
                                 </RadioGroup>
                                 <p className="text-xs text-slate-500">
-                                    EZ, MS und KO werden als "nicht verfügbar" gewertet. OU (Andere Organisationseinheit) bleibt verfügbar, zählt aber nicht als FTE.
+                                    EZ, MS, KO und BV werden als "nicht verfügbar" gewertet. BV (Beschäftigungsverbot) zählt dabei als besetzte Stelle mit dem letzten FTE-Wert. OU (Andere Organisationseinheit) bleibt verfügbar, zählt aber nicht als FTE.
                                 </p>
                             </div>
                         )}

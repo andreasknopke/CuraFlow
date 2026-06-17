@@ -1,5 +1,43 @@
-const STAFFING_PLAN_UNAVAILABLE_CODES = new Set(['KO', 'EZ', 'MS']);
+const STAFFING_PLAN_UNAVAILABLE_CODES = new Set(['KO', 'EZ', 'MS', 'BV']);
 const STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES = new Set(['OU']);
+const STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES = new Set(['BV']);
+
+function parseFteValue(value) {
+    const normalized = String(value).trim().replace(',', '.');
+    const parsed = parseFloat(normalized);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getLastNumericFteBeforeMonth(doctor, year, month, planEntries) {
+    for (let m = month - 1; m >= 1; m--) {
+        const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === m);
+        const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
+        const value = entryValue !== undefined && entryValue !== null && entryValue !== ''
+            ? String(entryValue).trim()
+            : (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== ''
+                ? String(doctor.fte).trim()
+                : '1.0');
+
+        if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(value)) {
+            continue;
+        }
+
+        if (STAFFING_PLAN_UNAVAILABLE_CODES.has(value) || STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(value)) {
+            continue;
+        }
+
+        const parsed = parseFteValue(value);
+        if (parsed !== null && parsed > 0.0001) {
+            return parsed;
+        }
+    }
+
+    const doctorFte = doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== ''
+        ? String(doctor.fte).trim()
+        : '1.0';
+    const parsed = parseFteValue(doctorFte);
+    return parsed !== null && parsed > 0.0001 ? parsed : 0;
+}
 
 export function getDoctorEffectiveFte(doctor, date, planEntries) {
     const year = date.getFullYear();
@@ -18,6 +56,10 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
     }
 
     const normalizedValue = String(value).trim();
+    if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(normalizedValue)) {
+        return getLastNumericFteBeforeMonth(doctor, year, month, planEntries);
+    }
+
     if (STAFFING_PLAN_UNAVAILABLE_CODES.has(normalizedValue)) {
         return 0;
     }
@@ -26,8 +68,8 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
         return 0;
     }
 
-    const parsedFte = parseFloat(normalizedValue.replace(',', '.'));
-    if (Number.isNaN(parsedFte)) {
+    const parsedFte = parseFteValue(normalizedValue);
+    if (parsedFte === null) {
         return 0;
     }
 
@@ -66,6 +108,10 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     const value = getStaffingPlanValue(doctor, date, planEntries);
     if (STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(value)) {
         return true;
+    }
+
+    if (STAFFING_PLAN_UNAVAILABLE_CODES.has(value)) {
+        return false;
     }
 
     return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
