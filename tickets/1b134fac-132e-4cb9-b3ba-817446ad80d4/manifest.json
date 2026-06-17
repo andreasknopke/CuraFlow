@@ -1,0 +1,98 @@
+{
+  "ticket_id": "1b134fac-132e-4cb9-b3ba-817446ad80d4",
+  "title": "Wunschkiste: Intelligente Filterung",
+  "type": "feature",
+  "urgency": "normal",
+  "system": {
+    "id": 1,
+    "name": "CuraFlow",
+    "repo": "andreasknopke/CuraFlow"
+  },
+  "run": {
+    "id": 185,
+    "started_at": "2026-06-04 05:40:27",
+    "current_stage": "planning",
+    "recommended_executor": null
+  },
+  "steps": [
+    {
+      "id": 1056,
+      "stage": "triage",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 5,
+      "staff_name": "Triage-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 3537
+    },
+    {
+      "id": 1057,
+      "stage": "approval",
+      "status": "done",
+      "executor_kind": "human",
+      "staff_id": 2,
+      "staff_name": "Andreas",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    },
+    {
+      "id": 1158,
+      "stage": "security",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 7,
+      "staff_name": "Security-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 6013
+    },
+    {
+      "id": 1159,
+      "stage": "approval",
+      "status": "done",
+      "executor_kind": "human",
+      "staff_id": 1,
+      "staff_name": "Christian",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    },
+    {
+      "id": 1160,
+      "stage": "planning",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 6,
+      "staff_name": "Architect-Bot",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "duration_ms": 413
+    },
+    {
+      "id": 1161,
+      "stage": "integration",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 8,
+      "staff_name": "Integration-Bot",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "duration_ms": 18166
+    },
+    {
+      "id": 1162,
+      "stage": "approval",
+      "status": "waiting_human",
+      "executor_kind": "human",
+      "staff_id": 2,
+      "staff_name": "Andreas",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    }
+  ],
+  "exported_at": "2026-06-17T12:25:11.512Z",
+  "dispatch_note": null
+}
