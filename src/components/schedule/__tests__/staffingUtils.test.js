@@ -4,6 +4,7 @@ import {
   calculateWeeklyTargetHours,
   getAvailabilityBlockingDoctorIdsByDate,
   getDoctorEffectiveFte,
+  getMonthlyEffectiveFte,
 } from '../staffingUtils';
 
 // ---------------------------------------------------------------------------
@@ -109,6 +110,36 @@ describe('getDoctorEffectiveFte', () => {
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), planEntries)).toBe(true);
+  });
+
+  it('applies status code only within start/end day range', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }];
+
+    expect(isDoctorAvailable(doctor, new Date(2024, 2, 5), planEntries)).toBe(true);
+    expect(isDoctorAvailable(doctor, new Date(2024, 2, 15), planEntries)).toBe(false);
+    expect(isDoctorAvailable(doctor, new Date(2024, 2, 25), planEntries)).toBe(true);
+  });
+
+  it('calculates monthly FTE proportionally with status range', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }];
+
+    // March 2024 has 31 days; MS applies for 11 days (10-20 inclusive)
+    const expected = (0 * 11 + 1.0 * 20) / 31;
+    expect(getMonthlyEffectiveFte(doctor, 2024, 3, planEntries)).toBeCloseTo(expected, 5);
+  });
+
+  it('calculates BV monthly FTE proportionally using previous FTE', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [
+      { doctor_id: 1, year: 2024, month: 2, value: '0.8' },
+      { doctor_id: 1, year: 2024, month: 3, value: 'BV', status_start_day: 5, status_end_day: 15 },
+    ];
+
+    // March has 31 days; BV applies for 11 days (5-15 inclusive) with FTE 0.8
+    const expected = (0.8 * 11 + 1.0 * 20) / 31;
+    expect(getMonthlyEffectiveFte(doctor, 2024, 3, planEntries)).toBeCloseTo(expected, 5);
   });
 });
 

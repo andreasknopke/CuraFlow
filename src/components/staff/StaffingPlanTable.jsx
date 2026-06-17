@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
-import { getDoctorEffectiveFte } from "@/components/schedule/staffingUtils";
+import { getDoctorEffectiveFte, getMonthlyEffectiveFte } from "@/components/schedule/staffingUtils";
 
 const FTE_CODES = ["EZ", "KO", "MS", "BV", "OU"];
 const FTE_CODE_LABELS = {
@@ -110,7 +110,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     const [dialogInputType, setDialogInputType] = useState("number"); // "number" or "code"
     const [dialogValue, setDialogValue] = useState("");
     const [dialogCode, setDialogCode] = useState("EZ");
-    const [dialogApplyMode, setDialogApplyMode] = useState("single"); // "single" or "following"
+    const [dialogApplyMode, setDialogApplyMode] = useState("single"); // "single", "following" or "range"
+    const [dialogStartMonth, setDialogStartMonth] = useState(1);
+    const [dialogEndMonth, setDialogEndMonth] = useState(12);
+    const [dialogStatusStartDay, setDialogStatusStartDay] = useState(1);
+    const [dialogStatusEndDay, setDialogStatusEndDay] = useState(31);
 
     // --- Data Fetching ---
     const { data: entries = [], isLoading: isLoadingEntries } = useQuery({
@@ -128,7 +132,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     // --- Mutations ---
     const updateEntryMutation = useMutation({
-        mutationFn: async ({ doctor_id, month, value, oldValue }) => {
+        mutationFn: async ({ doctor_id, month, value, oldValue, statusStartDay, statusEndDay }) => {
             // Use atomic backend function
             const response = await base44.functions.invoke('atomicOperations', {
                 operation: 'upsertStaffing',
@@ -137,7 +141,9 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                     year,
                     month,
                     value,
-                    old_value_check: oldValue
+                    old_value_check: oldValue,
+                    status_start_day: statusStartDay,
+                    status_end_day: statusEndDay,
                 }
             });
             return response.data;
@@ -205,14 +211,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         return formatNumber(defaultFte);
     };
 
-    const parseFTE = (val, doc, month) => {
+    const parseFTE = (doc, month) => {
         if (doc && month !== undefined) {
-            const date = new Date(year, month - 1, 1);
-            return getDoctorEffectiveFte(doc, date, entries);
+            return getMonthlyEffectiveFte(doc, year, month, entries);
         }
-        if (!val || FTE_CODES.includes(val)) return 0;
-        const num = parseFloat(String(val).replace(',', '.'));
-        return isNaN(num) ? 0 : num;
+        return 0;
     };
 
     const visibleDoctors = useMemo(() => {
@@ -224,7 +227,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         const totals = Array(12).fill(0);
         visibleDoctors.forEach(doc => {
             for (let m = 1; m <= 12; m++) {
-                totals[m-1] += parseFTE(null, doc, m);
+                totals[m-1] += parseFTE(doc, m);
             }
         });
         return totals;
@@ -232,20 +235,25 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     const yearlyAverageTotal = monthlyTotals.reduce((a, b) => a + b, 0) / 12;
 
-    const handleValueChange = (doctorId, month, newValue) => {
+    const handleValueChange = (doctorId, month, newValue, statusStartDay, statusEndDay) => {
         // Get current known value for optimistic check
         const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
         const oldValue = entry ? entry.value : undefined; // undefined for new entries implies "expecting nothing"
 
-        updateEntryMutation.mutate({ doctor_id: doctorId, month, value: newValue, oldValue });
+        const payload = { doctor_id: doctorId, month, value: newValue, oldValue };
+        if (statusStartDay !== undefined) payload.statusStartDay = statusStartDay;
+        if (statusEndDay !== undefined) payload.statusEndDay = statusEndDay;
+
+        updateEntryMutation.mutate(payload);
     };
 
     const openEditDialog = (doctorId, doctorName, month, currentValue) => {
         if (isReadOnly) return;
-        
+
         // Determine if current value is a code or number
         const isCode = FTE_CODES.includes(currentValue);
-        
+        const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
+
         setEditDialog({
             open: true,
             doctorId,
@@ -257,12 +265,17 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         setDialogValue(isCode ? "" : currentValue);
         setDialogCode(isCode ? currentValue : "EZ");
         setDialogApplyMode("single");
+        setDialogStartMonth(month);
+        setDialogEndMonth(12);
+        setDialogStatusStartDay(entry?.status_start_day || 1);
+        setDialogStatusEndDay(entry?.status_end_day || new Date(year, month, 0).getDate());
     };
 
     const handleDialogSave = async () => {
         const { doctorId, month } = editDialog;
         const valueToSave = dialogInputType === "code" ? dialogCode : dialogValue;
-        
+        const isStatusCode = dialogInputType === "code";
+
         // Format number value
         let formattedValue = valueToSave;
         if (dialogInputType === "number" && valueToSave) {
@@ -272,17 +285,23 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                 formattedValue = num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
         }
-        
-        if (dialogApplyMode === "single") {
-            // Apply only to this cell
-            handleValueChange(doctorId, month, formattedValue);
-        } else {
-            // Apply to this month and all following months until December
-            for (let m = month; m <= 12; m++) {
-                handleValueChange(doctorId, m, formattedValue);
+
+        const startMonth = dialogApplyMode === "range" ? dialogStartMonth : month;
+        const endMonth = dialogApplyMode === "range" ? dialogEndMonth : (dialogApplyMode === "following" ? 12 : month);
+
+        for (let m = startMonth; m <= endMonth; m++) {
+            const daysInMonth = new Date(year, m, 0).getDate();
+            let statusStartDay = undefined;
+            let statusEndDay = undefined;
+
+            if (isStatusCode) {
+                statusStartDay = m === startMonth ? dialogStatusStartDay : 1;
+                statusEndDay = m === endMonth ? dialogStatusEndDay : daysInMonth;
             }
+
+            handleValueChange(doctorId, m, formattedValue, statusStartDay, statusEndDay);
         }
-        
+
         setEditDialog({ ...editDialog, open: false });
     };
 
@@ -292,7 +311,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         if (!doc) return 0;
         let sum = 0;
         for (let m = 1; m <= 12; m++) {
-            sum += parseFTE(null, doc, m);
+            sum += parseFTE(doc, m);
         }
         return sum / 12;
     };
@@ -532,8 +551,79 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                         <span className="text-slate-500 ml-2">({editDialog.month} - 12/{year})</span>
                                     </Label>
                                 </div>
+                                <div className="flex items-center space-x-2 border rounded-lg p-3 hover:bg-slate-50">
+                                    <RadioGroupItem value="range" id="apply-range" />
+                                    <Label htmlFor="apply-range" className="cursor-pointer flex-1">
+                                        <span className="font-medium">Von – Bis</span>
+                                    </Label>
+                                </div>
                             </RadioGroup>
                         </div>
+
+                        {dialogApplyMode === "range" && (
+                            <div className="space-y-3 border-t pt-4">
+                                <Label className="text-sm font-medium">Zeitraum</Label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-slate-500">Von Monat</Label>
+                                        <select
+                                            value={dialogStartMonth}
+                                            onChange={(e) => setDialogStartMonth(parseInt(e.target.value, 10))}
+                                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                        >
+                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                                                <option key={m} value={m}>{m}/{year}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-slate-500">Bis Monat</Label>
+                                        <select
+                                            value={dialogEndMonth}
+                                            onChange={(e) => setDialogEndMonth(parseInt(e.target.value, 10))}
+                                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
+                                        >
+                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                                                <option key={m} value={m}>{m}/{year}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {dialogInputType === "code" && (
+                            <div className="space-y-3 border-t pt-4">
+                                <Label className="text-sm font-medium">Statuscode-Zeitraum (optional)</Label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-slate-500">Starttag</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={31}
+                                            value={dialogStatusStartDay}
+                                            onChange={(e) => setDialogStatusStartDay(parseInt(e.target.value, 10) || 1)}
+                                            className="text-center"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs text-slate-500">Endtag</Label>
+                                        <Input
+                                            type="number"
+                                            min={1}
+                                            max={31}
+                                            value={dialogStatusEndDay}
+                                            onChange={(e) => setDialogStatusEndDay(parseInt(e.target.value, 10) || 31)}
+                                            className="text-center"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-slate-500">
+                                    Der Statuscode gilt nur zwischen Start- und Endtag. Außerhalb gilt der Standard-FTE.
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     <DialogFooter className="gap-2">

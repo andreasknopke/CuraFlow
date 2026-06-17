@@ -234,6 +234,12 @@ export default function VacationPage() {
                            const num = parseFloat(val.replace(',', '.'));
                            if (!isNaN(num) && num <= 0.0001) reason = `FTE: ${val} (0.0)`;
                        }
+
+                       if (entry?.status_start_day || entry?.status_end_day) {
+                           const startDay = entry.status_start_day || 1;
+                           const endDay = entry.status_end_day || new Date(year, month, 0).getDate();
+                           reason += ` (Tag ${startDay}-${endDay})`;
+                       }
                    }
                    
                    if (existing) {

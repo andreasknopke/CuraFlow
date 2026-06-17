@@ -299,7 +299,7 @@ router.post('/', async (req, res, next) => {
     // ===== OPERATION: upsertStaffing =====
     // Special upsert logic for StaffingPlanEntry
     if (operation === 'upsertStaffing') {
-      const { doctor_id, year, month, value, old_value_check } = data || {};
+      const { doctor_id, year, month, value, old_value_check, status_start_day, status_end_day } = data || {};
 
       if (!doctor_id || !year || !month) {
         return res.status(400).json({ error: 'doctor_id, year und month sind erforderlich' });
@@ -307,6 +307,10 @@ router.post('/', async (req, res, next) => {
 
       const existingList = await filterRecords('StaffingPlanEntry', { doctor_id, year, month });
       const existing = existingList[0];
+
+      const payload = { value };
+      if (status_start_day !== undefined) payload.status_start_day = status_start_day;
+      if (status_end_day !== undefined) payload.status_end_day = status_end_day;
 
       if (existing) {
         // Check for concurrent modification
@@ -332,7 +336,7 @@ router.post('/', async (req, res, next) => {
         }
 
         // Update existing
-        const result = await updateRecord('StaffingPlanEntry', existing.id, { value });
+        const result = await updateRecord('StaffingPlanEntry', existing.id, payload);
         broadcastPlanUpdate({
           scope: realtimeScope,
           entity: 'StaffingPlanEntry',
@@ -348,7 +352,7 @@ router.post('/', async (req, res, next) => {
         }
 
         // Create new
-        const result = await createRecord('StaffingPlanEntry', { doctor_id, year, month, value });
+        const result = await createRecord('StaffingPlanEntry', { doctor_id, year, month, ...payload });
         broadcastPlanUpdate({
           scope: realtimeScope,
           entity: 'StaffingPlanEntry',

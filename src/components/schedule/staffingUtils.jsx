@@ -39,33 +39,85 @@ function getLastNumericFteBeforeMonth(doctor, year, month, planEntries) {
     return parsed !== null && parsed > 0.0001 ? parsed : 0;
 }
 
+function getDefaultFte(doctor) {
+    if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
+        const parsed = parseFteValue(doctor.fte);
+        if (parsed !== null) return parsed;
+    }
+    return 1.0;
+}
+
+function getMonthEntry(doctor, year, month, planEntries) {
+    return planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
+}
+
+function getEntryValue(entry, doctor) {
+    const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
+    if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
+        return String(entryValue).trim();
+    }
+    return null;
+}
+
+function getEntryStatusStartDay(entry) {
+    const day = entry?.status_start_day;
+    if (day === undefined || day === null || day === '') return null;
+    const parsed = parseInt(day, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getEntryStatusEndDay(entry) {
+    const day = entry?.status_end_day;
+    if (day === undefined || day === null || day === '') return null;
+    const parsed = parseInt(day, 10);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function getDaysInMonth(year, month) {
+    return new Date(year, month, 0).getDate();
+}
+
+function isDateInStatusRange(date, entry) {
+    if (!entry) return false;
+    const startDay = getEntryStatusStartDay(entry);
+    const endDay = getEntryStatusEndDay(entry);
+    if (startDay === null && endDay === null) return true;
+
+    const dayOfMonth = date.getDate();
+    if (startDay !== null && dayOfMonth < startDay) return false;
+    if (endDay !== null && dayOfMonth > endDay) return false;
+    return true;
+}
+
 export function getDoctorEffectiveFte(doctor, date, planEntries) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
-    const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
+    const entry = getMonthEntry(doctor, year, month, planEntries);
+    const value = getEntryValue(entry, doctor);
 
-    const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
-    let value;
-
-    if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
-        value = String(entryValue);
-    } else if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
-        value = String(doctor.fte);
-    } else {
-        value = '1.0';
+    if (value === null) {
+        return getDefaultFte(doctor);
     }
 
     const normalizedValue = String(value).trim();
+    const defaultFte = getDefaultFte(doctor);
+    const daysInMonth = getDaysInMonth(year, month);
+    const statusRatio = isDateInStatusRange(date, entry) ? 1 : 0;
+
     if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(normalizedValue)) {
-        return getLastNumericFteBeforeMonth(doctor, year, month, planEntries);
+        const statusFte = getLastNumericFteBeforeMonth(doctor, year, month, planEntries);
+        if (statusRatio === 1) return statusFte;
+        return defaultFte;
     }
 
     if (STAFFING_PLAN_UNAVAILABLE_CODES.has(normalizedValue)) {
-        return 0;
+        if (statusRatio === 1) return 0;
+        return defaultFte;
     }
 
     if (STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(normalizedValue)) {
-        return 0;
+        if (statusRatio === 1) return 0;
+        return defaultFte;
     }
 
     const parsedFte = parseFteValue(normalizedValue);
@@ -76,14 +128,57 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
     return parsedFte;
 }
 
+export function getMonthlyEffectiveFte(doctor, year, month, planEntries) {
+    const entry = getMonthEntry(doctor, year, month, planEntries);
+    const value = getEntryValue(entry, doctor);
+
+    if (value === null) {
+        return getDefaultFte(doctor);
+    }
+
+    const normalizedValue = String(value).trim();
+    const defaultFte = getDefaultFte(doctor);
+    const daysInMonth = getDaysInMonth(year, month);
+
+    const startDay = getEntryStatusStartDay(entry);
+    const endDay = getEntryStatusEndDay(entry);
+
+    if (startDay === null && endDay === null) {
+        if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(normalizedValue)) {
+            return getLastNumericFteBeforeMonth(doctor, year, month, planEntries);
+        }
+        if (STAFFING_PLAN_UNAVAILABLE_CODES.has(normalizedValue) || STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(normalizedValue)) {
+            return 0;
+        }
+        const parsedFte = parseFteValue(normalizedValue);
+        return parsedFte === null ? 0 : parsedFte;
+    }
+
+    const effectiveStart = startDay !== null ? startDay : 1;
+    const effectiveEnd = endDay !== null ? endDay : daysInMonth;
+    const statusDays = Math.max(0, effectiveEnd - effectiveStart + 1);
+    const nonStatusDays = daysInMonth - statusDays;
+
+    let statusFte = 0;
+    if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(normalizedValue)) {
+        statusFte = getLastNumericFteBeforeMonth(doctor, year, month, planEntries);
+    } else if (STAFFING_PLAN_UNAVAILABLE_CODES.has(normalizedValue) || STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(normalizedValue)) {
+        statusFte = 0;
+    } else {
+        const parsedFte = parseFteValue(normalizedValue);
+        statusFte = parsedFte === null ? 0 : parsedFte;
+    }
+
+    return (statusFte * statusDays + defaultFte * nonStatusDays) / daysInMonth;
+}
+
 function getStaffingPlanValue(doctor, date, planEntries) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
-    const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
-
-    const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
-    if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
-        return String(entryValue).trim();
+    const entry = getMonthEntry(doctor, year, month, planEntries);
+    const value = getEntryValue(entry, doctor);
+    if (value !== null) {
+        return value;
     }
 
     if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
@@ -105,13 +200,19 @@ export function isDoctorAvailable(doctor, date, planEntries) {
         if (checkDate > endDate) return false;
     }
 
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const entry = getMonthEntry(doctor, year, month, planEntries);
     const value = getStaffingPlanValue(doctor, date, planEntries);
+
     if (STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(value)) {
-        return true;
+        if (isDateInStatusRange(date, entry)) return true;
+        return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
     }
 
     if (STAFFING_PLAN_UNAVAILABLE_CODES.has(value)) {
-        return false;
+        if (isDateInStatusRange(date, entry)) return false;
+        return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
     }
 
     return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;

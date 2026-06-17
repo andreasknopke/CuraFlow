@@ -318,6 +318,8 @@ async function ensureTenantBaseTables(tenantPool) {
       year INT NOT NULL,
       month INT NOT NULL,
       \`value\` TEXT DEFAULT NULL,
+      status_start_day INT DEFAULT NULL,
+      status_end_day INT DEFAULT NULL,
       created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
       updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       created_by VARCHAR(255) DEFAULT 'seed'

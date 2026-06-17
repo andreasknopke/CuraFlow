@@ -305,6 +305,9 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     }
   }
 
+  await addCol('add_staffing_status_start_day', `ALTER TABLE StaffingPlanEntry ADD COLUMN status_start_day INT DEFAULT NULL`);
+  await addCol('add_staffing_status_end_day', `ALTER TABLE StaffingPlanEntry ADD COLUMN status_end_day INT DEFAULT NULL`);
+
   // Clear column cache so new columns are recognized immediately when running inside the server.
   try {
     clearColumnsCache([
