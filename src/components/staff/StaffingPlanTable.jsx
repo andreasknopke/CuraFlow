@@ -12,7 +12,7 @@ import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scr
 import { cn } from "@/lib/utils";
 import { getDoctorEffectiveFte } from "@/components/schedule/staffingUtils";
 
-const FTE_CODES = ["EZ", "KO", "MS", "OU"];
+const FTE_CODES = ["EZ", "KO", "MS", "BV", "OU"];
 const FTE_CODE_LABELS = {
     "EZ": "Elternzeit",
     "MS": "Mutterschutz",
