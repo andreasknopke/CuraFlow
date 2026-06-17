@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import {
   ArrowLeft, Building2, User, FileText, Clock, CalendarDays, Sun,
   TrendingUp, TrendingDown, Minus, Save, Pencil, AlertCircle,
@@ -911,6 +912,20 @@ function RelationshipsTab({ employeeId }) {
     },
   });
 
+  const employeeOptions = useMemo(() => (
+    allEmployees.map((employee) => {
+      const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
+      return {
+        value: employee.id,
+        label: fullName,
+        triggerLabel: fullName,
+        description: employee.work_time_model_name || undefined,
+        searchText: [employee.first_name, employee.last_name, employee.work_time_model_name].filter(Boolean).join(' '),
+        sortLabel: fullName,
+      };
+    })
+  ), [allEmployees]);
+
   const addMutation = useMutation({
     mutationFn: (data) => api.request(`/api/master/employees/${employeeId}/relationships`, {
       method: 'POST',
@@ -1067,19 +1082,13 @@ function RelationshipsTab({ employeeId }) {
           <div className="space-y-4 py-2">
             <div className="space-y-2">
               <Label className="text-sm font-medium">Mitarbeiter</Label>
-              <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Mitarbeiter auswählen…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allEmployees.map((emp) => (
-                    <SelectItem key={emp.id} value={emp.id}>
-                      {[emp.first_name, emp.last_name].filter(Boolean).join(' ') || emp.payroll_id || emp.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {allEmployees.length === 0 && (
+              <EmployeeSelect
+                value={selectedEmployeeId}
+                onValueChange={setSelectedEmployeeId}
+                options={employeeOptions}
+                placeholder="Mitarbeiter auswählen…"
+              />
+              {employeeOptions.length === 0 && (
                 <p className="text-xs text-amber-600 mt-1">
                   Keine weiteren aktiven Mitarbeiter vorhanden.
                 </p>
