@@ -19,6 +19,8 @@ import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@
 import { isWishOnDate } from '@/utils/wishRange';
 import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { resolveWishDefaultPosition } from '@/components/wishlist/wishPreferences';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
+import { filterQualifiedWishServiceTypes } from '@/components/wishlist/wishQualificationFilter';
 
 const getDateRangeDays = (startDate, endDate) => {
     if (!startDate || !endDate) return [];
@@ -92,11 +94,30 @@ export default function WishListPage() {
   });
 
   const serviceTypes = React.useMemo(() => {
-      return workplaces
+      const serviceWorkplaces = workplaces
           .filter(w => w.category === 'Dienste')
           .sort((a, b) => (a.order || 0) - (b.order || 0))
-          .map(w => w.name);
-  }, [workplaces]);
+;
+
+      if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
+          return serviceWorkplaces.map((workplace) => workplace.name);
+      }
+
+      const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
+
+      return filterQualifiedWishServiceTypes(
+          serviceWorkplaces,
+          doctorQualificationIds,
+          workplaceQualificationsByWorkplaceId,
+      ).map((workplace) => workplace.name);
+  }, [
+      workplaces,
+      selectedDoctorId,
+      isDoctorQualificationsLoading,
+      isWorkplaceQualificationsLoading,
+      getDoctorQualIds,
+      workplaceQualificationsByWorkplaceId,
+  ]);
 
   React.useEffect(() => {
       if (serviceTypes.length === 0) {
@@ -134,6 +155,8 @@ export default function WishListPage() {
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
+    const { getQualificationIds: getDoctorQualIds, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
+    const { byWorkplace: workplaceQualificationsByWorkplaceId, isLoading: isWorkplaceQualificationsLoading } = useAllWorkplaceQualifications();
 
   // Fetch Doctors
   const { data: doctors = [] } = useQuery({
