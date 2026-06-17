@@ -1,0 +1,76 @@
+{
+  "ticket_id": "0c66e7c4-07d3-43b9-9a4d-881e78c5ec3a",
+  "title": "\"Andere Abteilung (AA)\" als Status im Stellenplan",
+  "type": "feature",
+  "urgency": "normal",
+  "system": {
+    "id": 1,
+    "name": "CuraFlow",
+    "repo": "andreasknopke/CuraFlow"
+  },
+  "run": {
+    "id": 202,
+    "started_at": "2026-06-10 12:47:52",
+    "current_stage": "triage",
+    "recommended_executor": null
+  },
+  "steps": [
+    {
+      "id": 1129,
+      "stage": "triage",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 5,
+      "staff_name": "Triage-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 3035
+    },
+    {
+      "id": 1130,
+      "stage": "security",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 7,
+      "staff_name": "Security-Bot",
+      "provider": "openai_local",
+      "model": "gemma-4",
+      "duration_ms": 6600
+    },
+    {
+      "id": 1131,
+      "stage": "planning",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 6,
+      "staff_name": "Architect-Bot",
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "duration_ms": 414
+    },
+    {
+      "id": 1132,
+      "stage": "integration",
+      "status": "done",
+      "executor_kind": "ai",
+      "staff_id": 8,
+      "staff_name": "Integration-Bot",
+      "provider": "mistral",
+      "model": "mistral-large-latest",
+      "duration_ms": 22743
+    },
+    {
+      "id": 1133,
+      "stage": "approval",
+      "status": "waiting_human",
+      "executor_kind": "human",
+      "staff_id": 1,
+      "staff_name": "Christian",
+      "provider": null,
+      "model": null,
+      "duration_ms": null
+    }
+  ],
+  "exported_at": "2026-06-17T06:55:29.550Z",
+  "dispatch_note": null
+}
