@@ -206,12 +206,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     };
 
     const parseFTE = (val, doc, month) => {
-        if (!val) return 0;
         if (doc && month !== undefined) {
             const date = new Date(year, month - 1, 1);
             return getDoctorEffectiveFte(doc, date, entries);
         }
-        if (FTE_CODES.includes(val)) return 0;
+        if (!val || FTE_CODES.includes(val)) return 0;
         const num = parseFloat(String(val).replace(',', '.'));
         return isNaN(num) ? 0 : num;
     };
