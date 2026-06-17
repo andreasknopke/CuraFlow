@@ -31,6 +31,11 @@ describe('isDoctorAvailable', () => {
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
   });
 
+  it('returns true when staffing plan value is "OU" (OtherUnit)', () => {
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }];
+    expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(true);
+  });
+
   it('returns false when plan entry FTE is 0', () => {
     const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.0' }];
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
@@ -70,6 +75,14 @@ describe('getDoctorEffectiveFte', () => {
     const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value }];
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
+  });
+
+  it('maps staffing code OU to 0 fte while remaining available', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }];
+
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
+    expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), planEntries)).toBe(true);
   });
 });
 

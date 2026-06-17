@@ -11,11 +11,18 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
 
-const FTE_CODES = ["EZ", "KO", "MS"];
+const FTE_CODES = ["EZ", "KO", "MS", "OU"];
 const FTE_CODE_LABELS = {
     "EZ": "Elternzeit",
-    "MS": "Mutterschutz", 
-    "KO": "Krank ohne Entgelt"
+    "MS": "Mutterschutz",
+    "KO": "Krank ohne Entgelt",
+    "OU": "Andere Organisationseinheit"
+};
+const FTE_CODE_COLORS = {
+    "EZ": { bg: "bg-orange-50", text: "text-orange-700" },
+    "MS": { bg: "bg-pink-50", text: "text-pink-700" },
+    "KO": { bg: "bg-red-50", text: "text-red-700" },
+    "OU": { bg: "bg-blue-50", text: "text-blue-700" }
 };
 
 // --- Sub-Components ---
@@ -197,7 +204,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     const parseFTE = (val) => {
         if (!val) return 0;
-        if (FTE_CODES.includes(val)) return 0; 
+        if (FTE_CODES.includes(val)) return 0;
         const num = parseFloat(String(val).replace(',', '.'));
         return isNaN(num) ? 0 : num;
     };
@@ -304,7 +311,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                 </div>
                 <div className="flex items-center gap-4">
                      <div className="text-sm text-slate-500">
-                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-pink-600">MS</span> = Mutterschutz, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt
+                         Legende: <span className="font-medium text-indigo-600">EZ</span> = Elternzeit, <span className="font-medium text-pink-600">MS</span> = Mutterschutz, <span className="font-medium text-red-600">KO</span> = Krank ohne Entgelt, <span className="font-medium text-blue-600">OU</span> = Andere Organisationseinheit
                      </div>
                 </div>
             </div>
@@ -346,9 +353,10 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             
                                             let cellBg = "";
                                             let textColor = "";
-                                            if (val === "EZ") { cellBg = "bg-orange-50"; textColor = "text-orange-700"; }
-                                            if (val === "MS") { cellBg = "bg-pink-50"; textColor = "text-pink-700"; }
-                                            if (val === "KO") { cellBg = "bg-red-50"; textColor = "text-red-700"; }
+                                            if (FTE_CODE_COLORS[val]) {
+                                                cellBg = FTE_CODE_COLORS[val].bg;
+                                                textColor = FTE_CODE_COLORS[val].text;
+                                            }
                                             
                                             // Determine text color for numbers
                                             const numVal = parseFTE(val);
@@ -488,7 +496,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                                     "font-bold",
                                                     code === "EZ" && "text-orange-600",
                                                     code === "MS" && "text-pink-600",
-                                                    code === "KO" && "text-red-600"
+                                                    code === "KO" && "text-red-600",
+                                                    code === "OU" && "text-blue-600"
                                                 )}>{code}</span>
                                                 <span className="text-slate-500 ml-2">– {FTE_CODE_LABELS[code]}</span>
                                             </Label>
@@ -496,7 +505,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                     ))}
                                 </RadioGroup>
                                 <p className="text-xs text-slate-500">
-                                    Alle Statuscodes werden als "nicht verfügbar" gewertet
+                                    EZ, MS und KO werden als "nicht verfügbar" gewertet. OU (Andere Organisationseinheit) bleibt verfügbar, zählt aber nicht als FTE.
                                 </p>
                             </div>
                         )}

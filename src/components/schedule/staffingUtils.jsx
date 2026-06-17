@@ -1,4 +1,5 @@
 const STAFFING_PLAN_UNAVAILABLE_CODES = new Set(['KO', 'EZ', 'MS']);
+const STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES = new Set(['OU']);
 
 export function getDoctorEffectiveFte(doctor, date, planEntries) {
     const year = date.getFullYear();
@@ -21,12 +22,33 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
         return 0;
     }
 
+    if (STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(normalizedValue)) {
+        return 0;
+    }
+
     const parsedFte = parseFloat(normalizedValue.replace(',', '.'));
     if (Number.isNaN(parsedFte)) {
         return 0;
     }
 
     return parsedFte;
+}
+
+function getStaffingPlanValue(doctor, date, planEntries) {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
+
+    const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
+    if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
+        return String(entryValue).trim();
+    }
+
+    if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
+        return String(doctor.fte).trim();
+    }
+
+    return '1.0';
 }
 
 export function isDoctorAvailable(doctor, date, planEntries) {
@@ -36,11 +58,16 @@ export function isDoctorAvailable(doctor, date, planEntries) {
         endDate.setHours(0,0,0,0);
         const checkDate = new Date(date);
         checkDate.setHours(0,0,0,0);
-        
+
         // If the date is strictly AFTER the end date, doctor is unavailable
         if (checkDate > endDate) return false;
     }
-    
+
+    const value = getStaffingPlanValue(doctor, date, planEntries);
+    if (STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(value)) {
+        return true;
+    }
+
     return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
 }
 

@@ -228,6 +228,7 @@ export default function VacationPage() {
                        if (val === "KO") reason = "Status: KO (Krank ohne Entgelt)";
                        else if (val === "EZ") reason = "Status: EZ (Elternzeit)";
                        else if (val === "MS") reason = "Status: MS (Mutterschutz)";
+                       else if (val === "OU") reason = "Status: OU (Andere Organisationseinheit)";
                        else {
                            const num = parseFloat(val.replace(',', '.'));
                            if (!isNaN(num) && num <= 0.0001) reason = `FTE: ${val} (0.0)`;
