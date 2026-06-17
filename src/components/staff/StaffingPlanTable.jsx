@@ -474,8 +474,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
             {/* Edit Dialog */}
             <Dialog open={editDialog.open} onOpenChange={(open) => setEditDialog({ ...editDialog, open })}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
+                <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col p-0">
+                    <DialogHeader className="px-6 pt-6">
                         <DialogTitle>
                             Stellenplan bearbeiten
                         </DialogTitle>
@@ -483,8 +483,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                             {editDialog.doctorName} - Monat {editDialog.month}/{year}
                         </p>
                     </DialogHeader>
-                    
-                    <div className="space-y-6 py-4">
+
+                    <div className="space-y-6 py-4 px-6 overflow-y-auto">
                         {/* Input Type Selection */}
                         <div className="space-y-3">
                             <Label className="text-sm font-medium">Eingabeart</Label>
@@ -571,7 +571,6 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
                         {dialogApplyMode === "range" && (
                             <div className="space-y-3 border-t pt-4">
-                                <Label className="text-sm font-medium">Zeitraum</Label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                         <Label className="text-xs text-slate-500">Von</Label>
@@ -599,7 +598,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                         )}
                     </div>
 
-                    <DialogFooter className="gap-2">
+                    <DialogFooter className="gap-2 px-6 py-4 border-t">
                         <Button variant="outline" onClick={() => setEditDialog({ ...editDialog, open: false })}>
                             Abbrechen
                         </Button>
