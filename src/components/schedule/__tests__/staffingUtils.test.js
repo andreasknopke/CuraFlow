@@ -141,6 +141,19 @@ describe('getDoctorEffectiveFte', () => {
     const expected = (0.8 * 11 + 1.0 * 20) / 31;
     expect(getMonthlyEffectiveFte(doctor, 2024, 3, planEntries)).toBeCloseTo(expected, 5);
   });
+
+  it('applies numeric FTE only within date range and uses default outside', () => {
+    const doctor = { id: 1, fte: 1.0 };
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.5', status_start_day: 10, status_end_day: 20 }];
+
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 5), planEntries)).toBe(1.0);
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 15), planEntries)).toBe(0.5);
+    expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 25), planEntries)).toBe(1.0);
+
+    // March has 31 days; 0.5 applies for 11 days (10-20 inclusive)
+    const expected = (0.5 * 11 + 1.0 * 20) / 31;
+    expect(getMonthlyEffectiveFte(doctor, 2024, 3, planEntries)).toBeCloseTo(expected, 5);
+  });
 });
 
 // ---------------------------------------------------------------------------

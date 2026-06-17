@@ -111,10 +111,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     const [dialogValue, setDialogValue] = useState("");
     const [dialogCode, setDialogCode] = useState("EZ");
     const [dialogApplyMode, setDialogApplyMode] = useState("single"); // "single", "following" or "range"
-    const [dialogStartMonth, setDialogStartMonth] = useState(1);
-    const [dialogEndMonth, setDialogEndMonth] = useState(12);
-    const [dialogStatusStartDay, setDialogStatusStartDay] = useState(1);
-    const [dialogStatusEndDay, setDialogStatusEndDay] = useState(31);
+    const [dialogStartDate, setDialogStartDate] = useState("");
+    const [dialogEndDate, setDialogEndDate] = useState("");
 
     // --- Data Fetching ---
     const { data: entries = [], isLoading: isLoadingEntries } = useQuery({
@@ -265,10 +263,10 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         setDialogValue(isCode ? "" : currentValue);
         setDialogCode(isCode ? currentValue : "EZ");
         setDialogApplyMode("single");
-        setDialogStartMonth(month);
-        setDialogEndMonth(12);
-        setDialogStatusStartDay(entry?.status_start_day || 1);
-        setDialogStatusEndDay(entry?.status_end_day || new Date(year, month, 0).getDate());
+        const startDay = entry?.status_start_day || 1;
+        const endDay = entry?.status_end_day || new Date(year, month, 0).getDate();
+        setDialogStartDate(`${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`);
+        setDialogEndDate(`${year}-12-31`);
     };
 
     const handleDialogSave = async () => {
@@ -286,17 +284,28 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             }
         }
 
-        const startMonth = dialogApplyMode === "range" ? dialogStartMonth : month;
-        const endMonth = dialogApplyMode === "range" ? dialogEndMonth : (dialogApplyMode === "following" ? 12 : month);
+        let startMonth = month;
+        let endMonth = month;
+        let rangeStartDate = null;
+        let rangeEndDate = null;
+
+        if (dialogApplyMode === "range") {
+            rangeStartDate = new Date(dialogStartDate);
+            rangeEndDate = new Date(dialogEndDate);
+            startMonth = rangeStartDate.getMonth() + 1;
+            endMonth = rangeEndDate.getMonth() + 1;
+        } else if (dialogApplyMode === "following") {
+            endMonth = 12;
+        }
 
         for (let m = startMonth; m <= endMonth; m++) {
             const daysInMonth = new Date(year, m, 0).getDate();
             let statusStartDay = undefined;
             let statusEndDay = undefined;
 
-            if (isStatusCode) {
-                statusStartDay = m === startMonth ? dialogStatusStartDay : 1;
-                statusEndDay = m === endMonth ? dialogStatusEndDay : daysInMonth;
+            if (dialogApplyMode === "range") {
+                statusStartDay = m === startMonth ? rangeStartDate.getDate() : 1;
+                statusEndDay = m === endMonth ? rangeEndDate.getDate() : daysInMonth;
             }
 
             handleValueChange(doctorId, m, formattedValue, statusStartDay, statusEndDay);
@@ -565,62 +574,26 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                 <Label className="text-sm font-medium">Zeitraum</Label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="space-y-1">
-                                        <Label className="text-xs text-slate-500">Von Monat</Label>
-                                        <select
-                                            value={dialogStartMonth}
-                                            onChange={(e) => setDialogStartMonth(parseInt(e.target.value, 10))}
-                                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                                        >
-                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                                <option key={m} value={m}>{m}/{year}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1">
-                                        <Label className="text-xs text-slate-500">Bis Monat</Label>
-                                        <select
-                                            value={dialogEndMonth}
-                                            onChange={(e) => setDialogEndMonth(parseInt(e.target.value, 10))}
-                                            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
-                                        >
-                                            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                                <option key={m} value={m}>{m}/{year}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {dialogInputType === "code" && (
-                            <div className="space-y-3 border-t pt-4">
-                                <Label className="text-sm font-medium">Statuscode-Zeitraum (optional)</Label>
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                        <Label className="text-xs text-slate-500">Starttag</Label>
+                                        <Label className="text-xs text-slate-500">Von</Label>
                                         <Input
-                                            type="number"
-                                            min={1}
-                                            max={31}
-                                            value={dialogStatusStartDay}
-                                            onChange={(e) => setDialogStatusStartDay(parseInt(e.target.value, 10) || 1)}
+                                            type="date"
+                                            value={dialogStartDate}
+                                            onChange={(e) => setDialogStartDate(e.target.value)}
                                             className="text-center"
                                         />
                                     </div>
                                     <div className="space-y-1">
-                                        <Label className="text-xs text-slate-500">Endtag</Label>
+                                        <Label className="text-xs text-slate-500">Bis</Label>
                                         <Input
-                                            type="number"
-                                            min={1}
-                                            max={31}
-                                            value={dialogStatusEndDay}
-                                            onChange={(e) => setDialogStatusEndDay(parseInt(e.target.value, 10) || 31)}
+                                            type="date"
+                                            value={dialogEndDate}
+                                            onChange={(e) => setDialogEndDate(e.target.value)}
                                             className="text-center"
                                         />
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-500">
-                                    Der Statuscode gilt nur zwischen Start- und Endtag. Außerhalb gilt der Standard-FTE.
+                                    Der Wert wird für alle betroffenen Monate anteilig gespeichert.
                                 </p>
                             </div>
                         )}

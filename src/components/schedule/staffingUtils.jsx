@@ -125,6 +125,10 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
         return 0;
     }
 
+    if (statusRatio === 0) {
+        return defaultFte;
+    }
+
     return parsedFte;
 }
 
@@ -213,6 +217,10 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     if (STAFFING_PLAN_UNAVAILABLE_CODES.has(value)) {
         if (isDateInStatusRange(date, entry)) return false;
         return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
+    }
+
+    if (!isDateInStatusRange(date, entry)) {
+        return getDefaultFte(doctor) > 0.0001;
     }
 
     return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
