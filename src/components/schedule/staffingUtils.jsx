@@ -176,6 +176,33 @@ export function getMonthlyEffectiveFte(doctor, year, month, planEntries) {
     return (statusFte * statusDays + defaultFte * nonStatusDays) / daysInMonth;
 }
 
+export function getStatusCodeRatioForMonth(doctor, year, month, planEntries) {
+    const entry = getMonthEntry(doctor, year, month, planEntries);
+    const value = getEntryValue(entry, doctor);
+
+    if (value === null) {
+        return 0;
+    }
+
+    const normalizedValue = String(value).trim();
+    if (!STAFFING_PLAN_UNAVAILABLE_CODES.has(normalizedValue) && !STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES.has(normalizedValue)) {
+        return 0;
+    }
+
+    const startDay = getEntryStatusStartDay(entry);
+    const endDay = getEntryStatusEndDay(entry);
+
+    if (startDay === null && endDay === null) {
+        return 1;
+    }
+
+    const daysInMonth = getDaysInMonth(year, month);
+    const effectiveStart = startDay !== null ? startDay : 1;
+    const effectiveEnd = endDay !== null ? endDay : daysInMonth;
+    const statusDays = Math.max(0, effectiveEnd - effectiveStart + 1);
+    return statusDays / daysInMonth;
+}
+
 function getStaffingPlanValue(doctor, date, planEntries) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;

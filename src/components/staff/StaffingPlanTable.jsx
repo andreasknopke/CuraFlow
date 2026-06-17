@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
-import { getDoctorEffectiveFte, getMonthlyEffectiveFte } from "@/components/schedule/staffingUtils";
+import { getDoctorEffectiveFte, getMonthlyEffectiveFte, getStatusCodeRatioForMonth } from "@/components/schedule/staffingUtils";
 
 const FTE_CODES = ["EZ", "KO", "MS", "BV", "OU"];
 const FTE_CODE_LABELS = {
@@ -21,12 +21,18 @@ const FTE_CODE_LABELS = {
     "OU": "Andere Organisationseinheit"
 };
 const FTE_CODE_COLORS = {
-    "EZ": { bg: "bg-orange-50", text: "text-orange-700" },
-    "MS": { bg: "bg-pink-50", text: "text-pink-700" },
-    "KO": { bg: "bg-red-50", text: "text-red-700" },
-    "BV": { bg: "bg-purple-50", text: "text-purple-700" },
-    "OU": { bg: "bg-blue-50", text: "text-blue-700" }
+    "EZ": { bg: "bg-orange-50", text: "text-orange-700", color: "rgb(255 247 237)" },
+    "MS": { bg: "bg-pink-50", text: "text-pink-700", color: "rgb(253 242 248)" },
+    "KO": { bg: "bg-red-50", text: "text-red-700", color: "rgb(254 242 242)" },
+    "BV": { bg: "bg-purple-50", text: "text-purple-700", color: "rgb(250 245 255)" },
+    "OU": { bg: "bg-blue-50", text: "text-blue-700", color: "rgb(239 246 255)" }
 };
+
+function getStatusColor(value, ratio) {
+    const base = FTE_CODE_COLORS[value]?.color || "rgb(241 245 249)";
+    const alpha = Math.max(0.2, ratio);
+    return base.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+}
 
 // --- Sub-Components ---
 
@@ -384,11 +390,15 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             
                                             let cellBg = "";
                                             let textColor = "";
+                                            let statusRatio = 0;
                                             if (FTE_CODE_COLORS[val]) {
-                                                cellBg = FTE_CODE_COLORS[val].bg;
                                                 textColor = FTE_CODE_COLORS[val].text;
+                                                statusRatio = getStatusCodeRatioForMonth(doc, year, month, entries);
+                                                if (statusRatio === 1) {
+                                                    cellBg = FTE_CODE_COLORS[val].bg;
+                                                }
                                             }
-                                            
+
                                             // Determine text color for numbers
                                             const numVal = parseFTE(val);
                                             if (!isNaN(numVal) && numVal < 1 && numVal > 0) { textColor = "text-slate-500"; }
@@ -399,13 +409,16 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             const isDefault = !entryExists && val !== "";
 
                                             return (
-                                                <TableCell 
-                                                    key={month} 
+                                                <TableCell
+                                                    key={month}
                                                     className={cn(
-                                                        "p-0 border-r last:border-r-0 cursor-pointer hover:bg-slate-100 transition-colors", 
+                                                        "p-0 border-r last:border-r-0 cursor-pointer hover:bg-slate-100 transition-colors",
                                                         cellBg,
                                                         isReadOnly && "cursor-default hover:bg-transparent"
                                                     )}
+                                                    style={statusRatio > 0 && statusRatio < 1 ? {
+                                                        background: `linear-gradient(to top, ${getStatusColor(val, statusRatio)} 0%, ${getStatusColor(val, statusRatio)} ${Math.round(statusRatio * 100)}%, transparent ${Math.round(statusRatio * 100)}%, transparent 100%)`
+                                                    } : undefined}
                                                     onClick={() => openEditDialog(doc.id, doctorName, month, val)}
                                                 >
                                                     <div className={cn(
