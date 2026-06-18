@@ -30,6 +30,9 @@ const StickyHorizontalScrollbar = React.forwardRef(
           {children}
         </ScrollAreaPrimitive.Viewport>
 
+        {/* Vertical scrollbar */}
+        <ScrollBar orientation="vertical" />
+
         {/* Horizontal scrollbar — always visible via type="always" */}
         <ScrollBar
           orientation="horizontal"
