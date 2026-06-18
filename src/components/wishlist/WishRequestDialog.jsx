@@ -317,25 +317,7 @@ export default function WishRequestDialog({
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Priorität</Label>
-                                <Select 
-                                    value={formData.priority} 
-                                    onValueChange={(val) => setFormData({...formData, priority: val})}
-                                    disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
-                                >
-                                    <SelectTrigger data-testid="wish-priority-trigger">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="low">Niedrig</SelectItem>
-                                    <SelectItem value="medium">Mittel</SelectItem>
-                                    <SelectItem value="high">Hoch</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
+
 
                     <div className="space-y-2">
                         <Label>Begründung (Optional)</Label>
@@ -398,7 +380,7 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 sm:justify-between">
+                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
                     {wish ? (
                         <Button 
                             data-testid="wish-delete-button"
@@ -412,13 +394,32 @@ export default function WishRequestDialog({
                     ) : (
                         <div />
                     )}
-                    <div className="flex gap-2">
-                        <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button">
-                            Abbrechen
-                        </Button>
-                        <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
-                            Speichern
-                        </Button>
+                    <div className="flex items-end gap-3 sm:ml-auto">
+                        <div className="space-y-1 min-w-0">
+                            <Label className="text-xs text-slate-500">Priorität</Label>
+                            <Select 
+                                value={formData.priority} 
+                                onValueChange={(val) => setFormData({...formData, priority: val})}
+                                disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
+                            >
+                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px]">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="low">Niedrig</SelectItem>
+                                    <SelectItem value="medium">Mittel</SelectItem>
+                                    <SelectItem value="high">Hoch</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button">
+                                Abbrechen
+                            </Button>
+                            <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
+                                Speichern
+                            </Button>
+                        </div>
                     </div>
                 </DialogFooter>
             </DialogContent>
