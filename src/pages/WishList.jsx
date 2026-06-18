@@ -81,7 +81,8 @@ export default function WishListPage() {
   const [dialogState, setDialogState] = useState({
     isOpen: false,
     date: null,
-    wish: null
+    wish: null,
+    initialDraft: null
   });
 
   const queryClient = useQueryClient();
@@ -400,7 +401,7 @@ export default function WishListPage() {
     },
   });
 
-    const handleDateClick = (date, doctorIdOverride = null) => {
+    const handleDateClick = (date, doctorIdOverride = null, dragDateKeys = null) => {
         const targetDoctorId = doctorIdOverride || selectedDoctorId;
         if (!targetDoctorId || !canEdit) return;
         const targetContractInfo = getDoctorContractInfo(targetDoctorId);
@@ -418,11 +419,21 @@ export default function WishListPage() {
     }
 
         const existingWish = relevantDoctorWishes.find(w => isWishOnDate(w, dateStr));
+
+    // Wenn ein Drag-Range mit mehreren Tagen vorliegt, initialDraft für den Dialog erstellen
+    const initialDraftFromDrag = dragDateKeys && dragDateKeys.length > 1
+        ? {
+            range_enabled: true,
+            range_start: dragDateKeys[0],
+            range_end: dragDateKeys[dragDateKeys.length - 1],
+          }
+        : null;
     
     setDialogState({
         isOpen: true,
         date: date,
-        wish: existingWish || null
+        wish: existingWish || null,
+        initialDraft: initialDraftFromDrag,
     });
 
         if (targetDoctorId !== selectedDoctorId) {
@@ -460,12 +471,11 @@ export default function WishListPage() {
 
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
-      const isNoServiceRange = dataToSave.type === 'no_service'
-          && dataToSave.range_enabled
+      const isRangeMode = dataToSave.range_enabled
           && dataToSave.range_start
           && dataToSave.range_end;
 
-      if (isNoServiceRange) {
+      if (isRangeMode) {
           const clampedRange = clampRangeToContract(
               parseISO(dataToSave.range_start),
               parseISO(dataToSave.range_end),
@@ -484,7 +494,7 @@ export default function WishListPage() {
           );
           const existingWishesByDate = new Map(
               doctorWishes
-                  .filter(w => w.type === 'no_service' && rangeDates.includes(w.date))
+                  .filter(w => w.type === dataToSave.type && rangeDates.includes(w.date))
                   .map(w => [w.date, w])
           );
           const baseWishData = {
@@ -760,6 +770,7 @@ export default function WishListPage() {
           onClose={() => setDialogState({ ...dialogState, isOpen: false })}
           date={dialogState.date}
           wish={dialogState.wish}
+          initialDraft={dialogState.initialDraft}
           doctorName={selectedDoctor?.name}
           contractInfo={selectedDoctorContractInfo}
           activePosition={activeTab}

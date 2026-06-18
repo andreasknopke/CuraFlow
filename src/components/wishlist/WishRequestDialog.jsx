@@ -137,7 +137,7 @@ export default function WishRequestDialog({
             return;
         }
 
-        if (formData.type === 'no_service' && formData.range_enabled) {
+        if (formData.range_enabled) {
             if (!formData.range_start || !formData.range_end) {
                 alert('Bitte Start- und Enddatum für den Zeitraum auswählen.');
                 return;
@@ -163,7 +163,7 @@ export default function WishRequestDialog({
         const requiresApproval = getRequiresApproval();
         const dataToSave = { ...formData };
 
-        if (formData.type !== 'no_service' || !formData.range_enabled) {
+        if (!formData.range_enabled) {
             dataToSave.range_start = null;
             dataToSave.range_end = null;
         }
@@ -257,10 +257,9 @@ export default function WishRequestDialog({
                         </RadioGroup>
                     </div>
 
-                    {formData.type === 'no_service' && (
-                        <div className="space-y-3 border rounded-lg p-3 bg-slate-50">
-                            <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="range-enabled" className="cursor-pointer">Zeitraum auswählen</Label>
+                    <div className="space-y-3 border rounded-lg p-3 bg-slate-50">
+                        <div className="flex items-center justify-between gap-3">
+                            <Label htmlFor="range-enabled" className="cursor-pointer">Zeitraum auswählen</Label>
                                 <input
                                     id="range-enabled"
                                     data-testid="wish-range-enabled"
@@ -310,7 +309,6 @@ export default function WishRequestDialog({
                                 </div>
                             )}
                         </div>
-                    )}
 
                     {formData.type === 'service' && activePosition && (
                         <div className="space-y-2 animate-in fade-in slide-in-from-top-2 bg-indigo-50 p-3 rounded border border-indigo-100 text-indigo-900">
