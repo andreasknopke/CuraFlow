@@ -86,6 +86,8 @@ export default function WishListPage() {
 
   const queryClient = useQueryClient();
     const migratedLegacyWishIdsRef = useRef(new Set());
+    const { getQualificationIds: getDoctorQualIds, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
+    const { byWorkplace: workplaceQualificationsByWorkplaceId, isLoading: isWorkplaceQualificationsLoading } = useAllWorkplaceQualifications();
 
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
@@ -155,8 +157,6 @@ export default function WishListPage() {
 
   // Dynamische Rollenprioritäten aus DB laden
   const { rolePriority } = useTeamRoles();
-    const { getQualificationIds: getDoctorQualIds, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
-    const { byWorkplace: workplaceQualificationsByWorkplaceId, isLoading: isWorkplaceQualificationsLoading } = useAllWorkplaceQualifications();
 
   // Fetch Doctors
   const { data: doctors = [] } = useQuery({
