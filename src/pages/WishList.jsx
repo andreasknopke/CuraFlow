@@ -82,7 +82,8 @@ export default function WishListPage() {
     isOpen: false,
     date: null,
     wish: null,
-    initialDraft: null
+    initialDraft: null,
+    rangeWishes: null
   });
 
   const queryClient = useQueryClient();
@@ -428,12 +429,18 @@ export default function WishListPage() {
             range_end: dragDateKeys[dragDateKeys.length - 1],
           }
         : null;
+
+    // Alle vorhandenen Wünsche im Drag-Range sammeln
+    const rangeWishesFromDrag = dragDateKeys && dragDateKeys.length > 1
+        ? relevantDoctorWishes.filter(w => dragDateKeys.some(key => isWishOnDate(w, key)))
+        : null;
     
     setDialogState({
         isOpen: true,
         date: date,
         wish: existingWish || null,
         initialDraft: initialDraftFromDrag,
+        rangeWishes: rangeWishesFromDrag?.length > 0 ? rangeWishesFromDrag : null,
     });
 
         if (targetDoctorId !== selectedDoctorId) {
@@ -580,8 +587,25 @@ export default function WishListPage() {
       }
   };
 
-  const handleDialogDelete = () => {
-      if (dialogState.wish) {
+  const handleDialogDelete = async () => {
+      const rangeWishes = dialogState.rangeWishes;
+      if (rangeWishes?.length > 1) {
+          const dates = rangeWishes.map(w => w.date).sort();
+          for (const w of rangeWishes) {
+              await db.WishRequest.delete(w.id);
+          }
+          trackDbChange();
+          queryClient.invalidateQueries({ queryKey: ['wishes'] });
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          if (selectedDoctor) {
+              logWishAction(
+                  `${rangeWishes.length} Einträge gelöscht`,
+                  selectedDoctor.name,
+                  `${dates[0]} bis ${dates[dates.length - 1]}`,
+                  rangeWishes[0].type
+              );
+          }
+      } else if (dialogState.wish) {
           deleteWishMutation.mutate(dialogState.wish.id, {
               onSuccess: () => {
                   if (selectedDoctor) {
@@ -767,10 +791,11 @@ export default function WishListPage() {
 
       <WishRequestDialog 
           isOpen={dialogState.isOpen}
-          onClose={() => setDialogState({ ...dialogState, isOpen: false })}
+          onClose={() => setDialogState({ ...dialogState, isOpen: false, rangeWishes: null })}
           date={dialogState.date}
           wish={dialogState.wish}
           initialDraft={dialogState.initialDraft}
+          rangeWishes={dialogState.rangeWishes}
           doctorName={selectedDoctor?.name}
           contractInfo={selectedDoctorContractInfo}
           activePosition={activeTab}

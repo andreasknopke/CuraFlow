@@ -25,7 +25,8 @@ export default function WishRequestDialog({
     onSave, 
     onDelete,
     activePosition,
-    initialDraft
+    initialDraft,
+    rangeWishes
 }) {
     const [formData, setFormData] = useState({
         type: 'service',
@@ -212,6 +213,13 @@ export default function WishRequestDialog({
                 </DialogHeader>
 
                 <div className="px-6 shrink-0">
+                    {rangeWishes?.length > 1 && (
+                        <div className="bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-md text-sm mb-2 flex items-center gap-2">
+                            <span className="font-semibold">{rangeWishes.length} Einträge</span>
+                            <span className="text-indigo-400">·</span>
+                            <span>{rangeWishes[0].range_start || rangeWishes[0].date} – {rangeWishes[rangeWishes.length - 1].range_end || rangeWishes[rangeWishes.length - 1].date}</span>
+                        </div>
+                    )}
                     {isBlockedByDeadline && (
                         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
                             <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
@@ -381,7 +389,16 @@ export default function WishRequestDialog({
                 </div>
 
                 <DialogFooter className="shrink-0 bg-white border-t px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
-                    {wish ? (
+                    {rangeWishes?.length > 1 ? (
+                        <Button 
+                            variant="destructive" 
+                            onClick={handleDelete}
+                            type="button"
+                        >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Alle löschen ({rangeWishes.length})
+                        </Button>
+                    ) : wish ? (
                         <Button 
                             data-testid="wish-delete-button"
                             variant="destructive" 
