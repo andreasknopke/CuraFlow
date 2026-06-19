@@ -42,19 +42,16 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
   const finishDragSelection = () => {
     if (!isDragging || !dragStartDate || !dragCurrentDate) return;
 
-    let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
-    let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
-
-    if (isAfter(start, end)) {
-      const temp = start;
-      start = end;
-      end = temp;
-    }
+    const sortedDateKeys = Array.from(dragSelectedDateKeys).sort();
 
     if (onRangeSelect) {
+      const start = parseISO(sortedDateKeys[0]);
+      const end = parseISO(sortedDateKeys[sortedDateKeys.length - 1]);
       onRangeSelect(start, end);
-    } else if (onToggle) {
-      onToggle(start);
+    } else if (onToggle && sortedDateKeys.length > 0) {
+      // Passieren der gesamten Drag-Auswahl an den Parent,
+      // damit der Dialog den Zeitraum vorausfüllen kann
+      onToggle(parseISO(sortedDateKeys[0]), null, sortedDateKeys);
     }
 
     setIsDragging(false);

@@ -19,6 +19,8 @@ import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@
 import { isWishOnDate } from '@/utils/wishRange';
 import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { resolveWishDefaultPosition } from '@/components/wishlist/wishPreferences';
+import { useAllDoctorQualifications, useAllWorkplaceQualifications } from '@/hooks/useQualifications';
+import { filterQualifiedWishServiceTypes } from '@/components/wishlist/wishQualificationFilter';
 
 const getDateRangeDays = (startDate, endDate) => {
     if (!startDate || !endDate) return [];
@@ -79,11 +81,15 @@ export default function WishListPage() {
   const [dialogState, setDialogState] = useState({
     isOpen: false,
     date: null,
-    wish: null
+    wish: null,
+    initialDraft: null,
+    rangeWishes: null
   });
 
   const queryClient = useQueryClient();
     const migratedLegacyWishIdsRef = useRef(new Set());
+    const { getQualificationIds: getDoctorQualIds, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
+    const { byWorkplace: workplaceQualificationsByWorkplaceId, isLoading: isWorkplaceQualificationsLoading } = useAllWorkplaceQualifications();
 
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
@@ -92,11 +98,30 @@ export default function WishListPage() {
   });
 
   const serviceTypes = React.useMemo(() => {
-      return workplaces
+      const serviceWorkplaces = workplaces
           .filter(w => w.category === 'Dienste')
           .sort((a, b) => (a.order || 0) - (b.order || 0))
-          .map(w => w.name);
-  }, [workplaces]);
+;
+
+      if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
+          return serviceWorkplaces.map((workplace) => workplace.name);
+      }
+
+      const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
+
+      return filterQualifiedWishServiceTypes(
+          serviceWorkplaces,
+          doctorQualificationIds,
+          workplaceQualificationsByWorkplaceId,
+      ).map((workplace) => workplace.name);
+  }, [
+      workplaces,
+      selectedDoctorId,
+      isDoctorQualificationsLoading,
+      isWorkplaceQualificationsLoading,
+      getDoctorQualIds,
+      workplaceQualificationsByWorkplaceId,
+  ]);
 
   React.useEffect(() => {
       if (serviceTypes.length === 0) {
@@ -377,7 +402,7 @@ export default function WishListPage() {
     },
   });
 
-    const handleDateClick = (date, doctorIdOverride = null) => {
+    const handleDateClick = (date, doctorIdOverride = null, dragDateKeys = null) => {
         const targetDoctorId = doctorIdOverride || selectedDoctorId;
         if (!targetDoctorId || !canEdit) return;
         const targetContractInfo = getDoctorContractInfo(targetDoctorId);
@@ -395,11 +420,27 @@ export default function WishListPage() {
     }
 
         const existingWish = relevantDoctorWishes.find(w => isWishOnDate(w, dateStr));
+
+    // Wenn ein Drag-Range mit mehreren Tagen vorliegt, initialDraft für den Dialog erstellen
+    const initialDraftFromDrag = dragDateKeys && dragDateKeys.length > 1
+        ? {
+            range_enabled: true,
+            range_start: dragDateKeys[0],
+            range_end: dragDateKeys[dragDateKeys.length - 1],
+          }
+        : null;
+
+    // Alle vorhandenen Wünsche im Drag-Range sammeln
+    const rangeWishesFromDrag = dragDateKeys && dragDateKeys.length > 1
+        ? relevantDoctorWishes.filter(w => dragDateKeys.some(key => isWishOnDate(w, key)))
+        : null;
     
     setDialogState({
         isOpen: true,
         date: date,
-        wish: existingWish || null
+        wish: existingWish || null,
+        initialDraft: initialDraftFromDrag,
+        rangeWishes: rangeWishesFromDrag?.length > 0 ? rangeWishesFromDrag : null,
     });
 
         if (targetDoctorId !== selectedDoctorId) {
@@ -437,12 +478,11 @@ export default function WishListPage() {
 
       const dateStr = format(dialogState.date, 'yyyy-MM-dd');
       const { _createShift, ...dataToSave } = formData;
-      const isNoServiceRange = dataToSave.type === 'no_service'
-          && dataToSave.range_enabled
+      const isRangeMode = dataToSave.range_enabled
           && dataToSave.range_start
           && dataToSave.range_end;
 
-      if (isNoServiceRange) {
+      if (isRangeMode) {
           const clampedRange = clampRangeToContract(
               parseISO(dataToSave.range_start),
               parseISO(dataToSave.range_end),
@@ -461,7 +501,7 @@ export default function WishListPage() {
           );
           const existingWishesByDate = new Map(
               doctorWishes
-                  .filter(w => w.type === 'no_service' && rangeDates.includes(w.date))
+                  .filter(w => w.type === dataToSave.type && rangeDates.includes(w.date))
                   .map(w => [w.date, w])
           );
           const baseWishData = {
@@ -547,8 +587,25 @@ export default function WishListPage() {
       }
   };
 
-  const handleDialogDelete = () => {
-      if (dialogState.wish) {
+  const handleDialogDelete = async () => {
+      const rangeWishes = dialogState.rangeWishes;
+      if (rangeWishes?.length > 1) {
+          const dates = rangeWishes.map(w => w.date).sort();
+          for (const w of rangeWishes) {
+              await db.WishRequest.delete(w.id);
+          }
+          trackDbChange();
+          queryClient.invalidateQueries({ queryKey: ['wishes'] });
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          if (selectedDoctor) {
+              logWishAction(
+                  `${rangeWishes.length} Einträge gelöscht`,
+                  selectedDoctor.name,
+                  `${dates[0]} bis ${dates[dates.length - 1]}`,
+                  rangeWishes[0].type
+              );
+          }
+      } else if (dialogState.wish) {
           deleteWishMutation.mutate(dialogState.wish.id, {
               onSuccess: () => {
                   if (selectedDoctor) {
@@ -734,9 +791,11 @@ export default function WishListPage() {
 
       <WishRequestDialog 
           isOpen={dialogState.isOpen}
-          onClose={() => setDialogState({ ...dialogState, isOpen: false })}
+          onClose={() => setDialogState({ ...dialogState, isOpen: false, rangeWishes: null })}
           date={dialogState.date}
           wish={dialogState.wish}
+          initialDraft={dialogState.initialDraft}
+          rangeWishes={dialogState.rangeWishes}
           doctorName={selectedDoctor?.name}
           contractInfo={selectedDoctorContractInfo}
           activePosition={activeTab}

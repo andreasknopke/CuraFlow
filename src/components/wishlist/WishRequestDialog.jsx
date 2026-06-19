@@ -25,7 +25,8 @@ export default function WishRequestDialog({
     onSave, 
     onDelete,
     activePosition,
-    initialDraft
+    initialDraft,
+    rangeWishes
 }) {
     const [formData, setFormData] = useState({
         type: 'service',
@@ -72,9 +73,9 @@ export default function WishRequestDialog({
                     reason: wish.reason || '',
                     status: wish.status || 'pending',
                     admin_comment: wish.admin_comment || '',
-                    range_enabled: !!(wish.range_start || wish.range_end),
-                    range_start: wish.range_start || wish.date || '',
-                    range_end: wish.range_end || wish.date || ''
+                    range_enabled: initialDraft?.range_enabled ?? !!(wish.range_start || wish.range_end),
+                    range_start: initialDraft?.range_start || wish.range_start || wish.date || '',
+                    range_end: initialDraft?.range_end || wish.range_end || wish.date || ''
                 });
             } else {
                 const dateStr = date ? format(date, 'yyyy-MM-dd') : '';
@@ -137,7 +138,7 @@ export default function WishRequestDialog({
             return;
         }
 
-        if (formData.type === 'no_service' && formData.range_enabled) {
+        if (formData.range_enabled) {
             if (!formData.range_start || !formData.range_end) {
                 alert('Bitte Start- und Enddatum für den Zeitraum auswählen.');
                 return;
@@ -163,7 +164,7 @@ export default function WishRequestDialog({
         const requiresApproval = getRequiresApproval();
         const dataToSave = { ...formData };
 
-        if (formData.type !== 'no_service' || !formData.range_enabled) {
+        if (!formData.range_enabled) {
             dataToSave.range_start = null;
             dataToSave.range_end = null;
         }
@@ -201,8 +202,8 @@ export default function WishRequestDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[500px]" data-testid="wish-request-dialog">
-                <DialogHeader>
+            <DialogContent className="sm:max-w-[500px] p-0 flex flex-col max-h-[90vh]" data-testid="wish-request-dialog">
+                <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
                     <DialogTitle>
                         Wunsch für {format(date, 'EEEE, d. MMMM yyyy', { locale: de })}
                     </DialogTitle>
@@ -211,27 +212,29 @@ export default function WishRequestDialog({
                     </p>
                 </DialogHeader>
 
-                {isBlockedByDeadline && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
-                        <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <strong>Frist überschritten:</strong> Wünsche können nur {deadlineMonths} Monate im Voraus eingereicht werden. 
-                            Frühestes mögliches Datum: {minDate ? format(minDate, 'dd.MM.yyyy') : ''}.
+                <div className="px-6 shrink-0">
+                    {isBlockedByDeadline && (
+                        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
+                            <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <strong>Frist überschritten:</strong> Wünsche können nur {deadlineMonths} Monate im Voraus eingereicht werden. 
+                                Frühestes mögliches Datum: {minDate ? format(minDate, 'dd.MM.yyyy') : ''}.
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {isBlockedByContract && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
-                        <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <strong>Außerhalb des Vertrags:</strong> Für dieses Datum können keine Wünsche eingetragen werden.
-                            {contractInfo?.contractRangeLabel ? ` Vertragszeitraum: ${contractInfo.contractRangeLabel}.` : ''}
+                    {isBlockedByContract && (
+                        <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
+                            <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <strong>Außerhalb des Vertrags:</strong> Für dieses Datum können keine Wünsche eingetragen werden.
+                                {contractInfo?.contractRangeLabel ? ` Vertragszeitraum: ${contractInfo.contractRangeLabel}.` : ''}
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
 
-                <div className="grid gap-6 py-4">
+                <div className="overflow-y-auto overflow-x-hidden flex-1 px-6 py-4 space-y-6">
                     <div className="space-y-3">
                         <Label>Art des Wunsches</Label>
                         <RadioGroup 
@@ -257,10 +260,9 @@ export default function WishRequestDialog({
                         </RadioGroup>
                     </div>
 
-                    {formData.type === 'no_service' && (
-                        <div className="space-y-3 border rounded-lg p-3 bg-slate-50">
-                            <div className="flex items-center justify-between gap-3">
-                                <Label htmlFor="range-enabled" className="cursor-pointer">Zeitraum auswählen</Label>
+                    <div className="space-y-3 border rounded-lg p-3 bg-slate-50 min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                            <Label htmlFor="range-enabled" className="cursor-pointer">Zeitraum auswählen</Label>
                                 <input
                                     id="range-enabled"
                                     data-testid="wish-range-enabled"
@@ -310,34 +312,15 @@ export default function WishRequestDialog({
                                 </div>
                             )}
                         </div>
-                    )}
 
                     {formData.type === 'service' && activePosition && (
-                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 bg-indigo-50 p-3 rounded border border-indigo-100 text-indigo-900">
+                        <div className="space-y-2 animate-in fade-in slide-in-from-top-2 bg-indigo-50 p-3 rounded border border-indigo-100 text-indigo-900 min-w-0">
                             <Label className="text-xs uppercase tracking-wider font-semibold opacity-70">Dienst</Label>
                             <div className="font-medium text-lg">{activePosition}</div>
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Priorität</Label>
-                                <Select 
-                                    value={formData.priority} 
-                                    onValueChange={(val) => setFormData({...formData, priority: val})}
-                                    disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
-                                >
-                                    <SelectTrigger data-testid="wish-priority-trigger">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="low">Niedrig</SelectItem>
-                                    <SelectItem value="medium">Mittel</SelectItem>
-                                    <SelectItem value="high">Hoch</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    </div>
+
 
                     <div className="space-y-2">
                         <Label>Begründung (Optional)</Label>
@@ -353,35 +336,33 @@ export default function WishRequestDialog({
                     </div>
 
                     {(isAdmin || (wish && (wish.status !== 'pending' || wish.admin_comment))) && (
-                        <div className="border-t pt-4 space-y-4 bg-slate-50 p-4 rounded-lg">
+                        <div className="border-t pt-4 space-y-4 bg-slate-50 p-4 rounded-lg min-w-0">
                             <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                 <AlertCircle className="w-4 h-4" />
                                 Administration / Genehmigung
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Status</Label>
-                                    <Select 
-                                        value={formData.status} 
-                                        onValueChange={(val) => setFormData({...formData, status: val})}
-                                        disabled={!isAdmin}
-                                    >
-                                        <SelectTrigger data-testid="wish-admin-status-trigger" className={
-                                            formData.status === 'approved' ? 'text-green-600 font-medium' :
-                                            formData.status === 'rejected' ? 'text-red-600 font-medium' :
-                                            'text-amber-600 font-medium'
-                                        }>
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="pending">Ausstehend</SelectItem>
-                                            <SelectItem value="approved">Genehmigt</SelectItem>
-                                            <SelectItem value="rejected">Abgelehnt</SelectItem>
-                                            <SelectItem value="cancellation_requested">Stornierung angefragt</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                            <div className="space-y-2 min-w-0">
+                                <Label>Status</Label>
+                                <Select 
+                                    value={formData.status} 
+                                    onValueChange={(val) => setFormData({...formData, status: val})}
+                                    disabled={!isAdmin}
+                                >
+                                    <SelectTrigger data-testid="wish-admin-status-trigger" className={
+                                        formData.status === 'approved' ? 'text-green-600 font-medium' :
+                                        formData.status === 'rejected' ? 'text-red-600 font-medium' :
+                                        'text-amber-600 font-medium'
+                                    }>
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="pending">Ausstehend</SelectItem>
+                                        <SelectItem value="approved">Genehmigt</SelectItem>
+                                        <SelectItem value="rejected">Abgelehnt</SelectItem>
+                                        <SelectItem value="cancellation_requested">Stornierung angefragt</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             <div className="space-y-2">
@@ -400,8 +381,8 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 sm:justify-between">
-                    {wish ? (
+                <DialogFooter className="shrink-0 bg-white border-t px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
+                    {wish || rangeWishes?.length > 1 ? (
                         <Button 
                             data-testid="wish-delete-button"
                             variant="destructive" 
@@ -414,13 +395,32 @@ export default function WishRequestDialog({
                     ) : (
                         <div />
                     )}
-                    <div className="flex gap-2">
-                        <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button">
-                            Abbrechen
-                        </Button>
-                        <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
-                            Speichern
-                        </Button>
+                    <div className="flex items-end gap-3 sm:ml-auto">
+                        <div className="space-y-1 min-w-0">
+                            <Label className="text-xs text-slate-500">Priorität</Label>
+                            <Select 
+                                value={formData.priority} 
+                                onValueChange={(val) => setFormData({...formData, priority: val})}
+                                disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
+                            >
+                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px]">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="low">Niedrig</SelectItem>
+                                    <SelectItem value="medium">Mittel</SelectItem>
+                                    <SelectItem value="high">Hoch</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button">
+                                Abbrechen
+                            </Button>
+                            <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
+                                Speichern
+                            </Button>
+                        </div>
                     </div>
                 </DialogFooter>
             </DialogContent>
