@@ -407,11 +407,19 @@ export default function WishListPage() {
         if (!targetDoctorId || !canEdit) return;
         const targetContractInfo = getDoctorContractInfo(targetDoctorId);
         if (!isDateWithinContract(date, targetContractInfo?.contractStart, targetContractInfo?.contractEnd)) return;
-    const dateStr = format(date, 'yyyy-MM-dd');
+
+        // Wenn keine qualifizierten Dienst-Typen vorhanden sind, keine neuen Wünsche zulassen
+        // (bestehende Wünsche können weiterhin bearbeitet werden)
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const relevantDoctorWishes = allWishes.filter(w => w.doctor_id === targetDoctorId);
+        const hasExistingWish = relevantDoctorWishes.some(w => isWishOnDate(w, dateStr));
+        if (!activeTab && !hasExistingWish) {
+            alert('Für diese Person sind keine qualifizierten Dienste hinterlegt. Es können keine Wünsche eingetragen werden.');
+            return;
+        }
     
     // Check overlap with absence
         const relevantDoctorShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
-        const relevantDoctorWishes = allWishes.filter(w => w.doctor_id === targetDoctorId);
         const existingShift = relevantDoctorShifts.find(s => s.date === dateStr);
     const absencePositions = ["Urlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"];
     if (existingShift && absencePositions.includes(existingShift.position)) {
