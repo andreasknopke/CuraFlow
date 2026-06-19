@@ -1,10 +1,17 @@
 import { useState, useMemo } from 'react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
-import { de } from 'date-fns/locale';
+import {
+  format,
+  eachDayOfInterval,
+  getDay,
+  isAfter,
+  isValid,
+  parseISO,
+} from 'date-fns';
 import { RotateCcw } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { db } from '@/api/client';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -14,13 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 
 const WEEKDAYS = [
   { index: 1, short: 'Mo', long: 'Montag' },
@@ -33,7 +33,6 @@ const WEEKDAYS = [
 ];
 
 function getJSWeekday(date) {
-  // date-fns getDay: 0=Sunday, 1=Monday ... 6=Saturday
   return getDay(date);
 }
 
@@ -47,27 +46,22 @@ export default function WeekdayRecurrenceDialog({
   onApply,
 }) {
   const [selectedWeekdays, setSelectedWeekdays] = useState([]);
-  const [targetMonth, setTargetMonth] = useState(new Date().getMonth());
-  const [targetYear, setTargetYear] = useState(selectedYear);
+  const [rangeStart, setRangeStart] = useState(`${selectedYear}-01-01`);
+  const [rangeEnd, setRangeEnd] = useState(`${selectedYear}-12-31`);
 
-  // Fetch existing shifts for the target month to show count
-  const targetMonthStart = useMemo(
-    () => format(startOfMonth(new Date(targetYear, targetMonth, 1)), 'yyyy-MM-dd'),
-    [targetYear, targetMonth],
-  );
-  const targetMonthEnd = useMemo(
-    () => format(endOfMonth(new Date(targetYear, targetMonth, 1)), 'yyyy-MM-dd'),
-    [targetYear, targetMonth],
-  );
+  const parsedStart = useMemo(() => parseISO(rangeStart), [rangeStart]);
+  const parsedEnd = useMemo(() => parseISO(rangeEnd), [rangeEnd]);
+  const isRangeValid = isValid(parsedStart) && isValid(parsedEnd) && !isAfter(parsedStart, parsedEnd);
 
+  // Fetch existing shifts for the full range
   const { data: existingShifts = [] } = useQuery({
-    queryKey: ['shifts', targetYear, targetMonth, selectedDoctorId],
+    queryKey: ['shifts', 'recurrence', rangeStart, rangeEnd, selectedDoctorId],
     queryFn: () =>
       db.ShiftEntry.filter({
         doctor_id: selectedDoctorId,
-        date: { $gte: targetMonthStart, $lte: targetMonthEnd },
+        date: { $gte: rangeStart, $lte: rangeEnd },
       }),
-    enabled: Boolean(selectedDoctorId) && open,
+    enabled: Boolean(selectedDoctorId) && open && isRangeValid,
     staleTime: 10_000,
   });
 
@@ -75,8 +69,8 @@ export default function WeekdayRecurrenceDialog({
   const handleOpenChange = (next) => {
     if (next) {
       setSelectedWeekdays([]);
-      setTargetMonth(new Date().getMonth());
-      setTargetYear(selectedYear);
+      setRangeStart(`${selectedYear}-01-01`);
+      setRangeEnd(`${selectedYear}-12-31`);
     }
     onOpenChange(next);
   };
@@ -89,21 +83,18 @@ export default function WeekdayRecurrenceDialog({
     );
   };
 
-  // Compute which dates in the target month match selected weekdays
+  // Compute which dates in the range match selected weekdays
   const affectedDates = useMemo(() => {
-    if (selectedWeekdays.length === 0 || !selectedDoctorId) return [];
+    if (selectedWeekdays.length === 0 || !selectedDoctorId || !isRangeValid) return [];
 
-    const start = startOfMonth(new Date(targetYear, targetMonth, 1));
-    const end = endOfMonth(new Date(targetYear, targetMonth, 1));
-    const allDays = eachDayOfInterval({ start, end });
-
+    const allDays = eachDayOfInterval({ start: parsedStart, end: parsedEnd });
     const weekdaySet = new Set(selectedWeekdays);
     return allDays
       .filter((d) => weekdaySet.has(getJSWeekday(d)))
       .map((d) => format(d, 'yyyy-MM-dd'));
-  }, [selectedWeekdays, targetYear, targetMonth, selectedDoctorId]);
+  }, [selectedWeekdays, parsedStart, parsedEnd, selectedDoctorId, isRangeValid]);
 
-  // Count how many of the affected dates already have the active type
+  // Count how many affected dates already have the active type
   const existingCount = useMemo(() => {
     if (affectedDates.length === 0) return 0;
     const existingDates = new Set(
@@ -135,8 +126,8 @@ export default function WeekdayRecurrenceDialog({
             Wiederkehrende Abwesenheit
           </DialogTitle>
           <DialogDescription>
-            Trage für einen ganzen Monat denselben Abwesenheitsstatus an
-            bestimmten Wochentagen ein.
+            Trage für einen Zeitraum an bestimmten Wochentagen denselben
+            Abwesenheitsstatus ein, z. B. jeden Montag und Mittwoch.
           </DialogDescription>
         </DialogHeader>
 
@@ -169,49 +160,31 @@ export default function WeekdayRecurrenceDialog({
             </div>
           </div>
 
-          {/* Monat / Jahr */}
+          {/* Von / Bis */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-sm font-semibold text-slate-700">
-                Monat
+                Von
               </Label>
-              <Select
-                value={String(targetMonth)}
-                onValueChange={(v) => setTargetMonth(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {format(new Date(2000, i, 1), 'MMMM', { locale: de })}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Input
+                type="date"
+                value={rangeStart}
+                onChange={(e) => setRangeStart(e.target.value)}
+                min={`${selectedYear - 1}-01-01`}
+                max={rangeEnd}
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-semibold text-slate-700">
-                Jahr
+                Bis
               </Label>
-              <Select
-                value={String(targetYear)}
-                onValueChange={(v) => setTargetYear(Number(v))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {[targetYear - 1, targetYear, targetYear + 1, targetYear + 2].map(
-                    (y) => (
-                      <SelectItem key={y} value={String(y)}>
-                        {y}
-                      </SelectItem>
-                    ),
-                  )}
-                </SelectContent>
-              </Select>
+              <Input
+                type="date"
+                value={rangeEnd}
+                onChange={(e) => setRangeEnd(e.target.value)}
+                min={rangeStart}
+                max={`${selectedYear + 2}-12-31`}
+              />
             </div>
           </div>
 
@@ -228,9 +201,6 @@ export default function WeekdayRecurrenceDialog({
                     key={type.id}
                     variant={activeType === type.id ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => {
-                      /* activeType is managed by parent */
-                    }}
                     className="pointer-events-none gap-2"
                     style={
                       activeType === type.id
@@ -251,8 +221,7 @@ export default function WeekdayRecurrenceDialog({
                 ))}
             </div>
             <p className="text-xs text-slate-400">
-              Der aktuell ausgewählte Status wird verwendet. Ändere ihn über
-              die Status-Leiste oberhalb.
+              Der aktuell ausgewählte Status wird verwendet.
             </p>
           </div>
 
@@ -263,15 +232,11 @@ export default function WeekdayRecurrenceDialog({
               <div className="mt-1 space-y-0.5 text-slate-500">
                 <p>
                   {selectedWeekdays
-                    .map(
-                      (i) =>
-                        WEEKDAYS.find((w) => w.index === i)?.long,
-                    )
+                    .map((i) => WEEKDAYS.find((w) => w.index === i)?.long)
+                    .filter(Boolean)
                     .join(', ')}{' '}
-                  im{' '}
-                  {format(new Date(targetYear, targetMonth, 1), 'MMMM yyyy', {
-                    locale: de,
-                  })}
+                  – {format(parsedStart, 'dd.MM.yyyy')} bis{' '}
+                  {format(parsedEnd, 'dd.MM.yyyy')}
                 </p>
                 <p>
                   <span className="font-medium">{affectedDates.length}</span>{' '}
@@ -313,3 +278,4 @@ export default function WeekdayRecurrenceDialog({
     </Dialog>
   );
 }
+
