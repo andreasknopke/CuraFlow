@@ -21,7 +21,7 @@ export default function MasterLogin() {
     try {
       await login(email, password);
       // Navigation erfolgt automatisch über ProtectedRoute
-      window.location.href = '/';
+      window.location.href = '/master/';
     } catch (err) {
       setError(err.message || 'Login fehlgeschlagen');
     } finally {
