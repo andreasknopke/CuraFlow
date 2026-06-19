@@ -27,6 +27,8 @@ const queryClient = new QueryClient({
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useMasterAuth();
 
+  console.debug('[MasterApp] ProtectedRoute render — isLoading:', isLoading, 'isAuthenticated:', isAuthenticated, 'pathname:', window.location.pathname);
+
   if (isLoading) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-slate-50">
@@ -39,9 +41,11 @@ function ProtectedRoute({ children }) {
   }
 
   if (!isAuthenticated) {
+    console.debug('[MasterApp] Not authenticated, redirecting to /login');
     return <Navigate to="/login" replace />;
   }
 
+  console.debug('[MasterApp] Authenticated, rendering children');
   return children;
 }
 
@@ -49,6 +53,10 @@ export default function MasterApp() {
   const basename = window.location.pathname === '/master' || window.location.pathname.startsWith('/master/')
     ? '/master'
     : undefined;
+
+  console.debug('[MasterApp] Mounted — window.location.origin:', window.location.origin);
+  console.debug('[MasterApp] window.location.pathname:', window.location.pathname);
+  console.debug('[MasterApp] Computed basename:', basename);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -21,18 +21,23 @@ export default function MasterAuthProvider({ children }) {
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem(TOKEN_KEY);
+      console.debug('[MasterAuth] checkAuth: token present:', !!token, 'pathname:', window.location.pathname);
+      
       if (!token) {
+        console.debug('[MasterAuth] No token found, not authenticated');
         setIsLoading(false);
         return;
       }
 
       try {
         api.setToken(token);
+        console.debug('[MasterAuth] Calling api.me()...');
         const userData = await api.me();
+        console.debug('[MasterAuth] api.me() succeeded, role:', userData.role, 'email:', userData.email);
         
         // Master-Frontend: nur Admins erlaubt
         if (userData.role !== 'admin') {
-          console.warn('Master-Frontend: Zugriff nur für Admins');
+          console.warn('[MasterAuth] Zugriff nur für Admins (role:', userData.role + ')');
           setIsAuthenticated(false);
           setIsLoading(false);
           return;
@@ -40,8 +45,9 @@ export default function MasterAuthProvider({ children }) {
         
         setUser(userData);
         setIsAuthenticated(true);
+        console.debug('[MasterAuth] Authenticated as admin:', userData.email);
       } catch (error) {
-        console.error('Auth check failed:', error);
+        console.error('[MasterAuth] Auth check failed:', error.message, 'status:', error.status);
         localStorage.removeItem(TOKEN_KEY);
         setIsAuthenticated(false);
       } finally {
@@ -77,15 +83,19 @@ export default function MasterAuthProvider({ children }) {
   }, [isAuthenticated, user?.id]);
 
   const login = async (email, password) => {
+    console.debug('[MasterAuth] login() called for', email);
     const data = await api.login(email, password);
+    console.debug('[MasterAuth] api.login() returned, user role:', data.user?.role);
     
     if (data.user?.role !== 'admin') {
       api.setToken(null);
+      console.warn('[MasterAuth] Login rejected: user is not admin');
       throw new Error('Zugriff nur für Administratoren. Bitte melden Sie sich mit einem Admin-Konto an.');
     }
     
     setUser(data.user);
     setIsAuthenticated(true);
+    console.debug('[MasterAuth] isAuthenticated set to true for', data.user.email);
     return data;
   };
 

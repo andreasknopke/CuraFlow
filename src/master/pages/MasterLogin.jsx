@@ -19,10 +19,16 @@ export default function MasterLogin() {
     setLoading(true);
 
     try {
+      console.debug('[MasterLogin] Starting login for', email);
       await login(email, password);
+      console.debug('[MasterLogin] Login successful, redirecting to /master/');
+      console.debug('[MasterLogin] window.location.origin:', window.location.origin);
+      console.debug('[MasterLogin] window.location.pathname:', window.location.pathname);
+      console.debug('[MasterLogin] JWT token present:', !!localStorage.getItem('radioplan_jwt_token'));
       // Navigation erfolgt automatisch über ProtectedRoute
       window.location.href = '/master/';
     } catch (err) {
+      console.debug('[MasterLogin] Login failed:', err.message);
       setError(err.message || 'Login fehlgeschlagen');
     } finally {
       setLoading(false);

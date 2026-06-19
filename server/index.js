@@ -222,6 +222,14 @@ const __dirname = path.dirname(__filename);
 const distPath = path.resolve(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
   console.log(`📁 Serving static frontend from ${distPath}`);
+  console.log(`📁 dist contents:`, fs.readdirSync(distPath));
+  app.use((req, res, next) => {
+    // Debug: log non-API requests hitting static middleware
+    if (!req.path.startsWith('/api/') && !req.path.startsWith('/health')) {
+      console.debug(`[Static] Checking path="${req.path}" originalUrl="${req.originalUrl}"`);
+    }
+    next();
+  });
   app.use(express.static(distPath, {
     index: false,
     setHeaders: (res, filePath) => {
@@ -381,6 +389,7 @@ const configuredAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
 const allowedOrigins = Array.from(new Set([
   'https://curaflow-production.up.railway.app',
   'https://curaflow-frontend-production.up.railway.app',
+  'https://curaflow.abigailrook.de',
   process.env.FRONTEND_URL,
   ...configuredAllowedOrigins,
   'http://localhost:5173',
@@ -555,6 +564,7 @@ if (fs.existsSync(distPath)) {
     const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
       ? 'master.html'
       : 'index.html';
+    console.log(`[SPA] Serving ${htmlFile} for path="${req.path}" originalUrl="${req.originalUrl}"`);
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(distPath, htmlFile));
   });
