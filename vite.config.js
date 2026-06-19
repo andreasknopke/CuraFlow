@@ -7,11 +7,23 @@ import path from 'path'
 const coverageConfig = {
   provider: 'v8',
   include: [
+    // Existing coverage targets
     'src/utils/**',
     'src/components/AuthProvider.jsx',
     'src/components/schedule/costFunction.js',
     'src/components/schedule/staffingUtils.jsx',
     'src/components/staff/DoctorForm.jsx',
+
+    // Auto-fill engine (core scheduling algorithm)
+    'src/components/schedule/autoFillEngine.js',
+
+    // Custom hooks
+    'src/hooks/useCertificates.js',
+    'src/hooks/useQualifications.js',
+    'src/hooks/use-mobile.jsx',
+
+    // Holiday utilities
+    'src/components/schedule/holidayUtils.jsx',
   ],
   exclude: ['src/**/__tests__/**', 'src/**/__component_tests__/**', '**/*.test.*'],
   reporter: ['text', 'lcov', 'json-summary', 'html'],
