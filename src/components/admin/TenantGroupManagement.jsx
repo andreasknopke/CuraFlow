@@ -675,7 +675,7 @@ export default function TenantGroupManagement() {
             </div>
 
             <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
-                <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0">
+                <DialogContent className="flex flex-col max-h-[85vh] min-h-[300px] !gap-0 p-0">
                     <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle>{editingGroup ? 'Verbund bearbeiten' : 'Verbund anlegen'}</DialogTitle>
                         <DialogDescription>Ein Verbund verbindet mehrere Mandanten für gemeinsame Pool-Dienste.</DialogDescription>
@@ -707,7 +707,7 @@ export default function TenantGroupManagement() {
                             <Switch checked={groupForm.is_active} onCheckedChange={(checked) => setGroupForm((current) => ({ ...current, is_active: checked }))} />
                         </div>
                     </div>
-                    <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
+                    <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
                         <Button variant="outline" onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
                         <Button onClick={handleSaveGroup} disabled={createGroupMutation.isPending || updateGroupMutation.isPending} data-testid="admin-group-save-button">
                             {(createGroupMutation.isPending || updateGroupMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -718,7 +718,7 @@ export default function TenantGroupManagement() {
             </Dialog>
 
             <Dialog open={showWorkplaceDialog} onOpenChange={setShowWorkplaceDialog}>
-                <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0">
+                <DialogContent className="flex flex-col max-h-[85vh] min-h-[420px] !gap-0 p-0">
                     <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle>{editingWorkplace ? 'Gemeinsamen Dienst bearbeiten' : 'Gemeinsamen Dienst anlegen'}</DialogTitle>
                         <DialogDescription>Dieser Dienst erscheint später im Cross-Department-Pool des Dienstplans.</DialogDescription>
@@ -942,7 +942,7 @@ export default function TenantGroupManagement() {
                             />
                         </div>
                     </div>
-                    <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
+                    <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
                         <Button variant="outline" onClick={() => setShowWorkplaceDialog(false)}>Abbrechen</Button>
                         <Button onClick={handleSaveWorkplace} disabled={createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending} data-testid="admin-group-workplace-save-button">
                             {(createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

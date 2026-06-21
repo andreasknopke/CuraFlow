@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { api, db, base44 } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, getYear, startOfYear, endOfYear, eachDayOfInterval } from 'date-fns';
-import { ChevronLeft, ChevronRight, Eraser, Wand2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Eraser, RotateCcw, Wand2 } from 'lucide-react';
 import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
 import { Button } from '@/components/ui/button';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
@@ -15,6 +15,7 @@ import DoctorYearView from '@/components/vacation/DoctorYearView';
 import VacationOverview from '@/components/vacation/VacationOverview';
 import AppSettingsDialog from '@/components/settings/AppSettingsDialog';
 import ConflictDialog, { categorizeConflict } from '@/components/vacation/ConflictDialog';
+import WeekdayRecurrenceDialog from '@/components/vacation/WeekdayRecurrenceDialog';
 import { parseAnnualVacationDays } from '@/components/vacation/vacationBalance';
 
 import { useHolidays } from '@/components/useHolidays';
@@ -383,6 +384,7 @@ export default function VacationPage() {
 
   const [activeType, setActiveType] = useState('Urlaub');
   const [rangeStart, setRangeStart] = useState(null);
+  const [weekdayDialogOpen, setWeekdayDialogOpen] = useState(false);
   
   // Conflict Dialog State
   const [conflictDialog, setConflictDialog] = useState({
@@ -654,6 +656,38 @@ export default function VacationPage() {
     }
   };
 
+  const handleWeekdayApply = (affectedDates, existingSameTypeShifts) => {
+    if (!selectedDoctorId || affectedDates.length === 0) return;
+
+    const existingDateSet = new Set(
+      existingSameTypeShifts.map((s) => s.date),
+    );
+
+    const newShifts = affectedDates
+      .filter((dateStr) => !existingDateSet.has(dateStr))
+      .map((dateStr) => ({
+        date: dateStr,
+        position: activeType,
+        doctor_id: selectedDoctorId,
+      }));
+
+    if (newShifts.length > 0) {
+      bulkCreateShiftMutation.mutate(newShifts, {
+        onSuccess: () => {
+          toast.success(
+            `${newShifts.length} Abwesenheiten für ${selectedDoctor?.name || 'den Mitarbeiter'} erstellt.`,
+          );
+        },
+        onError: (err) => {
+          toast.error(
+            'Fehler beim Erstellen: ' +
+              (err.response?.data?.message || err.message),
+          );
+        },
+      });
+    }
+  };
+
   const absenceTypes = React.useMemo(() => {
       const types = [
           'Urlaub', 'Frei', 'Krank', 'Dienstreise', 'Nicht verfügbar'
@@ -757,6 +791,22 @@ export default function VacationPage() {
                   {type.label}
               </Button>
           ))}
+
+          {!isReadOnly && viewMode === 'single' && selectedDoctorId && (
+            <div className="ml-auto flex items-center">
+              <div className="w-px h-6 bg-slate-300 mr-3" />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setWeekdayDialogOpen(true)}
+                className="gap-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                data-testid="vacation-weekday-recurrence-button"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Wiederkehrend
+              </Button>
+            </div>
+          )}
       </div>
 
       {viewMode === 'single' ? (
@@ -803,6 +853,19 @@ export default function VacationPage() {
             />
       )}
       
+      {/* Wochentag-Wiederholung Dialog */}
+      {!isReadOnly && (
+        <WeekdayRecurrenceDialog
+          open={weekdayDialogOpen}
+          onOpenChange={setWeekdayDialogOpen}
+          absenceTypes={absenceTypes}
+          activeType={activeType}
+          selectedYear={selectedYear}
+          selectedDoctorId={selectedDoctorId}
+          onApply={handleWeekdayApply}
+        />
+      )}
+
       {/* Conflict Warning Dialog */}
       <ConflictDialog
           open={conflictDialog.open}
