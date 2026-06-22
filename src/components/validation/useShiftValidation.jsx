@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { db, base44, api } from "@/api/client";
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { ShiftValidator } from './ShiftValidation';
 import { toast } from 'sonner';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
@@ -170,12 +170,36 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
         return validator.isAutoOffPosition(position);
     };
 
+    /**
+     * Mandantenübergreifende Dienstkonflikt-Prüfung.
+     * Ruft das Backend auf, um zu prüfen, ob ein verwandter Mitarbeiter
+     * (mit shift_conflict=true) in einem anderen Mandanten ebenfalls
+     * einen echten Dienst am selben Datum hat.
+     *
+     * @param {string} doctorId - ID des zu prüfenden Arztes
+     * @param {string} dateStr - Datum als YYYY-MM-DD
+     * @returns {Promise<Array<{related_employee_id, related_employee_name, relationship_type}>>}
+     */
+    const checkCrossTenantConflicts = useCallback(async (doctorId, dateStr) => {
+        const doctor = doctors.find(d => d.id === doctorId);
+        if (!doctor || !doctor.central_employee_id) return [];
+
+        try {
+            const res = await api.checkRelationshipConflicts(doctor.central_employee_id, dateStr);
+            return res.conflicts || [];
+        } catch (err) {
+            console.warn('[useShiftValidation] Cross-tenant check failed:', err?.message);
+            return [];
+        }
+    }, [doctors]);
+
     return {
         validate,
         validateWithUI,
         shouldCreateAutoFrei,
         findAutoFreiToCleanup,
         isAutoOffPosition,
+        checkCrossTenantConflicts,
         validator
     };
 }

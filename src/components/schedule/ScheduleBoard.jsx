@@ -1733,7 +1733,7 @@ export default function ScheduleBoard() {
     return scheduleBlocksMap.get(`${dateStr}|${position}`);
   };
 
-        const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition } = useShiftValidation(allShifts, {
+        const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition, checkCrossTenantConflicts } = useShiftValidation(allShifts, {
             workplaces,
             timeslots: workplaceTimeslots,
             sharedShifts: visiblePoolShifts,
@@ -2427,7 +2427,7 @@ export default function ScheduleBoard() {
   // Konfliktprüfung mit Override-Dialog
   // Gibt true zurück wenn blockiert (Aktion abbrechen)
   // Wenn Override möglich: zeigt Dialog und führt onProceed bei Bestätigung aus
-  const checkConflictsWithOverride = (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
+  const checkConflictsWithOverride = async (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       const doctor = doctors.find(d => d.id === doctorId);
       
@@ -2449,12 +2449,32 @@ export default function ScheduleBoard() {
       if (result.warnings.length > 0) {
           toast.warning(result.warnings.join('\n'));
       }
+
+      // Mandantenübergreifende Dienstkonflikt-Prüfung
+      const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar",
+                                "Fortbildung", "Kongress", "Elternzeit", "Mutterschutz", "Verfügbar"];
+      if (!absencePositions.includes(newPosition)) {
+          const crossConflicts = await checkCrossTenantConflicts(doctorId, dateStr);
+          if (crossConflicts.length > 0) {
+              const names = [...new Set(crossConflicts.map(c => c.related_employee_name))].join(', ');
+              requestOverride({
+                  blockers: [`Dienstkonflikt (mandantenübergreifend): „${names}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag in einem anderen Mandanten ebenfalls für einen Dienst eingeteilt.`],
+                  warnings: [],
+                  doctorId,
+                  doctorName: doctor?.name,
+                  date: dateStr,
+                  position: newPosition,
+                  onConfirm: onProceed
+              });
+              return true; // Blockiert - warte auf Override-Bestätigung
+          }
+      }
       
       return false; // Nicht blockiert
   };
 
   // Legacy-Wrapper für Stellen die noch nicht umgestellt sind
-  const checkConflicts = (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
+  const checkConflicts = async (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
       if (isVoice) {
           return checkConflictsVoice(doctorId, dateStr, newPosition, excludeShiftId);
       }
@@ -3525,7 +3545,7 @@ export default function ScheduleBoard() {
             return;
         }
 
-        const executeCreateDrop = (selection) => {
+        const executeCreateDrop = async (selection) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const timeslotId = normalizedSelection.timeslotId;
             console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
@@ -3684,7 +3704,7 @@ export default function ScheduleBoard() {
                 }
             };
 
-            const hasConflict = checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
+            const hasConflict = await checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
             if (hasConflict) {
                 console.log('Conflict detected - waiting for override decision');
                 return;
@@ -3715,7 +3735,7 @@ export default function ScheduleBoard() {
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         const rawNewTimeslotId = destParts[2] || null;
-        const executeGridDrop = (selection) => {
+        const executeGridDrop = async (selection) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const newTimeslotId = normalizedSelection.timeslotId;
             if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
@@ -3815,7 +3835,7 @@ export default function ScheduleBoard() {
                     deleteShiftMutation.mutate(occupyingShift.id);
                 }
 
-                const executeCopy = () => {
+                const executeCopy = async () => {
                     const existingInNewCell = currentWeekShifts.filter(s => {
                         if (s.date !== newDateStr || s.position !== newPosition) return false;
                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
@@ -3836,7 +3856,7 @@ export default function ScheduleBoard() {
                     });
                 };
 
-                const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeCopy);
+                const hasConflict = await checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, null, executeCopy);
                 if (hasConflict) return;
 
                 executeCopy();
@@ -3903,7 +3923,7 @@ export default function ScheduleBoard() {
                 deleteShiftWithCleanup(occupyingShift);
             }
 
-            const executeMove = () => {
+            const executeMove = async () => {
                 const existingInNewCell = currentWeekShifts.filter(s => {
                     if (s.date !== newDateStr || s.position !== newPosition) return false;
                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
@@ -3927,7 +3947,7 @@ export default function ScheduleBoard() {
                 );
             };
 
-            const hasConflict = checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, shiftId, executeMove);
+            const hasConflict = await checkConflictsWithOverride(shift.doctor_id, newDateStr, newPosition, shiftId, executeMove);
             if (hasConflict) return;
 
             executeMove();

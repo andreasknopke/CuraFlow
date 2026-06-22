@@ -11,7 +11,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
-import { db } from '../index.js';
+import { db, getTenantDb } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { deleteEmployeeDependentRecords } from '../utils/masterEmployees.js';
@@ -2529,6 +2529,172 @@ router.delete('/employees/:id/relationships/:relationshipId', async (req, res, n
     next(error);
   }
 });
+
+// ============ CROSS-TENANT RELATIONSHIP CONFLICTS ============
+
+/**
+ * POST /api/master/check-relationship-conflicts
+ *
+ * Cross-tenant check: Prüft, ob ein zentraler Mitarbeiter an einem bestimmten
+ * Datum in einem anderen Mandanten einen echten Dienst hat, während ein
+ * verwandter Mitarbeiter (mit shift_conflict=true) ebenfalls einen echten
+ * Dienst in einem beliebigen Mandanten am selben Tag eingeteilt ist.
+ *
+ * Body: { employee_id: string, date: string (YYYY-MM-DD) }
+ * Returns: { conflicts: Array<{ related_employee_id, related_employee_name, relationship_type }> }
+ */
+router.post('/check-relationship-conflicts', async (req, res, next) => {
+  try {
+    const { employee_id, date } = req.body || {};
+    if (!employee_id || !date) {
+      return res.status(400).json({ error: 'employee_id und date sind erforderlich' });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date muss YYYY-MM-DD sein' });
+    }
+
+    const conflicts = await checkCrossTenantRelationshipConflicts(db, getTenantDb, { employeeId: employee_id, dateStr: date });
+    res.json({ conflicts });
+  } catch (error) {
+    console.error('[Master] Cross-tenant relationship conflict check error:', error);
+    next(error);
+  }
+});
+
+/**
+ * Führt eine mandantenübergreifende Prüfung auf Dienstkonflikte durch.
+ *
+ * 1. Findet alle Beziehungen mit shift_conflict=true für den gegebenen Mitarbeiter
+ * 2. Ermittelt über EmployeeTenantAssignment, in welchen Mandanten die
+ *    related employees als Doctors eingetragen sind
+ * 3. Fragt in jedem dieser Mandanten die ShiftEntry-Tabelle ab, ob dort
+ *    am gegebenen Datum ein echter Dienst (keine Abwesenheit) eingetragen ist
+ * 4. Gibt die gefundenen Konflikte zurück
+ *
+ * @param {object} masterDb - Master-DB-Pool
+ * @param {Function} getTenantPoolFn - Funktion zum Auflösen eines Tenant-Pools (getTenantDb)
+ * @param {object} params
+ * @param {string} params.employeeId - Zentrale Employee-ID
+ * @param {string} params.dateStr - Datum als YYYY-MM-DD
+ * @returns {Promise<Array<{related_employee_id, related_employee_name, relationship_type}>>}
+ */
+async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, { employeeId, dateStr }) {
+  // 1. Alle Beziehungen mit shift_conflict für diesen Mitarbeiter laden
+  const [relationships] = await masterDb.execute(
+    `SELECT er.*,
+            e1.first_name AS emp1_first, e1.last_name AS emp1_last,
+            e2.first_name AS emp2_first, e2.last_name AS emp2_last
+       FROM EmployeeRelationship er
+       JOIN Employee e1 ON er.employee_id = e1.id
+       JOIN Employee e2 ON er.related_employee_id = e2.id
+      WHERE er.shift_conflict = TRUE
+        AND (er.employee_id = ? OR er.related_employee_id = ?)`,
+    [employeeId, employeeId]
+  );
+
+  if (relationships.length === 0) return [];
+
+  // 2. Set der related employee IDs aufbauen
+  const relatedIds = new Map(); // relatedEmployeeId → relationship info
+  for (const rel of relationships) {
+    const [first, last] = String(rel.employee_id) === String(employeeId)
+      ? [rel.emp2_first, rel.emp2_last]
+      : [rel.emp1_first, rel.emp1_last];
+    const relatedId = String(rel.employee_id) === String(employeeId)
+      ? String(rel.related_employee_id)
+      : String(rel.employee_id);
+    relatedIds.set(relatedId, {
+      name: [first, last].filter(Boolean).join(' ') || relatedId,
+      type: rel.relationship_type || 'unbekannt',
+    });
+  }
+
+  if (relatedIds.size === 0) return [];
+
+  // 3. Für jeden related employee die Tenant-Zuordnungen laden
+  const placeholders = Array.from(relatedIds.keys()).map(() => '?').join(',');
+  const [allAssignments] = await masterDb.execute(
+    `SELECT eta.employee_id, eta.tenant_id, eta.tenant_doctor_id
+       FROM EmployeeTenantAssignment eta
+      WHERE eta.employee_id IN (${placeholders})`,
+    Array.from(relatedIds.keys())
+  );
+
+  // Gruppiere Assignments nach tenant_id für effiziente Batch-Abfragen
+  const tenantGroups = new Map(); // tenant_id → [{ employee_id, tenant_doctor_id }]
+  for (const a of allAssignments) {
+    if (!tenantGroups.has(a.tenant_id)) {
+      tenantGroups.set(a.tenant_id, []);
+    }
+    tenantGroups.get(a.tenant_id).push({ employeeId: a.employee_id, tenantDoctorId: a.tenant_doctor_id });
+  }
+
+  // 4. Für jeden Tenant prüfen, ob einer der Doctors einen echten Dienst hat
+  const REAL_SHIFT_EXCLUSIONS = [
+    'Frei', 'frei', 'Urlaub', 'urlaub', 'Krank', 'krank',
+    'Dienstreise', 'Nicht verfügbar', 'Nicht verfugbar',
+    'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz',
+    'Verfügbar', 'Verfugbar', 'AZ', 'KO', 'EZ', 'MS',
+  ];
+
+  const conflicts = [];
+  const processedTenants = new Set();
+
+  for (const [tenantId, doctorMappings] of tenantGroups) {
+    if (processedTenants.has(tenantId)) continue;
+    processedTenants.add(tenantId);
+
+    // Tenant-Token laden
+    const [tokenRows] = await masterDb.execute(
+      'SELECT token FROM db_tokens WHERE id = ? LIMIT 1',
+      [String(tenantId)]
+    );
+    if (tokenRows.length === 0) continue;
+
+    const rawToken = tokenRows[0].token;
+    const tenantPool = getTenantPoolFn(rawToken);
+    if (!tenantPool || tenantPool === masterDb) continue;
+
+    // Alle tenantDoctorIds für diesen Tenant sammeln
+    const docIds = doctorMappings.map(d => d.tenantDoctorId);
+    const docPlaceholders = docIds.map(() => '?').join(',');
+
+    try {
+      const [shifts] = await tenantPool.execute(
+        `SELECT doctor_id FROM ShiftEntry
+          WHERE doctor_id IN (${docPlaceholders})
+            AND date = ?
+            AND position NOT IN (${REAL_SHIFT_EXCLUSIONS.map(() => '?').join(',')})`,
+        [...docIds, dateStr, ...REAL_SHIFT_EXCLUSIONS]
+      );
+
+      // Welche related employees haben einen Dienst?
+      const conflictingEmployeeIds = new Set();
+      for (const shift of shifts) {
+        const mapping = doctorMappings.find(d => String(d.tenantDoctorId) === String(shift.doctor_id));
+        if (mapping) {
+          conflictingEmployeeIds.add(mapping.employeeId);
+        }
+      }
+
+      for (const relId of conflictingEmployeeIds) {
+        const info = relatedIds.get(relId);
+        if (info) {
+          conflicts.push({
+            related_employee_id: relId,
+            related_employee_name: info.name,
+            relationship_type: info.type,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(`[Master] Tenant query error for ${tenantId}:`, err.message);
+      // Einzelschläge dürfen die Gesamtprüfung nicht blockieren
+    }
+  }
+
+  return conflicts;
+}
 
 // ============ WORK TIME MODELS ============
 

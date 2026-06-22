@@ -100,7 +100,7 @@ export default function ServiceStaffingPage() {
         queryFn: () => db.Workplace.list(null, 1000),
     });
 
-    const { validateWithUI, validate, shouldCreateAutoFrei, findAutoFreiToCleanup } = useShiftValidation(allShifts, {
+    const { validateWithUI, validate, shouldCreateAutoFrei, findAutoFreiToCleanup, checkCrossTenantConflicts } = useShiftValidation(allShifts, {
         workplaces,
         sharedShifts: visiblePoolData?.shifts || [],
     });
@@ -466,6 +466,26 @@ export default function ServiceStaffingPage() {
             if (validationResult.warnings.length > 0) {
                 const msg = validationResult.warnings.join('\n');
                 alert(`Hinweis:\n${msg}`);
+            }
+
+            // Mandantenübergreifende Dienstkonflikt-Prüfung
+            // Prüft, ob ein verwandter Mitarbeiter (mit shift_conflict=true)
+            // in einem anderen Mandanten ebenfalls einen echten Dienst hat
+            const crossConflicts = await checkCrossTenantConflicts(doctorId, dateStr);
+            if (crossConflicts.length > 0) {
+                const names = [...new Set(crossConflicts.map(c => c.related_employee_name))].join(', ');
+                const doctor = doctors.find(d => d.id === doctorId);
+                const { confirmed } = await requestOverride({
+                    blockers: [`Dienstkonflikt (mandantenübergreifend): „${names}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag in einem anderen Mandanten ebenfalls für einen Dienst eingeteilt.`],
+                    warnings: [],
+                    doctorId,
+                    doctorName: doctor?.name,
+                    date: format(date, 'dd.MM.yyyy', { locale: de }),
+                    position,
+                    onConfirm: () => executeAssignment(dateStr, position, doctorId, existingShift)
+                });
+                if (!confirmed) return;
+                return;
             }
         }
 

@@ -493,6 +493,22 @@ class APIClient {
     return this.request('/api/master/employee-relationships');
   }
 
+  /**
+   * Cross-tenant check: Prüft ob ein Mitarbeiter an einem bestimmten Datum
+   * einen Dienstkonflikt mit einem anderen Mitarbeiter hat, der in einem
+   * anderen Mandanten eingeteilt ist.
+   *
+   * @param {string} employeeId - Zentrale Employee-ID
+   * @param {string} date - Datum als YYYY-MM-DD
+   * @returns {Promise<{conflicts: Array}>}
+   */
+  async checkRelationshipConflicts(employeeId, date) {
+    return this.request('/api/master/check-relationship-conflicts', {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: employeeId, date }),
+    });
+  }
+
   async getGroupSchedule(groupId, { from, to } = {}) {
     const params = new URLSearchParams();
     if (from) params.set('from', from);
