@@ -132,22 +132,24 @@ export default function WishListPage() {
   ]);
 
   React.useEffect(() => {
-      if (allServiceTypes.length === 0) {
+      const types = viewMode === 'month' ? allServiceTypes : serviceTypes;
+
+      if (types.length === 0) {
           if (activeTab !== null) {
               setActiveTab(null);
           }
           return;
       }
 
-      if (activeTab && allServiceTypes.includes(activeTab)) {
+      if (activeTab && types.includes(activeTab)) {
           return;
       }
 
-      const preferredPosition = resolveWishDefaultPosition(allServiceTypes, user?.wish_default_position);
+      const preferredPosition = resolveWishDefaultPosition(types, user?.wish_default_position);
       if (preferredPosition && preferredPosition !== activeTab) {
           setActiveTab(preferredPosition);
       }
-  }, [allServiceTypes, activeTab, user?.wish_default_position]);
+  }, [allServiceTypes, serviceTypes, activeTab, viewMode, user?.wish_default_position]);
 
   const saveWishDefaultPosition = async (position) => {
       try {
@@ -183,16 +185,29 @@ export default function WishListPage() {
             return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
     }, [doctors, user]);
 
-    const doctorSelectOptions = React.useMemo(() => (
-        doctorsForSelection.map((doctor) => ({
+    const doctorSelectOptions = React.useMemo(() => {
+        const options = doctorsForSelection.map((doctor) => ({
             value: doctor.id,
             label: doctor.name,
             triggerLabel: doctor.name,
             description: doctor.role || undefined,
             searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
             sortLabel: doctor.name,
-        }))
-    ), [doctorsForSelection]);
+        }));
+
+        if (user?.role === 'admin') {
+            options.unshift({
+                value: '',
+                label: 'Alle',
+                triggerLabel: 'Alle',
+                description: 'Alle Mitarbeiter anzeigen',
+                searchText: 'alle',
+                sortLabel: '',
+            });
+        }
+
+        return options;
+    }, [doctorsForSelection, user?.role]);
 
     const { data: masterEmployees = [] } = useQuery({
         queryKey: ['master-central-employees-for-wishlist'],
@@ -210,7 +225,7 @@ export default function WishListPage() {
 
   // Select first doctor by default or user's assigned doctor
   React.useEffect(() => {
-    if (doctorsForSelection.length > 0 && !selectedDoctorId) {
+    if (doctorsForSelection.length > 0 && selectedDoctorId === null) {
         if (user && user.role !== 'admin') {
             // Non-admins can ONLY see their assigned doctor
             if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
@@ -769,10 +784,10 @@ export default function WishListPage() {
                   <WishMonthOverview 
                       year={selectedYear}
                       month={viewDate.getMonth()}
-                      doctors={doctors}
+                      doctors={selectedDoctorId ? doctors.filter(d => d.id === selectedDoctorId) : doctors}
                       contractInfoByDoctorId={contractInfoByDoctorId}
-                      wishes={allWishes}
-                      shifts={allShifts}
+                      wishes={selectedDoctorId ? allWishes.filter(w => w.doctor_id === selectedDoctorId) : allWishes}
+                      shifts={selectedDoctorId ? allShifts.filter(s => s.doctor_id === selectedDoctorId) : allShifts}
                       onDateChange={setViewDate}
                       activeType={activeTab}
                       onToggle={(date, docId) => {
