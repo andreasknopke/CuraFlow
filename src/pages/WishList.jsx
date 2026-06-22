@@ -97,11 +97,19 @@ export default function WishListPage() {
       queryFn: () => db.Workplace.list(null, 1000),
   });
 
+  // Alle Dienstarten (ungefiltert nach Qualifikation) für die Filter-Buttons
+  const allServiceTypes = React.useMemo(() => {
+      return workplaces
+          .filter(w => w.category === 'Dienste')
+          .sort((a, b) => (a.order || 0) - (b.order || 0))
+          .map((workplace) => workplace.name);
+  }, [workplaces]);
+
+  // Qualifikationsgefilterte Dienstarten für die Jahresansicht (Einzel-Arzt)
   const serviceTypes = React.useMemo(() => {
       const serviceWorkplaces = workplaces
           .filter(w => w.category === 'Dienste')
-          .sort((a, b) => (a.order || 0) - (b.order || 0))
-;
+          .sort((a, b) => (a.order || 0) - (b.order || 0));
 
       if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
           return serviceWorkplaces.map((workplace) => workplace.name);
@@ -124,22 +132,22 @@ export default function WishListPage() {
   ]);
 
   React.useEffect(() => {
-      if (serviceTypes.length === 0) {
+      if (allServiceTypes.length === 0) {
           if (activeTab !== null) {
               setActiveTab(null);
           }
           return;
       }
 
-      if (activeTab && serviceTypes.includes(activeTab)) {
+      if (activeTab && allServiceTypes.includes(activeTab)) {
           return;
       }
 
-      const preferredPosition = resolveWishDefaultPosition(serviceTypes, user?.wish_default_position);
+      const preferredPosition = resolveWishDefaultPosition(allServiceTypes, user?.wish_default_position);
       if (preferredPosition && preferredPosition !== activeTab) {
           setActiveTab(preferredPosition);
       }
-  }, [serviceTypes, activeTab, user?.wish_default_position]);
+  }, [allServiceTypes, activeTab, user?.wish_default_position]);
 
   const saveWishDefaultPosition = async (position) => {
       try {
@@ -708,7 +716,7 @@ export default function WishListPage() {
       {/* Tabs for Service Types */}
       <div className="mb-6 overflow-x-auto pb-2">
           <div className="flex space-x-1">
-              {serviceTypes.map(type => (
+              {(isAdmin && viewMode === 'month' ? allServiceTypes : serviceTypes).map(type => (
                    <Button
                        key={type}
                        data-testid={`wishlist-service-tab-${type.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}

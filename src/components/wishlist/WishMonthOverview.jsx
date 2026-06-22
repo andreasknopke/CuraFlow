@@ -88,11 +88,22 @@ export default function WishMonthOverview({
 
     const getWish = (doctor, date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        return wishes.find(w => 
+        const doctorDateWishes = wishes.filter(w => 
             w.doctor_id === doctor.id && 
-            isWishOnDate(w, dateStr) &&
-            (w.type === 'no_service' || !activeType || w.position === activeType)
+            isWishOnDate(w, dateStr)
         );
+
+        if (!activeType) {
+            // No filter: prefer service over no_service when both exist
+            return doctorDateWishes.find(w => w.type === 'service') || doctorDateWishes[0];
+        }
+
+        // With activeType filter: find service wish matching the position first
+        const serviceWish = doctorDateWishes.find(w => w.type === 'service' && w.position === activeType);
+        if (serviceWish) return serviceWish;
+
+        // Fall back to no_service wishes (global or matching activeType)
+        return doctorDateWishes.find(w => w.type === 'no_service' && (!w.position || w.position === activeType));
     };
 
     const hasAnyWish = (date) => {
