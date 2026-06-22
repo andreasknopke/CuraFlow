@@ -230,3 +230,181 @@ describe('ShiftValidator vacation overshoot', () => {
     expect(result.warnings.find((w) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
   });
 });
+
+describe('ShiftValidator employee relationship conflicts', () => {
+  it('does not warn when no relationships are configured', () => {
+    const validator = createShiftValidator({
+      doctors: [
+        { id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' },
+        { id: 'doctor-2', role: 'Facharzt', fte: 1, central_employee_id: 'employee-2' },
+        { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
+      ],
+      shifts: [
+        { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      sharedShifts: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      employeeRelationships: new Map(),
+    });
+
+    const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
+    expect(result.canProceed).toBe(true);
+    // Keine Dienstkonflikt-Warnung bei leerer Relationships-Map
+    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+  });
+
+  it('warns when a related employee with shift_conflict is already assigned a real shift on the same day', () => {
+    const validator = createShiftValidator({
+      doctors: [
+        { id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1', name: 'Dr. Anna Müller' },
+        { id: 'doctor-2', role: 'Facharzt', fte: 1, central_employee_id: 'employee-2', name: 'Dr. Max Schmidt' },
+        { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
+      ],
+      shifts: [
+        { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      sharedShifts: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      // Bidirektionale Beziehung zwischen employee-1 und employee-2 mit shift_conflict
+      employeeRelationships: new Map([
+        ['employee-1', ['employee-2']],
+        ['employee-2', ['employee-1']],
+      ]),
+    });
+
+    const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
+    expect(result.canProceed).toBe(true);
+    const conflictWarnings = result.warnings.filter(w => w.includes('Dienstkonflikt'));
+    expect(conflictWarnings.length).toBeGreaterThan(0);
+    expect(conflictWarnings[0]).toContain('Dr. Max Schmidt');
+  });
+
+  it('does not warn for absence positions (Frei, Urlaub, Krank)', () => {
+    const validator = createShiftValidator({
+      doctors: [
+        { id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' },
+        { id: 'doctor-2', role: 'Facharzt', fte: 1, central_employee_id: 'employee-2' },
+        { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
+      ],
+      shifts: [
+        { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      sharedShifts: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      employeeRelationships: new Map([
+        ['employee-1', ['employee-2']],
+        ['employee-2', ['employee-1']],
+      ]),
+    });
+
+    // Frei sollte keine Dienstkonflikt-Warnung auslösen
+    const result = validator.validate('doctor-1', '2026-06-22', 'Frei');
+    expect(result.canProceed).toBe(true);
+    // Es sollte keine Warnung wegen Dienstkonflikt geben (nur ggf. Mindestbesetzung, aber das ist ein anderes Feature)
+    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+  });
+
+  it('does not warn for routine categories (Rotationen)', () => {
+    const validator = createShiftValidator({
+      doctors: [
+        { id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' },
+        { id: 'doctor-2', role: 'Facharzt', fte: 1, central_employee_id: 'employee-2' },
+        { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
+      ],
+      shifts: [
+        { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'CT Rotation' },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'CT Rotation', category: 'Rotationen' },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      sharedShifts: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      employeeRelationships: new Map([
+        ['employee-1', ['employee-2']],
+        ['employee-2', ['employee-1']],
+      ]),
+    });
+
+    const result = validator.validate('doctor-1', '2026-06-22', 'CT Rotation');
+    expect(result.canProceed).toBe(true);
+    // Keine Dienstkonflikt-Warnung für Rotationen
+    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+  });
+
+  it('warns only when both employees are assigned to real shifts on the same day', () => {
+    const validator = createShiftValidator({
+      doctors: [
+        { id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1', name: 'Dr. Anna Müller' },
+        { id: 'doctor-2', role: 'Facharzt', fte: 1, central_employee_id: 'employee-2', name: 'Dr. Max Schmidt' },
+        { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
+        { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
+      ],
+      shifts: [
+        { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-23', position: 'Bereitschaftsdienst' },
+      ],
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      sharedShifts: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      employeeRelationships: new Map([
+        ['employee-1', ['employee-2']],
+        ['employee-2', ['employee-1']],
+      ]),
+    });
+
+    // doctor-2 ist am 2026-06-23, nicht am 2026-06-22 -> keine Warnung
+    const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
+    expect(result.canProceed).toBe(true);
+    // Keine Dienstkonflikt-Warnung, da doctor-2 nicht am gleichen Tag eingeteilt ist
+    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+  });
+});

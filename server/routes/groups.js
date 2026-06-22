@@ -56,6 +56,81 @@ function createHttpError(status, message, details) {
   return error;
 }
 
+/**
+ * Prüft, ob der vorgeschlagene Mitarbeiter eine Beziehung mit aktiviertem
+ * Dienstkonflikt zu einem anderen Mitarbeiter hat, der bereits am selben Tag
+ * für denselben Pool-Dienst eingeteilt ist.
+ *
+ * @param {import('mysql2/promise').Pool} db - Master-DB-Pool
+ * @param {object} params
+ * @param {string} params.employeeId - Central employee ID des vorgeschlagenen Mitarbeiters
+ * @param {string} params.dateStr - Datum als YYYY-MM-DD
+ * @param {Array} params.existingSharedShiftsForWorkplace - Bestehende Pool-Dienste
+ * @returns {Promise<Array<{rule: string, message: string}>>}
+ */
+async function checkRelationshipConflictsForPoolShift(db, { employeeId, dateStr, existingSharedShiftsForWorkplace }) {
+  try {
+    // Alle Beziehungen mit shift_conflict abfragen, die diesen Mitarbeiter betreffen
+    const [relationships] = await db.execute(
+      `SELECT er.*,
+              e1.last_name AS emp1_last, e1.first_name AS emp1_first,
+              e2.last_name AS emp2_last, e2.first_name AS emp2_first
+         FROM EmployeeRelationship er
+         JOIN Employee e1 ON er.employee_id = e1.id
+         JOIN Employee e2 ON er.related_employee_id = e2.id
+        WHERE er.shift_conflict = TRUE
+          AND (er.employee_id = ? OR er.related_employee_id = ?)`,
+      [employeeId, employeeId]
+    );
+
+    if (relationships.length === 0) return [];
+
+    // Bidirektionale Map: employee_id → Set von related employee IDs
+    const relatedIds = new Set();
+    for (const rel of relationships) {
+      if (String(rel.employee_id) === String(employeeId)) {
+        relatedIds.add(String(rel.related_employee_id));
+      }
+      if (String(rel.related_employee_id) === String(employeeId)) {
+        relatedIds.add(String(rel.employee_id));
+      }
+    }
+
+    if (relatedIds.size === 0) return [];
+
+    // Prüfen, ob einer der related employees bereits einen Pool-Dienst am selben Tag hat
+    const blockers = [];
+    const normalizedDate = String(dateStr).slice(0, 10);
+
+    for (const existingShift of existingSharedShiftsForWorkplace) {
+      const shiftDate = String(existingShift.date || '').slice(0, 10);
+      if (shiftDate !== normalizedDate) continue;
+      if (String(existingShift.employee_id) === String(employeeId)) continue; // Selbst ignorieren
+
+      if (relatedIds.has(String(existingShift.employee_id))) {
+        // Name des Partners ermitteln
+        const rel = relationships.find(
+          (r) => String(r.employee_id) === String(existingShift.employee_id)
+             || String(r.related_employee_id) === String(existingShift.employee_id)
+        );
+        const partnerName = rel
+          ? [rel.emp1_first, rel.emp1_last].filter(Boolean).join(' ')
+          : existingShift.employee_name || 'Unbekannt';
+
+        blockers.push({
+          rule: 'employee_relationship_conflict',
+          message: `Dienstkonflikt: „${partnerName}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag ebenfalls für diesen Pool-Dienst eingeteilt.`,
+        });
+      }
+    }
+
+    return blockers;
+  } catch (error) {
+    console.error('[groups] Relationship conflict check error:', error);
+    return []; // Bei Fehler nicht blocken, nur loggen
+  }
+}
+
 async function loadTenantTokenById(tenantId) {
   const [rows] = await db.execute('SELECT * FROM db_tokens WHERE id = ? LIMIT 1', [String(tenantId)]);
   return rows[0] || null;
@@ -1138,12 +1213,21 @@ router.post('/:groupId/shifts', async (req, res) => {
       existingSharedShiftsForWorkplace: existing,
       holidayDates: tenantRuleContext.holidayDates,
     });
+
+    // Employee relationship conflict check for pool shifts
+    const relationshipBlockers = req.query.force === '1' ? [] : await checkRelationshipConflictsForPoolShift(db, {
+      employeeId: employee_id,
+      dateStr: date,
+      existingSharedShiftsForWorkplace: existing,
+    });
+
     // Hard violations (max_per_person_month, max_consecutive, rest_after) block the save.
     const hardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
     const hard = violations.filter((v) => hardRules.has(v.rule));
     const tenantHard = tenantRuleResult.blockers;
-    if (tenantHard.length > 0) {
-      return res.status(422).json({ error: 'constraint_violation', details: tenantHard });
+    const allBlockers = [...tenantHard, ...relationshipBlockers];
+    if (allBlockers.length > 0) {
+      return res.status(422).json({ error: 'constraint_violation', details: allBlockers });
     }
     if (hard.length > 0 && req.query.force !== '1') {
       return res.status(422).json({ error: 'constraint_violation', details: hard });
@@ -1248,8 +1332,17 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
       existingSharedShiftsForWorkplace: existingForWorkplace,
       holidayDates: tenantRuleContext.holidayDates,
     });
-    if (tenantRuleResult.blockers.length > 0) {
-      return res.status(422).json({ error: 'constraint_violation', details: tenantRuleResult.blockers });
+
+    // Employee relationship conflict check for pool shifts
+    const relationshipBlockers = await checkRelationshipConflictsForPoolShift(db, {
+      employeeId: nextState.employee_id,
+      dateStr: nextState.date,
+      existingSharedShiftsForWorkplace: existingForWorkplace,
+    });
+
+    const allPatchBlockers = [...tenantRuleResult.blockers, ...relationshipBlockers];
+    if (allPatchBlockers.length > 0) {
+      return res.status(422).json({ error: 'constraint_violation', details: allPatchBlockers });
     }
 
     values.push(req.params.shiftId);

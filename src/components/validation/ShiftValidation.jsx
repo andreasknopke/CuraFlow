@@ -22,7 +22,7 @@ export const DEFAULT_ASSISTANT_ROLES = ["Assistenzarzt"];
  */
 
 export class ShiftValidator {
-    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, sharedShifts, getPublicHolidayDatesForYear }) {
+    constructor({ doctors, shifts, workplaces, wishes, systemSettings, staffingEntries, specialistRoles, timeslots, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, sharedShifts, getPublicHolidayDatesForYear, employeeRelationships }) {
         this.doctors = doctors || [];
         this.shifts = shifts || [];
         this.sharedShifts = sharedShifts || [];
@@ -41,6 +41,8 @@ export class ShiftValidator {
         this.wpQualsByWorkplace = wpQualsByWorkplace || {};
         // Optional holiday hook for vacation-overshoot rule
         this.getPublicHolidayDatesForYear = getPublicHolidayDatesForYear || (() => null);
+        // Mitarbeiterbeziehungen mit Dienstkonflikt (employee_id → [related_employee_id, ...])
+        this.employeeRelationships = employeeRelationships || new Map();
 
         // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
         this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
@@ -206,6 +208,16 @@ export class ShiftValidator {
             if (overlapResult.warning) {
                 result.warnings.push(overlapResult.warning);
             }
+        }
+
+        // 8. Mitarbeiterbeziehungen mit Dienstkonflikt prüfen (nur für echte Dienste)
+        const relationshipResult = this._checkRelationshipConflicts(doctorId, dateStr, position, excludeShiftId);
+        if (relationshipResult.blocker) {
+            result.blockers.push(relationshipResult.blocker);
+            result.canProceed = false;
+        }
+        if (relationshipResult.warning) {
+            result.warnings.push(relationshipResult.warning);
         }
 
         return result;
@@ -721,6 +733,81 @@ export class ShiftValidator {
     isAutoOffPosition(position) {
         const workplace = this.workplaces.find(w => w.name === position);
         return !!workplace?.auto_off;
+    }
+
+    /**
+     * Prüft Mitarbeiterbeziehungen mit aktiviertem Dienstkonflikt.
+     * Wenn zwei Mitarbeiter, die in einer Beziehung mit shift_conflict=true stehen,
+     * am selben Tag für einen echten Dienst (keine Routine wie Rotationen/Konsile)
+     * eingeteilt werden, wird eine Warnung ausgegeben.
+     * 
+     * Die Prüfung ist auf "echte Dienste" beschränkt:
+     * - Freizeit/Abwesenheits-Positionen (Frei, Urlaub, Krank, etc.) werden ignoriert
+     * - Routine-Kategorien (Rotationen, Konsile, etc.) werden ignoriert
+     */
+    _checkRelationshipConflicts(doctorId, dateStr, position, excludeShiftId) {
+        // Nur prüfen wenn Beziehungsdaten vorhanden sind
+        if (!this.employeeRelationships || this.employeeRelationships.size === 0) {
+            return {};
+        }
+
+        // Nur echte Dienste prüfen – keine Abwesenheiten
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar",
+                                  "Fortbildung", "Kongress", "Elternzeit", "Mutterschutz", "Verfügbar"];
+        if (absencePositions.includes(position)) return {};
+
+        // Nur Dienste-Kategorie prüfen – keine Routine (Rotationen, Konsile etc.)
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (workplace && workplace.category !== 'Dienste') {
+            return {};
+        }
+
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor || !doctor.central_employee_id) return {};
+
+        const centralId = String(doctor.central_employee_id);
+
+        // Alle related employees mit shift_conflict für diesen Mitarbeiter finden
+        const relatedEmployeeIds = this.employeeRelationships.get(centralId);
+        if (!relatedEmployeeIds || relatedEmployeeIds.length === 0) return {};
+
+        // Prüfen, ob einer der related employees am selben Tag einen echten Dienst hat
+        const conflictingDoctorNames = [];
+
+        for (const relCentralId of relatedEmployeeIds) {
+            // Finde alle lokalen Doctors die zu diesem central employee gehören
+            const doctorsWithRelation = this.doctors.filter(
+                d => String(d.central_employee_id) === relCentralId
+            );
+
+            for (const relDoctor of doctorsWithRelation) {
+                const hasRealShift = this.shifts.some(s =>
+                    s.doctor_id === relDoctor.id
+                    && s.date === dateStr
+                    && s.id !== excludeShiftId
+                    && !absencePositions.includes(s.position)
+                );
+
+                // Auch sharedShifts (Gruppendienste) prüfen
+                const hasSharedShift = this.sharedShifts.some(s =>
+                    String(s.employee_id) === relCentralId
+                    && String(s.date).slice(0, 10) === dateStr
+                );
+
+                if (hasRealShift || hasSharedShift) {
+                    conflictingDoctorNames.push(relDoctor.name || `${relDoctor.first_name || ''} ${relDoctor.last_name || ''}`.trim() || 'Unbekannt');
+                }
+            }
+        }
+
+        if (conflictingDoctorNames.length > 0) {
+            const names = [...new Set(conflictingDoctorNames)].join(', ');
+            return {
+                warning: `Dienstkonflikt: „${names}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag ebenfalls für einen Dienst eingeteilt.`
+            };
+        }
+
+        return {};
     }
 }
 

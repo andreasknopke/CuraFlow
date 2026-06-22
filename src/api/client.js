@@ -483,6 +483,16 @@ class APIClient {
     return this.request(`/api/groups/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/eligible-staff`);
   }
 
+  /**
+   * Fetch all employee relationships with shift_conflict enabled.
+   * Used by the shift validation system to detect scheduling conflicts
+   * between employees who have a relationship and do not want to serve
+   * at the same time.
+   */
+  async getEmployeeRelationships() {
+    return this.request('/api/master/employee-relationships');
+  }
+
   async getGroupSchedule(groupId, { from, to } = {}) {
     const params = new URLSearchParams();
     if (from) params.set('from', from);

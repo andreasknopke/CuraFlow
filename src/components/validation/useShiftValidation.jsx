@@ -1,9 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
-import { db, base44 } from "@/api/client";
+import { db, base44, api } from "@/api/client";
 import { useMemo } from 'react';
 import { ShiftValidator } from './ShiftValidation';
 import { toast } from 'sonner';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
+
+/**
+ * Baut eine bidirektionale Map aus Employee-Beziehungen mit shift_conflict=true.
+ * Map: central_employee_id → [related_central_employee_id, ...]
+ */
+function buildRelationshipMap(relationships) {
+    const map = new Map();
+    for (const rel of relationships) {
+        if (!rel.shift_conflict) continue;
+        // Bidirektional: A → B und B → A
+        const empId = String(rel.employee_id);
+        const relId = String(rel.related_employee_id);
+        if (!map.has(empId)) map.set(empId, []);
+        if (!map.has(relId)) map.set(relId, []);
+        map.get(empId).push(relId);
+        map.get(relId).push(empId);
+    }
+    return map;
+}
 
 /**
  * Hook für zentrale Shift-Validierung
@@ -41,6 +60,19 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
         staleTime: 1000 * 60 * 5
     });
 
+    // Mitarbeiterbeziehungen mit Dienstkonflikt
+    const { data: relationshipsData = [] } = useQuery({
+        queryKey: ['employee-relationships-conflicts'],
+        queryFn: async () => {
+            const res = await api.getEmployeeRelationships();
+            return res.relationships || [];
+        },
+        staleTime: 1000 * 60 * 5,
+    });
+
+    // Bidirektionale Map aufbauen
+    const employeeRelationships = useMemo(() => buildRelationshipMap(relationshipsData), [relationshipsData]);
+
     // Qualifikationsdaten laden
     const { qualificationMap } = useQualifications();
     const { getQualificationIds: getDoctorQualIds, allDoctorQualifications } = useAllDoctorQualifications();
@@ -66,9 +98,10 @@ export function useShiftValidation(shifts = [], customOptions = {}) {
             qualificationMap,
             getDoctorQualIds,
             wpQualsByWorkplace,
+            employeeRelationships,
             ...customOptions
         });
-    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, sharedShifts, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
+    }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, sharedShifts, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, employeeRelationships, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
 
     /**
      * Validiert eine geplante Shift-Operation

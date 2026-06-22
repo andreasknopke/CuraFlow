@@ -2389,6 +2389,31 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
 // ============ EMPLOYEE RELATIONSHIPS ============
 
 /**
+ * GET /api/master/employee-relationships
+ * List all relationships with shift_conflict enabled.
+ * Used by frontend validation to detect scheduling conflicts.
+ */
+router.get('/employee-relationships', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute(
+      `SELECT er.*,
+              e1.last_name as employee_last_name, e1.first_name as employee_first_name,
+              e2.last_name as related_last_name, e2.first_name as related_first_name
+       FROM EmployeeRelationship er
+       JOIN Employee e1 ON er.employee_id = e1.id
+       JOIN Employee e2 ON er.related_employee_id = e2.id
+       WHERE er.shift_conflict = TRUE
+       ORDER BY er.created_at DESC`
+    );
+
+    res.json({ relationships: rows });
+  } catch (error) {
+    console.error('[Master relationships] List all error:', error);
+    next(error);
+  }
+});
+
+/**
  * GET /api/master/employees/:id/relationships
  * List all relationships for a central employee
  */
