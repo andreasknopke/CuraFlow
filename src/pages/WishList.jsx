@@ -151,6 +151,28 @@ export default function WishListPage() {
       }
   }, [allServiceTypes, serviceTypes, activeTab, viewMode, user?.wish_default_position]);
 
+  // Beim Wechsel zur Monatsübersicht: "Alle" im Mitarbeiter-Dropdown auswählen
+  // Beim Wechsel zurück zur Jahresansicht: vorher ausgewählten Arzt wiederherstellen
+  const prevViewModeRef = useRef(viewMode);
+  React.useEffect(() => {
+      const prev = prevViewModeRef.current;
+      prevViewModeRef.current = viewMode;
+
+      if (user?.role !== 'admin') return;
+
+      if (viewMode === 'month' && prev === 'year' && selectedDoctorId && selectedDoctorId !== '') {
+          // Wechsel von Jahr→Monat: speichere aktuellen Arzt, setze auf "Alle"
+          setSelectedDoctorId('');
+      } else if (viewMode === 'year' && prev === 'month' && !selectedDoctorId) {
+          // Wechsel von Monat→Jahr: setze ersten Arzt oder user.doctor_id
+          if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
+              setSelectedDoctorId(user.doctor_id);
+          } else if (doctorsForSelection.length > 0) {
+              setSelectedDoctorId(doctorsForSelection[0].id);
+          }
+      }
+  }, [viewMode, user?.role, selectedDoctorId, doctorsForSelection]);
+
   const saveWishDefaultPosition = async (position) => {
       try {
           await api.updateMe({ data: { wish_default_position: position } });
