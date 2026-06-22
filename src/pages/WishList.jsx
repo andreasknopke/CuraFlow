@@ -154,6 +154,7 @@ export default function WishListPage() {
   // Beim Wechsel zur Monatsübersicht: "Alle" im Mitarbeiter-Dropdown auswählen
   // Beim Wechsel zurück zur Jahresansicht: vorher ausgewählten Arzt wiederherstellen
   const prevViewModeRef = useRef(viewMode);
+  const prevDoctorIdRef = useRef(null);
   React.useEffect(() => {
       const prev = prevViewModeRef.current;
       prevViewModeRef.current = viewMode;
@@ -162,16 +163,17 @@ export default function WishListPage() {
 
       if (viewMode === 'month' && prev === 'year' && selectedDoctorId && selectedDoctorId !== '') {
           // Wechsel von Jahr→Monat: speichere aktuellen Arzt, setze auf "Alle"
+          prevDoctorIdRef.current = selectedDoctorId;
           setSelectedDoctorId('');
       } else if (viewMode === 'year' && prev === 'month' && !selectedDoctorId) {
-          // Wechsel von Monat→Jahr: setze ersten Arzt oder user.doctor_id
-          if (user.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
-              setSelectedDoctorId(user.doctor_id);
-          } else if (doctorsForSelection.length > 0) {
-              setSelectedDoctorId(doctorsForSelection[0].id);
+          // Wechsel von Monat→Jahr: setze zurück auf vorher ausgewählten Arzt
+          const restoreId = prevDoctorIdRef.current;
+          prevDoctorIdRef.current = null;
+          if (restoreId && doctors.some(d => d.id === restoreId)) {
+              setSelectedDoctorId(restoreId);
           }
       }
-  }, [viewMode, user?.role, selectedDoctorId, doctorsForSelection]);
+  }, [viewMode, user?.role, selectedDoctorId]);
 
   const saveWishDefaultPosition = async (position) => {
       try {
