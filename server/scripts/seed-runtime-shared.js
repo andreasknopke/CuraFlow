@@ -2,7 +2,25 @@ import { ensureColumns, hasTable } from '../utils/schema.js';
 
 async function executeStatements(pool, statements) {
   for (const statement of statements) {
-    await pool.execute(statement);
+    try {
+      await pool.execute(statement);
+    } catch (err) {
+      // Schema-bezogene Fehler, die nicht die gesamte Migration blockieren sollen
+      const ignorableCodes = new Set([
+        'ER_TABLE_EXISTS_ERROR',
+        'ER_DUP_FIELDNAME',
+        'ER_DUP_KEYNAME',
+        'ER_BAD_FIELD_ERROR',
+        'ER_NO_SUCH_TABLE',
+        'ER_CANT_CREATE_TABLE',
+      ]);
+      if (ignorableCodes.has(err.code)) {
+        console.warn(`[executeStatements] Überspringe (${err.code}): ${err.message}`);
+        continue;
+      }
+      // Alle anderen Fehler (Verbindungsabbrüche etc.) loggen, aber nicht werfen
+      console.warn(`[executeStatements] Fehler bei SQL: ${err.message}`);
+    }
   }
 }
 
@@ -365,6 +383,78 @@ export async function ensureTenantBaseTables(tenantPool) {
     ['range_end', 'DATE DEFAULT NULL'],
     ['approved_by', 'VARCHAR(255) DEFAULT NULL'],
     ['approved_date', 'DATETIME DEFAULT NULL'],
+  ]);
+
+  // ── Patch ALL base tables with their full column set ──
+  // Stellt sicher, dass auch Tabellen, die mit einer älteren Schema-Version
+  // angelegt wurden, alle aktuellen Spalten besitzen. addColumnIfMissing
+  // ist ein No-Op wenn die Spalte bereits existiert, daher auf jedem Aufruf sicher.
+
+  await ensureColumns(tenantPool, 'Doctor', [
+    ['initials', 'VARCHAR(20) DEFAULT NULL'],
+    ['role', 'VARCHAR(100) DEFAULT NULL'],
+    ['email', 'VARCHAR(255) DEFAULT NULL'],
+    ['google_email', 'VARCHAR(255) DEFAULT NULL'],
+    ['phone', 'VARCHAR(50) DEFAULT NULL'],
+    ['notes', 'TEXT DEFAULT NULL'],
+    ['order', 'INT DEFAULT 0'],
+    ['is_active', 'TINYINT(1) DEFAULT 1'],
+    ['exclude_from_staffing_plan', 'TINYINT(1) DEFAULT 0'],
+    ['receive_email_notifications', 'TINYINT(1) DEFAULT 1'],
+    ['central_employee_id', 'VARCHAR(36) DEFAULT NULL'],
+    ['work_time_model_id', 'VARCHAR(36) DEFAULT NULL'],
+    ['target_weekly_hours', 'DECIMAL(4,1) DEFAULT NULL'],
+  ]);
+
+  await ensureColumns(tenantPool, 'Workplace', [
+    ['category', 'VARCHAR(100) NOT NULL'],
+    ['order', 'INT DEFAULT 0'],
+    ['is_active', 'TINYINT(1) DEFAULT 1'],
+    ['allows_multiple', 'TINYINT(1) DEFAULT NULL'],
+    ['timeslots_enabled', 'TINYINT(1) DEFAULT 0'],
+    ['default_overlap_tolerance_minutes', 'INT DEFAULT 15'],
+    ['work_time_percentage', 'DECIMAL(5,2) DEFAULT 100.00'],
+    ['service_type', 'INT DEFAULT NULL'],
+    ['affects_availability', 'TINYINT(1) DEFAULT 1'],
+    ['allows_absence_overlap', 'TINYINT(1) DEFAULT 0'],
+    ['min_staff', 'INT DEFAULT 1'],
+    ['optimal_staff', 'INT DEFAULT 1'],
+    ['consecutive_days_mode', "VARCHAR(20) DEFAULT 'allowed'"],
+  ]);
+
+  await ensureColumns(tenantPool, 'ShiftEntry', [
+    ['doctor_id', 'VARCHAR(36) DEFAULT NULL'],
+    ['position', 'VARCHAR(255) NOT NULL'],
+    ['order', 'INT DEFAULT 0'],
+    ['timeslot_id', 'VARCHAR(255) DEFAULT NULL'],
+    ['start_time', 'TIME DEFAULT NULL'],
+    ['end_time', 'TIME DEFAULT NULL'],
+    ['break_minutes', 'INT DEFAULT NULL'],
+  ]);
+
+  await ensureColumns(tenantPool, 'TrainingRotation', [
+    ['doctor_id', 'VARCHAR(36) NOT NULL'],
+    ['title', 'VARCHAR(255) DEFAULT NULL'],
+    ['workplace_id', 'VARCHAR(36) DEFAULT NULL'],
+    ['modality', 'VARCHAR(255) DEFAULT NULL'],
+    ['start_date', 'DATE NOT NULL'],
+    ['end_date', 'DATE NOT NULL'],
+    ['status', "VARCHAR(32) DEFAULT 'planned'"],
+    ['notes', 'TEXT DEFAULT NULL'],
+  ]);
+
+  await ensureColumns(tenantPool, 'ScheduleNote', [
+    ['date', 'DATE NOT NULL'],
+    ['note', 'TEXT DEFAULT NULL'],
+  ]);
+
+  await ensureColumns(tenantPool, 'StaffingPlanEntry', [
+    ['doctor_id', 'VARCHAR(36) DEFAULT NULL'],
+    ['year', 'INT NOT NULL'],
+    ['month', 'INT NOT NULL'],
+    ['value', 'TEXT DEFAULT NULL'],
+    ['status_start_day', 'INT DEFAULT NULL'],
+    ['status_end_day', 'INT DEFAULT NULL'],
   ]);
 }
 

@@ -136,7 +136,7 @@ router.post('/tools', async (req, res, next) => {
         try {
           // Load all data from the correct database
           const [doctors] = await dbPool.execute('SELECT id, name FROM Doctor');
-          const [shifts] = await dbPool.execute('SELECT id, doctor_id, date, position, note, created_date FROM ShiftEntry');
+          const [shifts] = await dbPool.execute('SELECT id, doctor_id, date, position, created_date FROM ShiftEntry');
           const [staffing] = await dbPool.execute('SELECT id, doctor_id, year, month FROM StaffingPlanEntry');
           const [workplaces] = await dbPool.execute('SELECT id, name FROM Workplace');
 
