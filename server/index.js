@@ -369,20 +369,24 @@ export const tenantDbMiddleware = async (req, res, next) => {
       await migrationInFlight.get(dbToken);
       req.db = getTenantDb(dbToken);
       req.isCustomDb = !!dbToken && req.db !== db;
-
-      // Ensure all base tables exist (needed for brand-new empty tenant databases)
-      try {
-        await ensureTenantBaseTables(req.db);
-      } catch (e) {
-        console.warn('[Auto-Migration] ensureTenantBaseTables warning:', e.message);
-        // Non-fatal — migrations will retry on next deploy/restart
-      }
     } catch (err) {
       console.error('[Auto-Migration] Unexpected error:', err.message);
       if (dbToken) {
         removeTenantPool(dbToken);
       }
       return next(err);
+    }
+  }
+
+  // Ensure all base tables exist and have all required columns.
+  // Läuft bei JEDEM Request (idempotent) – ensureColumns addiert nur fehlende Spalten.
+  // Notwendig, damit Tenants, die vor Einführung neuer Spalten angelegt wurden,
+  // diese nachträglich erhalten, ohne dass ein Server-Neustart nötig ist.
+  if (req.isCustomDb) {
+    try {
+      await ensureTenantBaseTables(req.db);
+    } catch (e) {
+      console.warn('[Auto-Migration] ensureTenantBaseTables warning:', e.message);
     }
   }
 
