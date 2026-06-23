@@ -32,9 +32,10 @@ function createMockPool(tablesWithErrors = new Set()) {
 /**
  * Simuliert die Logik der rename-position-Route.
  * Die gleichen SQL-Updates und Error-Handling wie in server/routes/admin.js.
+ * NOTE: ScheduleNote hat keine position-Spalte, daher nur ShiftEntry + TrainingRotation.
  */
 async function executeRenamePosition(dbPool, { oldName, newName }) {
-  const stats = { updatedShifts: 0, updatedNotes: 0, updatedRotations: 0 };
+  const stats = { updatedShifts: 0, updatedRotations: 0 };
 
   // Update ShiftEntry
   try {
@@ -44,36 +45,25 @@ async function executeRenamePosition(dbPool, { oldName, newName }) {
     );
     stats.updatedShifts = r1.affectedRows || 0;
   } catch (e) {
-    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
-  }
-
-  // Update ScheduleNote
-  try {
-    const [r2] = await dbPool.execute(
-      'UPDATE ScheduleNote SET position = ? WHERE position = ?',
-      [newName, oldName],
-    );
-    stats.updatedNotes = r2.affectedRows || 0;
-  } catch (e) {
-    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
   }
 
   // Update TrainingRotation (modality field)
   try {
-    const [r3] = await dbPool.execute(
+    const [r2] = await dbPool.execute(
       'UPDATE TrainingRotation SET modality = ? WHERE modality = ?',
       [newName, oldName],
     );
-    stats.updatedRotations = r3.affectedRows || 0;
+    stats.updatedRotations = r2.affectedRows || 0;
   } catch (e) {
-    if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+    if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
   }
 
   return stats;
 }
 
 describe('renamePosition (SQL-Logik)', () => {
-  it('führt Updates auf allen drei Tabellen durch, wenn diese existieren', async () => {
+  it('führt Updates auf ShiftEntry und TrainingRotation durch', async () => {
     const pool = createMockPool();
     const result = await executeRenamePosition(pool, {
       oldName: 'Dienst Alt',
@@ -81,18 +71,16 @@ describe('renamePosition (SQL-Logik)', () => {
     });
 
     expect(result.updatedShifts).toBe(1);
-    expect(result.updatedNotes).toBe(1);
     expect(result.updatedRotations).toBe(1);
 
-    expect(pool.calls).toHaveLength(3);
+    expect(pool.calls).toHaveLength(2);
     expect(pool.calls[0].sql).toContain('UPDATE ShiftEntry');
     expect(pool.calls[0].params).toEqual(['Dienst Neu', 'Dienst Alt']);
-    expect(pool.calls[1].sql).toContain('UPDATE ScheduleNote');
-    expect(pool.calls[2].sql).toContain('UPDATE TrainingRotation');
+    expect(pool.calls[1].sql).toContain('UPDATE TrainingRotation');
   });
 
-  it('überspringt fehlende Tabellen via ER_NO_SUCH_TABLE', async () => {
-    const missingTables = new Set(['ShiftEntry', 'ScheduleNote', 'TrainingRotation']);
+  it('überspringt fehlende Tabellen via ER_NO_SUCH_TABLE / ER_BAD_FIELD_ERROR', async () => {
+    const missingTables = new Set(['ShiftEntry', 'TrainingRotation']);
     const pool = createMockPool(missingTables);
 
     // Sollte keinen Fehler werfen, sondern tabellenlos durchlaufen
@@ -102,12 +90,11 @@ describe('renamePosition (SQL-Logik)', () => {
     });
 
     expect(result.updatedShifts).toBe(0);
-    expect(result.updatedNotes).toBe(0);
     expect(result.updatedRotations).toBe(0);
   });
 
   it('überspringt nur fehlende Tabellen, andere bleiben funktionsfähig', async () => {
-    // Nur ShiftEntry fehlt, ScheduleNote und TrainingRotation existieren
+    // Nur ShiftEntry fehlt, TrainingRotation existiert
     const missingTables = new Set(['ShiftEntry']);
     const pool = createMockPool(missingTables);
 
@@ -116,9 +103,8 @@ describe('renamePosition (SQL-Logik)', () => {
       newName: 'Dienst Neu',
     });
 
-    expect(result.updatedShifts).toBe(0);  // Tabelle fehlt → übersprungen
-    expect(result.updatedNotes).toBe(1);   // OK
-    expect(result.updatedRotations).toBe(1); // OK
+    expect(result.updatedShifts).toBe(0);       // Tabelle fehlt → übersprungen
+    expect(result.updatedRotations).toBe(1);    // OK
   });
 
   it('gibt 0 affectedRows zurück, wenn keine Einträge matchen', async () => {
@@ -127,9 +113,7 @@ describe('renamePosition (SQL-Logik)', () => {
       async execute(sql, params) {
         this.calls.push({ sql, params });
 
-        // 0 Zeilen betroffen
         if (sql.includes('ShiftEntry')) return [{ affectedRows: 0 }, []];
-        if (sql.includes('ScheduleNote')) return [{ affectedRows: 0 }, []];
         if (sql.includes('TrainingRotation')) return [{ affectedRows: 0 }, []];
 
         return [{ affectedRows: 0 }, []];
@@ -142,12 +126,32 @@ describe('renamePosition (SQL-Logik)', () => {
     });
 
     expect(result.updatedShifts).toBe(0);
-    expect(result.updatedNotes).toBe(0);
     expect(result.updatedRotations).toBe(0);
-    expect(pool.calls).toHaveLength(3);
+    expect(pool.calls).toHaveLength(2);
   });
 
-  it('wirft echte MySQL-Fehler (kein ER_NO_SUCH_TABLE)', async () => {
+  it('fängt ER_BAD_FIELD_ERROR (fehlende Spalte) genauso wie ER_NO_SUCH_TABLE', async () => {
+    const pool = {
+      calls: [],
+      async execute(sql) {
+        this.calls.push({ sql });
+        const err = new Error("Unknown column 'position' in 'SET'");
+        err.code = 'ER_BAD_FIELD_ERROR';
+        throw err;
+      },
+    };
+
+    // Sollte keinen Fehler werfen
+    const result = await executeRenamePosition(pool, {
+      oldName: 'Alt',
+      newName: 'Neu',
+    });
+
+    expect(result.updatedShifts).toBe(0);
+    expect(result.updatedRotations).toBe(0);
+  });
+
+  it('wirft echte MySQL-Fehler (kein ER_NO_SUCH_TABLE / ER_BAD_FIELD_ERROR)', async () => {
     const pool = {
       calls: [],
       async execute(sql) {
@@ -164,21 +168,17 @@ describe('renamePosition (SQL-Logik)', () => {
     })).rejects.toThrow('Lock wait timeout exceeded');
   });
 
-  it('aktualisiert alle drei Tabellen mit den korrekten Positionswerten', async () => {
+  it('aktualisiert beide Tabellen mit den korrekten Werten', async () => {
     const pool = createMockPool();
     await executeRenamePosition(pool, {
       oldName: 'Hintergrunddienst',
       newName: 'BG-Dienst',
     });
 
-    // Alle drei Queries müssen dieselben Parameer verwenden
-    for (const call of pool.calls) {
-      if (call.sql.includes('TrainingRotation')) {
-        // TrainingRotation verwendet modality statt position
-        expect(call.params).toEqual(['BG-Dienst', 'Hintergrunddienst']);
-      } else {
-        expect(call.params).toEqual(['BG-Dienst', 'Hintergrunddienst']);
-      }
-    }
+    expect(pool.calls).toHaveLength(2);
+    // ShiftEntry: position-Spalte
+    expect(pool.calls[0].params).toEqual(['BG-Dienst', 'Hintergrunddienst']);
+    // TrainingRotation: modality-Spalte
+    expect(pool.calls[1].params).toEqual(['BG-Dienst', 'Hintergrunddienst']);
   });
 });

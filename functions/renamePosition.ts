@@ -53,7 +53,6 @@ Deno.serve(async (req) => {
 
         const dbMode = await getDbMode(base44);
         let shiftsUpdated = 0;
-        let notesUpdated = 0;
         let rotationsUpdated = 0;
 
         if (dbMode === 'mysql') {
@@ -69,13 +68,6 @@ Deno.serve(async (req) => {
                 [newName, oldName]
             );
             shiftsUpdated = r1.affectedRows;
-
-            // Update ScheduleNote
-            const [r2] = await connection.execute(
-                'UPDATE ScheduleNote SET position = ? WHERE position = ?',
-                [newName, oldName]
-            );
-            notesUpdated = r2.affectedRows;
 
             // Update TrainingRotation (modality field)
             const [r3] = await connection.execute(
@@ -93,14 +85,6 @@ Deno.serve(async (req) => {
             await Promise.all(updatePromises);
             shiftsUpdated = shifts.length;
 
-            // Also update ScheduleNotes
-            const notes = await base44.entities.ScheduleNote.filter({ position: oldName }, null, 5000);
-            const updateNotesPromises = notes.map(note => 
-                base44.entities.ScheduleNote.update(note.id, { position: newName })
-            );
-            await Promise.all(updateNotesPromises);
-            notesUpdated = notes.length;
-
             // Also update TrainingRotations (modality field)
             const rotations = await base44.entities.TrainingRotation.filter({ modality: oldName }, null, 5000);
             const updateRotationsPromises = rotations.map(rot => 
@@ -112,7 +96,6 @@ Deno.serve(async (req) => {
 
         const stats = { 
             updatedShifts: shiftsUpdated, 
-            updatedNotes: notesUpdated,
             updatedRotations: rotationsUpdated,
             dbMode
         };

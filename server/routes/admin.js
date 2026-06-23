@@ -619,7 +619,6 @@ router.post('/rename-position', async (req, res, next) => {
     }
     
     let shiftsUpdated = 0;
-    let notesUpdated = 0;
     let rotationsUpdated = 0;
     
     // Update ShiftEntry
@@ -630,18 +629,7 @@ router.post('/rename-position', async (req, res, next) => {
       );
       shiftsUpdated = r1.affectedRows || 0;
     } catch (e) {
-      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
-    }
-    
-    // Update ScheduleNote
-    try {
-      const [r2] = await dbPool.execute(
-        'UPDATE ScheduleNote SET position = ? WHERE position = ?',
-        [newName, oldName]
-      );
-      notesUpdated = r2.affectedRows || 0;
-    } catch (e) {
-      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
     }
     
     // Update TrainingRotation (modality field)
@@ -652,12 +640,11 @@ router.post('/rename-position', async (req, res, next) => {
       );
       rotationsUpdated = r3.affectedRows || 0;
     } catch (e) {
-      if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
     }
     
     const stats = {
       updatedShifts: shiftsUpdated,
-      updatedNotes: notesUpdated,
       updatedRotations: rotationsUpdated
     };
     
