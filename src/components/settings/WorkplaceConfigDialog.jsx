@@ -749,11 +749,11 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                             <div className="font-medium text-slate-900 flex items-center gap-2 flex-wrap">
                                                                                 {item.name}
                                                                                 {item.time && <Badge variant="outline" className="text-[10px] font-normal">{item.time} Uhr</Badge>}
-                                                                                {item.service_type && (() => { const st = SERVICE_TYPES.find(t => t.value === item.service_type); return st ? <Badge variant="secondary" className={`text-[10px] font-normal ${st.color}`}>{st.label}</Badge> : null; })()}
+                                                                                {item.service_type != null && item.service_type !== '' && (() => { const st = SERVICE_TYPES.find(t => t.value === item.service_type); return st ? <Badge variant="secondary" className={`text-[10px] font-normal ${st.color}`}>{st.label}</Badge> : null; })()}
                                                                                 {item.auto_off && <Badge variant="secondary" className="text-[10px] font-normal bg-blue-100 text-blue-700">Auto-Frei</Badge>}
                                                                                 {item.allows_rotation_concurrently && <Badge variant="secondary" className="text-[10px] font-normal bg-green-100 text-green-700">Rotation OK</Badge>}
                                                                                 {item.allows_absence_overlap && <Badge variant="secondary" className="text-[10px] font-normal bg-violet-100 text-violet-700">Abwesenheit OK</Badge>}
-                                                                                {item.allows_multiple && <Badge variant="secondary" className="text-[10px] font-normal bg-teal-100 text-teal-700">Mehrfachbesetzung</Badge>}
+                                                                                {!!item.allows_multiple && <Badge variant="secondary" className="text-[10px] font-normal bg-teal-100 text-teal-700">Mehrfachbesetzung</Badge>}
                                                                                 {item.allows_multiple && (item.min_staff > 0 || item.optimal_staff > 1) && (
                                                                                     <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">
                                                                                         {item.min_staff ?? 1}–{item.optimal_staff ?? 1}
