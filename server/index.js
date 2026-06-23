@@ -379,9 +379,9 @@ export const tenantDbMiddleware = async (req, res, next) => {
   }
 
   // Ensure all base tables exist and have all required columns.
-  // Läuft bei JEDEM Request (idempotent) – ensureColumns addiert nur fehlende Spalten.
-  // Notwendig, damit Tenants, die vor Einführung neuer Spalten angelegt wurden,
-  // diese nachträglich erhalten, ohne dass ein Server-Neustart nötig ist.
+  // Ist idempotent und sicher – CREATE TABLE IF NOT EXISTS und ensureColumns/addColumnIfMissing
+  // sind No-Ops wenn Tabellen/Spalten bereits existieren.
+  // Läuft bei jedem Request, damit Tenants aus allen Versionen automatisch aktuelle Schemas erhalten.
   if (req.isCustomDb) {
     try {
       await ensureTenantBaseTables(req.db);
