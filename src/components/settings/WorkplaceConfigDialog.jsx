@@ -121,8 +121,17 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     };
 
     const handleAddNew = () => {
+        const baseName = "Neue Position";
+        const existingNames = new Set(localItems.map(i => i.name));
+        let name = baseName;
+        let counter = 2;
+        while (existingNames.has(name)) {
+            name = `${baseName} ${counter}`;
+            counter++;
+        }
+
         const newItem = {
-            name: "Neue Position",
+            name,
             category: activeTab,
             order: localItems.length + 1,
             active_days: [1, 2, 3, 4, 5], // Mo-Fr default
