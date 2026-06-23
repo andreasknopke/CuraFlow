@@ -9,6 +9,7 @@ import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
 import { checkAndSendWishReminders } from '../utils/wishReminder.js';
 import { runTenantMigrations } from '../utils/tenantMigrations.js';
 import { resolveMasterDbConfig } from '../utils/mysqlConfig.js';
+import { ensureTenantBaseTables } from '../scripts/seed-runtime-shared.js';
 
 const router = express.Router();
 
@@ -606,6 +607,16 @@ router.post('/rename-position', async (req, res, next) => {
     
     // Use tenant DB if available (req.db is set by tenantDbMiddleware)
     const dbPool = req.db;
+
+    // Ensure all base tables exist before attempting updates (needed for new tenants)
+    if (req.isCustomDb) {
+      try {
+        await ensureTenantBaseTables(dbPool);
+      } catch (e) {
+        console.warn('[rename-position] ensureTenantBaseTables warning:', e.message);
+        // Non-fatal - continue anyway
+      }
+    }
     
     let shiftsUpdated = 0;
     let notesUpdated = 0;
@@ -658,6 +669,7 @@ router.post('/rename-position', async (req, res, next) => {
       ...stats
     });
   } catch (error) {
+    console.error('[rename-position] Failed:', error.message, error.code);
     next(error);
   }
 });
