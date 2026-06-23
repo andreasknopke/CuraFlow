@@ -420,6 +420,12 @@ export async function ensureTenantBaseTables(tenantPool) {
     ['min_staff', 'INT DEFAULT 1'],
     ['optimal_staff', 'INT DEFAULT 1'],
     ['consecutive_days_mode', "VARCHAR(20) DEFAULT 'allowed'"],
+    ['auto_off', 'TINYINT(1) DEFAULT 0'],
+    ['allows_rotation_concurrently', 'TINYINT(1) DEFAULT 0'],
+    ['show_in_service_plan', 'TINYINT(1) DEFAULT 1'],
+    ['active_days', 'TEXT DEFAULT NULL'],
+    ['time', 'VARCHAR(10) DEFAULT NULL'],
+    ['allows_consecutive_days', 'TINYINT(1) DEFAULT 1'],
   ]);
 
   await ensureColumns(tenantPool, 'ShiftEntry', [
