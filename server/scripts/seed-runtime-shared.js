@@ -5,21 +5,12 @@ async function executeStatements(pool, statements) {
     try {
       await pool.execute(statement);
     } catch (err) {
-      // Schema-bezogene Fehler, die nicht die gesamte Migration blockieren sollen
-      const ignorableCodes = new Set([
-        'ER_TABLE_EXISTS_ERROR',
-        'ER_DUP_FIELDNAME',
-        'ER_DUP_KEYNAME',
-        'ER_BAD_FIELD_ERROR',
-        'ER_NO_SUCH_TABLE',
-        'ER_CANT_CREATE_TABLE',
-      ]);
-      if (ignorableCodes.has(err.code)) {
-        console.warn(`[executeStatements] Überspringe (${err.code}): ${err.message}`);
-        continue;
-      }
-      // Alle anderen Fehler (Verbindungsabbrüche etc.) loggen, aber nicht werfen
-      console.warn(`[executeStatements] Fehler bei SQL: ${err.message}`);
+      // Nur bekannte, harmlose Schema-Fehler übergehen.
+      // Alle anderen (z.B. Verbindungsabbrüche, volle Platte, Syntaxfehler) werden geworfen.
+      if (err.code === 'ER_TABLE_EXISTS_ERROR') continue;
+      if (err.code === 'ER_DUP_FIELDNAME') continue;
+      if (err.code === 'ER_DUP_KEYNAME') continue;
+      throw err;
     }
   }
 }
