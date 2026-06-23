@@ -30,6 +30,7 @@ import certificatesRouter from './routes/certificates.js';
 import groupsRouter from './routes/groups.js';
 import vacationRouter from './routes/vacation.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
+import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
 
 // Load environment variables
 dotenv.config();
@@ -368,6 +369,14 @@ export const tenantDbMiddleware = async (req, res, next) => {
       await migrationInFlight.get(dbToken);
       req.db = getTenantDb(dbToken);
       req.isCustomDb = !!dbToken && req.db !== db;
+
+      // Ensure all base tables exist (needed for brand-new empty tenant databases)
+      try {
+        await ensureTenantBaseTables(req.db);
+      } catch (e) {
+        console.warn('[Auto-Migration] ensureTenantBaseTables warning:', e.message);
+        // Non-fatal — migrations will retry on next deploy/restart
+      }
     } catch (err) {
       console.error('[Auto-Migration] Unexpected error:', err.message);
       if (dbToken) {
