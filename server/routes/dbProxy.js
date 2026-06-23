@@ -920,6 +920,37 @@ router.post('/', async (req, res, next) => {
         return res.json(data);
       } catch (err) {
         console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
+
+        // Bei Workplace: Duplikat (Name bereits vergeben) → Name hochzählen und nochmal versuchen
+        if (tableName === 'Workplace' && err.code === 'ER_DUP_ENTRY' && data.name) {
+          const baseName = data.name;
+          let retryName = baseName;
+          let counter = 2;
+          while (counter <= 20) {
+            retryName = `${baseName} ${counter}`;
+            data.name = retryName;
+            values[keys.indexOf('name')] = toSqlValue(retryName);
+            const safeValuesRetry = values.map(v => v === undefined ? null : v);
+            try {
+              await dbPool.execute(sql, safeValuesRetry);
+              data.name = retryName;
+              if (isPlanSyncEntity(tableName)) {
+                broadcastPlanUpdate({
+                  scope: realtimeScope,
+                  entity: tableName,
+                  action: 'create',
+                  recordId: data.id,
+                  actor,
+                });
+              }
+              return res.json(data);
+            } catch (retryErr) {
+              if (retryErr.code !== 'ER_DUP_ENTRY') throw retryErr;
+              counter++;
+            }
+          }
+        }
+
         if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
           const conflictResponse = await buildDoctorConflictResponse(dbPool, data);
           if (conflictResponse) {
