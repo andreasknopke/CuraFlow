@@ -335,12 +335,27 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
     
     // Check if user exists
     const [existing] = await db.execute(
-      'SELECT id FROM app_users WHERE email = ?',
+      'SELECT id, is_active FROM app_users WHERE email = ?',
       [email.toLowerCase().trim()]
     );
     
     if (existing.length > 0) {
-      return res.status(409).json({ error: 'Benutzer existiert bereits' });
+      const existingUser = existing[0];
+      if (existingUser.is_active) {
+        return res.status(409).json({ error: 'Benutzer existiert bereits' });
+      }
+      // Soft-deleted user → reaktivieren mit neuen Daten
+      const password_hash = await bcrypt.hash(password, 12);
+      await db.execute(
+        `UPDATE app_users
+            SET password_hash = ?, full_name = ?, role = ?,
+                doctor_id = ?, is_active = 1, updated_date = NOW(),
+                email_verified = 0
+          WHERE id = ?`,
+        [password_hash, full_name || '', role, doctor_id || null, existingUser.id]
+      );
+      const [updated] = await db.execute('SELECT * FROM app_users WHERE id = ?', [existingUser.id]);
+      return res.status(201).json({ user: sanitizeUser(updated[0]) });
     }
     
     // Hash password
