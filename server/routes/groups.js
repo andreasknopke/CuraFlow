@@ -434,97 +434,85 @@ router.get('/central-absences', async (req, res) => {
 
     const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
     if (!activeTenantId) {
-      console.warn('[central-absences] NO ACTIVE TENANT — kein x-db-token');
+      console.log('[central-absences] NO ACTIVE TENANT');
       return res.json({ absences: [] });
     }
 
     const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
     if (accessibleGroupIds.length === 0) {
-      console.warn(`[central-absences] KEINE ZUGÄNGLICHEN GRUPPEN für tenant=${activeTenantId}`);
+      console.log('[central-absences] NO ACCESSIBLE GROUPS');
       return res.json({ absences: [] });
     }
 
     const { from, to } = req.query;
-    const dateFilter = [];
-    const dateParams = [];
-    if (from) { dateFilter.push('c.date >= ?'); dateParams.push(from); }
-    if (to) { dateFilter.push('c.date <= ?'); dateParams.push(to); }
-    const dateWhere = dateFilter.length > 0 ? `AND ${dateFilter.join(' AND ')}` : '';
+    console.log(`[central-absences] tenant=${activeTenantId} groups=[${accessibleGroupIds.join(',')}] from=${from} to=${to}`);
 
-    const placeholders = accessibleGroupIds.map(() => '?').join(',');
+    // 1) Alle tenant_ids der zugänglichen Gruppen sammeln
+    const allTenantIds = new Set();
+    for (const gid of accessibleGroupIds) {
+      const ids = await loadGroupTenantIds(db, gid);
+      for (const tid of ids) allTenantIds.add(tid);
+    }
+    const tenantIds = [...allTenantIds];
+    console.log(`[central-absences] tenantIds=${JSON.stringify(tenantIds)}`);
 
-    // Schritt 1: Alle Einträge in CentralAbsenceEntry zählen (ohne Filter)
-    let totalAll = 0;
-    try {
-      const [cnt] = await db.execute('SELECT COUNT(*) AS c FROM CentralAbsenceEntry');
-      totalAll = cnt[0]?.c ?? 0;
-    } catch { /* table existiert vielleicht nicht */ }
-
-    // Schritt 2: employee_ids aus den Gruppen-Tenants ermitteln
-    const [groupEmpRows] = await db.execute(
-      `SELECT DISTINCT eta.employee_id
-         FROM EmployeeTenantAssignment eta
-         JOIN tenant_group_member tgm ON tgm.tenant_id = eta.tenant_id
-        WHERE tgm.group_id IN (${placeholders})`,
-      accessibleGroupIds
+    // 2) Alle EmployeeTenantAssignment-Einträge für diese Tenants laden
+    //    → bekommen wir alle employee_ids, die in den Gruppen-Tenants arbeiten
+    const placeholders = tenantIds.map(() => '?').join(',');
+    const [etaRows] = await db.execute(
+      `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
+      tenantIds
     );
-    const groupEmployeeIds = groupEmpRows.map(r => r.employee_id);
-    const groupEmployeeCount = groupEmployeeIds.length;
+    const groupEmployeeIds = etaRows.map(r => String(r.employee_id));
+    console.log(`[central-absences] groupEmployeeIds=${JSON.stringify(groupEmployeeIds)} (${groupEmployeeIds.length} total)`);
 
-    // Schritt 3: CentralAbsenceEntry für diese employee_ids zählen
-    let matchingCount = 0;
-    if (groupEmployeeIds.length > 0) {
-      try {
-        const empPlaceholders = groupEmployeeIds.map(() => '?').join(',');
-        const [cnt2] = await db.execute(
-          `SELECT COUNT(*) AS c FROM CentralAbsenceEntry
-            WHERE employee_id IN (${empPlaceholders})`,
-          groupEmployeeIds
-        );
-        matchingCount = cnt2[0]?.c ?? 0;
-      } catch { /* ignore */ }
+    if (groupEmployeeIds.length === 0) {
+      console.log('[central-absences] NO EMPLOYEES IN GROUP');
+      return res.json({ absences: [] });
     }
 
-    const [rows] = await db.execute(
-      `SELECT DISTINCT c.employee_id, c.date, c.position
-         FROM CentralAbsenceEntry c
-         JOIN EmployeeTenantAssignment eta
-           ON eta.employee_id COLLATE utf8mb4_general_ci = c.employee_id COLLATE utf8mb4_general_ci
-         JOIN tenant_group_member tgm
-           ON tgm.tenant_id = eta.tenant_id
-        WHERE tgm.group_id IN (${placeholders})
-          ${dateWhere}
-        ORDER BY c.date ASC`,
-      [...accessibleGroupIds, ...dateParams]
-    );
+    // 3) CentralAbsenceEntry für diese employee_ids abfragen — genau wie
+    //    listShiftEntriesWithCentralAbsences es macht: direktes SELECT
+    //    ohne JOIN über ETA/tgm, weil employee_id bereits die zentrale ID ist.
+    const empPlaceholders = groupEmployeeIds.map(() => '?').join(',');
+    let sql = `SELECT employee_id, date, position FROM CentralAbsenceEntry WHERE employee_id IN (${empPlaceholders})`;
+    const sqlParams = [...groupEmployeeIds];
+
+    if (from) {
+      sql += ' AND date >= ?';
+      sqlParams.push(from);
+    }
+    if (to) {
+      sql += ' AND date <= ?';
+      sqlParams.push(to);
+    }
+    sql += ' ORDER BY date ASC';
+
+    let rows = [];
+    try {
+      [rows] = await db.execute(sql, sqlParams);
+    } catch (err) {
+      console.error(`[central-absences] QUERY FAILED:`, err.message);
+      // Tabelle existiert vielleicht nicht — dann halt leer
+    }
 
     const absences = rows.map((r) => ({
-      employee_id: r.employee_id,
+      employee_id: String(r.employee_id),
       date: typeof r.date === 'string' ? r.date.slice(0, 10) : String(r.date).slice(0, 10),
       position: String(r.position || '').trim(),
     }));
 
-    // Ausführliches Logging
+    // Ausführliches Logging pro Employee
     const byEmp = {};
     for (const a of absences) {
       if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
       byEmp[a.employee_id].push(`${a.date}=${a.position}`);
     }
-    console.log(
-      `[central-absences] ✅ tenant=${activeTenantId} ` +
-      `groups=[${accessibleGroupIds.join(',')}] ` +
-      `from=${from} to=${to} ` +
-      `totalInTable=${totalAll} ` +
-      `groupEmployeeCount=${groupEmployeeCount} ` +
-      `matchingAbsencesInDB=${matchingCount} ` +
-      `queryReturned=${absences.length} ` +
-      `employees=${Object.keys(byEmp).length} ` +
-      `data=${JSON.stringify(byEmp)}`
-    );
+    console.log(`[central-absences] RETURNING ${absences.length} absences for ${Object.keys(byEmp).length} employees:`, JSON.stringify(byEmp));
 
     res.json({ absences });
   } catch (err) {
-    console.error('[central-absences] FEHLER:', err.message);
+    console.error('[central-absences] ERROR:', err.message);
     handleError(res, err);
   }
 });
