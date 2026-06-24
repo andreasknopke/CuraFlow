@@ -66,7 +66,9 @@ export default function PoolShiftEditDialog({
         queryKey: ['pool', 'eligible-staff', groupId, workplace?.id],
         queryFn: () => api.getWorkplaceEligibleStaff(groupId, workplace.id),
         enabled: !!open && !!groupId && !!workplace?.id,
-        staleTime: 60_000,
+        // No staleTime — always fetch fresh data when the dialog opens,
+        // so that qualification assignments/changes are reflected immediately
+        // without requiring a logout/login cycle.
     });
 
     const staff = staffQuery.data?.staff || [];

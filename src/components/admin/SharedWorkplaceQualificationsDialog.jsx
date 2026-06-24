@@ -65,6 +65,9 @@ export default function SharedWorkplaceQualificationsDialog({
             ),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'shared-workplace-qualifications', groupId, workplace?.id] });
+            // Also invalidate eligible-staff cache so the PoolShiftEditDialog
+            // shows the updated qualification rules immediately.
+            queryClient.invalidateQueries({ queryKey: ['pool', 'eligible-staff', groupId] });
             toast.success('Qualifikationen gespeichert');
             onOpenChange(false);
         },
