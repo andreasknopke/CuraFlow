@@ -843,7 +843,25 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       });
     }
 
+    // Build a mapping from tenant doctor ID → employee ID via EmployeeTenantAssignment,
+    // so that doctors without central_employee_id can still be matched to a central employee.
+    const doctorToEmployee = new Map(); // key: `${tenantId}:${doctorId}` → employeeId
+    const [etaRows] = await db.execute(
+      `SELECT tenant_id, tenant_doctor_id, employee_id
+         FROM EmployeeTenantAssignment
+        WHERE tenant_id IN (${placeholders})
+          AND tenant_doctor_id IS NOT NULL`,
+      tenantIds.map(String)
+    );
+    for (const eta of etaRows) {
+      const key = `${eta.tenant_id}:${eta.tenant_doctor_id}`;
+      doctorToEmployee.set(key, String(eta.employee_id));
+    }
+
     // Build employee → set of qualification names by scanning each tenant DB.
+    // Resolves the employee ID first via Doctor.central_employee_id, and falls
+    // back to the EmployeeTenantAssignment mapping for doctors that only have
+    // a tenant_doctor_id link (no central_employee_id).
     const employeeQuals = new Map(); // employee_id (string) → Set<string>
     for (const tenantId of tenantIds) {
       const token = await loadTenantTokenById(tenantId);
@@ -851,14 +869,19 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       try {
         await withTenantDb(token, async (pool) => {
           const [rows] = await pool.execute(
-            `SELECT d.central_employee_id AS emp_id, q.name AS qname
+            `SELECT d.id AS doctor_id, d.central_employee_id AS emp_id, q.name AS qname
                FROM Doctor d
                JOIN DoctorQualification dq ON dq.doctor_id = d.id
-               JOIN Qualification q ON q.id = dq.qualification_id
-              WHERE d.central_employee_id IS NOT NULL`
+               JOIN Qualification q ON q.id = dq.qualification_id`
           );
           for (const row of rows) {
-            const empId = String(row.emp_id);
+            let empId = row.emp_id ? String(row.emp_id) : null;
+            // Fallback: resolve via EmployeeTenantAssignment.tenant_doctor_id
+            if (!empId) {
+              const mapKey = `${tenantId}:${row.doctor_id}`;
+              empId = doctorToEmployee.get(mapKey) || null;
+            }
+            if (!empId) continue;
             const qname = String(row.qname || '').trim();
             if (!qname) continue;
             if (!employeeQuals.has(empId)) employeeQuals.set(empId, new Set());
