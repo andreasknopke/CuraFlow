@@ -367,6 +367,38 @@ class APIClient {
     return this.request(`/api/groups/central-absences${qs ? `?${qs}` : ''}`);
   }
 
+  // Central wishes (Dienstwunsch / Kein-Dienst-Wunsch) for cross-tenant
+  // (Verbundsdienst) workplaces. Returns wishes for all employees in the
+  // user's accessible groups. Used by the Wunschbox (per-doctor merge) and
+  // the PoolShiftEditDialog (workplace+date wish coloring).
+  async getGroupCentralWishes({ from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return this.request(`/api/groups/central-wishes${qs ? `?${qs}` : ''}`);
+  }
+
+  async createGroupCentralWish(data) {
+    return this.request('/api/groups/central-wishes', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateGroupCentralWish(id, data) {
+    return this.request(`/api/groups/central-wishes/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteGroupCentralWish(id) {
+    return this.request(`/api/groups/central-wishes/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
   async listGroups() {
     return this.request('/api/groups');
   }

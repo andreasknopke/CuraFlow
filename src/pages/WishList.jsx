@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { addDays, format, parseISO } from 'date-fns';
+import { addDays, eachDayOfInterval, format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
@@ -99,11 +99,14 @@ export default function WishListPage() {
 
   // Alle Dienstarten (ungefiltert nach Qualifikation) für die Filter-Buttons
   const allServiceTypes = React.useMemo(() => {
-      return workplaces
+      const local = workplaces
           .filter(w => w.category === 'Dienste')
           .sort((a, b) => (a.order || 0) - (b.order || 0))
           .map((workplace) => workplace.name);
-  }, [workplaces]);
+      // Append cross-tenant (Verbundsdienst) tabs after the local ones so the
+      // admin month-overview can manage these wishes from the Wunschbox too.
+      return [...local, ...crossTenantServiceTypes];
+  }, [workplaces, crossTenantServiceTypes]);
 
   // Qualifikationsgefilterte Dienstarten für die Jahresansicht (Einzel-Arzt)
   const serviceTypes = React.useMemo(() => {
@@ -111,17 +114,21 @@ export default function WishListPage() {
           .filter(w => w.category === 'Dienste')
           .sort((a, b) => (a.order || 0) - (b.order || 0));
 
+      let local;
       if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
-          return serviceWorkplaces.map((workplace) => workplace.name);
+          local = serviceWorkplaces.map((workplace) => workplace.name);
+      } else {
+          const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
+          local = filterQualifiedWishServiceTypes(
+              serviceWorkplaces,
+              doctorQualificationIds,
+              workplaceQualificationsByWorkplaceId,
+          ).map((workplace) => workplace.name);
       }
-
-      const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
-
-      return filterQualifiedWishServiceTypes(
-          serviceWorkplaces,
-          doctorQualificationIds,
-          workplaceQualificationsByWorkplaceId,
-      ).map((workplace) => workplace.name);
+      // Cross-tenant workplaces do not undergo local qualification filtering
+      // here — their qualification rules live on shared_workplace_qualification
+      // in the master DB and are evaluated by the pool dialog separately.
+      return [...local, ...crossTenantServiceTypes];
   }, [
       workplaces,
       selectedDoctorId,
@@ -129,6 +136,7 @@ export default function WishListPage() {
       isWorkplaceQualificationsLoading,
       getDoctorQualIds,
       workplaceQualificationsByWorkplaceId,
+      crossTenantServiceTypes,
   ]);
 
   React.useEffect(() => {
@@ -299,6 +307,62 @@ export default function WishListPage() {
     }),
   });
 
+  // Cross-tenant (Verbundsdienst) workplaces accessible to this tenant.
+  // Used to add additional tabs whose wishes are stored centrally in
+  // CentralWishRequest (master DB) instead of the local WishRequest table.
+  const { data: visiblePoolData } = useQuery({
+    queryKey: ['pool', 'visible-shifts', selectedYear],
+    queryFn: () => api.getVisiblePoolShifts({
+      from: `${selectedYear}-01-01`,
+      to: `${selectedYear}-12-31`,
+    }),
+  });
+
+  // Cross-tenant workplaces that count as "Dienste" (services). These become
+  // extra tabs in the Wunschbox. The tab key is `ct:<shared_workplace_id>` so
+  // it cannot collide with any local position name. The display label strips
+  // the "Dienst " prefix to match the local-tab rendering.
+  const crossTenantServiceWorkplaces = React.useMemo(() => {
+    const wps = visiblePoolData?.workplaces || [];
+    return wps
+      .filter((w) => w.category === 'Dienste')
+      .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  }, [visiblePoolData?.workplaces]);
+
+  const crossTenantServiceTypes = React.useMemo(
+    () => crossTenantServiceWorkplaces.map((w) => `ct:${w.id}`),
+    [crossTenantServiceWorkplaces]
+  );
+
+  const crossTenantWorkplaceByTabKey = React.useMemo(() => {
+    const map = new Map();
+    for (const w of crossTenantServiceWorkplaces) map.set(`ct:${w.id}`, w);
+    return map;
+  }, [crossTenantServiceWorkplaces]);
+
+  const crossTenantTabLabel = React.useCallback(
+    (tabKey) => {
+      if (!tabKey || !tabKey.startsWith('ct:')) return tabKey;
+      const wp = crossTenantWorkplaceByTabKey.get(tabKey);
+      if (!wp) return tabKey;
+      return wp.name.replace(/^Dienst /, '');
+    },
+    [crossTenantWorkplaceByTabKey]
+  );
+
+  const isCrossTenantTab = (tab) => typeof tab === 'string' && tab.startsWith('ct:');
+
+  // Central wishes for the year. Mapped per-doctor to a doctor_id later.
+  const { data: centralWishesData = [] } = useQuery({
+    queryKey: ['pool', 'central-wishes', selectedYear],
+    queryFn: () => api.getGroupCentralWishes({
+      from: `${selectedYear}-01-01`,
+      to: `${selectedYear}-12-31`,
+    }),
+    enabled: crossTenantServiceTypes.length > 0,
+  });
+  const allCentralWishes = centralWishesData?.wishes || [];
+
   // Fetch Absences (Shifts) for context
   const { data: allShifts = [] } = useQuery({
     queryKey: ['shifts', selectedYear],
@@ -309,6 +373,93 @@ export default function WishListPage() {
 
   const doctorWishes = allWishes.filter(w => w.doctor_id === selectedDoctorId);
   const doctorShifts = allShifts.filter(s => s.doctor_id === selectedDoctorId);
+
+  // Merge cross-tenant wishes into the per-doctor wish stream. Each central
+  // wish is reshaped to look like a local WishRequest row — same fields the
+  // calendar/drag/dialog code already understands (doctor_id, date, position,
+  // type, status, reason, etc.). The `position` carries the `ct:<wpId>` tab
+  // key so the same `position === activeType` matching in WishMonthOverview
+  // applies to cross-tenant wishes unchanged.
+  const selectedDoctorCentralEmployeeId = selectedDoctor?.central_employee_id || null;
+
+  const mappedDoctorCentralWishes = React.useMemo(() => {
+      if (!selectedDoctorCentralEmployeeId) return [];
+      return allCentralWishes
+          .filter((w) => String(w.employee_id) === String(selectedDoctorCentralEmployeeId))
+          .map((w) => ({
+              id: w.id,
+              _isCentral: true,
+              centralId: w.id,
+              shared_workplace_id: w.shared_workplace_id,
+              doctor_id: selectedDoctorId,
+              target_month: w.target_month || null,
+              date: w.date,
+              start_date: w.start_date || null,
+              end_date: w.end_date || null,
+              position: w.shared_workplace_id ? `ct:${w.shared_workplace_id}` : (w.position || null),
+              type: w.type || 'service',
+              status: w.status || 'pending',
+              priority: w.priority || 'medium',
+              reason: w.reason || null,
+              admin_comment: w.admin_comment || null,
+              comment: w.comment || null,
+              user_viewed: !!w.user_viewed,
+              range_start: w.range_start || null,
+              range_end: w.range_end || null,
+              approved_by: w.approved_by || null,
+              approved_date: w.approved_date || null,
+          }));
+  }, [allCentralWishes, selectedDoctorCentralEmployeeId, selectedDoctorId]);
+
+  const mergedDoctorWishes = useMemo(
+      () => [...doctorWishes, ...mappedDoctorCentralWishes],
+      [doctorWishes, mappedDoctorCentralWishes]
+  );
+
+  // For the month-overview "all doctors" view we need central wishes mapped
+  // to every doctor that has a central_employee_id. The result is appended to
+  // the local wishes prop. Position is encoded as `ct:<wpId>` like above.
+  const mappedAllCentralWishes = React.useMemo(() => {
+      if (!allCentralWishes.length) return [];
+      const doctorByEmployeeId = new Map();
+      for (const d of doctorsForSelection) {
+          if (d.central_employee_id) doctorByEmployeeId.set(String(d.central_employee_id), d.id);
+      }
+      return allCentralWishes
+          .map((w) => {
+              const doctorId = doctorByEmployeeId.get(String(w.employee_id));
+              if (!doctorId) return null;
+              return {
+                  id: w.id,
+                  _isCentral: true,
+                  centralId: w.id,
+                  shared_workplace_id: w.shared_workplace_id,
+                  doctor_id: doctorId,
+                  target_month: w.target_month || null,
+                  date: w.date,
+                  start_date: w.start_date || null,
+                  end_date: w.end_date || null,
+                  position: w.shared_workplace_id ? `ct:${w.shared_workplace_id}` : (w.position || null),
+                  type: w.type || 'service',
+                  status: w.status || 'pending',
+                  priority: w.priority || 'medium',
+                  reason: w.reason || null,
+                  admin_comment: w.admin_comment || null,
+                  comment: w.comment || null,
+                  user_viewed: !!w.user_viewed,
+                  range_start: w.range_start || null,
+                  range_end: w.range_end || null,
+                  approved_by: w.approved_by || null,
+                  approved_date: w.approved_date || null,
+              };
+          })
+          .filter(Boolean);
+  }, [allCentralWishes, doctorsForSelection]);
+
+  const mergedAllWishes = useMemo(
+      () => [...allWishes, ...mappedAllCentralWishes],
+      [allWishes, mappedAllCentralWishes]
+  );
 
   useEffect(() => {
       const accessibleDoctorId = user?.doctor_id || null;
@@ -386,11 +537,21 @@ export default function WishListPage() {
 
   const filteredDoctorWishes = React.useMemo(() => {
       if (!activeTab) return [];
-      return doctorWishes.filter(w => {
-          if (w.type === 'no_service') return true; // Always show 'Kein Dienst'
+      return mergedDoctorWishes.filter(w => {
+          if (w.type === 'no_service') {
+              // For local no_service wishes we always show; for central ones
+              // only when they apply to the active cross-tenant workplace
+              // (shared_workplace_id === extracted id) or are global (null wp).
+              if (w._isCentral && isCrossTenantTab(activeTab)) {
+                  const wpId = activeTab.slice(3);
+                  return !w.shared_workplace_id || w.shared_workplace_id === wpId;
+              }
+              if (w._isCentral) return false; // central no_service shown via its own tab
+              return true; // Always show 'Kein Dienst'
+          }
           return w.position === activeTab; // Only match specific position
       });
-  }, [doctorWishes, activeTab]);
+  }, [mergedDoctorWishes, activeTab]);
 
   // Identify days where ANY doctor has a 'service' wish (filtered by tab)
   const occupiedWishDates = new Set(
@@ -458,7 +619,9 @@ export default function WishListPage() {
         // Wenn keine qualifizierten Dienst-Typen vorhanden sind, keine neuen Wünsche zulassen
         // (bestehende Wünsche können weiterhin bearbeitet werden)
         const dateStr = format(date, 'yyyy-MM-dd');
-        const relevantDoctorWishes = allWishes.filter(w => w.doctor_id === targetDoctorId);
+        const relevantDoctorWishes = targetDoctorId === selectedDoctorId
+            ? mergedDoctorWishes
+            : allWishes.filter(w => w.doctor_id === targetDoctorId);
         const hasExistingWish = relevantDoctorWishes.some(w => isWishOnDate(w, dateStr));
         if (!activeTab && !hasExistingWish) {
             alert('Für diese Person sind keine qualifizierten Dienste hinterlegt. Es können keine Wünsche eingetragen werden.');
@@ -522,8 +685,114 @@ export default function WishListPage() {
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
   };
 
+  // Central (cross-tenant) wishes are stored in the master DB through
+  // /api/groups/:id/central-wishes. The body mimics WishRequest but swaps
+  // doctor_id for employee_id and adds shared_workplace_id. No local shift is
+  // created automatically — cross-tenant shifts are managed via the pool.
+  const handleCentralDialogSave = async (formData) => {
+      if (!selectedDoctorId) return;
+      const employeeId = selectedDoctor?.central_employee_id;
+      if (!employeeId) {
+          alert('Dieser Arzt ist noch keiner zentralen Mitarbeiterkennung zugeordnet. Bitte wende dich an die Verwaltung.');
+          return;
+      }
+      const sharedWorkplaceId = activeTab.slice(3); // strip "ct:"
+
+      const {
+          _createShift,
+          range_enabled,
+          range_start,
+          range_end,
+          ...rest
+      } = formData;
+      const dataToSave = {
+          ...rest,
+          employee_id: employeeId,
+          shared_workplace_id: formData.type === 'service' ? sharedWorkplaceId : null,
+          position: activeTab,
+      };
+
+      const toCentralPayload = (date) => ({
+          ...dataToSave,
+          date,
+      });
+
+      if (range_enabled && range_start && range_end) {
+          const rangeDates = eachDayOfInterval({ start: new Date(range_start), end: new Date(range_end) })
+              .map((d) => format(d, 'yyyy-MM-dd'));
+
+          const existingByDate = new Map();
+          for (const w of mappedDoctorCentralWishes) {
+              if (w.type === dataToSave.type && rangeDates.includes(w.date)) {
+                  existingByDate.set(w.date, w);
+              }
+          }
+
+          for (const rangeDate of rangeDates) {
+              const existing = existingByDate.get(rangeDate)
+                  || (dialogState.wish?.date === rangeDate && dialogState.wish._isCentral ? dialogState.wish : null);
+              if (existing) {
+                  await api.updateGroupCentralWish(existing.centralId || existing.id, toCentralPayload(rangeDate));
+              } else {
+                  await api.createGroupCentralWish(toCentralPayload(rangeDate));
+              }
+          }
+          if (dialogState.wish?._isCentral && !rangeDates.includes(dialogState.wish.date)) {
+              await api.deleteGroupCentralWish(dialogState.wish.centralId || dialogState.wish.id);
+          }
+      } else {
+          const dateStr = format(dialogState.date, 'yyyy-MM-dd');
+          if (dialogState.wish?._isCentral) {
+              await api.updateGroupCentralWish(
+                  dialogState.wish.centralId || dialogState.wish.id,
+                  toCentralPayload(dateStr)
+              );
+          } else {
+              await api.createGroupCentralWish(toCentralPayload(dateStr));
+          }
+      }
+
+      trackDbChange();
+      queryClient.invalidateQueries({ queryKey: ['pool', 'central-wishes'] });
+      if (selectedDoctor) {
+          logWishAction(
+              dialogState.wish?._isCentral ? 'Verbundswunsch aktualisiert' : 'Verbundswunsch erstellt',
+              selectedDoctor.name,
+              format(dialogState.date, 'yyyy-MM-dd'),
+              dataToSave.type
+          );
+      }
+  };
+
+  const handleCentralDialogDelete = async () => {
+      const rangeWishes = (dialogState.rangeWishes || []).filter((w) => w._isCentral);
+      if (rangeWishes.length > 1) {
+          for (const w of rangeWishes) {
+              await api.deleteGroupCentralWish(w.centralId || w.id);
+          }
+      } else if (dialogState.wish?._isCentral) {
+          await api.deleteGroupCentralWish(dialogState.wish.centralId || dialogState.wish.id);
+      }
+      trackDbChange();
+      queryClient.invalidateQueries({ queryKey: ['pool', 'central-wishes'] });
+      if (selectedDoctor) {
+          logWishAction(
+              'Verbundswunsch gelöscht',
+              selectedDoctor.name,
+              format(dialogState.date, 'yyyy-MM-dd'),
+              dialogState.wish?.type
+          );
+      }
+  };
+
   const handleDialogSave = async (formData) => {
       if (!selectedDoctorId) return;
+
+      // Cross-tenant wishes live in the master DB (CentralWishRequest) and are
+      // routed through the dedicated API. Local wishes are unchanged.
+      if (isCrossTenantTab(activeTab)) {
+          return handleCentralDialogSave(formData);
+      }
 
       const contractInfo = getDoctorContractInfo(selectedDoctorId);
       if (!isDateWithinContract(dialogState.date, contractInfo?.contractStart, contractInfo?.contractEnd)) {
@@ -643,6 +912,10 @@ export default function WishListPage() {
   };
 
   const handleDialogDelete = async () => {
+      // Cross-tenant wishes go through the master-DB API.
+      if (isCrossTenantTab(activeTab) || dialogState.wish?._isCentral) {
+          return handleCentralDialogDelete();
+      }
       const rangeWishes = dialogState.rangeWishes;
       if (rangeWishes?.length > 1) {
           const dates = rangeWishes.map(w => w.date).sort();
@@ -764,7 +1037,9 @@ export default function WishListPage() {
                       className="whitespace-nowrap"
                       size="sm"
                   >
-                      {type.replace('Dienst ', '')}
+                      {isCrossTenantTab(type)
+                          ? crossTenantTabLabel(type)
+                          : type.replace('Dienst ', '')}
                   </Button>
               ))}
           </div>
@@ -810,7 +1085,7 @@ export default function WishListPage() {
                       month={viewDate.getMonth()}
                       doctors={selectedDoctorId ? doctors.filter(d => d.id === selectedDoctorId) : doctors}
                       contractInfoByDoctorId={contractInfoByDoctorId}
-                      wishes={selectedDoctorId ? allWishes.filter(w => w.doctor_id === selectedDoctorId) : allWishes}
+                      wishes={selectedDoctorId ? mergedDoctorWishes : mergedAllWishes}
                       shifts={selectedDoctorId ? allShifts.filter(s => s.doctor_id === selectedDoctorId) : allShifts}
                       onDateChange={setViewDate}
                       activeType={activeTab}
@@ -854,6 +1129,7 @@ export default function WishListPage() {
           doctorName={selectedDoctor?.name}
           contractInfo={selectedDoctorContractInfo}
           activePosition={activeTab}
+          activePositionLabel={isCrossTenantTab(activeTab) ? crossTenantTabLabel(activeTab) : null}
           isReadOnly={!canEdit}
           isAdmin={isAdmin}
           onSave={handleDialogSave}

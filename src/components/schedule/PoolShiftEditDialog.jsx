@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { invalidatePoolShiftQueries } from './poolShiftQueries';
+import { isWishOnDate } from '@/utils/wishRange';
 
 /**
  * Edit (or create) a single pool shift entry.
@@ -74,6 +75,37 @@ export default function PoolShiftEditDialog({
     const staff = staffQuery.data?.staff || [];
     const requiredQuals = staffQuery.data?.required || [];
     const absencesByEmployee = staffQuery.data?.absences_by_employee || {};
+
+    // Central wishes for this date+workplace so that employees who expressed a
+    // Dienstwunsch (green) or Kein-Dienst-Wunsch (red) are highlighted in the
+    // staff dropdown — exactly like the tenant-internal ServiceStaffing view.
+    const dateStr = date ? String(date).slice(0, 10) : null;
+    const { data: centralWishesData } = useQuery({
+        queryKey: ['pool', 'central-wishes', dateStr],
+        queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }),
+        enabled: !!open && !!dateStr && !!workplace?.id,
+    });
+    const centralWishes = centralWishesData?.wishes || [];
+
+    const wishByEmployeeId = useMemo(() => {
+        const map = new Map();
+        if (!centralWishes.length) return map;
+        for (const w of centralWishes) {
+            // Match wishes that apply to this workplace. A no_service wish with
+            // a null/shared_workplace_id is treated as global (applies here too).
+            const wpMatch = w.shared_workplace_id == null
+                || String(w.shared_workplace_id) === String(workplace?.id);
+            if (!wpMatch) continue;
+            if (!isWishOnDate(w, dateStr)) continue;
+            // Prefer service wishes over no_service when both apply.
+            const empKey = String(w.employee_id);
+            const existing = map.get(empKey);
+            if (!existing || (existing.type === 'no_service' && w.type === 'service')) {
+                map.set(empKey, w);
+            }
+        }
+        return map;
+    }, [centralWishes, workplace?.id, dateStr]);
 
     // Build busy employee set from the eligible-staff response (absences_by_employee)
     // and merge with the busyEmployeeIds prop (from parent's central-absences query).
@@ -234,11 +266,31 @@ export default function PoolShiftEditDialog({
                                     <SelectValue placeholder="Mitarbeiter wählen" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {visibleStaff.map((s) => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                            {[s.last_name, s.first_name].filter(Boolean).join(', ') || s.id}
-                                        </SelectItem>
-                                    ))}
+                                    {visibleStaff.map((s) => {
+                                        const wish = wishByEmployeeId.get(String(s.id));
+                                        const isServiceWish = wish?.type === 'service' && wish?.status !== 'rejected';
+                                        const isNoServiceWish = !isServiceWish && wish?.type === 'no_service' && wish?.status !== 'rejected';
+                                        const className = isServiceWish
+                                            ? 'text-green-700 font-medium bg-green-50'
+                                            : isNoServiceWish
+                                                ? 'text-red-700 font-medium bg-red-50'
+                                                : undefined;
+                                        const labelExtra = isServiceWish
+                                            ? ' · Dienstwunsch'
+                                            : isNoServiceWish
+                                                ? ' · Kein-Dienst-Wunsch'
+                                                : '';
+                                        const fullLabel = [s.last_name, s.first_name].filter(Boolean).join(', ') || s.id;
+                                        return (
+                                            <SelectItem
+                                                key={s.id}
+                                                value={s.id}
+                                                className={className}
+                                            >
+                                                {fullLabel}{labelExtra}
+                                            </SelectItem>
+                                        );
+                                    })}
                                 </SelectContent>
                             </Select>
                             </>

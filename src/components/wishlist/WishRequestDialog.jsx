@@ -25,6 +25,7 @@ export default function WishRequestDialog({
     onSave, 
     onDelete,
     activePosition,
+    activePositionLabel,
     initialDraft,
     rangeWishes
 }) {
@@ -316,7 +317,7 @@ export default function WishRequestDialog({
                     {formData.type === 'service' && activePosition && (
                         <div className="space-y-2 animate-in fade-in slide-in-from-top-2 bg-indigo-50 p-3 rounded border border-indigo-100 text-indigo-900 min-w-0">
                             <Label className="text-xs uppercase tracking-wider font-semibold opacity-70">Dienst</Label>
-                            <div className="font-medium text-lg">{activePosition}</div>
+                            <div className="font-medium text-lg">{activePositionLabel || activePosition}</div>
                         </div>
                     )}
 
