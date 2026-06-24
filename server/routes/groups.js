@@ -421,6 +421,57 @@ router.get('/visible-shifts', async (req, res) => {
   }
 });
 
+// ============ CENTRAL ABSENCES FOR VISIBLE GROUPS ============
+// Returns CentralAbsenceEntry rows for every employee assigned to any
+// tenant of the user's accessible groups, within the given date range.
+// Used by the frontend to build a cross-tenant absence filter in the
+// pool shift dialog — absences from all group tenants are included,
+// not just the active tenant's.
+router.get('/central-absences', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    if (!activeTenantId) return res.json({ absences: [] });
+
+    const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
+    if (accessibleGroupIds.length === 0) return res.json({ absences: [] });
+
+    const { from, to } = req.query;
+    const dateFilter = [];
+    const dateParams = [];
+    if (from) { dateFilter.push('c.date >= ?'); dateParams.push(from); }
+    if (to) { dateFilter.push('c.date <= ?'); dateParams.push(to); }
+    const dateWhere = dateFilter.length > 0 ? `AND ${dateFilter.join(' AND ')}` : '';
+
+    const placeholders = accessibleGroupIds.map(() => '?').join(',');
+
+    const [rows] = await db.execute(
+      `SELECT DISTINCT c.employee_id, c.date, c.position
+         FROM CentralAbsenceEntry c
+         JOIN EmployeeTenantAssignment eta
+           ON eta.employee_id COLLATE utf8mb4_general_ci = c.employee_id COLLATE utf8mb4_general_ci
+         JOIN tenant_group_member tgm
+           ON tgm.tenant_id = eta.tenant_id
+        WHERE tgm.group_id IN (${placeholders})
+          ${dateWhere}
+        ORDER BY c.date ASC`,
+      [...accessibleGroupIds, ...dateParams]
+    );
+
+    const absences = rows.map((r) => ({
+      employee_id: r.employee_id,
+      date: r.date,
+      position: r.position,
+    }));
+
+    res.json({ absences });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
 router.get('/:groupId', async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);

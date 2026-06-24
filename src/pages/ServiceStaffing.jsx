@@ -63,6 +63,16 @@ export default function ServiceStaffingPage() {
         placeholderData: keepPreviousData,
     });
 
+    // Cross-tenant absences for all employees in the user's accessible groups.
+    // This catches absences (Urlaub, Krank, Frei, …) from OTHER tenants in the
+    // group — data that would be missing from the local allShifts query.
+    const { data: centralAbsencesData } = useQuery({
+        queryKey: ['pool', 'central-absences', fetchRange.start, fetchRange.end],
+        queryFn: () => api.getGroupCentralAbsences({ from: fetchRange.start, to: fetchRange.end }),
+        placeholderData: (prev) => prev,
+    });
+    const centralAbsences = centralAbsencesData?.absences || [];
+
     // Build cross-tenant rows + shift lookup map (mirrors ScheduleBoard).
     const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
     const crossTenantShifts = visiblePoolData?.shifts || [];
@@ -324,8 +334,18 @@ export default function ServiceStaffingPage() {
                 if (nd) add(nd, s.employee_id);
             }
         }
+        // SOURCE 3: Central absences from other tenants in the group.
+        // These records live in CentralAbsenceEntry (master DB) and originate
+        // from any tenant in the user's accessible groups. Without this, an
+        // absence created in Tenant A would be invisible when scheduling pool
+        // shifts from Tenant B.
+        for (const a of centralAbsences) {
+            if (!ABSENCE_POSITIONS.includes(a.position)) continue;
+            if (!a.employee_id) continue;
+            add(a.date, a.employee_id);
+        }
         return map;
-    }, [allShifts, crossTenantShifts, doctors, isPublicHoliday]);
+    }, [allShifts, crossTenantShifts, centralAbsences, doctors, isPublicHoliday]);
 
     const sendNotificationsMutation = useMutation({
         mutationFn: async () => {

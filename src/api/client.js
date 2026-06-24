@@ -356,6 +356,17 @@ class APIClient {
     return this.request(`/api/groups/visible-shifts${qs ? `?${qs}` : ''}`);
   }
 
+  // Central absences for all employees in the user's accessible groups.
+  // Returns absences (Urlaub, Krank, Frei, …) regardless of which tenant
+  // they were created in, so the pool shift dialog can filter correctly.
+  async getGroupCentralAbsences({ from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return this.request(`/api/groups/central-absences${qs ? `?${qs}` : ''}`);
+  }
+
   async listGroups() {
     return this.request('/api/groups');
   }
