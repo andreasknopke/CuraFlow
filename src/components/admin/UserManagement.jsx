@@ -64,6 +64,9 @@ export default function UserManagement() {
     const [createError, setCreateError] = useState('');
     const [sendPasswordEmail, setSendPasswordEmail] = useState(true);
     const [passwordEmailSending, setPasswordEmailSending] = useState({});
+    const [showEditDialog, setShowEditDialog] = useState(false);
+    const [editUser, setEditUser] = useState({ id: null, email: '', full_name: '', password: '' });
+    const [editError, setEditError] = useState('');
 
     const { data: users = [], isLoading } = useQuery({
         queryKey: ['users'],
@@ -366,6 +369,25 @@ export default function UserManagement() {
                                         <Button
                                             variant="outline"
                                             size="sm"
+                                            className="gap-1"
+                                            data-testid={`admin-user-edit-${user.id}`}
+                                            onClick={() => {
+                                                setEditUser({
+                                                    id: user.id,
+                                                    email: user.email || '',
+                                                    full_name: user.full_name || '',
+                                                    password: '',
+                                                });
+                                                setEditError('');
+                                                setShowEditDialog(true);
+                                            }}
+                                            title="Benutzer bearbeiten"
+                                        >
+                                            <PenSquare className="w-3 h-3" />
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
                                             className="gap-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
                                             disabled={passwordEmailSending[user.id] || !user.is_active}
                                             data-testid={`admin-user-send-password-${user.id}`}
@@ -577,6 +599,93 @@ export default function UserManagement() {
                             isLoading={updateUserMutation.isPending}
                         />
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Edit User Dialog */}
+            <Dialog open={showEditDialog} onOpenChange={(open) => {
+                setShowEditDialog(open);
+                if (!open) setEditUser({ id: null, email: '', full_name: '', password: '' });
+            }}>
+                <DialogContent data-testid="admin-user-edit-dialog">
+                    <DialogHeader>
+                        <DialogTitle>Benutzer bearbeiten</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        {editError && (
+                            <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                                {editError}
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-email">E-Mail</Label>
+                            <Input
+                                id="edit-email"
+                                type="email"
+                                value={editUser.email}
+                                onChange={(e) => setEditUser({ ...editUser, email: e.target.value })}
+                                placeholder="name@beispiel.de"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-name">Name</Label>
+                            <Input
+                                id="edit-name"
+                                value={editUser.full_name}
+                                onChange={(e) => setEditUser({ ...editUser, full_name: e.target.value })}
+                                placeholder="Max Mustermann"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="edit-password">Neues Passwort (leer lassen = nicht ändern)</Label>
+                            <Input
+                                id="edit-password"
+                                type="password"
+                                value={editUser.password}
+                                onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
+                                placeholder="Mindestens 6 Zeichen"
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                            Abbrechen
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                const data = {};
+                                if (editUser.email) data.email = editUser.email;
+                                if (editUser.full_name) data.full_name = editUser.full_name;
+                                if (editUser.password) data.password = editUser.password;
+                                if (Object.keys(data).length === 0) {
+                                    setEditError('Keine Felder zum Ändern');
+                                    return;
+                                }
+                                updateUserMutation.mutate({
+                                    id: editUser.id,
+                                    data,
+                                }, {
+                                    onSuccess: () => {
+                                        setShowEditDialog(false);
+                                        setEditUser({ id: null, email: '', full_name: '', password: '' });
+                                    },
+                                    onError: (err) => {
+                                        setEditError(err.message);
+                                    }
+                                });
+                            }}
+                            disabled={updateUserMutation.isPending}
+                            className="bg-indigo-600 hover:bg-indigo-700"
+                            data-testid="admin-user-edit-submit"
+                        >
+                            {updateUserMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                                <PenSquare className="w-4 h-4 mr-2" />
+                            )}
+                            Speichern
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

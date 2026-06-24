@@ -513,7 +513,7 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
     
     // Admin can update more fields
     const allowedFields = [
-      'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants', 'allowed_groups', 'group_admin_groups',
+      'full_name', 'email', 'role', 'doctor_id', 'is_active', 'allowed_tenants', 'allowed_groups', 'group_admin_groups',
       'theme', 'section_config', 'collapsed_sections',
       'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
       'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position'
@@ -521,6 +521,18 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
     
     const updates = [];
     const values = [];
+    
+    // Normalize email early for uniqueness check
+    if (data.email) {
+      data.email = String(data.email).toLowerCase().trim();
+      const [existingWithEmail] = await db.execute(
+        'SELECT id FROM app_users WHERE email = ? AND id != ? LIMIT 1',
+        [data.email, userId]
+      );
+      if (existingWithEmail.length > 0) {
+        return res.status(409).json({ error: 'E-Mail-Adresse wird bereits von einem anderen Benutzer verwendet' });
+      }
+    }
     
     for (const [key, value] of Object.entries(data)) {
       if (allowedFields.includes(key)) {
@@ -533,7 +545,6 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
       }
     }
     
-    // Handle password reset
     if (data.password) {
       updates.push('password_hash = ?');
       values.push(await bcrypt.hash(data.password, 12));
@@ -558,16 +569,15 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
   }
 });
 
-// ============ DELETE USER (Admin only - soft delete) ============
+// ============ DELETE USER (Admin only) ============
+// Hard delete — users are not doctors; they can be fully removed
+// so the same email can be used to create a new account.
 router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
     const { userId } = req.params;
-    
-    await db.execute(
-      'UPDATE app_users SET is_active = 0, updated_date = NOW() WHERE id = ?',
-      [userId]
-    );
-    
+
+    await db.execute('DELETE FROM app_users WHERE id = ?', [userId]);
+
     res.json({ success: true });
   } catch (error) {
     next(error);
