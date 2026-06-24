@@ -433,10 +433,16 @@ router.get('/central-absences', async (req, res) => {
     if (!ctx) return;
 
     const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
-    if (!activeTenantId) return res.json({ absences: [] });
+    if (!activeTenantId) {
+      console.warn('[central-absences] NO ACTIVE TENANT — kein x-db-token');
+      return res.json({ absences: [] });
+    }
 
     const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
-    if (accessibleGroupIds.length === 0) return res.json({ absences: [] });
+    if (accessibleGroupIds.length === 0) {
+      console.warn(`[central-absences] KEINE ZUGÄNGLICHEN GRUPPEN für tenant=${activeTenantId}`);
+      return res.json({ absences: [] });
+    }
 
     const { from, to } = req.query;
     const dateFilter = [];
@@ -446,6 +452,38 @@ router.get('/central-absences', async (req, res) => {
     const dateWhere = dateFilter.length > 0 ? `AND ${dateFilter.join(' AND ')}` : '';
 
     const placeholders = accessibleGroupIds.map(() => '?').join(',');
+
+    // Schritt 1: Alle Einträge in CentralAbsenceEntry zählen (ohne Filter)
+    let totalAll = 0;
+    try {
+      const [cnt] = await db.execute('SELECT COUNT(*) AS c FROM CentralAbsenceEntry');
+      totalAll = cnt[0]?.c ?? 0;
+    } catch { /* table existiert vielleicht nicht */ }
+
+    // Schritt 2: employee_ids aus den Gruppen-Tenants ermitteln
+    const [groupEmpRows] = await db.execute(
+      `SELECT DISTINCT eta.employee_id
+         FROM EmployeeTenantAssignment eta
+         JOIN tenant_group_member tgm ON tgm.tenant_id = eta.tenant_id
+        WHERE tgm.group_id IN (${placeholders})`,
+      accessibleGroupIds
+    );
+    const groupEmployeeIds = groupEmpRows.map(r => r.employee_id);
+    const groupEmployeeCount = groupEmployeeIds.length;
+
+    // Schritt 3: CentralAbsenceEntry für diese employee_ids zählen
+    let matchingCount = 0;
+    if (groupEmployeeIds.length > 0) {
+      try {
+        const empPlaceholders = groupEmployeeIds.map(() => '?').join(',');
+        const [cnt2] = await db.execute(
+          `SELECT COUNT(*) AS c FROM CentralAbsenceEntry
+            WHERE employee_id IN (${empPlaceholders})`,
+          groupEmployeeIds
+        );
+        matchingCount = cnt2[0]?.c ?? 0;
+      } catch { /* ignore */ }
+    }
 
     const [rows] = await db.execute(
       `SELECT DISTINCT c.employee_id, c.date, c.position
@@ -462,12 +500,31 @@ router.get('/central-absences', async (req, res) => {
 
     const absences = rows.map((r) => ({
       employee_id: r.employee_id,
-      date: r.date,
-      position: r.position,
+      date: typeof r.date === 'string' ? r.date.slice(0, 10) : String(r.date).slice(0, 10),
+      position: String(r.position || '').trim(),
     }));
+
+    // Ausführliches Logging
+    const byEmp = {};
+    for (const a of absences) {
+      if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
+      byEmp[a.employee_id].push(`${a.date}=${a.position}`);
+    }
+    console.log(
+      `[central-absences] ✅ tenant=${activeTenantId} ` +
+      `groups=[${accessibleGroupIds.join(',')}] ` +
+      `from=${from} to=${to} ` +
+      `totalInTable=${totalAll} ` +
+      `groupEmployeeCount=${groupEmployeeCount} ` +
+      `matchingAbsencesInDB=${matchingCount} ` +
+      `queryReturned=${absences.length} ` +
+      `employees=${Object.keys(byEmp).length} ` +
+      `data=${JSON.stringify(byEmp)}`
+    );
 
     res.json({ absences });
   } catch (err) {
+    console.error('[central-absences] FEHLER:', err.message);
     handleError(res, err);
   }
 });

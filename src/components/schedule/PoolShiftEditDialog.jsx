@@ -78,14 +78,29 @@ export default function PoolShiftEditDialog({
     // cross-tenant pool shift, or auto-frei from a previous-day on-call). The
     // current shift's employee is always kept so the edit dialog can show them.
     const visibleStaff = useMemo(() => {
-        if (!busyEmployeeIds || busyEmployeeIds.size === 0) return staff;
+        if (!busyEmployeeIds || busyEmployeeIds.size === 0) {
+            if (open && staff.length > 0) {
+                console.log(`[PoolShiftEditDialog] KEINE busyEmployeeIds — alle ${staff.length} Mitarbeiter sichtbar`);
+            }
+            return staff;
+        }
         const currentEmp = shift?.employee_id ? String(shift.employee_id) : null;
-        return staff.filter((s) => {
+        const filtered = staff.filter((s) => {
             const id = String(s.id);
             if (id === currentEmp) return true;
             return !busyEmployeeIds.has(id);
         });
-    }, [staff, busyEmployeeIds, shift]);
+        if (open) {
+            const filteredOut = staff.length - filtered.length;
+            if (filteredOut > 0) {
+                console.log(
+                    `[PoolShiftEditDialog] busyEmployeeIds=${JSON.stringify([...busyEmployeeIds])} ` +
+                    `staff=${staff.length} gefiltert=${filteredOut} sichtbar=${filtered.length}`
+                );
+            }
+        }
+        return filtered;
+    }, [staff, busyEmployeeIds, shift, open]);
 
     // Distinct list of tenant ids the chosen employee is assigned to.
     // We let the admin pick which tenant gets billed for the shift.

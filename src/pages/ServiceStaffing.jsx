@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, db } from "@/api/client";
@@ -72,6 +72,18 @@ export default function ServiceStaffingPage() {
         placeholderData: (prev) => prev,
     });
     const centralAbsences = centralAbsencesData?.absences || [];
+
+    // 🔍 LOG: central absences received
+    if (centralAbsences.length > 0) {
+        const byEmp = {};
+        for (const a of centralAbsences) {
+            if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
+            byEmp[a.employee_id].push(`${a.date}=${a.position}`);
+        }
+        console.log('[ServiceStaffing] centralAbsences geladen:', centralAbsences.length, 'Einträge', JSON.stringify(byEmp));
+    } else if (centralAbsencesData) {
+        console.warn('[ServiceStaffing] centralAbsencesData geladen aber leer!');
+    }
 
     // Build cross-tenant rows + shift lookup map (mirrors ScheduleBoard).
     const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
@@ -346,6 +358,20 @@ export default function ServiceStaffingPage() {
         }
         return map;
     }, [allShifts, crossTenantShifts, centralAbsences, doctors, isPublicHoliday]);
+
+    // 🔍 LOG: Was ist im busyFilter für das aktuelle Dialog-Datum?
+    useEffect(() => {
+        if (!poolEditDialog.date) return;
+        const busySet = busyCentralIdsByDate[poolEditDialog.date];
+        if (busySet) {
+            console.log(
+                `[ServiceStaffing] busyCentralIdsByDate[${poolEditDialog.date}] =`,
+                JSON.stringify([...busySet])
+            );
+        } else {
+            console.warn(`[ServiceStaffing] busyCentralIdsByDate[${poolEditDialog.date}] — NICHT GEFUNDEN oder leer`);
+        }
+    }, [poolEditDialog.date, busyCentralIdsByDate]);
 
     const sendNotificationsMutation = useMutation({
         mutationFn: async () => {
