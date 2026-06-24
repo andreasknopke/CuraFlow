@@ -241,7 +241,7 @@ const mapShiftEntryToCentralRecord = ({ shift, employeeId, tenantId, tenantDocto
   source_tenant_doctor_id: tenantDoctorId ?? null,
 });
 
-async function loadLinkedDoctors(tenantDb, filters = {}) {
+export async function loadLinkedDoctors(tenantDb, filters = {}) {
   const clauses = ['central_employee_id IS NOT NULL', "central_employee_id != ''"];
   const params = [];
 

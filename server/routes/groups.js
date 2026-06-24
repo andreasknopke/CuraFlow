@@ -31,7 +31,7 @@ import {
   validateSharedShiftTenantRules,
 } from '../utils/sharedShiftTenantRules.js';
 import { getPublicHolidayDatesForYear } from './holidays.js';
-import { ensureCentralAbsenceTables } from '../utils/centralAbsences.js';
+import { ensureCentralAbsenceTables, loadLinkedDoctors } from '../utils/centralAbsences.js';
 
 const router = express.Router();
 
@@ -487,23 +487,67 @@ router.get('/central-absences', async (req, res) => {
       `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
       tenantIds
     );
-    const groupEmployeeIds = etaRows.map(r => String(r.employee_id));
-    console.log('[central-absences] groupEmployeeIds=' + JSON.stringify(groupEmployeeIds) + ' (' + groupEmployeeIds.length + ' total)');
+    const groupEmployeeIds = new Set(etaRows.map(r => String(r.employee_id)));
+    console.log('[central-absences] groupEmployeeIds from ETA=' + JSON.stringify([...groupEmployeeIds]) + ' (' + groupEmployeeIds.size + ' total)');
+
+    // 3b) Fallback: auch in den Tenant-Doctor-Tabellen nach central_employee_id suchen,
+    //     falls EmployeeTenantAssignment nicht alle Verknüpfungen enthält
+    let tenantDoctorCount = 0;
+    for (const tid of tenantIds) {
+      try {
+        const token = await loadTenantTokenById(tid);
+        if (!token) continue;
+        const config = parseDbToken(token.token);
+        if (!config || !config.host || !config.database) continue;
+
+        let pool = null;
+        try {
+          pool = createPool({
+            host: config.host,
+            port: parseInt(config.port || '3306', 10),
+            user: config.user,
+            password: config.password,
+            database: config.database,
+            ssl: config.ssl || undefined,
+            waitForConnections: true,
+            connectionLimit: 1,
+            queueLimit: 0,
+            dateStrings: true,
+            timezone: '+00:00',
+            connectTimeout: 5000,
+          });
+          const linked = await loadLinkedDoctors(pool);
+          for (const doc of linked) {
+            if (!groupEmployeeIds.has(doc.employee_id)) {
+              groupEmployeeIds.add(doc.employee_id);
+              tenantDoctorCount++;
+            }
+          }
+        } finally {
+          if (pool) await pool.end();
+        }
+      } catch (err) {
+        console.error('[central-absences] Error scanning tenant ' + tid + ' Doctor table:', err.message);
+      }
+    }
+    console.log('[central-absences] added ' + tenantDoctorCount + ' employee_ids from tenant Doctor tables, total unique=' + groupEmployeeIds.size);
+
+    const allEmployeeIds = [...groupEmployeeIds];
 
     // Find specific employee 2f7d3d63-48d8-4f25-9ec4-af973800fc50
     const targetId = '2f7d3d63-48d8-4f25-9ec4-af973800fc50';
-    const hasTarget = groupEmployeeIds.some(id => id === targetId);
-    console.log('[central-absences] target employee ' + targetId + ' in group employees: ' + hasTarget);
+    const hasTarget = allEmployeeIds.some(id => id === targetId);
+    console.log('[central-absences] target employee ' + targetId + ' in combined set: ' + hasTarget);
 
-    if (groupEmployeeIds.length === 0) {
+    if (allEmployeeIds.length === 0) {
       console.log('[central-absences] NO EMPLOYEES IN GROUP TENANTS');
       return res.json({ absences: [] });
     }
 
     // 4) CentralAbsenceEntry für diese employee_ids abfragen
-    const empPlaceholders = groupEmployeeIds.map(() => '?').join(',');
+    const empPlaceholders = allEmployeeIds.map(() => '?').join(',');
     let sql = `SELECT employee_id, date, position FROM CentralAbsenceEntry WHERE employee_id IN (${empPlaceholders})`;
-    const sqlParams = [...groupEmployeeIds];
+    const sqlParams = [...allEmployeeIds];
 
     if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
     if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
