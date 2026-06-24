@@ -91,6 +91,30 @@ export default function WishListPage() {
     const { getQualificationIds: getDoctorQualIds, isLoading: isDoctorQualificationsLoading } = useAllDoctorQualifications();
     const { byWorkplace: workplaceQualificationsByWorkplaceId, isLoading: isWorkplaceQualificationsLoading } = useAllWorkplaceQualifications();
 
+  // Cross-tenant (Verbundsdienst) workplaces accessible to this tenant.
+  // Declared up here because the serviceTypes/allServiceTypes memos below
+  // depend on crossTenantServiceTypes (must be initialized first to avoid a
+  // "Cannot access ... before initialization" TDZ crash).
+  const { data: visiblePoolData } = useQuery({
+    queryKey: ['pool', 'visible-shifts', selectedYear],
+    queryFn: () => api.getVisiblePoolShifts({
+      from: `${selectedYear}-01-01`,
+      to: `${selectedYear}-12-31`,
+    }),
+  });
+
+  const crossTenantServiceWorkplaces = React.useMemo(() => {
+    const wps = visiblePoolData?.workplaces || [];
+    return wps
+      .filter((w) => w.category === 'Dienste')
+      .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
+  }, [visiblePoolData?.workplaces]);
+
+  const crossTenantServiceTypes = React.useMemo(
+    () => crossTenantServiceWorkplaces.map((w) => `ct:${w.id}`),
+    [crossTenantServiceWorkplaces]
+  );
+
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
       queryKey: ['workplaces'],
@@ -307,33 +331,10 @@ export default function WishListPage() {
     }),
   });
 
-  // Cross-tenant (Verbundsdienst) workplaces accessible to this tenant.
-  // Used to add additional tabs whose wishes are stored centrally in
-  // CentralWishRequest (master DB) instead of the local WishRequest table.
-  const { data: visiblePoolData } = useQuery({
-    queryKey: ['pool', 'visible-shifts', selectedYear],
-    queryFn: () => api.getVisiblePoolShifts({
-      from: `${selectedYear}-01-01`,
-      to: `${selectedYear}-12-31`,
-    }),
-  });
-
   // Cross-tenant workplaces that count as "Dienste" (services). These become
   // extra tabs in the Wunschbox. The tab key is `ct:<shared_workplace_id>` so
   // it cannot collide with any local position name. The display label strips
   // the "Dienst " prefix to match the local-tab rendering.
-  const crossTenantServiceWorkplaces = React.useMemo(() => {
-    const wps = visiblePoolData?.workplaces || [];
-    return wps
-      .filter((w) => w.category === 'Dienste')
-      .sort((a, b) => (a.order || 0) - (b.order || 0) || a.name.localeCompare(b.name));
-  }, [visiblePoolData?.workplaces]);
-
-  const crossTenantServiceTypes = React.useMemo(
-    () => crossTenantServiceWorkplaces.map((w) => `ct:${w.id}`),
-    [crossTenantServiceWorkplaces]
-  );
-
   const crossTenantWorkplaceByTabKey = React.useMemo(() => {
     const map = new Map();
     for (const w of crossTenantServiceWorkplaces) map.set(`ct:${w.id}`, w);
