@@ -807,8 +807,16 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
         WHERE shared_workplace_id = ?`,
       [req.params.workplaceId]
     );
-    const required = qualRows.filter((r) => !r.is_excluded).map((r) => r.qualification_name);
-    const excluded = qualRows.filter((r) => r.is_excluded).map((r) => r.qualification_name);
+    // Trim qualification names from the master DB for robust comparison
+    // with names coming from tenant DBs (which are trimmed on read).
+    const required = qualRows
+      .filter((r) => !r.is_excluded)
+      .map((r) => String(r.qualification_name || '').trim())
+      .filter(Boolean);
+    const excluded = qualRows
+      .filter((r) => r.is_excluded)
+      .map((r) => String(r.qualification_name || '').trim())
+      .filter(Boolean);
 
     // Load all group staff (same shape as /staff)
     const placeholders = tenantIds.map(() => '?').join(',');
@@ -893,16 +901,55 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       }
     }
 
+    // Case-insensitive qualification name matching.
+    // MySQL VARCHAR UNIQUE uses a case-insensitive collation (utf8mb4_unicode_ci),
+    // so "Facharzt" and "facharzt" cannot co-exist in the same tenant — but the
+    // stored casing depends on which value was inserted first. Since JavaScript
+    // Set.has() is case-sensitive, we normalize to lowercase for matching.
+    const hasQual = (set, name) => {
+      if (set.has(name)) return true;
+      const lower = name.toLowerCase();
+      if (lower === name) return false;
+      for (const q of set) {
+        if (q.toLowerCase() === lower) return true;
+      }
+      return false;
+    };
+
     const eligible = staffRows.filter((r) => {
       const have = employeeQuals.get(String(r.id)) || new Set();
       for (const req of required) {
-        if (!have.has(req)) return false;
+        if (!hasQual(have, req)) return false;
       }
       for (const ex of excluded) {
-        if (have.has(ex)) return false;
+        if (hasQual(have, ex)) return false;
       }
       return true;
     });
+
+    // Diagnostic: log when qualifications are required but no one matched
+    if (required.length > 0 && eligible.length === 0) {
+      const totalStaff = staffRows.length;
+      const lowerRequired = required.map((r) => r.toLowerCase());
+      const staffWithQuals = [...employeeQuals.entries()]
+        .filter(([_, quals]) => lowerRequired.every((lr) => {
+          for (const q of quals) {
+            if (q.toLowerCase() === lr) return true;
+          }
+          return false;
+        }))
+        .length;
+      const qualsSummary = [...employeeQuals.entries()].slice(0, 5)
+        .map(([eid, quals]) => `${eid}:[${[...quals].join(',')}]`)
+        .join('; ');
+      console.warn(
+        `[groups] eligible-staff: workplace=${req.params.workplaceId} ` +
+        `required=[${required.join(', ')}] ` +
+        `totalStaff=${totalStaff} staffWithAllRequiredQuals=${staffWithQuals} ` +
+        `tenantsWithQualData=${[...employeeQuals.keys()].length} ` +
+        `employeeQuals=${qualsSummary}`
+      );
+    }
 
     res.json({
       staff: eligible.map((r) => ({
