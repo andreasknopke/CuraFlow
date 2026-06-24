@@ -15,6 +15,7 @@ import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog
 import { trackDbChange } from '@/components/utils/dbTracker';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
+import { getActiveTokenId } from '@/components/dbTokenStorage';
 import { isWishOnDate } from '@/utils/wishRange';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import PoolShiftEditDialog from '@/components/schedule/PoolShiftEditDialog';
@@ -49,6 +50,8 @@ export default function ServiceStaffingPage() {
         };
     }, [currentDate]);
 
+    const dbTokenId = getActiveTokenId();
+
     const { data: allShifts = [] } = useQuery({
         queryKey: ['shifts', fetchRange.start, fetchRange.end],
         queryFn: () => db.ShiftEntry.filter({
@@ -58,7 +61,7 @@ export default function ServiceStaffingPage() {
     });
 
     const { data: visiblePoolData } = useQuery({
-        queryKey: ['pool', 'visible-shifts', fetchRange.start, fetchRange.end],
+        queryKey: ['pool', 'visible-shifts', dbTokenId, fetchRange.start, fetchRange.end],
         queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }),
         placeholderData: keepPreviousData,
     });
@@ -67,9 +70,9 @@ export default function ServiceStaffingPage() {
     // This catches absences (Urlaub, Krank, Frei, …) from OTHER tenants in the
     // group — data that would be missing from the local allShifts query.
     const { data: centralAbsencesData } = useQuery({
-        queryKey: ['pool', 'central-absences', fetchRange.start, fetchRange.end],
+        queryKey: ['pool', 'central-absences', dbTokenId, fetchRange.start, fetchRange.end],
         queryFn: () => api.getGroupCentralAbsences({ from: fetchRange.start, to: fetchRange.end }),
-        placeholderData: (prev) => prev,
+        placeholderData: keepPreviousData,
     });
     const centralAbsences = centralAbsencesData?.absences || [];
 
