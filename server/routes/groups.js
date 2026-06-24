@@ -31,6 +31,7 @@ import {
   validateSharedShiftTenantRules,
 } from '../utils/sharedShiftTenantRules.js';
 import { getPublicHolidayDatesForYear } from './holidays.js';
+import { ensureCentralAbsenceTables } from '../utils/centralAbsences.js';
 
 const router = express.Router();
 
@@ -428,6 +429,7 @@ router.get('/visible-shifts', async (req, res) => {
 // pool shift dialog — absences from all group tenants are included,
 // not just the active tenant's.
 router.get('/central-absences', async (req, res) => {
+  console.log('🔥🔥🔥 [central-absences] CALLED by ' + req.user?.sub + ' url=' + req.originalUrl);
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -440,61 +442,86 @@ router.get('/central-absences', async (req, res) => {
 
     const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
     if (accessibleGroupIds.length === 0) {
-      console.log('[central-absences] NO ACCESSIBLE GROUPS');
+      console.log('[central-absences] NO ACCESSIBLE GROUPS for tenant ' + activeTenantId);
       return res.json({ absences: [] });
+    }
+    console.log('[central-absences] accessibleGroupIds=' + JSON.stringify(accessibleGroupIds) + ' tenant=' + activeTenantId);
+
+    // Ensure the CentralAbsenceEntry table exists (safety net for fresh deploys)
+    try {
+      await ensureCentralAbsenceTables(db);
+      console.log('[central-absences] table CentralAbsenceEntry ensured');
+    } catch (tableErr) {
+      console.error('[central-absences] ensureCentralAbsenceTables ERROR:', tableErr.message);
     }
 
     const { from, to } = req.query;
-    console.log(`[central-absences] tenant=${activeTenantId} groups=[${accessibleGroupIds.join(',')}] from=${from} to=${to}`);
 
-    // 1) Alle tenant_ids der zugänglichen Gruppen sammeln
+    // 1) Count total in CentralAbsenceEntry — to know if table has ANY data
+    let totalCount = -1;
+    try {
+      const [cnt] = await db.execute('SELECT COUNT(*) AS c FROM CentralAbsenceEntry');
+      totalCount = cnt[0]?.c ?? -1;
+      console.log('[central-absences] total entries in CentralAbsenceEntry: ' + totalCount);
+    } catch (cntErr) {
+      console.error('[central-absences] COUNT query failed:', cntErr.message);
+    }
+
+    // 2) Alle tenant_ids der zugänglichen Gruppen sammeln
     const allTenantIds = new Set();
     for (const gid of accessibleGroupIds) {
       const ids = await loadGroupTenantIds(db, gid);
       for (const tid of ids) allTenantIds.add(tid);
     }
     const tenantIds = [...allTenantIds];
-    console.log(`[central-absences] tenantIds=${JSON.stringify(tenantIds)}`);
+    console.log('[central-absences] tenantIds for groups: ' + JSON.stringify(tenantIds));
 
-    // 2) Alle EmployeeTenantAssignment-Einträge für diese Tenants laden
-    //    → bekommen wir alle employee_ids, die in den Gruppen-Tenants arbeiten
+    if (tenantIds.length === 0) {
+      console.log('[central-absences] NO TENANTS IN GROUPS');
+      return res.json({ absences: [] });
+    }
+
+    // 3) Alle EmployeeTenantAssignment-Einträge für diese Tenants laden
     const placeholders = tenantIds.map(() => '?').join(',');
     const [etaRows] = await db.execute(
       `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
       tenantIds
     );
     const groupEmployeeIds = etaRows.map(r => String(r.employee_id));
-    console.log(`[central-absences] groupEmployeeIds=${JSON.stringify(groupEmployeeIds)} (${groupEmployeeIds.length} total)`);
+    console.log('[central-absences] groupEmployeeIds=' + JSON.stringify(groupEmployeeIds) + ' (' + groupEmployeeIds.length + ' total)');
+
+    // Find specific employee 2f7d3d63-48d8-4f25-9ec4-af973800fc50
+    const targetId = '2f7d3d63-48d8-4f25-9ec4-af973800fc50';
+    const hasTarget = groupEmployeeIds.some(id => id === targetId);
+    console.log('[central-absences] target employee ' + targetId + ' in group employees: ' + hasTarget);
 
     if (groupEmployeeIds.length === 0) {
-      console.log('[central-absences] NO EMPLOYEES IN GROUP');
+      console.log('[central-absences] NO EMPLOYEES IN GROUP TENANTS');
       return res.json({ absences: [] });
     }
 
-    // 3) CentralAbsenceEntry für diese employee_ids abfragen — genau wie
-    //    listShiftEntriesWithCentralAbsences es macht: direktes SELECT
-    //    ohne JOIN über ETA/tgm, weil employee_id bereits die zentrale ID ist.
+    // 4) CentralAbsenceEntry für diese employee_ids abfragen
     const empPlaceholders = groupEmployeeIds.map(() => '?').join(',');
     let sql = `SELECT employee_id, date, position FROM CentralAbsenceEntry WHERE employee_id IN (${empPlaceholders})`;
     const sqlParams = [...groupEmployeeIds];
 
-    if (from) {
-      sql += ' AND date >= ?';
-      sqlParams.push(from);
-    }
-    if (to) {
-      sql += ' AND date <= ?';
-      sqlParams.push(to);
-    }
-    sql += ' ORDER BY date ASC';
+    if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
+    if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
+    sql += ' ORDER BY employee_id, date ASC';
+
+    console.log('[central-absences] SQL: ' + sql + ' params(' + sqlParams.length + ')');
 
     let rows = [];
     try {
       [rows] = await db.execute(sql, sqlParams);
+      console.log('[central-absences] query returned ' + rows.length + ' rows');
     } catch (err) {
-      console.error(`[central-absences] QUERY FAILED:`, err.message);
-      // Tabelle existiert vielleicht nicht — dann halt leer
+      console.error('[central-absences] QUERY FAILED: ' + err.message + ' code=' + err.code);
     }
+
+    // Check if target employee has absences in result
+    const targetRows = rows.filter(r => String(r.employee_id) === targetId);
+    console.log('[central-absences] target employee absences found: ' + targetRows.length);
 
     const absences = rows.map((r) => ({
       employee_id: String(r.employee_id),
@@ -502,17 +529,17 @@ router.get('/central-absences', async (req, res) => {
       position: String(r.position || '').trim(),
     }));
 
-    // Ausführliches Logging pro Employee
+    // Log per employee
     const byEmp = {};
     for (const a of absences) {
       if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
-      byEmp[a.employee_id].push(`${a.date}=${a.position}`);
+      byEmp[a.employee_id].push(a.date + '=' + a.position);
     }
-    console.log(`[central-absences] RETURNING ${absences.length} absences for ${Object.keys(byEmp).length} employees:`, JSON.stringify(byEmp));
+    console.log('[central-absences] DONE — ' + absences.length + ' absences for ' + Object.keys(byEmp).length + ' employees: ' + JSON.stringify(byEmp));
 
     res.json({ absences });
   } catch (err) {
-    console.error('[central-absences] ERROR:', err.message);
+    console.error('[central-absences] UNCAUGHT ERROR:', err.message, err.stack);
     handleError(res, err);
   }
 });
