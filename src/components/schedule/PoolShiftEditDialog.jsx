@@ -73,12 +73,45 @@ export default function PoolShiftEditDialog({
 
     const staff = staffQuery.data?.staff || [];
     const requiredQuals = staffQuery.data?.required || [];
+    const absencesByEmployee = staffQuery.data?.absences_by_employee || {};
+
+    // Build busy employee set from the eligible-staff response (absences_by_employee)
+    // and merge with the busyEmployeeIds prop (from parent's central-absences query).
+    // This ensures absence data is available even before the separate central-absences
+    // query completes — both sources are combined.
+    const busyFromEligibleStaff = useMemo(() => {
+        if (!date || !absencesByEmployee || Object.keys(absencesByEmployee).length === 0) {
+            return new Set();
+        }
+        const busy = new Set();
+        const dateStr = String(date).slice(0, 10);
+        for (const [empId, absences] of Object.entries(absencesByEmployee)) {
+            for (const a of absences) {
+                if (String(a.date).slice(0, 10) === dateStr) {
+                    busy.add(String(empId));
+                    break;
+                }
+            }
+        }
+        return busy;
+    }, [date, absencesByEmployee]);
+
+    // Combined busy set: from the direct eligible-staff response + the parent's prop
+    const combinedBusyIds = useMemo(() => {
+        const combined = new Set();
+        for (const id of busyFromEligibleStaff) combined.add(id);
+        if (busyEmployeeIds && busyEmployeeIds.size > 0) {
+            for (const id of busyEmployeeIds) combined.add(id);
+        }
+        return combined;
+    }, [busyFromEligibleStaff, busyEmployeeIds]);
 
     // Hide employees that are already absent on this date (Frei, Krank, Urlaub,
     // cross-tenant pool shift, or auto-frei from a previous-day on-call). The
     // current shift's employee is always kept so the edit dialog can show them.
     const visibleStaff = useMemo(() => {
-        if (!busyEmployeeIds || busyEmployeeIds.size === 0) {
+        const busyIds = combinedBusyIds;
+        if (!busyIds || busyIds.size === 0) {
             if (open && staff.length > 0) {
                 console.log(`[PoolShiftEditDialog] KEINE busyEmployeeIds — alle ${staff.length} Mitarbeiter sichtbar`);
             }
@@ -88,19 +121,17 @@ export default function PoolShiftEditDialog({
         const filtered = staff.filter((s) => {
             const id = String(s.id);
             if (id === currentEmp) return true;
-            return !busyEmployeeIds.has(id);
+            return !busyIds.has(id);
         });
-        if (open) {
+        if (open && (filtered.length < staff.length)) {
             const filteredOut = staff.length - filtered.length;
-            if (filteredOut > 0) {
-                console.log(
-                    `[PoolShiftEditDialog] busyEmployeeIds=${JSON.stringify([...busyEmployeeIds])} ` +
-                    `staff=${staff.length} gefiltert=${filteredOut} sichtbar=${filtered.length}`
-                );
-            }
+            console.log(
+                `[PoolShiftEditDialog] busyIds=${JSON.stringify([...busyIds])} ` +
+                `staff=${staff.length} gefiltert=${filteredOut} sichtbar=${filtered.length}`
+            );
         }
         return filtered;
-    }, [staff, busyEmployeeIds, shift, open]);
+    }, [staff, combinedBusyIds, shift, open]);
 
     // Distinct list of tenant ids the chosen employee is assigned to.
     // We let the admin pick which tenant gets billed for the shift.

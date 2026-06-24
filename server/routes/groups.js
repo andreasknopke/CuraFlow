@@ -31,7 +31,7 @@ import {
   validateSharedShiftTenantRules,
 } from '../utils/sharedShiftTenantRules.js';
 import { getPublicHolidayDatesForYear } from './holidays.js';
-import { ensureCentralAbsenceTables, loadLinkedDoctors } from '../utils/centralAbsences.js';
+import { ensureCentralAbsenceTables, isCentralAbsencePosition, loadLinkedDoctors } from '../utils/centralAbsences.js';
 
 const router = express.Router();
 
@@ -174,6 +174,36 @@ async function loadTenantDoctorAssignment(employeeId, tenantId) {
     [String(employeeId), String(tenantId)]
   );
   return rows[0]?.tenant_doctor_id || null;
+}
+
+async function loadEligibleAbsences(masterDb, eligibleStaffRows) {
+  try {
+    await ensureCentralAbsenceTables(masterDb);
+    const empIds = eligibleStaffRows.map(r => String(r.id)).filter(Boolean);
+    if (empIds.length === 0) return {};
+    const placeholders = empIds.map(() => '?').join(',');
+    const [rows] = await masterDb.execute(
+      `SELECT employee_id, date, position FROM CentralAbsenceEntry
+        WHERE employee_id IN (${placeholders})
+        ORDER BY employee_id, date`,
+      empIds
+    );
+    const byEmp = {};
+    for (const r of rows) {
+      const pos = String(r.position || '').trim();
+      if (!isCentralAbsencePosition(pos)) continue;
+      const eid = String(r.employee_id);
+      if (!byEmp[eid]) byEmp[eid] = [];
+      byEmp[eid].push({
+        date: String(r.date).slice(0, 10),
+        position: pos,
+      });
+    }
+    return byEmp;
+  } catch (err) {
+    console.error('[groups] loadEligibleAbsences error:', err.message);
+    return {};
+  }
 }
 
 async function loadHolidayDatesAround(dateStr) {
@@ -996,6 +1026,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
 
     // If no rules, return everyone (cheap path)
     if (required.length === 0 && excluded.length === 0) {
+      const allIds = staffRows.map(r => String(r.id));
       return res.json({
         staff: staffRows.map((r) => ({
           id: r.id,
@@ -1008,6 +1039,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
           qualifications: [],
         })),
         required, excluded,
+        absences_by_employee: await loadEligibleAbsences(db, staffRows),
       });
     }
 
@@ -1127,6 +1159,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       })),
       required,
       excluded,
+      absences_by_employee: await loadEligibleAbsences(db, eligible),
     });
   } catch (err) {
     handleError(res, err);
