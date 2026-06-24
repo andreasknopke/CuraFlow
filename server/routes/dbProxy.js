@@ -463,7 +463,7 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
         updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
         created_by VARCHAR(255) DEFAULT 'system'
-      )
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
     
     await dbPool.execute(`
@@ -484,7 +484,7 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         UNIQUE KEY uq_doctor_qual (doctor_id, qualification_id),
         INDEX idx_dq_doctor (doctor_id),
         INDEX idx_dq_qualification (qualification_id)
-      )
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
     
     await dbPool.execute(`
@@ -500,7 +500,7 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
         UNIQUE KEY uq_workplace_qual (workplace_id, qualification_id),
         INDEX idx_wq_workplace (workplace_id),
         INDEX idx_wq_qualification (qualification_id)
-      )
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
 
     // Add is_excluded column if table already existed without it

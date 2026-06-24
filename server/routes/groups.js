@@ -876,10 +876,13 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       if (!token) continue;
       try {
         await withTenantDb(token, async (pool) => {
+          // Doctor uses utf8mb4_unicode_ci (explicit), but DoctorQualification
+          // and Qualification use the database default (utf8mb4_uca1400_ai_ci
+          // on MySQL 8.4+). Add COLLATE to avoid "Illegal mix of collations".
           const [rows] = await pool.execute(
             `SELECT d.id AS doctor_id, d.central_employee_id AS emp_id, q.name AS qname
                FROM Doctor d
-               JOIN DoctorQualification dq ON dq.doctor_id = d.id
+               JOIN DoctorQualification dq ON dq.doctor_id COLLATE utf8mb4_unicode_ci = d.id
                JOIN Qualification q ON q.id = dq.qualification_id`
           );
           for (const row of rows) {
