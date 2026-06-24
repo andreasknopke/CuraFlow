@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { addDays, eachDayOfInterval, format, parseISO } from 'date-fns';
@@ -115,6 +115,35 @@ export default function WishListPage() {
     [crossTenantServiceWorkplaces]
   );
 
+  // Cross-tenant eligibility: shared_workplace_qualification rules live in
+  // the master DB. The /eligible-staff endpoint evaluates them across all
+  // group tenants (case-insensitive qualification-name matching) and returns
+  // the set of central employee IDs that satisfy each workplace's required/
+  // excluded rules. We fetch one query per visible cross-tenant workplace —
+  // same data source the PoolShiftEditDialog uses for its staff dropdown.
+  const eligibilityQueries = useQueries({
+    queries: crossTenantServiceWorkplaces.map((w) => ({
+      queryKey: ['pool', 'eligible-staff', w.group_id, w.id],
+      queryFn: () => api.getWorkplaceEligibleStaff(w.group_id, w.id),
+      staleTime: 60 * 1000,
+      enabled: crossTenantServiceWorkplaces.length > 0,
+    })),
+  });
+
+  // Map<sharedWorkplaceId(string), Set<centralEmployeeId(string)>>.
+  // While any query is still loading the map is empty — callers MUST treat
+  // that as "unknown → show all" to avoid flashing an empty tab bar.
+  const crossTenantEligibility = React.useMemo(() => {
+    const map = new Map();
+    for (let i = 0; i < crossTenantServiceWorkplaces.length; i += 1) {
+      const wp = crossTenantServiceWorkplaces[i];
+      const data = eligibilityQueries[i]?.data;
+      const ids = (data?.staff || []).map((s) => String(s.id));
+      map.set(String(wp.id), new Set(ids));
+    }
+    return map;
+  }, [crossTenantServiceWorkplaces, eligibilityQueries]);
+
   // Fetch Workplaces for Tabs
   const { data: workplaces = [] } = useQuery({
       queryKey: ['workplaces'],
@@ -132,56 +161,11 @@ export default function WishListPage() {
       return [...local, ...crossTenantServiceTypes];
   }, [workplaces, crossTenantServiceTypes]);
 
-  // Qualifikationsgefilterte Dienstarten für die Jahresansicht (Einzel-Arzt)
-  const serviceTypes = React.useMemo(() => {
-      const serviceWorkplaces = workplaces
-          .filter(w => w.category === 'Dienste')
-          .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-      let local;
-      if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
-          local = serviceWorkplaces.map((workplace) => workplace.name);
-      } else {
-          const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
-          local = filterQualifiedWishServiceTypes(
-              serviceWorkplaces,
-              doctorQualificationIds,
-              workplaceQualificationsByWorkplaceId,
-          ).map((workplace) => workplace.name);
-      }
-      // Cross-tenant workplaces do not undergo local qualification filtering
-      // here — their qualification rules live on shared_workplace_qualification
-      // in the master DB and are evaluated by the pool dialog separately.
-      return [...local, ...crossTenantServiceTypes];
-  }, [
-      workplaces,
-      selectedDoctorId,
-      isDoctorQualificationsLoading,
-      isWorkplaceQualificationsLoading,
-      getDoctorQualIds,
-      workplaceQualificationsByWorkplaceId,
-      crossTenantServiceTypes,
-  ]);
-
-  React.useEffect(() => {
-      const types = viewMode === 'month' ? allServiceTypes : serviceTypes;
-
-      if (types.length === 0) {
-          if (activeTab !== null) {
-              setActiveTab(null);
-          }
-          return;
-      }
-
-      if (activeTab && types.includes(activeTab)) {
-          return;
-      }
-
-      const preferredPosition = resolveWishDefaultPosition(types, user?.wish_default_position);
-      if (preferredPosition && preferredPosition !== activeTab) {
-          setActiveTab(preferredPosition);
-      }
-  }, [allServiceTypes, serviceTypes, activeTab, viewMode, user?.wish_default_position]);
+  // NOTE: serviceTypes (qualification-filtered) is computed further down,
+  // after selectedDoctorCentralEmployeeId is known, because cross-tenant
+  // workplaces are also filtered by shared_workplace_qualification rules.
+  // The activeTab auto-selection effect that depends on serviceTypes is
+  // likewise moved below it to avoid a temporal-dead-zone reference.
 
   // Beim Wechsel zur Monatsübersicht: "Alle" im Mitarbeiter-Dropdown auswählen
   // Beim Wechsel zurück zur Jahresansicht: vorher ausgewählten Arzt wiederherstellen
@@ -382,6 +366,77 @@ export default function WishListPage() {
   // key so the same `position === activeType` matching in WishMonthOverview
   // applies to cross-tenant wishes unchanged.
   const selectedDoctorCentralEmployeeId = selectedDoctor?.central_employee_id || null;
+
+  // Qualifikationsgefilterte Dienstarten für die Jahresansicht (Einzel-Arzt).
+  // Local services use tenant DB qualifications (filterQualifiedWishServiceTypes);
+  // cross-tenant services use shared_workplace_qualification rules from the
+  // master DB, evaluated by the /eligible-staff endpoint (see
+  // crossTenantEligibility). While eligibility is still loading, or when no
+  // doctor is selected, all cross-tenant tabs are shown — matching the
+  // local filter's "loading → show all" fallback.
+  const serviceTypes = React.useMemo(() => {
+      const serviceWorkplaces = workplaces
+          .filter(w => w.category === 'Dienste')
+          .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+      let local;
+      if (!selectedDoctorId || isDoctorQualificationsLoading || isWorkplaceQualificationsLoading) {
+          local = serviceWorkplaces.map((workplace) => workplace.name);
+      } else {
+          const doctorQualificationIds = getDoctorQualIds(selectedDoctorId);
+          local = filterQualifiedWishServiceTypes(
+              serviceWorkplaces,
+              doctorQualificationIds,
+              workplaceQualificationsByWorkplaceId,
+          ).map((workplace) => workplace.name);
+      }
+
+      const anyEligibilityLoading = eligibilityQueries.some((q) => q.isLoading);
+      let crossTenant = crossTenantServiceTypes;
+      if (selectedDoctorCentralEmployeeId && !anyEligibilityLoading) {
+          crossTenant = crossTenantServiceTypes.filter((tabKey) => {
+              const wpId = tabKey.slice(3); // strip "ct:"
+              const eligibleIds = crossTenantEligibility.get(String(wpId));
+              // No eligibility data for this workplace → fall back to visible.
+              if (!eligibleIds) return true;
+              return eligibleIds.has(String(selectedDoctorCentralEmployeeId));
+          });
+      }
+      return [...local, ...crossTenant];
+  }, [
+      workplaces,
+      selectedDoctorId,
+      isDoctorQualificationsLoading,
+      isWorkplaceQualificationsLoading,
+      getDoctorQualIds,
+      workplaceQualificationsByWorkplaceId,
+      crossTenantServiceTypes,
+      selectedDoctorCentralEmployeeId,
+      eligibilityQueries,
+      crossTenantEligibility,
+  ]);
+
+  // Auto-select / keep in sync an active tab. Moved below serviceTypes to
+  // avoid a temporal-dead-zone reference in its dependency array.
+  React.useEffect(() => {
+      const types = viewMode === 'month' ? allServiceTypes : serviceTypes;
+
+      if (types.length === 0) {
+          if (activeTab !== null) {
+              setActiveTab(null);
+          }
+          return;
+      }
+
+      if (activeTab && types.includes(activeTab)) {
+          return;
+      }
+
+      const preferredPosition = resolveWishDefaultPosition(types, user?.wish_default_position);
+      if (preferredPosition && preferredPosition !== activeTab) {
+          setActiveTab(preferredPosition);
+      }
+  }, [allServiceTypes, serviceTypes, activeTab, viewMode, user?.wish_default_position]);
 
   const mappedDoctorCentralWishes = React.useMemo(() => {
       if (!selectedDoctorCentralEmployeeId) return [];
