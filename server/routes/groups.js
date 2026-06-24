@@ -615,6 +615,419 @@ router.get('/central-absences', async (req, res) => {
   }
 });
 
+// ============ CENTRAL WISHES (cross-tenant Dienstwünsche for Verbundsdienste) ============
+//
+// IMPORTANT: These routes MUST be registered BEFORE the generic /:groupId
+// routes below. Express matches in registration order, and /:groupId would
+// otherwise swallow /central-wishes (groupId="central-wishes" → 404).
+//
+// Mirrors the central-absences pattern: wishes for shared_workplaces are
+// stored in the master DB so they follow the employee across tenants.
+// Reads are scoped to the user's accessible groups; writes additionally
+// require write access to the group that owns the target shared_workplace.
+
+// Helper: confirm the caller has write access to the group that owns the
+// given shared_workplace_id, and return the group_id. Throws 403/404 on
+// failure. Used by POST/PATCH/DELETE below.
+async function requireWriteAccessByWorkplace(ctx, sharedWorkplaceId) {
+  const [rows] = await db.execute(
+    'SELECT id, group_id FROM shared_workplace WHERE id = ? LIMIT 1',
+    [String(sharedWorkplaceId)]
+  );
+  if (rows.length === 0) {
+    throw createHttpError(404, 'Verbundsdienst nicht gefunden');
+  }
+  const groupId = Number(rows[0].group_id);
+  requireGroupWriteAccess(ctx, groupId);
+  return groupId;
+}
+
+// Helper: confirm the employee_id is linked to one of the group's tenants,
+// so a caller cannot create wishes for arbitrary employees.
+async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
+  const tenantIds = await loadGroupTenantIds(db, groupId);
+  if (tenantIds.length === 0) {
+    throw createHttpError(422, 'Verbund hat keine Mandanten');
+  }
+  const placeholders = tenantIds.map(() => '?').join(',');
+  const [etaRows] = await db.execute(
+    `SELECT 1 FROM EmployeeTenantAssignment
+      WHERE employee_id = ?
+        AND tenant_id IN (${placeholders})
+      LIMIT 1`,
+    [String(employeeId), ...tenantIds]
+  );
+  if (etaRows.length === 0) {
+    // Fallback: Doctor.central_employee_id link
+    let linked = false;
+    for (const tid of tenantIds) {
+      try {
+        const token = await loadTenantTokenById(tid);
+        if (!token) continue;
+        const config = parseDbToken(token.token);
+        if (!config || !config.host || !config.database) continue;
+        let pool = null;
+        try {
+          pool = createPool({
+            host: config.host,
+            port: parseInt(config.port || '3306', 10),
+            user: config.user,
+            password: config.password,
+            database: config.database,
+            ssl: config.ssl || undefined,
+            waitForConnections: true,
+            connectionLimit: 1,
+            queueLimit: 0,
+            dateStrings: true,
+            timezone: '+00:00',
+            connectTimeout: 5000,
+          });
+          const linkedDoctors = await loadLinkedDoctors(pool);
+          if (linkedDoctors.some((d) => String(d.employee_id) === String(employeeId))) {
+            linked = true;
+            break;
+          }
+        } finally {
+          if (pool) await pool.end().catch(() => {});
+        }
+      } catch (err) {
+        console.error('[central-wishes] assertEmployee scan tenant ' + tid + ':', err.message);
+      }
+    }
+    if (!linked) {
+      throw createHttpError(403, 'Mitarbeiter ist keinem Mandanten dieser Gruppe zugeordnet');
+    }
+  }
+}
+
+// GET /central-wishes?from=&to=
+// Returns wishes for all employees in the user's accessible groups within
+// the optional date range. Shape mirrors /central-absences but richer.
+router.get('/central-wishes', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    if (!activeTenantId) return res.json({ wishes: [] });
+
+    const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
+    if (accessibleGroupIds.length === 0) return res.json({ wishes: [] });
+
+    try {
+      await ensureCentralWishTables(db);
+    } catch (tableErr) {
+      console.error('[central-wishes] ensureCentralWishTables ERROR:', tableErr.message);
+    }
+
+    const { from, to } = req.query;
+
+    // 1) Collect tenant_ids of all accessible groups
+    const allTenantIds = new Set();
+    for (const gid of accessibleGroupIds) {
+      const ids = await loadGroupTenantIds(db, gid);
+      for (const tid of ids) allTenantIds.add(tid);
+    }
+    const tenantIds = [...allTenantIds];
+    if (tenantIds.length === 0) return res.json({ wishes: [] });
+
+    // 2) Collect employee_ids (ETA rows + Doctor.central_employee_id fallback)
+    const placeholders = tenantIds.map(() => '?').join(',');
+    const [etaRows] = await db.execute(
+      `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment
+        WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
+      tenantIds
+    );
+    const groupEmployeeIds = new Set(etaRows.map((r) => String(r.employee_id)));
+
+    for (const tid of tenantIds) {
+      try {
+        const token = await loadTenantTokenById(tid);
+        if (!token) continue;
+        const config = parseDbToken(token.token);
+        if (!config || !config.host || !config.database) continue;
+        let pool = null;
+        try {
+          pool = createPool({
+            host: config.host,
+            port: parseInt(config.port || '3306', 10),
+            user: config.user,
+            password: config.password,
+            database: config.database,
+            ssl: config.ssl || undefined,
+            waitForConnections: true,
+            connectionLimit: 1,
+            queueLimit: 0,
+            dateStrings: true,
+            timezone: '+00:00',
+            connectTimeout: 5000,
+          });
+          const linked = await loadLinkedDoctors(pool);
+          for (const doc of linked) {
+            groupEmployeeIds.add(String(doc.employee_id));
+          }
+        } finally {
+          if (pool) await pool.end().catch(() => {});
+        }
+      } catch (err) {
+        console.error('[central-wishes] Error scanning tenant ' + tid + ' Doctor table:', err.message);
+      }
+    }
+
+    const allEmployeeIds = [...groupEmployeeIds];
+    if (allEmployeeIds.length === 0) return res.json({ wishes: [] });
+
+    // 3) Load CentralWishRequest rows for these employees
+    const empPlaceholders = allEmployeeIds.map(() => '?').join(',');
+    let sql = `SELECT id, employee_id, shared_workplace_id, group_id, date,
+                      target_month, start_date, end_date, range_start, range_end,
+                      \`position\`, type, status, priority, reason, admin_comment,
+                      comment, user_viewed, approved_by, approved_date,
+                      source_tenant_id, source_tenant_doctor_id
+                 FROM CentralWishRequest
+                WHERE employee_id IN (${empPlaceholders})`;
+    const sqlParams = [...allEmployeeIds];
+    if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
+    if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
+    sql += ' ORDER BY employee_id, date ASC';
+
+    let rows = [];
+    try {
+      [rows] = await db.execute(sql, sqlParams);
+    } catch (err) {
+      console.error('[central-wishes] QUERY FAILED: ' + err.message + ' code=' + err.code);
+    }
+
+    const toDateString = (value) => {
+      if (!value) return null;
+      if (typeof value === 'string') return value.slice(0, 10);
+      if (value instanceof Date) return value.toISOString().slice(0, 10);
+      return String(value).slice(0, 10);
+    };
+
+    const wishes = rows.map((r) => ({
+      id: String(r.id),
+      employee_id: String(r.employee_id),
+      shared_workplace_id: r.shared_workplace_id ? String(r.shared_workplace_id) : null,
+      group_id: r.group_id != null ? Number(r.group_id) : null,
+      date: toDateString(r.date),
+      target_month: r.target_month || null,
+      start_date: toDateString(r.start_date),
+      end_date: toDateString(r.end_date),
+      range_start: toDateString(r.range_start),
+      range_end: toDateString(r.range_end),
+      position: r.position || null,
+      type: r.type || 'service',
+      status: r.status || 'pending',
+      priority: r.priority || 'medium',
+      reason: r.reason || null,
+      admin_comment: r.admin_comment || null,
+      comment: r.comment || null,
+      user_viewed: !!r.user_viewed,
+      approved_by: r.approved_by || null,
+      approved_date: r.approved_date || null,
+      source_tenant_id: r.source_tenant_id ? String(r.source_tenant_id) : null,
+      source_tenant_doctor_id: r.source_tenant_doctor_id != null ? String(r.source_tenant_doctor_id) : null,
+    }));
+
+    res.json({ wishes });
+  } catch (err) {
+    console.error('[central-wishes] UNCAUGHT ERROR:', err.message, err.stack);
+    handleError(res, err);
+  }
+});
+
+// POST /central-wishes
+// Create a new cross-tenant wish. Body must include employee_id, date, type,
+// and shared_workplace_id (or null for a global no_service wish).
+router.post('/central-wishes', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    const body = req.body || {};
+    const { employee_id, date, shared_workplace_id } = body;
+
+    if (!employee_id || typeof employee_id !== 'string') {
+      return res.status(400).json({ error: 'employee_id ist erforderlich' });
+    }
+    if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
+    }
+    if (!['service', 'no_service'].includes(body.type)) {
+      return res.status(400).json({ error: "type muss 'service' oder 'no_service' sein" });
+    }
+    if (!shared_workplace_id && body.type === 'service') {
+      return res.status(400).json({ error: 'shared_workplace_id ist fuer Dienstwuensche erforderlich' });
+    }
+
+    await ensureCentralWishTables(db);
+
+    const groupId = shared_workplace_id
+      ? await requireWriteAccessByWorkplace(ctx, shared_workplace_id)
+      : null;
+
+    // If the wish targets a specific workplace, ensure the employee belongs to
+    // that group. For global no_service wishes (shared_workplace_id = null) we
+    // cannot resolve a single group, so we accept any employee id; the caller
+    // is an authenticated tenant admin and the read endpoint filters by
+    // accessible groups anyway.
+    if (shared_workplace_id) {
+      await assertEmployeeBelongsToGroupGroup(employee_id, groupId);
+    }
+
+    // Build the row from a strict whitelist only.
+    const id = crypto.randomUUID();
+    const row = { id, group_id: groupId };
+    for (const key of CENTRAL_WISH_WRITABLE_COLUMNS) {
+      if (key === 'group_id' || key === 'created_by') continue;
+      if (body[key] !== undefined) row[key] = body[key];
+    }
+    // Force integrity-critical fields from the validated path.
+    row.employee_id = String(employee_id);
+    row.date = date;
+    if (shared_workplace_id) row.shared_workplace_id = String(shared_workplace_id);
+
+    // Defaults — only set when missing so callers can override.
+    if (row.type === undefined) row.type = 'service';
+    if (row.status === undefined) row.status = 'pending';
+    if (row.priority === undefined) row.priority = 'medium';
+    if (row.user_viewed === undefined) row.user_viewed = 0;
+    row.created_by = req.user?.sub || null;
+
+    // source_tenant_id: stamp with the caller's active tenant so we can trace
+    // where a wish originated, mirroring CentralAbsenceEntry usage.
+    if (!row.source_tenant_id) {
+      const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+      if (activeTenantId) row.source_tenant_id = String(activeTenantId);
+    }
+
+    const columns = Object.keys(row);
+    const values = columns.map((k) => row[k]);
+    const colList = columns.map((c) => (c === 'position' ? '`position`' : c)).join(', ');
+    const placeholders = columns.map(() => '?').join(', ');
+
+    try {
+      await db.execute(
+        `INSERT INTO CentralWishRequest (${colList}) VALUES (${placeholders})`,
+        values
+      );
+    } catch (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({
+          error: 'Für diesen Mitarbeiter und Verbundsdienst existiert an diesem Datum bereits ein Wunsch',
+        });
+      }
+      throw err;
+    }
+
+    const [rows] = await db.execute(
+      'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
+      [id]
+    );
+    res.status(201).json({ wish: rows[0] });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// PATCH /central-wishes/:id
+// Update an existing wish. Only whitelisted columns from the body are applied.
+router.patch('/central-wishes/:id', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    await ensureCentralWishTables(db);
+
+    const [existing] = await db.execute(
+      'SELECT id, shared_workplace_id, group_id, employee_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
+      [String(req.params.id)]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Wunsch nicht gefunden' });
+    }
+    const current = existing[0];
+
+    // Resolve write access: target workplace if present, else the stored group.
+    const wpId = current.shared_workplace_id || req.body?.shared_workplace_id;
+    if (wpId) {
+      await requireWriteAccessByWorkplace(ctx, wpId);
+    } else if (current.group_id != null) {
+      requireGroupWriteAccess(ctx, Number(current.group_id));
+    } else {
+      // Without a workplace anchor we cannot prove group ownership; refuse.
+      return res.status(403).json({ error: 'Wunsch ohne Workplace-Zuordnung kann nicht aktualisiert werden' });
+    }
+
+    const body = req.body || {};
+    const fields = [];
+    const values = [];
+    for (const key of CENTRAL_WISH_WRITABLE_COLUMNS) {
+      if (body[key] === undefined) continue;
+      if (key === 'employee_id') continue; // immutable on update
+      fields.push(`${key === 'position' ? '`position`' : key} = ?`);
+      values.push(body[key]);
+    }
+    if (fields.length === 0) {
+      return res.status(400).json({ error: 'Keine änderbaren Felder übergeben' });
+    }
+
+    // If shared_workplace_id is being changed, re-validate ownership + employee.
+    if (body.shared_workplace_id !== undefined && body.shared_workplace_id !== current.shared_workplace_id) {
+      const newGroupId = await requireWriteAccessByWorkplace(ctx, body.shared_workplace_id);
+      await assertEmployeeBelongsToGroupGroup(current.employee_id, newGroupId);
+    }
+
+    values.push(String(req.params.id));
+    await db.execute(
+      `UPDATE CentralWishRequest SET ${fields.join(', ')} WHERE id = ?`,
+      values
+    );
+
+    const [rows] = await db.execute(
+      'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
+      [String(req.params.id)]
+    );
+    res.json({ wish: rows[0] });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// DELETE /central-wishes/:id
+router.delete('/central-wishes/:id', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    await ensureCentralWishTables(db);
+
+    const [existing] = await db.execute(
+      'SELECT id, shared_workplace_id, group_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
+      [String(req.params.id)]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Wunsch nicht gefunden' });
+    }
+    const current = existing[0];
+
+    const wpId = current.shared_workplace_id;
+    if (wpId) {
+      await requireWriteAccessByWorkplace(ctx, wpId);
+    } else if (current.group_id != null) {
+      requireGroupWriteAccess(ctx, Number(current.group_id));
+    } else {
+      return res.status(403).json({ error: 'Wunsch ohne Workplace-Zuordnung kann nicht gelöscht werden' });
+    }
+
+    await db.execute('DELETE FROM CentralWishRequest WHERE id = ?', [String(req.params.id)]);
+    res.status(204).end();
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
 router.get('/:groupId', async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
@@ -1712,424 +2125,6 @@ router.get('/:groupId/stats', async (req, res) => {
     );
 
     res.json({ per_tenant: perTenant, per_person: perPerson });
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// ============ CENTRAL WISHES (cross-tenant Dienstwünsche for Verbundsdienste) ============
-//
-// Mirrors the central-absences pattern: wishes for shared_workplaces are
-// stored in the master DB so they follow the employee across tenants.
-// Reads are scoped to the user's accessible groups; writes additionally
-// require write access to the group that owns the target shared_workplace.
-//
-// Employee resolution copies /central-absences: ETA-rows first, Doctor
-// fallbacks for employees without a CentralAbsenceEntry-style link.
-
-// Shared helper: resolve the full set of employee_ids for every tenant of
-// every group the caller can see. Same logic as /central-absences, factored
-// out so both endpoints resolve employees identically.
-// (Currently each route inlines this; kept here as a marker for future
-// refactor — see /central-wishes and /central-absences.)
-
-// GET /central-wishes?from=&to=
-// Returns wishes for all employees in the user's accessible groups within
-// the optional date range. Shape mirrors /central-absences but richer.
-router.get('/central-wishes', async (req, res) => {
-  try {
-    const ctx = await loadCtx(req, res);
-    if (!ctx) return;
-
-    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
-    if (!activeTenantId) return res.json({ wishes: [] });
-
-    const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
-    if (accessibleGroupIds.length === 0) return res.json({ wishes: [] });
-
-    try {
-      await ensureCentralWishTables(db);
-    } catch (tableErr) {
-      console.error('[central-wishes] ensureCentralWishTables ERROR:', tableErr.message);
-    }
-
-    const { from, to } = req.query;
-
-    // 1) Collect tenant_ids of all accessible groups
-    const allTenantIds = new Set();
-    for (const gid of accessibleGroupIds) {
-      const ids = await loadGroupTenantIds(db, gid);
-      for (const tid of ids) allTenantIds.add(tid);
-    }
-    const tenantIds = [...allTenantIds];
-    if (tenantIds.length === 0) return res.json({ wishes: [] });
-
-    // 2) Collect employee_ids (ETA rows + Doctor.central_employee_id fallback)
-    const placeholders = tenantIds.map(() => '?').join(',');
-    const [etaRows] = await db.execute(
-      `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment
-        WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
-      tenantIds
-    );
-    const groupEmployeeIds = new Set(etaRows.map((r) => String(r.employee_id)));
-
-    for (const tid of tenantIds) {
-      try {
-        const token = await loadTenantTokenById(tid);
-        if (!token) continue;
-        const config = parseDbToken(token.token);
-        if (!config || !config.host || !config.database) continue;
-        let pool = null;
-        try {
-          pool = createPool({
-            host: config.host,
-            port: parseInt(config.port || '3306', 10),
-            user: config.user,
-            password: config.password,
-            database: config.database,
-            ssl: config.ssl || undefined,
-            waitForConnections: true,
-            connectionLimit: 1,
-            queueLimit: 0,
-            dateStrings: true,
-            timezone: '+00:00',
-            connectTimeout: 5000,
-          });
-          const linked = await loadLinkedDoctors(pool);
-          for (const doc of linked) {
-            groupEmployeeIds.add(String(doc.employee_id));
-          }
-        } finally {
-          if (pool) await pool.end().catch(() => {});
-        }
-      } catch (err) {
-        console.error('[central-wishes] Error scanning tenant ' + tid + ' Doctor table:', err.message);
-      }
-    }
-
-    const allEmployeeIds = [...groupEmployeeIds];
-    if (allEmployeeIds.length === 0) return res.json({ wishes: [] });
-
-    // 3) Load CentralWishRequest rows for these employees
-    const empPlaceholders = allEmployeeIds.map(() => '?').join(',');
-    let sql = `SELECT id, employee_id, shared_workplace_id, group_id, date,
-                      target_month, start_date, end_date, range_start, range_end,
-                      \`position\`, type, status, priority, reason, admin_comment,
-                      comment, user_viewed, approved_by, approved_date,
-                      source_tenant_id, source_tenant_doctor_id
-                 FROM CentralWishRequest
-                WHERE employee_id IN (${empPlaceholders})`;
-    const sqlParams = [...allEmployeeIds];
-    if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
-    if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
-    sql += ' ORDER BY employee_id, date ASC';
-
-    let rows = [];
-    try {
-      [rows] = await db.execute(sql, sqlParams);
-    } catch (err) {
-      console.error('[central-wishes] QUERY FAILED: ' + err.message + ' code=' + err.code);
-    }
-
-    const toDateString = (value) => {
-      if (!value) return null;
-      if (typeof value === 'string') return value.slice(0, 10);
-      if (value instanceof Date) return value.toISOString().slice(0, 10);
-      return String(value).slice(0, 10);
-    };
-
-    const wishes = rows.map((r) => ({
-      id: String(r.id),
-      employee_id: String(r.employee_id),
-      shared_workplace_id: r.shared_workplace_id ? String(r.shared_workplace_id) : null,
-      group_id: r.group_id != null ? Number(r.group_id) : null,
-      date: toDateString(r.date),
-      target_month: r.target_month || null,
-      start_date: toDateString(r.start_date),
-      end_date: toDateString(r.end_date),
-      range_start: toDateString(r.range_start),
-      range_end: toDateString(r.range_end),
-      position: r.position || null,
-      type: r.type || 'service',
-      status: r.status || 'pending',
-      priority: r.priority || 'medium',
-      reason: r.reason || null,
-      admin_comment: r.admin_comment || null,
-      comment: r.comment || null,
-      user_viewed: !!r.user_viewed,
-      approved_by: r.approved_by || null,
-      approved_date: r.approved_date || null,
-      source_tenant_id: r.source_tenant_id ? String(r.source_tenant_id) : null,
-      source_tenant_doctor_id: r.source_tenant_doctor_id != null ? String(r.source_tenant_doctor_id) : null,
-    }));
-
-    res.json({ wishes });
-  } catch (err) {
-    console.error('[central-wishes] UNCAUGHT ERROR:', err.message, err.stack);
-    handleError(res, err);
-  }
-});
-
-// Helper: confirm the caller has write access to the group that owns the
-// given shared_workplace_id, and return the group_id. Throws 403/404 on
-// failure. Used by POST/PATCH/DELETE below.
-async function requireWriteAccessByWorkplace(ctx, sharedWorkplaceId) {
-  const [rows] = await db.execute(
-    'SELECT id, group_id FROM shared_workplace WHERE id = ? LIMIT 1',
-    [String(sharedWorkplaceId)]
-  );
-  if (rows.length === 0) {
-    throw createHttpError(404, 'Verbundsdienst nicht gefunden');
-  }
-  const groupId = Number(rows[0].group_id);
-  requireGroupWriteAccess(ctx, groupId);
-  return groupId;
-}
-
-// Helper: confirm the employee_id is linked to one of the group's tenants,
-// so a caller cannot create wishes for arbitrary employees.
-async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
-  const tenantIds = await loadGroupTenantIds(db, groupId);
-  if (tenantIds.length === 0) {
-    throw createHttpError(422, 'Verbund hat keine Mandanten');
-  }
-  const placeholders = tenantIds.map(() => '?').join(',');
-  const [etaRows] = await db.execute(
-    `SELECT 1 FROM EmployeeTenantAssignment
-      WHERE employee_id = ?
-        AND tenant_id IN (${placeholders})
-      LIMIT 1`,
-    [String(employeeId), ...tenantIds]
-  );
-  if (etaRows.length === 0) {
-    // Fallback: Doctor.central_employee_id link
-    let linked = false;
-    for (const tid of tenantIds) {
-      try {
-        const token = await loadTenantTokenById(tid);
-        if (!token) continue;
-        const config = parseDbToken(token.token);
-        if (!config || !config.host || !config.database) continue;
-        let pool = null;
-        try {
-          pool = createPool({
-            host: config.host,
-            port: parseInt(config.port || '3306', 10),
-            user: config.user,
-            password: config.password,
-            database: config.database,
-            ssl: config.ssl || undefined,
-            waitForConnections: true,
-            connectionLimit: 1,
-            queueLimit: 0,
-            dateStrings: true,
-            timezone: '+00:00',
-            connectTimeout: 5000,
-          });
-          const linkedDoctors = await loadLinkedDoctors(pool);
-          if (linkedDoctors.some((d) => String(d.employee_id) === String(employeeId))) {
-            linked = true;
-            break;
-          }
-        } finally {
-          if (pool) await pool.end().catch(() => {});
-        }
-      } catch (err) {
-        console.error('[central-wishes] assertEmployee scan tenant ' + tid + ':', err.message);
-      }
-    }
-    if (!linked) {
-      throw createHttpError(403, 'Mitarbeiter ist keinem Mandanten dieser Gruppe zugeordnet');
-    }
-  }
-}
-
-// POST /central-wishes
-// Create a new cross-tenant wish. Body must include employee_id, date, type,
-// and shared_workplace_id (or null for a global no_service wish).
-router.post('/central-wishes', async (req, res) => {
-  try {
-    const ctx = await loadCtx(req, res);
-    if (!ctx) return;
-
-    const body = req.body || {};
-    const { employee_id, date, shared_workplace_id } = body;
-
-    if (!employee_id || typeof employee_id !== 'string') {
-      return res.status(400).json({ error: 'employee_id ist erforderlich' });
-    }
-    if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
-    }
-    if (!['service', 'no_service'].includes(body.type)) {
-      return res.status(400).json({ error: "type muss 'service' oder 'no_service' sein" });
-    }
-    if (!shared_workplace_id && body.type === 'service') {
-      return res.status(400).json({ error: 'shared_workplace_id ist fuer Dienstwuensche erforderlich' });
-    }
-
-    await ensureCentralWishTables(db);
-
-    const groupId = shared_workplace_id
-      ? await requireWriteAccessByWorkplace(ctx, shared_workplace_id)
-      : null;
-
-    // If the wish targets a specific workplace, ensure the employee belongs to
-    // that group. For global no_service wishes (shared_workplace_id = null) we
-    // cannot resolve a single group, so we accept any employee id; the caller
-    // is an authenticated tenant admin and the read endpoint filters by
-    // accessible groups anyway.
-    if (shared_workplace_id) {
-      await assertEmployeeBelongsToGroupGroup(employee_id, groupId);
-    }
-
-    // Build the row from a strict whitelist only.
-    const id = crypto.randomUUID();
-    const row = { id, group_id: groupId };
-    for (const key of CENTRAL_WISH_WRITABLE_COLUMNS) {
-      if (key === 'group_id' || key === 'created_by') continue;
-      if (body[key] !== undefined) row[key] = body[key];
-    }
-    // Force integrity-critical fields from the validated path.
-    row.employee_id = String(employee_id);
-    row.date = date;
-    if (shared_workplace_id) row.shared_workplace_id = String(shared_workplace_id);
-
-    // Defaults — only set when missing so callers can override.
-    if (row.type === undefined) row.type = 'service';
-    if (row.status === undefined) row.status = 'pending';
-    if (row.priority === undefined) row.priority = 'medium';
-    if (row.user_viewed === undefined) row.user_viewed = 0;
-    row.created_by = req.user?.sub || null;
-
-    // source_tenant_id: stamp with the caller's active tenant so we can trace
-    // where a wish originated, mirroring CentralAbsenceEntry usage.
-    if (!row.source_tenant_id) {
-      const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
-      if (activeTenantId) row.source_tenant_id = String(activeTenantId);
-    }
-
-    const columns = Object.keys(row);
-    const values = columns.map((k) => row[k]);
-    const colList = columns.map((c) => (c === 'position' ? '`position`' : c)).join(', ');
-    const placeholders = columns.map(() => '?').join(', ');
-
-    try {
-      await db.execute(
-        `INSERT INTO CentralWishRequest (${colList}) VALUES (${placeholders})`,
-        values
-      );
-    } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') {
-        return res.status(409).json({
-          error: 'Für diesen Mitarbeiter und Verbundsdienst existiert an diesem Datum bereits ein Wunsch',
-        });
-      }
-      throw err;
-    }
-
-    const [rows] = await db.execute(
-      'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [id]
-    );
-    res.status(201).json({ wish: rows[0] });
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// PATCH /central-wishes/:id
-// Update an existing wish. Only whitelisted columns from the body are applied.
-router.patch('/central-wishes/:id', async (req, res) => {
-  try {
-    const ctx = await loadCtx(req, res);
-    if (!ctx) return;
-
-    await ensureCentralWishTables(db);
-
-    const [existing] = await db.execute(
-      'SELECT id, shared_workplace_id, group_id, employee_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
-    if (existing.length === 0) {
-      return res.status(404).json({ error: 'Wunsch nicht gefunden' });
-    }
-    const current = existing[0];
-
-    // Resolve write access: target workplace if present, else the stored group.
-    const wpId = current.shared_workplace_id || req.body?.shared_workplace_id;
-    if (wpId) {
-      await requireWriteAccessByWorkplace(ctx, wpId);
-    } else if (current.group_id != null) {
-      requireGroupWriteAccess(ctx, Number(current.group_id));
-    } else {
-      // Without a workplace anchor we cannot prove group ownership; refuse.
-      return res.status(403).json({ error: 'Wunsch ohne Workplace-Zuordnung kann nicht aktualisiert werden' });
-    }
-
-    const body = req.body || {};
-    const fields = [];
-    const values = [];
-    for (const key of CENTRAL_WISH_WRITABLE_COLUMNS) {
-      if (body[key] === undefined) continue;
-      if (key === 'employee_id') continue; // immutable on update
-      fields.push(`${key === 'position' ? '`position`' : key} = ?`);
-      values.push(body[key]);
-    }
-    if (fields.length === 0) {
-      return res.status(400).json({ error: 'Keine änderbaren Felder übergeben' });
-    }
-
-    // If shared_workplace_id is being changed, re-validate ownership + employee.
-    if (body.shared_workplace_id !== undefined && body.shared_workplace_id !== current.shared_workplace_id) {
-      const newGroupId = await requireWriteAccessByWorkplace(ctx, body.shared_workplace_id);
-      await assertEmployeeBelongsToGroupGroup(current.employee_id, newGroupId);
-    }
-
-    values.push(String(req.params.id));
-    await db.execute(
-      `UPDATE CentralWishRequest SET ${fields.join(', ')} WHERE id = ?`,
-      values
-    );
-
-    const [rows] = await db.execute(
-      'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
-    res.json({ wish: rows[0] });
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// DELETE /central-wishes/:id
-router.delete('/central-wishes/:id', async (req, res) => {
-  try {
-    const ctx = await loadCtx(req, res);
-    if (!ctx) return;
-
-    await ensureCentralWishTables(db);
-
-    const [existing] = await db.execute(
-      'SELECT id, shared_workplace_id, group_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
-    if (existing.length === 0) {
-      return res.status(404).json({ error: 'Wunsch nicht gefunden' });
-    }
-    const current = existing[0];
-
-    const wpId = current.shared_workplace_id;
-    if (wpId) {
-      await requireWriteAccessByWorkplace(ctx, wpId);
-    } else if (current.group_id != null) {
-      requireGroupWriteAccess(ctx, Number(current.group_id));
-    } else {
-      return res.status(403).json({ error: 'Wunsch ohne Workplace-Zuordnung kann nicht gelöscht werden' });
-    }
-
-    await db.execute('DELETE FROM CentralWishRequest WHERE id = ?', [String(req.params.id)]);
-    res.status(204).end();
   } catch (err) {
     handleError(res, err);
   }
