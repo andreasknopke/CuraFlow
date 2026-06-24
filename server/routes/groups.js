@@ -474,7 +474,7 @@ router.get('/central-absences', async (req, res) => {
       for (const tid of ids) allTenantIds.add(tid);
     }
     const tenantIds = [...allTenantIds];
-    console.log('[central-absences] tenantIds for groups: ' + JSON.stringify(tenantIds));
+    console.log('[central-absences] tenantIds count=' + tenantIds.length);
 
     if (tenantIds.length === 0) {
       console.log('[central-absences] NO TENANTS IN GROUPS');
@@ -488,7 +488,7 @@ router.get('/central-absences', async (req, res) => {
       tenantIds
     );
     const groupEmployeeIds = new Set(etaRows.map(r => String(r.employee_id)));
-    console.log('[central-absences] groupEmployeeIds from ETA=' + JSON.stringify([...groupEmployeeIds]) + ' (' + groupEmployeeIds.size + ' total)');
+    console.log('[central-absences] groupEmployeeIds from ETA: ' + groupEmployeeIds.size);
 
     // 3b) Fallback: auch in den Tenant-Doctor-Tabellen nach central_employee_id suchen,
     //     falls EmployeeTenantAssignment nicht alle Verknüpfungen enthält
@@ -553,12 +553,9 @@ router.get('/central-absences', async (req, res) => {
     if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
     sql += ' ORDER BY employee_id, date ASC';
 
-    console.log('[central-absences] SQL: ' + sql + ' params(' + sqlParams.length + ')');
-
     let rows = [];
     try {
       [rows] = await db.execute(sql, sqlParams);
-      console.log('[central-absences] query returned ' + rows.length + ' rows');
     } catch (err) {
       console.error('[central-absences] QUERY FAILED: ' + err.message + ' code=' + err.code);
     }
@@ -573,13 +570,9 @@ router.get('/central-absences', async (req, res) => {
       position: String(r.position || '').trim(),
     }));
 
-    // Log per employee
-    const byEmp = {};
-    for (const a of absences) {
-      if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
-      byEmp[a.employee_id].push(a.date + '=' + a.position);
-    }
-    console.log('[central-absences] DONE — ' + absences.length + ' absences for ' + Object.keys(byEmp).length + ' employees: ' + JSON.stringify(byEmp));
+    // Log summary
+    const uniqueEmployees = new Set(absences.map(a => a.employee_id));
+    console.log('[central-absences] DONE — ' + absences.length + ' absences for ' + uniqueEmployees.size + ' employees');
 
     res.json({ absences });
   } catch (err) {

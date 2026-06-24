@@ -78,12 +78,7 @@ export default function ServiceStaffingPage() {
 
     // 🔍 LOG: central absences received
     if (centralAbsences.length > 0) {
-        const byEmp = {};
-        for (const a of centralAbsences) {
-            if (!byEmp[a.employee_id]) byEmp[a.employee_id] = [];
-            byEmp[a.employee_id].push(`${a.date}=${a.position}`);
-        }
-        console.log('[ServiceStaffing] centralAbsences geladen:', centralAbsences.length, 'Einträge', JSON.stringify(byEmp));
+        console.log('[ServiceStaffing] centralAbsences geladen:', centralAbsences.length, 'Einträge');
     } else if (centralAbsencesData) {
         console.warn('[ServiceStaffing] centralAbsencesData geladen aber leer!');
     }
