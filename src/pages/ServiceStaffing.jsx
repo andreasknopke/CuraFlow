@@ -309,6 +309,8 @@ export default function ServiceStaffingPage() {
     // next-workday auto-frei).
     const busyCentralIdsByDate = useMemo(() => {
         const ABSENCE_POSITIONS = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
+        const ABSENCE_POSITIONS_LOWER = new Set(ABSENCE_POSITIONS.map(p => p.toLowerCase()));
+        const isAbsence = (pos) => ABSENCE_POSITIONS_LOWER.has(String(pos).toLowerCase().trim());
         const doctorToCentral = new Map();
         for (const d of doctors) {
             if (d.central_employee_id) doctorToCentral.set(d.id, String(d.central_employee_id));
@@ -329,7 +331,7 @@ export default function ServiceStaffingPage() {
             return iso;
         };
         for (const s of allShifts) {
-            if (!ABSENCE_POSITIONS.includes(s.position)) continue;
+            if (!isAbsence(s.position)) continue;
             const central = doctorToCentral.get(s.doctor_id);
             if (central) add(s.date, central);
         }
@@ -350,7 +352,7 @@ export default function ServiceStaffingPage() {
         // absence created in Tenant A would be invisible when scheduling pool
         // shifts from Tenant B.
         for (const a of centralAbsences) {
-            if (!ABSENCE_POSITIONS.includes(a.position)) continue;
+            if (!isAbsence(a.position)) continue;
             if (!a.employee_id) continue;
             add(a.date, a.employee_id);
         }
@@ -361,15 +363,22 @@ export default function ServiceStaffingPage() {
     useEffect(() => {
         if (!poolEditDialog.date) return;
         const busySet = busyCentralIdsByDate[poolEditDialog.date];
-        if (busySet) {
+        const allAbsencePositions = centralAbsences.map(a => `${a.date}=${a.position}`);
+        if (busySet && busySet.size > 0) {
             console.log(
                 `[ServiceStaffing] busyCentralIdsByDate[${poolEditDialog.date}] =`,
-                JSON.stringify([...busySet])
+                JSON.stringify([...busySet]),
+                '| centralAbsencePositions:',
+                allAbsencePositions
             );
         } else {
-            console.warn(`[ServiceStaffing] busyCentralIdsByDate[${poolEditDialog.date}] — NICHT GEFUNDEN oder leer`);
+            console.warn(
+                `[ServiceStaffing] busyCentralIdsByDate[${poolEditDialog.date}] — NICHT GEFUNDEN oder leer`,
+                '| centralAbsencePositions:',
+                allAbsencePositions
+            );
         }
-    }, [poolEditDialog.date, busyCentralIdsByDate]);
+    }, [poolEditDialog.date, busyCentralIdsByDate, centralAbsences]);
 
     const sendNotificationsMutation = useMutation({
         mutationFn: async () => {
