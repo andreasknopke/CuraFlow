@@ -975,6 +975,7 @@ export const db = {
   SystemSetting: new EntityClient('SystemSetting'),
   CustomHoliday: new EntityClient('CustomHoliday'),
   StaffingPlanEntry: new EntityClient('StaffingPlanEntry'),
+  StaffingPlanNote: new EntityClient('StaffingPlanNote'),
   BackupLog: new EntityClient('BackupLog'),
   SystemLog: new EntityClient('SystemLog'),
   VoiceAlias: new EntityClient('VoiceAlias'),
