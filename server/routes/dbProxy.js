@@ -40,6 +40,7 @@ const TENANT_BASE_TABLES = [
   'SystemSetting',
   'CustomHoliday',
   'StaffingPlanEntry',
+  'StaffingPlanNote',
   'ShiftNotification',
   'DemoSetting',
   'BackupLog',

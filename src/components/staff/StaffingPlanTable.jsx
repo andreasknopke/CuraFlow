@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { db, base44 } from "@/api/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -85,6 +86,31 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
     );
 };
 
+const StaffingPlanNoteInput = ({ value: initialValue, onChange, disabled }) => {
+    const [value, setValue] = useState(initialValue);
+
+    useEffect(() => {
+        setValue(initialValue);
+    }, [initialValue]);
+
+    const handleBlur = () => {
+        if (value !== initialValue) {
+            onChange(value);
+        }
+    };
+
+    return (
+        <Textarea
+            className="h-14 text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-1 focus-visible:ring-slate-300 shadow-none"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onBlur={handleBlur}
+            disabled={disabled}
+            placeholder="Notiz..."
+        />
+    );
+};
+
 // --- Main Component ---
 
 export default function StaffingPlanTable({ doctors, isReadOnly }) {
@@ -124,6 +150,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     const { data: entries = [], isLoading: isLoadingEntries } = useQuery({
         queryKey: ["staffingPlanEntries", year],
         queryFn: () => db.StaffingPlanEntry.filter({ year }),
+    });
+
+    const { data: notes = [] } = useQuery({
+        queryKey: ["staffingPlanNotes", year],
+        queryFn: () => db.StaffingPlanNote.filter({ year }),
     });
 
     const { data: systemSettings = [] } = useQuery({
@@ -171,6 +202,25 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             }
         },
         onSuccess: () => queryClient.invalidateQueries(["systemSettings"]),
+    });
+
+    const saveNoteMutation = useMutation({
+        mutationFn: async ({ doctor_id, year, note }) => {
+            const existing = notes.find(n => n.doctor_id === doctor_id && n.year === year);
+            if (existing) {
+                if (!note || !note.trim()) {
+                    await db.StaffingPlanNote.delete(existing.id);
+                    return { deleted: true };
+                }
+                return db.StaffingPlanNote.update(existing.id, { note });
+            }
+            if (!note || !note.trim()) return { skipped: true };
+            return db.StaffingPlanNote.create({ doctor_id, year, note });
+        },
+        onSuccess: () => queryClient.invalidateQueries(["staffingPlanNotes", year]),
+        onError: (err) => {
+            console.error("Fehler beim Speichern der Notiz:", err);
+        },
     });
 
     // --- Helpers ---
@@ -331,6 +381,15 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         return sum / 12;
     };
 
+    const getNoteForDoctor = (doctorId) => {
+        const note = notes.find(n => n.doctor_id === doctorId && n.year === year);
+        return note ? note.note || "" : "";
+    };
+
+    const handleNoteSave = (doctorId, value) => {
+        saveNoteMutation.mutate({ doctor_id: doctorId, year, note: value });
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border">
@@ -367,6 +426,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                 {Array.from({ length: 12 }).map((_, i) => (
                                     <TableHead key={i} className="text-center font-semibold text-slate-600 w-[60px]">{i + 1}</TableHead>
                                 ))}
+                                <TableHead className="w-[220px] font-semibold text-slate-600 border-l">Notiz</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -431,6 +491,13 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                                 </TableCell>
                                             );
                                         })}
+                                        <TableCell className="border-l p-1 bg-white max-w-[220px] min-w-[220px]">
+                                            <StaffingPlanNoteInput
+                                                value={getNoteForDoctor(doc.id)}
+                                                onChange={(val) => handleNoteSave(doc.id, val)}
+                                                disabled={isReadOnly}
+                                            />
+                                        </TableCell>
                                     </TableRow>
                                 );
                             })}
@@ -444,6 +511,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                         {formatNumber(total)}
                                     </TableCell>
                                 ))}
+                                <TableCell className="border-l"></TableCell>
                             </TableRow>
                             <TableRow className="bg-slate-50 font-medium text-slate-600">
                                 <TableCell className="sticky left-0 bg-slate-50 border-r">Stellenplan (Soll)</TableCell>
@@ -465,6 +533,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                         </div>
                                     </TableCell>
                                 ))}
+                                <TableCell className="border-l"></TableCell>
                             </TableRow>
                             <TableRow className={cn("font-bold border-t", yearlyAverageTotal - targetFTE < 0 ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700")}>
                                 <TableCell className="sticky left-0 bg-inherit border-r">Differenz</TableCell>
@@ -479,6 +548,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                         </TableCell>
                                     );
                                 })}
+                                <TableCell className="border-l"></TableCell>
                             </TableRow>
                         </TableBody>
                     </Table>

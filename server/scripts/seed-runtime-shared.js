@@ -225,6 +225,15 @@ export async function ensureTenantBaseTables(tenantPool) {
       updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
       created_by VARCHAR(255) DEFAULT 'seed'
     ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+    `CREATE TABLE IF NOT EXISTS StaffingPlanNote (
+      id VARCHAR(36) PRIMARY KEY,
+      doctor_id VARCHAR(36) DEFAULT NULL,
+      year INT NOT NULL,
+      note TEXT,
+      created_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+      updated_date DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+      created_by VARCHAR(255) DEFAULT 'seed'
+    ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
     `CREATE TABLE IF NOT EXISTS ShiftNotification (
       id VARCHAR(36) PRIMARY KEY,
       shift_entry_id VARCHAR(36) DEFAULT NULL,
