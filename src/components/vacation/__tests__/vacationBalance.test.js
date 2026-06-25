@@ -232,6 +232,54 @@ describe('computeVacationBalance', () => {
   });
 });
 
+describe('computeVacationBalance — Schichturlaub', () => {
+  it('only counts Schichturlaub shifts when position is passed', () => {
+    // Same date: one Urlaub, one Schichturlaub. Urlaub must be ignored.
+    const result = computeVacationBalance({
+      shifts: [
+        { date: `${YEAR}-06-10`, position: 'Urlaub' },
+        { date: `${YEAR}-06-11`, position: 'Schichturlaub' },
+      ],
+      year: YEAR,
+      position: 'Schichturlaub',
+      annualVacationDays: 3,
+      today: TODAY,
+    });
+    expect(result.taken).toBe(1);
+    expect(result.planned).toBe(0);
+    expect(result.remaining).toBe(2);
+  });
+
+  it('uses the actual 0 entitlement without falling back to 30', () => {
+    const result = computeVacationBalance({
+      shifts: [],
+      year: YEAR,
+      position: 'Schichturlaub',
+      annualVacationDays: 0,
+      today: TODAY,
+    });
+    expect(result.total).toBe(0);
+    expect(result.remaining).toBe(0);
+  });
+
+  it('flags overshoot when more Schichturlaub is booked than granted', () => {
+    const result = computeVacationBalance({
+      shifts: [
+        { date: `${YEAR}-06-10`, position: 'Schichturlaub' },
+        { date: `${YEAR}-06-11`, position: 'Schichturlaub' },
+        { date: `${YEAR}-06-12`, position: 'Schichturlaub' },
+      ],
+      year: YEAR,
+      position: 'Schichturlaub',
+      annualVacationDays: 2,
+      today: TODAY,
+    });
+    expect(result.taken).toBe(3);
+    expect(result.remaining).toBe(-1);
+    expect(result.overshoot).toBe(true);
+  });
+});
+
 describe('parseAnnualVacationDays', () => {
   it('returns the numeric value for finite numbers', () => {
     expect(parseAnnualVacationDays(30)).toBe(30);

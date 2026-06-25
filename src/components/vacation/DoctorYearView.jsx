@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, isWithinInterval, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays } from 'lucide-react';
+import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { cn } from "@/lib/utils";
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
+import { useToast } from '@/components/ui/use-toast';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
@@ -242,6 +244,130 @@ export default function DoctorYearView({
     });
   }, [doctor, shifts, centralAbsencePayload, year, publicHolidayDates]);
 
+  // Year-specific shift-/Sonderurlaubs-Anspruch for this doctor. Stored
+  // centrally in EmployeeVacationYear; default 0 (most years carry none).
+  // Only available for doctors that are linked to a central Employee,
+  // because the entitlement is a property of the central record, not
+  // the tenant-local Doctor row.
+  const { data: shiftEntitlement } = useQuery({
+    queryKey: ['shift-vacation-entitlement', year, doctor?.id],
+    queryFn: async () => {
+      if (!doctor?.id) return null;
+      try {
+        const result = await api.request(
+          `/api/vacation/shift-entitlement?year=${year}&doctorId=${encodeURIComponent(doctor.id)}`
+        );
+        return result || null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(doctor?.id),
+    staleTime: 0,
+    retry: 0,
+  });
+
+  // Live shift-vacation balance. Same merge logic as `vacationBalance`
+  // but scoped to position 'Schichturlaub' and the year-specific entitlement.
+  const shiftVacationBalance = useMemo(() => {
+    if (!doctor) return null;
+    const localShifts = (shifts || []).filter(
+      (s) => s.doctor_id === doctor.id || !s.doctor_id
+    );
+    const localDates = new Set(localShifts.map((s) => s.date));
+    const centralShifts = (centralAbsencePayload?.absences || []).filter(
+      (a) => !localDates.has(a.date)
+    );
+    return computeVacationBalance({
+      shifts: [...localShifts, ...centralShifts],
+      year,
+      position: 'Schichturlaub',
+      annualVacationDays: shiftEntitlement?.shift_vacation_days ?? 0,
+      publicHolidayDates,
+    });
+  }, [doctor, shifts, centralAbsencePayload, year, shiftEntitlement, publicHolidayDates]);
+
+  // --- Shift-/Sonderurlaub editing + carry-over ---
+  // We keep a local draft for the number input so the field stays
+  // responsive while typing; only on explicit save do we PUT it. The
+  // default value of `0` is enforced server-side even when no row exists.
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [shiftVacationDraft, setShiftVacationDraft] = useState('0');
+  const [carryDialogOpen, setCarryDialogOpen] = useState(false);
+  const entitlementKey = ['shift-vacation-entitlement', year, doctor?.id];
+  const nextYearKey = (nextYear) => ['shift-vacation-entitlement', nextYear, doctor?.id];
+
+  useEffect(() => {
+    // Reset the draft when the loaded value changes (year switch, refetch).
+    setShiftVacationDraft(
+      shiftEntitlement?.shift_vacation_days != null
+        ? String(shiftEntitlement.shift_vacation_days)
+        : '0'
+    );
+  }, [shiftEntitlement]);
+
+  const saveShiftVacationMutation = useMutation({
+    mutationFn: (shiftVacationDays) =>
+      api.request('/api/vacation/shift-entitlement', {
+        method: 'PUT',
+        body: JSON.stringify({
+          year,
+          doctorId: doctor?.id,
+          shift_vacation_days: shiftVacationDays,
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: entitlementKey });
+      toast({ title: 'Gespeichert', description: 'Schichturlaub aktualisiert.' });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Fehler',
+        description: err.message || 'Speichern fehlgeschlagen.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const carryOverMutation = useMutation({
+    mutationFn: () =>
+      api.request('/api/vacation/shift-entitlement/carry-over', {
+        method: 'POST',
+        body: JSON.stringify({
+          fromYear: year,
+          toYear: year + 1,
+          doctorId: doctor?.id,
+        }),
+      }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: entitlementKey });
+      queryClient.invalidateQueries({ queryKey: nextYearKey(year + 1) });
+      setCarryDialogOpen(false);
+      toast({
+        title: 'Übertragen',
+        description: `${result.carried_days} Tag(e) Schichturlaub ins Jahr ${year + 1} übertragen.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: 'Übertrag nicht möglich',
+        description: err.message || 'Der Übertrag ist fehlgeschlagen.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Carry-over is offered only when there's an actual remainder. The
+  // planner clicks "Resturlaub" → confirm dialog → server fill the next
+  // year's Schichturlaub row with the remaining days.
+  const shiftVacationRemainder = shiftVacationBalance?.remaining ?? 0;
+  const canCarryOver =
+    Boolean(shiftEntitlement?.employee_id) &&
+    Number.isFinite(shiftVacationRemainder) &&
+    shiftVacationRemainder > 0 &&
+    !carryOverMutation.isPending;
+
   const getShiftStatus = (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const shift = shifts.find(s => s.date === dateStr);
@@ -279,6 +405,59 @@ export default function DoctorYearView({
       {vacationBalance && (
         <VacationBalanceBox balance={vacationBalance} />
       )}
+
+      {shiftVacationBalance && (
+        <ShiftVacationBox
+          balance={shiftVacationBalance}
+          entitlement={shiftEntitlement}
+          draft={shiftVacationDraft}
+          onDraftChange={setShiftVacationDraft}
+          onSave={() => {
+            const parsed = parseInt(shiftVacationDraft, 10);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+              toast({
+                title: 'Ungültige Eingabe',
+                description: 'Bitte eine nicht-negative Ganzzahl eingeben.',
+                variant: 'destructive',
+              });
+              return;
+            }
+            saveShiftVacationMutation.mutate(parsed);
+          }}
+          isSaving={saveShiftVacationMutation.isPending}
+          canCarryOver={canCarryOver}
+          isCarrying={carryOverMutation.isPending}
+          onCarryOver={() => setCarryDialogOpen(true)}
+          year={year}
+        />
+      )}
+
+      {/* Carry-over confirmation dialog */}
+      <Dialog open={carryDialogOpen} onOpenChange={setCarryDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schichturlaub ins Folgejahr übertragen?</DialogTitle>
+            <DialogDescription>
+              Es werden {shiftVacationRemainder} Tag(e) Schichturlaub aus {year}
+              {' '}als Schichturlaub-Anspruch in das Jahr {year + 1} übernommen.
+              {' '}Regulärer Urlaub bleibt unberührt und wird nicht übertragen.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setCarryDialogOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button onClick={() => carryOverMutation.mutate()} disabled={carryOverMutation.isPending}>
+              {carryOverMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <RotateCw className="w-4 h-4 mr-2" />
+              )}
+              {shiftVacationRemainder} Tag(e) übertragen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
 
       {/* Email Confirmation Dialog */}
@@ -438,6 +617,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
               style = dynamicColor;
               colorClass = "hover:opacity-90 font-medium";
           } else if (status === 'Urlaub') colorClass = "bg-green-500 text-white hover:bg-green-600";
+          else if (status === 'Schichturlaub') colorClass = "bg-cyan-500 text-white hover:bg-cyan-600";
           else if (status === 'Frei') colorClass = "bg-slate-500 text-white hover:bg-slate-600";
           else if (status === 'Krank') colorClass = "bg-red-500 text-white hover:bg-red-600";
           else if (status === 'Dienstreise') colorClass = "bg-blue-500 text-white hover:bg-blue-600";
@@ -571,6 +751,171 @@ function VacationBalanceBox({ balance }) {
           </span>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Separate balance box for Schichturlaub (shift-/Sonderurlaub).
+ *
+ * Mirrors the layout of `VacationBalanceBox` but adds an inline input
+ * to edit the year-specific entitlement (default 0) and a "carry over"
+ * button that the planner uses to transfer the remainder into the next
+ * year. Carry-over is only offered when a positive remainder exists;
+ * this is the only place where the rule "nur Schichturlaub darf ins
+ * Folgejahr übertragen werden" surfaces in the UI.
+ *
+ * The box is intentionally visually distinct (cyan accent) so planers
+ * can tell Schichturlaub apart from regular Urlaub at a glance.
+ */
+function ShiftVacationBox({
+  balance,
+  entitlement,
+  draft,
+  onDraftChange,
+  onSave,
+  isSaving,
+  canCarryOver,
+  isCarrying,
+  onCarryOver,
+  year,
+}) {
+  const isLinked = Boolean(entitlement?.employee_id);
+
+  const cards = [
+    { label: 'Zusatzurlaub', value: balance.total, suffix: 'Tage' },
+    { label: 'Genommen', value: balance.taken, suffix: 'Tage' },
+    { label: 'Geplant', value: balance.planned, suffix: 'Tage' },
+    { label: 'Rest', value: balance.remaining, suffix: 'Tage' },
+  ];
+
+  return (
+    <div
+      data-testid="shift-vacation-box"
+      className={cn(
+        'mb-6 rounded-xl border p-3',
+        balance.overshoot
+          ? 'border-red-200 bg-red-50'
+          : 'border-cyan-200 bg-cyan-50'
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Sun className="w-4 h-4 text-cyan-600" />
+          <h3 className="text-sm font-semibold text-slate-800">
+            Schicht- &amp; Sonderurlaub {year}
+          </h3>
+          {entitlement?.carried_over && (
+            <span className="text-xs px-2 py-0.5 rounded bg-cyan-100 text-cyan-800">
+              Übertrag aus {entitlement.carried_over_from_year ?? 'Vorjahr'}
+            </span>
+          )}
+        </div>
+
+        {/* Entitlement editing. Only enabled for linked employees
+            because the entitlement is a central Employee property. */}
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="shift-vacation-days-input"
+            className="text-xs text-slate-600"
+          >
+            Zusatzurlaub {year}
+          </label>
+          <Input
+            id="shift-vacation-days-input"
+            type="number"
+            min={0}
+            step={1}
+            value={draft}
+            disabled={!isLinked || isSaving}
+            onChange={(e) => onDraftChange(e.target.value)}
+            className="w-20 h-8"
+            data-testid="shift-vacation-days-input"
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={!isLinked || isSaving}
+            onClick={onSave}
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+            <span className="ml-1">Speichern</span>
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cards.map(({ label, value, suffix }) => (
+          <div key={label} className="p-3 bg-white rounded-lg border border-slate-200">
+            <div className="text-xs text-slate-500 mb-1">{label}</div>
+            <p
+              className={cn(
+                'text-xl font-bold',
+                balance.overshoot && label === 'Rest'
+                  ? 'text-red-700'
+                  : label === 'Rest'
+                    ? (value < 0 ? 'text-red-700' : 'text-emerald-700')
+                    : 'text-slate-900'
+              )}
+            >
+              {value}
+              {suffix && <span className="text-sm font-normal text-slate-400"> {suffix}</span>}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {!isLinked && (
+        <div className="mt-3 text-xs text-slate-500 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Dieser Mitarbeiter ist nicht zentral verknüpft. Die Pflege des
+            Zusatzurlaubs ist erst nach Verknüpfung über die zentrale
+            Mitarbeiterverwaltung möglich.
+          </span>
+        </div>
+      )}
+
+      {balance.overshoot && (
+        <div
+          data-testid="shift-vacation-overshoot-warning"
+          className="mt-3 flex items-start gap-2 text-sm text-red-700"
+          role="alert"
+        >
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span>
+            <strong>Schichturlaub überschritten:</strong>{' '}
+            {Math.abs(balance.remaining)} Tag(e) mehr gebucht als
+            der Zusatzurlaub ({balance.total} Tage) hergibt.
+          </span>
+        </div>
+      )}
+
+      {/* Carry-over offer: visibly enabled only when there is a remainder.
+          Clicking opens the confirmation dialog owned by DoctorYearView. */}
+      <div className="mt-3 flex items-center justify-end">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!canCarryOver}
+          onClick={onCarryOver}
+          title={
+            canCarryOver
+              ? `Rest (${balance.remaining} Tage) als Zusatzurlaub ins Jahr ${year + 1} übertragen`
+              : 'Resturlaub kann nur übertragen werden, wenn ein positiver Rest vorhanden ist.'
+          }
+          data-testid="shift-vacation-carry-over-btn"
+        >
+          {isCarrying ? (
+            <Loader2 className="w-4 h-4 animate-spin mr-1" />
+          ) : (
+            <RotateCw className="w-4 h-4 mr-1" />
+          )}
+          Rest ins Folgejahr ({year + 1}) übertragen
+        </Button>
+      </div>
     </div>
   );
 }

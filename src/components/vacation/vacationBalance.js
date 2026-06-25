@@ -7,7 +7,10 @@
  * "vacation taken" vs "vacation planned".
  *
  * Rules (kept in sync with the master implementation):
- *  - Only entries with position === 'Urlaub' count.
+ *  - Only entries with the given position count (default 'Urlaub').
+ *    The same helper is reused for 'Schichturlaub' by passing
+ *    `{ position: 'Schichturlaub' }`, so shift-/Sonderurlaub gets its
+ *    own balance with identical counting rules.
  *  - Weekends (Sat/Sun) do not consume vacation.
  *  - Public holidays do not consume vacation.
  *  - A date on or before `today` is "taken", a date after is "planned".
@@ -24,12 +27,18 @@
  *
  * @param {Object} options
  * @param {Array<{date: string, position: string}>} options.shifts
- *        All shifts for the employee (any positions; only 'Urlaub' counts).
+ *        All shifts for the employee (any positions; only the target
+ *        position counts).
  * @param {number|string} options.year
  *        The year to consider (e.g. 2026).
  * @param {number|null|undefined} options.annualVacationDays
  *        Annual entitlement, e.g. from `doctor.vacation_days`. Falsy/null
  *        values fall back to 30 to match the master backend default.
+ *        For Schichturlaub pass `0` explicitly — most years carry no
+ *        Schichturlaub at all, so the implicit 30 fallback must not apply.
+ * @param {string} [options.position='Urlaub']
+ *        Which position string to count. Defaults to 'Urlaub'. Pass
+ *        'Schichturlaub' to compute the separate shift-vacation balance.
  * @param {Set<string>|Array<string>} [options.publicHolidayDates]
  *        Set or array of `yyyy-MM-dd` strings. Anything not provided is
  *        treated as "no public holiday information available".
@@ -46,6 +55,7 @@ export function computeVacationBalance({
   shifts = [],
   year,
   annualVacationDays,
+  position = 'Urlaub',
   publicHolidayDates,
   today,
   candidateDate,
@@ -63,7 +73,7 @@ export function computeVacationBalance({
   let planned = 0;
 
   for (const shift of shifts) {
-    if (!shift || shift.position !== 'Urlaub') continue;
+    if (!shift || shift.position !== position) continue;
     const dateStr = extractYmd(shift.date);
     if (!dateStr) continue;
     if (Number(dateStr.slice(0, 4)) !== Number(year)) continue;

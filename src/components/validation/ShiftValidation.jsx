@@ -71,7 +71,7 @@ export class ShiftValidator {
     _parseAbsenceRules() {
         const setting = this.systemSettings.find(s => s.key === 'absence_blocking_rules');
         return setting ? JSON.parse(setting.value) : {
-            "Urlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
+            "Urlaub": true, "Schichturlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
         };
     }
 
@@ -170,7 +170,7 @@ export class ShiftValidator {
         }
 
         // 5. Mindestbesetzung prüfen (nur für Abwesenheiten)
-        const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
         if (absencePositions.includes(position)) {
             const staffingResult = this._checkStaffingMinimums(doctorId, dateStr, excludeShiftId);
             if (staffingResult.warning) {
@@ -653,7 +653,7 @@ export class ShiftValidator {
         const doctor = this.doctors.find(d => d.id === doctorId);
         if (!doctor) return {};
 
-        const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+        const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
 
         // Zähle aktuelle Abwesenheiten (ohne diese neue)
         const absentOnDate = this.shifts.filter(s => 
@@ -752,7 +752,7 @@ export class ShiftValidator {
         }
 
         // Nur echte Dienste prüfen – keine Abwesenheiten
-        const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar",
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar",
                                   "Fortbildung", "Kongress", "Elternzeit", "Mutterschutz", "Verfügbar"];
         if (absencePositions.includes(position)) return {};
 

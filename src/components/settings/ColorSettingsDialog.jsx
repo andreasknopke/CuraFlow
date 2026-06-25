@@ -43,6 +43,7 @@ export const DEFAULT_COLORS = {
     },
     absences: {
         "Urlaub": { bg: "#22c55e", text: "#ffffff" }, // green-500
+        "Schichturlaub": { bg: "#06b6d4", text: "#ffffff" }, // cyan-500
         "Frei": { bg: "#64748b", text: "#ffffff" }, // slate-500
         "Krank": { bg: "#ef4444", text: "#ffffff" }, // red-500
         "Dienstreise": { bg: "#3b82f6", text: "#ffffff" }, // blue-500

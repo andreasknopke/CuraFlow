@@ -19,7 +19,7 @@ vi.mock('../utils/centralAbsences.js', () => ({
     const normalized = String(position).trim().toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return [
-      'urlaub', 'krank', 'frei', 'dienstreise', 'nicht verfugbar',
+      'urlaub', 'schichturlaub', 'krank', 'frei', 'dienstreise', 'nicht verfugbar',
       'fortbildung', 'kongress', 'elternzeit', 'mutterschutz',
     ].includes(normalized);
   },

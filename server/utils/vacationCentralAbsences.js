@@ -9,7 +9,7 @@
 import { ensureCentralAbsenceTables, isCentralAbsencePosition } from './centralAbsences.js';
 
 export const VACATION_ABSENCE_POSITIONS = [
-  'Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar',
+  'Urlaub', 'Schichturlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar',
   'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz',
 ];
 

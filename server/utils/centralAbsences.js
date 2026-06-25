@@ -3,6 +3,7 @@ import crypto from 'crypto';
 // Canonical PascalCase spellings used by the central absence storage.
 export const CENTRAL_ABSENCE_POSITIONS = new Set([
   'Urlaub',
+  'Schichturlaub',
   'Krank',
   'Frei',
   'Dienstreise',
@@ -20,6 +21,7 @@ export const CENTRAL_ABSENCE_POSITIONS = new Set([
 // migration and read-merge handle both consistently.
 const CENTRAL_ABSENCE_POSITIONS_NORMALIZED = new Set([
   'urlaub',
+  'schichturlaub',
   'krank',
   'frei',
   'dienstreise',
@@ -47,6 +49,7 @@ const ABSENCE_PRIORITY = {
   Kongress: 55,
   Dienstreise: 40,
   'Nicht verfügbar': 30,
+  Schichturlaub: 25,
   Urlaub: 20,
   Frei: 10,
 };

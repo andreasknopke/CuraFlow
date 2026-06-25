@@ -251,6 +251,25 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  await run('create_employee_vacation_year_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS EmployeeVacationYear (
+        employee_id VARCHAR(36) NOT NULL,
+        year INT NOT NULL,
+        shift_vacation_days INT NOT NULL DEFAULT 0,
+        carried_over BOOLEAN NOT NULL DEFAULT FALSE,
+        carried_over_from_year INT DEFAULT NULL,
+        note TEXT,
+        updated_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        updated_by VARCHAR(255) DEFAULT NULL,
+        PRIMARY KEY (employee_id, year),
+        INDEX idx_employee_vacation_year (employee_id),
+        CONSTRAINT fk_employee_vacation_year_employee
+          FOREIGN KEY (employee_id) REFERENCES Employee(id) ON DELETE CASCADE
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   // ===== PHASE 1: Work Time Models =====
 
   await run('create_work_time_model_table', async () => {

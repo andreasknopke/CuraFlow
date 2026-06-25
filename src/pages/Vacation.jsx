@@ -311,7 +311,7 @@ export default function VacationPage() {
 
   // Prepare Props for Overview
   const rawVisibleTypes = systemSettings.find(s => s.key === 'overview_visible_types')?.value;
-  const visibleTypes = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
+  const visibleTypes = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
 
   const minPresentSpecialists = parseInt(systemSettings.find(s => s.key === 'min_present_specialists')?.value || '2');
   const minPresentAssistants = parseInt(systemSettings.find(s => s.key === 'min_present_assistants')?.value || '4');
@@ -341,8 +341,10 @@ export default function VacationPage() {
       return colors;
   }, [colorSettings]);
 
-  // Only show absence positions in Vacation module
-  const absencePositions = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
+  // Only show absence positions in Vacation module (Schichturlaub added so
+  // the planner can book shift-/Sonderurlaub days that count against the
+  // separate year-specific entitlement, not against the regular vacation).
+  const absencePositions = ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
   
   const yearShifts = allShifts.filter(s => 
     s.doctor_id === selectedDoctorId && absencePositions.includes(s.position)
@@ -612,7 +614,7 @@ export default function VacationPage() {
     }
 
     // 3. Different shift: Overwrite if it's an absence type
-    const isExistingAbsence = ["Urlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"].includes(existingShift.position);
+    const isExistingAbsence = ["Urlaub", "Schichturlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"].includes(existingShift.position);
     
     if (isExistingAbsence) {
          // Overwrite: Update the first one, delete any others (duplicates)

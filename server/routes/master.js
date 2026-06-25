@@ -759,8 +759,10 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
         const currentYear = new Date().getFullYear();
         const publicHolidayDates = await getPublicHolidayDatesForYear(currentYear);
 
-        // Absences for current year
-        const absencePositions = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz'];
+        // Absences for current year (Schichturlaub added so migrated rows
+        // remain visible in this legacy per-tenant view; the central detail
+        // endpoint also computes its own separate Shifturlaub balance).
+        const absencePositions = ['Urlaub', 'Schichturlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz'];
         const placeholders = absencePositions.map(() => '?').join(',');
         let absences = [];
         try {
@@ -1592,7 +1594,7 @@ router.get('/employees/:id', async (req, res, next) => {
  */
 async function aggregateVacationAcrossTenants(adminUserId, assignments, vacationDaysTotal = 30, employeeId = null) {
   const absencePositions = [
-    'Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar',
+    'Urlaub', 'Schichturlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar',
     'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz',
   ];
   const placeholders = absencePositions.map(() => '?').join(',');
@@ -1702,13 +1704,65 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
   const vacationTaken = vacationDates.filter((d) => d <= today).length;
   const vacationPlanned = vacationDates.filter((d) => d > today).length;
 
+  // Schichturlaub: separate balance with the same counting rules, but
+  // sourced from EmployeeVacationYear.shift_vacation_days (default 0).
+  // Out-sourced into a helper so the tenant endpoint can reuse the
+  // exact same "this year's entitlement" lookup.
+  const shiftEntitlement = employeeId
+    ? await fetchShiftVacationEntitlement(db, employeeId, currentYear)
+    : { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+
+  const shiftVacationDates = absences
+    .filter((a) => a.type === 'Schichturlaub' && isWorkday(a.from))
+    .map((a) => a.from);
+  const shiftVacationTaken = shiftVacationDates.filter((d) => d <= today).length;
+  const shiftVacationPlanned = shiftVacationDates.filter((d) => d > today).length;
+  const shiftVacationTotal = Number(shiftEntitlement.shift_vacation_days) || 0;
+
   return {
     absences,
     vacation_days_total: vacationDaysTotal,
     vacation_days_taken: vacationTaken,
     vacation_days_planned: vacationPlanned,
     remaining_vacation: vacationDaysTotal - vacationTaken - vacationPlanned,
+    shift_vacation_total: shiftVacationTotal,
+    shift_vacation_taken: shiftVacationTaken,
+    shift_vacation_planned: shiftVacationPlanned,
+    remaining_shift_vacation: shiftVacationTotal - shiftVacationTaken - shiftVacationPlanned,
+    shift_vacation_carried_over: Boolean(shiftEntitlement.carried_over),
+    shift_vacation_carried_over_from_year: shiftEntitlement.carried_over_from_year ?? null,
   };
+}
+
+/**
+ * Reads the year-specific shift/Sonderurlaub entitlement for a central
+ * employee. Returns `{ shift_vacation_days: 0 }` when no row exists yet
+ * (the default — most years carry no shift-vacation adjustment).
+ *
+ * Also tolerates a missing `EmployeeVacationYear` table so older
+ * deployments don't crash on the detail endpoint.
+ */
+async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
+  try {
+    const [rows] = await masterDb.execute(
+      `SELECT shift_vacation_days, carried_over, carried_over_from_year
+         FROM EmployeeVacationYear
+        WHERE employee_id = ? AND year = ?
+        LIMIT 1`,
+      [employeeId, year]
+    );
+    if (rows.length === 0) {
+      return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+    }
+    return {
+      shift_vacation_days: Number(rows[0].shift_vacation_days) || 0,
+      carried_over: Boolean(rows[0].carried_over),
+      carried_over_from_year: rows[0].carried_over_from_year ?? null,
+    };
+  } catch (e) {
+    console.warn(`[Master employees] Shift-vacation entitlement lookup failed for ${employeeId}/${year}: ${e.message}`);
+    return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+  }
 }
 
 /**

@@ -461,6 +461,64 @@ export default function MasterCentralEmployeeDetail() {
             />
           </div>
 
+          {/* Separate Schicht-/Sonderurlaub-Bilanz. Die Werte kommen aus der
+              erweiterten `aggregateVacationAcrossTenants`-Antwort und aus der
+              jahresspezifischen Tabelle EmployeeVacationYear. Anzeige liegt im
+              Master, weil der zentrale Employee-Detail die verknüpften Tenants
+              zusammenfasst — der Anspruch selbst wird jedoch im Tenant gepflegt
+              (siehe docs/features/CENTRAL_EMPLOYEE_MANAGEMENT.md). */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sun className="w-5 h-5 text-cyan-600" />
+                Schicht- &amp; Sonderurlaub
+              </CardTitle>
+              <CardDescription>
+                Zusatzurlaub laut Tarifvertrag (jahresspezifisch). Pflege im Mandanten-Frontend, Übertrag ins Folgejahr nur für Schichturlaub.
+                {employee.shift_vacation_carried_over && (
+                  <span className="block text-cyan-700 mt-1">
+                    Dieser Anspruch wurde aus dem Jahr {employee.shift_vacation_carried_over_from_year ?? 'Vorjahr'} übertragen.
+                  </span>
+                )}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <MiniCard
+                  icon={Sun}
+                  label="Zusatzurlaub"
+                  value={employee.shift_vacation_total ?? 0}
+                  suffix="Tage"
+                />
+                <MiniCard
+                  icon={CalendarCheck}
+                  label="Genommen"
+                  value={employee.shift_vacation_taken ?? 0}
+                  suffix="Tage"
+                  color="blue"
+                />
+                <MiniCard
+                  icon={CalendarDays}
+                  label="Geplant"
+                  value={employee.shift_vacation_planned ?? 0}
+                  suffix="Tage"
+                  color="amber"
+                />
+                <MiniCard
+                  icon={CalendarDays}
+                  label="Rest"
+                  value={employee.remaining_shift_vacation ?? 0}
+                  suffix="Tage"
+                  color={
+                    typeof employee.remaining_shift_vacation === 'number' && employee.remaining_shift_vacation < 0
+                      ? 'red'
+                      : 'emerald'
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1173,6 +1231,7 @@ function MiniCard({ icon: Icon, label, value, suffix, color = 'slate' }) {
 function AbsenceTypeBadge({ type }) {
   const map = {
     'Urlaub': 'bg-emerald-100 text-emerald-800',
+    'Schichturlaub': 'bg-cyan-100 text-cyan-800',
     'Krank': 'bg-red-100 text-red-800',
     'Frei': 'bg-slate-100 text-slate-800',
     'Dienstreise': 'bg-blue-100 text-blue-800',
