@@ -544,8 +544,14 @@ export default function VacationPage() {
           const dStr = format(d, 'yyyy-MM-dd');
           const existingShift = relevantShifts.find(s => s.date === dStr);
 
-          // Skip if same type already exists
-          if (existingShift && existingShift.position === activeType) return;
+          // Skip if same type already exists (Urlaub ↔ Schichturlaub are
+          // equivalent for this check — both are "vacation" and toggling
+          // through the range builder should treat them interchangeably).
+          if (existingShift && (
+            existingShift.position === activeType
+            || (activeType === 'Urlaub' && existingShift.position === 'Schichturlaub')
+            || (activeType === 'Schichturlaub' && existingShift.position === 'Urlaub')
+          )) return;
 
           // Skip if keeping optional and this is an optional conflict
           if (existingShift && keepOptionalServices) {
@@ -648,7 +654,13 @@ export default function VacationPage() {
       // Schichturlaub fallback when booking 'Urlaub'.
       const candidateDays = days.map(d => format(d, 'yyyy-MM-dd')).filter(dStr => {
           const existing = allShifts.find(x => x.doctor_id === targetDoctorId && x.date === dStr);
-          return !existing || existing.position !== activeType;
+          // Treat Urlaub ↔ Schichturlaub as equivalent for the purpose of
+          // not creating duplicate vacation entries.
+          if (!existing) return true;
+          if (existing.position === activeType) return false;
+          if (activeType === 'Urlaub' && existing.position === 'Schichturlaub') return false;
+          if (activeType === 'Schichturlaub' && existing.position === 'Urlaub') return false;
+          return true;
       });
       
       if (candidateDays.length === 0) return;
@@ -742,8 +754,16 @@ export default function VacationPage() {
     const existingShifts = relevantShifts.filter(s => s.date === dateStr);
     const existingShift = existingShifts[0]; // Primary one for logic
 
-    // 1. Exact match: Toggle OFF
-    if (existingShift && existingShift.position === activeType) {
+    // 1. Exact match or equivalent vacation type: Toggle OFF.
+    //    'Urlaub' and 'Schichturlaub' are semantically the same for
+    //    toggle-off — clicking a Schichturlaub day while in Urlaub mode
+    //    (or vice versa) deletes the entry, matching the behaviour that
+    //    clicking a Urlaub day in Urlaub mode also deletes it.
+    if (existingShift && (
+      existingShift.position === activeType
+      || (activeType === 'Urlaub' && existingShift.position === 'Schichturlaub')
+      || (activeType === 'Schichturlaub' && existingShift.position === 'Urlaub')
+    )) {
         // Delete ALL shifts on this day if we are toggling off, to be clean
         const idsToDelete = existingShifts.map(s => s.id);
         bulkDeleteShiftMutation.mutate(idsToDelete);
