@@ -4760,6 +4760,8 @@ export default function ScheduleBoard() {
                                                   ? `${dateStr}__${rowName}__${rowTimeslotId}`
                                                   : `${dateStr}__${rowName}`;
                                               const cellId = withPanelPrefix(rawCellId, SPLIT_PANEL_PREFIX);
+                                              const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean(rowWorkplace?.timeslots_enabled) });
+                                              const isOccupied = cellShiftsForOcc.length > 0;
 
                                               let isDisabled = false;
                                               let isTrainingHighlight = false;
@@ -4869,6 +4871,7 @@ export default function ScheduleBoard() {
                                                               isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
                                                               blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
                                                               infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                              isOccupied={isOccupied}
                                                               onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                               baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                               baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
@@ -5765,6 +5768,8 @@ export default function ScheduleBoard() {
                                 const cellId = rowTimeslotId 
                                     ? `${dateStr}__${rowName}__${rowTimeslotId}`
                                     : `${dateStr}__${rowName}`;
+                                const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean(rowWorkplace?.timeslots_enabled) });
+                                const isOccupied = cellShiftsForOcc.length > 0;
                                 
                                 // Check if it's a demo row and if it's allowed
                                 let isDisabled = false;
@@ -5917,6 +5922,7 @@ export default function ScheduleBoard() {
                                                 isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
                                                 blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
                                                 infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                isOccupied={isOccupied}
                                                 onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                 baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                 baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}

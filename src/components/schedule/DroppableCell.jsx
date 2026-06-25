@@ -11,7 +11,7 @@ export default function DroppableCell({
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
     isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone,
   isBlocked, blockReason, onContextMenu, isCompact = false, testId,
-  infoReason
+  infoReason, isOccupied
 }) {
   const cellRef = useRef(null);
   const [cellWidth, setCellWidth] = useState(null);
@@ -100,8 +100,20 @@ export default function DroppableCell({
           {/* Always hide placeholder to prevent layout shift */}
           <div style={{ display: 'none' }}>{provided.placeholder}</div>
 
-          {/* Info indicator — shows when cell has an informational note */}
-          {hasInfo && !isBlocked && (
+          {/* Info indicator — empty cell: blue hatched overlay with text; occupied cell: badge + tooltip */}
+          {hasInfo && !isBlocked && !isOccupied && (
+            <div className="absolute inset-0 pointer-events-none z-10">
+              <div className="absolute inset-0 opacity-15" style={{
+                backgroundImage: 'repeating-linear-gradient(135deg, #3b82f6 0, #3b82f6 2px, transparent 2px, transparent 8px)',
+              }}></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="bg-blue-100/90 px-2 py-0.5 rounded shadow-sm text-xs text-blue-700 font-medium max-w-full truncate">
+                  ℹ️ {infoReason}
+                </span>
+              </div>
+            </div>
+          )}
+          {hasInfo && !isBlocked && isOccupied && (
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
