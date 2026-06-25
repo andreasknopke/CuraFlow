@@ -25,6 +25,18 @@
  * Read the year-specific row for a central employee. Always returns a
  * well-shaped object; missing rows resolve to the `0` default.
  *
+ * **Dynamic carry adjustment (Option B):** When the requested `year` is
+ * a carried-over row (`carried_over = true`), the real `shift_vacation_days`
+ * is computed from the *current* remaining balance of the source year.
+ * This prevents double-counting: if the planner books additional
+ * Schichturlaub in the source year after the carry-over, the target
+ * year's entitlement shrinks automatically. The carry never grows
+ * beyond the original stored amount, but it shrinks in lockstep with
+ * the source year's remaining balance.
+ *
+ * The adjustment is persisted on every read so subsequent reads and the
+ * frontend API always return the up-to-date value.
+ *
  * @param {import('mysql2/promise').Pool} masterDb
  * @param {string} employeeId
  * @param {number} year
@@ -47,7 +59,8 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
       [employeeId, year]
     );
     if (rows.length === 0) return fallback;
-    return {
+
+    const row = {
       shift_vacation_days: Number(rows[0].shift_vacation_days) || 0,
       carried_over: Boolean(rows[0].carried_over),
       carried_over_from_year: rows[0].carried_over_from_year != null
@@ -55,6 +68,17 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
         : null,
       note: rows[0].note ?? null,
     };
+
+    // Dynamic carry adjustment: if this row was created by a carry-over,
+    // the effective value is the current remaining of the source year,
+    // because booking more Schichturlaub in the source year should
+    // correspondingly reduce the carry-over to prevent double-counting.
+    if (row.carried_over && row.carried_over_from_year != null) {
+      const adjusted = await _adjustCarryFromSource(masterDb, employeeId, year, row);
+      return adjusted;
+    }
+
+    return row;
   } catch (e) {
     // Missing table is okay (migration not applied yet) — return default
     // so the API stays available. Any other error surfaces in the log.
@@ -63,6 +87,63 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
     }
     return fallback;
   }
+}
+
+/**
+ * Re-compute the effective carry for a `year` whose row has
+ * `carried_over = true`. The effective value is the *current* remaining
+ * balance of the source year (clamped to `[0, originalCarry]`).
+ *
+ * Persists any change so the frontend always sees the corrected value
+ * on subsequent reads.
+ *
+ * @param {import('mysql2/promise').Pool} masterDb
+ * @param {string} employeeId
+ * @param {number} targetYear  The carried-over year whose value to adjust.
+ * @param {Object} row         The stored row (as returned by the SELECT).
+ * @returns {Promise<Object>}  Adjusted row (same shape as `getShiftVacationEntitlement`).
+ */
+async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
+  const sourceYear = row.carried_over_from_year;
+  // Guard: a carry always goes forward (source < target). If the stored
+  // data violates this, don't adjust — it's either a degenerate test
+  // fixture or a legacy row that shouldn't cascade further.
+  if (sourceYear == null || sourceYear >= targetYear) return row;
+
+  const originalCarry = row.shift_vacation_days; // what was stored at carry time
+  const sourceRemaining = await computeShiftVacationRemaining(masterDb, employeeId, sourceYear);
+
+  // Effective carry = what the source year currently has left, but never
+  // more than what was originally carried (prevents re-growth).
+  const effectiveDays = Math.max(0, Math.min(
+    sourceRemaining.remaining_shift_vacation,
+    originalCarry
+  ));
+
+  if (effectiveDays === originalCarry) {
+    return row; // no change needed
+  }
+
+  // Persist the adjusted value so subsequent reads and the frontend API
+  // are always consistent. We use a targeted UPDATE instead of
+  // `setShiftVacationEntitlement` so we don't clobber `note`/`updated_by`.
+  try {
+    await masterDb.execute(
+      `UPDATE EmployeeVacationYear
+          SET shift_vacation_days = ?
+        WHERE employee_id = ? AND year = ?`,
+      [effectiveDays, employeeId, targetYear]
+    );
+  } catch (e) {
+    console.warn(`[shiftVacationEntitlement] carry-adjust persist failed: ${e.message}`);
+  }
+
+  return {
+    shift_vacation_days: effectiveDays,
+    carried_over: true,
+    carried_over_from_year: sourceYear,
+    note: row.note,
+  };
 }
 
 /**

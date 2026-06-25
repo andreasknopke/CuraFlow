@@ -48,17 +48,34 @@ describe('getShiftVacationEntitlement', () => {
     });
   });
 
-  it('returns the stored value, including carry-over flags', async () => {
+  it('returns the stored value, including carry-over flags, and dynamically adjusts from source', async () => {
+    // When the row has carried_over=true, the helper re-computes the source
+    // year's remaining. This mock simulates a source year (2025) that still
+    // has all 3 days available → effective carry stays 3.
     const db = createMockDb([
       [
         'FROM EmployeeVacationYear',
-        async () => [[{
-          shift_vacation_days: 3,
-          carried_over: 1,
-          carried_over_from_year: 2025,
-          note: 'Übertrag',
-        }]],
+        async (sql, params) => {
+          if (params[1] === 2026) {
+            // Target year: carried from 2025, originally 3 days.
+            return [[{
+              shift_vacation_days: 3,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              note: 'Übertrag',
+            }]];
+          }
+          // Source year (2025): entitlement 3, not carried_over itself.
+          return [[{
+            shift_vacation_days: 3,
+            carried_over: 0,
+            carried_over_from_year: null,
+            note: null,
+          }]];
+        },
       ],
+      // Source year: no additional Schichturlaub booked in 2025
+      ['FROM CentralAbsenceEntry', async () => [[], []]],
     ]);
     const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, YEAR);
     expect(result).toEqual({
@@ -67,6 +84,79 @@ describe('getShiftVacationEntitlement', () => {
       carried_over_from_year: 2025,
       note: 'Übertrag',
     });
+  });
+
+  it('dynamically reduces a carried-over value when the source year has consumed more Schichturlaub', async () => {
+    // Source year (2025): only 2 of 3 entitlement days remaining because
+    // 1 day has been taken. Effective carry → min(3, 2) = 2.
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async (sql, params) => {
+          if (params[1] === 2026) {
+            return [[{
+              shift_vacation_days: 3,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              note: 'Übertrag',
+            }]];
+          }
+          return [[{
+            shift_vacation_days: 3,
+            carried_over: 0,
+            carried_over_from_year: null,
+            note: null,
+          }]];
+        },
+      ],
+      // Source year: 1 Schichturlaub day already taken → only 2 remaining
+      ['FROM CentralAbsenceEntry', async () => [[
+        { date: new Date('2025-06-10') },
+      ]]],
+    ]);
+    const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, YEAR);
+    expect(result.shift_vacation_days).toBe(2);
+    expect(result.carried_over).toBe(true);
+    expect(result.carried_over_from_year).toBe(2025);
+    // Verify the DB was updated with the new value
+    const updateCalls = db.calls.filter((c) => c.sql.includes('UPDATE EmployeeVacationYear'));
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].params[0]).toBe(2); // the updated value
+  });
+
+  it('clamps carry to zero when the source year has no remaining Schichturlaub', async () => {
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async (sql, params) => {
+          if (params[1] === 2026) {
+            return [[{
+              shift_vacation_days: 3,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              note: 'Übertrag',
+            }]];
+          }
+          return [[{
+            shift_vacation_days: 3,
+            carried_over: 0,
+            carried_over_from_year: null,
+            note: null,
+          }]];
+        },
+      ],
+      // Source year: all 3 days consumed + 1 overshoot → remaining -1
+      ['FROM CentralAbsenceEntry', async () => [[
+        { date: new Date('2025-01-13') }, // Mon
+        { date: new Date('2025-01-14') }, // Tue
+        { date: new Date('2025-01-15') }, // Wed
+        { date: new Date('2025-01-16') }, // Thu
+      ]]],
+    ]);
+    const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, YEAR);
+    expect(result.shift_vacation_days).toBe(0);
+    expect(result.carried_over).toBe(true);
+    expect(result.carried_over_from_year).toBe(2025);
   });
 
   it('returns the fallback when the table does not exist yet (idempotent bootstrap)', async () => {
@@ -189,14 +279,30 @@ describe('carryOverShiftVacation', () => {
     const db = createMockDb([
       [
         'FROM EmployeeVacationYear',
-        // Probe order: first call is the target-year lookup.
-        async () => [[{
-          shift_vacation_days: 2,
-          carried_over: 1,
-          carried_over_from_year: 2025,
-          note: null,
-        }]],
+        async (sql, params) => {
+          // Target year (2026): already carried from 2025.
+          if (params[1] === 2026) {
+            return [[{
+              shift_vacation_days: 2,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              note: null,
+            }]];
+          }
+          // Source year (2025): normal row (not carried) so the dynamic
+          // adjustment doesn't cascade infinitely.
+          return [[{
+            shift_vacation_days: 5,
+            carried_over: 0,
+            carried_over_from_year: null,
+            note: null,
+          }]];
+        },
       ],
+      // Source year: some Schichturlaub already taken → remaining is
+      // used for the dynamic carry adjustment, but the carry-over check
+      // uses the target's carried_over flag BEFORE the adjustment runs.
+      ['FROM CentralAbsenceEntry', async () => [[], []]],
     ]);
     const result = await carryOverShiftVacation(db, EMPLOYEE_ID, {
       fromYear: 2025,
