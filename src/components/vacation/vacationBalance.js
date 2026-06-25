@@ -152,6 +152,116 @@ export function parseAnnualVacationDays(value) {
 }
 
 /**
+ * Decision helper for the "auto-shift-vacation fallback" rule.
+ *
+ * Background: when a planner books 'Urlaub' beyond the regular annual
+ * quota, the system should silently consume any available Schichturlaub
+ * days (year-specific bonus entitlement) for the over-quota days before
+ * letting the regular vacation balance go negative. Only when Schichturlaub
+ * is also exhausted is the regular vacation allowed to go into overshoot.
+ *
+ * This helper is PURE: given the current vacation balances and a list of
+ * new vacation days to be booked, it returns the position ('Urlaub' or
+ * 'Schichturlaub') that each new day should be saved as. The caller
+ * (Vacation.jsx) uses the result to set `position` on the ShiftEntry it
+ * creates.
+ *
+ * Algorithm:
+ *  1. Days are processed chronologically (earliest first) so the
+ *     "fallback kicks in" order is stable and matches planner intuition.
+ *  2. For each countable day, the regular quota is consumed first. Once
+ *     `usedRegular >= regularVacationBalance.total`, subsequent days go
+ *     to Schichturlaub until `usedShift >= shiftVacationBalance.total`.
+ *  3. Days that would fall through both are saved as 'Urlaub' (overshoot)
+ *     so the existing overshoot warning still fires on the regular card.
+ *  4. Days already covered by an existing Urlaub/Schichturlaub shift are
+ *     left alone (caller filters them out beforehand, but we also guard
+ *     here: such days are returned with their existing position so the
+ *     caller can skip them).
+ *
+ * The function does NOT mutate inputs. It uses only the `remaining`
+ * fields of the two balances so the live candidate (in-progress drag)
+ * is already accounted for by the caller when building the balances.
+ *
+ * @param {Object} params
+ * @param {Array<{date: string}>} params.newDays           `yyyy-MM-dd` strings of the days the planner is booking as Urlaub. Caller should already exclude weekends/public holidays/non-editable days — but this helper tolerates them (they receive 'Urlaub' as a safe default because they don't consume quota anyway).
+ * @param {{remaining: number, total: number}} params.regularVacationBalance  Result of `computeVacationBalance({position: 'Urlaub', ...})` *without* the new days counted. `remaining` is the free quota.
+ * @param {{remaining: number, total: number}} [params.shiftVacationBalance]  Same shape for 'Schichturlaub'. Optional; if missing, no fallback happens.
+ * @param {Object<string, string>} [params.existingByDate]  Map `yyyy-MM-dd` → 'Urlaub' | 'Schichturlaub' of already-booked days (so we don't double-count them).
+ * @returns {{ positions: Array<'Urlaub'|'Schichturlaub'>, shiftedToSchichturlaub: number, regularOvershoot: number }}
+ */
+export function decidePositionsForUrlaubsDays({
+  newDays = [],
+  regularVacationBalance,
+  shiftVacationBalance,
+  existingByDate = {},
+} = {}) {
+  if (!regularVacationBalance) {
+    return {
+      positions: newDays.map(() => 'Urlaub'),
+      shiftedToSchichturlaub: 0,
+      regularOvershoot: 0,
+    };
+  }
+
+  // Sort chronologically (mutate copy, not caller's array).
+  const sortedDays = [...newDays].sort((a, b) => String(a).localeCompare(String(b)));
+
+  // Running tallies. We start the regular counter at "already used"
+  // (total - remaining) so we know how much of the allowance is spent
+  // even when remaining is negative (overshoot).
+  let regularUsed = Math.max(0, (regularVacationBalance.total ?? 0) - (regularVacationBalance.remaining ?? 0));
+  let shiftUsed = shiftVacationBalance
+    ? Math.max(0, (shiftVacationBalance.total ?? 0) - (shiftVacationBalance.remaining ?? 0))
+    : 0;
+  const shiftTotal = shiftVacationBalance?.total ?? 0;
+
+  const positionsByDate = {};
+  let shifted = 0;
+  let regularOvershoot = 0;
+
+  for (const dateStr of sortedDays) {
+    // If this day is already booked as vacation, keep its position so the
+    // caller's "skip if same type" logic continues to work.
+    const existing = existingByDate[dateStr];
+    if (existing === 'Urlaub' || existing === 'Schichturlaub') {
+      positionsByDate[dateStr] = existing;
+      continue;
+    }
+
+    // Consume regular quota first.
+    if (regularUsed < regularVacationBalance.total) {
+      regularUsed += 1;
+      positionsByDate[dateStr] = 'Urlaub';
+      continue;
+    }
+
+    // Regular quota exhausted → fall back to Schichturlaub when available.
+    if (shiftVacationBalance && shiftUsed < shiftTotal) {
+      shiftUsed += 1;
+      positionsByDate[dateStr] = 'Schichturlaub';
+      shifted += 1;
+      continue;
+    }
+
+    // Both exhausted → book as Urlaub (overshoot). The existing warning
+    // in the balance box will surface this to the planner.
+    regularUsed += 1;
+    regularOvershoot += 1;
+    positionsByDate[dateStr] = 'Urlaub';
+  }
+
+  // Preserve the caller's original ordering in the returned array.
+  const positions = newDays.map((d) => positionsByDate[d] || 'Urlaub');
+
+  return {
+    positions,
+    shiftedToSchichturlaub: shifted,
+    regularOvershoot,
+  };
+}
+
+/**
  * Returns true iff the given `yyyy-MM-dd` date is a workday that
  * consumes vacation (Mon–Fri, not on the public-holiday set).
  */

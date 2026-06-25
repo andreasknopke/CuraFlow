@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { addDays, isWeekend, format } from 'date-fns';
-import { computeVacationBalance, parseAnnualVacationDays } from '../vacationBalance';
+import { computeVacationBalance, decidePositionsForUrlaubsDays, parseAnnualVacationDays } from '../vacationBalance';
 
 /**
  * Build `count` consecutive weekday dates (Mon–Fri) starting from
@@ -292,5 +292,93 @@ describe('parseAnnualVacationDays', () => {
     expect(parseAnnualVacationDays(undefined)).toBe(30);
     expect(parseAnnualVacationDays('')).toBe(30);
     expect(parseAnnualVacationDays('n/a')).toBe(30);
+  });
+});
+
+describe('decidePositionsForUrlaubsDays', () => {
+  it('returns Urlaub for all days when regular quota is sufficient', () => {
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10', '2026-06-11'],
+      regularVacationBalance: { total: 30, remaining: 20 },
+      shiftVacationBalance: { total: 3, remaining: 3 },
+    });
+    expect(result.positions).toEqual(['Urlaub', 'Urlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(0);
+    expect(result.regularOvershoot).toBe(0);
+  });
+
+  it('falls back to Schichturlaub for over-quota days when shift balance is positive', () => {
+    // Regular quota fully used (remaining 0), 3 shift-vacation days
+    // available. 5 new days → first 3 use Schichturlaub, last 2 overshoot.
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10', '2026-06-11', '2026-06-12', '2026-06-15', '2026-06-16'],
+      regularVacationBalance: { total: 30, remaining: 0 },
+      shiftVacationBalance: { total: 3, remaining: 3 },
+    });
+    expect(result.positions).toEqual([
+      'Schichturlaub', 'Schichturlaub', 'Schichturlaub',
+      'Urlaub', 'Urlaub',
+    ]);
+    expect(result.shiftedToSchichturlaub).toBe(3);
+    expect(result.regularOvershoot).toBe(2);
+  });
+
+  it('expects only overshoot once Schichturlaub is also exhausted', () => {
+    // The user\'s scenario: regular is already at -2 (overshoot), 3
+    // Schichturlaub are available. New days should consume Schichturlaub
+    // first because regular is exhausted.
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10', '2026-06-11'],
+      regularVacationBalance: { total: 30, remaining: -2 },
+      shiftVacationBalance: { total: 3, remaining: 3 },
+    });
+    // remaining -2 means already 32 of 30 used. So all new days prefer
+    // Schichturlaub (still has 3 free).
+    expect(result.positions).toEqual(['Schichturlaub', 'Schichturlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(2);
+    expect(result.regularOvershoot).toBe(0);
+  });
+
+  it('preserves existing Urlaub/Schichturlaub days (no double-counting)', () => {
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10', '2026-06-11'],
+      regularVacationBalance: { total: 30, remaining: 10 },
+      shiftVacationBalance: { total: 3, remaining: 3 },
+      existingByDate: { '2026-06-10': 'Urlaub' },
+    });
+    // 2026-06-10 already Urlaub → kept as-is (not counted against quota).
+    expect(result.positions).toEqual(['Urlaub', 'Urlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(0);
+  });
+
+  it('processes days chronologically even when input is unordered', () => {
+    // Later dates first — helper should still consume quota in date order.
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-15', '2026-06-10'],
+      regularVacationBalance: { total: 30, remaining: 0 },
+      shiftVacationBalance: { total: 1, remaining: 1 },
+    });
+    // Chronological: 06-10 first → Schichturlaub (only 1 left), 06-15 → Urlaub overshoot
+    expect(result.positions).toEqual(['Urlaub', 'Schichturlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(1);
+    expect(result.regularOvershoot).toBe(1);
+  });
+
+  it('returns Urlaub for all when no shift balance is provided', () => {
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10'],
+      regularVacationBalance: { total: 30, remaining: 0 },
+    });
+    expect(result.positions).toEqual(['Urlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(0);
+    expect(result.regularOvershoot).toBe(1);
+  });
+
+  it('returns Urlaub for all when regularVacationBalance is missing', () => {
+    const result = decidePositionsForUrlaubsDays({
+      newDays: ['2026-06-10', '2026-06-11'],
+    });
+    expect(result.positions).toEqual(['Urlaub', 'Urlaub']);
+    expect(result.shiftedToSchichturlaub).toBe(0);
   });
 });

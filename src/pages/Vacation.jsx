@@ -16,7 +16,7 @@ import VacationOverview from '@/components/vacation/VacationOverview';
 import AppSettingsDialog from '@/components/settings/AppSettingsDialog';
 import ConflictDialog, { categorizeConflict } from '@/components/vacation/ConflictDialog';
 import WeekdayRecurrenceDialog from '@/components/vacation/WeekdayRecurrenceDialog';
-import { parseAnnualVacationDays } from '@/components/vacation/vacationBalance';
+import { parseAnnualVacationDays, computeVacationBalance, decidePositionsForUrlaubsDays } from '@/components/vacation/vacationBalance';
 
 import { useHolidays } from '@/components/useHolidays';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
@@ -94,6 +94,42 @@ export default function VacationPage() {
   }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+
+  // Public holiday set for the selected year, deferred as yyyy-MM-dd.
+  // Used by the live vacation-balance helper and by the auto-
+  // Schichturlaub fallback so weekends/holidays don't consume quota.
+  const publicHolidayDates = useMemo(() => {
+    const set = new Set();
+    const start = startOfYear(new Date(selectedYear, 0, 1));
+    const end = endOfYear(new Date(selectedYear, 0, 1));
+    for (const d of eachDayOfInterval({ start, end })) {
+      if (isPublicHoliday && isPublicHoliday(d)) {
+        set.add(format(d, 'yyyy-MM-dd'));
+      }
+    }
+    return set;
+  }, [selectedYear, isPublicHoliday]);
+
+  // Schichturlaub-Entitlement for the selected doctor (year-specific, from
+  // EmployeeVacationYear via the tenant endpoint). Used by the auto-fallback
+  // so quota exhaustion is decided from the same source the balance box uses.
+  const { data: selectedShiftEntitlement } = useQuery({
+    queryKey: ['shift-vacation-entitlement', selectedYear, selectedDoctorId],
+    queryFn: async () => {
+      if (!selectedDoctorId) return null;
+      try {
+        const result = await api.request(
+          `/api/vacation/shift-entitlement?year=${selectedYear}&doctorId=${encodeURIComponent(selectedDoctorId)}`
+        );
+        return result || null;
+      } catch {
+        return null;
+      }
+    },
+    enabled: Boolean(selectedDoctorId),
+    staleTime: 0,
+    retry: 0,
+  });
 
   const contractInfoByDoctorId = useMemo(() => {
     const employeesById = new Map(masterEmployees.map((employee) => [employee.id, employee]));
@@ -345,8 +381,64 @@ export default function VacationPage() {
   // the planner can book shift-/Sonderurlaub days that count against the
   // separate year-specific entitlement, not against the regular vacation).
   const absencePositions = ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
-  
-  const yearShifts = allShifts.filter(s => 
+
+  /**
+   * Live balances for a doctor in the selected year, used by the auto-
+   * Schichturlaub fallback. Mirrors the math in DoctorYearView so both
+   * views agree on "remaining Urlaub" / "remaining Schichturlaub".
+   *
+   * Returns `{ regular: VacationBalance, shift: VacationBalance|null }`
+   * with `null` shift balance when the doctor has no central link / no
+   * entitlement row yet (the fallback then simply does nothing).
+   */
+  const buildVacationBalancesForDoctor = (doctor, relevantShifts) => {
+    if (!doctor) return { regular: null, shift: null };
+    const annualVacationDays = entitlementByDoctorId[doctor.id] ?? parseAnnualVacationDays(doctor.vacation_days);
+    const regular = computeVacationBalance({
+      shifts: relevantShifts,
+      year: selectedYear,
+      annualVacationDays,
+      publicHolidayDates,
+    });
+    const shiftDays = selectedShiftEntitlement?.doctorId === doctor.id
+      ? (selectedShiftEntitlement.shift_vacation_days ?? 0)
+      : 0;
+    const shift = computeVacationBalance({
+      shifts: relevantShifts,
+      year: selectedYear,
+      position: 'Schichturlaub',
+      annualVacationDays: shiftDays,
+      publicHolidayDates,
+    });
+    return { regular, shift };
+  };
+
+  /**
+   * Decides, for a set of new vacation days the planner is booking for a
+   * doctor, which ones should be saved as 'Urlaub' and which as
+   * 'Schichturlaub'. See `decidePositionsForUrlaubsDays` for the rule.
+   *
+   * Returns the decision object `{ positions, shiftedToSchichturlaub,
+   * regularOvershoot }` or `null` if the fallback can't run (no balances).
+   */
+  const decidePositionsForDoctor = (doctor, dates, relevantShifts) => {
+    const { regular, shift } = buildVacationBalancesForDoctor(doctor, relevantShifts);
+    if (!regular) return null;
+    const existingByDate = {};
+    for (const s of relevantShifts) {
+      if (s.position === 'Urlaub' || s.position === 'Schichturlaub') {
+        existingByDate[s.date] = s.position;
+      }
+    }
+    return decidePositionsForUrlaubsDays({
+      newDays: dates,
+      regularVacationBalance: regular,
+      shiftVacationBalance: shift.total > 0 ? shift : null,
+      existingByDate,
+    });
+  };
+
+  const yearShifts = allShifts.filter(s =>
     s.doctor_id === selectedDoctorId && absencePositions.includes(s.position)
   );
 
@@ -441,31 +533,63 @@ export default function VacationPage() {
   const executeRangeAction = (days, targetDoctorId, deleteIds, overwriteIds, keepOptionalServices) => {
       const relevantShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
       const shiftsToDeleteIds = [...deleteIds, ...overwriteIds];
-      const newShifts = [];
-      
+
+      // Determine the candidate days first so we can optionally apply the
+      // Schichturlaub fallback for 'Urlaub' bookings. Days that will be
+      // deleted/overwritten are treated as "free" by the helper, so we
+      // exclude any existing shift on those dates when building the
+      // snapshot the fallback inspects.
+      const candidateDescriptors = [];
       days.forEach(d => {
           const dStr = format(d, 'yyyy-MM-dd');
           const existingShift = relevantShifts.find(s => s.date === dStr);
-          
+
           // Skip if same type already exists
           if (existingShift && existingShift.position === activeType) return;
-          
+
           // Skip if keeping optional and this is an optional conflict
           if (existingShift && keepOptionalServices) {
               const conflictType = categorizeConflict(activeType, existingShift.position);
-              if (conflictType === 'optional') return; // Keep both - don't create new absence here either
+              if (conflictType === 'optional') return;
           }
-          
+
           // Only add if not in delete list (means we're overwriting) or no existing shift
           if (!existingShift || shiftsToDeleteIds.includes(existingShift.id)) {
-              newShifts.push({
-                  date: dStr,
-                  position: activeType,
-                  doctor_id: targetDoctorId
-              });
+              candidateDescriptors.push({ dStr, existingShift });
           }
       });
-      
+
+      // Apply Schichturlaub fallback for Urlaub bookings.
+      let positionsByDate = {};
+      if (activeType === 'Urlaub' && candidateDescriptors.length > 0) {
+          const doctor = doctors.find(d => d.id === targetDoctorId);
+          // Exclude any shift that is about to be deleted/overwritten so
+          // the helper sees those days as available quota.
+          const snapshot = relevantShifts.filter(
+              s => !shiftsToDeleteIds.includes(s.id)
+                  && !candidateDescriptors.some(c => c.dStr === s.date && c.existingShift?.id === s.id)
+          );
+          const dates = candidateDescriptors.map(c => c.dStr);
+          const decision = decidePositionsForDoctor(doctor, dates, snapshot);
+          if (decision) {
+              dates.forEach((dStr, idx) => {
+                  positionsByDate[dStr] = decision.positions[idx];
+              });
+              if (decision.shiftedToSchichturlaub > 0) {
+                  toast.info(`${decision.shiftedToSchichturlaub} Tag(e) als Schichturlaub gebucht – reguläres Urlaubskontingent erschöpft.`);
+              }
+              if (decision.regularOvershoot > 0) {
+                  toast.warning(`${decision.regularOvershoot} Tag(e) über dem regulären UND Schichturlaub-Kontingent.`);
+              }
+          }
+      }
+
+      const newShifts = candidateDescriptors.map(({ dStr }) => ({
+          date: dStr,
+          position: positionsByDate[dStr] || activeType,
+          doctor_id: targetDoctorId
+      }));
+
       // Execute mutations
       if (shiftsToDeleteIds.length > 0) {
           bulkDeleteShiftMutation.mutate(shiftsToDeleteIds, {
@@ -520,15 +644,38 @@ export default function VacationPage() {
       }
       
       // No conflicts - execute directly
-      const newShifts = days.map(d => ({
-          date: format(d, 'yyyy-MM-dd'),
-          position: activeType,
-          doctor_id: targetDoctorId
-      })).filter(s => {
-          // Filter out days that already have this type
-          const existing = allShifts.find(x => x.doctor_id === targetDoctorId && x.date === s.date);
+      // Build the candidate list first, then optionally apply the
+      // Schichturlaub fallback when booking 'Urlaub'.
+      const candidateDays = days.map(d => format(d, 'yyyy-MM-dd')).filter(dStr => {
+          const existing = allShifts.find(x => x.doctor_id === targetDoctorId && x.date === dStr);
           return !existing || existing.position !== activeType;
       });
+      
+      if (candidateDays.length === 0) return;
+
+      let newShifts;
+      if (activeType === 'Urlaub') {
+          const doctor = doctors.find(d => d.id === targetDoctorId);
+          const relevantShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
+          const decision = decidePositionsForDoctor(doctor, candidateDays, relevantShifts);
+          newShifts = candidateDays.map((dStr, idx) => ({
+              date: dStr,
+              position: decision ? decision.positions[idx] : activeType,
+              doctor_id: targetDoctorId
+          }));
+          if (decision && decision.shiftedToSchichturlaub > 0) {
+              toast.info(`${decision.shiftedToSchichturlaub} Tag(e) als Schichturlaub gebucht – reguläres Urlaubskontingent erschöpft.`);
+          }
+          if (decision && decision.regularOvershoot > 0) {
+              toast.warning(`${decision.regularOvershoot} Tag(e) über dem regulären UND Schichturlaub-Kontingent.`);
+          }
+      } else {
+          newShifts = candidateDays.map((dStr) => ({
+              date: dStr,
+              position: activeType,
+              doctor_id: targetDoctorId
+          }));
+      }
       
       if (newShifts.length > 0) {
           bulkCreateShiftMutation.mutate(newShifts);
@@ -605,11 +752,29 @@ export default function VacationPage() {
 
     // 2. No shift: Create
     if (!existingShift) {
-        createShiftMutation.mutate({
-            date: dateStr,
-            position: activeType,
-            doctor_id: targetDoctorId
-        });
+        if (activeType === 'Urlaub') {
+            // Auto-Schichturlaub-Fallback: verbrauche zuerst das reguläre
+            // Kontingent, dann Schichturlaub, erst dann Urlaub-Überschreitung.
+            const doctor = doctors.find(d => d.id === targetDoctorId);
+            const decision = decidePositionsForDoctor(doctor, [dateStr], relevantShifts);
+            const position = decision && decision.positions[0] === 'Schichturlaub'
+                ? 'Schichturlaub'
+                : activeType;
+            if (decision && decision.shiftedToSchichturlaub > 0) {
+                toast.info(`Reguläres Urlaubskontingent erschöpft – ${dateStr} wird als Schichturlaub gebucht.`);
+            }
+            createShiftMutation.mutate({
+                date: dateStr,
+                position,
+                doctor_id: targetDoctorId
+            });
+        } else {
+            createShiftMutation.mutate({
+                date: dateStr,
+                position: activeType,
+                doctor_id: targetDoctorId
+            });
+        }
         return;
     }
 
@@ -623,13 +788,27 @@ export default function VacationPage() {
          if (rest.length > 0) {
              bulkDeleteShiftMutation.mutate(rest.map(s => s.id));
          }
+
+         // Auto-Schichturlaub-Fallback for new 'Urlaub' bookings.
+         let newPosition = activeType;
+         if (activeType === 'Urlaub') {
+             const doctor = doctors.find(d => d.id === targetDoctorId);
+             // Treat the overwritten day as "new" — exclude the existing
+             // shift on this date so the fallback sees it as bookable.
+             const shiftsExcludingToday = relevantShifts.filter(s => s.date !== dateStr);
+             const decision = decidePositionsForDoctor(doctor, [dateStr], shiftsExcludingToday);
+             if (decision && decision.positions[0] === 'Schichturlaub') {
+                 newPosition = 'Schichturlaub';
+                 toast.info(`Reguläres Urlaubskontingent erschöpft – ${dateStr} wird als Schichturlaub gebucht.`);
+             }
+         }
          
          // Optimistic Update via atomicOperations
          base44.functions.invoke('atomicOperations', {
              operation: 'checkAndUpdate',
              entity: 'ShiftEntry',
              id: first.id,
-             data: { position: activeType },
+             data: { position: newPosition },
              check: { updated_date: first.updated_date }
          }).then(() => {
              queryClient.invalidateQueries({ queryKey: ['shifts'] });
