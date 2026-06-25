@@ -1704,7 +1704,9 @@ export default function ScheduleBoard() {
             return noteMap;
     }, [scheduleNotes]);
 
-  // ScheduleBlock: Gesperrte Zellen im Wochenplan
+  // ScheduleBlock: Gesperrte Zellen + Info-Notizen im Wochenplan
+  // type='block' = Zelle gesperrt (kein Drag & Drop)
+  // type='info'  = nur Information, kein Lock
   const { data: scheduleBlocks = [] } = useQuery({
     queryKey: ['scheduleBlocks', fetchRange.start, fetchRange.end],
     queryFn: () => db.ScheduleBlock.filter({
@@ -1715,13 +1717,26 @@ export default function ScheduleBoard() {
     keepPreviousData: true,
   });
 
-  // Map for quick lookup: "date|position" or "date|position|timeslotId" → block
+  // Map for quick lookup: "date|position" or "date|position|timeslotId" → block (type='block')
   const scheduleBlocksMap = useMemo(() => {
     const map = new Map();
-    for (const block of scheduleBlocks) {
-      const dateStr = typeof block.date === 'string' ? block.date.substring(0, 10) : format(new Date(block.date), 'yyyy-MM-dd');
-      const key = block.timeslot_id ? `${dateStr}|${block.position}|${block.timeslot_id}` : `${dateStr}|${block.position}`;
-      map.set(key, block);
+    for (const entry of scheduleBlocks) {
+      if (entry.type === 'info') continue; // only blocks
+      const dateStr = typeof entry.date === 'string' ? entry.date.substring(0, 10) : format(new Date(entry.date), 'yyyy-MM-dd');
+      const key = entry.timeslot_id ? `${dateStr}|${entry.position}|${entry.timeslot_id}` : `${dateStr}|${entry.position}`;
+      map.set(key, entry);
+    }
+    return map;
+  }, [scheduleBlocks]);
+
+  // Map for quick lookup: "date|position" or "date|position|timeslotId" → info (type='info')
+  const scheduleInfoMap = useMemo(() => {
+    const map = new Map();
+    for (const entry of scheduleBlocks) {
+      if (entry.type !== 'info') continue; // only infos
+      const dateStr = typeof entry.date === 'string' ? entry.date.substring(0, 10) : format(new Date(entry.date), 'yyyy-MM-dd');
+      const key = entry.timeslot_id ? `${dateStr}|${entry.position}|${entry.timeslot_id}` : `${dateStr}|${entry.position}`;
+      map.set(key, entry);
     }
     return map;
   }, [scheduleBlocks]);
@@ -1731,6 +1746,13 @@ export default function ScheduleBoard() {
       return scheduleBlocksMap.get(`${dateStr}|${position}|${timeslotId}`) || scheduleBlocksMap.get(`${dateStr}|${position}`);
     }
     return scheduleBlocksMap.get(`${dateStr}|${position}`);
+  };
+
+  const getScheduleInfo = (dateStr, position, timeslotId) => {
+    if (timeslotId) {
+      return scheduleInfoMap.get(`${dateStr}|${position}|${timeslotId}`) || scheduleInfoMap.get(`${dateStr}|${position}`);
+    }
+    return scheduleInfoMap.get(`${dateStr}|${position}`);
   };
 
         const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition, checkCrossTenantConflicts } = useShiftValidation(allShifts, {
@@ -2294,9 +2316,9 @@ export default function ScheduleBoard() {
     onSuccess: () => queryClient.invalidateQueries(['scheduleNotes']),
   });
 
-  // ScheduleBlock mutations
+  // ScheduleBlock mutations (type='block')
   const createBlockMutation = useMutation({
-    mutationFn: (data) => db.ScheduleBlock.create(data),
+    mutationFn: (data) => db.ScheduleBlock.create({ ...data, type: 'block' }),
     onSuccess: () => {
       queryClient.invalidateQueries(['scheduleBlocks']);
       toast.success('Zelle gesperrt');
@@ -2311,14 +2333,33 @@ export default function ScheduleBoard() {
     },
   });
 
-  // Context menu state for cell blocking
+  // ScheduleBlock mutations (type='info')
+  const createInfoMutation = useMutation({
+    mutationFn: (data) => db.ScheduleBlock.create({ ...data, type: 'info' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['scheduleBlocks']);
+      toast.success('Info hinterlegt');
+    },
+  });
+
+  const deleteInfoMutation = useMutation({
+    mutationFn: (id) => db.ScheduleBlock.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['scheduleBlocks']);
+      toast.success('Info entfernt');
+    },
+  });
+
+  // Context menu state for cell blocking / info
   const [blockContextMenu, setBlockContextMenu] = useState(null);
   const [blockReasonInput, setBlockReasonInput] = useState('');
+  const [infoReasonInput, setInfoReasonInput] = useState('');
 
   const handleCellContextMenu = (e, dateStr, position, timeslotId = null) => {
     if (isReadOnly) return;
     e.preventDefault();
     const block = getScheduleBlock(dateStr, position, timeslotId);
+    const info = getScheduleInfo(dateStr, position, timeslotId);
     setBlockContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -2326,8 +2367,10 @@ export default function ScheduleBoard() {
       position,
       timeslotId,
       existingBlock: block || null,
+      existingInfo: info || null,
     });
     setBlockReasonInput(block?.reason || '');
+    setInfoReasonInput(info?.reason || '');
   };
 
   const handleBlockCell = () => {
@@ -2341,6 +2384,7 @@ export default function ScheduleBoard() {
     });
     setBlockContextMenu(null);
     setBlockReasonInput('');
+    setInfoReasonInput('');
   };
 
   const handleUnblockCell = () => {
@@ -2348,6 +2392,29 @@ export default function ScheduleBoard() {
     deleteBlockMutation.mutate(blockContextMenu.existingBlock.id);
     setBlockContextMenu(null);
     setBlockReasonInput('');
+    setInfoReasonInput('');
+  };
+
+  const handleInfoCell = () => {
+    if (!blockContextMenu) return;
+    const { dateStr, position, timeslotId } = blockContextMenu;
+    createInfoMutation.mutate({
+      date: dateStr,
+      position,
+      timeslot_id: timeslotId || null,
+      reason: infoReasonInput.trim() || null,
+    });
+    setBlockContextMenu(null);
+    setBlockReasonInput('');
+    setInfoReasonInput('');
+  };
+
+  const handleDeleteInfoCell = () => {
+    if (!blockContextMenu?.existingInfo) return;
+    deleteInfoMutation.mutate(blockContextMenu.existingInfo.id);
+    setBlockContextMenu(null);
+    setBlockReasonInput('');
+    setInfoReasonInput('');
   };
 
   const handleClearWeek = () => {
@@ -4801,6 +4868,7 @@ export default function ScheduleBoard() {
                                                               isTrainingHighlight={isTrainingHighlight}
                                                               isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
                                                               blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                              infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
                                                               onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                               baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                               baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
@@ -5848,6 +5916,7 @@ export default function ScheduleBoard() {
                                                 isTrainingHighlight={isTrainingHighlight}
                                                 isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
                                                 blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
                                                 onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
                                                 baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                 baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
@@ -6004,20 +6073,22 @@ export default function ScheduleBoard() {
           </DialogContent>
       </Dialog>
 
-      {/* Schedule Block Context Menu */}
+      {/* Schedule Block & Info Context Menu */}
       {blockContextMenu && (
         <>
           <div className="fixed inset-0 z-[9998]" onClick={() => setBlockContextMenu(null)} />
           <div
-            className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-3 min-w-[220px]"
+            className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-3 min-w-[260px]"
             style={{ left: blockContextMenu.x, top: blockContextMenu.y }}
           >
             <div className="text-xs text-slate-500 mb-2 font-medium">
               {blockContextMenu.position} — {blockContextMenu.dateStr}
             </div>
+
+            {/* --- Block section --- */}
             {blockContextMenu.existingBlock ? (
               <>
-                <div className="text-sm text-red-700 mb-2 flex items-center gap-1.5">
+                <div className="text-sm text-red-700 mb-1.5 flex items-center gap-1.5">
                   <Lock className="w-3.5 h-3.5" />
                   Gesperrt{blockContextMenu.existingBlock.reason ? `: ${blockContextMenu.existingBlock.reason}` : ''}
                 </div>
@@ -6025,29 +6096,67 @@ export default function ScheduleBoard() {
                   onClick={handleUnblockCell}
                   className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-green-50 text-green-700 flex items-center gap-2"
                 >
-                                    <Unlock className="w-3.5 h-3.5" />
-                                    Sperrung aufheben
+                  <Unlock className="w-3.5 h-3.5" />
+                  Sperrung aufheben
                 </button>
               </>
-                        ) : (
-                            <>
-                                <input
-                                    type="text"
-                                    placeholder="Begründung (z.B. Wartung)"
-                                    value={blockReasonInput}
-                                    onChange={(e) => setBlockReasonInput(e.target.value)}
-                                    onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
-                                    className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-2 focus:outline-none focus:ring-1 focus:ring-red-300"
-                                    autoFocus
-                                />
-                                <button
-                                    onClick={handleBlockCell}
-                                    className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-red-50 text-red-700 flex items-center gap-2"
-                                >
-                                    <Lock className="w-3.5 h-3.5" />
-                                    Zelle sperren
-                                </button>
-                            </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Begründung (z.B. Wartung)"
+                  value={blockReasonInput}
+                  onChange={(e) => setBlockReasonInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
+                  className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-red-300"
+                />
+                <button
+                  onClick={handleBlockCell}
+                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-red-50 text-red-700 flex items-center gap-2"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  Zelle sperren
+                </button>
+              </>
+            )}
+
+            {/* Separator */}
+            <div className="border-t border-slate-100 my-2" />
+
+            {/* --- Info section --- */}
+            <div className="text-xs text-slate-400 mb-1 font-medium">Info</div>
+            {blockContextMenu.existingInfo ? (
+              <>
+                <div className="text-sm text-blue-700 mb-1.5 flex items-center gap-1.5">
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-400 text-white text-[10px] font-bold">i</span>
+                  {blockContextMenu.existingInfo.reason || 'Kein Text'}
+                </div>
+                <button
+                  onClick={handleDeleteInfoCell}
+                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-blue-50 text-blue-700 flex items-center gap-2"
+                >
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-400 text-white text-[10px] font-bold">i</span>
+                  Info entfernen
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Info-Text (z.B. Wartung ab 8:00)"
+                  value={infoReasonInput}
+                  onChange={(e) => setInfoReasonInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleInfoCell(); }}
+                  className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
+                />
+                <button
+                  onClick={handleInfoCell}
+                  className="w-full text-left px-3 py-1.5 text-sm rounded hover:bg-blue-50 text-blue-700 flex items-center gap-2"
+                >
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-400 text-white text-[10px] font-bold">i</span>
+                  Info hinterlegen
+                </button>
+              </>
             )}
           </div>
         </>

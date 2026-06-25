@@ -1,10 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Droppable } from '@hello-pangea/dnd';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export default function DroppableCell({ 
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
     isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone,
-  isBlocked, blockReason, onContextMenu, isCompact = false, testId
+  isBlocked, blockReason, onContextMenu, isCompact = false, testId,
+  infoReason
 }) {
   const cellRef = useRef(null);
   const [cellWidth, setCellWidth] = useState(null);
@@ -31,6 +38,7 @@ export default function DroppableCell({
   }, []);
 
   const effectiveDisabled = isDisabled || isBlocked;
+  const hasInfo = !!infoReason;
 
   return (
     <Droppable 
@@ -51,6 +59,7 @@ export default function DroppableCell({
           className={`
           ${isCompact ? 'min-h-[38px] p-0.5 gap-0.5' : 'min-h-[60px] p-1 gap-1'} border rounded-sm h-full flex flex-wrap content-start relative will-change-auto
           ${isBlocked ? 'bg-red-50/60 border-red-200 cursor-not-allowed overflow-hidden' : ''}
+          ${!isBlocked && hasInfo ? 'bg-blue-50/40 border-blue-200' : ''}
           ${isDisabled && !isBlocked ? 'bg-slate-100/80 border-slate-100 cursor-not-allowed overflow-hidden' : ''}
           ${isTrainingHighlight && !effectiveDisabled ? 'ring-2 ring-amber-400 bg-amber-50 border-amber-300 shadow-inner' : ''}
           ${!effectiveDisabled && snapshot.isDraggingOver ? 'border-indigo-300 ring-2 ring-indigo-300 z-10 transition-none' : (
@@ -90,6 +99,24 @@ export default function DroppableCell({
           {typeof children === 'function' ? children({ cellWidth }) : children}
           {/* Always hide placeholder to prevent layout shift */}
           <div style={{ display: 'none' }}>{provided.placeholder}</div>
+
+          {/* Info indicator — shows when cell has an informational note */}
+          {hasInfo && !isBlocked && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="absolute top-0.5 right-0.5 z-20 cursor-help">
+                    <span className="flex items-center justify-center w-4 h-4 rounded-full bg-blue-400 text-white text-[10px] font-bold shadow-sm">
+                      i
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[250px] text-xs bg-blue-900 text-white border-blue-700 shadow-lg">
+                  <p>{infoReason}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       )}
     </Droppable>
