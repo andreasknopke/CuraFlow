@@ -678,85 +678,92 @@ export default function ServerTokenManager() {
                         </DialogDescription>
                     </DialogHeader>
                     
-                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="name">Name / Bezeichnung *</Label>
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+                        <div className="space-y-1">
+                            <Label htmlFor="name" className="text-xs">Name / Bezeichnung *</Label>
                             <Input
                                 id="name"
                                 value={formData.name}
                                 onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
                                 placeholder="z.B. Klinik Süd Rostock"
+                                className="h-8 text-xs"
                             />
                         </div>
                         
-                        <div className="space-y-2">
-                            <Label htmlFor="description">Beschreibung</Label>
+                        <div className="space-y-1">
+                            <Label htmlFor="description" className="text-xs">Beschreibung</Label>
                             <Textarea
                                 id="description"
                                 value={formData.description}
                                 onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
                                 placeholder="Optionale Beschreibung..."
-                                rows={2}
+                                rows={1}
+                                className="text-xs"
                             />
                         </div>
                         
                         {editingToken && (
-                            <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-lg">
+                            <div className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg text-xs">
                                 <Switch
                                     checked={formData.updateCredentials}
                                     onCheckedChange={checked => setFormData(prev => ({ ...prev, updateCredentials: checked }))}
+                                    className="scale-75"
                                 />
-                                <Label>Zugangsdaten aktualisieren</Label>
+                                <Label className="text-xs">Zugangsdaten aktualisieren</Label>
                             </div>
                         )}
                         
                         {(!editingToken || formData.updateCredentials) && (
                             <>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="host">Host *</Label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="host" className="text-xs">Host *</Label>
                                         <Input
                                             id="host"
                                             value={formData.host}
                                             onChange={e => setFormData(prev => ({ ...prev, host: e.target.value }))}
                                             placeholder="mysql.railway.app"
+                                            className="h-8 text-xs"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="port">Port</Label>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="port" className="text-xs">Port</Label>
                                         <Input
                                             id="port"
                                             value={formData.port}
                                             onChange={e => setFormData(prev => ({ ...prev, port: e.target.value }))}
                                             placeholder="3306"
+                                            className="h-8 text-xs"
                                         />
                                     </div>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="user">Benutzer *</Label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label htmlFor="user" className="text-xs">Benutzer *</Label>
                                         <Input
                                             id="user"
                                             value={formData.user}
                                             onChange={e => setFormData(prev => ({ ...prev, user: e.target.value }))}
                                             placeholder="root"
+                                            className="h-8 text-xs"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="password">Passwort</Label>
+                                    <div className="space-y-1">
+                                        <Label htmlFor="password" className="text-xs">Passwort</Label>
                                         <Input
                                             id="password"
                                             type="password"
                                             value={formData.password}
                                             onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))}
                                             placeholder="••••••••"
+                                            className="h-8 text-xs"
                                         />
                                     </div>
                                 </div>
                                 
-                                <div className="space-y-2">
-                                    <Label htmlFor="database">Datenbank *</Label>
+                                <div className="space-y-1">
+                                    <Label htmlFor="database" className="text-xs">Datenbank *</Label>
                                     <div className="flex gap-2">
                                         <Input
                                             id="database"
@@ -766,25 +773,25 @@ export default function ServerTokenManager() {
                                                 setCheckDbStatus(null); // reset check on change
                                             }}
                                             placeholder="railway"
-                                            className="flex-1"
+                                            className="flex-1 h-8 text-xs"
                                         />
                                         <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={checkDatabase}
                                             disabled={checkingDb || !formData.host || !formData.user || !formData.database}
-                                            className="shrink-0"
+                                            className="shrink-0 h-8 text-xs"
                                         >
                                             {checkingDb ? (
-                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <Loader2 className="w-3.5 h-3.5" />
                                             ) : (
-                                                <Database className="w-4 h-4" />
+                                                <Database className="w-3.5 h-3.5" />
                                             )}
                                             <span className="ml-1">Prüfen</span>
                                         </Button>
                                     </div>
                                     {checkDbStatus && !checkDbStatus.error && (
-                                        <div className={`p-2 rounded text-sm flex items-center gap-2 border ${
+                                        <div className={`p-1.5 rounded text-xs flex items-center gap-1.5 border ${
                                             checkDbStatus.exists && checkDbStatus.empty
                                                 ? 'bg-green-50 text-green-800 border-green-300'
                                                 : checkDbStatus.exists
@@ -793,27 +800,18 @@ export default function ServerTokenManager() {
                                         }`}>
                                             {checkDbStatus.exists ? (
                                                 checkDbStatus.empty ? (
-                                                    <>
-                                                        <Check className="w-4 h-4 shrink-0" />
-                                                        <span>Datenbank <strong>{formData.database}</strong> existiert und ist leer.</span>
-                                                    </>
+                                                    <><Check className="w-3.5 h-3.5 shrink-0" /><span>Datenbank <strong>{formData.database}</strong> existiert und ist leer.</span></>
                                                 ) : (
-                                                    <>
-                                                        <AlertTriangle className="w-4 h-4 shrink-0" />
-                                                        <span>Datenbank <strong>{formData.database}</strong> existiert mit <strong>{checkDbStatus.tableCount}</strong> Tabelle(n).</span>
-                                                    </>
+                                                    <><AlertTriangle className="w-3.5 h-3.5 shrink-0" /><span>Datenbank <strong>{formData.database}</strong> existiert mit <strong>{checkDbStatus.tableCount}</strong> Tabelle(n).</span></>
                                                 )
                                             ) : (
-                                                <>
-                                                    <Database className="w-4 h-4 shrink-0" />
-                                                    <span>Datenbank <strong>{formData.database}</strong> existiert noch nicht.</span>
-                                                </>
+                                                <><Database className="w-3.5 h-3.5 shrink-0" /><span>Datenbank <strong>{formData.database}</strong> existiert noch nicht.</span></>
                                             )}
                                         </div>
                                     )}
                                     {checkDbStatus?.error && (
-                                        <div className="p-2 rounded text-sm flex items-center gap-2 border bg-red-50 text-red-800 border-red-300">
-                                            <X className="w-4 h-4 shrink-0" />
+                                        <div className="p-1.5 rounded text-xs flex items-center gap-1.5 border bg-red-50 text-red-800 border-red-300">
+                                            <X className="w-3.5 h-3.5 shrink-0" />
                                             <span>Prüfung fehlgeschlagen: {checkDbStatus.error}</span>
                                         </div>
                                     )}
@@ -823,31 +821,32 @@ export default function ServerTokenManager() {
                                             size="sm"
                                             onClick={createDatabase}
                                             disabled={creatingDb}
-                                            className="w-full"
+                                            className="w-full text-xs h-8"
                                         >
                                             {creatingDb ? (
-                                                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
                                             ) : (
-                                                <Plus className="w-4 h-4 mr-1" />
+                                                <Plus className="w-3.5 h-3.5 mr-1" />
                                             )}
                                             Datenbank "{formData.database}" jetzt anlegen
                                         </Button>
                                     )}
                                 </div>
                                 
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 text-xs">
                                     <Switch
                                         id="ssl"
                                         checked={formData.ssl}
                                         onCheckedChange={checked => setFormData(prev => ({ ...prev, ssl: checked }))}
+                                        className="scale-75"
                                     />
-                                    <Label htmlFor="ssl">SSL-Verbindung verwenden</Label>
+                                    <Label htmlFor="ssl" className="text-xs">SSL-Verbindung verwenden</Label>
                                 </div>
                             </>
                         )}
                     </div>
                     
-                    <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 gap-2">
+                    <DialogFooter className="shrink-0 border-t px-6 py-3 gap-2">
                         {(!editingToken || formData.updateCredentials) && (
                             <Button
                                 variant="outline"
