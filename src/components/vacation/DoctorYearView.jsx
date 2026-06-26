@@ -296,6 +296,7 @@ export default function DoctorYearView({
   const { toast } = useToast();
   const [shiftVacationDraft, setShiftVacationDraft] = useState('0');
   const [carryDialogOpen, setCarryDialogOpen] = useState(false);
+  const [hasCarriedThisYear, setHasCarriedThisYear] = useState(false);
   const entitlementKey = ['shift-vacation-entitlement', year, doctor?.id];
   const nextYearKey = (nextYear) => ['shift-vacation-entitlement', nextYear, doctor?.id];
 
@@ -345,6 +346,7 @@ export default function DoctorYearView({
       queryClient.invalidateQueries({ queryKey: entitlementKey });
       queryClient.invalidateQueries({ queryKey: nextYearKey(year + 1) });
       setCarryDialogOpen(false);
+      setHasCarriedThisYear(true);
       toast({
         title: 'Übertragen',
         description: `${result.carried_days} Tag(e) Schichturlaub ins Jahr ${year + 1} übertragen.`,
@@ -359,12 +361,17 @@ export default function DoctorYearView({
     },
   });
 
-  // Carry-over is offered only when there's an actual remainder. The
-  // planner clicks "Resturlaub" → confirm dialog → server fill the next
-  // year's Schichturlaub row with the remaining days.
+  // Carry-over is offered only when:
+  //  - This year's entitlement is NOT itself a carry-over (carried_over
+  //    Schichturlaub verfällt am 31.03. und darf nicht weitergetragen werden).
+  //  - A carry was not already performed this session (nach erfolgreichem
+  //    Übertrag verschwindet der Button sofort).
+  //  - There's an actual remainder > 0.
   const shiftVacationRemainder = shiftVacationBalance?.remaining ?? 0;
   const canCarryOver =
     Boolean(shiftEntitlement?.employee_id) &&
+    !shiftEntitlement?.carried_over &&
+    !hasCarriedThisYear &&
     Number.isFinite(shiftVacationRemainder) &&
     shiftVacationRemainder > 0 &&
     !carryOverMutation.isPending;
@@ -923,28 +930,26 @@ function ShiftVacationBox({
             </div>
           )}
 
-          <div className="mt-3 flex items-center justify-end">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!canCarryOver}
-              onClick={onCarryOver}
-              title={
-                canCarryOver
-                  ? `Rest (${balance.remaining} Tage) als Zusatzurlaub ins Jahr ${year + 1} übertragen`
-                  : 'Resturlaub kann nur übertragen werden, wenn ein positiver Rest vorhanden ist.'
-              }
-              data-testid="shift-vacation-carry-over-btn"
-            >
-              {isCarrying ? (
-                <Loader2 className="w-4 h-4 animate-spin mr-1" />
-              ) : (
-                <RotateCw className="w-4 h-4 mr-1" />
-              )}
-              Rest ins Folgejahr ({year + 1}) übertragen
-            </Button>
-          </div>
+          {canCarryOver && (
+            <div className="mt-3 flex items-center justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!canCarryOver}
+                onClick={onCarryOver}
+                title={`Rest (${balance.remaining} Tage) als Zusatzurlaub ins Jahr ${year + 1} übertragen`}
+                data-testid="shift-vacation-carry-over-btn"
+              >
+                {isCarrying ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : (
+                  <RotateCw className="w-4 h-4 mr-1" />
+                )}
+                Rest ins Folgejahr ({year + 1}) übertragen
+              </Button>
+            </div>
+          )}
         </CollapsibleContent>
       </Collapsible>
     </div>
