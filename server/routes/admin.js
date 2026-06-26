@@ -1387,6 +1387,116 @@ router.post('/db-tokens/test', async (req, res, next) => {
   }
 });
 
+// CHECK a database: exists? empty?
+router.post('/db-tokens/check-database', async (req, res, next) => {
+  try {
+    const { credentials, database } = req.body;
+    if (!credentials || !credentials.host || !credentials.user) {
+      return res.status(400).json({ error: 'Host und Benutzer erforderlich' });
+    }
+    const dbName = (database || credentials.database || '').trim();
+    if (!dbName) {
+      return res.status(400).json({ error: 'Datenbank-Name erforderlich' });
+    }
+
+    // Connect to mysql server without specifying a database,
+    // so we can check schema existence.
+    const { createPool } = await import('mysql2/promise');
+    const checkPool = createPool({
+      host: credentials.host.trim(),
+      port: parseInt(credentials.port || '3306'),
+      user: credentials.user.trim(),
+      password: credentials.password || '',
+      database: 'mysql',
+      waitForConnections: true,
+      connectionLimit: 1,
+      connectTimeout: 10000,
+    });
+
+    try {
+      // Check if the database exists
+      const [schemaRows] = await checkPool.execute(
+        'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
+        [dbName]
+      );
+      const exists = schemaRows.length > 0;
+
+      let tableCount = 0;
+      if (exists) {
+        // Switch to target database to count its tables
+        await checkPool.execute(`USE \`${dbName}\``);
+        const [tableRows] = await checkPool.execute(
+          'SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+          [dbName]
+        );
+        tableCount = Number(tableRows[0].cnt) || 0;
+      }
+
+      await checkPool.end();
+
+      return res.json({
+        exists,
+        empty: exists ? tableCount === 0 : null,
+        tableCount,
+        database: dbName,
+      });
+    } catch (connErr) {
+      await checkPool.end().catch(() => {});
+      return res.status(400).json({
+        error: 'Verbindung fehlgeschlagen: ' + connErr.message,
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
+// CREATE a new database
+router.post('/db-tokens/create-database', async (req, res, next) => {
+  try {
+    const { credentials, database } = req.body;
+    if (!credentials || !credentials.host || !credentials.user) {
+      return res.status(400).json({ error: 'Host und Benutzer erforderlich' });
+    }
+    const dbName = (database || credentials.database || '').trim();
+    if (!dbName) {
+      return res.status(400).json({ error: 'Datenbank-Name erforderlich' });
+    }
+
+    const { createPool } = await import('mysql2/promise');
+    const adminPool = createPool({
+      host: credentials.host.trim(),
+      port: parseInt(credentials.port || '3306'),
+      user: credentials.user.trim(),
+      password: credentials.password || '',
+      database: 'mysql',
+      waitForConnections: true,
+      connectionLimit: 1,
+      connectTimeout: 10000,
+    });
+
+    try {
+      await adminPool.execute(
+        `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+      );
+      await adminPool.end();
+
+      return res.json({
+        success: true,
+        message: `Datenbank "${dbName}" wurde angelegt.`,
+        database: dbName,
+      });
+    } catch (connErr) {
+      await adminPool.end().catch(() => {});
+      return res.status(400).json({
+        error: 'Fehler beim Anlegen der Datenbank: ' + connErr.message,
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ===== WISH REMINDER - Manual trigger or cron check =====
 router.post('/wish-reminder/check', async (req, res, next) => {
   try {

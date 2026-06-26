@@ -184,6 +184,11 @@ export default function ServerTokenManager() {
     // Test connection result state for UI feedback
     const [testResult, setTestResult] = useState(null);
     
+    // Database check/creation state
+    const [checkDbStatus, setCheckDbStatus] = useState(null); // null | { exists, empty, tableCount } | { error }
+    const [checkingDb, setCheckingDb] = useState(false);
+    const [creatingDb, setCreatingDb] = useState(false);
+    
     // Test connection
     const testConnection = async (tokenId) => {
         setTestingId(tokenId);
@@ -262,6 +267,76 @@ export default function ServerTokenManager() {
             port: '3306',
             ssl: false
         });
+        setCheckDbStatus(null);
+    };
+    
+    // Check if database exists and is empty
+    const checkDatabase = async () => {
+        if (!formData.host || !formData.user || !formData.database) {
+            toast.error('Host, Benutzer und Datenbank-Name erforderlich');
+            return;
+        }
+        setCheckingDb(true);
+        setCheckDbStatus(null);
+        try {
+            const result = await api.request('/api/admin/db-tokens/check-database', {
+                method: 'POST',
+                skipDbToken: true,
+                body: JSON.stringify({
+                    credentials: {
+                        host: formData.host,
+                        user: formData.user,
+                        password: formData.password,
+                        port: formData.port,
+                    },
+                    database: formData.database,
+                }),
+            });
+            setCheckDbStatus(result);
+            if (result.exists && result.empty) {
+                toast.success(`Datenbank "${formData.database}" existiert und ist leer.`);
+            } else if (result.exists) {
+                toast.info(`Datenbank "${formData.database}" existiert mit ${result.tableCount} Tabelle(n).`);
+            } else {
+                toast.info(`Datenbank "${formData.database}" existiert nicht.`);
+            }
+        } catch (err) {
+            setCheckDbStatus({ error: err.message });
+            toast.error('Prüfung fehlgeschlagen: ' + err.message);
+        } finally {
+            setCheckingDb(false);
+        }
+    };
+    
+    // Create database
+    const createDatabase = async () => {
+        if (!formData.host || !formData.user || !formData.database) {
+            toast.error('Host, Benutzer und Datenbank-Name erforderlich');
+            return;
+        }
+        setCreatingDb(true);
+        try {
+            const result = await api.request('/api/admin/db-tokens/create-database', {
+                method: 'POST',
+                skipDbToken: true,
+                body: JSON.stringify({
+                    credentials: {
+                        host: formData.host,
+                        user: formData.user,
+                        password: formData.password,
+                        port: formData.port,
+                    },
+                    database: formData.database,
+                }),
+            });
+            toast.success(result.message || `Datenbank "${formData.database}" angelegt.`);
+            // Re-check to confirm
+            setCheckDbStatus({ exists: true, empty: true, tableCount: 0, database: formData.database });
+        } catch (err) {
+            toast.error('Fehler: ' + err.message);
+        } finally {
+            setCreatingDb(false);
+        }
     };
     
     const openEditDialog = (token) => {
@@ -682,12 +757,82 @@ export default function ServerTokenManager() {
                                 
                                 <div className="space-y-2">
                                     <Label htmlFor="database">Datenbank *</Label>
-                                    <Input
-                                        id="database"
-                                        value={formData.database}
-                                        onChange={e => setFormData(prev => ({ ...prev, database: e.target.value }))}
-                                        placeholder="railway"
-                                    />
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="database"
+                                            value={formData.database}
+                                            onChange={e => {
+                                                setFormData(prev => ({ ...prev, database: e.target.value }));
+                                                setCheckDbStatus(null); // reset check on change
+                                            }}
+                                            placeholder="railway"
+                                            className="flex-1"
+                                        />
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={checkDatabase}
+                                            disabled={checkingDb || !formData.host || !formData.user || !formData.database}
+                                            className="shrink-0"
+                                        >
+                                            {checkingDb ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <Database className="w-4 h-4" />
+                                            )}
+                                            <span className="ml-1">Prüfen</span>
+                                        </Button>
+                                    </div>
+                                    {checkDbStatus && !checkDbStatus.error && (
+                                        <div className={`p-2 rounded text-sm flex items-center gap-2 border ${
+                                            checkDbStatus.exists && checkDbStatus.empty
+                                                ? 'bg-green-50 text-green-800 border-green-300'
+                                                : checkDbStatus.exists
+                                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                                    : 'bg-blue-50 text-blue-800 border-blue-300'
+                                        }`}>
+                                            {checkDbStatus.exists ? (
+                                                checkDbStatus.empty ? (
+                                                    <>
+                                                        <Check className="w-4 h-4 shrink-0" />
+                                                        <span>Datenbank <strong>{formData.database}</strong> existiert und ist leer.</span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <AlertTriangle className="w-4 h-4 shrink-0" />
+                                                        <span>Datenbank <strong>{formData.database}</strong> existiert mit <strong>{checkDbStatus.tableCount}</strong> Tabelle(n).</span>
+                                                    </>
+                                                )
+                                            ) : (
+                                                <>
+                                                    <Database className="w-4 h-4 shrink-0" />
+                                                    <span>Datenbank <strong>{formData.database}</strong> existiert noch nicht.</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                    {checkDbStatus?.error && (
+                                        <div className="p-2 rounded text-sm flex items-center gap-2 border bg-red-50 text-red-800 border-red-300">
+                                            <X className="w-4 h-4 shrink-0" />
+                                            <span>Prüfung fehlgeschlagen: {checkDbStatus.error}</span>
+                                        </div>
+                                    )}
+                                    {checkDbStatus && !checkDbStatus.exists && !checkDbStatus.error && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={createDatabase}
+                                            disabled={creatingDb}
+                                            className="w-full"
+                                        >
+                                            {creatingDb ? (
+                                                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                                            ) : (
+                                                <Plus className="w-4 h-4 mr-1" />
+                                            )}
+                                            Datenbank "{formData.database}" jetzt anlegen
+                                        </Button>
+                                    )}
                                 </div>
                                 
                                 <div className="flex items-center gap-2">
