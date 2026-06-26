@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, isWithinInterval, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil } from 'lucide-react';
+import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db, base44 } from "@/api/client";
 import { useToast } from '@/components/ui/use-toast';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
@@ -793,129 +794,136 @@ function ShiftVacationBox({
     <div
       data-testid="shift-vacation-box"
       className={cn(
-        'mb-6 rounded-xl border p-3',
+        'rounded-xl border mb-6',
         balance.overshoot
           ? 'border-red-200 bg-red-50'
           : 'border-cyan-200 bg-cyan-50'
       )}
     >
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-        <div className="flex items-center gap-2">
-          <Sun className="w-4 h-4 text-cyan-600" />
-          <h3 className="text-sm font-semibold text-slate-800">
-            Schicht- &amp; Sonderurlaub {year}
-          </h3>
-          {entitlement?.carried_over && (
-            <span className="text-xs px-2 py-0.5 rounded bg-cyan-100 text-cyan-800">
-              Übertrag aus {entitlement.carried_over_from_year ?? 'Vorjahr'}
-            </span>
-          )}
-        </div>
-
-        {/* Entitlement editing. Only enabled for linked employees
-            because the entitlement is a central Employee property. */}
-        <div className="flex items-center gap-2">
-          <label
-            htmlFor="shift-vacation-days-input"
-            className="text-xs text-slate-600"
-          >
-            Zusatzurlaub {year}
-          </label>
-          <Input
-            id="shift-vacation-days-input"
-            type="number"
-            min={0}
-            step={1}
-            value={draft}
-            disabled={!isLinked || isSaving}
-            onChange={(e) => onDraftChange(e.target.value)}
-            className="w-20 h-8"
-            data-testid="shift-vacation-days-input"
-          />
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={!isLinked || isSaving}
-            onClick={onSave}
-          >
-            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
-            <span className="ml-1">Speichern</span>
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {cards.map(({ label, value, suffix }) => (
-          <div key={label} className="p-3 bg-white rounded-lg border border-slate-200">
-            <div className="text-xs text-slate-500 mb-1">{label}</div>
-            <p
-              className={cn(
-                'text-xl font-bold',
-                balance.overshoot && label === 'Rest'
-                  ? 'text-red-700'
-                  : label === 'Rest'
-                    ? (value < 0 ? 'text-red-700' : 'text-emerald-700')
-                    : 'text-slate-900'
+      <Collapsible defaultOpen={false} className="group">
+        <CollapsibleTrigger className="w-full text-left">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 pb-0">
+            <div className="flex items-center gap-2">
+              <ChevronRight className="w-4 h-4 text-slate-400 group-open:hidden" />
+              <ChevronDown className="w-4 h-4 text-slate-400 hidden group-open:block" />
+              <Sun className="w-4 h-4 text-cyan-600" />
+              <h3 className="text-sm font-semibold text-slate-800">
+                Schicht- &amp; Sonderurlaub {year}
+              </h3>
+              {entitlement?.carried_over && (
+                <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                  Übertrag aus {entitlement.carried_over_from_year ?? 'Vorjahr'}
+                </span>
               )}
-            >
-              {value}
-              {suffix && <span className="text-sm font-normal text-slate-400"> {suffix}</span>}
-            </p>
+              <span className="inline group-open:hidden text-xs text-slate-500 ml-1">
+                {balance.total} Tage · Rest {balance.remaining}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+              <label
+                htmlFor="shift-vacation-days-input"
+                className="text-xs text-slate-600"
+              >
+                Zusatzurlaub {year}
+              </label>
+              <Input
+                id="shift-vacation-days-input"
+                type="number"
+                min={0}
+                step={1}
+                value={draft}
+                disabled={!isLinked || isSaving}
+                onChange={(e) => onDraftChange(e.target.value)}
+                className="w-20 h-8"
+                data-testid="shift-vacation-days-input"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!isLinked || isSaving}
+                onClick={onSave}
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                <span className="ml-1">Speichern</span>
+              </Button>
+            </div>
           </div>
-        ))}
-      </div>
+        </CollapsibleTrigger>
 
-      {!isLinked && (
-        <div className="mt-3 text-xs text-slate-500 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <span>
-            Dieser Mitarbeiter ist nicht zentral verknüpft. Die Pflege des
-            Zusatzurlaubs ist erst nach Verknüpfung über die zentrale
-            Mitarbeiterverwaltung möglich.
-          </span>
-        </div>
-      )}
+        <CollapsibleContent className="px-3 pb-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+            {cards.map(({ label, value, suffix }) => (
+              <div key={label} className="p-3 bg-white rounded-lg border border-slate-200">
+                <div className="text-xs text-slate-500 mb-1">{label}</div>
+                <p
+                  className={cn(
+                    'text-xl font-bold',
+                    balance.overshoot && label === 'Rest'
+                      ? 'text-red-700'
+                      : label === 'Rest'
+                        ? (value < 0 ? 'text-red-700' : 'text-emerald-700')
+                        : 'text-slate-900'
+                  )}
+                >
+                  {value}
+                  {suffix && <span className="text-sm font-normal text-slate-400"> {suffix}</span>}
+                </p>
+              </div>
+            ))}
+          </div>
 
-      {balance.overshoot && (
-        <div
-          data-testid="shift-vacation-overshoot-warning"
-          className="mt-3 flex items-start gap-2 text-sm text-red-700"
-          role="alert"
-        >
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <span>
-            <strong>Schichturlaub überschritten:</strong>{' '}
-            {Math.abs(balance.remaining)} Tag(e) mehr gebucht als
-            der Zusatzurlaub ({balance.total} Tage) hergibt.
-          </span>
-        </div>
-      )}
-
-      {/* Carry-over offer: visibly enabled only when there is a remainder.
-          Clicking opens the confirmation dialog owned by DoctorYearView. */}
-      <div className="mt-3 flex items-center justify-end">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!canCarryOver}
-          onClick={onCarryOver}
-          title={
-            canCarryOver
-              ? `Rest (${balance.remaining} Tage) als Zusatzurlaub ins Jahr ${year + 1} übertragen`
-              : 'Resturlaub kann nur übertragen werden, wenn ein positiver Rest vorhanden ist.'
-          }
-          data-testid="shift-vacation-carry-over-btn"
-        >
-          {isCarrying ? (
-            <Loader2 className="w-4 h-4 animate-spin mr-1" />
-          ) : (
-            <RotateCw className="w-4 h-4 mr-1" />
+          {!isLinked && (
+            <div className="mt-3 text-xs text-slate-500 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                Dieser Mitarbeiter ist nicht zentral verknüpft. Die Pflege des
+                Zusatzurlaubs ist erst nach Verknüpfung über die zentrale
+                Mitarbeiterverwaltung möglich.
+              </span>
+            </div>
           )}
-          Rest ins Folgejahr ({year + 1}) übertragen
-        </Button>
-      </div>
+
+          {balance.overshoot && (
+            <div
+              data-testid="shift-vacation-overshoot-warning"
+              className="mt-3 flex items-start gap-2 text-sm text-red-700"
+              role="alert"
+            >
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                <strong>Schichturlaub überschritten:</strong>{' '}
+                {Math.abs(balance.remaining)} Tag(e) mehr gebucht als
+                der Zusatzurlaub ({balance.total} Tage) hergibt.
+              </span>
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center justify-end">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!canCarryOver}
+              onClick={onCarryOver}
+              title={
+                canCarryOver
+                  ? `Rest (${balance.remaining} Tage) als Zusatzurlaub ins Jahr ${year + 1} übertragen`
+                  : 'Resturlaub kann nur übertragen werden, wenn ein positiver Rest vorhanden ist.'
+              }
+              data-testid="shift-vacation-carry-over-btn"
+            >
+              {isCarrying ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-1" />
+              ) : (
+                <RotateCw className="w-4 h-4 mr-1" />
+              )}
+              Rest ins Folgejahr ({year + 1}) übertragen
+            </Button>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
