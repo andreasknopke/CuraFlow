@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, isWithinInterval, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil, ChevronDown, ChevronRight, CalendarX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from "@/lib/utils";
@@ -815,6 +815,11 @@ function ShiftVacationBox({
                   Übertrag aus {entitlement.carried_over_from_year ?? 'Vorjahr'}
                 </span>
               )}
+              {entitlement?.expires_at && (
+                <span className="text-xs px-2 py-0.5 rounded bg-orange-100 text-orange-800">
+                  Verfällt {new Date(entitlement.expires_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                </span>
+              )}
               <span className="inline group-open:hidden text-xs text-slate-500 ml-1">
                 {balance.total} Tage · Rest {balance.remaining}
               </span>
@@ -896,6 +901,24 @@ function ShiftVacationBox({
                 <strong>Schichturlaub überschritten:</strong>{' '}
                 {Math.abs(balance.remaining)} Tag(e) mehr gebucht als
                 der Zusatzurlaub ({balance.total} Tage) hergibt.
+              </span>
+            </div>
+          )}
+
+          {entitlement?.expires_at && new Date(entitlement.expires_at) < new Date(new Date().toDateString()) && (
+            <div
+              data-testid="shift-vacation-expired-warning"
+              className="mt-3 flex items-start gap-2 text-sm text-red-700"
+              role="alert"
+            >
+              <CalendarX className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                <strong>Schichturlaub abgelaufen:</strong> Der übertragene
+                Schichturlaub ist seit dem{' '}
+                {new Date(entitlement.expires_at).toLocaleDateString('de-DE', {
+                  day: '2-digit', month: '2-digit', year: 'numeric'
+                })}{' '}
+                verfallen und kann nicht mehr genutzt werden.
               </span>
             </div>
           )}

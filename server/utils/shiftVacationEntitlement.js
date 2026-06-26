@@ -6,9 +6,10 @@
  * index.js. The routes in `routes/vacation.js` are thin wrappers.
  *
  * Storage: master-DB table `EmployeeVacationYear(employee_id, year)`:
- *   - shift_vacation_days   INT NOT NULL DEFAULT 0
- *   - carried_over          BOOLEAN NOT NULL DEFAULT FALSE
- *   - carried_over_from_year INT DEFAULT NULL
+ *   - shift_vacation_days       INT NOT NULL DEFAULT 0
+ *   - carried_over              BOOLEAN NOT NULL DEFAULT FALSE
+ *   - carried_over_from_year    INT DEFAULT NULL
+ *   - expires_at                DATE DEFAULT NULL
  *
  * Business rules (mirrored in the frontend `vacationBalance.js` helper):
  *  - The remaining shift-vacation is `shift_vacation_days` MINUS
@@ -40,19 +41,20 @@
  * @param {import('mysql2/promise').Pool} masterDb
  * @param {string} employeeId
  * @param {number} year
- * @returns {Promise<{ shift_vacation_days: number, carried_over: boolean, carried_over_from_year: number|null, note: string|null }>}
+ * @returns {Promise<{ shift_vacation_days: number, carried_over: boolean, carried_over_from_year: number|null, expires_at: string|null, note: string|null }>}
  */
 export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
   const fallback = {
     shift_vacation_days: 0,
     carried_over: false,
     carried_over_from_year: null,
+    expires_at: null,
     note: null,
   };
   if (!employeeId || !Number.isFinite(year)) return fallback;
   try {
     const [rows] = await masterDb.execute(
-      `SELECT shift_vacation_days, carried_over, carried_over_from_year, note
+      `SELECT shift_vacation_days, carried_over, carried_over_from_year, expires_at, note
          FROM EmployeeVacationYear
         WHERE employee_id = ? AND year = ?
         LIMIT 1`,
@@ -66,6 +68,9 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
       carried_over_from_year: rows[0].carried_over_from_year != null
         ? Number(rows[0].carried_over_from_year)
         : null,
+      expires_at: rows[0].expires_at ? formatYmd(
+        rows[0].expires_at instanceof Date ? rows[0].expires_at : new Date(rows[0].expires_at)
+      ) : null,
       note: rows[0].note ?? null,
     };
 
@@ -74,8 +79,23 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
     // because booking more Schichturlaub in the source year should
     // correspondingly reduce the carry-over to prevent double-counting.
     if (row.carried_over && row.carried_over_from_year != null) {
-      const adjusted = await _adjustCarryFromSource(masterDb, employeeId, year, row);
+      let adjusted = await _adjustCarryFromSource(masterDb, employeeId, year, row);
+      // Expiry check for carried-over rows — after dynamic adjustment
+      if (row.expires_at && formatYmd(new Date()) > row.expires_at) {
+        adjusted = { ...adjusted, shift_vacation_days: 0 };
+      }
       return adjusted;
+    }
+
+    // Expiry check: if expires_at is in the past, the entitlement is 0.
+    if (row.expires_at) {
+      const todayStr = formatYmd(new Date());
+      if (todayStr > row.expires_at) {
+        return {
+          ...row,
+          shift_vacation_days: 0,
+        };
+      }
     }
 
     return row;
@@ -94,6 +114,9 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
  * `carried_over = true`. The effective value is the *current* remaining
  * balance of the source year (clamped to `[0, originalCarry]`).
  *
+ * Also applies the expiry rule: if the carried-over row has `expires_at`
+ * set and today is past it, the effective days become 0.
+ *
  * Persists any change so the frontend always sees the corrected value
  * on subsequent reads.
  *
@@ -109,6 +132,12 @@ async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
   // data violates this, don't adjust — it's either a degenerate test
   // fixture or a legacy row that shouldn't cascade further.
   if (sourceYear == null || sourceYear >= targetYear) return row;
+
+  // Expired carry → effectively 0
+  const todayStr = formatYmd(new Date());
+  if (row.expires_at && todayStr > row.expires_at) {
+    return { ...row, shift_vacation_days: 0 };
+  }
 
   const originalCarry = row.shift_vacation_days; // what was stored at carry time
   const sourceRemaining = await computeShiftVacationRemaining(masterDb, employeeId, sourceYear);
@@ -142,6 +171,7 @@ async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
     shift_vacation_days: effectiveDays,
     carried_over: true,
     carried_over_from_year: sourceYear,
+    expires_at: row.expires_at ?? null,
     note: row.note,
   };
 }
@@ -158,6 +188,7 @@ async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
  * @param {number} payload.shift_vacation_days   Non-negative integer.
  * @param {boolean} [payload.carried_over=false]
  * @param {number|null} [payload.carried_over_from_year=null]
+ * @param {string|null} [payload.expires_at]     yyyy-MM-dd or ISO date.
  * @param {string|null} [payload.note=null]
  * @param {string|null} [payload.updatedBy=null]
  * @returns {Promise<Object>} the row as `getShiftVacationEntitlement` returns.
@@ -171,20 +202,22 @@ export async function setShiftVacationEntitlement(masterDb, employeeId, year, pa
   const carriedOverFromYear = Number.isFinite(payload.carried_over_from_year)
     ? Number(payload.carried_over_from_year)
     : null;
+  const expiresAt = payload.expires_at || null;
   const note = payload.note ?? null;
   const updatedBy = payload.updatedBy ?? null;
 
   await masterDb.execute(
     `INSERT INTO EmployeeVacationYear
-        (employee_id, year, shift_vacation_days, carried_over, carried_over_from_year, note, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+        (employee_id, year, shift_vacation_days, carried_over, carried_over_from_year, expires_at, note, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
         shift_vacation_days   = VALUES(shift_vacation_days),
         carried_over          = VALUES(carried_over),
         carried_over_from_year = VALUES(carried_over_from_year),
+        expires_at            = VALUES(expires_at),
         note                  = VALUES(note),
         updated_by            = VALUES(updated_by)`,
-    [employeeId, year, days, carriedOver, carriedOverFromYear, note, updatedBy]
+    [employeeId, year, days, carriedOver, carriedOverFromYear, expiresAt, note, updatedBy]
   );
 
   return getShiftVacationEntitlement(masterDb, employeeId, year);
@@ -296,6 +329,7 @@ export async function carryOverShiftVacation(masterDb, employeeId, opts) {
     shift_vacation_days: carriedDays,
     carried_over: true,
     carried_over_from_year: fromYear,
+    expires_at: `${toYear}-03-31`,
     note: `Übertrag aus ${fromYear}: ${carriedDays} Tag(e) Schichturlaub`,
     updatedBy,
   });

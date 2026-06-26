@@ -259,6 +259,7 @@ export async function runMasterMigrations(dbPool) {
         shift_vacation_days INT NOT NULL DEFAULT 0,
         carried_over BOOLEAN NOT NULL DEFAULT FALSE,
         carried_over_from_year INT DEFAULT NULL,
+        expires_at DATE DEFAULT NULL,
         note TEXT,
         updated_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         updated_by VARCHAR(255) DEFAULT NULL,
@@ -269,6 +270,11 @@ export async function runMasterMigrations(dbPool) {
       ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('add_employee_vacation_year_expires_at', async () => {
+    const changed = await addColumnIfMissing('EmployeeVacationYear', 'expires_at', 'DATE DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
   // ===== PHASE 1: Work Time Models =====
 

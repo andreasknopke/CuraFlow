@@ -480,6 +480,11 @@ export default function MasterCentralEmployeeDetail() {
                     Dieser Anspruch wurde aus dem Jahr {employee.shift_vacation_carried_over_from_year ?? 'Vorjahr'} übertragen.
                   </span>
                 )}
+                {employee.shift_vacation_expires_at && (
+                  <span className="block text-orange-700 mt-1">
+                    Verfällt am {new Date(employee.shift_vacation_expires_at).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}.
+                  </span>
+                )}
               </CardDescription>
             </CardHeader>
             <CardContent>

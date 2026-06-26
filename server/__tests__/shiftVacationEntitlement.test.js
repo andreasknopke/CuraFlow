@@ -44,6 +44,7 @@ describe('getShiftVacationEntitlement', () => {
       shift_vacation_days: 0,
       carried_over: false,
       carried_over_from_year: null,
+      expires_at: null,
       note: null,
     });
   });
@@ -82,6 +83,7 @@ describe('getShiftVacationEntitlement', () => {
       shift_vacation_days: 3,
       carried_over: true,
       carried_over_from_year: 2025,
+      expires_at: null,
       note: 'Übertrag',
     });
   });
@@ -384,5 +386,122 @@ describe('carryOverShiftVacation', () => {
     expect(upsertParams[2]).toBe(4);          // shift_vacation_days
     expect(upsertParams[3]).toBe(1);          // carried_over = TRUE
     expect(upsertParams[4]).toBe(2026);       // carried_over_from_year
+  });
+
+  it('sets expires_at = {toYear}-03-31 when carrying over', async () => {
+    let upsertParams = null;
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async (sql, params) => {
+          if (params[1] === 2027) return [[], []];
+          return [[{
+            shift_vacation_days: 5,
+            carried_over: 0,
+            carried_over_from_year: null,
+            note: null,
+          }]];
+        },
+      ],
+      ['FROM CentralAbsenceEntry', async () => [[], []]],
+      [
+        'INSERT INTO EmployeeVacationYear',
+        async (sql, params) => {
+          upsertParams = params;
+          return [[], []];
+        },
+      ],
+    ]);
+    const result = await carryOverShiftVacation(db, EMPLOYEE_ID, {
+      fromYear: 2026,
+      toYear: 2027,
+      today: '2026-12-31',
+    });
+    expect(result.carried_days).toBe(5);
+    // Column order: employee_id, year, shift_vacation_days,
+    // carried_over, carried_over_from_year, expires_at, note, updated_by
+    expect(upsertParams[5]).toBe('2027-03-31');
+  });
+});
+
+describe('expiry (expires_at)', () => {
+  it('returns effective 0 when carried-over row has expires_at in the past', async () => {
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async (sql, params) => {
+          if (params[1] === 2026) {
+            return [[{
+              shift_vacation_days: 5,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              expires_at: new Date('2026-03-31'),
+              note: 'Übertrag',
+            }]];
+          }
+          // Source year (2025): all days still available — normally
+          // dynamic adjustment would return 5, but expiry should override.
+          return [[{
+            shift_vacation_days: 5,
+            carried_over: 0,
+            carried_over_from_year: null,
+            expires_at: null,
+            note: null,
+          }]];
+        },
+      ],
+      ['FROM CentralAbsenceEntry', async () => [[], []]],
+    ]);
+    const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, 2026);
+    expect(result.shift_vacation_days).toBe(0);
+    expect(result.carried_over).toBe(true);
+  });
+
+  it('returns stored value when carried-over row has expires_at in the future', async () => {
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async (sql, params) => {
+          if (params[1] === 2026) {
+            return [[{
+              shift_vacation_days: 5,
+              carried_over: 1,
+              carried_over_from_year: 2025,
+              expires_at: new Date('2099-03-31'),
+              note: 'Übertrag',
+            }]];
+          }
+          return [[{
+            shift_vacation_days: 5,
+            carried_over: 0,
+            carried_over_from_year: null,
+            expires_at: null,
+            note: null,
+          }]];
+        },
+      ],
+      ['FROM CentralAbsenceEntry', async () => [[], []]],
+    ]);
+    const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, 2026);
+    expect(result.shift_vacation_days).toBe(5);
+    expect(result.carried_over).toBe(true);
+  });
+
+  it('returns effective 0 for non-carried row with expires_at in the past', async () => {
+    const db = createMockDb([
+      [
+        'FROM EmployeeVacationYear',
+        async () => [[{
+          shift_vacation_days: 3,
+          carried_over: 0,
+          carried_over_from_year: null,
+          expires_at: new Date('2025-01-01'),
+          note: 'befristeter Zusatzurlaub',
+        }]],
+      ],
+    ]);
+    const result = await getShiftVacationEntitlement(db, EMPLOYEE_ID, 2026);
+    expect(result.shift_vacation_days).toBe(0);
+    expect(result.note).toBe('befristeter Zusatzurlaub');
   });
 });

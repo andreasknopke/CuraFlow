@@ -1710,7 +1710,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
   // exact same "this year's entitlement" lookup.
   const shiftEntitlement = employeeId
     ? await fetchShiftVacationEntitlement(db, employeeId, currentYear)
-    : { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+    : { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
 
   const shiftVacationDates = absences
     .filter((a) => a.type === 'Schichturlaub' && isWorkday(a.from))
@@ -1731,6 +1731,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
     remaining_shift_vacation: shiftVacationTotal - shiftVacationTaken - shiftVacationPlanned,
     shift_vacation_carried_over: Boolean(shiftEntitlement.carried_over),
     shift_vacation_carried_over_from_year: shiftEntitlement.carried_over_from_year ?? null,
+    shift_vacation_expires_at: shiftEntitlement.expires_at ?? null,
   };
 }
 
@@ -1745,23 +1746,28 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
 async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
   try {
     const [rows] = await masterDb.execute(
-      `SELECT shift_vacation_days, carried_over, carried_over_from_year
+      `SELECT shift_vacation_days, carried_over, carried_over_from_year, expires_at
          FROM EmployeeVacationYear
         WHERE employee_id = ? AND year = ?
         LIMIT 1`,
       [employeeId, year]
     );
     if (rows.length === 0) {
-      return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+      return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
     }
     return {
       shift_vacation_days: Number(rows[0].shift_vacation_days) || 0,
       carried_over: Boolean(rows[0].carried_over),
       carried_over_from_year: rows[0].carried_over_from_year ?? null,
+      expires_at: rows[0].expires_at ? (
+        rows[0].expires_at instanceof Date
+          ? rows[0].expires_at.toISOString().slice(0, 10)
+          : String(rows[0].expires_at).slice(0, 10)
+      ) : null,
     };
   } catch (e) {
     console.warn(`[Master employees] Shift-vacation entitlement lookup failed for ${employeeId}/${year}: ${e.message}`);
-    return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null };
+    return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
   }
 }
 
