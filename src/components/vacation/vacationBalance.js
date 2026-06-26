@@ -160,6 +160,14 @@ export function parseAnnualVacationDays(value) {
  * letting the regular vacation balance go negative. Only when Schichturlaub
  * is also exhausted is the regular vacation allowed to go into overshoot.
  *
+ * **Q1-Verbrauchsregel für übertragenen Schichturlaub:**
+ * Wenn der Schichturlaub aus dem Vorjahr übertragen wurde (`carried_over`)
+ * und am 31.03. verfällt, muss er in den ersten drei Monaten (Jan–Mär)
+ * zuerst verbraucht werden – noch vor dem regulären Urlaub. Dazu wird
+ * der Parameter `consumeShiftVacationFirstInQ1` auf `true` gesetzt.
+ * Für Tage außerhalb des Q1 oder ohne Carry-Over gilt die Standard-
+ * Logik (regulärer Urlaub zuerst).
+ *
  * This helper is PURE: given the current vacation balances and a list of
  * new vacation days to be booked, it returns the position ('Urlaub' or
  * 'Schichturlaub') that each new day should be saved as. The caller
@@ -169,25 +177,25 @@ export function parseAnnualVacationDays(value) {
  * Algorithm:
  *  1. Days are processed chronologically (earliest first) so the
  *     "fallback kicks in" order is stable and matches planner intuition.
- *  2. For each countable day, the regular quota is consumed first. Once
- *     `usedRegular >= regularVacationBalance.total`, subsequent days go
- *     to Schichturlaub until `usedShift >= shiftVacationBalance.total`.
- *  3. Days that would fall through both are saved as 'Urlaub' (overshoot)
- *     so the existing overshoot warning still fires on the regular card.
- *  4. Days already covered by an existing Urlaub/Schichturlaub shift are
- *     left alone (caller filters them out beforehand, but we also guard
- *     here: such days are returned with their existing position so the
- *     caller can skip them).
+ *  2. **Standard (außerhalb Q1 oder ohne Carry-Over):** regulärer Urlaub
+ *     wird zuerst verbraucht, dann Schichturlaub als Fallback.
+ *  3. **Q1-Regel (consumeShiftVacationFirstInQ1):** Für Jan–Mär wird
+ *     zuerst der Schichturlaub verbraucht, dann der reguläre Urlaub.
+ *  4. Tage, die beide Kontingente überschreiten, werden als 'Urlaub'
+ *     (Überziehung) gespeichert, damit die Overshoot-Warnung greift.
+ *  5. Bereits gebuchte Urlaub-/Schichturlaub-Tage werden unverändert
+ *     gelassen (die Prüfung dient als Guard für den Aufrufer).
  *
  * The function does NOT mutate inputs. It uses only the `remaining`
  * fields of the two balances so the live candidate (in-progress drag)
  * is already accounted for by the caller when building the balances.
  *
  * @param {Object} params
- * @param {Array<{date: string}>} params.newDays           `yyyy-MM-dd` strings of the days the planner is booking as Urlaub. Caller should already exclude weekends/public holidays/non-editable days — but this helper tolerates them (they receive 'Urlaub' as a safe default because they don't consume quota anyway).
- * @param {{remaining: number, total: number}} params.regularVacationBalance  Result of `computeVacationBalance({position: 'Urlaub', ...})` *without* the new days counted. `remaining` is the free quota.
- * @param {{remaining: number, total: number}} [params.shiftVacationBalance]  Same shape for 'Schichturlaub'. Optional; if missing, no fallback happens.
- * @param {Object<string, string>} [params.existingByDate]  Map `yyyy-MM-dd` → 'Urlaub' | 'Schichturlaub' of already-booked days (so we don't double-count them).
+ * @param {Array<{date: string}>} params.newDays           `yyyy-MM-dd` strings of the days the planner is booking as Urlaub.
+ * @param {{remaining: number, total: number}} params.regularVacationBalance  Result of `computeVacationBalance({position: 'Urlaub', ...})` *without* the new days counted.
+ * @param {{remaining: number, total: number}} [params.shiftVacationBalance]  Same shape for 'Schichturlaub'. Optional; if missing, no fallback/Q1-rule happens.
+ * @param {Object<string, string>} [params.existingByDate]  Map `yyyy-MM-dd` → 'Urlaub' | 'Schichturlaub' of already-booked days.
+ * @param {boolean} [params.consumeShiftVacationFirstInQ1]  When true, days in Jan–Mär consume Schichturlaub FIRST (Q1-Regel für übertragenen Schichturlaub).
  * @returns {{ positions: Array<'Urlaub'|'Schichturlaub'>, shiftedToSchichturlaub: number, regularOvershoot: number }}
  */
 export function decidePositionsForUrlaubsDays({
@@ -195,6 +203,7 @@ export function decidePositionsForUrlaubsDays({
   regularVacationBalance,
   shiftVacationBalance,
   existingByDate = {},
+  consumeShiftVacationFirstInQ1 = false,
 } = {}) {
   if (!regularVacationBalance) {
     return {
@@ -229,19 +238,41 @@ export function decidePositionsForUrlaubsDays({
       continue;
     }
 
-    // Consume regular quota first.
-    if (regularUsed < regularVacationBalance.total) {
-      regularUsed += 1;
-      positionsByDate[dateStr] = 'Urlaub';
-      continue;
-    }
+    // Check if this day is in Q1 (January-March).
+    const month = dateStr ? parseInt(dateStr.slice(5, 7), 10) : 0;
+    const isQ1 = month >= 1 && month <= 3;
 
-    // Regular quota exhausted → fall back to Schichturlaub when available.
-    if (shiftVacationBalance && shiftUsed < shiftTotal) {
-      shiftUsed += 1;
-      positionsByDate[dateStr] = 'Schichturlaub';
-      shifted += 1;
-      continue;
+    if (consumeShiftVacationFirstInQ1 && isQ1 && shiftVacationBalance) {
+      // Q1-Regel: Schichturlaub zuerst verbrauchen (übertragener
+      // Schichturlaub verfällt am 31.03., muss also zuerst genutzt werden).
+      if (shiftUsed < shiftTotal) {
+        shiftUsed += 1;
+        shifted += 1;
+        positionsByDate[dateStr] = 'Schichturlaub';
+        continue;
+      }
+      // Schichturlaub aufgebraucht → regulären Urlaub verwenden.
+      if (regularUsed < regularVacationBalance.total) {
+        regularUsed += 1;
+        positionsByDate[dateStr] = 'Urlaub';
+        continue;
+      }
+    } else {
+      // Standard-Logik (außerhalb Q1 oder ohne Carry-Over):
+      // regulären Urlaub zuerst verbrauchen.
+      if (regularUsed < regularVacationBalance.total) {
+        regularUsed += 1;
+        positionsByDate[dateStr] = 'Urlaub';
+        continue;
+      }
+
+      // Regular quota exhausted → fall back to Schichturlaub when available.
+      if (shiftVacationBalance && shiftUsed < shiftTotal) {
+        shiftUsed += 1;
+        positionsByDate[dateStr] = 'Schichturlaub';
+        shifted += 1;
+        continue;
+      }
     }
 
     // Both exhausted → book as Urlaub (overshoot). The existing warning

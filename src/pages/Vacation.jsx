@@ -418,6 +418,11 @@ export default function VacationPage() {
    * doctor, which ones should be saved as 'Urlaub' and which as
    * 'Schichturlaub'. See `decidePositionsForUrlaubsDays` for the rule.
    *
+   * Übertragener Schichturlaub (carried_over) verfällt am 31.03. und muss
+   * in Q1 (Jan–Mär) zuerst verbraucht werden – daher wird
+   * `consumeShiftVacationFirstInQ1` aktiviert, wenn der aktuelle
+   * `selectedShiftEntitlement` für diesen Arzt carried_over ist.
+   *
    * Returns the decision object `{ positions, shiftedToSchichturlaub,
    * regularOvershoot }` or `null` if the fallback can't run (no balances).
    */
@@ -430,11 +435,14 @@ export default function VacationPage() {
         existingByDate[s.date] = s.position;
       }
     }
+    const isCarriedOver = selectedShiftEntitlement?.doctorId === doctor.id
+      && selectedShiftEntitlement?.carried_over === true;
     return decidePositionsForUrlaubsDays({
       newDays: dates,
       regularVacationBalance: regular,
       shiftVacationBalance: shift.total > 0 ? shift : null,
       existingByDate,
+      consumeShiftVacationFirstInQ1: isCarriedOver,
     });
   };
 
