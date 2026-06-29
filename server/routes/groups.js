@@ -389,16 +389,16 @@ router.get('/visible-shifts', async (req, res) => {
     if (wpIds.length > 0) {
       const wpPlaceholders = wpIds.map(() => '?').join(',');
       const [tsRows] = await db.execute(
-        `SELECT id, workplace_id, label, start_time, end_time, \`order\`
+        `SELECT id, shared_workplace_id, label, start_time, end_time, \`order\`
            FROM shared_workplace_timeslot
-          WHERE workplace_id IN (${wpPlaceholders})
+          WHERE shared_workplace_id IN (${wpPlaceholders})
           ORDER BY \`order\` ASC`,
         wpIds
       );
       for (const ts of tsRows) {
-        const list = timeslotsByWpId.get(ts.workplace_id) || [];
+        const list = timeslotsByWpId.get(ts.shared_workplace_id) || [];
         list.push({ id: ts.id, label: ts.label, start_time: ts.start_time, end_time: ts.end_time, order: ts.order });
-        timeslotsByWpId.set(ts.workplace_id, list);
+        timeslotsByWpId.set(ts.shared_workplace_id, list);
       }
     }
 
