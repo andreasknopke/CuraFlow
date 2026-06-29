@@ -4627,11 +4627,15 @@ export default function ScheduleBoard() {
 
         // ============================================================
         //  POOL-PLANER (canWrite) — DROPPABLECELL + DRAGGABLE CHIPS
-        //  Exakt wie normale Rotationszellen: gleiche Höhe (60px),
+        //  Exakt wie normale Rotationszellen: gleiche Hoehe (60px),
         //  gleiches Styling, gleiches Drag-Verhalten.
+        //  Zusaetzlich: Bedarfs-Anzeige aus Stations-Mandanten.
         // ============================================================
         if (canWrite) {
             const isOccupied = assignments.length > 0;
+
+            // Sammle offene Bedarfsanforderungen fuer diese Zelle
+            const openDemands = cellDemands.filter((d) => d.status === 'open');
 
             return (
                 <DroppableCell
@@ -4645,72 +4649,80 @@ export default function ScheduleBoard() {
                     baseClassName={baseClassName}
                     baseStyle={baseStyle}
                 >
-                    {() => (
-                        <div className="flex flex-wrap gap-1">
-                            {assignments.map((assignment, idx) => {
-                                const empName = getEmpName(assignment);
-                                const ts = hasTimeslots && assignment.timeslot_id
-                                    ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
-                                    : null;
-                                const timeLabel = ts
-                                    ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
-                                    : null;
-                                const doctor = doctorById.get(assignment.employee_id);
-                                const doctorLike = doctor || { id: assignment.employee_id, name: empName };
-                                const chipLabel = getDoctorChipLabel(doctorLike);
-                                const roleColor = doctor
-                                    ? getRoleColor(doctor.role)
-                                    : { backgroundColor: '#f3f4f6', color: '#1f2937' };
-                                const displayFontSize = effectiveGridFontSize;
+                    {() => assignments.map((assignment, idx) => {
+                        const empName = getEmpName(assignment);
+                        const ts = hasTimeslots && assignment.timeslot_id
+                            ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
+                            : null;
+                        const timeLabel = ts
+                            ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
+                            : null;
+                        const doctor = doctorById.get(assignment.employee_id);
+                        const doctorLike = doctor || { id: assignment.employee_id, name: empName };
+                        const chipLabel = getDoctorChipLabel(doctorLike);
+                        const roleColor = doctor
+                            ? getRoleColor(doctor.role)
+                            : { backgroundColor: '#f3f4f6', color: '#1f2937' };
+                        const displayFontSize = effectiveGridFontSize;
 
-                                return (
-                                    <Draggable
-                                        key={assignment.id}
-                                        draggableId={`rotation-assignment-${assignment.id}`}
-                                        index={idx}
-                                        isDragDisabled={false}
+                        return (
+                            <Draggable
+                                key={assignment.id}
+                                draggableId={`rotation-assignment-${assignment.id}`}
+                                index={idx}
+                                isDragDisabled={false}
+                            >
+                                {(provided) => (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            setRotationAssignmentDialog({
+                                                open: true, workplace, date: dateStr,
+                                                assignment, timeslotId: assignment.timeslot_id || null,
+                                            });
+                                        }}
+                                        className="relative flex items-center justify-center rounded-md font-bold border shadow-sm transition-colors select-none cursor-grab active:cursor-grabbing"
+                                        style={{
+                                            backgroundColor: roleColor.backgroundColor,
+                                            color: roleColor.color,
+                                            width: `${shiftBoxSize}px`,
+                                            height: `${shiftBoxSize}px`,
+                                            fontSize: `${displayFontSize}px`,
+                                        }}
+                                        title={empName}
                                     >
-                                        {(provided) => (
-                                            <div
-                                                ref={provided.innerRef}
-                                                {...provided.draggableProps}
-                                                {...provided.dragHandleProps}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setRotationAssignmentDialog({
-                                                        open: true, workplace, date: dateStr,
-                                                        assignment, timeslotId: assignment.timeslot_id || null,
-                                                    });
-                                                }}
-                                                className="relative flex items-center justify-center rounded-md font-bold border shadow-sm transition-colors select-none cursor-grab active:cursor-grabbing"
-                                                style={{
-                                                    backgroundColor: roleColor.backgroundColor,
-                                                    color: roleColor.color,
-                                                    width: `${shiftBoxSize}px`,
-                                                    height: `${shiftBoxSize}px`,
-                                                    fontSize: `${displayFontSize}px`,
-                                                }}
-                                                title={empName}
-                                            >
-                                                <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
-                                                <div className="flex flex-col items-center justify-center w-full relative z-10">
-                                                    <span className="px-0.5 leading-none text-center whitespace-nowrap" style={{ fontSize: `${displayFontSize}px` }}>
-                                                        {chipLabel}
-                                                    </span>
-                                                    {timeLabel && (
-                                                        <span className="leading-none text-center whitespace-nowrap opacity-60"
-                                                              style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}>
-                                                            {timeLabel}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </Draggable>
-                                );
-                            })}
-                        </div>
-                    )}
+                                        <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
+                                        <div className="flex flex-col items-center justify-center w-full relative z-10">
+                                            <span className="px-0.5 leading-none text-center whitespace-nowrap" style={{ fontSize: `${displayFontSize}px` }}>
+                                                {chipLabel}
+                                            </span>
+                                            {timeLabel && (
+                                                <span className="leading-none text-center whitespace-nowrap opacity-60"
+                                                      style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}>
+                                                    {timeLabel}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </Draggable>
+                        );
+                    }).concat(openDemands.map((demand) => {
+                        const tsLabel = demand.timeslot_label || (demand.timeslot_id
+                            ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                            : null);
+                        return (
+                            <div key={`demand-${demand.id}`}
+                                 className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 font-medium"
+                                 title={`Bedarf von Station: ${demand.note || ''}`.trim()}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                                {tsLabel ? `Bedarf ${tsLabel}` : 'Bedarf'}
+                            </div>
+                        );
+                    }))}
                 </DroppableCell>
             );
         }
