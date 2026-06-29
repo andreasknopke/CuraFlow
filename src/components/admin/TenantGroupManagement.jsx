@@ -16,7 +16,9 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import SharedTimeslotEditor from '@/components/admin/SharedTimeslotEditor';
 import SharedWorkplaceQualificationsDialog from '@/components/admin/SharedWorkplaceQualificationsDialog';
 import { SERVICE_TYPES } from '@/components/settings/serviceTypes';
-import { Building2, Clock, Globe2, Loader2, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { createPageUrl } from '@/utils';
+import { AlertCircle, Building2, CheckCircle2, Clock, ExternalLink, Globe2, Loader2, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 
 const DEFAULT_GROUP_FORM = {
     name: '',
@@ -143,6 +145,26 @@ export default function TenantGroupManagement() {
         const memberIds = new Set(members.map((member) => String(member.tenant_id)));
         return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
     }, [members, tenants]);
+
+    const { data: demandsResponse, isLoading: demandsLoading } = useQuery({
+        queryKey: ['admin', 'ward-demands'],
+        queryFn: () => api.getWardDemands(),
+        staleTime: 15_000,
+    });
+
+    const groupDemands = useMemo(() => {
+        if (!Array.isArray(demandsResponse?.demands)) return [];
+        return demandsResponse.demands.filter((d) => Number(d.group_id) === selectedGroupId);
+    }, [demandsResponse, selectedGroupId]);
+
+    const openDemandsCount = useMemo(() => groupDemands.filter((d) => d.status === 'open').length, [groupDemands]);
+    const fulfilledDemandsCount = useMemo(() => groupDemands.filter((d) => d.status === 'fulfilled').length, [groupDemands]);
+    const recentOpenDemands = useMemo(() => {
+        return groupDemands
+            .filter((d) => d.status === 'open')
+            .sort((a, b) => new Date(b.created_at || b.date) - new Date(a.created_at || a.date))
+            .slice(0, 10);
+    }, [groupDemands]);
 
     const invalidateGroups = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'tenant-groups'] });
@@ -623,6 +645,7 @@ export default function TenantGroupManagement() {
                                                         {workplace.allows_rotation_concurrently ? <Badge variant="secondary" className="bg-green-100 text-[10px] font-normal text-green-700">Rotation OK</Badge> : null}
                                                         {workplace.allows_absence_overlap ? <Badge variant="secondary" className="bg-violet-100 text-[10px] font-normal text-violet-700">Abwesenheit OK</Badge> : null}
                                                         {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
+                                                        {<Badge variant="secondary" className="bg-orange-100 text-[10px] font-normal text-orange-700">Bedarf</Badge>}
                                                         {workplace.allows_multiple ? <Badge variant="secondary" className="bg-teal-100 text-[10px] font-normal text-teal-700">Mehrfachbesetzung</Badge> : null}
                                                         {workplace.allows_multiple && (workplace.min_staff > 0 || workplace.optimal_staff > 1) ? (
                                                             <Badge variant="secondary" className="bg-amber-100 text-[10px] font-normal text-amber-700">
@@ -668,6 +691,88 @@ export default function TenantGroupManagement() {
                                         ))}
                                     </TableBody>
                                 </Table>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <AlertCircle className="h-5 w-5 text-orange-600" />
+                                Bedarfsanmeldung (Springerpool)
+                            </CardTitle>
+                            <CardDescription>
+                                {selectedGroup ? `Offene Bedarfe und Status für ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            {!selectedGroup ? (
+                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
+                            ) : demandsLoading ? (
+                                <div className="flex items-center justify-center py-6 text-sm text-slate-500">
+                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Bedarfe …
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="flex flex-wrap gap-3">
+                                        <div className="rounded-lg border bg-orange-50 p-3 min-w-[120px]">
+                                            <div className="text-2xl font-bold text-orange-700">{openDemandsCount}</div>
+                                            <div className="text-xs text-orange-600">Offen</div>
+                                        </div>
+                                        <div className="rounded-lg border bg-green-50 p-3 min-w-[120px]">
+                                            <div className="text-2xl font-bold text-green-700">{fulfilledDemandsCount}</div>
+                                            <div className="text-xs text-green-600">Erfüllt</div>
+                                        </div>
+                                    </div>
+
+                                    {recentOpenDemands.length > 0 ? (
+                                        <div>
+                                            <h4 className="mb-2 text-sm font-medium text-slate-700">Aktuelle offene Bedarfe</h4>
+                                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                {recentOpenDemands.map((demand) => (
+                                                    <div key={demand.id} className="flex items-center justify-between rounded border bg-white p-2 text-sm">
+                                                        <div>
+                                                            <span className="font-medium">{demand.workplace_name}</span>
+                                                            <span className="mx-1 text-slate-400">·</span>
+                                                            <span className="text-slate-600">{demand.date}</span>
+                                                            {demand.timeslot_label ? (
+                                                                <>
+                                                                    <span className="mx-1 text-slate-400">·</span>
+                                                                    <span className="text-slate-600">{demand.timeslot_label}</span>
+                                                                </>
+                                                            ) : null}
+                                                        </div>
+                                                        {demand.ward_tenant_name ? (
+                                                            <Badge variant="outline" className="text-[10px]">{demand.ward_tenant_name}</Badge>
+                                                        ) : null}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="rounded-lg border border-dashed p-3 text-sm text-slate-500">
+                                            {openDemandsCount === 0 && groupDemands.length === 0
+                                                ? 'Noch keine Bedarfe für diesen Verbund. Stations-Mitarbeiter können im Dienstplan auf eine Springerpool-Zelle klicken, um Bedarf anzumelden.'
+                                                : 'Alle Bedarfe wurden erfüllt oder storniert.'}
+                                        </div>
+                                    )}
+
+                                    <div className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 space-y-1">
+                                        <p><strong>So funktioniert's:</strong></p>
+                                        <ol className="list-decimal pl-4 space-y-0.5">
+                                            <li>Stations-Mitarbeiter sehen die gemeinsamen Dienste als <strong>read-only Zeilen</strong> im Dienstplan.</li>
+                                            <li>Per Klick auf eine Zelle können sie <strong>Bedarf anmelden</strong> (mit optionaler Notiz).</li>
+                                            <li>Der Springerpool-Planer sieht offene Bedarfe in Echtzeit und kann <strong>Rotationen zuweisen</strong>.</li>
+                                            <li>Nach der Zuweisung wird der Bedarf automatisch als <strong>erfüllt</strong> markiert.</li>
+                                        </ol>
+                                        <Link
+                                            to={createPageUrl('Schedule')}
+                                            className="mt-2 inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 underline font-medium"
+                                        >
+                                            <ExternalLink className="h-3 w-3" /> Zum Dienstplan
+                                        </Link>
+                                    </div>
+                                </div>
                             )}
                         </CardContent>
                     </Card>
