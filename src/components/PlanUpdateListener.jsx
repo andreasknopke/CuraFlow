@@ -186,32 +186,6 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
 
     eventSource.addEventListener('plan-update', handlePlanUpdate);
     eventSource.addEventListener('cowork-update', handleCoworkUpdate);
-
-    const handleWardDemand = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        console.info('[PlanUpdateListener] Ward-Demand-Event empfangen', payload);
-
-        // Invalidate ward-demands query
-        queryClient.invalidateQueries({ queryKey: ['pool', 'ward-demands'] });
-
-        // Also invalidate visible-shifts since demands appear there too
-        queryClient.invalidateQueries({ queryKey: ['pool', 'visible-shifts'] });
-
-        // Show toast if there's a demand payload
-        if (payload?.payload?.demand) {
-          const d = payload.payload.demand;
-          toast.info(`Neuer Springer-Bedarf: ${d.workplace_name || ''} am ${d.date || ''}`, {
-            id: 'ward-demand-notification',
-            duration: 6000,
-          });
-        }
-      } catch (error) {
-        console.warn('[PlanUpdateListener] Konnte Ward-Demand-Event nicht verarbeiten:', error);
-      }
-    };
-
-    eventSource.addEventListener('pool-ward-demand', handleWardDemand);
     eventSource.addEventListener('connected', () => {
       console.info('[PlanUpdateListener] Realtime-Verbindung aktiv');
     });

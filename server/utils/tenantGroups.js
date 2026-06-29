@@ -181,21 +181,3 @@ export function canWriteShiftInGroup(ctx, groupId) {
   if (ctx.isMasterAdmin) return true;
   return Array.isArray(ctx.adminGroups) && ctx.adminGroups.includes(Number(groupId));
 }
-
-/**
- * Get user IDs of all group admins for a given group (users whose
- * group_admin_groups includes the group, or role = 'admin').
- * Used for realtime event targeting (e.g. notify pool schedulers).
- */
-export async function getGroupAdminUserIds(masterDb, groupId) {
-  const [rows] = await masterDb.execute(
-    `SELECT id FROM app_users
-      WHERE is_active = 1
-        AND (
-          role = 'admin'
-          OR JSON_CONTAINS(group_admin_groups, ?)
-        )`,
-    [JSON.stringify(String(groupId))]
-  );
-  return rows.map((r) => r.id);
-}

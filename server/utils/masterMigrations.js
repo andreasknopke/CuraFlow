@@ -670,54 +670,6 @@ export async function runMasterMigrations(dbPool) {
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
-  // ===== PHASE: Cross-Tenant Springerpool Rotationen =====
-
-  await run('add_shared_shift_entry_timeslot_id', async () => {
-    const changed = await addColumnIfMissing('shared_shift_entry', 'timeslot_id', 'VARCHAR(36) DEFAULT NULL');
-    if (changed) {
-      // Add index for the new column
-      const [idxRows] = await dbPool.execute(
-        `SELECT COUNT(*) AS cnt FROM information_schema.STATISTICS
-          WHERE TABLE_SCHEMA = DATABASE()
-            AND TABLE_NAME = 'shared_shift_entry'
-            AND INDEX_NAME = 'idx_sse_workplace_date_timeslot'`
-      );
-      if (Number(idxRows[0]?.cnt || 0) === 0) {
-        await dbPool.execute(
-          'CREATE INDEX idx_sse_workplace_date_timeslot ON shared_shift_entry (shared_workplace_id, date, timeslot_id)'
-        );
-      }
-    }
-    return changed || SKIPPED;
-  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
-
-  await run('create_pool_ward_demand_table', async () => {
-    await dbPool.execute(`
-      CREATE TABLE IF NOT EXISTS pool_ward_demand (
-        id VARCHAR(36) PRIMARY KEY,
-        shared_workplace_id VARCHAR(36) NOT NULL,
-        group_id INT NOT NULL,
-        ward_tenant_id VARCHAR(36) NOT NULL,
-        date DATE NOT NULL,
-        timeslot_id VARCHAR(36) DEFAULT NULL,
-        note TEXT DEFAULT NULL,
-        status VARCHAR(32) NOT NULL DEFAULT 'open',
-        fulfilled_by_shift_id VARCHAR(36) DEFAULT NULL,
-        created_by VARCHAR(255) DEFAULT NULL,
-        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
-        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-        INDEX idx_demand_status (status),
-        INDEX idx_demand_workplace_date (shared_workplace_id, date),
-        INDEX idx_demand_ward (ward_tenant_id, date),
-        INDEX idx_demand_fulfilled (fulfilled_by_shift_id),
-        CONSTRAINT fk_demand_workplace FOREIGN KEY (shared_workplace_id)
-          REFERENCES shared_workplace(id) ON DELETE CASCADE,
-        CONSTRAINT fk_demand_group FOREIGN KEY (group_id)
-          REFERENCES tenant_group(id) ON DELETE CASCADE
-      ) ${fkTableSuffix}
-    `);
-  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
-
   // ===== PHASE: Pay Scale Tariffs (Tarifverträge) =====
 
   await run('create_pay_scale_tariff_table', async () => {
