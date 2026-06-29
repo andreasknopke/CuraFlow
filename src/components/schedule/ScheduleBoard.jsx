@@ -3223,9 +3223,11 @@ export default function ScheduleBoard() {
         const destDate = parts[2];
         if (!wpId || !destDate) return;
 
-        // Resolve doctor from available doctor drag or shift drag
+        // Resolve doctor from sidebar, available, or shift drag
         let doctorId = null;
-        if (normalizedDraggableId.startsWith('available-doc-')) {
+        if (normalizedDraggableId.startsWith('sidebar-doc-')) {
+            doctorId = normalizedDraggableId.replace('sidebar-doc-', '');
+        } else if (normalizedDraggableId.startsWith('available-doc-')) {
             doctorId = parseAvailableDoctorId(normalizedDraggableId);
         } else if (normalizedDraggableId.startsWith('shift-')) {
             const shift = currentWeekShifts.find(s => s.id === normalizedDraggableId.replace('shift-', ''));
@@ -4496,10 +4498,11 @@ export default function ScheduleBoard() {
     //  Springerpool-Rotationen — Zellen-Rendering
     // ================================================================
     // Zwei Modi:
-    //   Pool-Planer (canWrite=true)  → wie normale Rotation: chips mit Zeit,
-    //                                   Timeslot-Pills, Droppable, Plus-Button
-    //   Stations-Ansicht (canWrite=false) → Timeslot-Sub-Zeilen, chips OHNE
-    //                                   Zeit, Bedarfs-Anmeldung per Klick
+    //   Pool-Planer (canWrite=true)  → EXAKT wie normale Rotationen:
+    //                                   Droppable, grüner Hintergrund,
+    //                                   Chips mit getDoctorChipLabel,
+    //                                   Zeit im Chip + Timeslot-Dialog
+    //   Station (canWrite=false)      → Timeslot-Sub-Zeilen mit Bedarf
     // ================================================================
 
     const formatRotationTime = (timeStr) => {
@@ -4516,7 +4519,6 @@ export default function ScheduleBoard() {
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
         const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
 
-        // Helper: resolve employee name from backend response
         const getEmpName = (a) => a.employee_name || `#${a.employee_id}`;
 
         // Collect demands for this cell
@@ -4538,47 +4540,31 @@ export default function ScheduleBoard() {
         };
 
         // ============================================================
-        //  POOL-PLANER (canWrite) — wie normale Rotation
+        //  POOL-PLANER (canWrite) — EXAKT wie normale Rotation
+        //  - grüner Zellen-Hintergrund wie DroppableCell
+        //  - Chips mit DraggableShift-Styling + getDoctorChipLabel
+        //  - Zeitlabel auf dem Chip bei Timeslots
+        //  - Droppable für Drag aus Verfügbar/Sidebar
         // ============================================================
         if (canWrite) {
-            // Timeslot-Pills für schnelle Zuweisung
-            const tsPills = hasTimeslots ? (
-                <div className="flex gap-0.5 mb-1 border-b border-teal-100 pb-1">
-                    {workplace.timeslots.map((ts) => {
-                        const tsCount = assignments.filter((a) => String(a.timeslot_id || '') === String(ts.id)).length;
-                        return (
-                            <button
-                                key={ts.id}
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRotationAssignmentDialog({
-                                        open: true, workplace, date: dateStr,
-                                        assignment: null, timeslotId: ts.id,
-                                    });
-                                }}
-                                className="flex-1 text-[8px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded py-0.5 px-1 truncate transition-colors"
-                                title={`${ts.label} (${tsCount}) — Klicken zum Zuweisen`}
-                            >
-                                {ts.label}
-                                {tsCount > 0 && <span className="ml-0.5 text-teal-500">·{tsCount}</span>}
-                            </button>
-                        );
-                    })}
-                </div>
-            ) : null;
+            const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
+            const isOccupied = assignments.length > 0;
 
-            // Alle Chips in einem Flow — jeder mit Zeitlabel
-            const chips = assignments.length > 0 ? (
-                <div className="flex flex-wrap gap-0.5">
+            const chipContent = assignments.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
                     {assignments.map((assignment) => {
                         const empName = getEmpName(assignment);
                         const ts = hasTimeslots && assignment.timeslot_id
                             ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
                             : null;
-                        const timeDisplay = ts
+                        const timeLabel = ts
                             ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
                             : null;
+                        // Look up doctor for getDoctorChipLabel
+                        const doctor = doctorById.get(assignment.employee_id);
+                        const doctorLike = doctor || { id: assignment.employee_id, name: empName };
+                        const chipLabel = getDoctorChipLabel(doctorLike);
+
                         return (
                             <button
                                 key={assignment.id}
@@ -4590,48 +4576,44 @@ export default function ScheduleBoard() {
                                         assignment, timeslotId: assignment.timeslot_id || null,
                                     });
                                 }}
-                                className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded border max-w-[120px] truncate bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
+                                className="text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
                                 title={empName}
                             >
-                                {timeDisplay && (
-                                    <span className="font-medium text-teal-600 shrink-0">{timeDisplay}</span>
+                                {timeLabel && (
+                                    <span className="font-medium mr-0.5">{timeLabel}</span>
                                 )}
-                                <span className="truncate">{empName}</span>
+                                {chipLabel}
                             </button>
                         );
                     })}
                 </div>
-            ) : null;
-
-            // Plus-Button für leere Zelle
-            const addButton = (
-                <div
-                    className="flex items-center justify-center gap-1 text-[10px] text-teal-400 hover:text-teal-600 border border-dashed border-teal-200 hover:border-teal-400 rounded py-1 mt-0.5 cursor-pointer transition-colors"
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        setRotationAssignmentDialog({
-                            open: true, workplace, date: dateStr,
-                            assignment: null, timeslotId: null,
-                        });
-                    }}
-                >
+            ) : (
+                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 pointer-events-none">
                     <Plus className="w-3 h-3" />
-                    <span>Springer</span>
-                </div>
+                </span>
             );
 
-            const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
             return (
                 <Droppable droppableId={droppableId} isDropDisabled={false}>
                     {(provided, snapshot) => (
                         <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`min-h-[40px] p-1 transition-colors ${snapshot.isDraggingOver ? 'bg-teal-100/50 ring-2 ring-teal-400 ring-inset rounded' : ''}`}
+                            className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${
+                                snapshot.isDraggingOver
+                                    ? 'bg-green-100'
+                                    : isOccupied ? '' : 'bg-green-50'
+                            }`}
+                            onClick={() => {
+                                if (assignments.length === 0) {
+                                    setRotationAssignmentDialog({
+                                        open: true, workplace, date: dateStr,
+                                        assignment: null, timeslotId: null,
+                                    });
+                                }
+                            }}
                         >
-                            {tsPills}
-                            {chips}
-                            {chips === null && assignments.length === 0 && addButton}
+                            {chipContent}
                             {provided.placeholder}
                         </div>
                     )}
