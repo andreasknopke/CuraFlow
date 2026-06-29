@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { db, base44 } from "@/api/client";
+import { db, api } from "@/api/client";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -168,20 +168,15 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     // --- Mutations ---
     const updateEntryMutation = useMutation({
         mutationFn: async ({ doctor_id, month, value, oldValue, statusStartDay, statusEndDay }) => {
-            // Use atomic backend function
-            const response = await base44.functions.invoke('atomicOperations', {
-                operation: 'upsertStaffing',
-                data: {
-                    doctor_id,
-                    year,
-                    month,
-                    value,
-                    old_value_check: oldValue,
-                    status_start_day: statusStartDay,
-                    status_end_day: statusEndDay,
-                }
+            return api.upsertStaffing({
+                doctor_id,
+                year,
+                month,
+                value,
+                old_value_check: oldValue,
+                status_start_day: statusStartDay,
+                status_end_day: statusEndDay,
             });
-            return response.data;
         },
         onSuccess: () => queryClient.invalidateQueries(["staffingPlanEntries", year]),
         onError: (err) => {

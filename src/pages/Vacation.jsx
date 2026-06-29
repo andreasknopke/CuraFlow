@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { format, getYear, startOfYear, endOfYear, eachDayOfInterval } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, RotateCcw, Wand2 } from 'lucide-react';
@@ -456,14 +456,7 @@ export default function VacationPage() {
 
   const createShiftMutation = useMutation({
     mutationFn: async (data) => {
-        // Use atomic checkAndCreate
-        const response = await base44.functions.invoke('atomicOperations', {
-            operation: 'checkAndCreate',
-            entity: 'ShiftEntry',
-            data: data,
-            check: { uniqueKeys: ['date', 'doctor_id'] }
-        });
-        return response.data;
+        return api.checkAndCreate('ShiftEntry', data, { uniqueKeys: ['date', 'doctor_id'] });
     },
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['shifts', selectedYear] });
@@ -831,14 +824,8 @@ export default function VacationPage() {
              }
          }
          
-         // Optimistic Update via atomicOperations
-         base44.functions.invoke('atomicOperations', {
-             operation: 'checkAndUpdate',
-             entity: 'ShiftEntry',
-             id: first.id,
-             data: { position: newPosition },
-             check: { updated_date: first.updated_date }
-         }).then(() => {
+         // Optimistic Update
+         api.checkAndUpdate('ShiftEntry', first.id, { position: newPosition }, { updated_date: first.updated_date }).then(() => {
              queryClient.invalidateQueries({ queryKey: ['shifts'] });
          }).catch(err => {
              alert("Fehler beim Aktualisieren: " + (err.response?.data?.message || err.message));
