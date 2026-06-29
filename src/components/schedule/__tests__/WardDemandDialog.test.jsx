@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-// @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

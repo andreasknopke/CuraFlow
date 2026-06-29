@@ -39,6 +39,11 @@ export default function WardDemandDialog({
     const [note, setNote] = useState(existingDemand?.note || '');
     const [error, setError] = useState(null);
 
+    // Guard: render nothing until workplace is provided.
+    // Hooks are still called unconditionally (React rule of hooks);
+    // only the JSX return is skipped.
+    if (!workplace) return null;
+
     const mode = existingDemand
         ? (existingDemand.status === 'open' ? 'cancel' : 'fulfilled')
         : 'create';
