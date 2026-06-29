@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   parseAllowedRotationGroups,
   parseRotationAdminGroups,
@@ -89,5 +92,48 @@ describe('canWriteRotationGroup', () => {
 
   it('denies write when ctx is null', () => {
     expect(canWriteRotationGroup(null, 1)).toBe(false);
+  });
+});
+
+// Express matches routes in registration order. A param route like /:groupId
+// would shadow any single-segment named route (e.g. /visible-rotations, /demands)
+// registered after it. This test guards against that regression by checking
+// the source file line order (importing the router in unit tests fails due
+// to the express dependency not being resolvable from the root).
+describe('rotations router route ordering', () => {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const source = readFileSync(
+    join(__dirname, '..', 'routes', 'rotations.js'),
+    'utf-8'
+  );
+  const lines = source.split('\n');
+
+  function firstLineMatching(pattern) {
+    const idx = lines.findIndex((l) => pattern.test(l));
+    return idx; // 0-based, -1 if not found
+  }
+
+  it('registers GET /visible-rotations before GET /:groupId', () => {
+    const visibleLine = firstLineMatching(/router\.get\(['"]\/visible-rotations['"]/);
+    const groupIdLine = firstLineMatching(/router\.get\(['"]\/:groupId['"]/);
+    expect(visibleLine).toBeGreaterThanOrEqual(0);
+    expect(groupIdLine).toBeGreaterThanOrEqual(0);
+    expect(visibleLine).toBeLessThan(groupIdLine);
+  });
+
+  it('registers POST /demands before GET /:groupId', () => {
+    const demandsPostLine = firstLineMatching(/router\.post\(['"]\/demands['"]/);
+    const groupIdLine = firstLineMatching(/router\.get\(['"]\/:groupId['"]/);
+    expect(demandsPostLine).toBeGreaterThanOrEqual(0);
+    expect(groupIdLine).toBeGreaterThanOrEqual(0);
+    expect(demandsPostLine).toBeLessThan(groupIdLine);
+  });
+
+  it('registers GET /demands before GET /:groupId', () => {
+    const demandsGetLine = firstLineMatching(/router\.get\(['"]\/demands['"]/);
+    const groupIdLine = firstLineMatching(/router\.get\(['"]\/:groupId['"]/);
+    expect(demandsGetLine).toBeGreaterThanOrEqual(0);
+    expect(groupIdLine).toBeGreaterThanOrEqual(0);
+    expect(demandsGetLine).toBeLessThan(groupIdLine);
   });
 });

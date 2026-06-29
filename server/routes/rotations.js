@@ -104,58 +104,9 @@ router.post('/', adminMiddleware, async (req, res) => {
   }
 });
 
-// GET /:groupId
-router.get('/:groupId', async (req, res) => {
-  try {
-    const ctx = await loadCtx(req, res);
-    if (!ctx) return;
-    const group = await requireRotationGroupReadAccess(db, ctx, req.params.groupId);
-    res.json({ group });
-  } catch (err) {
-    handleError(res, err);
-  }
-});
-
-// PATCH /:groupId (master admin only)
-router.patch('/:groupId', adminMiddleware, async (req, res) => {
-  try {
-    const { name, description, is_active } = req.body || {};
-    const fields = [];
-    const values = [];
-    if (name !== undefined) {
-      if (!String(name).trim()) return res.status(400).json({ error: 'Name darf nicht leer sein' });
-      fields.push('name = ?');
-      values.push(String(name).trim());
-    }
-    if (description !== undefined) {
-      fields.push('description = ?');
-      values.push(description?.trim() || null);
-    }
-    if (is_active !== undefined) {
-      fields.push('is_active = ?');
-      values.push(Boolean(is_active) ? 1 : 0);
-    }
-    if (fields.length === 0) return res.status(400).json({ error: 'Keine Änderungen' });
-    values.push(req.params.groupId);
-    await db.execute(`UPDATE rotation_group SET ${fields.join(', ')} WHERE id = ?`, values);
-    res.json({ success: true });
-  } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ error: 'Name bereits vergeben' });
-    }
-    handleError(res, err);
-  }
-});
-
-// DELETE /:groupId (master admin only)
-router.delete('/:groupId', adminMiddleware, async (req, res) => {
-  try {
-    await db.execute('DELETE FROM rotation_group WHERE id = ?', [req.params.groupId]);
-    res.status(204).end();
-  } catch (err) {
-    handleError(res, err);
-  }
-});
+// NOTE: GET/PATCH/DELETE /:groupId are registered at the END of this file
+// to avoid shadowing named routes like /visible-rotations and /demands.
+// Express matches routes in registration order, so /:groupId must come last.
 
 // ============================================================
 //  MEMBERS (master admin only)
@@ -939,5 +890,63 @@ function canReadRotationGroupForDemand(ctx, groupId) {
   if (list === null) return true; // no explicit allow list → membership suffices
   return Array.isArray(list) && list.includes(Number(groupId));
 }
+
+// ============================================================
+//  GROUP CRUD — registered LAST to avoid shadowing named routes
+//  like /visible-rotations and /demands (Express matches in order).
+// ============================================================
+
+// GET /:groupId
+router.get('/:groupId', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+    const group = await requireRotationGroupReadAccess(db, ctx, req.params.groupId);
+    res.json({ group });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// PATCH /:groupId (master admin only)
+router.patch('/:groupId', adminMiddleware, async (req, res) => {
+  try {
+    const { name, description, is_active } = req.body || {};
+    const fields = [];
+    const values = [];
+    if (name !== undefined) {
+      if (!String(name).trim()) return res.status(400).json({ error: 'Name darf nicht leer sein' });
+      fields.push('name = ?');
+      values.push(String(name).trim());
+    }
+    if (description !== undefined) {
+      fields.push('description = ?');
+      values.push(description?.trim() || null);
+    }
+    if (is_active !== undefined) {
+      fields.push('is_active = ?');
+      values.push(Boolean(is_active) ? 1 : 0);
+    }
+    if (fields.length === 0) return res.status(400).json({ error: 'Keine Änderungen' });
+    values.push(req.params.groupId);
+    await db.execute(`UPDATE rotation_group SET ${fields.join(', ')} WHERE id = ?`, values);
+    res.json({ success: true });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Name bereits vergeben' });
+    }
+    handleError(res, err);
+  }
+});
+
+// DELETE /:groupId (master admin only)
+router.delete('/:groupId', adminMiddleware, async (req, res) => {
+  try {
+    await db.execute('DELETE FROM rotation_group WHERE id = ?', [req.params.groupId]);
+    res.status(204).end();
+  } catch (err) {
+    handleError(res, err);
+  }
+});
 
 export default router;
