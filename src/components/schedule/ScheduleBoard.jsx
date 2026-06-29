@@ -3213,9 +3213,31 @@ export default function ScheduleBoard() {
     const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;
 
     // ============================================================
-    //  ROTATION CELL DROP HANDLING (Pool-Rotationen)
-    //  Detect drops on rotation cells and open assignment dialog
-    //  with the dragged employee pre-selected.
+    //  ROTATION ASSIGNMENT DRAG-OUT (Pool-Rotationen)
+    //  Detect rotation-assignment-* dragged to trash or available.
+    // ============================================================
+    if (normalizedDraggableId.startsWith('rotation-assignment-')) {
+        const assignmentId = normalizedDraggableId.replace('rotation-assignment-', '');
+        const assignment = rotationAssignments.find((a) => String(a.id) === String(assignmentId));
+        if (!assignment) return;
+
+        // Dropped outside or to Verfügbar/sidebar/trash → delete
+        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar') || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
+            try {
+                await api.deleteRotationAssignment(assignment.group_id, assignmentId);
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                toast.success('Einteilung entfernt');
+            } catch (err) {
+                toast.error('Fehler beim Entfernen: ' + (err?.message || ''));
+            }
+        }
+        return;
+    }
+
+    // ============================================================
+    //  ROTATION CELL DROP (Pool-Rotationen)
+    //  Timeslot-Auswahl wie bei normalen Rotationen.
     // ============================================================
     if (destinationDroppableId && destinationDroppableId.startsWith('rotationCell__')) {
         const parts = destinationDroppableId.split('__');
@@ -3240,15 +3262,44 @@ export default function ScheduleBoard() {
         const wp = rotationWorkplaces.find(w => String(w.id) === String(wpId));
         if (!wp) return;
 
-        // Open assignment dialog with employee pre-selected
-        setRotationAssignmentDialog({
-            open: true,
-            workplace: wp,
-            date: destDate,
-            assignment: null,
-            timeslotId: null,
-            defaultEmployeeId: doctorId,
-        });
+        const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
+
+        // Build callback for timeslot selection (or direct creation)
+        const doCreate = (timeslotId) => {
+            api.createRotationAssignment(wp.group_id, {
+                rotation_workplace_id: wp.id,
+                date: destDate,
+                employee_id: doctorId,
+                timeslot_id: timeslotId || null,
+            }).then(() => {
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                toast.success('Springer eingeteilt');
+            }).catch((err) => {
+                toast.error('Fehler: ' + (err?.message || ''));
+            });
+        };
+
+        if (hasTimeslots) {
+            const options = wp.timeslots.map((ts) => ({
+                id: ts.id,
+                label: ts.label,
+                start_time: ts.start_time,
+                end_time: ts.end_time,
+                canCustomize: false,
+            }));
+            pendingTimeslotSelectionRef.current = doCreate;
+            setTimeslotSelectionDialog({
+                open: true,
+                workplaceName: wp.name,
+                description: `${wp.name} am ${format(new Date(destDate + 'T00:00:00'), 'dd.MM.yyyy')} hat mehrere Zeitfenster.`,
+                options,
+                allowCustomEditing: false,
+                customEndMinutesByOptionId: {},
+            });
+        } else {
+            doCreate(null);
+        }
         return;
     }
 
@@ -4541,10 +4592,10 @@ export default function ScheduleBoard() {
 
         // ============================================================
         //  POOL-PLANER (canWrite) — EXAKT wie normale Rotation
-        //  - grüner Zellen-Hintergrund wie DroppableCell
-        //  - Chips mit DraggableShift-Styling + getDoctorChipLabel
-        //  - Zeitlabel auf dem Chip bei Timeslots
-        //  - Droppable für Drag aus Verfügbar/Sidebar
+        //  - Droppable + Draggable Chips
+        //  - Chips: Zeitlabel + getDoctorChipLabel
+        //  - Klick öffnet AssignmentDialog (edit)
+        //  - Drag zu Verfügbar/Sidebar = löschen
         // ============================================================
         if (canWrite) {
             const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
@@ -4552,7 +4603,7 @@ export default function ScheduleBoard() {
 
             const chipContent = assignments.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
-                    {assignments.map((assignment) => {
+                    {assignments.map((assignment, idx) => {
                         const empName = getEmpName(assignment);
                         const ts = hasTimeslots && assignment.timeslot_id
                             ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
@@ -4560,30 +4611,41 @@ export default function ScheduleBoard() {
                         const timeLabel = ts
                             ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
                             : null;
-                        // Look up doctor for getDoctorChipLabel
                         const doctor = doctorById.get(assignment.employee_id);
                         const doctorLike = doctor || { id: assignment.employee_id, name: empName };
                         const chipLabel = getDoctorChipLabel(doctorLike);
 
                         return (
-                            <button
+                            <Draggable
                                 key={assignment.id}
-                                type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setRotationAssignmentDialog({
-                                        open: true, workplace, date: dateStr,
-                                        assignment, timeslotId: assignment.timeslot_id || null,
-                                    });
-                                }}
-                                className="text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
-                                title={empName}
+                                draggableId={`rotation-assignment-${assignment.id}`}
+                                index={idx}
+                                isDragDisabled={false}
                             >
-                                {timeLabel && (
-                                    <span className="font-medium mr-0.5">{timeLabel}</span>
+                                {(provided) => (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setRotationAssignmentDialog({
+                                                open: true, workplace, date: dateStr,
+                                                assignment, timeslotId: assignment.timeslot_id || null,
+                                            });
+                                        }}
+                                        className="inline-flex flex-col items-center text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none cursor-pointer bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
+                                        title={empName}
+                                    >
+                                        {timeLabel && (
+                                            <span className="text-[8px] font-medium text-teal-600 leading-tight whitespace-nowrap">
+                                                {timeLabel}
+                                            </span>
+                                        )}
+                                        <span className="truncate w-full text-center">{chipLabel}</span>
+                                    </div>
                                 )}
-                                {chipLabel}
-                            </button>
+                            </Draggable>
                         );
                     })}
                 </div>
