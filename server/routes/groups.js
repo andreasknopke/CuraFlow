@@ -24,6 +24,7 @@ import {
   resolveTenantIdFromToken,
   loadVisibleGroupIdsForTenant,
   canWriteShiftInGroup,
+  getGroupAdminUserIds,
 } from '../utils/tenantGroups.js';
 import { validateProposedShift } from '../utils/poolConstraints.js';
 import {
@@ -36,6 +37,14 @@ import {
   ensureCentralWishTables,
   CENTRAL_WISH_WRITABLE_COLUMNS,
 } from '../utils/centralWishes.js';
+import {
+  ensurePoolWardDemandTables,
+  POOL_WARD_DEMAND_WRITABLE_COLUMNS,
+  assertNoOpenDemandForCell,
+  markDemandFulfilledForCell,
+  reopenDemandOnShiftDelete,
+} from '../utils/poolWardDemand.js';
+import { broadcastUserEvent } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -366,13 +375,33 @@ router.get('/visible-shifts', async (req, res) => {
     const [workplaceRows] = await db.execute(
       `SELECT id, group_id, name, category, start_time, end_time, affects_availability,
               allows_rotation_concurrently, auto_off,
-              min_staff, optimal_staff
+              min_staff, optimal_staff, timeslots_enabled
          FROM shared_workplace
         WHERE group_id IN (${placeholders})
           AND is_active = 1
         ORDER BY name ASC`,
       accessibleGroupIds
     );
+
+    // Load timeslots for workplaces that have them enabled
+    const wpIds = workplaceRows.map((r) => r.id);
+    let timeslotsByWpId = new Map();
+    if (wpIds.length > 0) {
+      const wpPlaceholders = wpIds.map(() => '?').join(',');
+      const [tsRows] = await db.execute(
+        `SELECT id, workplace_id, label, start_time, end_time, \`order\`
+           FROM shared_workplace_timeslot
+          WHERE workplace_id IN (${wpPlaceholders})
+          ORDER BY \`order\` ASC`,
+        wpIds
+      );
+      for (const ts of tsRows) {
+        const list = timeslotsByWpId.get(ts.workplace_id) || [];
+        list.push({ id: ts.id, label: ts.label, start_time: ts.start_time, end_time: ts.end_time, order: ts.order });
+        timeslotsByWpId.set(ts.workplace_id, list);
+      }
+    }
+
     const workplaces = workplaceRows.map((r) => ({
       id: r.id,
       group_id: Number(r.group_id),
@@ -385,6 +414,8 @@ router.get('/visible-shifts', async (req, res) => {
       auto_off: Boolean(r.auto_off),
       min_staff: r.min_staff,
       optimal_staff: r.optimal_staff,
+      timeslots_enabled: Boolean(r.timeslots_enabled),
+      timeslots: timeslotsByWpId.get(r.id) || [],
       canWrite: canWriteShiftInGroup(ctx, r.group_id),
     }));
 
@@ -445,9 +476,58 @@ router.get('/visible-shifts', async (req, res) => {
       };
     });
 
+    // Load demands for the active tenant's ward context
+    let demands = [];
+    try {
+      await ensurePoolWardDemandTables(db);
+      const demandConditions = [`d.group_id IN (${accessibleGroupIds.map(() => '?').join(',')})`];
+      const demandParams = [...accessibleGroupIds];
+
+      // Tenant users see only their own demands; group admins see all
+      const canWriteAny = accessibleGroupIds.some((gid) => canWriteShiftInGroup(ctx, gid));
+      if (!canWriteAny) {
+        demandConditions.push('d.ward_tenant_id = ?');
+        demandParams.push(activeTenantId);
+      }
+
+      if (dateFilter.length > 0) {
+        // Reuse dateFilter which is already AND-joined
+        if (from) { demandConditions.push('d.date >= ?'); demandParams.push(from); }
+        if (to) { demandConditions.push('d.date <= ?'); demandParams.push(to); }
+      }
+
+      const [demandRows] = await db.execute(
+        `SELECT d.id, d.shared_workplace_id, d.ward_tenant_id, d.date,
+                d.timeslot_id, d.note, d.status, d.fulfilled_by_shift_id,
+                w.name AS workplace_name, ts.label AS timeslot_label
+           FROM pool_ward_demand d
+           JOIN shared_workplace w ON w.id = d.shared_workplace_id
+           LEFT JOIN shared_workplace_timeslot ts ON ts.id = d.timeslot_id
+          WHERE ${demandConditions.join(' AND ')}
+          ORDER BY d.date ASC`,
+        demandParams
+      );
+
+      demands = demandRows.map((r) => ({
+        id: String(r.id),
+        shared_workplace_id: String(r.shared_workplace_id),
+        ward_tenant_id: String(r.ward_tenant_id),
+        date: r.date ? String(r.date).slice(0, 10) : null,
+        timeslot_id: r.timeslot_id ? String(r.timeslot_id) : null,
+        note: r.note || null,
+        status: r.status,
+        fulfilled_by_shift_id: r.fulfilled_by_shift_id ? String(r.fulfilled_by_shift_id) : null,
+        workplace_name: r.workplace_name,
+        timeslot_label: r.timeslot_label || null,
+      }));
+    } catch (demandErr) {
+      console.error('[visible-shifts] load demands error:', demandErr.message);
+    }
+
     res.json({
       shifts,
       workplaces,
+      demands,
       tenantId: activeTenantId,
       groupIds: accessibleGroupIds,
     });
@@ -1023,6 +1103,278 @@ router.delete('/central-wishes/:id', async (req, res) => {
 
     await db.execute('DELETE FROM CentralWishRequest WHERE id = ?', [String(req.params.id)]);
     res.status(204).end();
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// ============ POOL WARD DEMAND (Springerpool Bedarf) ============
+//
+// Ward staff on a department tenant can register demand for a float-pool
+// nurse on a specific date+timeslot. The pool scheduler sees open demands
+// and fulfils them by assigning a shared_shift_entry to that cell, which
+// auto-transitions the demand to "fulfilled".
+//
+// Permission model:
+//   - CREATE: tenant user (authMiddleware + own tenant check)
+//   - READ: tenant user sees own demands; group admin sees all for group
+//   - PATCH (cancel): own tenant or group admin
+//   - Fullfilment/rejection: group admin only (via PATCH with { status })
+
+// Helper: resolve the shared_workplace's group_id and verify it exists.
+async function resolveWorkplaceGroup(sharedWorkplaceId) {
+  const [rows] = await db.execute(
+    'SELECT id, group_id FROM shared_workplace WHERE id = ? AND is_active = 1 LIMIT 1',
+    [String(sharedWorkplaceId)]
+  );
+  if (rows.length === 0) {
+    throw createHttpError(404, 'Springerpool-Station nicht gefunden');
+  }
+  return { workplaceId: rows[0].id, groupId: Number(rows[0].group_id) };
+}
+
+// POST /ward-demands
+// Create a new ward demand. The caller's active tenant (x-db-token) is used
+// as ward_tenant_id — ward staff can only create demand for their own tenant.
+router.post('/ward-demands', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    if (!activeTenantId) {
+      return res.status(400).json({ error: 'Kein aktiver Mandant (x-db-token fehlt)' });
+    }
+
+    const body = req.body || {};
+    const { shared_workplace_id, date, timeslot_id, note } = body;
+
+    if (!shared_workplace_id) {
+      return res.status(400).json({ error: 'shared_workplace_id ist erforderlich' });
+    }
+    if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
+    }
+
+    await ensurePoolWardDemandTables(db);
+
+    // Resolve workplace and group
+    const { groupId } = await resolveWorkplaceGroup(shared_workplace_id);
+
+    // Check no duplicate open demand
+    await assertNoOpenDemandForCell(db, {
+      sharedWorkplaceId: shared_workplace_id,
+      wardTenantId: activeTenantId,
+      date,
+      timeslotId: timeslot_id || null,
+    });
+
+    const id = crypto.randomUUID();
+    const row = {
+      id,
+      shared_workplace_id: String(shared_workplace_id),
+      group_id: groupId,
+      ward_tenant_id: activeTenantId,
+      date,
+      timeslot_id: timeslot_id || null,
+      note: note || null,
+      status: 'open',
+      fulfilled_by_shift_id: null,
+      created_by: req.user?.sub || null,
+    };
+
+    const columns = Object.keys(row);
+    const values = columns.map((k) => row[k]);
+    const colList = columns.join(', ');
+    const placeholders = columns.map(() => '?').join(', ');
+
+    await db.execute(
+      `INSERT INTO pool_ward_demand (${colList}) VALUES (${placeholders})`,
+      values
+    );
+
+    // Notify group admins via realtime
+    try {
+      const adminUserIds = await getGroupAdminUserIds(db, groupId);
+      if (adminUserIds.length > 0) {
+        broadcastUserEvent({
+          eventName: 'pool-ward-demand',
+          payload: { demand: row, groupId },
+          userIds: adminUserIds,
+        });
+      }
+    } catch (realtimeErr) {
+      console.error('[ward-demands] broadcastUserEvent error:', realtimeErr.message);
+    }
+
+    res.status(201).json({ demand: row });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// GET /ward-demands?from=&to=&status=
+// Returns demands scoped to the caller's context:
+//   - Group admin: all demands for accessible groups
+//   - Tenant user: demands where ward_tenant_id = active tenant
+router.get('/ward-demands', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    if (!activeTenantId) return res.json({ demands: [] });
+
+    const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
+    if (accessibleGroupIds.length === 0) return res.json({ demands: [] });
+
+    await ensurePoolWardDemandTables(db);
+
+    const { from, to, status } = req.query;
+    const conditions = [`d.group_id IN (${accessibleGroupIds.map(() => '?').join(',')})`];
+    const params = [...accessibleGroupIds];
+
+    // Group admins see all demands for their groups; tenant users see only own
+    const canWriteAny = accessibleGroupIds.some((gid) => canWriteShiftInGroup(ctx, gid));
+    if (!canWriteAny) {
+      conditions.push('d.ward_tenant_id = ?');
+      params.push(activeTenantId);
+    }
+
+    if (from) { conditions.push('d.date >= ?'); params.push(from); }
+    if (to) { conditions.push('d.date <= ?'); params.push(to); }
+    if (status) { conditions.push('d.status = ?'); params.push(status); }
+
+    const [rows] = await db.execute(
+      `SELECT d.id,
+              d.shared_workplace_id,
+              d.group_id,
+              d.ward_tenant_id,
+              d.date,
+              d.timeslot_id,
+              d.note,
+              d.status,
+              d.fulfilled_by_shift_id,
+              d.created_by,
+              d.created_at,
+              d.updated_at,
+              w.name AS workplace_name,
+              t.name AS ward_tenant_name,
+              ts.label AS timeslot_label,
+              s.employee_id AS fulfilled_employee_id,
+              e.first_name AS fulfilled_employee_first,
+              e.last_name AS fulfilled_employee_last
+         FROM pool_ward_demand d
+         JOIN shared_workplace w ON w.id = d.shared_workplace_id
+         JOIN db_tokens t ON t.id = d.ward_tenant_id
+         LEFT JOIN shared_workplace_timeslot ts ON ts.id = d.timeslot_id
+         LEFT JOIN shared_shift_entry s ON s.id = d.fulfilled_by_shift_id
+         LEFT JOIN Employee e ON e.id COLLATE utf8mb4_general_ci = s.employee_id COLLATE utf8mb4_general_ci
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY d.date ASC, w.name ASC`,
+      params
+    );
+
+    const demands = rows.map((r) => ({
+      id: String(r.id),
+      shared_workplace_id: String(r.shared_workplace_id),
+      group_id: Number(r.group_id),
+      ward_tenant_id: String(r.ward_tenant_id),
+      date: r.date ? String(r.date).slice(0, 10) : null,
+      timeslot_id: r.timeslot_id ? String(r.timeslot_id) : null,
+      note: r.note || null,
+      status: r.status,
+      fulfilled_by_shift_id: r.fulfilled_by_shift_id ? String(r.fulfilled_by_shift_id) : null,
+      created_by: r.created_by || null,
+      created_at: r.created_at || null,
+      updated_at: r.updated_at || null,
+      workplace_name: r.workplace_name,
+      ward_tenant_name: r.ward_tenant_name,
+      timeslot_label: r.timeslot_label || null,
+      fulfilled_employee_name: r.fulfilled_employee_first
+        ? [r.fulfilled_employee_first, r.fulfilled_employee_last].filter(Boolean).join(' ')
+        : null,
+      canManage: canWriteShiftInGroup(ctx, r.group_id),
+    }));
+
+    res.json({ demands });
+  } catch (err) {
+    handleError(res, err);
+  }
+});
+
+// PATCH /ward-demands/:id
+// Update demand status. Ward staff can cancel (open → cancelled) for own
+// tenant. Group admins can fulfil/reject any demand in their group.
+router.patch('/ward-demands/:id', async (req, res) => {
+  try {
+    const ctx = await loadCtx(req, res);
+    if (!ctx) return;
+
+    await ensurePoolWardDemandTables(db);
+
+    const [existing] = await db.execute(
+      'SELECT id, shared_workplace_id, group_id, ward_tenant_id, status FROM pool_ward_demand WHERE id = ? LIMIT 1',
+      [String(req.params.id)]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Bedarf nicht gefunden' });
+    }
+    const current = existing[0];
+
+    const body = req.body || {};
+    const { status: newStatus, note } = body;
+
+    if (!newStatus && note === undefined) {
+      return res.status(400).json({ error: 'Status oder Notiz erforderlich' });
+    }
+
+    const validTransitions = {
+      open: ['cancelled', 'fulfilled'],
+      fulfilled: ['cancelled'],
+      cancelled: [],
+    };
+
+    // Determine write permission based on the transition
+    const isGroupAdmin = canWriteShiftInGroup(ctx, Number(current.group_id));
+    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    const isOwnTenant = activeTenantId && String(activeTenantId) === String(current.ward_tenant_id);
+
+    if (newStatus) {
+      if (!validTransitions[current.status]?.includes(newStatus)) {
+        return res.status(422).json({
+          error: `Ungültiger Status-Übergang: ${current.status} → ${newStatus}`,
+        });
+      }
+
+      if (newStatus === 'cancelled' && !isGroupAdmin && !isOwnTenant) {
+        return res.status(403).json({ error: 'Nur der anfordernde Mandant oder Gruppen-Admin kann Bedarf stornieren' });
+      }
+
+      if (newStatus === 'fulfilled' && !isGroupAdmin) {
+        return res.status(403).json({ error: 'Nur Gruppen-Admins können Bedarf als erfüllt markieren' });
+      }
+    }
+
+    const fields = ['status = ?', 'updated_at = NOW()'];
+    const vals = [newStatus || current.status];
+    if (note !== undefined) { fields.push('note = ?'); vals.push(note); }
+    vals.push(String(req.params.id));
+
+    await db.execute(
+      `UPDATE pool_ward_demand SET ${fields.join(', ')} WHERE id = ?`,
+      vals
+    );
+
+    const [rows] = await db.execute(
+      `SELECT d.*, w.name AS workplace_name, t.name AS ward_tenant_name
+         FROM pool_ward_demand d
+         JOIN shared_workplace w ON w.id = d.shared_workplace_id
+         JOIN db_tokens t ON t.id = d.ward_tenant_id
+        WHERE d.id = ? LIMIT 1`,
+      [String(req.params.id)]
+    );
+    res.json({ demand: rows[0] });
   } catch (err) {
     handleError(res, err);
   }
@@ -1933,12 +2285,28 @@ router.post('/:groupId/shifts', async (req, res) => {
       autoFreiDate: tenantRuleResult.autoFreiDate,
       tenantShifts: tenantRuleContext.tenantShifts,
     });
+
+    // Auto-fulfil any open ward demand for this cell
+    let fulfilledDemandId = null;
+    try {
+      fulfilledDemandId = await markDemandFulfilledForCell(db, {
+        sharedWorkplaceId: shared_workplace_id,
+        wardTenantId: billing_tenant_id,
+        date,
+        timeslotId: req.body.timeslot_id || null,
+        shiftId: id,
+      });
+    } catch (demandErr) {
+      console.error('[shifts] markDemandFulfilledForCell error:', demandErr.message);
+    }
+
     res.status(201).json({
       id,
       warnings: [
         ...violations.filter((v) => !hardRules.has(v.rule)),
         ...tenantRuleResult.warnings,
       ],
+      ...(fulfilledDemandId ? { fulfilled_demand_id: fulfilledDemandId } : {}),
     });
   } catch (err) {
     handleError(res, err);
@@ -1950,7 +2318,7 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireGroupWriteAccess(ctx, req.params.groupId);
-    const allowed = ['date', 'employee_id', 'billing_tenant_id', 'start_time', 'end_time', 'note'];
+    const allowed = ['date', 'employee_id', 'billing_tenant_id', 'start_time', 'end_time', 'note', 'timeslot_id'];
     const fields = [];
     const values = [];
     for (const key of allowed) {
@@ -2042,6 +2410,22 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
       autoFreiDate: tenantRuleResult.autoFreiDate,
       tenantShifts: tenantRuleContext.tenantShifts,
     });
+
+    // Auto-fulfil any open ward demand for the (possibly updated) cell
+    const nextWpId = currentShift.shared_workplace_id
+      || req.body.shared_workplace_id;
+    try {
+      await markDemandFulfilledForCell(db, {
+        sharedWorkplaceId: nextWpId,
+        wardTenantId: nextState.billing_tenant_id,
+        date: nextState.date,
+        timeslotId: nextState.timeslot_id || null,
+        shiftId: req.params.shiftId,
+      });
+    } catch (demandErr) {
+      console.error('[shifts patch] markDemandFulfilledForCell error:', demandErr.message);
+    }
+
     res.json({
       success: true,
       warnings: [
@@ -2076,6 +2460,17 @@ router.delete('/:groupId/shifts/:shiftId', async (req, res) => {
       [req.params.shiftId, req.params.groupId]
     );
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
+
+    // Reopen any demand that was fulfilled by this shift
+    try {
+      const reopenedCount = await reopenDemandOnShiftDelete(db, req.params.shiftId);
+      if (reopenedCount > 0) {
+        console.log(`[shifts delete] Reopened ${reopenedCount} demand(s) for deleted shift ${req.params.shiftId}`);
+      }
+    } catch (demandErr) {
+      console.error('[shifts delete] reopenDemandOnShiftDelete error:', demandErr.message);
+    }
+
     res.status(204).end();
   } catch (err) {
     handleError(res, err);

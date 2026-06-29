@@ -13,7 +13,8 @@ describe('invalidatePoolShiftQueries', () => {
 
     expect(invalidateQueries).toHaveBeenCalledTimes(POOL_SHIFT_REFRESH_QUERY_KEYS.length);
     expect(invalidateQueries).toHaveBeenNthCalledWith(1, { queryKey: ['pool', 'visible-shifts'] });
-    expect(invalidateQueries).toHaveBeenNthCalledWith(2, { queryKey: ['pool', 'schedule'] });
-    expect(invalidateQueries).toHaveBeenNthCalledWith(3, { queryKey: ['shifts'] });
+    expect(invalidateQueries).toHaveBeenNthCalledWith(2, { queryKey: ['pool', 'ward-demands'] });
+    expect(invalidateQueries).toHaveBeenNthCalledWith(3, { queryKey: ['pool', 'schedule'] });
+    expect(invalidateQueries).toHaveBeenNthCalledWith(4, { queryKey: ['shifts'] });
   });
 });

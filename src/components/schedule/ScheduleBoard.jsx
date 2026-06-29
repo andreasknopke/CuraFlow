@@ -37,6 +37,7 @@ import DraggableDoctor from './DraggableDoctor';
 import DraggableShift from './DraggableShift';
 import DroppableCell from './DroppableCell';
 import PoolShiftEditDialog from './PoolShiftEditDialog';
+import WardDemandDialog from './WardDemandDialog';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { generateSuggestions } from './autoFillEngine';
 import AutoFillSettingsDialog from './AutoFillSettingsDialog';
@@ -1072,6 +1073,7 @@ export default function ScheduleBoard() {
     });
 
     const visiblePoolShifts = visiblePoolData?.shifts || [];
+    const visiblePoolDemands = visiblePoolData?.demands || [];
     const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
 
     // Map shifts by `${shared_workplace_id}|${date}` for fast cell lookup.
@@ -1086,8 +1088,25 @@ export default function ScheduleBoard() {
         return map;
     }, [visiblePoolShifts]);
 
+    // Map demands by `${shared_workplace_id}|${date}|${timeslot_id}` for cell overlay.
+    const demandsByCell = useMemo(() => {
+        const map = new Map();
+        for (const demand of visiblePoolDemands) {
+            const key = `${demand.shared_workplace_id}|${String(demand.date).slice(0, 10)}|${demand.timeslot_id || ''}`;
+            map.set(key, demand);
+        }
+        return map;
+    }, [visiblePoolDemands]);
+
     // Local state for the cross-tenant edit dialog launched from the board cells.
     const [poolEditDialog, setPoolEditDialog] = useState({ open: false, workplace: null, date: null, shift: null });
+    const [demandDialog, setDemandDialog] = useState({
+        open: false,
+        workplace: null,
+        date: null,
+        timeslot: null,
+        existingDemand: null,
+    });
     const pendingTimeslotSelectionRef = useRef(null);
     const [timeslotSelectionDialog, setTimeslotSelectionDialog] = useState({
         open: false,
@@ -4339,18 +4358,126 @@ export default function ScheduleBoard() {
 
     // Renders the cell content for a cross-tenant (group/pool) workplace row.
     // The row itself is NOT a drop target; the user clicks to open the
-    // PoolShiftEditDialog. Existing shifts are rendered as simple chips.
+    // PoolShiftEditDialog (for writers) or WardDemandDialog (for readers).
+    // Existing shifts are rendered as simple chips.
+    // Demands are shown as small badges (open=orange, fulfilled=green).
     const renderCrossTenantCell = (workplace, dateStr) => {
         const shifts = crossTenantShiftsByCell.get(`${workplace.id}|${dateStr}`) || [];
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
+
+        // Helper: open demand dialog for this cell+timeslot
+        const openDemandFor = (timeslot = null) => {
+            const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
+            const existing = demandsByCell.get(demandKey);
+            setDemandDialog({
+                open: true,
+                workplace,
+                date: dateStr,
+                timeslot,
+                existingDemand: existing || null,
+            });
+        };
+
+        // Collect demands for this cell
+        const cellDemands = [];
+        for (const [key, demand] of demandsByCell) {
+            const [wpId, dDate] = key.split('|');
+            if (wpId === workplace.id && dDate === dateStr) {
+                cellDemands.push(demand);
+            }
+        }
+
+        // Group shifts and demands by timeslot for workplaces with timeslots
+        const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
+
+        if (hasTimeslots) {
+            return (
+                <div className="min-h-[40px] flex flex-col gap-0.5 p-0.5">
+                    {workplace.timeslots.map((ts) => {
+                        const tsShifts = shifts.filter((s) =>
+                            String(s.timeslot_id || '') === String(ts.id)
+                        );
+                        const tsDemand = cellDemands.find((d) =>
+                            String(d.timeslot_id || '') === String(ts.id)
+                        );
+                        const isCovered = tsShifts.length > 0;
+                        const demandStatus = tsDemand?.status;
+                        return (
+                            <div
+                                key={ts.id}
+                                className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors ${
+                                    canWrite
+                                        ? 'cursor-pointer hover:bg-indigo-50/40'
+                                        : 'cursor-pointer hover:bg-amber-50/40'
+                                } ${isCovered ? 'bg-indigo-50/30' : ''}`}
+                                onClick={() => {
+                                    if (canWrite) {
+                                        openPoolEditDialog(workplace, dateStr, null);
+                                    } else {
+                                        openDemandFor(ts);
+                                    }
+                                }}
+                                title={`${ts.label}${tsDemand ? ` · ${tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
+                            >
+                                {/* Timeslot label */}
+                                <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">
+                                    {ts.label}
+                                </span>
+                                {/* Shift chips */}
+                                <div className="flex flex-1 flex-wrap gap-0.5">
+                                    {tsShifts.map((shift) => (
+                                        <span
+                                            key={shift.id}
+                                            className={`inline-block px-1 py-0.5 rounded border max-w-[100px] truncate ${
+                                                shift.belongs_to_active_tenant
+                                                    ? 'bg-indigo-100 border-indigo-200 text-indigo-800'
+                                                    : 'bg-slate-100 border-slate-200 text-slate-700'
+                                            }`}
+                                            title={shift.employee_name}
+                                        >
+                                            {shift.employee_name}
+                                        </span>
+                                    ))}
+                                </div>
+                                {/* Demand badge */}
+                                {demandStatus === 'open' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block"
+                                        title="Bedarf offen" />
+                                )}
+                                {demandStatus === 'fulfilled' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block"
+                                        title="Bedarf erfüllt" />
+                                )}
+                                {!isCovered && !tsDemand && !canWrite && (
+                                    <span className="text-[9px] text-amber-500 shrink-0">
+                                        +Bedarf
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // Simple (non-timeslot) cell
+        const demand = cellDemands[0]; // Only one demand for full-day cell
         return (
             <div
-                className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${canWrite ? 'cursor-pointer hover:bg-indigo-50/40' : ''}`}
+                className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${
+                    canWrite
+                        ? 'cursor-pointer hover:bg-indigo-50/40'
+                        : demand?.status !== 'fulfilled'
+                            ? 'cursor-pointer hover:bg-amber-50/40'
+                            : ''
+                }`}
                 onClick={(e) => {
-                    if (!canWrite) return;
-                    // Only open "create" when clicking empty area
-                    if (e.target === e.currentTarget) {
+                    // Only handle clicks on the container, not on chips
+                    if (e.target !== e.currentTarget) return;
+                    if (canWrite) {
                         openPoolEditDialog(workplace, dateStr, null);
+                    } else {
+                        openDemandFor(null);
                     }
                 }}
             >
@@ -4370,10 +4497,26 @@ export default function ScheduleBoard() {
                     </button>
                 ))}
                 {canWrite && shifts.length === 0 && (
-                    <span
-                        className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 pointer-events-none"
-                    >
+                    <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 pointer-events-none">
                         <Plus className="w-3 h-3" />
+                    </span>
+                )}
+                {/* Demand badge */}
+                {demand?.status === 'open' && (
+                    <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                        Bedarf offen
+                    </span>
+                )}
+                {demand?.status === 'fulfilled' && (
+                    <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        Erfüllt
+                    </span>
+                )}
+                {!canWrite && !demand && (
+                    <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5 pointer-events-none">
+                        +Bedarf
                     </span>
                 )}
             </div>
@@ -6176,6 +6319,16 @@ export default function ScheduleBoard() {
         date={poolEditDialog.date}
         shift={poolEditDialog.shift}
         busyEmployeeIds={poolEditDialog.date ? (busyCentralIdsByDate[poolEditDialog.date] || new Set()) : new Set()}
+      />
+
+      {/* Ward demand dialog for requesting float-pool nurses */}
+      <WardDemandDialog
+        open={demandDialog.open}
+        onOpenChange={(open) => setDemandDialog((prev) => ({ ...prev, open }))}
+        workplace={demandDialog.workplace}
+        dateStr={demandDialog.date}
+        timeslot={demandDialog.timeslot}
+        existingDemand={demandDialog.existingDemand}
       />
     </div>
   );

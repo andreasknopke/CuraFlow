@@ -1,5 +1,6 @@
 export const POOL_SHIFT_REFRESH_QUERY_KEYS = [
   ['pool', 'visible-shifts'],
+  ['pool', 'ward-demands'],
   ['pool', 'schedule'],
   ['shifts'],
 ];

@@ -399,6 +399,30 @@ class APIClient {
     });
   }
 
+  // Ward demands (Springerpool Bedarf)
+  async getWardDemands({ from, to, status } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (status) params.set('status', status);
+    const qs = params.toString();
+    return this.request(`/api/groups/ward-demands${qs ? `?${qs}` : ''}`);
+  }
+
+  async createWardDemand(data) {
+    return this.request('/api/groups/ward-demands', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWardDemand(id, data) {
+    return this.request(`/api/groups/ward-demands/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   async listGroups() {
     return this.request('/api/groups');
   }
