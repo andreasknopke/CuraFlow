@@ -4672,42 +4672,77 @@ export default function ScheduleBoard() {
                                 index={idx}
                                 isDragDisabled={false}
                             >
-                                {(provided) => (
-                                    <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                        onDoubleClick={(e) => {
-                                            e.stopPropagation();
-                                            setRotationAssignmentDialog({
-                                                open: true, workplace, date: dateStr,
-                                                assignment, timeslotId: assignment.timeslot_id || null,
-                                            });
-                                        }}
-                                        className="relative flex items-center justify-center rounded-md font-bold border shadow-sm transition-colors select-none cursor-grab active:cursor-grabbing"
-                                        style={{
-                                            backgroundColor: roleColor.backgroundColor,
-                                            color: roleColor.color,
-                                            width: `${shiftBoxSize}px`,
-                                            height: `${shiftBoxSize}px`,
-                                            fontSize: `${displayFontSize}px`,
-                                        }}
-                                        title={empName}
-                                    >
-                                        <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
-                                        <div className="flex flex-col items-center justify-center w-full relative z-10">
-                                            <span className="px-0.5 leading-none text-center whitespace-nowrap" style={{ fontSize: `${displayFontSize}px` }}>
-                                                {chipLabel}
-                                            </span>
-                                            {timeLabel && (
-                                                <span className="leading-none text-center whitespace-nowrap opacity-60"
-                                                      style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}>
-                                                    {timeLabel}
-                                                </span>
+                                {(provided, snapshot) => {
+                                    const isDragging = snapshot.isDragging;
+                                    // Beim Drag: transparenter Container, der die dnd-transform uebernimmt.
+                                    // Der sichtbare Chip wird als Kind gerendert (wie DraggableShift).
+                                    const containerStyle = isDragging ? {
+                                        ...provided.draggableProps.style,
+                                        backgroundColor: 'transparent',
+                                        border: 'none',
+                                        boxShadow: 'none',
+                                        zIndex: 9999,
+                                        width: `${shiftBoxSize}px`,
+                                        height: `${shiftBoxSize}px`,
+                                    } : {
+                                        ...provided.draggableProps.style,
+                                        backgroundColor: roleColor.backgroundColor,
+                                        color: roleColor.color,
+                                        width: `${shiftBoxSize}px`,
+                                        height: `${shiftBoxSize}px`,
+                                        fontSize: `${displayFontSize}px`,
+                                    };
+                                    const containerClass = isDragging
+                                        ? 'flex items-center justify-center'
+                                        : 'relative flex items-center justify-center rounded-md font-bold border shadow-sm transition-colors select-none cursor-grab active:cursor-grabbing';
+                                    return (
+                                        <div
+                                            ref={provided.innerRef}
+                                            {...provided.draggableProps}
+                                            {...provided.dragHandleProps}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                setRotationAssignmentDialog({
+                                                    open: true, workplace, date: dateStr,
+                                                    assignment, timeslotId: assignment.timeslot_id || null,
+                                                });
+                                            }}
+                                            className={containerClass}
+                                            style={containerStyle}
+                                            title={empName}
+                                        >
+                                            {isDragging ? (
+                                                <div
+                                                    className="relative flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
+                                                    style={{
+                                                        backgroundColor: roleColor.backgroundColor,
+                                                        color: roleColor.color,
+                                                        width: `${shiftBoxSize}px`,
+                                                        height: `${shiftBoxSize}px`,
+                                                        fontSize: `${displayFontSize}px`,
+                                                    }}
+                                                >
+                                                    <span className="whitespace-nowrap leading-none">{chipLabel}</span>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
+                                                    <div className="flex flex-col items-center justify-center w-full relative z-10">
+                                                        <span className="px-0.5 leading-none text-center whitespace-nowrap" style={{ fontSize: `${displayFontSize}px` }}>
+                                                            {chipLabel}
+                                                        </span>
+                                                        {timeLabel && (
+                                                            <span className="leading-none text-center whitespace-nowrap opacity-60"
+                                                                  style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}>
+                                                                {timeLabel}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </>
                                             )}
                                         </div>
-                                    </div>
-                                )}
+                                    );
+                                }}
                             </Draggable>
                         );
                     }).concat(openDemands.map((demand) => {
