@@ -485,7 +485,7 @@ router.get('/visible-rotations', async (req, res) => {
       name: r.name,
       timeslots_enabled: Boolean(r.timeslots_enabled),
       timeslots: timeslotsByWpId.get(r.id) || [],
-      canWrite: canWriteRotationGroup(ctx, Number(r.group_id)),
+      canWrite: poolGroupIds.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
     }));
 
     // Load assignments for these workplaces in date range
@@ -493,12 +493,11 @@ router.get('/visible-rotations', async (req, res) => {
     if (wpIds.length > 0) {
       const wpPlaceholders = wpIds.map(() => '?').join(',');
       const [aRows] = await db.execute(
-        `SELECT a.id, a.rotation_workplace_id, a.date, a.employee_id, a.timeslot_id,
-                a.note, w.name AS workplace_name, w.group_id,
-                e.first_name, e.last_name
+        `SELECT a.id, a.rotation_workplace_id, a.date, a.employee_id,
+                a.employee_name, a.timeslot_id, a.note,
+                w.name AS workplace_name, w.group_id
            FROM rotation_assignment a
            JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
-           LEFT JOIN Employee e ON e.id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
           WHERE a.rotation_workplace_id IN (${wpPlaceholders})
             ${dateWhere}
           ORDER BY a.date ASC, w.name ASC`,
@@ -510,11 +509,11 @@ router.get('/visible-rotations', async (req, res) => {
         group_id: Number(r.group_id),
         date: r.date ? String(r.date).slice(0, 10) : null,
         employee_id: r.employee_id,
-        employee_name: [r.first_name, r.last_name].filter(Boolean).join(' ') || `#${r.employee_id}`,
+        employee_name: r.employee_name || `#${r.employee_id}`,
         timeslot_id: r.timeslot_id ? String(r.timeslot_id) : null,
         note: r.note || null,
         workplace_name: r.workplace_name,
-        canWrite: canWriteRotationGroup(ctx, Number(r.group_id)),
+        canManage: poolGroupIds.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
       }));
     }
 
@@ -579,7 +578,7 @@ router.post('/:groupId/assignments', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireRotationGroupWriteAccess(ctx, req.params.groupId);
-    const { rotation_workplace_id, date, employee_id, timeslot_id, note } = req.body || {};
+    const { rotation_workplace_id, date, employee_id, employee_name, timeslot_id, note } = req.body || {};
     if (!rotation_workplace_id) return res.status(400).json({ error: 'rotation_workplace_id ist erforderlich' });
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
     if (!employee_id) return res.status(400).json({ error: 'employee_id ist erforderlich' });
@@ -593,9 +592,10 @@ router.post('/:groupId/assignments', async (req, res) => {
 
     const id = crypto.randomUUID();
     await db.execute(
-      `INSERT INTO rotation_assignment (id, rotation_workplace_id, date, employee_id, timeslot_id, note, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rotation_assignment (id, rotation_workplace_id, date, employee_id, employee_name, timeslot_id, note, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, String(rotation_workplace_id), date, String(employee_id),
+       employee_name || null,
        timeslot_id ? String(timeslot_id) : null, note || null,
        req.user?.email || req.user?.sub || null]
     );
@@ -628,7 +628,7 @@ router.patch('/:groupId/assignments/:assignmentId', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireRotationGroupWriteAccess(ctx, req.params.groupId);
-    const allowed = ['date', 'employee_id', 'timeslot_id', 'note'];
+    const allowed = ['date', 'employee_id', 'employee_name', 'timeslot_id', 'note'];
     const fields = [];
     const values = [];
     for (const key of allowed) {
@@ -780,9 +780,17 @@ router.get('/demands', async (req, res) => {
     const conditions = [`d.group_id IN (${accessibleGroupIds.map(() => '?').join(',')})`];
     const params = [...accessibleGroupIds];
 
-    // Pool admins see all demands for their groups; ward users see only own
-    const canWriteAny = accessibleGroupIds.some((gid) => canWriteRotationGroup(ctx, gid));
-    if (!canWriteAny) {
+    // Determine if active tenant is pool tenant in any accessible group
+    const [poolRows] = await db.execute(
+      `SELECT DISTINCT group_id FROM rotation_group_member
+        WHERE tenant_id = ? AND role = 'pool' AND group_id IN (${accessibleGroupIds.map(() => '?').join(',')})`,
+      [activeTenantId, ...accessibleGroupIds]
+    );
+    const poolGroupIdsDemands = new Set(poolRows.map((r) => Number(r.group_id)));
+    const isPoolForAny = poolGroupIdsDemands.size > 0;
+
+    // Pool tenants see all demands; ward users see only own
+    if (!isPoolForAny) {
       conditions.push('d.ward_tenant_id = ?');
       params.push(activeTenantId);
     }
@@ -795,14 +803,11 @@ router.get('/demands', async (req, res) => {
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
-              a.employee_id AS fulfilled_employee_id,
-              e.first_name AS fulfilled_employee_first,
-              e.last_name AS fulfilled_employee_last
+              a.employee_name AS fulfilled_employee_name
          FROM rotation_demand d
          JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
          LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
          LEFT JOIN rotation_assignment a ON a.id = d.fulfilled_by_assignment_id
-         LEFT JOIN Employee e ON e.id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
         WHERE ${conditions.join(' AND ')}
         ORDER BY d.date ASC, w.name ASC`,
       params
@@ -823,10 +828,8 @@ router.get('/demands', async (req, res) => {
       updated_at: r.updated_at || null,
       workplace_name: r.workplace_name,
       timeslot_label: r.timeslot_label || null,
-      fulfilled_employee_name: r.fulfilled_employee_first
-        ? [r.fulfilled_employee_first, r.fulfilled_employee_last].filter(Boolean).join(' ')
-        : null,
-      canManage: canWriteRotationGroup(ctx, Number(r.group_id)),
+      fulfilled_employee_name: r.fulfilled_employee_name || null,
+      canManage: poolGroupIdsDemands.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
     }));
 
     res.json({ demands });

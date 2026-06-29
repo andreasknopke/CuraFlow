@@ -36,6 +36,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
  *   date: 'YYYY-MM-DD' | null
  *   assignment: existing assignment (with id, employee_id, employee_name) | null
  *   timeslotId: string | null
+ *   defaultEmployeeId: string | null — pre-selected employee from drag-drop
  */
 export default function RotationAssignmentDialog({
     open,
@@ -44,6 +45,7 @@ export default function RotationAssignmentDialog({
     date,
     assignment,
     timeslotId,
+    defaultEmployeeId,
 }) {
     const queryClient = useQueryClient();
     const isEdit = !!assignment;
@@ -53,13 +55,14 @@ export default function RotationAssignmentDialog({
     const [note, setNote] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
 
-    // Reset form when dialog opens or target changes
+    // Reset form when dialog opens or target changes.
+    // Use defaultEmployeeId from drag-drop when no existing assignment.
     useEffect(() => {
         if (!open) return;
-        setEmployeeId(assignment?.employee_id || '');
+        setEmployeeId(assignment?.employee_id || defaultEmployeeId || '');
         setNote(assignment?.note || '');
         setErrorMsg('');
-    }, [open, assignment]);
+    }, [open, assignment, defaultEmployeeId]);
 
     // Load all employees (pool planner picks from the full list).
     // The rotation system does not have a qualification-based eligible-staff
@@ -88,10 +91,14 @@ export default function RotationAssignmentDialog({
 
     const saveMutation = useMutation({
         mutationFn: async () => {
+            // Resolve employee_name from selected doctor
+            const selectedDoctor = sortedDoctors.find((d) => String(d.id) === String(employeeId));
+            const employee_name = selectedDoctor?.name || null;
             const payload = {
                 rotation_workplace_id: workplace.id,
                 date,
                 employee_id: employeeId,
+                employee_name,
                 timeslot_id: timeslotId || null,
                 note: note.trim() || null,
             };
