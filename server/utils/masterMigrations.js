@@ -800,5 +800,133 @@ export async function runMasterMigrations(dbPool) {
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
+  // ===== PHASE: Springerpool-Rotationen (separates System, analog tenant_group) =====
+  // Rotationen sind KEINE Dienste — sie haben eigene Tabellen, eigene Routes,
+  // eigene Berechtigungen. Sie nutzen tenant_group als Vorbild, sind aber
+  // vollständig getrennt, um die bestehenden Cross-Tenant-Dienste nicht zu
+  // beeinflussen. Siehe docs/features/SPRINGERPOOL_ROTATION_V2.md.
+
+  // app_users: Berechtigungen für Rotationsverbünde (analog allowed_groups / group_admin_groups)
+  await run('add_app_users_allowed_rotation_groups', async () => {
+    const changed = await addColumnIfMissing('app_users', 'allowed_rotation_groups', 'JSON DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('add_app_users_rotation_admin_groups', async () => {
+    const changed = await addColumnIfMissing('app_users', 'rotation_admin_groups', 'JSON DEFAULT NULL');
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
+  await run('create_rotation_group_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_group (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        UNIQUE KEY uk_rotation_group_name (name)
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_rotation_group_member_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_group_member (
+        group_id INT NOT NULL,
+        tenant_id VARCHAR(36) NOT NULL,
+        role ENUM('pool','ward') NOT NULL DEFAULT 'ward',
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        PRIMARY KEY (group_id, tenant_id),
+        INDEX idx_rgm_tenant (tenant_id),
+        CONSTRAINT fk_rgm_group FOREIGN KEY (group_id) REFERENCES rotation_group(id) ON DELETE CASCADE,
+        CONSTRAINT fk_rgm_tenant FOREIGN KEY (tenant_id) REFERENCES db_tokens(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_rotation_workplace_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_workplace (
+        id VARCHAR(36) PRIMARY KEY,
+        group_id INT NOT NULL,
+        ward_tenant_id VARCHAR(36) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        timeslots_enabled TINYINT(1) DEFAULT 0,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT NULL,
+        INDEX idx_rw_group (group_id, is_active),
+        INDEX idx_rw_ward (ward_tenant_id),
+        CONSTRAINT fk_rw_group FOREIGN KEY (group_id) REFERENCES rotation_group(id) ON DELETE CASCADE,
+        CONSTRAINT fk_rw_ward FOREIGN KEY (ward_tenant_id) REFERENCES db_tokens(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_rotation_timeslot_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_timeslot (
+        id VARCHAR(36) PRIMARY KEY,
+        rotation_workplace_id VARCHAR(36) NOT NULL,
+        label VARCHAR(100) NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        \`order\` INT DEFAULT 0,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        INDEX idx_rt_workplace (rotation_workplace_id),
+        CONSTRAINT fk_rt_workplace FOREIGN KEY (rotation_workplace_id) REFERENCES rotation_workplace(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_rotation_assignment_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_assignment (
+        id VARCHAR(36) PRIMARY KEY,
+        rotation_workplace_id VARCHAR(36) NOT NULL,
+        date DATE NOT NULL,
+        employee_id VARCHAR(36) NOT NULL,
+        timeslot_id VARCHAR(36) DEFAULT NULL,
+        note TEXT DEFAULT NULL,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        created_by VARCHAR(255) DEFAULT NULL,
+        INDEX idx_ra_date (date),
+        INDEX idx_ra_workplace_date (rotation_workplace_id, date),
+        INDEX idx_ra_emp_date (employee_id, date),
+        CONSTRAINT fk_ra_workplace FOREIGN KEY (rotation_workplace_id) REFERENCES rotation_workplace(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_rotation_demand_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS rotation_demand (
+        id VARCHAR(36) PRIMARY KEY,
+        rotation_workplace_id VARCHAR(36) NOT NULL,
+        group_id INT NOT NULL,
+        ward_tenant_id VARCHAR(36) NOT NULL,
+        date DATE NOT NULL,
+        timeslot_id VARCHAR(36) DEFAULT NULL,
+        note TEXT DEFAULT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'open',
+        fulfilled_by_assignment_id VARCHAR(36) DEFAULT NULL,
+        created_by VARCHAR(255) DEFAULT NULL,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        INDEX idx_rd_status (status),
+        INDEX idx_rd_workplace_date (rotation_workplace_id, date),
+        INDEX idx_rd_ward (ward_tenant_id, date),
+        INDEX idx_rd_fulfilled (fulfilled_by_assignment_id),
+        CONSTRAINT fk_rd_workplace FOREIGN KEY (rotation_workplace_id) REFERENCES rotation_workplace(id) ON DELETE CASCADE,
+        CONSTRAINT fk_rd_group FOREIGN KEY (group_id) REFERENCES rotation_group(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }

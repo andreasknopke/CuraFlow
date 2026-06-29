@@ -69,6 +69,10 @@ function describeRealtimeConnection(streamUrl) {
 
 const COWORK_QUERY_KEYS = [['coworkInvites'], ['coworkContacts']];
 
+// Springerpool-Rotationen: invalidate visible-rotations + demands when a ward
+// registers demand. The pool planner sees the new demand in near-realtime.
+const ROTATION_QUERY_KEYS = [['rotations', 'visible-rotations'], ['rotations', 'demands']];
+
 export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }) {
   const queryClient = useQueryClient();
   const authState = useAuth();
@@ -184,8 +188,27 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       }
     };
 
+    const handleRotationDemand = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        console.info('[PlanUpdateListener] Rotation-Bedarf empfangen', payload);
+        for (const queryKey of ROTATION_QUERY_KEYS) {
+          queryClient.invalidateQueries({ queryKey });
+        }
+        toast.info('Neuer Springer-Bedarf angemeldet', {
+          description: payload?.demand?.workplace_name
+            ? `${payload.demand.workplace_name} · ${payload.demand.date}`
+            : undefined,
+        });
+      } catch (error) {
+        console.warn('[PlanUpdateListener] Konnte Rotation-Event nicht verarbeiten:', error);
+      }
+    };
+
     eventSource.addEventListener('plan-update', handlePlanUpdate);
     eventSource.addEventListener('cowork-update', handleCoworkUpdate);
+    eventSource.addEventListener('rotation-demand', handleRotationDemand);
     eventSource.addEventListener('connected', () => {
       console.info('[PlanUpdateListener] Realtime-Verbindung aktiv');
     });
@@ -197,6 +220,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       console.info('[PlanUpdateListener] Realtime-Verbindung wird beendet');
       eventSource.removeEventListener('plan-update', handlePlanUpdate);
       eventSource.removeEventListener('cowork-update', handleCoworkUpdate);
+      eventSource.removeEventListener('rotation-demand', handleRotationDemand);
       eventSource.close();
       if (flushTimerRef.current) {
         window.clearTimeout(flushTimerRef.current);

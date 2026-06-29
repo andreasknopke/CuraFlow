@@ -37,6 +37,8 @@ import DraggableDoctor from './DraggableDoctor';
 import DraggableShift from './DraggableShift';
 import DroppableCell from './DroppableCell';
 import PoolShiftEditDialog from './PoolShiftEditDialog';
+import RotationAssignmentDialog from './RotationAssignmentDialog';
+import RotationDemandDialog from './RotationDemandDialog';
 import WorkplaceConfigDialog from '@/components/settings/WorkplaceConfigDialog';
 import { generateSuggestions } from './autoFillEngine';
 import AutoFillSettingsDialog from './AutoFillSettingsDialog';
@@ -94,6 +96,10 @@ const SECTION_CONFIG = {
     "Demonstrationen & Konsile": {
         headerColor: "bg-amber-100 text-amber-900",
         rowColor: "bg-amber-50/30",
+    },
+    "Pool-Rotationen": {
+        headerColor: "bg-teal-100 text-teal-900",
+        rowColor: "bg-teal-50/30",
     }
 };
 
@@ -1074,6 +1080,51 @@ export default function ScheduleBoard() {
     const visiblePoolShifts = visiblePoolData?.shifts || [];
     const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
 
+    // ===== Springerpool-Rotationen (separates System) =====
+    const { data: visibleRotationData } = useQuery({
+        queryKey: ['rotations', 'visible-rotations', fetchRange.start, fetchRange.end],
+        queryFn: () => api.getVisibleRotations({ from: fetchRange.start, to: fetchRange.end }),
+        staleTime: 30 * 1000,
+        refetchOnWindowFocus: false,
+        placeholderData: keepPreviousData,
+    });
+
+    const rotationWorkplaces = visibleRotationData?.workplaces || [];
+    const rotationAssignments = visibleRotationData?.assignments || [];
+    const rotationDemands = visibleRotationData?.demands || [];
+
+    // Map assignments by `${rotation_workplace_id}|${date}` for fast cell lookup.
+    const rotationAssignmentsByCell = useMemo(() => {
+        const map = new Map();
+        for (const assignment of rotationAssignments) {
+            const key = `${assignment.rotation_workplace_id}|${String(assignment.date).slice(0, 10)}`;
+            const list = map.get(key) || [];
+            list.push(assignment);
+            map.set(key, list);
+        }
+        return map;
+    }, [rotationAssignments]);
+
+    // Map demands by `${rotation_workplace_id}|${date}|${timeslot_id}` for cell overlay.
+    const rotationDemandsByCell = useMemo(() => {
+        const map = new Map();
+        for (const demand of rotationDemands) {
+            const key = `${demand.rotation_workplace_id}|${String(demand.date).slice(0, 10)}|${demand.timeslot_id || ''}`;
+            map.set(key, demand);
+        }
+        return map;
+    }, [rotationDemands]);
+
+    // Local state for the rotation dialogs launched from the board cells.
+    const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState({ open: false, workplace: null, date: null, assignment: null });
+    const [rotationDemandDialog, setRotationDemandDialog] = useState({
+        open: false,
+        workplace: null,
+        date: null,
+        timeslot: null,
+        existingDemand: null,
+    });
+
     // Map shifts by `${shared_workplace_id}|${date}` for fast cell lookup.
     const crossTenantShiftsByCell = useMemo(() => {
         const map = new Map();
@@ -1433,6 +1484,23 @@ export default function ScheduleBoard() {
           });
       }
 
+      // Append Springerpool-Rotationen to the "Pool-Rotationen" section.
+      // These are SEPARATE from cross-tenant Dienste — they use their own
+      // rotation_workplace / rotation_assignment tables.
+      const rotationRows = [];
+      for (const wp of rotationWorkplaces) {
+          rotationRows.push({
+              name: `__rotation_${wp.id}`,
+              displayName: wp.name,
+              timeslotId: null,
+              isTimeslotRow: false,
+              isTimeslotGroupHeader: false,
+              isRotationRow: true,
+              rotationWorkplace: wp,
+          });
+      }
+      dynamicRows["Pool-Rotationen"] = rotationRows;
+
       // Für statische Sections: Einfache String-zu-Objekt Konvertierung
       const staticRowsToObjects = (rows) => rows.map(name => ({ 
           name, displayName: name, timeslotId: null, isTimeslotRow: false 
@@ -1445,6 +1513,7 @@ export default function ScheduleBoard() {
           ...dynamicRows["Dienste"].map(r => r.name),
           ...dynamicRows["Rotationen"].map(r => r.name),
           ...dynamicRows["Demonstrationen & Konsile"].map(r => r.name),
+          ...(dynamicRows["Pool-Rotationen"] || []).map(r => r.name),
           ...customCategoryNames.flatMap(categoryName => (dynamicRows[categoryName] || []).map(r => r.name)),
           ...STATIC_SECTIONS["Sonstiges"].rows
       ]);
@@ -1478,6 +1547,11 @@ export default function ScheduleBoard() {
               title: "Demonstrationen & Konsile", 
               ...SECTION_CONFIG["Demonstrationen & Konsile"], 
               rows: dynamicRows["Demonstrationen & Konsile"] 
+          },
+          {
+              title: "Pool-Rotationen",
+              ...SECTION_CONFIG["Pool-Rotationen"],
+              rows: dynamicRows["Pool-Rotationen"] || []
           },
           // Add custom categories dynamically
           ...customCategoryNames.map(categoryName => ({
@@ -1518,7 +1592,7 @@ export default function ScheduleBoard() {
       }
 
       return result;
-    }, [workplaces, workplaceTimeslotsByWorkplaceId, allShifts, previewShifts, getSectionOrder, systemSettings, crossTenantWorkplaces]);
+    }, [workplaces, workplaceTimeslotsByWorkplaceId, allShifts, previewShifts, getSectionOrder, systemSettings, crossTenantWorkplaces, rotationWorkplaces]);
 
     const availableSectionTabs = useMemo(() => {
         const knownTitles = new Set(allSections.map(s => s.title));
@@ -4380,6 +4454,177 @@ export default function ScheduleBoard() {
         );
     };
 
+    // Renders the cell content for a Springerpool-Rotation workplace row.
+    // SEPARATE from renderCrossTenantCell — uses rotation_assignment / rotation_demand.
+    // Pool-Planer (canWrite) → click opens RotationAssignmentDialog.
+    // Stations-Mitarbeiter (!canWrite) → click opens RotationDemandDialog.
+    const renderRotationCell = (workplace, dateStr) => {
+        const assignments = rotationAssignmentsByCell.get(`${workplace.id}|${dateStr}`) || [];
+        const canWrite = !isReadOnly && (workplace.canWrite !== false);
+
+        const openDemandFor = (timeslot = null) => {
+            const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
+            const existing = rotationDemandsByCell.get(demandKey);
+            setRotationDemandDialog({
+                open: true,
+                workplace,
+                date: dateStr,
+                timeslot,
+                existingDemand: existing || null,
+            });
+        };
+
+        // Collect demands for this cell
+        const cellDemands = [];
+        for (const [key, demand] of rotationDemandsByCell) {
+            const [wpId, dDate] = key.split('|');
+            if (wpId === workplace.id && dDate === dateStr) {
+                cellDemands.push(demand);
+            }
+        }
+
+        const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
+
+        if (hasTimeslots) {
+            return (
+                <div className="min-h-[40px] flex flex-col gap-0.5 p-0.5">
+                    {workplace.timeslots.map((ts) => {
+                        const tsAssignments = assignments.filter((a) =>
+                            String(a.timeslot_id || '') === String(ts.id)
+                        );
+                        const tsDemand = cellDemands.find((d) =>
+                            String(d.timeslot_id || '') === String(ts.id)
+                        );
+                        const isCovered = tsAssignments.length > 0;
+                        const demandStatus = tsDemand?.status;
+                        return (
+                            <div
+                                key={ts.id}
+                                className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors ${
+                                    canWrite
+                                        ? 'cursor-pointer hover:bg-teal-50/40'
+                                        : 'cursor-pointer hover:bg-amber-50/40'
+                                } ${isCovered ? 'bg-teal-50/30' : ''}`}
+                                onClick={() => {
+                                    if (canWrite) {
+                                        setRotationAssignmentDialog({
+                                            open: true,
+                                            workplace,
+                                            date: dateStr,
+                                            assignment: tsAssignments[0] || null,
+                                            timeslotId: ts.id,
+                                        });
+                                    } else {
+                                        openDemandFor(ts);
+                                    }
+                                }}
+                                title={`${ts.label}${tsDemand ? ` · ${tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
+                            >
+                                <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">
+                                    {ts.label}
+                                </span>
+                                <div className="flex flex-1 flex-wrap gap-0.5">
+                                    {tsAssignments.map((assignment) => (
+                                        <span
+                                            key={assignment.id}
+                                            className="inline-block px-1 py-0.5 rounded border max-w-[100px] truncate bg-teal-100 border-teal-200 text-teal-800"
+                                            title={assignment.employee_name}
+                                        >
+                                            {assignment.employee_name}
+                                        </span>
+                                    ))}
+                                </div>
+                                {demandStatus === 'open' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />
+                                )}
+                                {demandStatus === 'fulfilled' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block" title="Bedarf erfüllt" />
+                                )}
+                                {!isCovered && !tsDemand && !canWrite && (
+                                    <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // Simple (non-timeslot) cell
+        const demand = cellDemands[0];
+        return (
+            <div
+                className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${
+                    canWrite
+                        ? 'cursor-pointer hover:bg-teal-50/40'
+                        : demand?.status !== 'fulfilled'
+                            ? 'cursor-pointer hover:bg-amber-50/40'
+                            : ''
+                }`}
+                onClick={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (canWrite) {
+                        setRotationAssignmentDialog({
+                            open: true,
+                            workplace,
+                            date: dateStr,
+                            assignment: assignments[0] || null,
+                            timeslotId: null,
+                        });
+                    } else {
+                        openDemandFor(null);
+                    }
+                }}
+            >
+                {assignments.map((assignment) => (
+                    <button
+                        key={assignment.id}
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            if (canWrite) {
+                                setRotationAssignmentDialog({
+                                    open: true,
+                                    workplace,
+                                    date: dateStr,
+                                    assignment,
+                                    timeslotId: null,
+                                });
+                            }
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded border shadow-sm max-w-[140px] truncate bg-teal-100 border-teal-200 text-teal-800"
+                        title={`${assignment.employee_name} · ${assignment.workplace_name}`}
+                        disabled={!canWrite}
+                    >
+                        {assignment.employee_name}
+                    </button>
+                ))}
+                {canWrite && assignments.length === 0 && (
+                    <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 pointer-events-none">
+                        <Plus className="w-3 h-3" />
+                    </span>
+                )}
+                {demand?.status === 'open' && (
+                    <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                        Bedarf offen
+                    </span>
+                )}
+                {demand?.status === 'fulfilled' && (
+                    <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                        Erfüllt
+                    </span>
+                )}
+                {!canWrite && !demand && (
+                    <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5 pointer-events-none">
+                        +Bedarf
+                    </span>
+                )}
+            </div>
+        );
+    };
+
     const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '', cellWidth = null) => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
@@ -4700,7 +4945,7 @@ export default function ScheduleBoard() {
 
                                   return (
                                       <div key={`split-${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid ${viewMode === 'day' ? 'grid-cols-[200px_1fr]' : 'grid-cols-[200px_repeat(7,1fr)]'} border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group ${isRowQualFilterSource ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''}`}>
-                                          <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
+                                          <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow || rowObj.isRotationRow}>
                                               {(provided, snapshot) => (
                                                   <div
                                                       ref={provided.innerRef}
@@ -4713,6 +4958,7 @@ export default function ScheduleBoard() {
                                                       <div className="flex flex-col min-w-0">
                                                           <span className="flex min-w-0 items-center gap-1" title={rowDisplayName}>
                                                               {rowObj.isCrossTenantRow && <Globe2 className="w-3 h-3 mr-1 text-indigo-500" />}
+                                                              {rowObj.isRotationRow && <Globe2 className="w-3 h-3 mr-1 text-teal-500" />}
                                                               <span
                                                                   className={rowLabelPresentation.className}
                                                                   style={rowLabelPresentation.style}
@@ -4795,6 +5041,8 @@ export default function ScheduleBoard() {
                                                   <div key={`split-cell-${dIdx}`} className="border-r border-slate-100 last:border-r-0">
                                                       {rowObj.isCrossTenantRow ? (
                                                           renderCrossTenantCell(rowObj.crossTenantWorkplace, dateStr)
+                                                      ) : rowObj.isRotationRow ? (
+                                                          renderRotationCell(rowObj.rotationWorkplace, dateStr)
                                                       ) : rowName === 'Verfügbar' ? (
                                                           <Droppable droppableId={withPanelPrefix(`available__${dateStr}`, SPLIT_PANEL_PREFIX)} isDropDisabled={isReadOnly} renderClone={renderAvailableDoctorClone}>
                                                               {(provided, snapshot) => {
@@ -5680,7 +5928,7 @@ export default function ScheduleBoard() {
 
                         return (
                         <div key={`${sIdx}-${rowDisplayName}-${rowTimeslotId || 'full'}`} className={`grid border-b border-slate-200 ${(draggingDoctorId || draggingShiftId) ? '' : 'hover:bg-slate-50/50'} transition-colors group ${isRowQualFilterSource ? 'ring-2 ring-amber-400 ring-inset bg-amber-50/40' : ''}`} style={matrixGridStyle}>
-                            <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow}>
+                            <Droppable droppableId={headerDroppableId} isDropDisabled={isReadOnly || rowObj.isCrossTenantRow || rowObj.isRotationRow}>
                                 {(provided, snapshot) => (
                                     <div 
                                         ref={provided.innerRef}
@@ -5693,6 +5941,7 @@ export default function ScheduleBoard() {
                                         <div className="flex flex-col min-w-0">
                                             <span className="flex min-w-0 items-center gap-1" title={expandedRowLabel}>
                                                 {rowObj.isCrossTenantRow && <Globe2 className="w-3 h-3 mr-1 text-indigo-500" />}
+                                                {rowObj.isRotationRow && <Globe2 className="w-3 h-3 mr-1 text-teal-500" />}
                                                 <span
                                                     className={rowLabelPresentation.className}
                                                     style={rowLabelPresentation.style}
@@ -5816,6 +6065,8 @@ export default function ScheduleBoard() {
                                     <div key={dIdx} className={`border-r border-slate-100 last:border-r-0`}>
                                         {rowObj.isCrossTenantRow ? (
                                             renderCrossTenantCell(rowObj.crossTenantWorkplace, dateStr)
+                                        ) : rowObj.isRotationRow ? (
+                                            renderRotationCell(rowObj.rotationWorkplace, dateStr)
                                         ) : rowName === 'Verfügbar' ? (
                                             <Droppable droppableId={`available__${dateStr}`} isDropDisabled={isReadOnly} renderClone={renderAvailableDoctorClone}>
                                                 {(provided, snapshot) => {
@@ -6176,6 +6427,26 @@ export default function ScheduleBoard() {
         date={poolEditDialog.date}
         shift={poolEditDialog.shift}
         busyEmployeeIds={poolEditDialog.date ? (busyCentralIdsByDate[poolEditDialog.date] || new Set()) : new Set()}
+      />
+
+      {/* Springerpool-Rotationen — assignment editor (pool planner) */}
+      <RotationAssignmentDialog
+        open={rotationAssignmentDialog.open}
+        onOpenChange={(open) => setRotationAssignmentDialog((prev) => ({ ...prev, open }))}
+        workplace={rotationAssignmentDialog.workplace}
+        date={rotationAssignmentDialog.date}
+        assignment={rotationAssignmentDialog.assignment}
+        timeslotId={rotationAssignmentDialog.timeslotId}
+      />
+
+      {/* Springerpool-Rotationen — demand dialog (ward staff) */}
+      <RotationDemandDialog
+        open={rotationDemandDialog.open}
+        onOpenChange={(open) => setRotationDemandDialog((prev) => ({ ...prev, open }))}
+        workplace={rotationDemandDialog.workplace}
+        dateStr={rotationDemandDialog.date}
+        timeslot={rotationDemandDialog.timeslot}
+        existingDemand={rotationDemandDialog.existingDemand}
       />
     </div>
   );

@@ -590,6 +590,150 @@ class APIClient {
     return this.request(`/api/groups/${encodeURIComponent(groupId)}/stats${qs ? `?${qs}` : ''}`);
   }
 
+  // ==================== Springerpool-Rotationen (separates System) ====================
+  // Rotationsverbünde sind KEINE Dienstverbünde — sie haben eigene Endpunkte
+  // unter /api/rotations. Siehe docs/features/SPRINGERPOOL_ROTATION_V2.md.
+
+  async listRotationGroups() {
+    return this.request('/api/rotations');
+  }
+
+  async createRotationGroup(data) {
+    return this.request('/api/rotations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRotationGroup(groupId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRotationGroup(groupId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listRotationGroupMembers(groupId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/members`);
+  }
+
+  async addRotationGroupMember(groupId, tenantId, role) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenantId, role }),
+    });
+  }
+
+  async removeRotationGroupMember(groupId, tenantId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/members/${encodeURIComponent(tenantId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listRotationWorkplaces(groupId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces`);
+  }
+
+  async createRotationWorkplace(groupId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRotationWorkplace(groupId, workplaceId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRotationWorkplace(groupId, workplaceId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listRotationTimeslots(groupId, workplaceId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots`);
+  }
+
+  async createRotationTimeslot(groupId, workplaceId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRotationTimeslot(groupId, workplaceId, timeslotId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots/${encodeURIComponent(timeslotId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRotationTimeslot(groupId, workplaceId, timeslotId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/workplaces/${encodeURIComponent(workplaceId)}/timeslots/${encodeURIComponent(timeslotId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getVisibleRotations({ from, to } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return this.request(`/api/rotations/visible-rotations${qs ? `?${qs}` : ''}`);
+  }
+
+  async createRotationAssignment(groupId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/assignments`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRotationAssignment(groupId, assignmentId, data) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/assignments/${encodeURIComponent(assignmentId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteRotationAssignment(groupId, assignmentId) {
+    return this.request(`/api/rotations/${encodeURIComponent(groupId)}/assignments/${encodeURIComponent(assignmentId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getRotationDemands({ from, to, status } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (status) params.set('status', status);
+    const qs = params.toString();
+    return this.request(`/api/rotations/demands${qs ? `?${qs}` : ''}`);
+  }
+
+  async createRotationDemand(data) {
+    return this.request('/api/rotations/demands', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateRotationDemand(id, data) {
+    return this.request(`/api/rotations/demands/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ==================== Admin User Management ====================
 
   async listUsers() {
