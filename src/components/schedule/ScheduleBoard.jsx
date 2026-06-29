@@ -4596,6 +4596,8 @@ export default function ScheduleBoard() {
         //  - Chips: Zeitlabel + getDoctorChipLabel
         //  - Klick öffnet AssignmentDialog (edit)
         //  - Drag zu Verfügbar/Sidebar = löschen
+        //  - KEIN Plus-Icon, KEIN Click-Handler bei Leerzellen (wie normale Dienste-Rotation)
+        //  - min-h-[60px] wie DroppableCell, h-full für Zeilenfüllung
         // ============================================================
         if (canWrite) {
             const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
@@ -4649,11 +4651,7 @@ export default function ScheduleBoard() {
                         );
                     })}
                 </div>
-            ) : (
-                <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5 pointer-events-none">
-                    <Plus className="w-3 h-3" />
-                </span>
-            );
+            ) : null;
 
             return (
                 <Droppable droppableId={droppableId} isDropDisabled={false}>
@@ -4661,19 +4659,11 @@ export default function ScheduleBoard() {
                         <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${
+                            className={`min-h-[60px] h-full p-1 flex flex-wrap gap-1 transition-colors border rounded-sm ${
                                 snapshot.isDraggingOver
-                                    ? 'bg-green-100'
-                                    : isOccupied ? '' : 'bg-green-50'
+                                    ? 'bg-green-100 border-green-300'
+                                    : isOccupied ? 'bg-white border-slate-100' : 'bg-green-50 border-slate-100'
                             }`}
-                            onClick={() => {
-                                if (assignments.length === 0) {
-                                    setRotationAssignmentDialog({
-                                        open: true, workplace, date: dateStr,
-                                        assignment: null, timeslotId: null,
-                                    });
-                                }
-                            }}
                         >
                             {chipContent}
                             {provided.placeholder}
