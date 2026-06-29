@@ -91,14 +91,10 @@ export default function RotationAssignmentDialog({
 
     const saveMutation = useMutation({
         mutationFn: async () => {
-            // Resolve employee_name from selected doctor
-            const selectedDoctor = sortedDoctors.find((d) => String(d.id) === String(employeeId));
-            const employee_name = selectedDoctor?.name || null;
             const payload = {
                 rotation_workplace_id: workplace.id,
                 date,
                 employee_id: employeeId,
-                employee_name,
                 timeslot_id: timeslotId || null,
                 note: note.trim() || null,
             };

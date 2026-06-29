@@ -4572,20 +4572,23 @@ export default function ScheduleBoard() {
                         </span>
                     )}
                     <div className="flex flex-1 flex-wrap gap-0.5">
-                        {tsAssignments.map((assignment) => (
+                        {tsAssignments.map((assignment) => {
+                            const empName = doctorById.get(assignment.employee_id)?.name || `#${assignment.employee_id}`;
+                            return (
                             <span
                                 key={assignment.id}
                                 className="inline-flex items-center gap-1 px-1 py-0.5 rounded border max-w-[120px] truncate bg-teal-100 border-teal-200 text-teal-800"
-                                title={assignment.employee_name}
+                                title={empName}
                             >
                                 {timeDisplay && (
                                     <span className="text-[9px] font-medium text-teal-600 shrink-0">
                                         {timeDisplay}
                                     </span>
                                 )}
-                                <span className="truncate">{assignment.employee_name}</span>
+                                <span className="truncate">{empName}</span>
                             </span>
-                        ))}
+                            );
+                        })}
                     </div>
                     {demandStatus === 'open' && (
                         <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />

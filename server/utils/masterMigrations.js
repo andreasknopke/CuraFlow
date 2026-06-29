@@ -903,6 +903,7 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+
   await run('create_rotation_demand_table', async () => {
     await dbPool.execute(`
       CREATE TABLE IF NOT EXISTS rotation_demand (

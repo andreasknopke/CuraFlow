@@ -494,7 +494,7 @@ router.get('/visible-rotations', async (req, res) => {
       const wpPlaceholders = wpIds.map(() => '?').join(',');
       const [aRows] = await db.execute(
         `SELECT a.id, a.rotation_workplace_id, a.date, a.employee_id,
-                a.employee_name, a.timeslot_id, a.note,
+                a.timeslot_id, a.note,
                 w.name AS workplace_name, w.group_id
            FROM rotation_assignment a
            JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
@@ -509,7 +509,7 @@ router.get('/visible-rotations', async (req, res) => {
         group_id: Number(r.group_id),
         date: r.date ? String(r.date).slice(0, 10) : null,
         employee_id: r.employee_id,
-        employee_name: r.employee_name || `#${r.employee_id}`,
+        employee_name: null, // resolved from doctorById in frontend
         timeslot_id: r.timeslot_id ? String(r.timeslot_id) : null,
         note: r.note || null,
         workplace_name: r.workplace_name,
@@ -578,7 +578,7 @@ router.post('/:groupId/assignments', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireRotationGroupWriteAccess(ctx, req.params.groupId);
-    const { rotation_workplace_id, date, employee_id, employee_name, timeslot_id, note } = req.body || {};
+    const { rotation_workplace_id, date, employee_id, timeslot_id, note } = req.body || {};
     if (!rotation_workplace_id) return res.status(400).json({ error: 'rotation_workplace_id ist erforderlich' });
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
     if (!employee_id) return res.status(400).json({ error: 'employee_id ist erforderlich' });
@@ -592,10 +592,9 @@ router.post('/:groupId/assignments', async (req, res) => {
 
     const id = crypto.randomUUID();
     await db.execute(
-      `INSERT INTO rotation_assignment (id, rotation_workplace_id, date, employee_id, employee_name, timeslot_id, note, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rotation_assignment (id, rotation_workplace_id, date, employee_id, timeslot_id, note, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [id, String(rotation_workplace_id), date, String(employee_id),
-       employee_name || null,
        timeslot_id ? String(timeslot_id) : null, note || null,
        req.user?.email || req.user?.sub || null]
     );
@@ -628,7 +627,7 @@ router.patch('/:groupId/assignments/:assignmentId', async (req, res) => {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
     requireRotationGroupWriteAccess(ctx, req.params.groupId);
-    const allowed = ['date', 'employee_id', 'employee_name', 'timeslot_id', 'note'];
+    const allowed = ['date', 'employee_id', 'timeslot_id', 'note'];
     const fields = [];
     const values = [];
     for (const key of allowed) {
@@ -803,7 +802,7 @@ router.get('/demands', async (req, res) => {
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
-              a.employee_name AS fulfilled_employee_name
+              a.employee_id AS fulfilled_employee_id
          FROM rotation_demand d
          JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
          LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
@@ -828,7 +827,7 @@ router.get('/demands', async (req, res) => {
       updated_at: r.updated_at || null,
       workplace_name: r.workplace_name,
       timeslot_label: r.timeslot_label || null,
-      fulfilled_employee_name: r.fulfilled_employee_name || null,
+      fulfilled_employee_name: null, // resolved from assignments data in frontend
       canManage: poolGroupIdsDemands.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
     }));
 
