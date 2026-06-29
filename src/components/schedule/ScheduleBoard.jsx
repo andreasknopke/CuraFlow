@@ -1484,12 +1484,14 @@ export default function ScheduleBoard() {
           });
       }
 
-      // Append Springerpool-Rotationen to the "Pool-Rotationen" section.
-      // These are SEPARATE from cross-tenant Dienste — they use their own
-      // rotation_workplace / rotation_assignment tables.
-      const rotationRows = [];
+      // Append Springerpool-Rotationen — je nach Rolle in den passenden Bereich.
+      // Pool-Administratoren (canWrite=true) sehen die Zeilen als normale
+      // Rotationszeilen im Bereich "Rotationen". Stations-Mandanten (canWrite=false)
+      // sehen sie weiterhin im Bereich "Pool-Rotationen" mit Timeslot-Unterzeilen.
+      const poolRotationRows = [];
+      const wardRotationRows = [];
       for (const wp of rotationWorkplaces) {
-          rotationRows.push({
+          const row = {
               name: `__rotation_${wp.id}`,
               displayName: wp.name,
               timeslotId: null,
@@ -1497,9 +1499,15 @@ export default function ScheduleBoard() {
               isTimeslotGroupHeader: false,
               isRotationRow: true,
               rotationWorkplace: wp,
-          });
+          };
+          if (wp.canWrite) {
+              poolRotationRows.push(row);
+          } else {
+              wardRotationRows.push(row);
+          }
       }
-      dynamicRows["Pool-Rotationen"] = rotationRows;
+      dynamicRows["Rotationen"].push(...poolRotationRows);
+      dynamicRows["Pool-Rotationen"] = wardRotationRows;
 
       // Für statische Sections: Einfache String-zu-Objekt Konvertierung
       const staticRowsToObjects = (rows) => rows.map(name => ({ 
@@ -4565,10 +4573,11 @@ export default function ScheduleBoard() {
         return `${h}:${String(m).padStart(2, '0')}`;
     };
 
-    const renderRotationCell = (workplace, dateStr) => {
+    const renderRotationCell = (workplace, dateStr, extraProps = {}) => {
         const assignments = rotationAssignmentsByCell.get(`${workplace.id}|${dateStr}`) || [];
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
         const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
+        const { isToday, isWeekend, isAlternate, baseClassName, baseStyle } = extraProps;
 
         const getEmpName = (a) => a.employee_name || `#${a.employee_id}`;
 
@@ -4591,90 +4600,80 @@ export default function ScheduleBoard() {
         };
 
         // ============================================================
-        //  POOL-PLANER (canWrite) — EXAKT wie normale Rotation
-        //  - Droppable + Draggable Chips
-        //  - Chips: Zeitlabel + getDoctorChipLabel
-        //  - Klick öffnet AssignmentDialog (edit)
-        //  - Drag zu Verfügbar/Sidebar = löschen
-        //  - KEIN Plus-Icon, KEIN Click-Handler bei Leerzellen (wie normale Dienste-Rotation)
-        //  - min-h-[60px] wie DroppableCell, h-full für Zeilenfüllung
+        //  POOL-PLANER (canWrite) — DROPPABLECELL + DRAGGABLE CHIPS
+        //  Exakt wie normale Rotationszellen: gleiche Höhe (60px),
+        //  gleiches Styling, gleiches Drag-Verhalten.
         // ============================================================
         if (canWrite) {
-            const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
             const isOccupied = assignments.length > 0;
 
-            const chipContent = assignments.length > 0 ? (
-                <div className="flex flex-wrap gap-1">
-                    {assignments.map((assignment, idx) => {
-                        const empName = getEmpName(assignment);
-                        const ts = hasTimeslots && assignment.timeslot_id
-                            ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
-                            : null;
-                        const timeLabel = ts
-                            ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
-                            : null;
-                        const doctor = doctorById.get(assignment.employee_id);
-                        const doctorLike = doctor || { id: assignment.employee_id, name: empName };
-                        const chipLabel = getDoctorChipLabel(doctorLike);
-
-                        return (
-                            <Draggable
-                                key={assignment.id}
-                                draggableId={`rotation-assignment-${assignment.id}`}
-                                index={idx}
-                                isDragDisabled={false}
-                            >
-                                {(provided) => (
-                                    <div
-                                        ref={provided.innerRef}
-                                        {...provided.draggableProps}
-                                        {...provided.dragHandleProps}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setRotationAssignmentDialog({
-                                                open: true, workplace, date: dateStr,
-                                                assignment, timeslotId: assignment.timeslot_id || null,
-                                            });
-                                        }}
-                                        className="inline-flex flex-col items-center text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none cursor-pointer bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
-                                        title={empName}
-                                    >
-                                        {timeLabel && (
-                                            <span className="text-[8px] font-medium text-teal-600 leading-tight whitespace-nowrap">
-                                                {timeLabel}
-                                            </span>
-                                        )}
-                                        <span className="truncate w-full text-center">{chipLabel}</span>
-                                    </div>
-                                )}
-                            </Draggable>
-                        );
-                    })}
-                </div>
-            ) : null;
-
             return (
-                <Droppable droppableId={droppableId} isDropDisabled={false}>
-                    {(provided, snapshot) => (
-                        <div
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            className={`min-h-[60px] h-full p-1 flex flex-wrap gap-1 transition-colors border rounded-sm ${
-                                snapshot.isDraggingOver
-                                    ? 'bg-green-100 border-green-300'
-                                    : isOccupied ? 'bg-white border-slate-100' : 'bg-green-50 border-slate-100'
-                            }`}
-                        >
-                            {chipContent}
-                            {provided.placeholder}
+                <DroppableCell
+                    id={`rotationCell__${workplace.id}__${dateStr}`}
+                    isToday={isToday}
+                    isWeekend={isWeekend}
+                    isDisabled={false}
+                    isReadOnly={false}
+                    isAlternate={isAlternate}
+                    isOccupied={isOccupied}
+                    baseClassName={baseClassName}
+                    baseStyle={baseStyle}
+                >
+                    {() => (
+                        <div className="flex flex-wrap gap-1">
+                            {assignments.map((assignment, idx) => {
+                                const empName = getEmpName(assignment);
+                                const ts = hasTimeslots && assignment.timeslot_id
+                                    ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
+                                    : null;
+                                const timeLabel = ts
+                                    ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
+                                    : null;
+                                const doctor = doctorById.get(assignment.employee_id);
+                                const doctorLike = doctor || { id: assignment.employee_id, name: empName };
+                                const chipLabel = getDoctorChipLabel(doctorLike);
+
+                                return (
+                                    <Draggable
+                                        key={assignment.id}
+                                        draggableId={`rotation-assignment-${assignment.id}`}
+                                        index={idx}
+                                        isDragDisabled={false}
+                                    >
+                                        {(provided) => (
+                                            <div
+                                                ref={provided.innerRef}
+                                                {...provided.draggableProps}
+                                                {...provided.dragHandleProps}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setRotationAssignmentDialog({
+                                                        open: true, workplace, date: dateStr,
+                                                        assignment, timeslotId: assignment.timeslot_id || null,
+                                                    });
+                                                }}
+                                                className="inline-flex flex-col items-center text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none cursor-pointer bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
+                                                title={empName}
+                                            >
+                                                {timeLabel && (
+                                                    <span className="text-[8px] font-medium text-teal-600 leading-tight whitespace-nowrap">
+                                                        {timeLabel}
+                                                    </span>
+                                                )}
+                                                <span className="truncate w-full text-center">{chipLabel}</span>
+                                            </div>
+                                        )}
+                                    </Draggable>
+                                );
+                            })}
                         </div>
                     )}
-                </Droppable>
+                </DroppableCell>
             );
         }
 
         // ============================================================
-        //  STATIONS-ANSICHT (!canWrite) — Timeslot-Sub-Zeilen
+        //  STATIONS-ANSICHT (!canWrite) — Timeslot-Sub-Zeilen (UNVERÄNDERT)
         // ============================================================
         if (hasTimeslots) {
             return (
@@ -4726,7 +4725,7 @@ export default function ScheduleBoard() {
             );
         }
 
-        // Einfache Zelle (ohne Timeslots)
+        // Einfache Zelle (ohne Timeslots) — Station
         const demand = cellDemands[0];
         return (
             <div
@@ -5180,7 +5179,11 @@ export default function ScheduleBoard() {
                                                       {rowObj.isCrossTenantRow ? (
                                                           renderCrossTenantCell(rowObj.crossTenantWorkplace, dateStr)
                                                       ) : rowObj.isRotationRow ? (
-                                                          renderRotationCell(rowObj.rotationWorkplace, dateStr)
+                                                          renderRotationCell(rowObj.rotationWorkplace, dateStr, {
+                                                              isToday, isWeekend: isWeekendDay, isAlternate: rIdx % 2 !== 0,
+                                                              baseClassName: !customStyle && !rowStyle.backgroundColor ? section.rowColor : '',
+                                                              baseStyle: rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {},
+                                                          })
                                                       ) : rowName === 'Verfügbar' ? (
                                                           <Droppable droppableId={withPanelPrefix(`available__${dateStr}`, SPLIT_PANEL_PREFIX)} isDropDisabled={isReadOnly} renderClone={renderAvailableDoctorClone}>
                                                               {(provided, snapshot) => {
@@ -6204,7 +6207,11 @@ export default function ScheduleBoard() {
                                         {rowObj.isCrossTenantRow ? (
                                             renderCrossTenantCell(rowObj.crossTenantWorkplace, dateStr)
                                         ) : rowObj.isRotationRow ? (
-                                            renderRotationCell(rowObj.rotationWorkplace, dateStr)
+                                            renderRotationCell(rowObj.rotationWorkplace, dateStr, {
+                                                isToday, isWeekend, isAlternate: rIdx % 2 !== 0,
+                                                baseClassName: !customStyle && !rowStyle.backgroundColor ? section.rowColor : '',
+                                                baseStyle: rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {},
+                                            })
                                         ) : rowName === 'Verfügbar' ? (
                                             <Droppable droppableId={`available__${dateStr}`} isDropDisabled={isReadOnly} renderClone={renderAvailableDoctorClone}>
                                                 {(provided, snapshot) => {
