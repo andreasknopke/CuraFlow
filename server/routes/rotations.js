@@ -495,9 +495,13 @@ router.get('/visible-rotations', async (req, res) => {
       const [aRows] = await db.execute(
         `SELECT a.id, a.rotation_workplace_id, a.date, a.employee_id,
                 a.timeslot_id, a.note,
-                w.name AS workplace_name, w.group_id
+                w.name AS workplace_name, w.group_id,
+                e.first_name, e.last_name
            FROM rotation_assignment a
            JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
+           LEFT JOIN EmployeeTenantAssignment eta
+                  ON eta.tenant_doctor_id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
+           LEFT JOIN Employee e ON e.id = eta.employee_id
           WHERE a.rotation_workplace_id IN (${wpPlaceholders})
             ${dateWhere}
           ORDER BY a.date ASC, w.name ASC`,
@@ -509,7 +513,7 @@ router.get('/visible-rotations', async (req, res) => {
         group_id: Number(r.group_id),
         date: r.date ? String(r.date).slice(0, 10) : null,
         employee_id: r.employee_id,
-        employee_name: null, // resolved from doctorById in frontend
+        employee_name: [r.first_name, r.last_name].filter(Boolean).join(' ') || `#${r.employee_id}`,
         timeslot_id: r.timeslot_id ? String(r.timeslot_id) : null,
         note: r.note || null,
         workplace_name: r.workplace_name,
@@ -802,11 +806,15 @@ router.get('/demands', async (req, res) => {
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
-              a.employee_id AS fulfilled_employee_id
+              a.employee_id AS fulfilled_employee_id,
+              e.first_name AS fulfilled_first, e.last_name AS fulfilled_last
          FROM rotation_demand d
          JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
          LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
          LEFT JOIN rotation_assignment a ON a.id = d.fulfilled_by_assignment_id
+         LEFT JOIN EmployeeTenantAssignment eta
+                ON eta.tenant_doctor_id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
+         LEFT JOIN Employee e ON e.id = eta.employee_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY d.date ASC, w.name ASC`,
       params
@@ -827,7 +835,9 @@ router.get('/demands', async (req, res) => {
       updated_at: r.updated_at || null,
       workplace_name: r.workplace_name,
       timeslot_label: r.timeslot_label || null,
-      fulfilled_employee_name: null, // resolved from assignments data in frontend
+      fulfilled_employee_name: r.fulfilled_first
+        ? [r.fulfilled_first, r.fulfilled_last].filter(Boolean).join(' ')
+        : null,
       canManage: poolGroupIdsDemands.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
     }));
 

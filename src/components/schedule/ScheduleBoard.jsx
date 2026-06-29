@@ -4492,11 +4492,16 @@ export default function ScheduleBoard() {
         );
     };
 
-    // Renders the cell content for a Springerpool-Rotation workplace row.
-    // SEPARATE from renderCrossTenantCell — uses rotation_assignment / rotation_demand.
-    // Pool-Planer (canWrite) → click opens RotationAssignmentDialog.
-    // Stations-Mitarbeiter (!canWrite) → click opens RotationDemandDialog.
-    // Helper: format TIME (HH:MM:SS or HH:MM) to compact display (HH:MM)
+    // ================================================================
+    //  Springerpool-Rotationen — Zellen-Rendering
+    // ================================================================
+    // Zwei Modi:
+    //   Pool-Planer (canWrite=true)  → wie normale Rotation: chips mit Zeit,
+    //                                   Timeslot-Pills, Droppable, Plus-Button
+    //   Stations-Ansicht (canWrite=false) → Timeslot-Sub-Zeilen, chips OHNE
+    //                                   Zeit, Bedarfs-Anmeldung per Klick
+    // ================================================================
+
     const formatRotationTime = (timeStr) => {
         if (!timeStr) return null;
         const parts = String(timeStr).split(':');
@@ -4506,153 +4511,115 @@ export default function ScheduleBoard() {
         return `${h}:${String(m).padStart(2, '0')}`;
     };
 
-    // SEPARATE from renderCrossTenantCell — uses rotation_assignment / rotation_demand.
-    // Pool-Planer (canWrite) → click opens RotationAssignmentDialog, Droppable for drag-drop.
-    // Stations-Mitarbeiter (!canWrite) → click opens RotationDemandDialog, no Droppable.
     const renderRotationCell = (workplace, dateStr) => {
         const assignments = rotationAssignmentsByCell.get(`${workplace.id}|${dateStr}`) || [];
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
+        const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
 
-        const openDemandFor = (timeslot = null) => {
-            const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
-            const existing = rotationDemandsByCell.get(demandKey);
-            setRotationDemandDialog({
-                open: true,
-                workplace,
-                date: dateStr,
-                timeslot,
-                existingDemand: existing || null,
-            });
-        };
+        // Helper: resolve employee name from backend response
+        const getEmpName = (a) => a.employee_name || `#${a.employee_id}`;
 
         // Collect demands for this cell
         const cellDemands = [];
         for (const [key, demand] of rotationDemandsByCell) {
             const [wpId, dDate] = key.split('|');
-            if (wpId === workplace.id && dDate === dateStr) {
+            if (wpId === String(workplace.id) && dDate === dateStr) {
                 cellDemands.push(demand);
             }
         }
 
-        const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
-
-        // Helper: build the contents for a single timeslot sub-row (or whole cell)
-        const renderCellContents = (ts, tsAssignments, tsDemand, isCovered) => {
-            const demandStatus = tsDemand?.status;
-            const timeDisplay = ts
-                ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
-                : null;
-
-            return (
-                <div
-                    key={ts?.id || 'main'}
-                    className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors ${
-                        canWrite
-                            ? 'cursor-pointer hover:bg-teal-50/40'
-                            : 'cursor-pointer hover:bg-amber-50/40'
-                    } ${isCovered ? 'bg-teal-50/30' : ''}`}
-                    onClick={() => {
-                        if (canWrite) {
-                            setRotationAssignmentDialog({
-                                open: true,
-                                workplace,
-                                date: dateStr,
-                                assignment: tsAssignments[0] || null,
-                                timeslotId: ts?.id || null,
-                            });
-                        } else {
-                            openDemandFor(ts || null);
-                        }
-                    }}
-                    title={`${ts?.label || workplace.name}${tsDemand ? ` · ${tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
-                >
-                    {ts && (
-                        <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">
-                            {ts.label}
-                        </span>
-                    )}
-                    <div className="flex flex-1 flex-wrap gap-0.5">
-                        {tsAssignments.map((assignment) => {
-                            const empName = doctorById.get(assignment.employee_id)?.name || `#${assignment.employee_id}`;
-                            return (
-                            <span
-                                key={assignment.id}
-                                className="inline-flex items-center gap-1 px-1 py-0.5 rounded border max-w-[120px] truncate bg-teal-100 border-teal-200 text-teal-800"
-                                title={empName}
-                            >
-                                {timeDisplay && (
-                                    <span className="text-[9px] font-medium text-teal-600 shrink-0">
-                                        {timeDisplay}
-                                    </span>
-                                )}
-                                <span className="truncate">{empName}</span>
-                            </span>
-                            );
-                        })}
-                    </div>
-                    {demandStatus === 'open' && (
-                        <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />
-                    )}
-                    {demandStatus === 'fulfilled' && (
-                        <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block" title="Bedarf erfüllt" />
-                    )}
-                    {!isCovered && !tsDemand && !canWrite && (
-                        <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
-                    )}
-                </div>
-            );
+        const openDemandFor = (timeslot = null) => {
+            const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
+            const existing = rotationDemandsByCell.get(demandKey);
+            setRotationDemandDialog({
+                open: true, workplace, date: dateStr, timeslot,
+                existingDemand: existing || null,
+            });
         };
 
-        // Build the content (timeslot sub-rows or single cell)
-        const content = hasTimeslots ? (
-            <div className="flex flex-col gap-0.5 p-0.5 min-h-[40px]">
-                {workplace.timeslots.map((ts) => {
-                    const tsAssignments = assignments.filter((a) =>
-                        String(a.timeslot_id || '') === String(ts.id)
-                    );
-                    const tsDemand = cellDemands.find((d) =>
-                        String(d.timeslot_id || '') === String(ts.id)
-                    );
-                    const isCovered = tsAssignments.length > 0;
-                    return renderCellContents(ts, tsAssignments, tsDemand, isCovered);
-                })}
-            </div>
-        ) : (
-            (() => {
-                const demand = cellDemands[0];
-                const isCovered = assignments.length > 0;
-                const cellContent = renderCellContents(null, assignments, demand, isCovered);
-                // For pool tenants, wrap in a bigger click area with "add" affordance
-                if (canWrite && !isCovered) {
-                    return (
-                        <div className="min-h-[40px] p-1">
-                            {cellContent}
-                            <div
-                                className="flex items-center justify-center gap-1 mt-1 text-[10px] text-teal-500 cursor-pointer hover:text-teal-700 border border-dashed border-teal-200 rounded py-1"
+        // ============================================================
+        //  POOL-PLANER (canWrite) — wie normale Rotation
+        // ============================================================
+        if (canWrite) {
+            // Timeslot-Pills für schnelle Zuweisung
+            const tsPills = hasTimeslots ? (
+                <div className="flex gap-0.5 mb-1 border-b border-teal-100 pb-1">
+                    {workplace.timeslots.map((ts) => {
+                        const tsCount = assignments.filter((a) => String(a.timeslot_id || '') === String(ts.id)).length;
+                        return (
+                            <button
+                                key={ts.id}
+                                type="button"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     setRotationAssignmentDialog({
-                                        open: true,
-                                        workplace,
-                                        date: dateStr,
-                                        assignment: null,
-                                        timeslotId: null,
+                                        open: true, workplace, date: dateStr,
+                                        assignment: null, timeslotId: ts.id,
                                     });
                                 }}
+                                className="flex-1 text-[8px] font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded py-0.5 px-1 truncate transition-colors"
+                                title={`${ts.label} (${tsCount}) — Klicken zum Zuweisen`}
                             >
-                                <Plus className="w-3 h-3" />
-                                Springer zuweisen
-                            </div>
-                        </div>
-                    );
-                }
-                return <div className="min-h-[40px] p-1">{cellContent}</div>;
-            })()
-        );
+                                {ts.label}
+                                {tsCount > 0 && <span className="ml-0.5 text-teal-500">·{tsCount}</span>}
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : null;
 
-        // For pool tenants, wrap in Droppable to enable drag-drop from Verfügbar.
-        // Use a recognizable droppableId pattern: rotationCell__{wpId}__{dateStr}
-        if (canWrite) {
+            // Alle Chips in einem Flow — jeder mit Zeitlabel
+            const chips = assignments.length > 0 ? (
+                <div className="flex flex-wrap gap-0.5">
+                    {assignments.map((assignment) => {
+                        const empName = getEmpName(assignment);
+                        const ts = hasTimeslots && assignment.timeslot_id
+                            ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
+                            : null;
+                        const timeDisplay = ts
+                            ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
+                            : null;
+                        return (
+                            <button
+                                key={assignment.id}
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setRotationAssignmentDialog({
+                                        open: true, workplace, date: dateStr,
+                                        assignment, timeslotId: assignment.timeslot_id || null,
+                                    });
+                                }}
+                                className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded border max-w-[120px] truncate bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
+                                title={empName}
+                            >
+                                {timeDisplay && (
+                                    <span className="font-medium text-teal-600 shrink-0">{timeDisplay}</span>
+                                )}
+                                <span className="truncate">{empName}</span>
+                            </button>
+                        );
+                    })}
+                </div>
+            ) : null;
+
+            // Plus-Button für leere Zelle
+            const addButton = (
+                <div
+                    className="flex items-center justify-center gap-1 text-[10px] text-teal-400 hover:text-teal-600 border border-dashed border-teal-200 hover:border-teal-400 rounded py-1 mt-0.5 cursor-pointer transition-colors"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setRotationAssignmentDialog({
+                            open: true, workplace, date: dateStr,
+                            assignment: null, timeslotId: null,
+                        });
+                    }}
+                >
+                    <Plus className="w-3 h-3" />
+                    <span>Springer</span>
+                </div>
+            );
+
             const droppableId = `rotationCell__${workplace.id}__${dateStr}`;
             return (
                 <Droppable droppableId={droppableId} isDropDisabled={false}>
@@ -4660,9 +4627,11 @@ export default function ScheduleBoard() {
                         <div
                             ref={provided.innerRef}
                             {...provided.droppableProps}
-                            className={`transition-colors ${snapshot.isDraggingOver ? 'bg-teal-100/50 ring-2 ring-teal-400 ring-inset rounded' : ''}`}
+                            className={`min-h-[40px] p-1 transition-colors ${snapshot.isDraggingOver ? 'bg-teal-100/50 ring-2 ring-teal-400 ring-inset rounded' : ''}`}
                         >
-                            {content}
+                            {tsPills}
+                            {chips}
+                            {chips === null && assignments.length === 0 && addButton}
                             {provided.placeholder}
                         </div>
                     )}
@@ -4670,7 +4639,94 @@ export default function ScheduleBoard() {
             );
         }
 
-        return content;
+        // ============================================================
+        //  STATIONS-ANSICHT (!canWrite) — Timeslot-Sub-Zeilen
+        // ============================================================
+        if (hasTimeslots) {
+            return (
+                <div className="min-h-[40px] flex flex-col gap-0.5 p-0.5">
+                    {workplace.timeslots.map((ts) => {
+                        const tsAssignments = assignments.filter((a) =>
+                            String(a.timeslot_id || '') === String(ts.id)
+                        );
+                        const tsDemand = cellDemands.find((d) =>
+                            String(d.timeslot_id || '') === String(ts.id)
+                        );
+                        const isCovered = tsAssignments.length > 0;
+                        const demandStatus = tsDemand?.status;
+                        return (
+                            <div
+                                key={ts.id}
+                                className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer hover:bg-amber-50/40 ${isCovered ? 'bg-teal-50/30' : ''}`}
+                                onClick={() => openDemandFor(ts)}
+                                title={`${ts.label}${tsDemand ? ` · ${tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
+                            >
+                                <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">{ts.label}</span>
+                                <div className="flex flex-1 flex-wrap gap-0.5">
+                                    {tsAssignments.map((assignment) => {
+                                        const empName = getEmpName(assignment);
+                                        return (
+                                            <span
+                                                key={assignment.id}
+                                                className="inline-block px-1 py-0.5 rounded border max-w-[100px] truncate bg-teal-100 border-teal-200 text-teal-800"
+                                                title={empName}
+                                            >
+                                                {empName}
+                                            </span>
+                                        );
+                                    })}
+                                </div>
+                                {demandStatus === 'open' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />
+                                )}
+                                {demandStatus === 'fulfilled' && (
+                                    <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block" title="Bedarf erfüllt" />
+                                )}
+                                {!isCovered && !tsDemand && (
+                                    <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            );
+        }
+
+        // Einfache Zelle (ohne Timeslots)
+        const demand = cellDemands[0];
+        return (
+            <div
+                className={`min-h-[40px] p-1 ${demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
+                onClick={() => openDemandFor(null)}
+            >
+                <div className="flex flex-wrap gap-1">
+                    {assignments.map((assignment) => (
+                        <span
+                            key={assignment.id}
+                            className="inline-block text-[10px] px-1.5 py-0.5 rounded border shadow-sm max-w-[140px] truncate bg-teal-100 border-teal-200 text-teal-800"
+                            title={getEmpName(assignment)}
+                        >
+                            {getEmpName(assignment)}
+                        </span>
+                    ))}
+                    {demand?.status === 'open' && (
+                        <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                            Bedarf offen
+                        </span>
+                    )}
+                    {demand?.status === 'fulfilled' && (
+                        <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                            Erfüllt
+                        </span>
+                    )}
+                    {!demand && (
+                        <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5">+Bedarf</span>
+                    )}
+                </div>
+            </div>
+        );
     };
 
     const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '', cellWidth = null) => {
