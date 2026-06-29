@@ -306,13 +306,7 @@ const measureTextWidth = (() => {
 
 const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSectionFullWidth, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }) => {
     // Mehrfachbesetzung: IMMER compact — jeder Chip braucht eigenen Platz.
-    // Full-Width-Modus ist nur fuer einzelne Shifts in Full-Width-Sections (Dienste/Demos).
     if (forceInitialsOnly || isSplitModeActive || !isSingleShift) {
-        return 'compact';
-    }
-
-    // Einzelner Shift in einer Nicht-Full-Width-Section: compact
-    if (!isSectionFullWidth) {
         return 'compact';
     }
 
