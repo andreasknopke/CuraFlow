@@ -4710,7 +4710,7 @@ export default function ScheduleBoard() {
                                 );
                             })}
                         </div>
-                    )
+                    )}
                 </DroppableCell>
             );
         }
