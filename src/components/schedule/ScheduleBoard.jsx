@@ -2951,12 +2951,38 @@ export default function ScheduleBoard() {
         });
     };
 
-    const availabilityBlockingDoctorIdsByDate = useMemo(() => getAvailabilityBlockingDoctorIdsByDate({
+    const availabilityBlockingDoctorIdsByDate = useMemo(() => {
+        const baseMap = getAvailabilityBlockingDoctorIdsByDate({
             localShifts: currentWeekShifts,
             sharedShifts: visiblePoolShifts,
             workplaces,
             doctors,
-    }), [currentWeekShifts, visiblePoolShifts, workplaces, doctors]);
+        });
+        // Rotation-Assignments blockieren die Verfügbarkeit — ein Mitarbeiter,
+        // der an einem Tag in eine Pool-Rotation eingeteilt ist, ist nicht
+        // für reguläre Dienste verfügbar. Mapping via central_employee_id
+        // (gleiches Pattern wie sharedShifts in getAvailabilityBlockingDoctorIdsByDate).
+        const ceMap = new Map();
+        doctors.forEach((doc) => {
+            if (!doc.central_employee_id) return;
+            const key = String(doc.central_employee_id);
+            const list = ceMap.get(key) || [];
+            list.push(doc.id);
+            ceMap.set(key, list);
+        });
+        for (const assignment of rotationAssignments) {
+            const dateStr = String(assignment.date).slice(0, 10);
+            const empId = String(assignment.employee_id);
+            const doctorIds = ceMap.get(empId)
+                || (doctorById.has(assignment.employee_id) ? [assignment.employee_id] : []);
+            for (const docId of doctorIds) {
+                const existing = baseMap.get(dateStr) || new Set();
+                existing.add(docId);
+                baseMap.set(dateStr, existing);
+            }
+        }
+        return baseMap;
+    }, [currentWeekShifts, visiblePoolShifts, workplaces, doctors, rotationAssignments, doctorById]);
 
     const availableDoctorsByDate = useMemo(() => {
         const map = new Map();
@@ -4570,7 +4596,7 @@ export default function ScheduleBoard() {
         if (parts.length < 2) return null;
         const h = parseInt(parts[0], 10);
         const m = parseInt(parts[1], 10);
-        return `${h}:${String(m).padStart(2, '0')}`;
+        return m === 0 ? `${h}` : `${h}:${String(m).padStart(2, '0')}`;
     };
 
     const renderRotationCell = (workplace, dateStr, extraProps = {}) => {
@@ -4632,6 +4658,10 @@ export default function ScheduleBoard() {
                                 const doctor = doctorById.get(assignment.employee_id);
                                 const doctorLike = doctor || { id: assignment.employee_id, name: empName };
                                 const chipLabel = getDoctorChipLabel(doctorLike);
+                                const roleColor = doctor
+                                    ? getRoleColor(doctor.role)
+                                    : { backgroundColor: '#f3f4f6', color: '#1f2937' };
+                                const displayFontSize = effectiveGridFontSize;
 
                                 return (
                                     <Draggable
@@ -4652,22 +4682,35 @@ export default function ScheduleBoard() {
                                                         assignment, timeslotId: assignment.timeslot_id || null,
                                                     });
                                                 }}
-                                                className="inline-flex flex-col items-center text-[10px] px-1.5 py-0.5 max-w-[100px] truncate rounded border shadow-sm select-none cursor-pointer bg-teal-100 border-teal-200 text-teal-800 hover:bg-teal-200 transition-colors"
+                                                className="relative flex items-center justify-center rounded-md font-bold border shadow-sm transition-colors select-none cursor-grab active:cursor-grabbing"
+                                                style={{
+                                                    backgroundColor: roleColor.backgroundColor,
+                                                    color: roleColor.color,
+                                                    width: `${shiftBoxSize}px`,
+                                                    height: `${shiftBoxSize}px`,
+                                                    fontSize: `${displayFontSize}px`,
+                                                }}
                                                 title={empName}
                                             >
-                                                {timeLabel && (
-                                                    <span className="text-[8px] font-medium text-teal-600 leading-tight whitespace-nowrap">
-                                                        {timeLabel}
+                                                <div className="absolute inset-0 rounded-md bg-white/50 hover:bg-black/10 transition-colors z-0" />
+                                                <div className="flex flex-col items-center justify-center w-full relative z-10">
+                                                    <span className="px-0.5 leading-none text-center whitespace-nowrap" style={{ fontSize: `${displayFontSize}px` }}>
+                                                        {chipLabel}
                                                     </span>
-                                                )}
-                                                <span className="truncate w-full text-center">{chipLabel}</span>
+                                                    {timeLabel && (
+                                                        <span className="leading-none text-center whitespace-nowrap opacity-60"
+                                                              style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}>
+                                                            {timeLabel}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </Draggable>
                                 );
                             })}
                         </div>
-                    )}
+                    )
                 </DroppableCell>
             );
         }
