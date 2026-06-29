@@ -1,3 +1,15 @@
+/**
+ * DEAD CODE — GlobalVoiceControl
+ *
+ * This component is NOT imported or used anywhere in the src/ tree.
+ * It was part of an abandoned ElevenLabs voice control feature.
+ * VoiceControl.jsx in schedule/ is also commented out in ScheduleBoard.jsx.
+ *
+ * @dead — Remove after TypeScript migration is verified.
+ *         If re-enabling, the ElevenLabs integration and backend
+ *         functions must be deployed first.
+ */
+
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';

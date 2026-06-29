@@ -1,3 +1,12 @@
+/**
+ * DEAD CODE — VisualEditAgent
+ *
+ * This component is NOT imported or used anywhere in the src/ tree.
+ * It was a prototype for a visual/Tailwind CSS editing mode.
+ *
+ * @dead — Remove after TypeScript migration is verified.
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge'
 
