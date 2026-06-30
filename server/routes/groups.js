@@ -1907,7 +1907,10 @@ router.post('/:groupId/shifts', async (req, res) => {
     // Hard violations (max_per_person_month, max_consecutive, rest_after) block the save.
     const hardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
     const hard = violations.filter((v) => hardRules.has(v.rule));
-    const tenantHard = tenantRuleResult.blockers;
+    // Tenant-level blockers (rotation_conflict, auto_off_conflict, etc.) are
+    // overridable via force=1 – the user gets a dialog asking whether to
+    // remove the employee from the conflicting rotation.
+    const tenantHard = req.query.force === '1' ? [] : tenantRuleResult.blockers;
     const allBlockers = [...tenantHard, ...relationshipBlockers];
     if (allBlockers.length > 0) {
       return res.status(422).json({ error: 'constraint_violation', details: allBlockers });
@@ -2017,13 +2020,17 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
     });
 
     // Employee relationship conflict check for pool shifts
-    const relationshipBlockers = await checkRelationshipConflictsForPoolShift(db, {
+    const relationshipBlockers = req.query.force === '1' ? [] : await checkRelationshipConflictsForPoolShift(db, {
       employeeId: nextState.employee_id,
       dateStr: nextState.date,
       existingSharedShiftsForWorkplace: existingForWorkplace,
     });
 
-    const allPatchBlockers = [...tenantRuleResult.blockers, ...relationshipBlockers];
+    // Tenant-level blockers (rotation_conflict, auto_off_conflict, etc.) are
+    // overridable via force=1 – the user gets a dialog asking whether to
+    // remove the employee from the conflicting rotation.
+    const tenantPatchBlockers = req.query.force === '1' ? [] : tenantRuleResult.blockers;
+    const allPatchBlockers = [...tenantPatchBlockers, ...relationshipBlockers];
     if (allPatchBlockers.length > 0) {
       return res.status(422).json({ error: 'constraint_violation', details: allPatchBlockers });
     }
