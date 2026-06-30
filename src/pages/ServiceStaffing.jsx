@@ -500,6 +500,9 @@ export default function ServiceStaffingPage() {
             // Bei Blockern: Override-Dialog anzeigen
             if (validationResult.blockers.length > 0) {
                 const doctor = doctors.find(d => d.id === doctorId);
+                const isRotationConflict = validationResult.blockers.some(
+                    (b) => typeof b === 'string' && b.includes('Rotation')
+                );
                 const { confirmed } = await requestOverride({
                     blockers: validationResult.blockers,
                     warnings: validationResult.warnings,
@@ -507,7 +510,26 @@ export default function ServiceStaffingPage() {
                     doctorName: doctor?.name,
                     date: format(date, 'dd.MM.yyyy', { locale: de }),
                     position,
-                    onConfirm: () => executeAssignment(dateStr, position, doctorId, existingShift)
+                    onConfirm: () => {
+                        // Bei Rotationskonflikt die Rotation aus der Tenant-DB entfernen
+                        if (isRotationConflict) {
+                            const rotationPositions = new Set(
+                                workplaces
+                                    .filter((w) => w.category === 'Rotationen')
+                                    .map((w) => w.name)
+                            );
+                            const rotationShift = allShifts.find(
+                                (s) =>
+                                    s.date === dateStr &&
+                                    s.doctor_id === doctorId &&
+                                    rotationPositions.has(s.position)
+                            );
+                            if (rotationShift) {
+                                deleteShiftMutation.mutate(rotationShift.id);
+                            }
+                        }
+                        executeAssignment(dateStr, position, doctorId, existingShift);
+                    },
                 });
                 
                 if (!confirmed) return;

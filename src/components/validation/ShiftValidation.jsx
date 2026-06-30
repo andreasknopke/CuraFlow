@@ -543,7 +543,7 @@ export class ShiftValidator {
                 const existingWorkplace = this.workplaces.find(w => w.name === conflict.position);
                 return {
                     blocker: existingWorkplace?.category === 'Rotationen'
-                        ? `Konflikt: Rotation "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.`
+                        ? `Mitarbeiter ist bereits in Rotation "${conflict.position}" eingetragen.`
                         : `Konflikt: Bereich "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.`
                 };
             }
