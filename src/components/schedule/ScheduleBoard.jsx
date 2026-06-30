@@ -3877,13 +3877,18 @@ export default function ScheduleBoard() {
         const rawTimeslotId = dropParts[2] || null;
         if (!dateStr || !position) return;
 
-        // Springer chips are only valid on the day they come from
+        // Springer chips are only valid on the day they come from.
+        // Also capture the assignment ID so we can hide the chip on success.
+        let springerAssignmentId = null;
         if (sourceDroppableId.startsWith('available__')) {
             const springerSourceDate = sourceDroppableId.replace('available__', '');
             const springerDoc = (allDisplayDocsByDate.get(springerSourceDate) || [])[source.index];
-            if (springerDoc?._isSpringer && springerSourceDate !== dateStr) {
-                toast.error('Springer kann nur am selben Tag eingeteilt werden');
-                return;
+            if (springerDoc?._isSpringer) {
+                if (springerSourceDate !== dateStr) {
+                    toast.error('Springer kann nur am selben Tag eingeteilt werden');
+                    return;
+                }
+                springerAssignmentId = springerDoc._assignmentId;
             }
         }
 
@@ -4073,6 +4078,9 @@ export default function ScheduleBoard() {
                     bulkCreateShiftsMutation.mutate(shiftsToCreate, {
                         onSuccess: () => {
                             console.log('DEBUG: Bulk Create Success');
+                            if (springerAssignmentId) {
+                                setHiddenSpringerChipIds(prev => new Set([...prev, springerAssignmentId]));
+                            }
                             if (updateAutoFreiNeeded && existingAutoFreiShift) {
                                 if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
                                     updateAutoFreiMutation.mutate({
