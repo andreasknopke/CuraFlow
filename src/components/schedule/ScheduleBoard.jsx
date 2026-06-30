@@ -3352,8 +3352,6 @@ export default function ScheduleBoard() {
     //  Drag-out (outside grid) simply hides the chip locally.
     // ============================================================
     if (normalizedDraggableId.startsWith('available-springer-')) {
-        console.log('[SpringerDrag] Drag ended', { reason: result.reason, destination: destinationDroppableId, sourceIndex: source.index });
-
         const springerDateStr = sourceDroppableId.startsWith('available__')
             ? sourceDroppableId.replace('available__', '')
             : null;
@@ -3439,23 +3437,22 @@ export default function ScheduleBoard() {
             const rawTimeslotId = dropParts[2] || null;
             if (!destDate || !position) return;
 
-            // Resolve the local doctor ID via central_employee_id mapping
+            // Resolve the local doctor ID via central_employee_id mapping.
+            // Fallback: use the central employee ID directly as doctor_id.
             const empId = String(_employeeId);
             const localDoctor = centralEmployeeToLocalDoctor.get(empId);
-            const fallbackDoc = doctorById.has(_employeeId) ? _employeeId : null;
-            const doctorId = localDoctor ? localDoctor.id : fallbackDoc;
-            console.log('[SpringerDrag] Doctor resolution:', { _employeeId, empId, localDoctorFound: !!localDoctor, localDoctorId: localDoctor?.id, fallbackDoc, doctorId });
-
-            if (!doctorId) {
-                toast.error(`Mitarbeiter ${_employeeName} ist in diesem Mandanten nicht bekannt.`);
-                return;
-            }
+            const doctorId = localDoctor ? localDoctor.id : String(_employeeId);
+            // Diagnostic: show ALL central_employee_ids in local doctors vs the assignment employee_id
+            console.log('[SpringerDrag] DIAGNOSE — assignment.employee_id:', _employeeId);
+            console.log('[SpringerDrag] DIAGNOSE — centralEmployeeToLocalDoctor keys:', [...centralEmployeeToLocalDoctor.keys()]);
+            console.log('[SpringerDrag] DIAGNOSE — doctorById keys (first 10):', [...doctorById.keys()].slice(0, 10));
+            console.log('[SpringerDrag] DIAGNOSE — empId lookup:', empId, '→', localDoctor ? `FOUND id=${localDoctor.id}` : 'NOT FOUND');
+            console.log('[SpringerDrag] DIAGNOSE — doctorById.has(empId):', doctorById.has(empId));
+            console.log('[SpringerDrag] DIAGNOSE — resolved doctorId:', doctorId);
 
             const executeSpringerDrop = async (selection) => {
-                console.log('[SpringerDrag] executeSpringerDrop called, selection:', selection);
                 const normalizedSelection = normalizeTimeslotSelection(selection);
                 const timeslotId = normalizedSelection.timeslotId;
-                console.log('[SpringerDrag] Creating shift:', { destDate, position, doctorId, timeslotId });
 
                 const dropBlock = getScheduleBlock(destDate, position, timeslotId);
                 if (dropBlock) {
