@@ -4055,10 +4055,23 @@ export default function ScheduleBoard() {
                 }
             };
 
-            const hasConflict = await checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
-            if (hasConflict) {
-                console.log('Conflict detected - waiting for override decision');
-                return;
+            // Springer chips from rotation networks use the central employee ID
+            // as doctor_id. The local doctors table doesn't know them, so the
+            // "Person nicht gefunden" validator check would block. Skip validation
+            // for springer drops — the backend shift_entry table accepts any
+            // doctor_id (no FK constraint in the MySQL schema).
+            const springerSourceDate = sourceDroppableId.startsWith('available__')
+                ? sourceDroppableId.replace('available__', '')
+                : '';
+            const isSpringerDrop = springerSourceDate
+                && ((allDisplayDocsByDate.get(springerSourceDate) || [])[source.index] || {})._isSpringer;
+
+            if (!isSpringerDrop) {
+                const hasConflict = await checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
+                if (hasConflict) {
+                    console.log('Conflict detected - waiting for override decision');
+                    return;
+                }
             }
 
             executeShiftCreation();
