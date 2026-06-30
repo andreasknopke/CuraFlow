@@ -3565,6 +3565,14 @@ export default function ScheduleBoard() {
             }
             const shift = currentWeekShifts.find(s => s.id === shiftId) || allShifts.find(s => s.id === shiftId);
             if (shift) {
+                const springerDoc = springerDoctorById.get(shift.doctor_id);
+                if (springerDoc?._isSpringer) {
+                    setHiddenSpringerChipIds(prev => {
+                        const next = new Set(prev);
+                        next.delete(springerDoc._assignmentId);
+                        return next;
+                    });
+                }
                 deleteShiftWithCleanup(shift);
             }
         }
@@ -3848,6 +3856,15 @@ export default function ScheduleBoard() {
          console.log(`[DEBUG-LOG] Drop to Trash/Sidebar. ShiftID: ${shiftId}, Found: ${!!shift}`);
 
          if (shift) {
+             // If this is a springer shift, unhide the Verfügbar chip
+             const springerDoc = springerDoctorById.get(shift.doctor_id);
+             if (springerDoc?._isSpringer) {
+                 setHiddenSpringerChipIds(prev => {
+                     const next = new Set(prev);
+                     next.delete(springerDoc._assignmentId);
+                     return next;
+                 });
+             }
              deleteShiftWithCleanup(shift);
          } else {
              console.error(`[DEBUG-LOG] Shift ${shiftId} not found in currentWeekShifts! Available IDs:`, currentWeekShifts.map(s => s.id));
@@ -3855,6 +3872,14 @@ export default function ScheduleBoard() {
              const fallbackShift = allShifts.find(s => s.id === shiftId);
              if (fallbackShift) {
                  console.log(`[DEBUG-LOG] Found shift in allShifts fallback. Deleting.`);
+                 const fallbackSpringerDoc = springerDoctorById.get(fallbackShift.doctor_id);
+                 if (fallbackSpringerDoc?._isSpringer) {
+                     setHiddenSpringerChipIds(prev => {
+                         const next = new Set(prev);
+                         next.delete(fallbackSpringerDoc._assignmentId);
+                         return next;
+                     });
+                 }
                  deleteShiftWithCleanup(fallbackShift);
              }
          }
