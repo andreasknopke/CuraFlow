@@ -1116,6 +1116,49 @@ export default function ScheduleBoard() {
         return map;
     }, [rotationDemands]);
 
+    // Springer placeholder chips for ward tenants in rotation networks.
+    // When pool staff are assigned to rotation workplaces, ward tenants
+    // see placeholder "Springer N" chips in the Verfügbar row, which can
+    // be dragged onto station workplaces (creating a local shift and
+    // deleting the source rotation assignment).
+    const springerChipsByDate = useMemo(() => {
+        const map = new Map();
+
+        // Only show Springer chips for ward tenants (non-write rotation workplaces)
+        const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every(wp => wp.canWrite === false);
+        if (!isWardTenant || rotationAssignments.length === 0) return map;
+
+        // Group rotation assignments by date
+        const assignmentsByDate = new Map();
+        for (const assignment of rotationAssignments) {
+            const dateStr = String(assignment.date).slice(0, 10);
+            const list = assignmentsByDate.get(dateStr) || [];
+            list.push(assignment);
+            assignmentsByDate.set(dateStr, list);
+        }
+
+        // Create placeholder chips per day (numbered per day)
+        for (const day of weekDays) {
+            if (!isValid(day)) continue;
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const assignments = assignmentsByDate.get(dateStr) || [];
+            if (assignments.length === 0) continue;
+
+            const chips = assignments.map((assignment, idx) => ({
+                id: `springer-${assignment.id}-${dateStr}`,
+                assignmentId: assignment.id,
+                label: `Springer ${idx + 1}`,
+                employeeId: assignment.employee_id,
+                employeeName: assignment.employee_name || `#${assignment.employee_id}`,
+                groupId: assignment.group_id,
+                date: dateStr,
+            }));
+            map.set(dateStr, chips);
+        }
+
+        return map;
+    }, [rotationAssignments, rotationWorkplaces, weekDays]);
+
     // Local state for the rotation dialogs launched from the board cells.
     const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState({ open: false, workplace: null, date: null, assignment: null, timeslotId: null, defaultEmployeeId: null });
     const [rotationDemandDialog, setRotationDemandDialog] = useState({
@@ -2831,6 +2874,21 @@ export default function ScheduleBoard() {
 
         const doctorById = useMemo(() => new Map(doctors.map((doctor) => [doctor.id, doctor])), [doctors]);
 
+        // Map central_employee_id to local doctor ID for Springer chip resolution
+        const centralEmployeeToLocalDoctor = useMemo(() => {
+            const map = new Map();
+            for (const doctor of doctors) {
+                if (doctor.central_employee_id) {
+                    const key = String(doctor.central_employee_id);
+                    // Prefer the first matching doctor; central IDs should be unique per tenant
+                    if (!map.has(key)) {
+                        map.set(key, doctor);
+                    }
+                }
+            }
+            return map;
+        }, [doctors]);
+
         const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
 
     const getPositionTimeslotOptions = (positionName, doctorId = null) => {
@@ -3246,6 +3304,120 @@ export default function ScheduleBoard() {
     const normalizedDraggableId = normalizeDraggableId(draggableId);
     const sourceDroppableId = stripPanelPrefix(source.droppableId);
     const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;
+
+    // ============================================================
+    //  SPRINGER PLACEHOLDER DRAG (Ward-Tenant Rotation Network)
+    //  Springer chips from the Verfügbar row are dragged to
+    //  station workplaces. On drop: delete the rotation assignment
+    //  and create a local shift for the pool employee.
+    // ============================================================
+    if (normalizedDraggableId.startsWith('springer-')) {
+        // Parse: springer-{assignmentId}-{dateStr}
+        // The date is always YYYY-MM-DD (10 chars). Split from the end.
+        const springerParts = normalizedDraggableId.replace('springer-', '').split('-');
+        const assignmentId = springerParts.slice(0, -3).join('-');
+        const assignment = rotationAssignments.find((a) => String(a.id) === String(assignmentId));
+        if (!assignment) return;
+
+        // Dropped outside or to trash/sidebar/available → just delete the assignment
+        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar') || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
+            try {
+                await api.deleteRotationAssignment(assignment.group_id, assignmentId);
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                toast.success('Springer-Einteilung entfernt');
+            } catch (err) {
+                toast.error('Fehler beim Entfernen: ' + (err?.message || ''));
+            }
+            return;
+        }
+
+        // Dropped to a rotation cell → ignore (handled by rotation-assignment logic)
+        if (destinationDroppableId.startsWith('rotationCell__')) return;
+
+        // Dropped to a regular grid cell → create local shift + delete rotation assignment
+        if (destinationDroppableId.includes('__') && !destinationDroppableId.startsWith('rowHeader__')) {
+            const dropParts = destinationDroppableId.split('__');
+            const destDate = dropParts[0];
+            const position = dropParts[1];
+            const rawTimeslotId = dropParts[2] || null;
+            if (!destDate || !position) return;
+
+            // Resolve the local doctor ID via central_employee_id mapping
+            const empId = String(assignment.employee_id);
+            const localDoctor = centralEmployeeToLocalDoctor.get(empId);
+            const doctorId = localDoctor ? localDoctor.id : (doctorById.has(assignment.employee_id) ? assignment.employee_id : null);
+
+            if (!doctorId) {
+                toast.error(`Mitarbeiter ${assignment.employee_name || '#' + assignment.employee_id} ist in diesem Mandanten nicht bekannt.`);
+                return;
+            }
+
+            const executeSpringerDrop = async (selection) => {
+                const normalizedSelection = normalizeTimeslotSelection(selection);
+                const timeslotId = normalizedSelection.timeslotId;
+
+                const dropBlock = getScheduleBlock(destDate, position, timeslotId);
+                if (dropBlock) {
+                    toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
+                    return;
+                }
+
+                if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, destDate)) {
+                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                    return;
+                }
+
+                // Create the local shift first — only delete the rotation
+                // assignment after successful shift creation to avoid orphans.
+                const effectiveTsId = timeslotId === '__unassigned__' ? null : timeslotId;
+                const existingInCell = currentWeekShifts.filter(s => {
+                    if (s.date !== destDate || s.position !== position) return false;
+                    if (effectiveTsId) return s.timeslot_id === effectiveTsId;
+                    return !s.timeslot_id;
+                });
+                const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                const newOrder = maxOrder + 1;
+
+                createShiftMutation.mutate(
+                    applyTimeslotSelectionToCreateData(
+                        { date: destDate, position, doctor_id: doctorId, order: newOrder },
+                        { ...normalizedSelection, timeslotId: effectiveTsId }
+                    ),
+                    {
+                        onSuccess: () => {
+                            // Delete the rotation assignment after successful shift creation
+                            api.deleteRotationAssignment(assignment.group_id, assignmentId)
+                                .then(() => {
+                                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                                    toast.success(`${assignment.employee_name || 'Springer'} → ${position} eingeteilt`);
+                                })
+                                .catch((err) => {
+                                    toast.error('Rotation konnte nicht entfernt werden: ' + (err?.message || ''));
+                                });
+                        },
+                        onError: (err) => {
+                            toast.error('Fehler beim Erstellen der Schicht: ' + (err?.message || ''));
+                        },
+                    }
+                );
+            };
+
+            if (!resolveTimeslotSelection({
+                positionName: position,
+                dateStr: destDate,
+                requestedTimeslotId: rawTimeslotId,
+                onResolved: executeSpringerDrop,
+                doctorId,
+            })) {
+                return;
+            }
+            return;
+        }
+
+        return;
+    }
 
     // ============================================================
     //  ROTATION ASSIGNMENT DRAG-OUT (Pool-Rotationen)
@@ -6401,6 +6573,33 @@ export default function ScheduleBoard() {
                                                                             </div>
                                                                         );
                                                                     }}
+                                                                </Draggable>
+                                                            ))}
+                                                            {/* Springer placeholder chips for ward tenants in rotation networks */}
+                                                            {springerChipsByDate.get(dateStr)?.map((chip, springerIdx) => (
+                                                                <Draggable
+                                                                    key={chip.id}
+                                                                    draggableId={chip.id}
+                                                                    index={availableDocs.length + springerIdx}
+                                                                    isDragDisabled={isReadOnly}
+                                                                >
+                                                                    {(provided, snapshot) => (
+                                                                        <div
+                                                                            ref={provided.innerRef}
+                                                                            {...provided.draggableProps}
+                                                                            {...provided.dragHandleProps}
+                                                                            data-testid={`schedule-springer-${chip.assignmentId}-${dateStr}`}
+                                                                            style={provided.draggableProps.style}
+                                                                            className={`
+                                                                                relative ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[55px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none
+                                                                                bg-amber-100 border-amber-300 text-amber-900
+                                                                                ${snapshot.isDragging ? 'opacity-50 ring-2 ring-amber-500 z-50' : 'hover:bg-amber-200 cursor-grab active:cursor-grabbing'}
+                                                                            `}
+                                                                            title={`${chip.employeeName} — Aus Pool-Rotation zuweisbar`}
+                                                                        >
+                                                                            {chip.label}
+                                                                        </div>
+                                                                    )}
                                                                 </Draggable>
                                                             ))}
                                                             {provided.placeholder}
