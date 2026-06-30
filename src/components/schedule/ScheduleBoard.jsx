@@ -2835,21 +2835,6 @@ export default function ScheduleBoard() {
 
         const doctorById = useMemo(() => new Map(doctors.map((doctor) => [doctor.id, doctor])), [doctors]);
 
-        // Map central_employee_id to local doctor ID for Springer chip resolution
-        const centralEmployeeToLocalDoctor = useMemo(() => {
-            const map = new Map();
-            for (const doctor of doctors) {
-                if (doctor.central_employee_id) {
-                    const key = String(doctor.central_employee_id);
-                    // Prefer the first matching doctor; central IDs should be unique per tenant
-                    if (!map.has(key)) {
-                        map.set(key, doctor);
-                    }
-                }
-            }
-            return map;
-        }, [doctors]);
-
         const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
 
     const getPositionTimeslotOptions = (positionName, doctorId = null) => {
@@ -3043,8 +3028,10 @@ export default function ScheduleBoard() {
             assignmentsByDate.set(dateStr, list);
         }
 
-        // Create doctor-like synthetic entries (same shape expected by getAvailableDoctorWishPresentation,
-        // getDoctorChipLabel, getRoleColor, etc.)
+        // Create doctor-like synthetic entries. The `id` field is the central
+        // employee_id so that parseAvailableDoctorId etc. resolve correctly.
+        // The draggableId in the Verf�gbar row will be available-doc-{id}-{dateStr},
+        // which flows through the EXACT SAME drag-drop handler as regular doctors.
         for (const day of weekDays) {
             if (!isValid(day)) continue;
             const dateStr = format(day, 'yyyy-MM-dd');
@@ -3052,10 +3039,10 @@ export default function ScheduleBoard() {
             if (assignments.length === 0) continue;
 
             const chips = assignments.map((assignment, idx) => ({
-                id: `springer-${assignment.id}`,
+                id: assignment.employee_id,
                 name: assignment.employee_name || `#${assignment.employee_id}`,
                 role: 'Arzt',
-                initials: `Sp${idx + 1}`,
+                initials: `SP${idx + 1}`,
                 _isSpringer: true,
                 _assignmentId: assignment.id,
                 _employeeId: assignment.employee_id,
@@ -3079,7 +3066,7 @@ export default function ScheduleBoard() {
             const dateStr = format(day, 'yyyy-MM-dd');
             const realDocs = availableDoctorsByDate.get(dateStr) || [];
             const springerDocs = springerChipsByDate.get(dateStr) || [];
-            const visibleSpringers = springerDocs.filter(d => !hiddenSpringerChipIds.has(d.id));
+            const visibleSpringers = springerDocs.filter(d => !hiddenSpringerChipIds.has(d._assignmentId));
             map.set(dateStr, [...realDocs, ...visibleSpringers]);
         }
         return map;
@@ -3290,22 +3277,6 @@ export default function ScheduleBoard() {
         docId = normalizedDraggableId.replace('sidebar-doc-', '');
     } else if (normalizedDraggableId.startsWith('available-doc-')) {
         docId = parseAvailableDoctorId(normalizedDraggableId);
-    } else if (normalizedDraggableId.startsWith('available-springer-')) {
-        // Springer placeholder chips — resolve the local doctor ID for training
-        // highlights and availability checking.
-        const { source } = start;
-        const springerSourceId = stripPanelPrefix(source.droppableId);
-        const springerDateStr = springerSourceId.startsWith('available__')
-            ? springerSourceId.replace('available__', '')
-            : null;
-        const springerDoc = springerDateStr
-            ? (allDisplayDocsByDate.get(springerDateStr) || [])[source.index]
-            : null;
-        if (springerDoc?._isSpringer) {
-            const empId = String(springerDoc._employeeId);
-            const localDoctor = centralEmployeeToLocalDoctor.get(empId);
-            docId = localDoctor ? localDoctor.id : (doctorById.has(springerDoc._employeeId) ? springerDoc._employeeId : 'springer');
-        }
     } else if (normalizedDraggableId.startsWith('shift-')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
         setDraggingShiftId(shiftId);
@@ -3344,171 +3315,20 @@ export default function ScheduleBoard() {
     const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;
 
     // ============================================================
-    //  SPRINGER PLACEHOLDER DRAG (Ward-Tenant Rotation Network)
-    //  Springer chips from the Verfügbar row can be dragged to
-    //  station workplaces to create a local shift for the pool
-    //  employee. The rotation assignment is NOT deleted — the
-    //  Springer stays visible in the Pool-Rotationen row.
-    //  Drag-out (outside grid) simply hides the chip locally.
+    //  SPRINGER HIDE-ON-TRASH (Ward-Tenant Rotation Network)
+    //  A Springer chip dragged to the trash / sidebar is merely hidden
+    //  from the Verfügbar row. The rotation assignment is NOT deleted.
+    //  Grid-drops on station workplaces are handled by the regular
+    //  available-doc handler below (same draggableId format).
     // ============================================================
-    if (normalizedDraggableId.startsWith('available-springer-')) {
-        const springerDateStr = sourceDroppableId.startsWith('available__')
-            ? sourceDroppableId.replace('available__', '')
-            : null;
-        const springerDoc = springerDateStr
-            ? (allDisplayDocsByDate.get(springerDateStr) || [])[source.index]
-            : null;
-        if (!springerDoc?._isSpringer) return;
-
-        const { _assignmentId, _employeeId, _employeeName, _groupId } = springerDoc;
-
-        // Dropped to trash or sidebar → hide chip from Verfügbar
-        if (destinationDroppableId === 'sidebar' || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
-            setHiddenSpringerChipIds(prev => new Set([...prev, springerDoc.id]));
+    if ((destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId === 'sidebar') && sourceDroppableId.startsWith('available__')) {
+        const hideDateStr = sourceDroppableId.replace('available__', '');
+        const hideDoc = (allDisplayDocsByDate.get(hideDateStr) || [])[source.index];
+        if (hideDoc?._isSpringer) {
+            setHiddenSpringerChipIds(prev => new Set([...prev, hideDoc._assignmentId]));
             toast.success('Springer aus Verfügbar entfernt');
             return;
         }
-
-        // Dropped outside any droppable (null destination) → just ignore,
-        // the chip stays in the Verfügbar row. Ward-view rotation cells
-        // are not droppables, so this is the expected path there.
-        if (!destination) {
-            toast.info('Zum Einteilen auf einen Stations-Arbeitsplatz ziehen');
-            return;
-        }
-
-        // Dropped back to Verfügbar → ignore (no-op)
-        if (destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar')) return;
-
-        // Dropped to a rotation cell → create rotation assignment (same flow as
-        // dragging a real doctor into a rotation cell)
-        if (destinationDroppableId.startsWith('rotationCell__')) {
-            const rParts = destinationDroppableId.split('__');
-            const wpId = rParts[1];
-            const rDestDate = rParts[2];
-            if (!wpId || !rDestDate) return;
-
-            const wp = rotationWorkplaces.find(w => String(w.id) === String(wpId));
-            if (!wp) return;
-
-            const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
-            const doCreate = (timeslotId) => {
-                api.createRotationAssignment(wp.group_id, {
-                    rotation_workplace_id: wp.id,
-                    date: rDestDate,
-                    employee_id: _employeeId,
-                    timeslot_id: timeslotId || null,
-                }).then(() => {
-                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
-                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
-                    toast.success('Springer eingeteilt');
-                }).catch((err) => {
-                    toast.error('Fehler: ' + (err?.message || ''));
-                });
-            };
-            if (hasTimeslots) {
-                const options = wp.timeslots.map((ts) => ({
-                    id: ts.id,
-                    label: ts.label,
-                    start_time: ts.start_time,
-                    end_time: ts.end_time,
-                    canCustomize: false,
-                }));
-                pendingTimeslotSelectionRef.current = doCreate;
-                setTimeslotSelectionDialog({
-                    open: true,
-                    workplaceName: wp.name,
-                    description: `${wp.name} am ${format(new Date(rDestDate + 'T00:00:00'), 'dd.MM.yyyy')} hat mehrere Zeitfenster.`,
-                    options,
-                    allowCustomEditing: false,
-                    customEndMinutesByOptionId: {},
-                });
-            } else {
-                doCreate(null);
-            }
-            return;
-        }
-
-        // Dropped to a regular grid cell → create local shift
-        if (destinationDroppableId.includes('__') && !destinationDroppableId.startsWith('rowHeader__')) {
-            const dropParts = destinationDroppableId.split('__');
-            const destDate = dropParts[0];
-            const position = dropParts[1];
-            const rawTimeslotId = dropParts[2] || null;
-            if (!destDate || !position) return;
-
-            // Resolve the local doctor ID via central_employee_id mapping.
-            // Fallback: use the central employee ID directly as doctor_id.
-            const empId = String(_employeeId);
-            const localDoctor = centralEmployeeToLocalDoctor.get(empId);
-            const doctorId = localDoctor ? localDoctor.id : String(_employeeId);
-
-            const executeSpringerDrop = async (selection) => {
-                const normalizedSelection = normalizeTimeslotSelection(selection);
-                const timeslotId = normalizedSelection.timeslotId;
-
-                const dropBlock = getScheduleBlock(destDate, position, timeslotId);
-                if (dropBlock) {
-                    toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
-                    return;
-                }
-
-                // Inline active-day check to avoid referencing `isWorkplaceActiveOnDate`,
-                // which is defined later in handleDragEnd (same function scope → TDZ).
-                {
-                    const wp = workplaces.find(w => w.name === position);
-                    if (wp) {
-                        const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
-                        const d = new Date(destDate + 'T00:00:00');
-                        const dayOfWeek = d.getDay();
-                        const isActive = isPublicHoliday(d)
-                            ? activeDays.some(day => Number(day) === 0)
-                            : activeDays.some(day => Number(day) === dayOfWeek);
-                        if (!isActive) {
-                            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-                            return;
-                        }
-                    }
-                }
-
-                const effectiveTsId = timeslotId === '__unassigned__' ? null : timeslotId;
-                const existingInCell = currentWeekShifts.filter(s => {
-                    if (s.date !== destDate || s.position !== position) return false;
-                    if (effectiveTsId) return s.timeslot_id === effectiveTsId;
-                    return !s.timeslot_id;
-                });
-                const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
-                const newOrder = maxOrder + 1;
-
-                createShiftMutation.mutate(
-                    applyTimeslotSelectionToCreateData(
-                        { date: destDate, position, doctor_id: doctorId, order: newOrder },
-                        { ...normalizedSelection, timeslotId: effectiveTsId }
-                    ),
-                    {
-                        onSuccess: () => {
-                            toast.success(`${_employeeName} → ${position} eingeteilt`);
-                        },
-                        onError: (err) => {
-                            toast.error('Fehler beim Erstellen der Schicht: ' + (err?.message || ''));
-                        },
-                    }
-                );
-            };
-
-            if (!resolveTimeslotSelection({
-                positionName: position,
-                dateStr: destDate,
-                requestedTimeslotId: rawTimeslotId,
-                onResolved: executeSpringerDrop,
-                doctorId,
-            })) {
-                return;
-            }
-            return;
-        }
-
-        return;
     }
 
     // ============================================================
@@ -5596,7 +5416,7 @@ export default function ScheduleBoard() {
                                                                           {allDocs.map((doc, idx) => {
                                                                               const isSpringer = doc._isSpringer;
                                                                               return (
-                                                                              <Draggable key={isSpringer ? `split-available-springer-${doc.id}-${dateStr}` : `split-available-${doc.id}-${dateStr}`} draggableId={isSpringer ? `${SPLIT_DRAG_PREFIX}available-springer-${doc.id}-${dateStr}` : `${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
+                                                                              <Draggable key={`split-available-${doc.id}-${dateStr}`} draggableId={`${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
                                                                                   {(provided, snapshot) => {
                                                                                       if (isSpringer) {
                                                                                           const springerStyle = { backgroundColor: '#fef3c7', color: '#92400e' };
@@ -6641,8 +6461,8 @@ export default function ScheduleBoard() {
                                                                 const isSpringer = doc._isSpringer;
                                                                 return (
                                                                 <Draggable
-                                                                    key={isSpringer ? `available-springer-${doc.id}-${dateStr}` : `available-${doc.id}-${dateStr}`}
-                                                                    draggableId={isSpringer ? `available-springer-${doc.id}-${dateStr}` : `available-doc-${doc.id}-${dateStr}`}
+                                                                    key={`available-${doc.id}-${dateStr}`}
+                                                                    draggableId={`available-doc-${doc.id}-${dateStr}`}
                                                                     index={idx}
                                                                     isDragDisabled={isReadOnly}
                                                                 >
