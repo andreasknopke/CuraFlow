@@ -3061,7 +3061,7 @@ export default function ScheduleBoard() {
                 _employeeId: assignment.employee_id,
                 _employeeName: assignment.employee_name || `#${assignment.employee_id}`,
                 _groupId: assignment.group_id,
-                _springerLabel: `Springer ${idx + 1}`,
+                _springerLabel: `SP${idx + 1}`,
             }));
             map.set(dateStr, chips);
         }
@@ -3356,8 +3356,54 @@ export default function ScheduleBoard() {
         // Dropped back to Verfügbar → ignore (no-op)
         if (destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar')) return;
 
-        // Dropped to a rotation cell → ignore
-        if (destinationDroppableId.startsWith('rotationCell__')) return;
+        // Dropped to a rotation cell → create rotation assignment (same flow as
+        // dragging a real doctor into a rotation cell)
+        if (destinationDroppableId.startsWith('rotationCell__')) {
+            const rParts = destinationDroppableId.split('__');
+            const wpId = rParts[1];
+            const rDestDate = rParts[2];
+            if (!wpId || !rDestDate) return;
+
+            const wp = rotationWorkplaces.find(w => String(w.id) === String(wpId));
+            if (!wp) return;
+
+            const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
+            const doCreate = (timeslotId) => {
+                api.createRotationAssignment(wp.group_id, {
+                    rotation_workplace_id: wp.id,
+                    date: rDestDate,
+                    employee_id: _employeeId,
+                    timeslot_id: timeslotId || null,
+                }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                    toast.success('Springer eingeteilt');
+                }).catch((err) => {
+                    toast.error('Fehler: ' + (err?.message || ''));
+                });
+            };
+            if (hasTimeslots) {
+                const options = wp.timeslots.map((ts) => ({
+                    id: ts.id,
+                    label: ts.label,
+                    start_time: ts.start_time,
+                    end_time: ts.end_time,
+                    canCustomize: false,
+                }));
+                pendingTimeslotSelectionRef.current = doCreate;
+                setTimeslotSelectionDialog({
+                    open: true,
+                    workplaceName: wp.name,
+                    description: `${wp.name} am ${format(new Date(rDestDate + 'T00:00:00'), 'dd.MM.yyyy')} hat mehrere Zeitfenster.`,
+                    options,
+                    allowCustomEditing: false,
+                    customEndMinutesByOptionId: {},
+                });
+            } else {
+                doCreate(null);
+            }
+            return;
+        }
 
         // Dropped to a regular grid cell → create local shift
         if (destinationDroppableId.includes('__') && !destinationDroppableId.startsWith('rowHeader__')) {
