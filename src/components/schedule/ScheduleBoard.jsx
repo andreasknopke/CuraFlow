@@ -3442,7 +3442,9 @@ export default function ScheduleBoard() {
             // Resolve the local doctor ID via central_employee_id mapping
             const empId = String(_employeeId);
             const localDoctor = centralEmployeeToLocalDoctor.get(empId);
-            const doctorId = localDoctor ? localDoctor.id : (doctorById.has(_employeeId) ? _employeeId : null);
+            const fallbackDoc = doctorById.has(_employeeId) ? _employeeId : null;
+            const doctorId = localDoctor ? localDoctor.id : fallbackDoc;
+            console.log('[SpringerDrag] Doctor resolution:', { _employeeId, empId, localDoctorFound: !!localDoctor, localDoctorId: localDoctor?.id, fallbackDoc, doctorId });
 
             if (!doctorId) {
                 toast.error(`Mitarbeiter ${_employeeName} ist in diesem Mandanten nicht bekannt.`);
@@ -3450,8 +3452,10 @@ export default function ScheduleBoard() {
             }
 
             const executeSpringerDrop = async (selection) => {
+                console.log('[SpringerDrag] executeSpringerDrop called, selection:', selection);
                 const normalizedSelection = normalizeTimeslotSelection(selection);
                 const timeslotId = normalizedSelection.timeslotId;
+                console.log('[SpringerDrag] Creating shift:', { destDate, position, doctorId, timeslotId });
 
                 const dropBlock = getScheduleBlock(destDate, position, timeslotId);
                 if (dropBlock) {
