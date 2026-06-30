@@ -3346,10 +3346,18 @@ export default function ScheduleBoard() {
 
         const { _assignmentId, _employeeId, _employeeName, _groupId } = springerDoc;
 
-        // Dropped outside or to sidebar/trash → hide chip from Verfügbar
-        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
+        // Dropped to trash or sidebar → hide chip from Verfügbar
+        if (destinationDroppableId === 'sidebar' || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
             setHiddenSpringerChipIds(prev => new Set([...prev, springerDoc.id]));
             toast.success('Springer aus Verfügbar entfernt');
+            return;
+        }
+
+        // Dropped outside any droppable (null destination) → just ignore,
+        // the chip stays in the Verfügbar row. Ward-view rotation cells
+        // are not droppables, so this is the expected path there.
+        if (!destination) {
+            toast.info('Zum Einteilen auf einen Stations-Arbeitsplatz ziehen');
             return;
         }
 
@@ -5552,10 +5560,7 @@ export default function ScheduleBoard() {
                                                       ) : rowName === 'Verfügbar' ? (
                                                           <Droppable droppableId={withPanelPrefix(`available__${dateStr}`, SPLIT_PANEL_PREFIX)} isDropDisabled={isReadOnly} renderClone={renderAvailableDoctorClone}>
                                                               {(provided, snapshot) => {
-                                                                  const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
-                                                                  const availableDocs = sortDoctorsForDisplay(
-                                                                      doctors.filter(d => !assignedDocIds.has(d.id) && d.role !== 'Nicht-Radiologe')
-                                                                  );
+                                                                  const allDocs = allDisplayDocsByDate.get(dateStr) || [];
 
                                                                   return (
                                                                       <div
@@ -5563,9 +5568,27 @@ export default function ScheduleBoard() {
                                                                           {...provided.droppableProps}
                                                                           className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50'}`}
                                                                       >
-                                                                          {availableDocs.map((doc, idx) => (
-                                                                              <Draggable key={`split-available-${doc.id}-${dateStr}`} draggableId={`${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
+                                                                          {allDocs.map((doc, idx) => {
+                                                                              const isSpringer = doc._isSpringer;
+                                                                              return (
+                                                                              <Draggable key={isSpringer ? `split-available-springer-${doc.id}-${dateStr}` : `split-available-${doc.id}-${dateStr}`} draggableId={isSpringer ? `${SPLIT_DRAG_PREFIX}available-springer-${doc.id}-${dateStr}` : `${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
                                                                                   {(provided, snapshot) => {
+                                                                                      if (isSpringer) {
+                                                                                          const springerStyle = { backgroundColor: '#fef3c7', color: '#92400e' };
+                                                                                          const tooltipText = `${doc._employeeName} — Aus Pool-Rotation zuweisbar`;
+                                                                                          return (
+                                                                                              <div
+                                                                                                  ref={provided.innerRef}
+                                                                                                  {...provided.draggableProps}
+                                                                                                  {...provided.dragHandleProps}
+                                                                                                  style={{ ...provided.draggableProps.style, ...springerStyle }}
+                                                                                                  className={`relative ${isMonthView ? 'text-[9px] px-1 py-0.5 max-w-[44px] whitespace-nowrap' : 'text-[10px] px-1.5 py-0.5 max-w-[100px] truncate'} rounded border shadow-sm select-none ${snapshot.isDragging ? 'opacity-50 ring-2 ring-indigo-500 z-50' : ''}`}
+                                                                                                  title={tooltipText}
+                                                                                              >
+                                                                                                  {doc._springerLabel}
+                                                                                              </div>
+                                                                                          );
+                                                                                      }
                                                                                       const { style, wishClass, tooltipText } = getAvailableDoctorWishPresentation(doc, dateStr);
                                                                                       const splitQualIds = rowQualFilter ? getDoctorQualIds(doc.id) : [];
                                                                                       const splitHint = rowQualFilter ? getDoctorRowQualHint(rowQualFilter, splitQualIds) : null;
@@ -5592,7 +5615,8 @@ export default function ScheduleBoard() {
                                                                                       );
                                                                                   }}
                                                                               </Draggable>
-                                                                          ))}
+                                                                              );
+                                                                          })}
                                                                           {provided.placeholder}
                                                                       </div>
                                                                   );
