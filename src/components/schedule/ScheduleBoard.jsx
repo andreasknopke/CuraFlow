@@ -3290,6 +3290,22 @@ export default function ScheduleBoard() {
         docId = normalizedDraggableId.replace('sidebar-doc-', '');
     } else if (normalizedDraggableId.startsWith('available-doc-')) {
         docId = parseAvailableDoctorId(normalizedDraggableId);
+    } else if (normalizedDraggableId.startsWith('available-springer-')) {
+        // Springer placeholder chips — resolve the local doctor ID for training
+        // highlights and availability checking.
+        const { source } = start;
+        const springerSourceId = stripPanelPrefix(source.droppableId);
+        const springerDateStr = springerSourceId.startsWith('available__')
+            ? springerSourceId.replace('available__', '')
+            : null;
+        const springerDoc = springerDateStr
+            ? (allDisplayDocsByDate.get(springerDateStr) || [])[source.index]
+            : null;
+        if (springerDoc?._isSpringer) {
+            const empId = String(springerDoc._employeeId);
+            const localDoctor = centralEmployeeToLocalDoctor.get(empId);
+            docId = localDoctor ? localDoctor.id : (doctorById.has(springerDoc._employeeId) ? springerDoc._employeeId : 'springer');
+        }
     } else if (normalizedDraggableId.startsWith('shift-')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
         setDraggingShiftId(shiftId);
