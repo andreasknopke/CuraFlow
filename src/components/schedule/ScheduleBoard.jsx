@@ -3442,13 +3442,6 @@ export default function ScheduleBoard() {
             const empId = String(_employeeId);
             const localDoctor = centralEmployeeToLocalDoctor.get(empId);
             const doctorId = localDoctor ? localDoctor.id : String(_employeeId);
-            // Diagnostic: show ALL central_employee_ids in local doctors vs the assignment employee_id
-            console.log('[SpringerDrag] DIAGNOSE — assignment.employee_id:', _employeeId);
-            console.log('[SpringerDrag] DIAGNOSE — centralEmployeeToLocalDoctor keys:', [...centralEmployeeToLocalDoctor.keys()]);
-            console.log('[SpringerDrag] DIAGNOSE — doctorById keys (first 10):', [...doctorById.keys()].slice(0, 10));
-            console.log('[SpringerDrag] DIAGNOSE — empId lookup:', empId, '→', localDoctor ? `FOUND id=${localDoctor.id}` : 'NOT FOUND');
-            console.log('[SpringerDrag] DIAGNOSE — doctorById.has(empId):', doctorById.has(empId));
-            console.log('[SpringerDrag] DIAGNOSE — resolved doctorId:', doctorId);
 
             const executeSpringerDrop = async (selection) => {
                 const normalizedSelection = normalizeTimeslotSelection(selection);
@@ -3460,9 +3453,22 @@ export default function ScheduleBoard() {
                     return;
                 }
 
-                if (!absencePositions.includes(position) && !isWorkplaceActiveOnDate(position, destDate)) {
-                    toast.error('Diese Position ist an diesem Tag nicht aktiv.');
-                    return;
+                // Inline active-day check to avoid referencing `isWorkplaceActiveOnDate`,
+                // which is defined later in handleDragEnd (same function scope → TDZ).
+                {
+                    const wp = workplaces.find(w => w.name === position);
+                    if (wp) {
+                        const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
+                        const d = new Date(destDate + 'T00:00:00');
+                        const dayOfWeek = d.getDay();
+                        const isActive = isPublicHoliday(d)
+                            ? activeDays.some(day => Number(day) === 0)
+                            : activeDays.some(day => Number(day) === dayOfWeek);
+                        if (!isActive) {
+                            toast.error('Diese Position ist an diesem Tag nicht aktiv.');
+                            return;
+                        }
+                    }
                 }
 
                 const effectiveTsId = timeslotId === '__unassigned__' ? null : timeslotId;
