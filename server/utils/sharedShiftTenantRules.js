@@ -85,6 +85,8 @@ export function validateSharedShiftTenantRules({
         blockers.push({
           rule: 'rotation_conflict',
           message: `Konflikt: Rotation "${rotationConflict.position}" ist nicht mit diesem Dienst kombinierbar.`,
+          rotationShiftId: String(rotationConflict.id),
+          rotationPosition: rotationConflict.position,
         });
       }
     }

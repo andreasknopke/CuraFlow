@@ -319,10 +319,14 @@ export default function PoolShiftEditDialog({
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4" />
                             <AlertDescription>
-                                <div className="font-medium mb-1">Constraint-Verstoß:</div>
+                                <div className="font-medium mb-1">Hinweis:</div>
                                 <ul className="list-disc list-inside text-xs">
                                     {violations.map((v, i) => (
-                                        <li key={i}>{v.message}</li>
+                                        <li key={i}>
+                                            {v.rule === 'rotation_conflict'
+                                                ? `Mitarbeiter ist bereits in "${v.rotationPosition || 'einer Rotation'}" eingetragen.`
+                                                : v.message}
+                                        </li>
                                     ))}
                                 </ul>
                                 <div className="mt-2">
@@ -332,7 +336,9 @@ export default function PoolShiftEditDialog({
                                             checked={forceOverride}
                                             onChange={(e) => setForceOverride(e.target.checked)}
                                         />
-                                        Trotzdem speichern (Override)
+                                        {violations.some((v) => v.rule === 'rotation_conflict')
+                                            ? 'Rotation entfernen und Mitarbeiter trotzdem eintragen'
+                                            : 'Trotzdem speichern (Override)'}
                                     </label>
                                 </div>
                             </AlertDescription>

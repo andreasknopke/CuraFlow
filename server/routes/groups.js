@@ -1919,6 +1919,26 @@ router.post('/:groupId/shifts', async (req, res) => {
       return res.status(422).json({ error: 'constraint_violation', details: hard });
     }
 
+    // When force=1 with rotation_conflict blockers: delete the conflicting
+    // rotation entries from the tenant DB before saving the new Dienst.
+    if (req.query.force === '1') {
+      const rotationConflicts = (tenantRuleResult.blockers || []).filter(
+        (b) => b.rule === 'rotation_conflict' && b.rotationShiftId
+      );
+      if (rotationConflicts.length > 0) {
+        await withTenantDb(tenantRuleContext.tenantToken, async (pool) => {
+          const ids = rotationConflicts.map((b) => b.rotationShiftId).filter(Boolean);
+          if (ids.length > 0) {
+            const placeholders = ids.map(() => '?').join(',');
+            await pool.execute(
+              `DELETE FROM ShiftEntry WHERE id IN (${placeholders})`,
+              ids
+            );
+          }
+        });
+      }
+    }
+
     const id = crypto.randomUUID();
     await db.execute(
       `INSERT INTO shared_shift_entry
@@ -2033,6 +2053,26 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
     const allPatchBlockers = [...tenantPatchBlockers, ...relationshipBlockers];
     if (allPatchBlockers.length > 0) {
       return res.status(422).json({ error: 'constraint_violation', details: allPatchBlockers });
+    }
+
+    // When force=1 with rotation_conflict blockers: delete the conflicting
+    // rotation entries from the tenant DB before updating the Dienst.
+    if (req.query.force === '1') {
+      const rotationConflicts = (tenantRuleResult.blockers || []).filter(
+        (b) => b.rule === 'rotation_conflict' && b.rotationShiftId
+      );
+      if (rotationConflicts.length > 0) {
+        await withTenantDb(tenantRuleContext.tenantToken, async (pool) => {
+          const ids = rotationConflicts.map((b) => b.rotationShiftId).filter(Boolean);
+          if (ids.length > 0) {
+            const placeholders = ids.map(() => '?').join(',');
+            await pool.execute(
+              `DELETE FROM ShiftEntry WHERE id IN (${placeholders})`,
+              ids
+            );
+          }
+        });
+      }
     }
 
     values.push(req.params.shiftId);
