@@ -3664,6 +3664,16 @@ export default function ScheduleBoard() {
         const rawHeaderTimeslotId = headerParts[1] || null;
         const rowHeaderTimeslotId = rawHeaderTimeslotId;
 
+        // Springer chips cannot be assigned Mo-Fr — they apply to one day only
+        if (sourceDroppableId.startsWith('available__')) {
+            const springerSourceDate = sourceDroppableId.replace('available__', '');
+            const springerDoc = (allDisplayDocsByDate.get(springerSourceDate) || [])[source.index];
+            if (springerDoc?._isSpringer) {
+                toast.error('Springer kann nicht für die ganze Woche eingeteilt werden');
+                return;
+            }
+        }
+
         let doctorId = null;
 
            if (sourceDroppableId === 'sidebar') {
@@ -3866,6 +3876,16 @@ export default function ScheduleBoard() {
         const position = dropParts[1];
         const rawTimeslotId = dropParts[2] || null;
         if (!dateStr || !position) return;
+
+        // Springer chips are only valid on the day they come from
+        if (sourceDroppableId.startsWith('available__')) {
+            const springerSourceDate = sourceDroppableId.replace('available__', '');
+            const springerDoc = (allDisplayDocsByDate.get(springerSourceDate) || [])[source.index];
+            if (springerDoc?._isSpringer && springerSourceDate !== dateStr) {
+                toast.error('Springer kann nur am selben Tag eingeteilt werden');
+                return;
+            }
+        }
 
         // PREVIEW MODE: Add to previewShifts instead of creating DB entry
         if (previewShifts) {
