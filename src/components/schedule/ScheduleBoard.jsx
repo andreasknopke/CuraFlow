@@ -1116,49 +1116,6 @@ export default function ScheduleBoard() {
         return map;
     }, [rotationDemands]);
 
-    // Springer placeholder chips for ward tenants in rotation networks.
-    // When pool staff are assigned to rotation workplaces, ward tenants
-    // see placeholder "Springer N" chips in the Verfügbar row, which can
-    // be dragged onto station workplaces (creating a local shift and
-    // deleting the source rotation assignment).
-    const springerChipsByDate = useMemo(() => {
-        const map = new Map();
-
-        // Only show Springer chips for ward tenants (non-write rotation workplaces)
-        const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every(wp => wp.canWrite === false);
-        if (!isWardTenant || rotationAssignments.length === 0) return map;
-
-        // Group rotation assignments by date
-        const assignmentsByDate = new Map();
-        for (const assignment of rotationAssignments) {
-            const dateStr = String(assignment.date).slice(0, 10);
-            const list = assignmentsByDate.get(dateStr) || [];
-            list.push(assignment);
-            assignmentsByDate.set(dateStr, list);
-        }
-
-        // Create placeholder chips per day (numbered per day)
-        for (const day of weekDays) {
-            if (!isValid(day)) continue;
-            const dateStr = format(day, 'yyyy-MM-dd');
-            const assignments = assignmentsByDate.get(dateStr) || [];
-            if (assignments.length === 0) continue;
-
-            const chips = assignments.map((assignment, idx) => ({
-                id: `springer-${assignment.id}-${dateStr}`,
-                assignmentId: assignment.id,
-                label: `Springer ${idx + 1}`,
-                employeeId: assignment.employee_id,
-                employeeName: assignment.employee_name || `#${assignment.employee_id}`,
-                groupId: assignment.group_id,
-                date: dateStr,
-            }));
-            map.set(dateStr, chips);
-        }
-
-        return map;
-    }, [rotationAssignments, rotationWorkplaces, weekDays]);
-
     // Local state for the rotation dialogs launched from the board cells.
     const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState({ open: false, workplace: null, date: null, assignment: null, timeslotId: null, defaultEmployeeId: null });
     const [rotationDemandDialog, setRotationDemandDialog] = useState({
@@ -3062,6 +3019,49 @@ export default function ScheduleBoard() {
 
         return map;
     }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays]);
+
+    // Springer placeholder chips for ward tenants in rotation networks.
+    // When pool staff are assigned to rotation workplaces, ward tenants
+    // see placeholder "Springer N" chips in the Verfügbar row, which can
+    // be dragged onto station workplaces (creating a local shift and
+    // deleting the source rotation assignment).
+    const springerChipsByDate = useMemo(() => {
+        const map = new Map();
+
+        // Only show Springer chips for ward tenants (non-write rotation workplaces)
+        const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every(wp => wp.canWrite === false);
+        if (!isWardTenant || rotationAssignments.length === 0) return map;
+
+        // Group rotation assignments by date
+        const assignmentsByDate = new Map();
+        for (const assignment of rotationAssignments) {
+            const dateStr = String(assignment.date).slice(0, 10);
+            const list = assignmentsByDate.get(dateStr) || [];
+            list.push(assignment);
+            assignmentsByDate.set(dateStr, list);
+        }
+
+        // Create placeholder chips per day (numbered per day)
+        for (const day of weekDays) {
+            if (!isValid(day)) continue;
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const assignments = assignmentsByDate.get(dateStr) || [];
+            if (assignments.length === 0) continue;
+
+            const chips = assignments.map((assignment, idx) => ({
+                id: `springer-${assignment.id}-${dateStr}`,
+                assignmentId: assignment.id,
+                label: `Springer ${idx + 1}`,
+                employeeId: assignment.employee_id,
+                employeeName: assignment.employee_name || `#${assignment.employee_id}`,
+                groupId: assignment.group_id,
+                date: dateStr,
+            }));
+            map.set(dateStr, chips);
+        }
+
+        return map;
+    }, [rotationAssignments, rotationWorkplaces, weekDays]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
