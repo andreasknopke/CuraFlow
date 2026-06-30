@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -16,7 +17,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import SharedTimeslotEditor from '@/components/admin/SharedTimeslotEditor';
 import SharedWorkplaceQualificationsDialog from '@/components/admin/SharedWorkplaceQualificationsDialog';
 import { SERVICE_TYPES } from '@/components/settings/serviceTypes';
-import { Building2, Clock, Globe2, Loader2, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
+import { ArrowsUpFromLine, Building2, Clock, Globe2, Loader2, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 
 const DEFAULT_GROUP_FORM = {
     name: '',
@@ -38,6 +39,13 @@ const DEFAULT_WORKPLACE_FORM = {
     default_overlap_tolerance_minutes: '15',
     work_time_percentage: '100',
     affects_availability: true,
+    timeslots_enabled: false,
+    is_active: true,
+};
+
+const DEFAULT_ROTATION_WORKPLACE_FORM = {
+    name: '',
+    ward_tenant_id: '',
     timeslots_enabled: false,
     is_active: true,
 };
@@ -74,18 +82,37 @@ function toggleDay(days, dayIndex) {
         : [...days, dayIndex].sort((left, right) => left - right);
 }
 
+/** Composite key to distinguish dienst vs rotation groups */
+function groupKey(type, id) {
+    return `${type}:${id}`;
+}
+
 export default function TenantGroupManagement() {
     const queryClient = useQueryClient();
-    const [selectedGroupId, setSelectedGroupId] = useState(null);
+    const [selectedKey, setSelectedKey] = useState(null);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
     const [editingGroup, setEditingGroup] = useState(null);
     const [groupForm, setGroupForm] = useState(DEFAULT_GROUP_FORM);
+    const [newGroupType, setNewGroupType] = useState('dienst');
+
+    // ——— dienst: workplace dialog state ———
     const [showWorkplaceDialog, setShowWorkplaceDialog] = useState(false);
     const [editingWorkplace, setEditingWorkplace] = useState(null);
     const [workplaceForm, setWorkplaceForm] = useState(DEFAULT_WORKPLACE_FORM);
     const [qualificationsWorkplace, setQualificationsWorkplace] = useState(null);
     const [tenantToAdd, setTenantToAdd] = useState('');
 
+    // ——— rotation: workplace dialog state ———
+    const [showRotationWorkplaceDialog, setShowRotationWorkplaceDialog] = useState(false);
+    const [editingRotationWorkplace, setEditingRotationWorkplace] = useState(null);
+    const [rotationWorkplaceForm, setRotationWorkplaceForm] = useState(DEFAULT_ROTATION_WORKPLACE_FORM);
+    const [rotationTenantToAdd, setRotationTenantToAdd] = useState('');
+    const [rotationTenantRole, setRotationTenantRole] = useState('ward');
+    const [timeslotWorkplace, setTimeslotWorkplace] = useState(null);
+
+    // ===================== DATA FETCHING =====================
+
+    // ——— dienst groups ———
     const { data: groupsResponse, isLoading: groupsLoading } = useQuery({
         queryKey: ['admin', 'tenant-groups'],
         queryFn: () => api.listGroups(),
@@ -97,39 +124,69 @@ export default function TenantGroupManagement() {
         [groupsResponse]
     );
 
-    useEffect(() => {
-        if (groups.length === 0) {
-            setSelectedGroupId(null);
-            return;
-        }
-        const exists = groups.some((group) => group.id === selectedGroupId);
-        if (!exists) {
-            setSelectedGroupId(groups[0].id);
-        }
-    }, [groups, selectedGroupId]);
+    // ——— rotation groups ———
+    const { data: rotationGroupsResponse, isLoading: rotationGroupsLoading } = useQuery({
+        queryKey: ['admin', 'rotation-groups'],
+        queryFn: () => api.listRotationGroups(),
+        staleTime: 30_000,
+    });
 
-    const selectedGroup = useMemo(
-        () => groups.find((group) => group.id === selectedGroupId) || null,
-        [groups, selectedGroupId]
+    const rotationGroups = useMemo(
+        () => (Array.isArray(rotationGroupsResponse?.groups) ? rotationGroupsResponse.groups.map(normalizeGroup) : []),
+        [rotationGroupsResponse]
     );
 
+    // ——— unified group list ———
+    const unifiedGroups = useMemo(() => {
+        const dienst = groups.map((g) => ({ ...g, _type: 'dienst' }));
+        const rotation = rotationGroups.map((g) => ({ ...g, _type: 'rotation' }));
+        return [...dienst, ...rotation];
+    }, [groups, rotationGroups]);
+
+    // ——— derive selected group ———
+    useEffect(() => {
+        if (unifiedGroups.length === 0) {
+            setSelectedKey(null);
+            return;
+        }
+        if (!selectedKey) {
+            setSelectedKey(groupKey(unifiedGroups[0]._type, unifiedGroups[0].id));
+            return;
+        }
+        const exists = unifiedGroups.some((g) => groupKey(g._type, g.id) === selectedKey);
+        if (!exists) {
+            setSelectedKey(groupKey(unifiedGroups[0]._type, unifiedGroups[0].id));
+        }
+    }, [unifiedGroups, selectedKey]);
+
+    const selectedGroup = useMemo(
+        () => unifiedGroups.find((g) => groupKey(g._type, g.id) === selectedKey) || null,
+        [unifiedGroups, selectedKey]
+    );
+
+    const selectedType = selectedGroup?._type;
+    const selectedGroupId = selectedGroup?.id;
+
+    // ——— tenants list (shared) ———
     const { data: tenants = [] } = useQuery({
         queryKey: ['serverDbTokens'],
         queryFn: () => api.request('/api/admin/db-tokens'),
         staleTime: 30_000,
     });
 
+    // ===================== DIENST QUERIES =====================
+
     const { data: membersResponse, isLoading: membersLoading } = useQuery({
         queryKey: ['admin', 'tenant-group-members', selectedGroupId],
         queryFn: () => api.listGroupMembers(selectedGroupId),
-        enabled: !!selectedGroupId,
+        enabled: !!selectedGroupId && selectedType === 'dienst',
         staleTime: 10_000,
     });
 
     const { data: workplacesResponse, isLoading: workplacesLoading } = useQuery({
         queryKey: ['admin', 'tenant-group-workplaces', selectedGroupId],
         queryFn: () => api.listSharedWorkplaces(selectedGroupId),
-        enabled: !!selectedGroupId,
+        enabled: !!selectedGroupId && selectedType === 'dienst',
         staleTime: 10_000,
     });
 
@@ -144,15 +201,61 @@ export default function TenantGroupManagement() {
         return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
     }, [members, tenants]);
 
-    const invalidateGroups = () => {
+    // ===================== ROTATION QUERIES =====================
+
+    const { data: rotationMembersResponse, isLoading: rotationMembersLoading } = useQuery({
+        queryKey: ['admin', 'rotation-group-members', selectedGroupId],
+        queryFn: () => api.listRotationGroupMembers(selectedGroupId),
+        enabled: !!selectedGroupId && selectedType === 'rotation',
+        staleTime: 10_000,
+    });
+
+    const { data: rotationWorkplacesResponse, isLoading: rotationWorkplacesLoading } = useQuery({
+        queryKey: ['admin', 'rotation-group-workplaces', selectedGroupId],
+        queryFn: () => api.listRotationWorkplaces(selectedGroupId),
+        enabled: !!selectedGroupId && selectedType === 'rotation',
+        staleTime: 10_000,
+    });
+
+    const rotationMembers = Array.isArray(rotationMembersResponse?.members) ? rotationMembersResponse.members : [];
+    const rotationWorkplaces = useMemo(
+        () => (Array.isArray(rotationWorkplacesResponse?.workplaces) ? rotationWorkplacesResponse.workplaces : []),
+        [rotationWorkplacesResponse]
+    );
+
+    const availableRotationTenants = useMemo(() => {
+        const memberIds = new Set(rotationMembers.map((member) => String(member.tenant_id)));
+        return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
+    }, [rotationMembers, tenants]);
+
+    const wardMembers = useMemo(
+        () => rotationMembers.filter((m) => m.role === 'ward'),
+        [rotationMembers]
+    );
+
+    // ===================== INVALIDATION =====================
+
+    const invalidateDienstGroups = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'tenant-groups'] });
         queryClient.invalidateQueries({ queryKey: ['users'] });
     };
 
-    const invalidateSelectedGroup = () => {
+    const invalidateDienstDetail = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'tenant-group-members', selectedGroupId] });
         queryClient.invalidateQueries({ queryKey: ['admin', 'tenant-group-workplaces', selectedGroupId] });
         queryClient.invalidateQueries({ queryKey: ['pool', 'visible-shifts'] });
+        queryClient.invalidateQueries({ queryKey: ['users'] });
+    };
+
+    const invalidateRotationGroups = () => {
+        queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-groups'] });
+        queryClient.invalidateQueries({ queryKey: ['users'] });
+    };
+
+    const invalidateRotationDetail = () => {
+        queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-group-members', selectedGroupId] });
+        queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-group-workplaces', selectedGroupId] });
+        queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
         queryClient.invalidateQueries({ queryKey: ['users'] });
     };
 
@@ -176,13 +279,15 @@ export default function TenantGroupManagement() {
         });
     };
 
+    // ===================== DIENST MUTATIONS =====================
+
     const createGroupMutation = useMutation({
         mutationFn: (payload) => api.createGroup(payload),
         onSuccess: (response) => {
-            invalidateGroups();
+            invalidateDienstGroups();
             const groupId = Number(response?.group?.id);
             if (Number.isInteger(groupId)) {
-                setSelectedGroupId(groupId);
+                setSelectedKey(groupKey('dienst', groupId));
             }
             setShowGroupDialog(false);
             setEditingGroup(null);
@@ -195,7 +300,7 @@ export default function TenantGroupManagement() {
     const updateGroupMutation = useMutation({
         mutationFn: ({ groupId, payload }) => api.updateGroup(groupId, payload),
         onSuccess: () => {
-            invalidateGroups();
+            invalidateDienstGroups();
             setShowGroupDialog(false);
             setEditingGroup(null);
             setGroupForm(DEFAULT_GROUP_FORM);
@@ -207,8 +312,8 @@ export default function TenantGroupManagement() {
     const deleteGroupMutation = useMutation({
         mutationFn: (groupId) => api.deleteGroup(groupId),
         onSuccess: () => {
-            invalidateGroups();
-            setSelectedGroupId(null);
+            invalidateDienstGroups();
+            setSelectedKey(null);
             toast.success('Verbund gelöscht');
         },
         onError: (error) => toast.error(error.message || 'Verbund konnte nicht gelöscht werden'),
@@ -217,7 +322,7 @@ export default function TenantGroupManagement() {
     const addMemberMutation = useMutation({
         mutationFn: ({ groupId, tenantId }) => api.addGroupMember(groupId, tenantId),
         onSuccess: () => {
-            invalidateSelectedGroup();
+            invalidateDienstDetail();
             setTenantToAdd('');
             toast.success('Mandant hinzugefügt');
         },
@@ -228,7 +333,7 @@ export default function TenantGroupManagement() {
         mutationFn: ({ groupId, tenantId }) => api.removeGroupMember(groupId, tenantId),
         onSuccess: (_, variables) => {
             removeMemberFromCache(variables.groupId, variables.tenantId);
-            invalidateSelectedGroup();
+            invalidateDienstDetail();
             toast.success('Mandant entfernt');
         },
         onError: (error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
@@ -237,7 +342,7 @@ export default function TenantGroupManagement() {
     const createWorkplaceMutation = useMutation({
         mutationFn: ({ groupId, payload }) => api.createSharedWorkplace(groupId, payload),
         onSuccess: () => {
-            invalidateSelectedGroup();
+            invalidateDienstDetail();
             setShowWorkplaceDialog(false);
             setEditingWorkplace(null);
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
@@ -249,7 +354,7 @@ export default function TenantGroupManagement() {
     const updateWorkplaceMutation = useMutation({
         mutationFn: ({ groupId, workplaceId, payload }) => api.updateSharedWorkplace(groupId, workplaceId, payload),
         onSuccess: () => {
-            invalidateSelectedGroup();
+            invalidateDienstDetail();
             setShowWorkplaceDialog(false);
             setEditingWorkplace(null);
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
@@ -267,15 +372,111 @@ export default function TenantGroupManagement() {
                 setEditingWorkplace(null);
                 setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
             }
-            invalidateSelectedGroup();
+            invalidateDienstDetail();
             toast.success('Gemeinsamer Dienst gelöscht');
         },
         onError: (error) => toast.error(error.message || 'Dienst konnte nicht gelöscht werden'),
     });
 
+    // ===================== ROTATION MUTATIONS =====================
+
+    const createRotationGroupMutation = useMutation({
+        mutationFn: (payload) => api.createRotationGroup(payload),
+        onSuccess: (response) => {
+            invalidateRotationGroups();
+            const groupId = Number(response?.group?.id);
+            if (Number.isInteger(groupId)) {
+                setSelectedKey(groupKey('rotation', groupId));
+            }
+            setShowGroupDialog(false);
+            setEditingGroup(null);
+            setGroupForm(DEFAULT_GROUP_FORM);
+            toast.success('Rotationsverbund erstellt');
+        },
+        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht erstellt werden'),
+    });
+
+    const updateRotationGroupMutation = useMutation({
+        mutationFn: ({ groupId, payload }) => api.updateRotationGroup(groupId, payload),
+        onSuccess: () => {
+            invalidateRotationGroups();
+            setShowGroupDialog(false);
+            setEditingGroup(null);
+            setGroupForm(DEFAULT_GROUP_FORM);
+            toast.success('Rotationsverbund aktualisiert');
+        },
+        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht aktualisiert werden'),
+    });
+
+    const deleteRotationGroupMutation = useMutation({
+        mutationFn: (groupId) => api.deleteRotationGroup(groupId),
+        onSuccess: () => {
+            invalidateRotationGroups();
+            setSelectedKey(null);
+            toast.success('Rotationsverbund gelöscht');
+        },
+        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht gelöscht werden'),
+    });
+
+    const addRotationMemberMutation = useMutation({
+        mutationFn: ({ groupId, tenantId, role }) => api.addRotationGroupMember(groupId, tenantId, role),
+        onSuccess: () => {
+            invalidateRotationDetail();
+            setRotationTenantToAdd('');
+            setRotationTenantRole('ward');
+            toast.success('Mandant hinzugefügt');
+        },
+        onError: (error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
+    });
+
+    const removeRotationMemberMutation = useMutation({
+        mutationFn: ({ groupId, tenantId }) => api.removeRotationGroupMember(groupId, tenantId),
+        onSuccess: () => {
+            invalidateRotationDetail();
+            toast.success('Mandant entfernt');
+        },
+        onError: (error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
+    });
+
+    const createRotationWorkplaceMutation = useMutation({
+        mutationFn: ({ groupId, payload }) => api.createRotationWorkplace(groupId, payload),
+        onSuccess: () => {
+            invalidateRotationDetail();
+            setShowRotationWorkplaceDialog(false);
+            setEditingRotationWorkplace(null);
+            setRotationWorkplaceForm(DEFAULT_ROTATION_WORKPLACE_FORM);
+            toast.success('Rotation erstellt');
+        },
+        onError: (error) => toast.error(error.message || 'Rotation konnte nicht erstellt werden'),
+    });
+
+    const updateRotationWorkplaceMutation = useMutation({
+        mutationFn: ({ groupId, workplaceId, payload }) => api.updateRotationWorkplace(groupId, workplaceId, payload),
+        onSuccess: () => {
+            invalidateRotationDetail();
+            setShowRotationWorkplaceDialog(false);
+            setEditingRotationWorkplace(null);
+            setRotationWorkplaceForm(DEFAULT_ROTATION_WORKPLACE_FORM);
+            toast.success('Rotation aktualisiert');
+        },
+        onError: (error) => toast.error(error.message || 'Rotation konnte nicht aktualisiert werden'),
+    });
+
+    const deleteRotationWorkplaceMutation = useMutation({
+        mutationFn: ({ groupId, workplaceId }) => api.deleteRotationWorkplace(groupId, workplaceId),
+        onSuccess: () => {
+            invalidateRotationDetail();
+            toast.success('Rotation gelöscht');
+        },
+        onError: (error) => toast.error(error.message || 'Rotation konnte nicht gelöscht werden'),
+    });
+
+    // ===================== HANDLERS: GROUP =====================
+
     const handleOpenCreateGroup = () => {
         setEditingGroup(null);
         setGroupForm(DEFAULT_GROUP_FORM);
+        setNewGroupType('dienst');
         setShowGroupDialog(true);
     };
 
@@ -300,18 +501,35 @@ export default function TenantGroupManagement() {
             is_active: Boolean(groupForm.is_active),
         };
         if (editingGroup) {
-            updateGroupMutation.mutate({ groupId: editingGroup.id, payload });
+            const type = editingGroup._type || 'dienst';
+            if (type === 'rotation') {
+                updateRotationGroupMutation.mutate({ groupId: editingGroup.id, payload });
+            } else {
+                updateGroupMutation.mutate({ groupId: editingGroup.id, payload });
+            }
             return;
         }
-        createGroupMutation.mutate(payload);
+        // Create — use selected type
+        if (newGroupType === 'rotation') {
+            createRotationGroupMutation.mutate(payload);
+        } else {
+            createGroupMutation.mutate(payload);
+        }
     };
 
     const handleDeleteGroup = (group) => {
-        if (!window.confirm(`Verbund "${group.name}" wirklich löschen?`)) {
+        const label = group._type === 'rotation' ? 'Rotationsverbund' : 'Verbund';
+        if (!window.confirm(`${label} "${group.name}" wirklich löschen?`)) {
             return;
         }
-        deleteGroupMutation.mutate(group.id);
+        if (group._type === 'rotation') {
+            deleteRotationGroupMutation.mutate(group.id);
+        } else {
+            deleteGroupMutation.mutate(group.id);
+        }
     };
+
+    // ===================== HANDLERS: DIENST =====================
 
     const handleAddTenant = () => {
         if (!selectedGroupId || !tenantToAdd) {
@@ -406,12 +624,88 @@ export default function TenantGroupManagement() {
         deleteWorkplaceMutation.mutate({ groupId: selectedGroupId, workplaceId: workplace.id });
     };
 
+    // ===================== HANDLERS: ROTATION =====================
+
+    const handleAddRotationTenant = () => {
+        if (!selectedGroupId || !rotationTenantToAdd) {
+            toast.error('Bitte zuerst einen Mandanten wählen');
+            return;
+        }
+        addRotationMemberMutation.mutate({ groupId: selectedGroupId, tenantId: rotationTenantToAdd, role: rotationTenantRole });
+    };
+
+    const handleOpenCreateRotationWorkplace = () => {
+        setEditingRotationWorkplace(null);
+        setRotationWorkplaceForm(DEFAULT_ROTATION_WORKPLACE_FORM);
+        setShowRotationWorkplaceDialog(true);
+    };
+
+    const handleOpenEditRotationWorkplace = (workplace) => {
+        setEditingRotationWorkplace(workplace);
+        setRotationWorkplaceForm({
+            name: workplace.name || '',
+            ward_tenant_id: workplace.ward_tenant_id || '',
+            timeslots_enabled: Boolean(workplace.timeslots_enabled),
+            is_active: Boolean(workplace.is_active),
+        });
+        setShowRotationWorkplaceDialog(true);
+    };
+
+    const handleSaveRotationWorkplace = () => {
+        if (!selectedGroupId) {
+            toast.error('Bitte zuerst einen Verbund wählen');
+            return;
+        }
+        if (!rotationWorkplaceForm.name.trim()) {
+            toast.error('Name ist erforderlich');
+            return;
+        }
+        if (!rotationWorkplaceForm.ward_tenant_id) {
+            toast.error('Bitte eine Station (Mandant) wählen');
+            return;
+        }
+        const payload = {
+            name: rotationWorkplaceForm.name.trim(),
+            ward_tenant_id: rotationWorkplaceForm.ward_tenant_id,
+            timeslots_enabled: Boolean(rotationWorkplaceForm.timeslots_enabled),
+            is_active: Boolean(rotationWorkplaceForm.is_active),
+        };
+        if (editingRotationWorkplace) {
+            updateRotationWorkplaceMutation.mutate({
+                groupId: selectedGroupId,
+                workplaceId: editingRotationWorkplace.id,
+                payload,
+            });
+            return;
+        }
+        createRotationWorkplaceMutation.mutate({ groupId: selectedGroupId, payload });
+    };
+
+    const handleDeleteRotationWorkplace = (workplace) => {
+        if (!selectedGroupId) return;
+        if (!window.confirm(`Rotation "${workplace.name}" wirklich löschen?`)) {
+            return;
+        }
+        deleteRotationWorkplaceMutation.mutate({ groupId: selectedGroupId, workplaceId: workplace.id });
+    };
+
+    // ===================== RENDER HELPERS =====================
+
+    const typeLabel = (type) => (type === 'rotation' ? 'Rotationsverbund' : 'Dienst-Verbund');
+
+    const isLoading =
+        groupsLoading || rotationGroupsLoading;
+
+    // ===================== RENDER =====================
+
     return (
         <div className="space-y-6" data-testid="admin-tenant-group-management">
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <h2 className="text-xl font-semibold text-slate-900">Cross-Mandanten-Verbund</h2>
-                    <p className="text-sm text-slate-500">Verbünde, Mandanten-Mitglieder und gemeinsame Dienste zentral verwalten.</p>
+                    <h2 className="text-xl font-semibold text-slate-900">Verbünde</h2>
+                    <p className="text-sm text-slate-500">
+                        Übersicht über Dienst-Verbünde und Rotationsverbünde. Beim Anlegen wählst du den Typ.
+                    </p>
                 </div>
                 <Button onClick={handleOpenCreateGroup} className="bg-indigo-600 hover:bg-indigo-700" data-testid="admin-group-create-button">
                     <Plus className="mr-2 h-4 w-4" />
@@ -420,6 +714,7 @@ export default function TenantGroupManagement() {
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.1fr_1.9fr]">
+                {/* ============ SIDEBAR: UNIFIED GROUP LIST ============ */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
@@ -429,38 +724,50 @@ export default function TenantGroupManagement() {
                         <CardDescription>Wähle einen Verbund aus oder lege einen neuen an.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
-                        {groupsLoading ? (
+                        {isLoading ? (
                             <div className="flex items-center justify-center py-8 text-sm text-slate-500">
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Verbünde …
                             </div>
-                        ) : groups.length === 0 ? (
+                        ) : unifiedGroups.length === 0 ? (
                             <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">
                                 Noch kein Verbund vorhanden.
                             </div>
                         ) : (
-                            groups.map((group) => {
-                                const isSelected = group.id === selectedGroupId;
+                            unifiedGroups.map((group) => {
+                                const key = groupKey(group._type, group.id);
+                                const isSelected = key === selectedKey;
                                 return (
                                     <div
-                                        key={group.id}
+                                        key={key}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => setSelectedGroupId(group.id)}
+                                        onClick={() => setSelectedKey(key)}
                                         onKeyDown={(event) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
-                                                setSelectedGroupId(group.id);
+                                                setSelectedKey(key);
                                             }
                                         }}
                                         className={`w-full rounded-lg border p-4 text-left transition ${
                                             isSelected ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                                         }`}
-                                        data-testid={`admin-group-card-${group.id}`}
+                                        data-testid={`admin-group-card-${group._type}-${group.id}`}
                                     >
                                         <div className="flex items-start justify-between gap-3">
-                                            <div>
-                                                <div className="font-medium text-slate-900">{group.name}</div>
-                                                <div className="mt-1 text-sm text-slate-500">{group.description || 'Keine Beschreibung'}</div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="font-medium text-slate-900 truncate">{group.name}</div>
+                                                    {group._type === 'rotation' ? (
+                                                        <Badge variant="secondary" className="shrink-0 bg-indigo-100 text-[10px] font-normal text-indigo-700">
+                                                            <ArrowsUpFromLine className="mr-0.5 h-3 w-3" /> Rotation
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="secondary" className="shrink-0 bg-teal-100 text-[10px] font-normal text-teal-700">
+                                                            <Globe2 className="mr-0.5 h-3 w-3" /> Dienst
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <div className="mt-1 text-sm text-slate-500 truncate">{group.description || 'Keine Beschreibung'}</div>
                                             </div>
                                             <Badge variant="outline" className={group.is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-300 bg-slate-100 text-slate-600'}>
                                                 {group.is_active ? 'Aktiv' : 'Inaktiv'}
@@ -498,189 +805,428 @@ export default function TenantGroupManagement() {
                     </CardContent>
                 </Card>
 
+                {/* ============ RIGHT: DETAIL VIEW ============ */}
                 <div className="space-y-6">
-                    <Card>
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <Users className="h-5 w-5 text-indigo-600" />
-                                Mandanten im Verbund
-                            </CardTitle>
-                            <CardDescription>
-                                {selectedGroup ? `Mitglieder von ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            {selectedGroup ? (
-                                <>
-                                    <div className="flex flex-col gap-3 md:flex-row">
-                                        <Select value={tenantToAdd} onValueChange={setTenantToAdd}>
-                                            <SelectTrigger className="md:max-w-sm" data-testid="admin-group-add-tenant-select">
-                                                <SelectValue placeholder="Mandant wählen" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {availableTenants.length === 0 ? (
-                                                    <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
-                                                ) : (
-                                                    availableTenants.map((tenant) => (
-                                                        <SelectItem key={tenant.id} value={String(tenant.id)}>
-                                                            {tenant.name || tenant.id}
-                                                        </SelectItem>
-                                                    ))
-                                                )}
-                                            </SelectContent>
-                                        </Select>
-                                        <Button onClick={handleAddTenant} disabled={!tenantToAdd || addMemberMutation.isPending} data-testid="admin-group-add-tenant-submit">
-                                            {addMemberMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                                            Mandant hinzufügen
+                    {selectedType === 'dienst' ? (
+                        <>
+                            {/* ——— DIENST: Members ——— */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="flex items-center gap-2">
+                                        <Users className="h-5 w-5 text-indigo-600" />
+                                        Mandanten im Verbund
+                                    </CardTitle>
+                                    <CardDescription>
+                                        {selectedGroup ? `Mitglieder von ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {selectedGroup ? (
+                                        <>
+                                            <div className="flex flex-col gap-3 md:flex-row">
+                                                <Select value={tenantToAdd} onValueChange={setTenantToAdd}>
+                                                    <SelectTrigger className="md:max-w-sm" data-testid="admin-group-add-tenant-select">
+                                                        <SelectValue placeholder="Mandant wählen" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {availableTenants.length === 0 ? (
+                                                            <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
+                                                        ) : (
+                                                            availableTenants.map((tenant) => (
+                                                                <SelectItem key={tenant.id} value={String(tenant.id)}>
+                                                                    {tenant.name || tenant.id}
+                                                                </SelectItem>
+                                                            ))
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button onClick={handleAddTenant} disabled={!tenantToAdd || addMemberMutation.isPending} data-testid="admin-group-add-tenant-submit">
+                                                    {addMemberMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                                                    Mandant hinzufügen
+                                                </Button>
+                                            </div>
+
+                                            {membersLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-sm text-slate-500">
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Mitglieder …
+                                                </div>
+                                            ) : members.length === 0 ? (
+                                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch keine Mandanten zugeordnet.</div>
+                                            ) : (
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Mandant</TableHead>
+                                                            <TableHead>Datenbank</TableHead>
+                                                            <TableHead className="text-right">Aktion</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {members.map((member) => (
+                                                            <TableRow key={member.tenant_id} data-testid={`admin-group-member-${member.tenant_id}`}>
+                                                                <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
+                                                                <TableCell className="text-slate-500">{member.host}/{member.db_name}</TableCell>
+                                                                <TableCell className="text-right">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                                        onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
+                                                                    >
+                                                                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
+                                                                    </Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* ——— DIENST: Workplaces ——— */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2">
+                                                <Building2 className="h-5 w-5 text-indigo-600" />
+                                                Gemeinsame Dienste
+                                            </CardTitle>
+                                            <CardDescription>
+                                                {selectedGroup ? `Pool-Dienste für ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
+                                            </CardDescription>
+                                        </div>
+                                        <Button onClick={handleOpenCreateWorkplace} disabled={!selectedGroup} data-testid="admin-group-workplace-create-button">
+                                            <Plus className="mr-2 h-4 w-4" /> Dienst anlegen
                                         </Button>
                                     </div>
-
-                                    {membersLoading ? (
+                                </CardHeader>
+                                <CardContent>
+                                    {!selectedGroup ? (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
+                                    ) : workplacesLoading ? (
                                         <div className="flex items-center justify-center py-6 text-sm text-slate-500">
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Mitglieder …
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Dienste …
                                         </div>
-                                    ) : members.length === 0 ? (
-                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch keine Mandanten zugeordnet.</div>
+                                    ) : workplaces.length === 0 ? (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch kein gemeinsamer Dienst angelegt.</div>
                                     ) : (
                                         <Table>
                                             <TableHeader>
                                                 <TableRow>
-                                                    <TableHead>Mandant</TableHead>
-                                                    <TableHead>Datenbank</TableHead>
-                                                    <TableHead className="text-right">Aktion</TableHead>
+                                                    <TableHead>Name</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead className="text-right">Aktionen</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {members.map((member) => (
-                                                    <TableRow key={member.tenant_id} data-testid={`admin-group-member-${member.tenant_id}`}>
-                                                        <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
-                                                        <TableCell className="text-slate-500">{member.host}/{member.db_name}</TableCell>
+                                                {workplaces.map((workplace) => (
+                                                    <TableRow key={workplace.id} data-testid={`admin-group-workplace-${workplace.id}`}>
+                                                        <TableCell>
+                                                            <div className="font-medium">{workplace.name}</div>
+                                                            <div className="mt-1 flex flex-wrap gap-1">
+                                                                <Badge variant="secondary" className="text-[10px] font-normal">{serviceTypeLabel(workplace.service_type)}</Badge>
+                                                                {workplace.auto_off ? <Badge variant="secondary" className="bg-blue-100 text-[10px] font-normal text-blue-700">Auto-Frei</Badge> : null}
+                                                                {workplace.allows_rotation_concurrently ? <Badge variant="secondary" className="bg-green-100 text-[10px] font-normal text-green-700">Rotation OK</Badge> : null}
+                                                                {workplace.allows_absence_overlap ? <Badge variant="secondary" className="bg-violet-100 text-[10px] font-normal text-violet-700">Abwesenheit OK</Badge> : null}
+                                                                {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
+                                                                {workplace.allows_multiple ? <Badge variant="secondary" className="bg-teal-100 text-[10px] font-normal text-teal-700">Mehrfachbesetzung</Badge> : null}
+                                                                {workplace.allows_multiple && (workplace.min_staff > 0 || workplace.optimal_staff > 1) ? (
+                                                                    <Badge variant="secondary" className="bg-amber-100 text-[10px] font-normal text-amber-700">
+                                                                        {workplace.min_staff ?? 1}–{workplace.optimal_staff ?? 1}
+                                                                    </Badge>
+                                                                ) : null}
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <div className="flex flex-col gap-1">
+                                                                <Badge variant="outline" className={workplace.is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-300 bg-slate-100 text-slate-600'}>
+                                                                    {workplace.is_active ? 'Aktiv' : 'Inaktiv'}
+                                                                </Badge>
+                                                                <span className="text-xs text-slate-500">
+                                                                    {workplace.affects_availability ? 'Blockiert Verfügbarkeit' : 'Nicht verfügbarkeitsrelevant'}
+                                                                </span>
+                                                            </div>
+                                                        </TableCell>
                                                         <TableCell className="text-right">
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
-                                                            >
-                                                                <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
-                                                            </Button>
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <Button variant="outline" size="sm" onClick={() => handleOpenEditWorkplace(workplace)}>
+                                                                    <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
+                                                                </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() => setQualificationsWorkplace(workplace)}
+                                                                    title="Pflicht-Qualifikationen verwalten"
+                                                                >
+                                                                    <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Qualifikationen
+                                                                </Button>
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                                    onClick={() => handleDeleteWorkplace(workplace)}
+                                                                >
+                                                                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
+                                                                </Button>
+                                                            </div>
                                                         </TableCell>
                                                     </TableRow>
                                                 ))}
                                             </TableBody>
                                         </Table>
                                     )}
-                                </>
-                            ) : (
-                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
-                            )}
-                        </CardContent>
-                    </Card>
+                                </CardContent>
+                            </Card>
+                        </>
+                    ) : selectedType === 'rotation' ? (
+                        <>
+                            {/* ——— ROTATION: Info box ——— */}
+                            <div className="rounded-lg bg-indigo-50 p-3 text-xs text-indigo-700 space-y-1">
+                                <p><strong>Aufbau eines Rotationsverbunds:</strong></p>
+                                <ol className="list-decimal pl-4 space-y-0.5">
+                                    <li><strong>Springerpool-Mandant</strong> als Mitglied mit Rolle <code>pool</code> hinzufügen (genau einer).</li>
+                                    <li><strong>Stations-Mandanten</strong> als Mitglieder mit Rolle <code>ward</code> hinzufügen (z. B. Gyn1, Gyn2, Gyn3).</li>
+                                    <li><strong>Rotationen</strong> (Arbeitsplätze) pro Station anlegen — z. B. „Gyn 1", „Gyn 2", „Gyn 3".</li>
+                                    <li><strong>Zeitfenster</strong> pro Rotation aktivieren (Früh-/Mittel-/Spätdienst).</li>
+                                </ol>
+                            </div>
 
-                    <Card>
-                        <CardHeader>
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
+                            {/* ——— ROTATION: Members ——— */}
+                            <Card>
+                                <CardHeader>
                                     <CardTitle className="flex items-center gap-2">
-                                        <Building2 className="h-5 w-5 text-indigo-600" />
-                                        Gemeinsame Dienste
+                                        <Users className="h-5 w-5 text-indigo-600" />
+                                        Mandanten im Verbund
                                     </CardTitle>
                                     <CardDescription>
-                                        {selectedGroup ? `Pool-Dienste für ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
+                                        {selectedGroup ? `Mitglieder von ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
                                     </CardDescription>
-                                </div>
-                                <Button onClick={handleOpenCreateWorkplace} disabled={!selectedGroup} data-testid="admin-group-workplace-create-button">
-                                    <Plus className="mr-2 h-4 w-4" /> Dienst anlegen
-                                </Button>
-                            </div>
-                        </CardHeader>
-                        <CardContent>
-                            {!selectedGroup ? (
-                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
-                            ) : workplacesLoading ? (
-                                <div className="flex items-center justify-center py-6 text-sm text-slate-500">
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Dienste …
-                                </div>
-                            ) : workplaces.length === 0 ? (
-                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch kein gemeinsamer Dienst angelegt.</div>
-                            ) : (
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow>
-                                            <TableHead>Name</TableHead>
-                                            <TableHead>Status</TableHead>
-                                            <TableHead className="text-right">Aktionen</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
-                                        {workplaces.map((workplace) => (
-                                            <TableRow key={workplace.id} data-testid={`admin-group-workplace-${workplace.id}`}>
-                                                <TableCell>
-                                                    <div className="font-medium">{workplace.name}</div>
-                                                    <div className="mt-1 flex flex-wrap gap-1">
-                                                        <Badge variant="secondary" className="text-[10px] font-normal">{serviceTypeLabel(workplace.service_type)}</Badge>
-                                                        {workplace.auto_off ? <Badge variant="secondary" className="bg-blue-100 text-[10px] font-normal text-blue-700">Auto-Frei</Badge> : null}
-                                                        {workplace.allows_rotation_concurrently ? <Badge variant="secondary" className="bg-green-100 text-[10px] font-normal text-green-700">Rotation OK</Badge> : null}
-                                                        {workplace.allows_absence_overlap ? <Badge variant="secondary" className="bg-violet-100 text-[10px] font-normal text-violet-700">Abwesenheit OK</Badge> : null}
-                                                        {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
-                                                        {workplace.allows_multiple ? <Badge variant="secondary" className="bg-teal-100 text-[10px] font-normal text-teal-700">Mehrfachbesetzung</Badge> : null}
-                                                        {workplace.allows_multiple && (workplace.min_staff > 0 || workplace.optimal_staff > 1) ? (
-                                                            <Badge variant="secondary" className="bg-amber-100 text-[10px] font-normal text-amber-700">
-                                                                {workplace.min_staff ?? 1}–{workplace.optimal_staff ?? 1}
-                                                            </Badge>
-                                                        ) : null}
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex flex-col gap-1">
-                                                        <Badge variant="outline" className={workplace.is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-300 bg-slate-100 text-slate-600'}>
-                                                            {workplace.is_active ? 'Aktiv' : 'Inaktiv'}
-                                                        </Badge>
-                                                        <span className="text-xs text-slate-500">
-                                                            {workplace.affects_availability ? 'Blockiert Verfügbarkeit' : 'Nicht verfügbarkeitsrelevant'}
-                                                        </span>
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <Button variant="outline" size="sm" onClick={() => handleOpenEditWorkplace(workplace)}>
-                                                            <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
-                                                        </Button>
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => setQualificationsWorkplace(workplace)}
-                                                            title="Pflicht-Qualifikationen verwalten"
-                                                        >
-                                                            <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Qualifikationen
-                                                        </Button>
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                            onClick={() => handleDeleteWorkplace(workplace)}
-                                                        >
-                                                            <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
-                                                        </Button>
-                                                    </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            )}
-                        </CardContent>
-                    </Card>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {selectedGroup ? (
+                                        <>
+                                            <div className="flex flex-col gap-3 md:flex-row md:flex-wrap">
+                                                <Select value={rotationTenantToAdd} onValueChange={setRotationTenantToAdd}>
+                                                    <SelectTrigger className="md:max-w-sm" data-testid="admin-rotation-add-tenant-select">
+                                                        <SelectValue placeholder="Mandant wählen" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {availableRotationTenants.length === 0 ? (
+                                                            <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
+                                                        ) : (
+                                                            availableRotationTenants.map((tenant) => (
+                                                                <SelectItem key={tenant.id} value={String(tenant.id)}>
+                                                                    {tenant.name || tenant.id}
+                                                                </SelectItem>
+                                                            ))
+                                                        )}
+                                                    </SelectContent>
+                                                </Select>
+                                                <Select value={rotationTenantRole} onValueChange={setRotationTenantRole}>
+                                                    <SelectTrigger className="md:max-w-[180px]" data-testid="admin-rotation-add-tenant-role">
+                                                        <SelectValue placeholder="Rolle" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        <SelectItem value="pool">Springerpool</SelectItem>
+                                                        <SelectItem value="ward">Station</SelectItem>
+                                                    </SelectContent>
+                                                </Select>
+                                                <Button onClick={handleAddRotationTenant} disabled={!rotationTenantToAdd || addRotationMemberMutation.isPending} data-testid="admin-rotation-add-tenant-submit">
+                                                    {addRotationMemberMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                                                    Mandant hinzufügen
+                                                </Button>
+                                            </div>
+
+                                            {rotationMembersLoading ? (
+                                                <div className="flex items-center justify-center py-6 text-sm text-slate-500">
+                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Mitglieder …
+                                                </div>
+                                            ) : rotationMembers.length === 0 ? (
+                                                <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch keine Mandanten zugeordnet.</div>
+                                            ) : (
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Mandant</TableHead>
+                                                            <TableHead>Rolle</TableHead>
+                                                            <TableHead className="text-right">Aktion</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {rotationMembers.map((member) => (
+                                                            <TableRow key={member.tenant_id} data-testid={`admin-rotation-group-member-${member.tenant_id}`}>
+                                                                <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
+                                                                <TableCell>
+                                                                    <Badge variant="outline" className={member.role === 'pool' ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-300 bg-slate-100 text-slate-600'}>
+                                                                        {member.role === 'pool' ? 'Springerpool' : 'Station'}
+                                                                    </Badge>
+                                                                </TableCell>
+                                                                <TableCell className="text-right">
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="sm"
+                                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                                        onClick={() => removeRotationMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
+                                                                    >
+                                                                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
+                                                                    </Button>
+                                                                </TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* ——— ROTATION: Workplaces ——— */}
+                            <Card>
+                                <CardHeader>
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <CardTitle className="flex items-center gap-2">
+                                                <Building2 className="h-5 w-5 text-indigo-600" />
+                                                Rotationen
+                                            </CardTitle>
+                                            <CardDescription>
+                                                {selectedGroup ? `Arbeitsplatzzeilen für ${selectedGroup.name}` : 'Bitte zuerst einen Verbund wählen.'}
+                                            </CardDescription>
+                                        </div>
+                                        <Button onClick={handleOpenCreateRotationWorkplace} disabled={!selectedGroup} data-testid="admin-rotation-workplace-create-button">
+                                            <Plus className="mr-2 h-4 w-4" /> Rotation anlegen
+                                        </Button>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    {!selectedGroup ? (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Bitte links einen Verbund auswählen.</div>
+                                    ) : rotationWorkplacesLoading ? (
+                                        <div className="flex items-center justify-center py-6 text-sm text-slate-500">
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Rotationen …
+                                        </div>
+                                    ) : rotationWorkplaces.length === 0 ? (
+                                        <div className="rounded-lg border border-dashed p-4 text-sm text-slate-500">Noch keine Rotation angelegt.</div>
+                                    ) : (
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Name</TableHead>
+                                                    <TableHead>Station</TableHead>
+                                                    <TableHead>Status</TableHead>
+                                                    <TableHead className="text-right">Aktionen</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {rotationWorkplaces.map((workplace) => {
+                                                    const wardName = rotationMembers.find((m) => String(m.tenant_id) === String(workplace.ward_tenant_id))?.name || workplace.ward_tenant_id;
+                                                    return (
+                                                        <TableRow key={workplace.id} data-testid={`admin-rotation-workplace-${workplace.id}`}>
+                                                            <TableCell>
+                                                                <div className="font-medium">{workplace.name}</div>
+                                                                <div className="mt-1 flex flex-wrap gap-1">
+                                                                    {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className="text-slate-600">{wardName}</TableCell>
+                                                            <TableCell>
+                                                                <Badge variant="outline" className={workplace.is_active ? 'border-green-200 bg-green-50 text-green-700' : 'border-slate-300 bg-slate-100 text-slate-600'}>
+                                                                    {workplace.is_active ? 'Aktiv' : 'Inaktiv'}
+                                                                </Badge>
+                                                            </TableCell>
+                                                            <TableCell className="text-right">
+                                                                <div className="flex items-center justify-end gap-2">
+                                                                    <Button variant="outline" size="sm" onClick={() => setTimeslotWorkplace(workplace)} title="Zeitfenster verwalten">
+                                                                        <Clock className="mr-1 h-3.5 w-3.5" /> Zeitfenster
+                                                                    </Button>
+                                                                    <Button variant="outline" size="sm" onClick={() => handleOpenEditRotationWorkplace(workplace)}>
+                                                                        <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
+                                                                    </Button>
+                                                                    <Button
+                                                                        variant="outline"
+                                                                        size="sm"
+                                                                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                                        onClick={() => handleDeleteRotationWorkplace(workplace)}
+                                                                    >
+                                                                        <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
+                                                                    </Button>
+                                                                </div>
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
+                                            </TableBody>
+                                        </Table>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </>
+                    ) : (
+                        <div className="rounded-lg border border-dashed p-6 text-sm text-slate-500 text-center">
+                            Bitte links einen Verbund auswählen.
+                        </div>
+                    )}
                 </div>
             </div>
 
+            {/* ================================================================ */}
+            {/* GROUP DIALOG (shared for dienst + rotation) */}
+            {/* ================================================================ */}
             <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
-                <DialogContent className="flex flex-col max-h-[85vh] min-h-[300px] !gap-0 p-0">
+                <DialogContent className="flex flex-col max-h-[85vh] min-h-[380px] !gap-0 p-0">
                     <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                         <DialogTitle>{editingGroup ? 'Verbund bearbeiten' : 'Verbund anlegen'}</DialogTitle>
-                        <DialogDescription>Ein Verbund verbindet mehrere Mandanten für gemeinsame Pool-Dienste.</DialogDescription>
+                        <DialogDescription>
+                            {editingGroup
+                                ? `Bearbeite den ${typeLabel(editingGroup._type || 'dienst')}.`
+                                : 'Wähle den Typ und gib einen Namen für den Verbund ein.'}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                        {/* Type selector — only when creating new */}
+                        {!editingGroup && (
+                            <div className="space-y-2">
+                                <Label>Verbund-Typ</Label>
+                                <RadioGroup
+                                    value={newGroupType}
+                                    onValueChange={(value) => setNewGroupType(value)}
+                                    className="flex gap-4"
+                                >
+                                    <label className={`flex flex-1 cursor-pointer items-center gap-3 rounded-lg border p-4 transition ${newGroupType === 'dienst' ? 'border-teal-300 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <RadioGroupItem value="dienst" className="text-teal-600" />
+                                        <div>
+                                            <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                                                <Globe2 className="h-4 w-4 text-teal-600" /> Dienst-Verbund
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                Mehrere Mandanten teilen sich gemeinsame Dienste (Pool-Dienstplan).
+                                            </div>
+                                        </div>
+                                    </label>
+                                    <label className={`flex flex-1 cursor-pointer items-center gap-3 rounded-lg border p-4 transition ${newGroupType === 'rotation' ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 hover:border-slate-300'}`}>
+                                        <RadioGroupItem value="rotation" className="text-indigo-600" />
+                                        <div>
+                                            <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                                                <ArrowsUpFromLine className="h-4 w-4 text-indigo-600" /> Rotationsverbund
+                                            </div>
+                                            <div className="text-xs text-slate-500 mt-0.5">
+                                                Springerpool rotiert durch mehrere Stationen.
+                                            </div>
+                                        </div>
+                                    </label>
+                                </RadioGroup>
+                            </div>
+                        )}
+
                         <div className="space-y-2">
                             <Label htmlFor="group-name">Name</Label>
                             <Input
@@ -709,14 +1255,17 @@ export default function TenantGroupManagement() {
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
                         <Button variant="outline" onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
-                        <Button onClick={handleSaveGroup} disabled={createGroupMutation.isPending || updateGroupMutation.isPending} data-testid="admin-group-save-button">
-                            {(createGroupMutation.isPending || updateGroupMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        <Button onClick={handleSaveGroup} disabled={createGroupMutation.isPending || updateGroupMutation.isPending || createRotationGroupMutation.isPending || updateRotationGroupMutation.isPending} data-testid="admin-group-save-button">
+                            {(createGroupMutation.isPending || updateGroupMutation.isPending || createRotationGroupMutation.isPending || updateRotationGroupMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
                         </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
 
+            {/* ================================================================ */}
+            {/* DIENST WORKPLACE DIALOG */}
+            {/* ================================================================ */}
             <Dialog open={showWorkplaceDialog} onOpenChange={setShowWorkplaceDialog}>
                 <DialogContent className="flex flex-col max-h-[85vh] min-h-[420px] !gap-0 p-0">
                     <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
@@ -952,6 +1501,95 @@ export default function TenantGroupManagement() {
                 </DialogContent>
             </Dialog>
 
+            {/* ——— ROTATION WORKPLACE DIALOG ——— */}
+            <Dialog open={showRotationWorkplaceDialog} onOpenChange={setShowRotationWorkplaceDialog}>
+                <DialogContent className="flex flex-col max-h-[85vh] min-h-[420px] !gap-0 p-0">
+                    <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
+                        <DialogTitle>{editingRotationWorkplace ? 'Rotation bearbeiten' : 'Rotation anlegen'}</DialogTitle>
+                        <DialogDescription>
+                            Eine Rotation ist eine Arbeitsplatzzeile im Springerpool-Dienstplan (z. B. „Gyn 1").
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="rotation-workplace-name">Name</Label>
+                            <Input
+                                id="rotation-workplace-name"
+                                value={rotationWorkplaceForm.name}
+                                onChange={(event) => setRotationWorkplaceForm((current) => ({ ...current, name: event.target.value }))}
+                                data-testid="admin-rotation-workplace-name-input"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="rotation-workplace-ward">Station (Mandant)</Label>
+                            <div className="text-xs text-slate-500">Welcher Station gehört diese Rotation? Nur Stations-Mandanten (role=ward) sind wählbar.</div>
+                            <Select
+                                value={rotationWorkplaceForm.ward_tenant_id}
+                                onValueChange={(value) => setRotationWorkplaceForm((current) => ({ ...current, ward_tenant_id: value }))}
+                            >
+                                <SelectTrigger id="rotation-workplace-ward" data-testid="admin-rotation-workplace-ward-select">
+                                    <SelectValue placeholder="Station wählen" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {wardMembers.length === 0 ? (
+                                        <SelectItem value="__none__" disabled>Keine Stations-Mandanten — zuerst hinzufügen</SelectItem>
+                                    ) : (
+                                        wardMembers.map((member) => (
+                                            <SelectItem key={member.tenant_id} value={String(member.tenant_id)}>
+                                                {member.name || member.tenant_id}
+                                            </SelectItem>
+                                        ))
+                                    )}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex items-center justify-between rounded-lg border bg-indigo-50 p-3">
+                            <div>
+                                <div className="flex items-center gap-2 font-medium text-slate-900"><Clock className="h-4 w-4" /> Zeitfenster aktivieren</div>
+                                <div className="text-sm text-slate-500">Ermöglicht Früh-/Mittel-/Spätdienst-Unterteilung.</div>
+                            </div>
+                            <Switch
+                                checked={rotationWorkplaceForm.timeslots_enabled}
+                                onCheckedChange={(checked) => setRotationWorkplaceForm((current) => ({ ...current, timeslots_enabled: checked }))}
+                                data-testid="admin-rotation-workplace-timeslots-enabled"
+                            />
+                        </div>
+                        {rotationWorkplaceForm.timeslots_enabled && editingRotationWorkplace && (
+                            <div className="rounded bg-amber-50 p-2 text-xs text-amber-700">
+                                Speichern Sie, dann nutzen Sie den „Zeitfenster"-Button, um Slots anzulegen.
+                            </div>
+                        )}
+                        <div className="flex items-center justify-between rounded-lg border p-3">
+                            <div>
+                                <div className="font-medium text-slate-900">Aktiv</div>
+                                <div className="text-sm text-slate-500">Inaktive Rotationen bleiben historisch erhalten, erscheinen aber nicht neu.</div>
+                            </div>
+                            <Switch
+                                checked={rotationWorkplaceForm.is_active}
+                                onCheckedChange={(checked) => setRotationWorkplaceForm((current) => ({ ...current, is_active: checked }))}
+                            />
+                        </div>
+                    </div>
+                    <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
+                        <Button variant="outline" onClick={() => setShowRotationWorkplaceDialog(false)}>Abbrechen</Button>
+                        <Button onClick={handleSaveRotationWorkplace} disabled={createRotationWorkplaceMutation.isPending || updateRotationWorkplaceMutation.isPending} data-testid="admin-rotation-workplace-save-button">
+                            {(createRotationWorkplaceMutation.isPending || updateRotationWorkplaceMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                            Speichern
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* ——— ROTATION TIMESLOT EDITOR ——— */}
+            {timeslotWorkplace && (
+                <RotationTimeslotEditor
+                    groupId={selectedGroupId}
+                    workplace={timeslotWorkplace}
+                    onClose={() => setTimeslotWorkplace(null)}
+                />
+            )}
+
+            {/* ——— DIENST QUALIFICATIONS ——— */}
             <SharedWorkplaceQualificationsDialog
                 open={!!qualificationsWorkplace}
                 onOpenChange={(next) => { if (!next) setQualificationsWorkplace(null); }}
@@ -959,5 +1597,157 @@ export default function TenantGroupManagement() {
                 workplace={qualificationsWorkplace}
             />
         </div>
+    );
+}
+
+// ============================================================
+//  RotationTimeslotEditor — inline sub-component
+// ============================================================
+function RotationTimeslotEditor({ groupId, workplace, onClose }) {
+    const queryClient = useQueryClient();
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({ label: '', start_time: '07:00', end_time: '15:00', order: 0 });
+
+    const { data: timeslotsResponse, isLoading } = useQuery({
+        queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id],
+        queryFn: () => api.listRotationTimeslots(groupId, workplace.id),
+        staleTime: 10_000,
+    });
+
+    const timeslots = Array.isArray(timeslotsResponse?.timeslots) ? timeslotsResponse.timeslots : [];
+
+    const invalidate = () => {
+        queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id] });
+        queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+    };
+
+    const createMutation = useMutation({
+        mutationFn: (data) => api.createRotationTimeslot(groupId, workplace.id, data),
+        onSuccess: () => {
+            invalidate();
+            setForm({ label: '', start_time: '07:00', end_time: '15:00', order: timeslots.length });
+            setShowForm(false);
+            toast.success('Zeitfenster erstellt');
+        },
+        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (timeslotId) => api.deleteRotationTimeslot(groupId, workplace.id, timeslotId),
+        onSuccess: () => {
+            invalidate();
+            toast.success('Zeitfenster gelöscht');
+        },
+        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
+    });
+
+    return (
+        <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent className="!gap-0 p-0">
+                <DialogHeader className="px-6 pt-6 pb-0">
+                    <DialogTitle>Zeitfenster für „{workplace.name}"</DialogTitle>
+                    <DialogDescription>Früh-/Mittel-/Spätdienst für diese Rotation.</DialogDescription>
+                </DialogHeader>
+                <div className="px-6 py-4 space-y-3">
+                    {isLoading ? (
+                        <div className="flex items-center justify-center py-4 text-sm text-slate-500">
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Lade Zeitfenster …
+                        </div>
+                    ) : timeslots.length === 0 ? (
+                        <div className="rounded-lg border border-dashed p-3 text-sm text-slate-500">Noch keine Zeitfenster angelegt.</div>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Label</TableHead>
+                                    <TableHead>Zeit</TableHead>
+                                    <TableHead className="text-right">Aktion</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {timeslots.map((ts) => (
+                                    <TableRow key={ts.id}>
+                                        <TableCell className="font-medium">{ts.label}</TableCell>
+                                        <TableCell className="text-slate-600">{ts.start_time?.slice(0, 5)}–{ts.end_time?.slice(0, 5)}</TableCell>
+                                        <TableCell className="text-right">
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                                                onClick={() => deleteMutation.mutate(ts.id)}
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+
+                    {showForm ? (
+                        <div className="rounded-lg border p-3 space-y-3">
+                            <div className="grid gap-3 md:grid-cols-2">
+                                <div className="space-y-1">
+                                    <Label className="text-sm">Bezeichnung</Label>
+                                    <Input
+                                        value={form.label}
+                                        onChange={(e) => setForm((c) => ({ ...c, label: e.target.value }))}
+                                        placeholder="z. B. Frühdienst"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-sm">Reihenfolge</Label>
+                                    <Input
+                                        type="number"
+                                        min="0"
+                                        value={form.order}
+                                        onChange={(e) => setForm((c) => ({ ...c, order: Number(e.target.value) || 0 }))}
+                                        className="w-24"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-sm">Start</Label>
+                                    <Input
+                                        type="time"
+                                        value={form.start_time}
+                                        onChange={(e) => setForm((c) => ({ ...c, start_time: e.target.value }))}
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-sm">Ende</Label>
+                                    <Input
+                                        type="time"
+                                        value={form.end_time}
+                                        onChange={(e) => setForm((c) => ({ ...c, end_time: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    size="sm"
+                                    onClick={() => {
+                                        if (!form.label.trim()) {
+                                            toast.error('Bezeichnung erforderlich');
+                                            return;
+                                        }
+                                        createMutation.mutate(form);
+                                    }}
+                                    disabled={createMutation.isPending}
+                                >
+                                    {createMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
+                                    Hinzufügen
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>Abbrechen</Button>
+                            </div>
+                        </div>
+                    ) : (
+                        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+                            <Plus className="mr-1 h-3.5 w-3.5" /> Zeitfenster hinzufügen
+                        </Button>
+                    )}
+                </div>
+            </DialogContent>
+        </Dialog>
     );
 }
