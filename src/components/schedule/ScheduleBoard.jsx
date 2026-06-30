@@ -3075,9 +3075,11 @@ export default function ScheduleBoard() {
     // Fallback doctor map for springer shifts rendered in grid cells.
     // The shift's doctor_id is the central employee ID, which won't be
     // in the local doctorById. This map provides display data for them.
+    // Built from raw springerChipsByDate (NOT allDisplayDocsByDate) so
+    // that hiding the chip from Verfügbar doesn't break grid rendering.
     const springerDoctorById = useMemo(() => {
         const map = new Map();
-        for (const [, docs] of allDisplayDocsByDate) {
+        for (const [, docs] of springerChipsByDate) {
             for (const doc of docs) {
                 if (doc._isSpringer && !map.has(doc.id)) {
                     map.set(doc.id, doc);
@@ -3085,7 +3087,7 @@ export default function ScheduleBoard() {
             }
         }
         return map;
-    }, [allDisplayDocsByDate]);
+    }, [springerChipsByDate]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
