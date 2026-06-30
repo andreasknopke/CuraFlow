@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Mic, MicOff, Loader2, Trash2, Plus, Volume2 } from 'lucide-react';
-import { db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { useAuth } from '@/components/AuthProvider';
@@ -101,26 +101,21 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
 
             mediaRecorder.onstop = async () => {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64Audio = reader.result;
-                    setIsProcessing(true);
-                    try {
-                        const res = await base44.functions.invoke('transcribeAudio', { audioBase64: base64Audio });
-                        if (res.data.text) {
-                            setDetectedText(res.data.text);
-                        } else {
-                            toast.error("Kein Text erkannt");
-                        }
-                    } catch (e) {
-                        console.error(e);
-                        toast.error("Transkriptionsfehler");
-                    } finally {
-                        setIsProcessing(false);
-                        stream.getTracks().forEach(track => track.stop());
+                setIsProcessing(true);
+                try {
+                    const res = await api.transcribeAudio(audioBlob);
+                    if (res.transcript) {
+                        setDetectedText(res.transcript);
+                    } else {
+                        toast.error("Kein Text erkannt");
                     }
-                };
+                } catch (e) {
+                    console.error(e);
+                    toast.error("Transkriptionsfehler");
+                } finally {
+                    setIsProcessing(false);
+                    stream.getTracks().forEach(track => track.stop());
+                }
             };
 
             mediaRecorder.start();

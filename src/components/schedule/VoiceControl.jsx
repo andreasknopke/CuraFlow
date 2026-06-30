@@ -3,7 +3,7 @@ import { Mic, MicOff, Loader2, HelpCircle, AlertCircle, Volume2, Bot } from 'luc
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuCheckboxItem, ContextMenuSeparator } from "@/components/ui/context-menu";
-import { base44 } from "@/api/client";
+import { api } from "@/api/client";
 import { format, startOfWeek, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import VoiceTrainingDialog from './VoiceTrainingDialog';
@@ -140,43 +140,33 @@ export default function VoiceControl({ doctors, workplaces, currentDate, onVoice
                 console.log("VoiceControl: Recording stopped, processing audio...");
                 // Ensure listening state is off (in case of external stop)
                 setIsListening(false);
-                
+
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                
-                // Convert to Base64
-                const reader = new FileReader();
-                reader.readAsDataURL(audioBlob);
-                reader.onloadend = async () => {
-                    const base64Audio = reader.result;
-                    
-                    setIsProcessing(true);
-                    setTranscript("Transkribiere Audio...");
-                    console.log("VoiceControl: Sending audio to backend...");
-                    
-                    try {
-                        const res = await base44.functions.invoke('transcribeAudio', { 
-                            audioBase64: base64Audio 
-                        });
-                        
-                        const text = res.data.text;
-                        console.log("VoiceControl: Transcription received:", text);
-                        
-                        if (text) {
-                            setTranscript(text);
-                            handleSendTextRef.current(text);
-                        } else {
-                            setError("Kein Text erkannt.");
-                            setIsProcessing(false); // Reset processing if no text to process further
-                        }
-                    } catch (e) {
-                        console.error("VoiceControl: Transcription failed", e);
-                        setError("Transkriptionsfehler: " + (e.response?.data?.error || e.message));
+
+                setIsProcessing(true);
+                setTranscript("Transkribiere Audio...");
+                console.log("VoiceControl: Sending audio to backend...");
+
+                try {
+                    const res = await api.transcribeAudio(audioBlob);
+
+                    const text = res.text;
+                    console.log("VoiceControl: Transcription received:", text);
+
+                    if (text) {
+                        setTranscript(text);
+                        handleSendTextRef.current(text);
+                    } else {
+                        setError("Kein Text erkannt.");
                         setIsProcessing(false);
-                    } finally {
-                        // Stop tracks
-                        stream.getTracks().forEach(track => track.stop());
                     }
-                };
+                } catch (e) {
+                    console.error("VoiceControl: Transcription failed", e);
+                    setError("Transkriptionsfehler: " + (e.response?.data?.error || e.message));
+                    setIsProcessing(false);
+                } finally {
+                    stream.getTracks().forEach(track => track.stop());
+                }
             };
 
             mediaRecorder.start();
@@ -270,12 +260,12 @@ export default function VoiceControl({ doctors, workplaces, currentDate, onVoice
                 weekContext: weekContext
             };
 
-            const response = await base44.functions.invoke('processVoiceAudio', {
-                text: text,
-                context: context
+            const response = await api.request('/api/voice/command', {
+                method: 'POST',
+                body: JSON.stringify({ command: text, context }),
             });
             
-            const result = response.data;
+            const result = response;
             console.log("Voice Result:", result);
             
             if (result.corrected_text) {

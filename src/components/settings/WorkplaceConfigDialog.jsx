@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { 
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
@@ -98,8 +98,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
 
     const renamePositionMutation = useMutation({
         mutationFn: async ({ oldName, newName }) => {
-            // Call backend function
-            return base44.functions.invoke('renamePosition', { oldName, newName });
+            return api.renamePosition(oldName, newName);
         }
     });
 
