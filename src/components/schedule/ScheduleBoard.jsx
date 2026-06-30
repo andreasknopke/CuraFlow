@@ -3352,6 +3352,8 @@ export default function ScheduleBoard() {
     //  Drag-out (outside grid) simply hides the chip locally.
     // ============================================================
     if (normalizedDraggableId.startsWith('available-springer-')) {
+        console.log('[SpringerDrag] Drag ended', { reason: result.reason, destination: destinationDroppableId, sourceIndex: source.index });
+
         const springerDateStr = sourceDroppableId.startsWith('available__')
             ? sourceDroppableId.replace('available__', '')
             : null;
