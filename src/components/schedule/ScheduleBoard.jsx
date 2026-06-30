@@ -3072,6 +3072,21 @@ export default function ScheduleBoard() {
         return map;
     }, [availableDoctorsByDate, springerChipsByDate, hiddenSpringerChipIds, weekDays]);
 
+    // Fallback doctor map for springer shifts rendered in grid cells.
+    // The shift's doctor_id is the central employee ID, which won't be
+    // in the local doctorById. This map provides display data for them.
+    const springerDoctorById = useMemo(() => {
+        const map = new Map();
+        for (const [, docs] of allDisplayDocsByDate) {
+            for (const doc of docs) {
+                if (doc._isSpringer && !map.has(doc.id)) {
+                    map.set(doc.id, doc);
+                }
+            }
+        }
+        return map;
+    }, [allDisplayDocsByDate]);
+
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
 
@@ -5025,8 +5040,11 @@ export default function ScheduleBoard() {
     }
 
     return shifts.map((shift, index) => {
-        const baseDoctor = doctorById.get(shift.doctor_id);
-        const doctor = baseDoctor ? getDoctorWithEffectiveFte(baseDoctor, shift.date) : null;
+        const baseDoctor = doctorById.get(shift.doctor_id)
+            || springerDoctorById.get(shift.doctor_id);
+        const doctor = baseDoctor && !baseDoctor._isSpringer
+            ? getDoctorWithEffectiveFte(baseDoctor, shift.date)
+            : baseDoctor; // springer synthetic doc — no FTE calc needed
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
@@ -5108,7 +5126,7 @@ export default function ScheduleBoard() {
             </div>
         );
     });
-    }, [currentWeekShiftLookup, doctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
+    }, [currentWeekShiftLookup, doctorById, springerDoctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
@@ -5119,12 +5137,15 @@ export default function ScheduleBoard() {
     const shift = currentWeekShiftLookup.byId.get(shiftId);
     if (!shift) return null;
     
-    const doctor = doctorById.get(shift.doctor_id);
+    const doctor = doctorById.get(shift.doctor_id)
+        || springerDoctorById.get(shift.doctor_id);
     if (!doctor) return null;
-    const compactLabel = getDoctorChipLabel(doctor);
+    const compactLabel = doctor._isSpringer ? doctor._springerLabel : getDoctorChipLabel(doctor);
     const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${shift.date}`) || null;
     
-    const roleColor = getRoleColor(doctor.role);
+    const roleColor = doctor._isSpringer
+        ? { backgroundColor: '#fef3c7', color: '#92400e' }
+        : getRoleColor(doctor.role);
     const cloneSize = shiftBoxSize;
     
     return (
@@ -5158,7 +5179,7 @@ export default function ScheduleBoard() {
         </div>
       </div>
     );
-                                }, [currentWeekShiftLookup, doctorById, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
+                                }, [currentWeekShiftLookup, doctorById, springerDoctorById, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
 
     const renderAvailableDoctorClone = useMemo(() => (provided, snapshot, rubric) => {
         const droppableId = stripPanelPrefix(rubric.source.droppableId || '');
