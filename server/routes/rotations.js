@@ -539,6 +539,7 @@ router.get('/visible-rotations', async (req, res) => {
         `SELECT d.id, d.rotation_workplace_id, d.group_id, d.ward_tenant_id, d.date,
                 d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
                 d.return_requested_assignment_id,
+                d.offered_employee_id,
                 w.name AS workplace_name, ts.label AS timeslot_label
            FROM rotation_demand d
            JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
@@ -558,6 +559,7 @@ router.get('/visible-rotations', async (req, res) => {
         status: r.status,
         fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
         return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
+        offered_employee_id: r.offered_employee_id ? String(r.offered_employee_id) : null,
         workplace_name: r.workplace_name,
         timeslot_label: r.timeslot_label || null,
         canManage: canWriteRotationGroup(ctx, Number(r.group_id)),
@@ -709,7 +711,7 @@ router.post('/demands', async (req, res) => {
       return res.status(400).json({ error: 'Kein aktiver Mandant (x-db-token fehlt)' });
     }
 
-    const { rotation_workplace_id, date, timeslot_id, note, return_requested_assignment_id } = req.body || {};
+    const { rotation_workplace_id, date, timeslot_id, note, return_requested_assignment_id, offered_employee_id } = req.body || {};
     if (!rotation_workplace_id) return res.status(400).json({ error: 'rotation_workplace_id ist erforderlich' });
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
 
@@ -793,6 +795,81 @@ router.post('/demands', async (req, res) => {
       }
 
       return res.status(201).json({ demand: row });
+    }
+
+    // ── Joker-offer branch ("Mitarbeiter an den Pool übergeben") ──
+    // A ward can offer one of their own employees to the pool. Unlike
+    // the return-request branch, there is no existing rotation_assignment
+    // — the employee is currently just available on the ward schedule.
+    // The demand carries the central employee_id so the pool planner can
+    // see who is being offered and create a rotation_assignment for them.
+    if (offered_employee_id) {
+      // Ward staff can offer Joker to ANY workplace in the group (not
+      // just their own ward_tenant_id). Verify the workplace belongs to
+      // the same group and the caller has group access.
+      if (String(wp.group_id) !== groupId) {
+        return res.status(403).json({ error: 'Workplace gehört nicht zur selben Gruppe' });
+      }
+
+      // Verify the employee ID is provided (central employee IDs come from
+      // the Doctor.central_employee_id field in tenant databases).
+      if (!offered_employee_id || typeof offered_employee_id !== 'string' || !offered_employee_id.trim()) {
+        return res.status(400).json({ error: 'employee_id ist erforderlich für eine Joker-Übergabe' });
+      }
+
+      // Dedup: no open Joker offer for the same employee on the same
+      // cell (prevents double-offering the same person to the same slot).
+      const [existingOffer] = await db.execute(
+        `SELECT id FROM rotation_demand
+          WHERE rotation_workplace_id = ? AND date = ?
+            AND (timeslot_id = ? OR (timeslot_id IS NULL AND ? IS NULL))
+            AND offered_employee_id = ? AND status = 'open' LIMIT 1`,
+        [String(rotation_workplace_id), date, timeslot_id || null, timeslot_id || null, String(offered_employee_id)]
+      );
+      if (existingOffer.length > 0) {
+        const err = new Error('Für diesen Mitarbeiter existiert bereits ein offenes Übergabe-Angebot in dieser Zelle');
+        err.status = 409;
+        throw err;
+      }
+
+      const jokerId = crypto.randomUUID();
+      const jokerRow = {
+        id: jokerId,
+        rotation_workplace_id: String(rotation_workplace_id),
+        group_id: groupId,
+        ward_tenant_id: activeTenantId,
+        date,
+        timeslot_id: timeslot_id || null,
+        note: note || `Übergabe an den Pool gewünscht`,
+        status: 'open',
+        fulfilled_by_assignment_id: null,
+        offered_employee_id: String(offered_employee_id),
+        created_by: req.user?.email || req.user?.sub || null,
+      };
+
+      const jokerColumns = Object.keys(jokerRow);
+      const jokerValues = jokerColumns.map((k) => jokerRow[k]);
+      const jokerColList = jokerColumns.join(', ');
+      const jokerPlaceholders = jokerColumns.map(() => '?').join(', ');
+      await db.execute(
+        `INSERT INTO rotation_demand (${jokerColList}) VALUES (${jokerPlaceholders})`,
+        jokerValues
+      );
+
+      try {
+        const adminUserIds = await getRotationAdminUserIds(db, groupId);
+        if (adminUserIds.length > 0) {
+          broadcastUserEvent({
+            eventName: 'rotation-demand',
+            payload: { demand: jokerRow, groupId, kind: 'joker-offer' },
+            userIds: adminUserIds,
+          });
+        }
+      } catch (realtimeErr) {
+        console.error('[rotations] broadcastUserEvent error:', realtimeErr.message);
+      }
+
+      return res.status(201).json({ demand: jokerRow });
     }
 
     await assertNoOpenDemandForCell(db, {
@@ -881,6 +958,7 @@ router.get('/demands', async (req, res) => {
       `SELECT d.id, d.rotation_workplace_id, d.group_id, d.ward_tenant_id, d.date,
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
               d.return_requested_assignment_id,
+              d.offered_employee_id,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
               a.employee_id AS fulfilled_employee_id,
@@ -908,6 +986,7 @@ router.get('/demands', async (req, res) => {
       status: r.status,
       fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
       return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
+      offered_employee_id: r.offered_employee_id ? String(r.offered_employee_id) : null,
       created_by: r.created_by || null,
       created_at: r.created_at || null,
       updated_at: r.updated_at || null,

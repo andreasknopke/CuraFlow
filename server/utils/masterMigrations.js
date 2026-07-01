@@ -943,6 +943,21 @@ export async function runMasterMigrations(dbPool) {
     ).catch(() => { /* older MySQL without IF NOT EXISTS on index — ignore */ });
   }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'], duplicateReason: 'Spalte/Index bereits vorhanden' });
 
+  // Joker-transfer flavour on rotation_demand. A ward can offer one of
+  // their own employees to the pool by dragging the doctor chip onto a
+  // pool-timeslot cell. The demand stores the central employee_id of the
+  // offered doctor in offered_employee_id.
+  await run('add_rotation_demand_offered_employee_id', async () => {
+    await addColumnIfMissing(
+      'rotation_demand',
+      'offered_employee_id',
+      'VARCHAR(36) DEFAULT NULL'
+    );
+    await dbPool.execute(
+      'CREATE INDEX IF NOT EXISTS idx_rd_offered_emp ON rotation_demand (offered_employee_id)'
+    ).catch(() => { /* older MySQL without IF NOT EXISTS on index — ignore */ });
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'], duplicateReason: 'Spalte/Index bereits vorhanden' });
+
   // ===== PHASE: Workplace Links (read-only cross-tenant staffing mirror) =====
   // Lets e.g. a Radiology tenant's "CT" workplace show the staffing of the
   // MTR tenant's "CT1"/"CT2" workplaces (and vice versa) in the day view.

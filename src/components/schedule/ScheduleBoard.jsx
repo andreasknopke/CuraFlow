@@ -3515,6 +3515,48 @@ export default function ScheduleBoard() {
             }
         }
 
+        // ────────────────────────────────────────────────────────────
+        //  WARD-TENANT: Joker an den Pool übergeben
+        //  Ein regulärer Mitarbeiter (kein Springer) wird aus der
+        //  Verfügbar-Leiste auf eine Pool-Timeslot-Zelle gezogen,
+        //  um ihn dem Springerpool als "Joker" anzubieten.
+        // ────────────────────────────────────────────────────────────
+        if (wp.canWrite === false && normalizedDraggableId.startsWith('available-doc-')) {
+            // Only regular doctors (not Springer chips) can be offered as Joker
+            const isSpringer = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
+                .some((d) => d._isSpringer && d.id === doctorId);
+            if (!isSpringer) {
+                const doctor = doctorById.get(parseInt(doctorId, 10));
+                const doctorName = doctor?.name || doctorId;
+                const centralEmployeeId = doctor?.central_employee_id;
+                if (!centralEmployeeId) {
+                    toast.error('Dieser Mitarbeiter hat keine zentrale Verknüpfung und kann nicht an den Pool übergeben werden.');
+                    return;
+                }
+                const confirmed = window.confirm(
+                    `Wollen Sie ${doctorName} an den Springerpool übergeben?`
+                );
+                if (!confirmed) return;
+                api.createRotationDemand({
+                    rotation_workplace_id: wp.id,
+                    date: destDate,
+                    timeslot_id: tsId || null,
+                    offered_employee_id: centralEmployeeId,
+                    note: `Übergabe von ${doctorName} an den Pool gewünscht`,
+                }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                    toast.success(`${doctorName} wurde dem Pool angeboten.`);
+                }).catch((err) => {
+                    const msg = err?.status === 409
+                        ? 'Für diesen Mitarbeiter existiert bereits ein Angebot in dieser Zelle.'
+                        : 'Fehler bei der Joker-Übergabe: ' + (err?.message || '');
+                    toast.error(msg);
+                });
+                return;
+            }
+        }
+
         const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
 
         // Build callback for timeslot selection (or direct creation)
@@ -5239,7 +5281,7 @@ export default function ScheduleBoard() {
                                     }}
                                 </Draggable>
                             );
-                        }).concat(openDemands.filter((d) => !d.return_requested_assignment_id).map((demand) => {
+                        }).concat(openDemands.filter((d) => !d.return_requested_assignment_id && !d.offered_employee_id).map((demand) => {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
                                 ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
@@ -5249,6 +5291,18 @@ export default function ScheduleBoard() {
                                      title={`Bedarf von Station: ${demand.note || ''}`.trim()}>
                                     <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
                                     {tsLabel ? `Bedarf ${tsLabel}` : 'Bedarf'}
+                                </div>
+                            );
+                        })).concat(openDemands.filter((d) => d.offered_employee_id).map((demand) => {
+                            const tsLabel = demand.timeslot_label || (demand.timeslot_id
+                                ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                                : null);
+                            return (
+                                <div key={`joker-${demand.id}`}
+                                     className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 font-medium"
+                                     title={`Übergabe gewünscht: ${demand.note || ''}`.trim()}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                    {tsLabel ? `Übergabe ${tsLabel}` : 'Übergabe gewünscht'}
                                 </div>
                             );
                         })).concat(openDemands.filter((d) => d.return_requested_assignment_id).map((demand) => {

@@ -26,6 +26,7 @@ export const ROTATION_DEMAND_WRITABLE_COLUMNS = new Set([
   'status',
   'fulfilled_by_assignment_id',
   'return_requested_assignment_id',
+  'offered_employee_id',
   'created_by',
 ]);
 

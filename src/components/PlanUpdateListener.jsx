@@ -197,7 +197,13 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
           queryClient.invalidateQueries({ queryKey });
         }
         const isReturnRequest = payload?.kind === 'return-request';
-        toast.info(isReturnRequest ? 'Springer-Rückgabe angefordert' : 'Neuer Springer-Bedarf angemeldet', {
+        const isJokerOffer = payload?.kind === 'joker-offer';
+        const toastLabel = isReturnRequest
+          ? 'Springer-Rückgabe angefordert'
+          : isJokerOffer
+            ? 'Joker-Übergabe angeboten'
+            : 'Neuer Springer-Bedarf angemeldet';
+        toast.info(toastLabel, {
           description: payload?.demand?.workplace_name
             ? `${payload.demand.workplace_name} · ${payload.demand.date}`
             : undefined,
