@@ -1168,6 +1168,7 @@ export default function ScheduleBoard() {
         allowCustomEditing: false,
         customEndMinutesByOptionId: {},
         customStartMinutesByOptionId: {},
+        activeTimeslotId: null,
     });
 
     const openPoolEditDialog = (workplace, dateStr, shift = null) => {
@@ -1184,6 +1185,7 @@ export default function ScheduleBoard() {
             allowCustomEditing: false,
             customEndMinutesByOptionId: {},
             customStartMinutesByOptionId: {},
+            activeTimeslotId: null,
         });
     };
 
@@ -2918,6 +2920,7 @@ export default function ScheduleBoard() {
             allowCustomEditing,
             customEndMinutesByOptionId: buildInitialCustomTimeslotEndMinutesByOption(options, initialSelection),
             customStartMinutesByOptionId: buildInitialCustomTimeslotStartMinutesByOption(options, initialSelection),
+            activeTimeslotId: initialSelection?.timeslotId ?? null,
         });
         return false;
     };
@@ -4828,17 +4831,20 @@ export default function ScheduleBoard() {
                                         <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
                                     </div>
                                     {shiftsForDay.length > 0 ? (
-                                        <div className="space-y-1.5 ml-0.5">
+                                        <div className="flex flex-wrap gap-1.5 ml-1">
                                             {shiftsForDay.map((s, idx) => (
-                                                <div key={idx} className="flex items-center gap-2 text-sm">
-                                                    <span className="flex-1 min-w-0 text-slate-700 font-medium truncate">{s.doctor_name}</span>
-                                                    {(s.start_time || s.end_time) && (
-                                                        <span className="flex-shrink-0 text-[11px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                                                            {s.start_time ? s.start_time.slice(0, 5) : '??'}
-                                                            {s.end_time ? `–${s.end_time.slice(0, 5)}` : ''}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                <Badge
+                                                    key={idx}
+                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
+                                                    variant="outline"
+                                                >
+                                                    {s.doctor_name}
+                                                    {s.start_time && s.end_time
+                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
+                                                        : s.start_time
+                                                            ? ` (${s.start_time.slice(0, 5)})`
+                                                            : ''}
+                                                </Badge>
                                             ))}
                                         </div>
                                     ) : (
@@ -4891,17 +4897,20 @@ export default function ScheduleBoard() {
                                         <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
                                     </div>
                                     {shiftsForDay.length > 0 ? (
-                                        <div className="space-y-1.5 ml-0.5">
+                                        <div className="flex flex-wrap gap-1.5 ml-1">
                                             {shiftsForDay.map((s, idx) => (
-                                                <div key={`cell-shift-${idx}`} className="flex items-center gap-2 text-sm">
-                                                    <span className="flex-1 min-w-0 text-slate-700 font-medium truncate">{s.doctor_name}</span>
-                                                    {(s.start_time || s.end_time) && (
-                                                        <span className="flex-shrink-0 text-[11px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
-                                                            {s.start_time ? s.start_time.slice(0, 5) : '??'}
-                                                            {s.end_time ? `–${s.end_time.slice(0, 5)}` : ''}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                                <Badge
+                                                    key={idx}
+                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
+                                                    variant="outline"
+                                                >
+                                                    {s.doctor_name}
+                                                    {s.start_time && s.end_time
+                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
+                                                        : s.start_time
+                                                            ? ` (${s.start_time.slice(0, 5)})`
+                                                            : ''}
+                                                </Badge>
                                             ))}
                                         </div>
                                     ) : (
@@ -6946,13 +6955,21 @@ export default function ScheduleBoard() {
                                                   'rounded-xl border p-4 transition-colors',
                                                   timeslot.leavesEarly
                                                       ? 'border-amber-200 bg-amber-50/70'
-                                                      : 'border-slate-200 bg-white'
+                                                      : 'border-slate-200 bg-white',
+                                                  timeslotSelectionDialog.activeTimeslotId === timeslot.id
+                                                      ? 'ring-2 ring-emerald-500 border-emerald-400'
+                                                      : ''
                                               )}
                                           >
                                               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                                   <div className="space-y-1">
                                                       <div className="flex items-center gap-2">
                                                           <div className="font-medium text-slate-900">{timeslot.label || 'Zeitfenster'}</div>
+                                                          {timeslotSelectionDialog.activeTimeslotId === timeslot.id && (
+                                                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                                                  Aktuell
+                                                              </span>
+                                                          )}
                                                           {timeslot.leavesEarly && (
                                                               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
                                                                   <AlertTriangle className="h-3.5 w-3.5" />
