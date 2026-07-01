@@ -12,6 +12,12 @@ export class SchedulePage {
   readonly weekViewButton: Locator;
   readonly dayViewButton: Locator;
   readonly undoButton: Locator;
+  readonly autoFillTrigger: Locator;
+  readonly autoFillAll: Locator;
+  readonly previewBar: Locator;
+  readonly previewApplyButton: Locator;
+  readonly previewDiscardButton: Locator;
+  readonly clearWeekButton: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -23,6 +29,12 @@ export class SchedulePage {
     this.weekViewButton = page.getByTestId('schedule-view-week');
     this.dayViewButton = page.getByTestId('schedule-view-day');
     this.undoButton = page.getByTestId('schedule-undo');
+    this.autoFillTrigger = page.getByTestId('schedule-auto-fill-trigger');
+    this.autoFillAll = page.getByTestId('schedule-auto-fill-all');
+    this.previewBar = page.getByTestId('schedule-preview-bar');
+    this.previewApplyButton = page.getByTestId('schedule-preview-apply');
+    this.previewDiscardButton = page.getByTestId('schedule-preview-discard');
+    this.clearWeekButton = page.getByTestId('schedule-clear-week');
   }
 
   async goto(date: string, view: 'week' | 'month' | 'day' = 'week') {
@@ -134,6 +146,17 @@ export class SchedulePage {
     await this.undoButton.click();
   }
 
+  async dragShiftOffGrid(shiftId: string) {
+    const source = this.shift(shiftId);
+    await source.scrollIntoViewIfNeeded();
+    const box = await source.boundingBox();
+    if (!box) throw new Error('Shift not found for drag-off-grid');
+    await this.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await this.page.mouse.down();
+    await this.page.mouse.move(10, 10, { steps: 10 });
+    await this.page.mouse.up();
+  }
+
   private async dragToTarget(source: Locator, target: Locator) {
     await source.scrollIntoViewIfNeeded();
     await target.scrollIntoViewIfNeeded();
@@ -145,9 +168,20 @@ export class SchedulePage {
       throw new Error('Unable to calculate schedule drag target');
     }
 
-    await this.page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+    const sx = sourceBox.x + sourceBox.width / 2;
+    const sy = sourceBox.y + sourceBox.height / 2;
+    const tx = targetBox.x + targetBox.width / 2;
+    const ty = targetBox.y + targetBox.height / 2;
+
+    // Hover over the source to ensure the mouse is positioned on the drag handle.
+    // hello-pangea/dnd requires the mousedown to target the drag-handle element.
+    await source.hover({ force: true, position: { x: sourceBox.width / 2, y: sourceBox.height / 2 } });
+    await this.page.waitForTimeout(80);
     await this.page.mouse.down();
-    await this.page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y + targetBox.height / 2, { steps: 15 });
+    await this.page.waitForTimeout(150);
+    await this.page.mouse.move(tx, ty, { steps: 30 });
+    await this.page.waitForTimeout(200);
     await this.page.mouse.up();
+    await this.page.waitForTimeout(1200);
   }
 }
