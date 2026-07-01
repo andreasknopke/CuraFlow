@@ -29,6 +29,7 @@ import masterRouter from './routes/master.js';
 import certificatesRouter from './routes/certificates.js';
 import groupsRouter from './routes/groups.js';
 import rotationsRouter from './routes/rotations.js';
+import workplaceLinksRouter from './routes/workplaceLinks.js';
 import vacationRouter from './routes/vacation.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
@@ -572,6 +573,7 @@ app.use('/api/master', masterRouter);
 app.use('/api/certificates', certificatesRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/rotations', rotationsRouter);
+app.use('/api/workplace-links', workplaceLinksRouter);
 
 // ===== SPA fallback (Coolify / single-container deployment) =====
 if (fs.existsSync(distPath)) {

@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Plus, Filter, Check, ChevronsUpDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Link2, Plus, Filter, Check, ChevronsUpDown } from 'lucide-react';
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -1081,6 +1081,19 @@ export default function ScheduleBoard() {
 
     const visiblePoolShifts = visiblePoolData?.shifts || [];
     const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
+
+    // Read-only cross-tenant staffing mirror (e.g. Radiology "CT" ↔ MTR "CT1"/"CT2").
+    // Only fetched/shown in day view — see docs/features/WORKPLACE_LINKS.md.
+    const { data: visibleWorkplaceLinksData } = useQuery({
+        queryKey: ['workplace-links', 'visible-links', fetchRange.start, fetchRange.end],
+        queryFn: () => api.getVisibleWorkplaceLinks({ from: fetchRange.start, to: fetchRange.end }),
+        enabled: viewMode === 'day',
+        staleTime: 30 * 1000,
+        refetchOnWindowFocus: false,
+        placeholderData: keepPreviousData,
+    });
+
+    const linkedWorkplacesByName = visibleWorkplaceLinksData?.linkedWorkplaces || {};
 
     // ===== Springerpool-Rotationen (separates System) =====
     const { data: visibleRotationData } = useQuery({
@@ -4773,6 +4786,39 @@ export default function ScheduleBoard() {
         );
     };
 
+    // Renders a compact read-only summary of a linked partner workplace's
+    // staffing for one day — e.g. shown next to the ärztlich "CT" row header
+    // in day view to surface the MTR "CT1"/"CT2" occupancy (and vice versa).
+    // Only ever reads; never a drop target, never opens an edit dialog.
+    const renderLinkedWorkplaceHint = (rowName, dateStr) => {
+        const partners = linkedWorkplacesByName[rowName];
+        if (!partners || partners.length === 0) return null;
+        return (
+            <div className="mt-1 flex flex-col gap-0.5">
+                {partners.map((partner) => {
+                    const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                    return (
+                        <div
+                            key={`${partner.tenant_id}__${partner.workplace_name}`}
+                            className="flex items-center gap-1 text-[10px] text-slate-500"
+                            title={`${partner.tenant_name} · ${partner.workplace_name}`}
+                        >
+                            <Link2 className="w-2.5 h-2.5 text-teal-500 flex-shrink-0" />
+                            <span className="font-medium text-teal-700">{partner.workplace_name}:</span>
+                            {shiftsForDay.length > 0 ? (
+                                <span className="truncate">
+                                    {shiftsForDay.map((s) => s.doctor_name).join(', ')}
+                                </span>
+                            ) : (
+                                <span className="italic text-slate-400">nicht besetzt</span>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
     // ================================================================
     //  Springerpool-Rotationen — Zellen-Rendering
     // ================================================================
@@ -5448,6 +5494,7 @@ export default function ScheduleBoard() {
                                                                   count={rowObj.timeslotCount}
                                                               />
                                                           )}
+                                                          {viewMode === 'day' && renderLinkedWorkplaceHint(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                       </div>
                                                       <div className="flex items-center gap-0.5">
                                                           {hasRowQuals && (
@@ -6488,6 +6535,7 @@ export default function ScheduleBoard() {
                                                     {rowWorkplace.time} Uhr
                                                 </span>
                                                 )}
+                                                {viewMode === 'day' && renderLinkedWorkplaceHint(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                 </div>
                                                 <div className="flex items-center gap-0.5">
                                                 {hasRowQuals && (

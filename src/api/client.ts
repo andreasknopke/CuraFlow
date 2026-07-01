@@ -939,6 +939,65 @@ class APIClient {
     });
   }
 
+  // ==================== Workplace Links (read-only cross-tenant staffing mirror) ====================
+
+  async getVisibleWorkplaceLinks({
+    from,
+    to,
+  }: { from?: string; to?: string } = {}): Promise<unknown> {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const qs = params.toString();
+    return this.request(`/api/workplace-links/visible-links${qs ? `?${qs}` : ''}`);
+  }
+
+  async listWorkplaceLinkGroups(): Promise<unknown> {
+    return this.request('/api/workplace-links');
+  }
+
+  async createWorkplaceLinkGroup(data: Record<string, unknown>): Promise<unknown> {
+    return this.request('/api/workplace-links', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWorkplaceLinkGroup(groupId: string, data: Record<string, unknown>): Promise<unknown> {
+    return this.request(`/api/workplace-links/${encodeURIComponent(groupId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteWorkplaceLinkGroup(groupId: string): Promise<unknown> {
+    return this.request(`/api/workplace-links/${encodeURIComponent(groupId)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async addWorkplaceLinkMember(
+    groupId: string,
+    tenantId: string,
+    workplaceName: string,
+  ): Promise<unknown> {
+    return this.request(`/api/workplace-links/${encodeURIComponent(groupId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenantId, workplace_name: workplaceName }),
+    });
+  }
+
+  async removeWorkplaceLinkMember(groupId: string, memberId: string): Promise<unknown> {
+    return this.request(
+      `/api/workplace-links/${encodeURIComponent(groupId)}/members/${encodeURIComponent(memberId)}`,
+      { method: 'DELETE' },
+    );
+  }
+
+  async getTenantWorkplaceNames(tenantId: string): Promise<unknown> {
+    return this.request(`/api/workplace-links/tenant-workplaces/${encodeURIComponent(tenantId)}`);
+  }
+
   // ==================== Admin Users ====================
 
   async listUsers(): Promise<unknown> {

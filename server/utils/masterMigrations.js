@@ -929,5 +929,40 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // ===== PHASE: Workplace Links (read-only cross-tenant staffing mirror) =====
+  // Lets e.g. a Radiology tenant's "CT" workplace show the staffing of the
+  // MTR tenant's "CT1"/"CT2" workplaces (and vice versa) in the day view.
+  // Read-only, no shared shift storage — just a name↔tenant mapping table;
+  // the backend fetches same-day ShiftEntry rows from the linked tenant DB
+  // on demand. See docs/features/WORKPLACE_LINKS.md.
+  await run('create_workplace_link_group_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS workplace_link_group (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        name VARCHAR(255) NOT NULL,
+        description TEXT DEFAULT NULL,
+        is_active TINYINT(1) NOT NULL DEFAULT 1,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_workplace_link_member_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS workplace_link_member (
+        id VARCHAR(36) PRIMARY KEY,
+        link_group_id INT NOT NULL,
+        tenant_id VARCHAR(36) NOT NULL,
+        workplace_name VARCHAR(255) NOT NULL,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        UNIQUE KEY uk_wlm_group_tenant_wp (link_group_id, tenant_id, workplace_name),
+        INDEX idx_wlm_tenant (tenant_id),
+        CONSTRAINT fk_wlm_group FOREIGN KEY (link_group_id) REFERENCES workplace_link_group(id) ON DELETE CASCADE,
+        CONSTRAINT fk_wlm_tenant FOREIGN KEY (tenant_id) REFERENCES db_tokens(id) ON DELETE CASCADE
+      ) ${fkTableSuffix}
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }
