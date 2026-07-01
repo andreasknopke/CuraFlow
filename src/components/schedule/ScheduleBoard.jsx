@@ -6776,7 +6776,8 @@ export default function ScheduleBoard() {
                                   (() => {
                                       const customEndMinutes = timeslotSelectionDialog.customEndMinutesByOptionId?.[timeslot.id]
                                           ?? getDefaultCustomTimeslotEndMinutes(timeslot);
-                                      const customStartMinutes = timeslot.effectiveStartMinutes ?? timeslot.slotStartMinutes;
+                                      const customStartMinutes = timeslotSelectionDialog.customStartMinutesByOptionId?.[timeslot.id]
+                                          ?? timeslot.effectiveStartMinutes ?? timeslot.slotStartMinutes;
                                       const customTimeRange = Number.isFinite(customStartMinutes) && Number.isFinite(customEndMinutes)
                                           ? `${formatMinutesAsTime(customStartMinutes)}-${formatMinutesAsTime(customEndMinutes)}`
                                           : null;
