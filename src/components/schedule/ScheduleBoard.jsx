@@ -3053,6 +3053,20 @@ export default function ScheduleBoard() {
         return baseMap;
     }, [currentWeekShifts, visiblePoolShifts, workplaces, doctors, rotationAssignments, doctorById]);
 
+    // Central employee IDs whose Joker offer has been accepted (demand
+    // fulfilled) per date. Used by availableDoctorsByDate to keep the
+    // employee hidden in the ward after the pool accepts the transfer.
+    const jokerFulfilledCentralIdsByDate = useMemo(() => {
+        const map = new Map();
+        for (const demand of rotationDemands) {
+            if (demand.status !== 'fulfilled' || !demand.offered_employee_id || !demand.date) continue;
+            const set = map.get(demand.date) || new Set();
+            set.add(String(demand.offered_employee_id));
+            map.set(demand.date, set);
+        }
+        return map;
+    }, [rotationDemands]);
+
     const availableDoctorsByDate = useMemo(() => {
         const map = new Map();
 
@@ -3066,13 +3080,18 @@ export default function ScheduleBoard() {
                     !assignedDocIds.has(doctor.id) &&
                     doctor.role !== 'Nicht-Radiologe' &&
                     matchesAllQualificationFilters(doctor) &&
-                    !hiddenJokerDoctorIds.has(`${doctor.id}|${dateStr}`)
+                    !hiddenJokerDoctorIds.has(`${doctor.id}|${dateStr}`) &&
+                    // Also hide employees whose Joker offer has been
+                    // accepted by the pool (demand fulfilled). The pool
+                    // acceptance invalidates the visible-rotations query,
+                    // which would otherwise make the employee reappear.
+                    !jokerFulfilledCentralIdsByDate.get(dateStr)?.has(String(doctor.central_employee_id || ''))
                 )
             ));
         });
 
         return map;
-    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays, hiddenJokerDoctorIds]);
+    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays, hiddenJokerDoctorIds, jokerFulfilledCentralIdsByDate]);
 
     // Springer placeholder chips for ward tenants in rotation networks.
     // Produces doctor-like objects that flow through the SAME rendering
@@ -3167,7 +3186,11 @@ export default function ScheduleBoard() {
             );
             if (alreadyAssigned) continue;
             const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
-            const name = doc?.name || `#${demand.offered_employee_id}`;
+            // The pool tenant may not have the ward's doctors locally,
+            // so extract the name from the demand note as a fallback
+            // (format: "Übergabe von {Name} an den Pool gewünscht").
+            const noteName = (demand.note || '').match(/Übergabe von (.+?) an den Pool/)?.[1]?.trim() || '';
+            const name = doc?.name || noteName || `#${demand.offered_employee_id}`;
             const initials = doc?.initials || name.slice(0, 2).toUpperCase();
             const chips = map.get(dateStr) || [];
             chips.push({
