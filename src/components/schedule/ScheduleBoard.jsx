@@ -1087,7 +1087,7 @@ export default function ScheduleBoard() {
     const { data: visibleWorkplaceLinksData } = useQuery({
         queryKey: ['workplace-links', 'visible-links', fetchRange.start, fetchRange.end],
         queryFn: () => api.getVisibleWorkplaceLinks({ from: fetchRange.start, to: fetchRange.end }),
-        enabled: viewMode === 'day',
+        enabled: viewMode === 'day' || viewMode === 'week',
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         placeholderData: keepPreviousData,
@@ -4856,6 +4856,72 @@ export default function ScheduleBoard() {
         );
     };
 
+    // Same popover as renderLinkedWorkplaceButton but styled for inside a cell:
+    // positioned absolute top-right, visible only on row hover.
+    // Used in week view (day view uses the header button instead).
+    const renderLinkedWorkplaceCellButton = (rowName, dateStr) => {
+        const rawPartners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
+        if (!rawPartners || rawPartners.length === 0) return null;
+        const partners = activeLinkTenantId
+            ? rawPartners.filter((p) => String(p.tenant_id) !== String(activeLinkTenantId))
+            : rawPartners;
+        if (partners.length === 0) return null;
+        return (
+            <Popover>
+                <PopoverTrigger asChild>
+                    <button
+                        type="button"
+                        className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-white/80 text-teal-500 hover:text-teal-700 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Verknüpfte Arbeitsplätze anzeigen"
+                    >
+                        <Link2 className="w-3 h-3" />
+                    </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3" align="start" side="right">
+                    <div className="space-y-3">
+                        <h4 className="font-semibold text-sm text-slate-800 border-b pb-1.5 flex items-center gap-2">
+                            <Link2 className="w-4 h-4 text-teal-600" />
+                            Verknüpfte Arbeitsplätze
+                        </h4>
+                        {partners.map((partner) => {
+                            const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                            return (
+                                <div key={`cell-${partner.tenant_id}__${partner.workplace_name}`}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Badge variant="outline" className="text-[10px] font-semibold text-teal-700 border-teal-200 bg-teal-50/50">
+                                            {partner.tenant_name}
+                                        </Badge>
+                                        <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
+                                    </div>
+                                    {shiftsForDay.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5 ml-1">
+                                            {shiftsForDay.map((s, idx) => (
+                                                <Badge
+                                                    key={idx}
+                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
+                                                    variant="outline"
+                                                >
+                                                    {s.doctor_name}
+                                                    {s.start_time && s.end_time
+                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
+                                                        : s.start_time
+                                                            ? ` (${s.start_time.slice(0, 5)})`
+                                                            : ''}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-400 italic ml-1">nicht besetzt</p>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </PopoverContent>
+            </Popover>
+        );
+    };
+
     // ================================================================
     //  Springerpool-Rotationen — Zellen-Rendering
     // ================================================================
@@ -5682,7 +5748,7 @@ export default function ScheduleBoard() {
                                                               />
                                                           )
                                                       ) : (
-                                                          <div className="flex flex-col h-full">
+                                                          <div className="flex flex-col h-full relative">
                                                               <DroppableCell
                                                                   id={cellId}
                                                                   isToday={isToday}
@@ -5711,6 +5777,7 @@ export default function ScheduleBoard() {
                                                                       cellWidth
                                                                   )}
                                                               </DroppableCell>
+                                                              {viewMode !== 'day' && renderLinkedWorkplaceCellButton(rowName, dateStr)}
                                                           </div>
                                                       )}
                                                   </div>
@@ -6795,7 +6862,7 @@ export default function ScheduleBoard() {
                                                 />
                                             )
                                         ) : (
-                                            <div className="flex flex-col h-full">
+                                            <div className="flex flex-col h-full relative">
                                                 <DroppableCell 
                                                     id={cellId}
                                                     testId={`schedule-cell-${encodeScheduleTargetId(cellId)}`}
@@ -6826,6 +6893,7 @@ export default function ScheduleBoard() {
                                                         cellWidth
                                                     )}
                                                 </DroppableCell>
+                                                {viewMode !== 'day' && renderLinkedWorkplaceCellButton(rowName, dateStr)}
                                             </div>
                                         )}
                                     </div>
