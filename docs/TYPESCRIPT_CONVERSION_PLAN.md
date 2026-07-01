@@ -18,7 +18,7 @@ Convert the CuraFlow frontend pages to TypeScript with strict checking, matching
 | TS/TSX files already in `src/` | ~28 (App, Layout, hooks, api client, utils, contexts) |
 | JSX pages unconverted | 14 files in `src/pages/` |
 | JSX components unconverted | ~150 files (~50k lines); ScheduleBoard.jsx is 7k lines |
-| `src/types/` directory | Does not exist |
+| `src/types/` directory | Created (4 files: models.ts, auth.ts, api.ts, index.ts) |
 | `strict` mode | `false` |
 | Pre-existing TS errors | 0 — all fixed in Phase 0 |
 | E2E test coverage | 46 tests total; all 14 pages have smoke + schedule has 5 safety tests |
@@ -39,7 +39,7 @@ Convert the CuraFlow frontend pages to TypeScript with strict checking, matching
   - [x] Add smoke E2E tests for 6 untested pages (`e2e/specs/smoke/page-smoke.spec.ts`)
   - [x] Update `jsconfig.json` to include `src/**/*.tsx` in typecheck scope
   - [x] Verify: `npm run typecheck` zero errors, `npm run build` passes, `npm run test:e2e` 46 passed
-- [ ] **PR 1** — Create `src/types/`
+- [x] **Phase 1** — Create `src/types/` (models, auth, api, index — 4 files, ~430 lines)
 - [ ] **PR 2** — Convert Schedule, Home, Admin, CertificateUpload
 - [ ] **PR 3** — Convert AuthLogin, DataImport, Statistics
 - [ ] **PR 4** — Convert Staff, Training, Help
@@ -62,23 +62,23 @@ All groundwork done in a single PR:
 
 **Verification:** `npm run typecheck` zero errors, `npm run build` passes, 46 E2E tests pass.
 
-### Phase 1: Type Foundation — 1 PR
+### ✅ Phase 1: Type Foundation — Complete
 
-**PR 1 — Create `src/types/`**
-
-Port the four type files from `modernize-app-pr`, adapted to any schema changes master introduced:
+Created `src/types/` with four files ported from `modernize-app-pr` and adapted to master's schema:
 
 ```
 src/types/
   index.ts      — barrel export
-  models.ts     — Doctor, ShiftEntry, Workplace, StaffingPlanEntry, etc. (~231 lines)
-  auth.ts       — AppUser, LoginResponse, AuthState, etc. (~91 lines)
-  api.ts        — ApiError, DbListResponse, MutationResponse, etc. (~44 lines)
+  models.ts     — Doctor, ShiftEntry, Workplace, StaffingPlanEntry, ScheduleBlock,
+                  Qualification, WishRequest, SystemSetting, ShiftTimeRule,
+                  WorkTimeModel, ColorSetting, TrainingRotation, CustomHoliday,
+                  TeamRole, WorkplaceTimeslot, ScheduleNote, StaffingPlanNote
+  auth.ts       — AppUser, AuthUser, TokenPayload, LoginRequest, LoginResponse
+  api.ts        — ApiError, DbListResponse, MutationResponse, HealthResponse,
+                  ApiRequestOptions
 ```
 
-The domain models are derived from the MySQL schema, which has been stable. Minimal adaptation expected.
-
-- Verify: `npm run typecheck` passes; `npm run build` passes; E2E tests unaffected (types are erased at runtime)
+Key additions beyond modernize-app-pr: `ScheduleBlock.type`, `Doctor.receive_email_notifications`, `Workplace.allows_absence_overlap`, `Qualification.requires_certificate`/`certificate_validity_months`, `AppUser.wish_default_position`, new entity types for `StaffingPlanNote`, `TrainingRotation`, `CustomHoliday`.
 
 ### Phase 2: Page Conversions — 4 PRs
 
@@ -139,7 +139,7 @@ Add full typing: `Record<string, ComponentType>`, `LayoutProps` interface, typed
 | Phase | PR | Description | Files Changed |
 |-------|----|-------------|---------------|
 | 0 | ✅ | Fix TS errors + E2E safety tests + jsconfig | ~15 files |
-| 1 | 1 | Create `src/types/` | 4 new files |
+| 1 | ✅ | Create `src/types/` | 4 new files |
 | 2 | 2 | Convert Schedule, Home, Admin, CertificateUpload | 4 renames + type imports |
 | 2 | 3 | Convert AuthLogin, DataImport, Statistics | 3 renames + type imports |
 | 2 | 4 | Convert Staff, Training, Help | 3 renames + type imports |
