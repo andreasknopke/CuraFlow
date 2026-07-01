@@ -53,6 +53,7 @@ import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
 import { getAvailabilityBlockingDoctorIdsByDate, getDoctorEffectiveFte, isDoctorAvailable } from './staffingUtils';
+import { getAvailabilityWarnings } from '@/utils/staffingUtils';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -1849,9 +1850,18 @@ export default function ScheduleBoard() {
         });
 
   // Qualifikationsdaten für visuelle Indikatoren
-    const { getQualificationIds: getDoctorQualIds, isLoading: allDoctorQualsLoading } = useAllDoctorQualifications();
+    const { getQualificationIds: getDoctorQualIds, isLoading: allDoctorQualsLoading, byDoctor: doctorQualByDoctor } = useAllDoctorQualifications();
     const { getRequiredQualificationIds: getWpRequiredQualIds, getOptionalQualificationIds: getWpOptionalQualIds, getExcludedQualificationIds: getWpExcludedQualIds, getDiscouragedQualificationIds: getWpDiscouragedQualIds } = useAllWorkplaceQualifications();
     const { qualifications = [], qualificationMap, isLoading: qualificationsLoading } = useQualifications();
+
+    // ─── Verfügbarkeits-Grenzwerte aus SystemSettings parsen ───
+    const availabilityThresholds = useMemo(() => {
+        const raw = systemSettings.find(s => s.key === 'availability_thresholds')?.value;
+        if (raw) {
+            try { return JSON.parse(raw); } catch { return []; }
+        }
+        return [];
+    }, [systemSettings]);
 
     const activeQualifications = useMemo(
         () => qualifications.filter((q) => q.is_active !== false),
@@ -6223,6 +6233,17 @@ export default function ScheduleBoard() {
 
                     const showWarning = allRotationsFilled && unassignedDocs.length > 0 && !isHoliday && ![0,6].includes(day.getDay());
 
+                    // Verfügbarkeits-Grenzwerte prüfen
+                    const staffingWarnings = getAvailabilityWarnings({
+                        doctors,
+                        shifts: allShifts,
+                        dateStr,
+                        qualificationMap,
+                        doctorQualByDoctor,
+                        availabilityThresholds
+                    });
+                    const showStaffingWarning = staffingWarnings.hasWarning;
+
                     return (
                         <div key={day.toISOString()} className={`group relative text-center border-r border-slate-200 last:border-r-0 ${isMonthView ? 'px-0.5 py-1' : 'p-2'} ${bgClass || 'bg-white'}`}>
                             {isMonthView ? (
@@ -6277,6 +6298,34 @@ export default function ScheduleBoard() {
                                                     ))}
                                                 </div>
                                             </ScrollArea>
+                                        </div>
+                                    </PopoverContent>
+                                </Popover>
+                            )}
+
+                            {showStaffingWarning && (
+                                <Popover>
+                                    <PopoverTrigger asChild>
+                                        <button className="absolute top-1 right-1 p-1 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors" title="Personalunterdeckung">
+                                            <AlertTriangle className="w-3 h-3" />
+                                        </button>
+                                    </PopoverTrigger>
+                                    <PopoverContent className="w-64 p-3">
+                                        <div className="space-y-2">
+                                            <h4 className="font-medium text-sm text-red-800 flex items-center gap-2 border-b pb-1">
+                                                <AlertTriangle className="w-4 h-4" />
+                                                Personalunterdeckung
+                                            </h4>
+                                            <div className="text-xs space-y-2">
+                                                {staffingWarnings.warnings.map((w, idx) => (
+                                                    <div key={idx} className="font-semibold text-slate-700">
+                                                        {w.qualName}: {w.present} verfügbar (Min: {w.min})
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 pt-1 border-t">
+                                                Warnung bei Unterschreitung der Verfügbarkeits-Grenzwerte.
+                                            </div>
                                         </div>
                                     </PopoverContent>
                                 </Popover>

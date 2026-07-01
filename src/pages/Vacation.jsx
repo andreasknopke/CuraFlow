@@ -25,6 +25,7 @@ import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
+import { getAvailabilityWarnings } from '@/utils/staffingUtils';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
@@ -792,6 +793,26 @@ export default function VacationPage() {
         const idsToDelete = existingShifts.map(s => s.id);
         bulkDeleteShiftMutation.mutate(idsToDelete);
         return;
+    }
+
+    // Verfügbarkeits-Grenzwerte prüfen (vor Erstellen / Überschreiben einer Abwesenheit)
+    const ABSENCE_POSITIONS_ACTIVE = ["Urlaub", "Schichturlaub", "Frei", "Krank", "Dienstreise", "Nicht verfügbar"];
+    if (ABSENCE_POSITIONS_ACTIVE.includes(activeType) && availabilityThresholds.length > 0) {
+        const { hasWarning, warnings } = getAvailabilityWarnings({
+            doctors,
+            shifts: allShifts,
+            dateStr,
+            newAbsentDoctorId: targetDoctorId,
+            qualificationMap,
+            doctorQualByDoctor,
+            availabilityThresholds
+        });
+        if (hasWarning) {
+            const msg = 'Warnung: Verfügbarkeits-Grenzwerte werden unterschritten:\n'
+                + warnings.map(w => `• ${w.qualName}: ${w.present} verfügbar (Min: ${w.min})`).join('\n')
+                + '\n\nTrotzdem fortsetzen?';
+            if (!confirm(msg)) return;
+        }
     }
 
     // 2. No shift: Create
