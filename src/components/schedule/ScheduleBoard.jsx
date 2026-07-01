@@ -6231,8 +6231,6 @@ export default function ScheduleBoard() {
                     const dayShiftPositions = currentWeekShiftPositionsByDate.get(dateStr) || new Set();
                     const allRotationsFilled = rotationRows.length > 0 && rotationRows.every(r => dayShiftPositions.has(typeof r === 'string' ? r : r.name));
 
-                    const showWarning = allRotationsFilled && unassignedDocs.length > 0 && !isHoliday && ![0,6].includes(day.getDay());
-
                     // Verfügbarkeits-Grenzwerte prüfen
                     const staffingWarnings = getAvailabilityWarnings({
                         doctors,
@@ -6242,7 +6240,8 @@ export default function ScheduleBoard() {
                         doctorQualByDoctor,
                         availabilityThresholds
                     });
-                    const showStaffingWarning = staffingWarnings.hasWarning;
+
+                    const showWarning = (allRotationsFilled && unassignedDocs.length > 0 || staffingWarnings.hasWarning) && !isHoliday && ![0,6].includes(day.getDay());
 
                     return (
                         <div key={day.toISOString()} className={`group relative text-center border-r border-slate-200 last:border-r-0 ${isMonthView ? 'px-0.5 py-1' : 'p-2'} ${bgClass || 'bg-white'}`}>
@@ -6273,59 +6272,50 @@ export default function ScheduleBoard() {
                             {showWarning && (
                                 <Popover>
                                     <PopoverTrigger asChild>
-                                        <button className="absolute top-1 left-1 p-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors" title="Unbesetzte Mitarbeiter">
+                                        <button className="absolute top-1 left-1 p-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors" title="Hinweise zu diesem Tag">
                                             <AlertTriangle className="w-3 h-3" />
                                         </button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-64 p-3">
-                                        <div className="space-y-2">
-                                            <h4 className="font-medium text-sm text-amber-800 flex items-center gap-2">
-                                                <AlertTriangle className="w-4 h-4" />
-                                                Nicht eingeteilte Ärzte
-                                            </h4>
-                                            <div className="text-xs text-slate-600">
-                                                Folgende Ärzte haben heute noch keinen Eintrag (weder Dienst noch Abwesenheit):
-                                            </div>
-                                            <ScrollArea className="h-[200px] border rounded-md bg-slate-50 p-2">
-                                                <div className="space-y-1">
-                                                    {unassignedDocs.map(doc => (
-                                                        <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-700 p-1 hover:bg-white rounded">
-                                                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${getRoleColor(doc.role).backgroundColor}`} style={{ color: getRoleColor(doc.role).color }}>
-                                                                {getDoctorChipLabel(doc)}
+                                    <PopoverContent className="w-72 p-3">
+                                        <div className="space-y-3">
+                                            {staffingWarnings.hasWarning && (
+                                                <div>
+                                                    <h4 className="font-medium text-sm text-red-800 flex items-center gap-2 border-b pb-1 mb-2">
+                                                        <AlertTriangle className="w-4 h-4" />
+                                                        Personalunterdeckung
+                                                    </h4>
+                                                    <div className="text-xs space-y-1">
+                                                        {staffingWarnings.warnings.map((w, idx) => (
+                                                            <div key={idx} className="text-slate-700">
+                                                                <span className="font-semibold">{w.qualName}:</span> {w.present} verfügbar (Min: {w.min})
                                                             </div>
-                                                            <span>{doc.name}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </ScrollArea>
-                                        </div>
-                                    </PopoverContent>
-                                </Popover>
-                            )}
-
-                            {showStaffingWarning && (
-                                <Popover>
-                                    <PopoverTrigger asChild>
-                                        <button className="absolute top-1 right-1 p-1 rounded-full bg-red-100 text-red-600 hover:bg-red-200 transition-colors" title="Personalunterdeckung">
-                                            <AlertTriangle className="w-3 h-3" />
-                                        </button>
-                                    </PopoverTrigger>
-                                    <PopoverContent className="w-64 p-3">
-                                        <div className="space-y-2">
-                                            <h4 className="font-medium text-sm text-red-800 flex items-center gap-2 border-b pb-1">
-                                                <AlertTriangle className="w-4 h-4" />
-                                                Personalunterdeckung
-                                            </h4>
-                                            <div className="text-xs space-y-2">
-                                                {staffingWarnings.warnings.map((w, idx) => (
-                                                    <div key={idx} className="font-semibold text-slate-700">
-                                                        {w.qualName}: {w.present} verfügbar (Min: {w.min})
+                                                        ))}
                                                     </div>
-                                                ))}
-                                            </div>
-                                            <div className="text-[10px] text-slate-400 pt-1 border-t">
-                                                Warnung bei Unterschreitung der Verfügbarkeits-Grenzwerte.
-                                            </div>
+                                                </div>
+                                            )}
+                                            {allRotationsFilled && unassignedDocs.length > 0 && (
+                                                <div>
+                                                    <h4 className="font-medium text-sm text-amber-800 flex items-center gap-2 border-b pb-1 mb-2">
+                                                        <AlertTriangle className="w-4 h-4" />
+                                                        Nicht eingeteilte Mitarbeiter
+                                                    </h4>
+                                                    <div className="text-xs text-slate-600 mb-2">
+                                                        Folgende Mitarbeiter haben heute noch keinen Eintrag:
+                                                    </div>
+                                                    <ScrollArea className="h-[180px] border rounded-md bg-slate-50 p-2">
+                                                        <div className="space-y-1">
+                                                            {unassignedDocs.map(doc => (
+                                                                <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-700 p-1 hover:bg-white rounded">
+                                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${getRoleColor(doc.role).backgroundColor}`} style={{ color: getRoleColor(doc.role).color }}>
+                                                                        {getDoctorChipLabel(doc)}
+                                                                    </div>
+                                                                    <span>{doc.name}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </ScrollArea>
+                                                </div>
+                                            )}
                                         </div>
                                     </PopoverContent>
                                 </Popover>
