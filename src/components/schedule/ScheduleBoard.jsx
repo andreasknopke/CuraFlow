@@ -5810,13 +5810,13 @@ export default function ScheduleBoard() {
               </button>
           </div>
           {previewShifts && (
-             <div className="flex items-center bg-indigo-50 text-indigo-700 px-3 py-1 rounded-md border border-indigo-200">
+             <div className="flex items-center bg-indigo-50 text-indigo-700 px-3 py-1 rounded-md border border-indigo-200" data-testid="schedule-preview-bar">
                  <Wand2 className="w-4 h-4 mr-2" />
                  <span className="text-sm font-medium mr-3">{previewShifts.length} Vorschläge</span>
-                 <Button size="sm" onClick={applyPreview} className="bg-indigo-600 hover:bg-indigo-700 text-white h-7 mr-2">
+                 <Button size="sm" onClick={applyPreview} className="bg-indigo-600 hover:bg-indigo-700 text-white h-7 mr-2" data-testid="schedule-preview-apply">
                      Alle übernehmen
                  </Button>
-                 <Button size="sm" variant="ghost" onClick={cancelPreview} className="h-7 hover:bg-indigo-100 hover:text-indigo-800">
+                 <Button size="sm" variant="ghost" onClick={cancelPreview} className="h-7 hover:bg-indigo-100 hover:text-indigo-800" data-testid="schedule-preview-discard">
                      Verwerfen
                  </Button>
              </div>
@@ -5824,15 +5824,16 @@ export default function ScheduleBoard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1">
-             {!isReadOnly && !previewShifts && (
-                 <DropdownMenu>
-                     <DropdownMenuTrigger asChild>
-                         <Button 
-                             variant="outline" 
-                             size="sm" 
-                             className="h-9 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
-                             disabled={isGenerating}
-                         >
+              {!isReadOnly && !previewShifts && (
+                  <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                          <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-9 bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                              disabled={isGenerating}
+                              data-testid="schedule-auto-fill-trigger"
+                          >
                              {isGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                              <span className="hidden sm:inline ml-1">Auto-Fill</span>
                          </Button>
@@ -5840,9 +5841,9 @@ export default function ScheduleBoard() {
                      <DropdownMenuContent align="end" className="w-56">
                          <DropdownMenuLabel>Vorschläge generieren</DropdownMenuLabel>
                          <DropdownMenuSeparator />
-                         <DropdownMenuItem onClick={() => handleAutoFill()}>
-                             Alle Kategorien
-                         </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleAutoFill()} data-testid="schedule-auto-fill-all">
+                              Alle Kategorien
+                          </DropdownMenuItem>
                          <DropdownMenuSeparator />
                          <DropdownMenuItem onClick={() => handleAutoFill(['Rotationen'])}>
                              Nur {getSectionName('Rotationen')}
@@ -5883,24 +5884,26 @@ export default function ScheduleBoard() {
                      </DropdownMenuContent>
                  </DropdownMenu>
              )}
-             <Button 
-                variant="outline"
-                size="sm"
-                onClick={handleExportExcel}
-                disabled={isExporting}
-                title="Export nach Excel"
-                className="h-9"
-             >
+              <Button 
+                 variant="outline"
+                 size="sm"
+                 onClick={handleExportExcel}
+                 disabled={isExporting}
+                 title="Export nach Excel"
+                 className="h-9"
+                 data-testid="schedule-export"
+              >
                 {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                 <span className="hidden sm:inline ml-1">Export</span>
              </Button>
-             {currentWeekShifts.length > 0 && !isReadOnly && (
-                 <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={handleClearWeek}
-                    className="text-red-500 hover:text-red-700 hover:bg-red-50 h-9"
-                 >
+              {currentWeekShifts.length > 0 && !isReadOnly && (
+                  <Button 
+                     variant="ghost" 
+                     size="sm"
+                     onClick={handleClearWeek}
+                     className="text-red-500 hover:text-red-700 hover:bg-red-50 h-9"
+                     data-testid="schedule-clear-week"
+                  >
                     <Trash2 className="w-4 h-4" />
                     <span className="hidden sm:inline ml-1">Leeren</span>
                  </Button>
