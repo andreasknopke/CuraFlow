@@ -82,10 +82,10 @@ async function withTenantDb(token, callback) {
 /**
  * Load ShiftEntry rows for the given workplace names (by exact position
  * match) from a partner tenant, joined with the local Doctor name.
- * Tries to resolve start_time/end_time from WorkplaceTimeslot when
- * ShiftEntry's own columns are NULL (timeslot-based schedules).
- * Falls back gracefully if the WorkplaceTimeslot table does not exist
- * in the partner tenant.
+ * Resolves start_time/end_time from WorkplaceTimeslot when ShiftEntry's
+ * own columns are NULL (timeslot-based schedules), using a separate
+ * lookup query instead of a LEFT JOIN to avoid issues when the
+ * WorkplaceTimeslot table does not exist in the partner tenant.
  * Read-only, no employee ids or other fields are exposed.
  */
 async function fetchPartnerShifts(token, workplaceNames, from, to) {
@@ -97,35 +97,58 @@ async function fetchPartnerShifts(token, workplaceNames, from, to) {
     if (from) { dateFilter.push('s.date >= ?'); params.push(from); }
     if (to) { dateFilter.push('s.date <= ?'); params.push(to); }
     const dateWhere = dateFilter.length > 0 ? `AND ${dateFilter.join(' AND ')}` : '';
-    let rows;
-    try {
-      // Attempt JOIN with WorkplaceTimeslot to resolve times from slot-based schedules
-      [rows] = await pool.execute(
-        `SELECT s.date, s.position,
-                COALESCE(s.start_time, wt.start_time) AS start_time,
-                COALESCE(s.end_time, wt.end_time) AS end_time,
-                d.name AS doctor_name
-           FROM ShiftEntry s
-           LEFT JOIN Doctor d ON d.id = s.doctor_id
-           LEFT JOIN WorkplaceTimeslot wt ON wt.id = s.timeslot_id
-          WHERE s.position IN (${placeholders})
-            ${dateWhere}
-          ORDER BY s.date ASC`,
-        params
-      );
-    } catch (joinErr) {
-      // Fallback: WorkplaceTimeslot table may not exist — read ShiftEntry columns directly
-      [rows] = await pool.execute(
-        `SELECT s.date, s.position, s.start_time, s.end_time, d.name AS doctor_name
-           FROM ShiftEntry s
-           LEFT JOIN Doctor d ON d.id = s.doctor_id
-          WHERE s.position IN (${placeholders})
-            ${dateWhere}
-          ORDER BY s.date ASC`,
-        params
-      );
+
+    const [rows] = await pool.execute(
+      `SELECT s.date, s.position, s.start_time, s.end_time, s.timeslot_id, d.name AS doctor_name
+         FROM ShiftEntry s
+         LEFT JOIN Doctor d ON d.id = s.doctor_id
+        WHERE s.position IN (${placeholders})
+          ${dateWhere}
+        ORDER BY s.date ASC`,
+      params
+    );
+
+    // Collect distinct timeslot_ids that need time resolution
+    const timeslotIds = rows
+      .filter((r) => !r.start_time && r.timeslot_id)
+      .map((r) => r.timeslot_id)
+      .filter(Boolean);
+    const uniqueTsIds = [...new Set(timeslotIds)];
+
+    // Look up timeslot times in a separate query (safe — no JOIN = no crash on missing table)
+    const timeslotMap = new Map();
+    if (uniqueTsIds.length > 0) {
+      try {
+        const tsPlaceholders = uniqueTsIds.map(() => '?').join(',');
+        const [tsRows] = await pool.execute(
+          `SELECT id, start_time, end_time FROM WorkplaceTimeslot WHERE id IN (${tsPlaceholders})`,
+          uniqueTsIds
+        );
+        for (const ts of tsRows) {
+          timeslotMap.set(ts.id, ts);
+        }
+      } catch {
+        // WorkplaceTimeslot table does not exist — no times to resolve
+      }
     }
-    return rows;
+
+    // Fill in missing start_time/end_time from the timeslot lookup
+    return rows.map((r) => {
+      let startTime = r.start_time;
+      let endTime = r.end_time;
+      if (!startTime && r.timeslot_id && timeslotMap.has(r.timeslot_id)) {
+        const ts = timeslotMap.get(r.timeslot_id);
+        if (ts.start_time) startTime = ts.start_time;
+        if (ts.end_time) endTime = ts.end_time;
+      }
+      return {
+        date: r.date,
+        position: r.position,
+        start_time: startTime,
+        end_time: endTime,
+        doctor_name: r.doctor_name,
+      };
+    });
   });
 }
 
