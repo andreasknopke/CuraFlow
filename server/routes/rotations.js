@@ -796,22 +796,18 @@ router.post('/demands', async (req, res) => {
       return res.status(201).json({ demand: jokerRow });
     }
 
-    // ── Guards for return-request and regular demand (ward → own workplace only) ──
-    // Joker offers (above) are exempt because they target pool workplaces.
-    if (String(wp.ward_tenant_id) !== String(activeTenantId)) {
-      return res.status(403).json({ error: 'Sie können nur Bedarf für Ihre eigene Station anmelden' });
-    }
-
-    if (!canReadRotationGroupForDemand(ctx, groupId)) {
-      return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
-    }
-
     // ── Return-request branch ("Rückgabe an den Pool anfordern") ──
-    // A ward can request the pool to take a Springer back. The corresponding
-    // rotation_assignment must exist and match the requested cell. We DO NOT
-    // run assertNoOpenDemandForCell here because the cell legitimately has a
-    // fulfilled demand+assignment; we instead de-dupe per-assignment.
+    // Must also run BEFORE the ward_tenant_id guard because the ward
+    // drops onto a pool workplace cell, not their own workplace.
     if (return_requested_assignment_id) {
+      if (!canReadRotationGroupForDemand(ctx, groupId)) {
+        return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
+      }
+
+      if (String(wp.group_id) !== groupId) {
+        return res.status(403).json({ error: 'Workplace gehört nicht zur selben Gruppe' });
+      }
+
       const [asgRows] = await db.execute(
         'SELECT id, rotation_workplace_id, date, timeslot_id FROM rotation_assignment WHERE id = ? LIMIT 1',
         [String(return_requested_assignment_id)]
@@ -852,7 +848,6 @@ router.post('/demands', async (req, res) => {
         values
       );
 
-      // Notify rotation admins via realtime
       try {
         const adminUserIds = await getRotationAdminUserIds(db, groupId);
         if (adminUserIds.length > 0) {
@@ -867,6 +862,17 @@ router.post('/demands', async (req, res) => {
       }
 
       return res.status(201).json({ demand: row });
+    }
+
+    // ── Guards for regular demand only (ward → own workplace) ──
+    // Joker offers and return-requests (above) are exempt because they
+    // target pool workplaces.
+    if (String(wp.ward_tenant_id) !== String(activeTenantId)) {
+      return res.status(403).json({ error: 'Sie können nur Bedarf für Ihre eigene Station anmelden' });
+    }
+
+    if (!canReadRotationGroupForDemand(ctx, groupId)) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
     }
 
     await assertNoOpenDemandForCell(db, {
