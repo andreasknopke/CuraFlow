@@ -6252,7 +6252,7 @@ export default function ScheduleBoard() {
                             {showWarning && (
                                 <Popover>
                                     <PopoverTrigger asChild>
-                                        <button className="absolute top-1 left-1 p-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors" title="Unbesetzte Ärzte">
+                                        <button className="absolute top-1 left-1 p-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 transition-colors" title="Unbesetzte Mitarbeiter">
                                             <AlertTriangle className="w-3 h-3" />
                                         </button>
                                     </PopoverTrigger>
