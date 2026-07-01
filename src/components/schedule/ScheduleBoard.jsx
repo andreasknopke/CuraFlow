@@ -3526,7 +3526,7 @@ export default function ScheduleBoard() {
             const isSpringer = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
                 .some((d) => d._isSpringer && d.id === doctorId);
             if (!isSpringer) {
-                const doctor = doctorById.get(parseInt(doctorId, 10));
+                const doctor = doctorById.get(doctorId);
                 const doctorName = doctor?.name || doctorId;
                 const centralEmployeeId = doctor?.central_employee_id;
                 if (!centralEmployeeId) {
