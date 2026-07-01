@@ -1523,14 +1523,17 @@ export default function ScheduleBoard() {
 
       // Append Springerpool-Rotationen — je nach Rolle in den passenden Bereich.
       // Pool-Administratoren (canWrite=true) sehen die Zeilen als normale
-      // Rotationszeilen im Bereich "Rotationen". Stations-Mandanten (canWrite=false)
-      // sehen sie weiterhin im Bereich "Pool-Rotationen" mit Timeslot-Unterzeilen.
+      // Rotationszeilen im Bereich "Rotationen" (Header = Name wie "Gyn 3", damit
+      // der Pool-Planer die Stationen unterscheiden kann).
+      // Stations-Mandanten (canWrite=false) sehen ihre eigene Zeile im Bereich
+      // "Pool-Rotationen" — dort ist der Workplace-Name redundant (sie sehen eh nur
+      // ihre eigene Zeile), daher zeigen wir den Header "Springerpool" an.
       const poolRotationRows = [];
       const wardRotationRows = [];
       for (const wp of rotationWorkplaces) {
           const row = {
               name: `__rotation_${wp.id}`,
-              displayName: wp.name,
+              displayName: wp.canWrite ? wp.name : 'Springerpool',
               timeslotId: null,
               isTimeslotRow: false,
               isTimeslotGroupHeader: false,
