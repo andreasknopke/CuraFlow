@@ -75,14 +75,16 @@ export const normalizeCustomTimeslotStartMinutes = (option, timeValue) => {
         return defaultStartMinutes;
     }
 
-    const minStartMinutes = Number(option?.slotStartMinutes);
+    // Allow start times earlier than the slot's default start.
+    // Only ensure a non-negative time and at least MIN_CUSTOM_TIMESLOT_DURATION_MINUTES
+    // before the slot end so there's room for a minimal assignment.
     const maxEndMinutes = Number(option?.slotEndMinutes);
-    if (!Number.isFinite(minStartMinutes) || !Number.isFinite(maxEndMinutes)) {
-        return defaultStartMinutes;
+    if (Number.isFinite(maxEndMinutes)) {
+        const latestStart = maxEndMinutes - MIN_CUSTOM_TIMESLOT_DURATION_MINUTES;
+        return Math.min(latestStart, Math.max(0, parsedMinutes));
     }
 
-    const maxStartMinutes = Math.max(minStartMinutes, maxEndMinutes - MIN_CUSTOM_TIMESLOT_DURATION_MINUTES);
-    return Math.min(maxStartMinutes, Math.max(minStartMinutes, parsedMinutes));
+    return Math.max(0, parsedMinutes);
 };
 
 export const buildInitialCustomTimeslotStartMinutesByOption = (options = [], initialSelection = null) => {
