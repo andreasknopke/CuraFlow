@@ -4819,6 +4819,37 @@ export default function ScheduleBoard() {
         );
     };
 
+    // Renders the partner staffing hint inside each DAY CELL (per-date).
+    // Normalizes rowName (trim) for lookup to handle whitespace differences.
+    const renderLinkedCellHint = (rowName, dateStr) => {
+        const partners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
+        if (!partners || partners.length === 0) return null;
+        return (
+            <div className="px-1 pb-0.5 flex flex-wrap gap-x-1.5 gap-y-0.5">
+                {partners.map((partner) => {
+                    const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                    return (
+                        <div
+                            key={`${partner.tenant_id}__${partner.workplace_name}`}
+                            className="flex items-center gap-0.5 text-[9px] text-slate-400"
+                            title={`${partner.tenant_name} · ${partner.workplace_name}`}
+                        >
+                            <Link2 className="w-2 h-2 text-teal-400 flex-shrink-0" />
+                            <span className="font-medium text-teal-600 whitespace-nowrap">{partner.workplace_name}:</span>
+                            {shiftsForDay.length > 0 ? (
+                                <span className="truncate max-w-[90px]">
+                                    {shiftsForDay.map((s) => s.doctor_name).join(', ')}
+                                </span>
+                            ) : (
+                                <span className="italic text-slate-300">—</span>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
     // ================================================================
     //  Springerpool-Rotationen — Zellen-Rendering
     // ================================================================
@@ -5645,34 +5676,37 @@ export default function ScheduleBoard() {
                                                               />
                                                           )
                                                       ) : (
-                                                          <DroppableCell
-                                                              id={cellId}
-                                                              isToday={isToday}
-                                                              isWeekend={isWeekendDay}
-                                                              isDisabled={isDisabled}
-                                                              isReadOnly={isReadOnly}
-                                                              isAlternate={rIdx % 2 !== 0}
-                                                              isTrainingHighlight={isTrainingHighlight}
-                                                              isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                              blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
-                                                              infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
-                                                              isOccupied={isOccupied}
-                                                              onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
-                                                              baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
-                                                              baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
-                                                              renderClone={renderShiftClone}
-                                                          >
-                                                              {({ cellWidth }) => useLightweightTimeslotTarget ? null : renderCellShifts(
-                                                                  day,
-                                                                  rowName,
-                                                                  ['Dienste', 'Demonstrationen & Konsile'].includes(section.title),
-                                                                  rowTimeslotId,
-                                                                  rowObj.allTimeslotIds || null,
-                                                                  rowObj.singleTimeslotId || null,
-                                                                  SPLIT_DRAG_PREFIX,
-                                                                  cellWidth
-                                                              )}
-                                                          </DroppableCell>
+                                                          <div className="flex flex-col h-full">
+                                                              <DroppableCell
+                                                                  id={cellId}
+                                                                  isToday={isToday}
+                                                                  isWeekend={isWeekendDay}
+                                                                  isDisabled={isDisabled}
+                                                                  isReadOnly={isReadOnly}
+                                                                  isAlternate={rIdx % 2 !== 0}
+                                                                  isTrainingHighlight={isTrainingHighlight}
+                                                                  isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
+                                                                  blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                                  infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                                  isOccupied={isOccupied}
+                                                                  onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
+                                                                  baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
+                                                                  baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
+                                                                  renderClone={renderShiftClone}
+                                                              >
+                                                                  {({ cellWidth }) => useLightweightTimeslotTarget ? null : renderCellShifts(
+                                                                      day,
+                                                                      rowName,
+                                                                      ['Dienste', 'Demonstrationen & Konsile'].includes(section.title),
+                                                                      rowTimeslotId,
+                                                                      rowObj.allTimeslotIds || null,
+                                                                      rowObj.singleTimeslotId || null,
+                                                                      SPLIT_DRAG_PREFIX,
+                                                                      cellWidth
+                                                                  )}
+                                                              </DroppableCell>
+                                                              {viewMode === 'day' && renderLinkedCellHint(rowName, dateStr)}
+                                                          </div>
                                                       )}
                                                   </div>
                                               );
@@ -6756,36 +6790,39 @@ export default function ScheduleBoard() {
                                                 />
                                             )
                                         ) : (
-                                            <DroppableCell 
-                                                id={cellId}
-                                                testId={`schedule-cell-${encodeScheduleTargetId(cellId)}`}
-                                                isCompact={isMonthView}
-                                                isToday={isToday}
-                                                isWeekend={isWeekend}
-                                                isDisabled={isDisabled}
-                                                isReadOnly={isReadOnly}
-                                                isAlternate={rIdx % 2 !== 0}
-                                                isTrainingHighlight={isTrainingHighlight}
-                                                isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
-                                                infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
-                                                isOccupied={isOccupied}
-                                                onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
-                                                baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
-                                                baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
-                                                renderClone={renderShiftClone}
-                                            >
-                                                {({ cellWidth }) => useLightweightTimeslotTarget ? null : renderCellShifts(
-                                                    day, 
-                                                    rowName, 
-                                                    ["Dienste", "Demonstrationen & Konsile"].includes(section.title), 
-                                                    rowTimeslotId,
-                                                    rowObj.allTimeslotIds || null,
-                                                    rowObj.singleTimeslotId || null,
-                                                    '',
-                                                    cellWidth
-                                                )}
-                                            </DroppableCell>
+                                            <div className="flex flex-col h-full">
+                                                <DroppableCell 
+                                                    id={cellId}
+                                                    testId={`schedule-cell-${encodeScheduleTargetId(cellId)}`}
+                                                    isCompact={isMonthView}
+                                                    isToday={isToday}
+                                                    isWeekend={isWeekend}
+                                                    isDisabled={isDisabled}
+                                                    isReadOnly={isReadOnly}
+                                                    isAlternate={rIdx % 2 !== 0}
+                                                    isTrainingHighlight={isTrainingHighlight}
+                                                    isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
+                                                    blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
+                                                    infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                    isOccupied={isOccupied}
+                                                    onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
+                                                    baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
+                                                    baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
+                                                    renderClone={renderShiftClone}
+                                                >
+                                                    {({ cellWidth }) => useLightweightTimeslotTarget ? null : renderCellShifts(
+                                                        day, 
+                                                        rowName, 
+                                                        ["Dienste", "Demonstrationen & Konsile"].includes(section.title), 
+                                                        rowTimeslotId,
+                                                        rowObj.allTimeslotIds || null,
+                                                        rowObj.singleTimeslotId || null,
+                                                        '',
+                                                        cellWidth
+                                                    )}
+                                                </DroppableCell>
+                                                {viewMode === 'day' && renderLinkedCellHint(rowName, dateStr)}
+                                            </div>
                                         )}
                                     </div>
                                 );
