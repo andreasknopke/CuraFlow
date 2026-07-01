@@ -62,7 +62,7 @@ import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplac
 import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
 import { applyAlwaysVisibleRowsToSections, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
 import { createScheduleShiftLookup, getShiftsForScheduleCell } from '@/components/schedule/scheduleShiftLookup';
-import { buildInitialCustomTimeslotEndMinutesByOption, getDefaultCustomTimeslotEndMinutes, normalizeCustomTimeslotEndMinutes } from '@/components/schedule/timeslotSelectionUtils';
+import { buildInitialCustomTimeslotEndMinutesByOption, buildInitialCustomTimeslotStartMinutesByOption, getDefaultCustomTimeslotEndMinutes, normalizeCustomTimeslotEndMinutes, normalizeCustomTimeslotStartMinutes } from '@/components/schedule/timeslotSelectionUtils';
 import { resolveDoctorTargetDailyHours } from '@/components/schedule/doctorWorkTime';
 // import VoiceControl from './VoiceControl';
 
@@ -1153,6 +1153,7 @@ export default function ScheduleBoard() {
         options: [],
         allowCustomEditing: false,
         customEndMinutesByOptionId: {},
+        customStartMinutesByOptionId: {},
     });
 
     const openPoolEditDialog = (workplace, dateStr, shift = null) => {
@@ -1168,6 +1169,7 @@ export default function ScheduleBoard() {
             options: [],
             allowCustomEditing: false,
             customEndMinutesByOptionId: {},
+            customStartMinutesByOptionId: {},
         });
     };
 
@@ -1195,13 +1197,26 @@ export default function ScheduleBoard() {
         }));
     };
 
+    const handleTimeslotCustomStartChange = (timeslotId, option, value) => {
+        const normalizedStartMinutes = normalizeCustomTimeslotStartMinutes(option, value);
+
+        setTimeslotSelectionDialog((current) => ({
+            ...current,
+            customStartMinutesByOptionId: {
+                ...current.customStartMinutesByOptionId,
+                [timeslotId]: normalizedStartMinutes,
+            },
+        }));
+    };
+
     const handleTimeslotCustomApply = (option) => {
         const callback = pendingTimeslotSelectionRef.current;
         if (!callback || !option?.id) return;
 
         const customEndMinutes = timeslotSelectionDialog.customEndMinutesByOptionId?.[option.id]
             ?? getDefaultCustomTimeslotEndMinutes(option);
-        const customStartMinutes = option.effectiveStartMinutes ?? option.slotStartMinutes;
+        const customStartMinutes = timeslotSelectionDialog.customStartMinutesByOptionId?.[option.id]
+            ?? option.effectiveStartMinutes ?? option.slotStartMinutes;
         if (!Number.isFinite(customStartMinutes) || !Number.isFinite(customEndMinutes)) return;
 
         closeTimeslotSelectionDialog();
@@ -2888,6 +2903,7 @@ export default function ScheduleBoard() {
             options,
             allowCustomEditing,
             customEndMinutesByOptionId: buildInitialCustomTimeslotEndMinutesByOption(options, initialSelection),
+            customStartMinutesByOptionId: buildInitialCustomTimeslotStartMinutesByOption(options, initialSelection),
         });
         return false;
     };
@@ -6813,6 +6829,17 @@ export default function ScheduleBoard() {
 
                                               {timeslotSelectionDialog.allowCustomEditing && timeslot.canCustomize && (
                                                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                                                      <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                                                          Start
+                                                          <Input
+                                                              type="time"
+                                                              step={300}
+                                                              value={Number.isFinite(customStartMinutes) ? formatMinutesAsTime(customStartMinutes) : ''}
+                                                              onChange={(event) => handleTimeslotCustomStartChange(timeslot.id, timeslot, event.target.value)}
+                                                              className="h-8 w-[124px]"
+                                                              data-testid={`schedule-timeslot-custom-start-${timeslot.id}`}
+                                                          />
+                                                      </label>
                                                       <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
                                                           Ende
                                                           <Input

@@ -65,3 +65,38 @@ export const buildInitialCustomTimeslotEndMinutesByOption = (options = [], initi
         return accumulator;
     }, {});
 };
+
+export const normalizeCustomTimeslotStartMinutes = (option, timeValue) => {
+    const defaultStartMinutes = option.effectiveStartMinutes ?? option.slotStartMinutes;
+    if (!timeValue) return defaultStartMinutes;
+
+    const parsedMinutes = parseTimeToMinutes(timeValue);
+    if (!Number.isFinite(parsedMinutes)) {
+        return defaultStartMinutes;
+    }
+
+    const minStartMinutes = Number(option?.slotStartMinutes);
+    const maxEndMinutes = Number(option?.slotEndMinutes);
+    if (!Number.isFinite(minStartMinutes) || !Number.isFinite(maxEndMinutes)) {
+        return defaultStartMinutes;
+    }
+
+    const maxStartMinutes = Math.max(minStartMinutes, maxEndMinutes - MIN_CUSTOM_TIMESLOT_DURATION_MINUTES);
+    return Math.min(maxStartMinutes, Math.max(minStartMinutes, parsedMinutes));
+};
+
+export const buildInitialCustomTimeslotStartMinutesByOption = (options = [], initialSelection = null) => {
+    return options.reduce((accumulator, option) => {
+        const optionId = option?.id;
+        if (!optionId) return accumulator;
+
+        const selectionMatchesOption = Boolean(initialSelection?.isCustom)
+            && String(initialSelection?.timeslotId ?? '') === String(optionId);
+
+        accumulator[optionId] = selectionMatchesOption && initialSelection?.startTime
+            ? normalizeCustomTimeslotStartMinutes(option, initialSelection.startTime)
+            : (option.effectiveStartMinutes ?? option.slotStartMinutes);
+
+        return accumulator;
+    }, {});
+};
