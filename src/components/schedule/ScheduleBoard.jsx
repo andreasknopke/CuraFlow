@@ -3186,11 +3186,7 @@ export default function ScheduleBoard() {
             );
             if (alreadyAssigned) continue;
             const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
-            // The pool tenant may not have the ward's doctors locally,
-            // so extract the name from the demand note as a fallback
-            // (format: "Übergabe von {Name} an den Pool gewünscht").
-            const noteName = (demand.note || '').match(/Übergabe von (.+?) an den Pool/)?.[1]?.trim() || '';
-            const name = doc?.name || noteName || `#${demand.offered_employee_id}`;
+            const name = doc?.name || demand.offered_employee_name || `#${demand.offered_employee_id}`;
             const initials = doc?.initials || name.slice(0, 2).toUpperCase();
             const chips = map.get(dateStr) || [];
             chips.push({
@@ -5430,7 +5426,9 @@ export default function ScheduleBoard() {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
                                 ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
-                            const jokerName = (demand.note || '').replace(/^Übergabe von /, '').replace(/ an den Pool gewünscht$/, '') || 'Mitarbeiter';
+                            const jokerName = demand.offered_employee_name
+                                || (demand.note || '').replace(/^Übergabe von /, '').replace(/ an den Pool gewünscht$/, '')
+                                || 'Mitarbeiter';
                             const jokerLabel = tsLabel ? `Übergabe ${tsLabel}` : `Übergabe ${jokerName}`;
                             const handleAcceptJoker = () => {
                                 const confirmed = window.confirm(
@@ -5449,7 +5447,7 @@ export default function ScheduleBoard() {
                                 <div key={`joker-${demand.id}`}
                                      onClick={handleAcceptJoker}
                                      className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 font-medium cursor-pointer hover:bg-blue-200"
-                                     title={`Klicken um ${jokerName} zu übernehmen — ${demand.note || ''}`.trim()}>
+                                     title={`Klicken um ${jokerName} zu übernehmen`}> 
                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                                     {jokerLabel}
                                 </div>

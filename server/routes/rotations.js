@@ -540,10 +540,12 @@ router.get('/visible-rotations', async (req, res) => {
                 d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
                 d.return_requested_assignment_id,
                 d.offered_employee_id,
+                oe.first_name AS offered_first, oe.last_name AS offered_last,
                 w.name AS workplace_name, ts.label AS timeslot_label
            FROM rotation_demand d
            JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
            LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
+           LEFT JOIN Employee oe ON oe.id = d.offered_employee_id
           WHERE ${demandWhere}
           ORDER BY d.date ASC`,
         demandParams
@@ -560,6 +562,9 @@ router.get('/visible-rotations', async (req, res) => {
         fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
         return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
         offered_employee_id: r.offered_employee_id ? String(r.offered_employee_id) : null,
+        offered_employee_name: r.offered_first
+          ? [r.offered_first, r.offered_last].filter(Boolean).join(' ')
+          : null,
         workplace_name: r.workplace_name,
         timeslot_label: r.timeslot_label || null,
         canManage: canWriteRotationGroup(ctx, Number(r.group_id)),
@@ -964,6 +969,7 @@ router.get('/demands', async (req, res) => {
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
               d.return_requested_assignment_id,
               d.offered_employee_id,
+              oe.first_name AS offered_first, oe.last_name AS offered_last,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
               a.employee_id AS fulfilled_employee_id,
@@ -975,6 +981,7 @@ router.get('/demands', async (req, res) => {
          LEFT JOIN EmployeeTenantAssignment eta
                 ON eta.tenant_doctor_id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
          LEFT JOIN Employee e ON e.id = eta.employee_id
+         LEFT JOIN Employee oe ON oe.id = d.offered_employee_id
         WHERE ${conditions.join(' AND ')}
         ORDER BY d.date ASC, w.name ASC`,
       params
@@ -992,6 +999,9 @@ router.get('/demands', async (req, res) => {
       fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
       return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
       offered_employee_id: r.offered_employee_id ? String(r.offered_employee_id) : null,
+      offered_employee_name: r.offered_first
+        ? [r.offered_first, r.offered_last].filter(Boolean).join(' ')
+        : null,
       created_by: r.created_by || null,
       created_at: r.created_at || null,
       updated_at: r.updated_at || null,
