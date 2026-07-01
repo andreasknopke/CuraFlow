@@ -40,7 +40,7 @@ Convert the CuraFlow frontend pages to TypeScript with strict checking, matching
   - [x] Update `jsconfig.json` to include `src/**/*.tsx` in typecheck scope
   - [x] Verify: `npm run typecheck` zero errors, `npm run build` passes, `npm run test:e2e` 46 passed
 - [x] **Phase 1** — Create `src/types/` (models, auth, api, index — 4 files, ~430 lines)
-- [ ] **PR 2** — Convert Schedule, Home, Admin, CertificateUpload
+- [x] **Phase 2, PR 2** — Convert Schedule, Home, Admin, CertificateUpload (.jsx → .tsx)
 - [ ] **PR 3** — Convert AuthLogin, DataImport, Statistics
 - [ ] **PR 4** — Convert Staff, Training, Help
 - [ ] **PR 5** — Convert MyDashboard, ServiceStaffing, Vacation, WishList
@@ -140,7 +140,7 @@ Add full typing: `Record<string, ComponentType>`, `LayoutProps` interface, typed
 |-------|----|-------------|---------------|
 | 0 | ✅ | Fix TS errors + E2E safety tests + jsconfig | ~15 files |
 | 1 | ✅ | Create `src/types/` | 4 new files |
-| 2 | 2 | Convert Schedule, Home, Admin, CertificateUpload | 4 renames + type imports |
+| 2 | 2 | ✅ Convert Schedule, Home, Admin, CertificateUpload | 4 renames + type imports |
 | 2 | 3 | Convert AuthLogin, DataImport, Statistics | 3 renames + type imports |
 | 2 | 4 | Convert Staff, Training, Help | 3 renames + type imports |
 | 2 | 5 | Convert MyDashboard, ServiceStaffing, Vacation, WishList | 4 renames + type imports |
