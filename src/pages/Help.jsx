@@ -54,7 +54,7 @@ export default function HelpPage() {
     const { teamRoles } = useTeamRoles();
     
     return (
-        <div className="container mx-auto max-w-5xl space-y-8 pb-10">
+        <div className="container mx-auto max-w-5xl space-y-8 pb-10" data-testid="help-page">
             <div>
                 <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
                     <HelpCircle className="w-8 h-8 text-indigo-600" />

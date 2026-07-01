@@ -73,7 +73,7 @@ const COWORK_QUERY_KEYS = [['coworkInvites'], ['coworkContacts']];
 // registers demand. The pool planner sees the new demand in near-realtime.
 const ROTATION_QUERY_KEYS = [['rotations', 'visible-rotations'], ['rotations', 'demands']];
 
-export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }) {
+export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp } = {}) {
   const queryClient = useQueryClient();
   const authState = useAuth();
   const isAuthenticated = isAuthenticatedProp ?? authState.isAuthenticated;

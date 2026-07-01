@@ -1466,7 +1466,7 @@ export class EntityClient {
 
 // ─── Named Entity Clients ────────────────────────────────────────────────────
 
-export const db: Record<string, EntityClient> = {
+export const db = {
   Doctor: new EntityClient('Doctor'),
   ShiftEntry: new EntityClient('ShiftEntry'),
   WishRequest: new EntityClient('WishRequest'),
@@ -1495,7 +1495,7 @@ export const db: Record<string, EntityClient> = {
   ScheduleBlock: new EntityClient('ScheduleBlock'),
 
   collection: (name: string) => new EntityClient(name),
-} as Record<string, EntityClient> & { collection: (name: string) => EntityClient };
+};
 
 // ─── Base44 Compatibility Layer ──────────────────────────────────────────────
 

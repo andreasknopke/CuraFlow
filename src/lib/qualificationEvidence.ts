@@ -264,6 +264,7 @@ export function computeQualificationEvidenceSummary({
       reason: 'Kein Nachweis hinterlegt.',
       missing_roles: ['single'],
       active_certificate_ids: [],
+      certificate_valid_until_by_id: {},
     };
   }
 

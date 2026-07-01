@@ -95,7 +95,7 @@ export default function CertificateUploadPage() {
   }
 
   return (
-    <div className="container mx-auto max-w-4xl py-8 space-y-6">
+    <div className="container mx-auto max-w-4xl py-8 space-y-6" data-testid="certificate-upload-page">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-xl">

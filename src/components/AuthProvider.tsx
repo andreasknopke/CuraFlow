@@ -68,6 +68,9 @@ const AuthContext = createContext<AuthContextValue>({
   isReadOnly: true,
   user: null,
   isLoading: true,
+  token: null,
+  mustChangePassword: false,
+  setMustChangePassword: () => {},
   needsTenantSelection: false,
   allowedTenants: [],
   hasFullTenantAccess: false,
@@ -78,7 +81,7 @@ const AuthContext = createContext<AuthContextValue>({
   completeTenantSelection: () => {},
   refreshUser: async () => {},
   updateMe: async () => null,
-  logout: () => {},
+  logout: async () => {},
   login: async () => ({}),
 });
 

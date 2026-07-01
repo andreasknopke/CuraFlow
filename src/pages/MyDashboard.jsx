@@ -567,7 +567,7 @@ export default function MyDashboardPage() {
     if (isLoadingDocs) return <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>;
 
     return (
-        <div className="container mx-auto max-w-7xl space-y-6 px-2 sm:px-4">
+        <div className="container mx-auto max-w-7xl space-y-6 px-2 sm:px-4" data-testid="mydashboard-page">
             {/* Header */}
             <div className="flex flex-col gap-4">
                 <div>
