@@ -3221,6 +3221,8 @@ export default function ScheduleBoard() {
     // Fallback doctor map for rotation assignments with Joker employees.
     // The assignment's employee_id is a central UUID — not in doctorById.
     // Used by renderRotationCell's getEmpName fallback.
+    // Built from doctorByCentralEmployeeId so name resolution survives
+    // even after the Joker chip is filtered out of jokerChipsByDate.
     const jokerDoctorById = useMemo(() => {
         const map = new Map();
         for (const [, docs] of jokerChipsByDate) {
@@ -3230,8 +3232,21 @@ export default function ScheduleBoard() {
                 }
             }
         }
+        // Also include doctors with central IDs that may not have
+        // active Joker chips (e.g. after being assigned to a cell)
+        for (const [centralId, doc] of doctorByCentralEmployeeId) {
+            if (!map.has(centralId)) {
+                map.set(centralId, {
+                    id: centralId,
+                    name: doc.name,
+                    role: doc.role || 'Arzt',
+                    initials: doc.initials || doc.name.slice(0, 2).toUpperCase(),
+                    _isJoker: true,
+                });
+            }
+        }
         return map;
-    }, [jokerChipsByDate]);
+    }, [jokerChipsByDate, doctorByCentralEmployeeId]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
