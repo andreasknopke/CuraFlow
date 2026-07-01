@@ -1027,7 +1027,7 @@ router.patch('/demands/:id', async (req, res) => {
     if (!newStatus) return res.status(400).json({ error: 'status ist erforderlich' });
 
     const validTransitions = {
-      open: ['cancelled'],
+      open: ['cancelled', 'fulfilled'],
       fulfilled: ['cancelled'],
       cancelled: [],
     };

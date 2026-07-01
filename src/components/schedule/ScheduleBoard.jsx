@@ -3142,10 +3142,11 @@ export default function ScheduleBoard() {
             const realDocs = availableDoctorsByDate.get(dateStr) || [];
             const springerDocs = springerChipsByDate.get(dateStr) || [];
             const visibleSpringers = springerDocs.filter(d => !hiddenSpringerChipIds.has(d._assignmentId));
-            map.set(dateStr, [...realDocs, ...visibleSpringers]);
+            const jokerDocs = jokerChipsByDate.get(dateStr) || [];
+            map.set(dateStr, [...realDocs, ...visibleSpringers, ...jokerDocs]);
         }
         return map;
-    }, [availableDoctorsByDate, springerChipsByDate, hiddenSpringerChipIds, weekDays]);
+    }, [availableDoctorsByDate, springerChipsByDate, jokerChipsByDate, hiddenSpringerChipIds, weekDays]);
 
     // Fallback doctor map for springer shifts rendered in grid cells.
     // The shift's doctor_id is the central employee ID, which won't be
@@ -3163,6 +3164,66 @@ export default function ScheduleBoard() {
         }
         return map;
     }, [springerChipsByDate]);
+
+    // Central employee ID → tenant doctor lookup. Used to resolve
+    // Joker names (offered_employee_id is a central UUID) and to build
+    // Joker chips from fulfilled demands.
+    const doctorByCentralEmployeeId = useMemo(() => {
+        const map = new Map();
+        for (const doc of doctors) {
+            if (doc.central_employee_id && !map.has(String(doc.central_employee_id))) {
+                map.set(String(doc.central_employee_id), doc);
+            }
+        }
+        return map;
+    }, [doctors]);
+
+    // Joker chips for the pool planner's Verfügbar row. Built from
+    // fulfilled demands that have an offered_employee_id (ward→pool
+    // Joker transfers). These are NOT rotation_assignments — the Joker
+    // is unassigned and can be dragged anywhere from the Verfügbar row.
+    const jokerChipsByDate = useMemo(() => {
+        const map = new Map();
+        // Only for pool planners (canWrite on at least one workplace)
+        const isPoolTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.some(wp => wp.canWrite === true);
+        if (!isPoolTenant) return map;
+
+        for (const demand of rotationDemands) {
+            if (demand.status !== 'fulfilled' || !demand.offered_employee_id) continue;
+            const dateStr = demand.date;
+            if (!dateStr) continue;
+            const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
+            const name = doc?.name || `#${demand.offered_employee_id}`;
+            const initials = doc?.initials || name.slice(0, 2).toUpperCase();
+            const chips = map.get(dateStr) || [];
+            chips.push({
+                id: String(demand.offered_employee_id),
+                name,
+                role: doc?.role || 'Arzt',
+                initials,
+                _isJoker: true,
+                _jokerDemandId: demand.id,
+                _employeeId: String(demand.offered_employee_id),
+            });
+            map.set(dateStr, chips);
+        }
+        return map;
+    }, [rotationDemands, rotationWorkplaces, doctorByCentralEmployeeId]);
+
+    // Fallback doctor map for rotation assignments with Joker employees.
+    // The assignment's employee_id is a central UUID — not in doctorById.
+    // Used by renderRotationCell's getEmpName fallback.
+    const jokerDoctorById = useMemo(() => {
+        const map = new Map();
+        for (const [, docs] of jokerChipsByDate) {
+            for (const doc of docs) {
+                if (doc._isJoker && !map.has(doc.id)) {
+                    map.set(doc.id, doc);
+                }
+            }
+        }
+        return map;
+    }, [jokerChipsByDate]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
@@ -5090,7 +5151,14 @@ export default function ScheduleBoard() {
         const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
         const { isToday, isWeekend, isAlternate, baseClassName, baseStyle } = extraProps;
 
-        const getEmpName = (a) => a.employee_name || `#${a.employee_id}`;
+        const getEmpName = (a) => {
+            if (a.employee_name) return a.employee_name;
+            // Joker assignments use central_employee_id — resolve from doctors
+            const jokerDoc = jokerDoctorById.get(String(a.employee_id))
+                || doctorByCentralEmployeeId.get(String(a.employee_id));
+            if (jokerDoc?.name) return jokerDoc.name;
+            return `#${a.employee_id}`;
+        };
 
         // Collect demands for this cell
         const cellDemands = [];
@@ -5168,7 +5236,9 @@ export default function ScheduleBoard() {
                             const timeLabel = ts
                                 ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
                                 : null;
-                            const doctor = doctorById.get(assignment.employee_id);
+                            const doctor = doctorById.get(assignment.employee_id)
+                                || jokerDoctorById.get(String(assignment.employee_id))
+                                || doctorByCentralEmployeeId.get(String(assignment.employee_id));
                             const doctorLike = doctor || { id: assignment.employee_id, name: empName };
                             const chipLabel = getDoctorChipLabel(doctorLike);
                             const roleColor = doctor
@@ -5321,15 +5391,10 @@ export default function ScheduleBoard() {
                                     `Möchten Sie ${jokerName} an diesem Tag in den Springerpool übernehmen?`
                                 );
                                 if (!confirmed) return;
-                                api.createRotationAssignment(String(workplace.group_id), {
-                                    rotation_workplace_id: workplace.id,
-                                    date: dateStr,
-                                    employee_id: demand.offered_employee_id,
-                                    timeslot_id: demand.timeslot_id || undefined,
-                                }).then(() => {
+                                api.updateRotationDemand(demand.id, { status: 'fulfilled' }).then(() => {
                                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                                     queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
-                                    toast.success(`${jokerName} wurde in den Pool übernommen.`);
+                                    toast.success(`${jokerName} wurde in den Pool übernommen und steht in Anwesenheiten bereit.`);
                                 }).catch((err) => {
                                     toast.error('Fehler beim Übernehmen: ' + (err?.message || ''));
                                 });
