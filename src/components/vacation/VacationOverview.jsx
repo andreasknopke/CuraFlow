@@ -185,10 +185,16 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
             const absencesByQual = dailyAbsencesByQual.get(dStr);
             console.log('=== Verfügbarkeitsdebug ===', dStr);
             console.log('Thresholds:', JSON.parse(JSON.stringify(availabilityThresholds)));
-            console.log('Qualifikationen (Map):', Object.fromEntries(qualificationMap).length ? 'vorhanden' : 'leer', qualificationMap);
-            console.log('Qualifikationen pro Arzt (doctorQualByDoctor):', Object.keys(doctorQualByDoctor).length, 'Ärzte haben Einträge');
-            console.log('Abwesenheiten pro Qualifikation (dailyAbsencesByQual):', absencesByQual ? Object.fromEntries(absencesByQual) : 'KEINE Einträge für diesen Tag');
-            console.log('Gesamtpersonal pro Qualifikation (totalStaffByQual):', totalStaffByQual);
+            console.log('Qualifikationen:', Object.keys(qualificationMap).length, 'Einträge', qualificationMap);
+            console.log('doctorQualByDoctor:', Object.keys(doctorQualByDoctor).length, 'Ärzte haben Einträge');
+            if (absencesByQual) {
+                const entries = {};
+                absencesByQual.forEach((val, key) => { entries[key] = val; });
+                console.log('Abwesenheiten pro Qualifikation:', entries);
+            } else {
+                console.log('Abwesenheiten pro Qualifikation: KEINE Einträge für diesen Tag');
+            }
+            console.log('Gesamtpersonal pro Qualifikation:', totalStaffByQual);
             availabilityThresholds.forEach(t => {
                 const qual = qualificationMap[t.qualificationId];
                 const qualName = qual?.name || t.qualificationName || '(unbekannt)';
