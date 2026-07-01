@@ -3192,6 +3192,14 @@ export default function ScheduleBoard() {
             if (demand.status !== 'fulfilled' || !demand.offered_employee_id) continue;
             const dateStr = demand.date;
             if (!dateStr) continue;
+            // Skip if this Joker has already been assigned to a cell (the
+            // rotation_assignment will block them in Verfügbar via the
+            // availabilityBlockingDoctorIdsByDate mechanism).
+            const alreadyAssigned = rotationAssignments.some(
+                (a) => String(a.employee_id) === String(demand.offered_employee_id)
+                    && String(a.date).slice(0, 10) === dateStr
+            );
+            if (alreadyAssigned) continue;
             const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
             const name = doc?.name || `#${demand.offered_employee_id}`;
             const initials = doc?.initials || name.slice(0, 2).toUpperCase();
@@ -3208,7 +3216,7 @@ export default function ScheduleBoard() {
             map.set(dateStr, chips);
         }
         return map;
-    }, [rotationDemands, rotationWorkplaces, doctorByCentralEmployeeId]);
+    }, [rotationDemands, rotationWorkplaces, rotationAssignments, doctorByCentralEmployeeId]);
 
     // Fallback doctor map for rotation assignments with Joker employees.
     // The assignment's employee_id is a central UUID — not in doctorById.
