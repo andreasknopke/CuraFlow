@@ -8,7 +8,7 @@ import {
   getAuthHeaders,
   type DbAuthHeaders,
 } from '../../support/api';
-import { seededSchedule, storageStatePaths } from '../../support/config';
+import { storageStatePaths } from '../../support/config';
 
 type TrainingRotation = {
   id: string;
@@ -104,7 +104,7 @@ test.describe('training workflows', () => {
 
     const doctorId = 'doctor-clara';
     const modality = 'Sono Rotation';
-    const nextMonth = format(addMonths(parseISO(`${seededSchedule.targetMonth}-01`), 1), 'yyyy-MM');
+    const nextMonth = format(addMonths(new Date(), 1), 'yyyy-MM');
     const [startDate, transferDate] = getLastBusinessDaysOfMonth(nextMonth, 2);
     const startDateString = format(startDate, 'yyyy-MM-dd');
     const transferDateString = format(transferDate, 'yyyy-MM-dd');
