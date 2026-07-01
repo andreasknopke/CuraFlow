@@ -3186,7 +3186,10 @@ export default function ScheduleBoard() {
             );
             if (alreadyAssigned) continue;
             const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
-            const name = doc?.name || demand.offered_employee_name || `#${demand.offered_employee_id}`;
+            const centralEmp = centralEmployeesById.get(String(demand.offered_employee_id));
+            const name = doc?.name
+                || (centralEmp ? `${centralEmp.first_name || ''} ${centralEmp.last_name || ''}`.trim() : '')
+                || `#${demand.offered_employee_id}`;
             const initials = doc?.initials || name.slice(0, 2).toUpperCase();
             const chips = map.get(dateStr) || [];
             chips.push({
@@ -3201,7 +3204,7 @@ export default function ScheduleBoard() {
             map.set(dateStr, chips);
         }
         return map;
-    }, [rotationDemands, rotationWorkplaces, rotationAssignments, doctorByCentralEmployeeId]);
+    }, [rotationDemands, rotationWorkplaces, rotationAssignments, doctorByCentralEmployeeId, centralEmployeesById]);
 
     // Fallback doctor map for rotation assignments with Joker employees.
     // The assignment's employee_id is a central UUID — not in doctorById.
@@ -5426,7 +5429,12 @@ export default function ScheduleBoard() {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
                                 ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
-                            const jokerName = demand.offered_employee_name
+                            const centralEmp = demand.offered_employee_id
+                                ? centralEmployeesById.get(String(demand.offered_employee_id))
+                                : null;
+                            const jokerName = (centralEmp
+                                ? `${centralEmp.first_name || ''} ${centralEmp.last_name || ''}`.trim()
+                                : '')
                                 || (demand.note || '').replace(/^Übergabe von /, '').replace(/ an den Pool gewünscht$/, '')
                                 || 'Mitarbeiter';
                             const jokerLabel = tsLabel ? `Übergabe ${tsLabel}` : `Übergabe ${jokerName}`;
