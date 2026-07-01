@@ -180,9 +180,30 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     // Handler wrapper for toggle
     const handleToggle = React.useCallback((date, status, docId, e) => {
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
+            // ── DEBUG: Verfügbarkeits-Grenzwerte prüfen ──
+            const dStr = format(date, 'yyyy-MM-dd');
+            const absencesByQual = dailyAbsencesByQual.get(dStr);
+            console.log('=== Verfügbarkeitsdebug ===', dStr);
+            console.log('Thresholds:', JSON.parse(JSON.stringify(availabilityThresholds)));
+            console.log('Qualifikationen (Map):', Object.fromEntries(qualificationMap).length ? 'vorhanden' : 'leer', qualificationMap);
+            console.log('Qualifikationen pro Arzt (doctorQualByDoctor):', Object.keys(doctorQualByDoctor).length, 'Ärzte haben Einträge');
+            console.log('Abwesenheiten pro Qualifikation (dailyAbsencesByQual):', absencesByQual ? Object.fromEntries(absencesByQual) : 'KEINE Einträge für diesen Tag');
+            console.log('Gesamtpersonal pro Qualifikation (totalStaffByQual):', totalStaffByQual);
+            availabilityThresholds.forEach(t => {
+                const qual = qualificationMap[t.qualificationId];
+                const qualName = qual?.name || t.qualificationName || '(unbekannt)';
+                const total = totalStaffByQual[t.qualificationId] || 0;
+                const absent = absencesByQual?.get(t.qualificationId);
+                const absentCount = absent ? absent.absent : 0;
+                const present = total - absentCount;
+                const isLow = present < t.min;
+                console.log(`  ${qualName}: total=${total}, absent=${absentCount}, present=${present}, min=${t.min} → ${isLow ? '⚠️ UNTERSCHRITTEN' : '✅ OK'}`);
+            });
+            // ── Ende DEBUG ──
+
             onToggle && onToggle(date, status, docId, e);
         }
-    }, [isDragging, dragStart, dragCurrent, onToggle]);
+    }, [isDragging, dragStart, dragCurrent, onToggle, dailyAbsencesByQual, availabilityThresholds, qualificationMap, doctorQualByDoctor, totalStaffByQual]);
 
     // Optimize shift lookup
     const shiftLookup = React.useMemo(() => {
@@ -201,9 +222,19 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
 
     // Hilfsfunktion: gibt die Qualifikations-IDs eines Arztes zurück
     const getDoctorQualificationIds = React.useCallback((doctorId) => {
+        // 1. Explizite Qualifikationen aus der Join-Tabelle
         const entries = doctorQualByDoctor[doctorId];
-        return entries ? entries.map(e => String(e.qualification_id)) : [];
-    }, [doctorQualByDoctor]);
+        if (entries && entries.length > 0) {
+            return entries.map(e => String(e.qualification_id));
+        }
+        // 2. Fallback: aus der Rolle ableiten (wenn keine Qualifikationen zugewiesen)
+        const doc = doctors.find(d => d.id === doctorId);
+        if (doc?.role) {
+            const qual = Object.values(qualificationMap).find(q => q.name === doc.role);
+            if (qual?.id) return [String(qual.id)];
+        }
+        return [];
+    }, [doctorQualByDoctor, doctors, qualificationMap]);
 
     // Berechne pro Qualifikation: Gesamtpersonal und abwesendes Personal pro Tag
     const dailyAbsencesByQual = React.useMemo(() => {
