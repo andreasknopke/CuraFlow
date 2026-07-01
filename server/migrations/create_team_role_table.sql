@@ -16,5 +16,13 @@ INSERT INTO `TeamRole` (`name`, `priority`, `is_specialist`) VALUES
     ('Oberarzt', 1, TRUE),
     ('Facharzt', 2, TRUE),
     ('Assistenzarzt', 3, FALSE),
-    ('Nicht-Radiologe', 4, FALSE)
+    ('Nicht-Radiologe', 4, FALSE),
+    ('Pflegekraft', 5, FALSE),
+    ('MTR', 6, FALSE),
+    ('MTL', 7, FALSE),
+    ('MTA', 8, FALSE),
+    ('Physician Assistant', 9, FALSE),
+    ('Hilfskraft', 10, FALSE),
+    ('Student', 11, FALSE),
+    ('Hospitant', 12, FALSE)
 ON DUPLICATE KEY UPDATE `priority` = VALUES(`priority`), `is_specialist` = VALUES(`is_specialist`);

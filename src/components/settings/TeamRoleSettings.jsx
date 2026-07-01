@@ -33,6 +33,14 @@ export const DEFAULT_TEAM_ROLES = [
     { name: "Facharzt", priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: "Kann alle Dienste übernehmen" },
     { name: "Assistenzarzt", priority: 3, is_specialist: false, can_do_foreground_duty: true, can_do_background_duty: false, excluded_from_statistics: false, description: "Kann Vordergrunddienste übernehmen" },
     { name: "Nicht-Radiologe", priority: 4, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Wird in Statistiken nicht gezählt" },
+    { name: "Pflegekraft", priority: 5, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Pflegerische Betreuung der Patienten" },
+    { name: "MTR", priority: 6, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Medizinisch-technische Radiologieassistenz" },
+    { name: "MTL", priority: 7, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Medizinisch-technische Laborassistenz" },
+    { name: "MTA", priority: 8, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Medizinisch-technische Assistenz" },
+    { name: "Physician Assistant", priority: 9, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Unterstützung der ärztlichen Tätigkeit" },
+    { name: "Hilfskraft", priority: 10, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Unterstützung im Praxisalltag" },
+    { name: "Student", priority: 11, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Student in der Ausbildung" },
+    { name: "Hospitant", priority: 12, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: "Hospitant zur Orientierung" },
 ];
 
 // Hook zum Laden der Team-Rollen mit Fallback auf Defaults
