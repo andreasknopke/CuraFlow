@@ -196,7 +196,8 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
         for (const queryKey of ROTATION_QUERY_KEYS) {
           queryClient.invalidateQueries({ queryKey });
         }
-        toast.info('Neuer Springer-Bedarf angemeldet', {
+        const isReturnRequest = payload?.kind === 'return-request';
+        toast.info(isReturnRequest ? 'Springer-Rückgabe angefordert' : 'Neuer Springer-Bedarf angemeldet', {
           description: payload?.demand?.workplace_name
             ? `${payload.demand.workplace_name} · ${payload.demand.date}`
             : undefined,

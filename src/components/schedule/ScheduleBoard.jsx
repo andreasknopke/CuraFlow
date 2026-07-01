@@ -1131,6 +1131,19 @@ export default function ScheduleBoard() {
         return map;
     }, [rotationDemands]);
 
+    // Open return-request demands indexed by the assignment they want back.
+    // Used by the pool planner to color assignment chips red and show a badge
+    // even when the demand sits on a different (ward) workplace.
+    const openReturnRequestByAssignmentId = useMemo(() => {
+        const map = new Map();
+        for (const demand of rotationDemands) {
+            if (demand.status === 'open' && demand.return_requested_assignment_id) {
+                map.set(String(demand.return_requested_assignment_id), demand);
+            }
+        }
+        return map;
+    }, [rotationDemands]);
+
     // Local state for the rotation dialogs launched from the board cells.
     const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState({ open: false, workplace: null, date: null, assignment: null, timeslotId: null, defaultEmployeeId: null });
     const [rotationDemandDialog, setRotationDemandDialog] = useState({
@@ -5065,6 +5078,29 @@ export default function ScheduleBoard() {
                     {() => {
                         const isSingleAssignment = assignments.length === 1 && openDemands.length === 0;
 
+                        // Return-request demands are keyed to the WARD workplace,
+                        // not this pool workplace. Scan the global lookup for any
+                        // that reference assignments in this cell.
+                        const globalReturnBadges = [];
+                        const seenReturnDemandIds = new Set();
+                        for (const a of assignments) {
+                            const rd = openReturnRequestByAssignmentId.get(String(a.id));
+                            if (rd && !seenReturnDemandIds.has(rd.id)) {
+                                seenReturnDemandIds.add(rd.id);
+                                const rTsLabel = rd.timeslot_label || (rd.timeslot_id
+                                    ? workplace.timeslots?.find((t) => String(t.id) === String(rd.timeslot_id))?.label
+                                    : null);
+                                globalReturnBadges.push(
+                                    <div key={`global-return-${rd.id}`}
+                                         className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-300 font-medium"
+                                         title={`Rückgabe angefordert: ${rd.note || ''}`.trim()}>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                        {rTsLabel ? `Rückgabe ${rTsLabel}` : 'Rückgabe'}
+                                    </div>
+                                );
+                            }
+                        }
+
                         return assignments.map((assignment, idx) => {
                             const empName = getEmpName(assignment);
                             const ts = hasTimeslots && assignment.timeslot_id
@@ -5079,6 +5115,13 @@ export default function ScheduleBoard() {
                             const roleColor = doctor
                                 ? getRoleColor(doctor.role)
                                 : { backgroundColor: '#f3f4f6', color: '#1f2937' };
+                            // If the ward has already requested this Springer back,
+                            // override the chip colour to red so the pool planner
+                            // can spot the return-request at a glance.
+                            const returnRequest = openReturnRequestByAssignmentId.get(String(assignment.id));
+                            const effectiveColor = returnRequest
+                                ? { backgroundColor: '#fef2f2', color: '#991b1b' }
+                                : roleColor;
                             const displayFontSize = effectiveGridFontSize;
                             const boxSize = shiftBoxSize;
 
@@ -5103,16 +5146,16 @@ export default function ScheduleBoard() {
                                             height: `${boxSize}px`,
                                         } : isSingleAssignment ? {
                                             ...provided.draggableProps.style,
-                                            backgroundColor: roleColor.backgroundColor,
-                                            color: roleColor.color,
+                                            backgroundColor: effectiveColor.backgroundColor,
+                                            color: effectiveColor.color,
                                             width: '100%',
                                             height: '100%',
                                             minHeight: `${boxSize * 0.8}px`,
                                             fontSize: `${displayFontSize}px`,
                                         } : {
                                             ...provided.draggableProps.style,
-                                            backgroundColor: roleColor.backgroundColor,
-                                            color: roleColor.color,
+                                            backgroundColor: effectiveColor.backgroundColor,
+                                            color: effectiveColor.color,
                                             width: `${boxSize}px`,
                                             height: `${boxSize}px`,
                                             fontSize: `${displayFontSize}px`,
@@ -5142,8 +5185,8 @@ export default function ScheduleBoard() {
                                                     <div
                                                         className="relative flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
                                                         style={{
-                                                            backgroundColor: roleColor.backgroundColor,
-                                                            color: roleColor.color,
+                                                            backgroundColor: effectiveColor.backgroundColor,
+                                                            color: effectiveColor.color,
                                                             width: `${boxSize}px`,
                                                             height: `${boxSize}px`,
                                                             fontSize: `${displayFontSize}px`,
@@ -5220,7 +5263,7 @@ export default function ScheduleBoard() {
                                     {tsLabel ? `Rückgabe ${tsLabel}` : 'Rückgabe'}
                                 </div>
                             );
-                        }));
+                        })).concat(globalReturnBadges);
                     }}
                 </DroppableCell>
             );
