@@ -734,7 +734,7 @@ router.post('/demands', async (req, res) => {
         return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
       }
 
-      if (String(wp.group_id) !== groupId) {
+      if (String(wp.group_id) !== String(groupId)) {
         return res.status(403).json({ error: 'Workplace gehört nicht zur selben Gruppe' });
       }
 
@@ -804,19 +804,21 @@ router.post('/demands', async (req, res) => {
         return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
       }
 
-      if (String(wp.group_id) !== groupId) {
+      if (String(wp.group_id) !== String(groupId)) {
         return res.status(403).json({ error: 'Workplace gehört nicht zur selben Gruppe' });
       }
 
       const [asgRows] = await db.execute(
-        'SELECT id, rotation_workplace_id, date, timeslot_id FROM rotation_assignment WHERE id = ? LIMIT 1',
+        'SELECT a.id, a.rotation_workplace_id, a.date, a.timeslot_id, w.group_id FROM rotation_assignment a JOIN rotation_workplace w ON w.id = a.rotation_workplace_id WHERE a.id = ? LIMIT 1',
         [String(return_requested_assignment_id)]
       );
       if (asgRows.length === 0) {
         return res.status(404).json({ error: 'Zuweisung nicht gefunden' });
       }
       const asg = asgRows[0];
-      if (String(asg.rotation_workplace_id) !== String(rotation_workplace_id)
+      // Assignment must be in the same group (the ward drops onto a pool
+      // workplace, so rotation_workplace_id won't match — only group matters).
+      if (String(asg.group_id) !== String(groupId)
           || String(asg.date) !== String(date)
           || String(asg.timeslot_id || '') !== String(timeslot_id || '')) {
         return res.status(422).json({ error: 'Die Rückgabe-Zuweisung passt nicht zur angeforderten Zelle' });
