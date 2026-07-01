@@ -39,14 +39,14 @@ const teamRoles = [
   ['role-specialist', 'Facharzt', 2, true, true, true, false, 'Kann alle Dienste übernehmen'],
   ['role-resident', 'Assistenzarzt', 3, false, true, false, false, 'Kann Vordergrunddienste übernehmen'],
   ['role-non-rad', 'Nicht-Radiologe', 4, false, false, false, true, 'Wird in Statistiken nicht gezählt'],
-  ['role-nurse', 'Pflegekraft', 5, false, false, false, true, 'Pflegerische Betreuung der Patienten'],
-  ['role-mtr', 'MTR', 6, false, false, false, true, 'Medizinisch-technische Radiologieassistenz'],
-  ['role-mtl', 'MTL', 7, false, false, false, true, 'Medizinisch-technische Laborassistenz'],
-  ['role-mta', 'MTA', 8, false, false, false, true, 'Medizinisch-technische Assistenz'],
-  ['role-physician-assistant', 'Physician Assistant', 9, false, false, false, true, 'Unterstützung der ärztlichen Tätigkeit'],
-  ['role-auxiliary', 'Hilfskraft', 10, false, false, false, true, 'Unterstützung im Praxisalltag'],
-  ['role-student', 'Student', 11, false, false, false, true, 'Student in der Ausbildung'],
-  ['role-intern', 'Hospitant', 12, false, false, false, true, 'Hospitant zur Orientierung'],
+  ['role-nurse', 'Pflegekraft', 5, false, false, false, false, 'Pflegerische Betreuung der Patienten'],
+  ['role-mtr', 'MTR', 6, false, false, false, false, 'Medizinischer Technologe für Radiologie'],
+  ['role-mtl', 'MTL', 7, false, false, false, false, 'Medizinischer Technologe für Laboratoriumsanalytik'],
+  ['role-mta', 'MTA', 8, false, false, false, false, 'Medizinisch-technische Assistenz'],
+  ['role-physician-assistant', 'Physician Assistant', 9, false, false, false, false, 'Unterstützung der ärztlichen Tätigkeit'],
+  ['role-auxiliary', 'Hilfskraft', 10, false, false, false, false, 'Unterstützung im Praxisalltag'],
+  ['role-student', 'Student', 11, false, false, false, false, 'Student in der Ausbildung'],
+  ['role-intern', 'Hospitant', 12, false, false, false, false, 'Hospitant zur Orientierung'],
 ];
 
 const doctors = [
