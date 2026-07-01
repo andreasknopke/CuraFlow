@@ -3131,40 +3131,6 @@ export default function ScheduleBoard() {
         return map;
     }, [rotationAssignments, rotationDemands, rotationWorkplaces, weekDays]);
 
-    // Combined: real available doctors + Springer placeholder chips (filtered by hidden set).
-    // Used by the Verfügbar row rendering and drag clone — both flow through
-    // the SAME rendering code path.
-    const allDisplayDocsByDate = useMemo(() => {
-        const map = new Map();
-        for (const day of weekDays) {
-            if (!isValid(day)) continue;
-            const dateStr = format(day, 'yyyy-MM-dd');
-            const realDocs = availableDoctorsByDate.get(dateStr) || [];
-            const springerDocs = springerChipsByDate.get(dateStr) || [];
-            const visibleSpringers = springerDocs.filter(d => !hiddenSpringerChipIds.has(d._assignmentId));
-            const jokerDocs = jokerChipsByDate.get(dateStr) || [];
-            map.set(dateStr, [...realDocs, ...visibleSpringers, ...jokerDocs]);
-        }
-        return map;
-    }, [availableDoctorsByDate, springerChipsByDate, jokerChipsByDate, hiddenSpringerChipIds, weekDays]);
-
-    // Fallback doctor map for springer shifts rendered in grid cells.
-    // The shift's doctor_id is the central employee ID, which won't be
-    // in the local doctorById. This map provides display data for them.
-    // Built from raw springerChipsByDate (NOT allDisplayDocsByDate) so
-    // that hiding the chip from Verfügbar doesn't break grid rendering.
-    const springerDoctorById = useMemo(() => {
-        const map = new Map();
-        for (const [, docs] of springerChipsByDate) {
-            for (const doc of docs) {
-                if (doc._isSpringer && !map.has(doc.id)) {
-                    map.set(doc.id, doc);
-                }
-            }
-        }
-        return map;
-    }, [springerChipsByDate]);
-
     // Central employee ID → tenant doctor lookup. Used to resolve
     // Joker names (offered_employee_id is a central UUID) and to build
     // Joker chips from fulfilled demands.
@@ -3247,6 +3213,40 @@ export default function ScheduleBoard() {
         }
         return map;
     }, [jokerChipsByDate, doctorByCentralEmployeeId]);
+
+    // Combined: real available doctors + Springer placeholder chips (filtered by hidden set).
+    // Used by the Verfügbar row rendering and drag clone — both flow through
+    // the SAME rendering code path.
+    const allDisplayDocsByDate = useMemo(() => {
+        const map = new Map();
+        for (const day of weekDays) {
+            if (!isValid(day)) continue;
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const realDocs = availableDoctorsByDate.get(dateStr) || [];
+            const springerDocs = springerChipsByDate.get(dateStr) || [];
+            const visibleSpringers = springerDocs.filter(d => !hiddenSpringerChipIds.has(d._assignmentId));
+            const jokerDocs = jokerChipsByDate.get(dateStr) || [];
+            map.set(dateStr, [...realDocs, ...visibleSpringers, ...jokerDocs]);
+        }
+        return map;
+    }, [availableDoctorsByDate, springerChipsByDate, jokerChipsByDate, hiddenSpringerChipIds, weekDays]);
+
+    // Fallback doctor map for springer shifts rendered in grid cells.
+    // The shift's doctor_id is the central employee ID, which won't be
+    // in the local doctorById. This map provides display data for them.
+    // Built from raw springerChipsByDate (NOT allDisplayDocsByDate) so
+    // that hiding the chip from Verfügbar doesn't break grid rendering.
+    const springerDoctorById = useMemo(() => {
+        const map = new Map();
+        for (const [, docs] of springerChipsByDate) {
+            for (const doc of docs) {
+                if (doc._isSpringer && !map.has(doc.id)) {
+                    map.set(doc.id, doc);
+                }
+            }
+        }
+        return map;
+    }, [springerChipsByDate]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
