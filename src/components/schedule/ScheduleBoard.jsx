@@ -4786,67 +4786,66 @@ export default function ScheduleBoard() {
         );
     };
 
-    // Renders a compact read-only summary of a linked partner workplace's
-    // staffing for one day — e.g. shown next to the ärztlich "CT" row header
-    // in day view to surface the MTR "CT1"/"CT2" occupancy (and vice versa).
-    // Only ever reads; never a drop target, never opens an edit dialog.
-    const renderLinkedWorkplaceHint = (rowName, dateStr) => {
-        const partners = linkedWorkplacesByName[rowName];
-        if (!partners || partners.length === 0) return null;
-        return (
-            <div className="mt-1 flex flex-col gap-0.5">
-                {partners.map((partner) => {
-                    const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
-                    return (
-                        <div
-                            key={`${partner.tenant_id}__${partner.workplace_name}`}
-                            className="flex items-center gap-1 text-[10px] text-slate-500"
-                            title={`${partner.tenant_name} · ${partner.workplace_name}`}
-                        >
-                            <Link2 className="w-2.5 h-2.5 text-teal-500 flex-shrink-0" />
-                            <span className="font-medium text-teal-700">{partner.workplace_name}:</span>
-                            {shiftsForDay.length > 0 ? (
-                                <span className="truncate">
-                                    {shiftsForDay.map((s) => s.doctor_name).join(', ')}
-                                </span>
-                            ) : (
-                                <span className="italic text-slate-400">nicht besetzt</span>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
-        );
-    };
-
-    // Renders the partner staffing hint inside each DAY CELL (per-date).
-    // Normalizes rowName (trim) for lookup to handle whitespace differences.
-    const renderLinkedCellHint = (rowName, dateStr) => {
+    // Renders a small Link2 icon button in the row header that opens a popover
+    // showing the partner workplace staffing for the selected day (read-only).
+    // Only shown in day view when workplace links exist.
+    const renderLinkedWorkplaceButton = (rowName, dateStr) => {
         const partners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
         if (!partners || partners.length === 0) return null;
         return (
-            <div className="px-1 pb-0.5 flex flex-wrap gap-x-1.5 gap-y-0.5">
-                {partners.map((partner) => {
-                    const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
-                    return (
-                        <div
-                            key={`${partner.tenant_id}__${partner.workplace_name}`}
-                            className="flex items-center gap-0.5 text-[9px] text-slate-400"
-                            title={`${partner.tenant_name} · ${partner.workplace_name}`}
-                        >
-                            <Link2 className="w-2 h-2 text-teal-400 flex-shrink-0" />
-                            <span className="font-medium text-teal-600 whitespace-nowrap">{partner.workplace_name}:</span>
-                            {shiftsForDay.length > 0 ? (
-                                <span className="truncate max-w-[90px]">
-                                    {shiftsForDay.map((s) => s.doctor_name).join(', ')}
-                                </span>
-                            ) : (
-                                <span className="italic text-slate-300">—</span>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
+            <Popover>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 text-teal-600 hover:text-teal-700 hover:bg-teal-50"
+                        title="Verknüpfte Arbeitsplätze anzeigen"
+                    >
+                        <Link2 className="w-3.5 h-3.5" />
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3" align="start" side="right">
+                    <div className="space-y-3">
+                        <h4 className="font-semibold text-sm text-slate-800 border-b pb-1.5 flex items-center gap-2">
+                            <Link2 className="w-4 h-4 text-teal-600" />
+                            Verknüpfte Arbeitsplätze
+                        </h4>
+                        {partners.map((partner) => {
+                            const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                            return (
+                                <div key={`${partner.tenant_id}__${partner.workplace_name}`}>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Badge variant="outline" className="text-[10px] font-semibold text-teal-700 border-teal-200 bg-teal-50/50">
+                                            {partner.tenant_name}
+                                        </Badge>
+                                        <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
+                                    </div>
+                                    {shiftsForDay.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1.5 ml-1">
+                                            {shiftsForDay.map((s, idx) => (
+                                                <Badge
+                                                    key={idx}
+                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
+                                                    variant="outline"
+                                                >
+                                                    {s.doctor_name}
+                                                    {s.start_time && s.end_time
+                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
+                                                        : s.start_time
+                                                            ? ` (${s.start_time.slice(0, 5)})`
+                                                            : ''}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-400 italic ml-1">nicht besetzt</p>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </PopoverContent>
+            </Popover>
         );
     };
 
@@ -5525,9 +5524,9 @@ export default function ScheduleBoard() {
                                                                   count={rowObj.timeslotCount}
                                                               />
                                                           )}
-                                                          {viewMode === 'day' && renderLinkedWorkplaceHint(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                       </div>
                                                       <div className="flex items-center gap-0.5">
+                                                          {viewMode === 'day' && renderLinkedWorkplaceButton(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                           {hasRowQuals && (
                                                               <Button
                                                                   variant="ghost"
@@ -5705,7 +5704,6 @@ export default function ScheduleBoard() {
                                                                       cellWidth
                                                                   )}
                                                               </DroppableCell>
-                                                              {viewMode === 'day' && renderLinkedCellHint(rowName, dateStr)}
                                                           </div>
                                                       )}
                                                   </div>
@@ -6572,9 +6570,9 @@ export default function ScheduleBoard() {
                                                     {rowWorkplace.time} Uhr
                                                 </span>
                                                 )}
-                                                {viewMode === 'day' && renderLinkedWorkplaceHint(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                 </div>
                                                 <div className="flex items-center gap-0.5">
+                                                {viewMode === 'day' && renderLinkedWorkplaceButton(rowName, format(weekDays[0], 'yyyy-MM-dd'))}
                                                 {hasRowQuals && (
                                                 <Button
                                                     variant="ghost"
@@ -6821,7 +6819,6 @@ export default function ScheduleBoard() {
                                                         cellWidth
                                                     )}
                                                 </DroppableCell>
-                                                {viewMode === 'day' && renderLinkedCellHint(rowName, dateStr)}
                                             </div>
                                         )}
                                     </div>
