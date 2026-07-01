@@ -35,6 +35,8 @@ import {
 import {
   ROTATION_DEMAND_WRITABLE_COLUMNS,
   assertNoOpenDemandForCell,
+  assertNoOpenReturnRequestForAssignment,
+  cancelReturnRequestOnAssignmentDelete,
   markDemandFulfilledForCell,
   reopenDemandOnAssignmentDelete,
 } from '../utils/rotationDemand.js';
@@ -536,6 +538,7 @@ router.get('/visible-rotations', async (req, res) => {
       const [dRows] = await db.execute(
         `SELECT d.id, d.rotation_workplace_id, d.group_id, d.ward_tenant_id, d.date,
                 d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
+                d.return_requested_assignment_id,
                 w.name AS workplace_name, ts.label AS timeslot_label
            FROM rotation_demand d
            JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
@@ -554,6 +557,7 @@ router.get('/visible-rotations', async (req, res) => {
         note: r.note || null,
         status: r.status,
         fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
+        return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
         workplace_name: r.workplace_name,
         timeslot_label: r.timeslot_label || null,
         canManage: canWriteRotationGroup(ctx, Number(r.group_id)),
@@ -669,6 +673,15 @@ router.delete('/:groupId/assignments/:assignmentId', async (req, res) => {
     } catch (demandErr) {
       console.error('[rotations] reopenDemandOnAssignmentDelete error:', demandErr.message);
     }
+    // Cancel any open return-request ("Rückgabe anfordern") for this assignment
+    try {
+      const cancelled = await cancelReturnRequestOnAssignmentDelete(db, req.params.assignmentId);
+      if (cancelled > 0) {
+        console.log(`[rotations] Cancelled ${cancelled} return-request(s) for deleted assignment ${req.params.assignmentId}`);
+      }
+    } catch (retErr) {
+      console.error('[rotations] cancelReturnRequestOnAssignmentDelete error:', retErr.message);
+    }
     await db.execute(
       `DELETE a FROM rotation_assignment a
          JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
@@ -696,7 +709,7 @@ router.post('/demands', async (req, res) => {
       return res.status(400).json({ error: 'Kein aktiver Mandant (x-db-token fehlt)' });
     }
 
-    const { rotation_workplace_id, date, timeslot_id, note } = req.body || {};
+    const { rotation_workplace_id, date, timeslot_id, note, return_requested_assignment_id } = req.body || {};
     if (!rotation_workplace_id) return res.status(400).json({ error: 'rotation_workplace_id ist erforderlich' });
     if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) ist erforderlich' });
 
@@ -717,6 +730,69 @@ router.post('/demands', async (req, res) => {
     // Verify the caller has read access to this group
     if (!canReadRotationGroupForDemand(ctx, groupId)) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Rotationsverbund' });
+    }
+
+    // ── Return-request branch ("Rückgabe an den Pool anfordern") ──
+    // A ward can request the pool to take a Springer back. The corresponding
+    // rotation_assignment must exist and match the requested cell. We DO NOT
+    // run assertNoOpenDemandForCell here because the cell legitimately has a
+    // fulfilled demand+assignment; we instead de-dupe per-assignment.
+    if (return_requested_assignment_id) {
+      const [asgRows] = await db.execute(
+        'SELECT id, rotation_workplace_id, date, timeslot_id FROM rotation_assignment WHERE id = ? LIMIT 1',
+        [String(return_requested_assignment_id)]
+      );
+      if (asgRows.length === 0) {
+        return res.status(404).json({ error: 'Zuweisung nicht gefunden' });
+      }
+      const asg = asgRows[0];
+      if (String(asg.rotation_workplace_id) !== String(rotation_workplace_id)
+          || String(asg.date) !== String(date)
+          || String(asg.timeslot_id || '') !== String(timeslot_id || '')) {
+        return res.status(422).json({ error: 'Die Rückgabe-Zuweisung passt nicht zur angeforderten Zelle' });
+      }
+
+      await assertNoOpenReturnRequestForAssignment(db, String(return_requested_assignment_id));
+
+      const id = crypto.randomUUID();
+      const row = {
+        id,
+        rotation_workplace_id: String(rotation_workplace_id),
+        group_id: groupId,
+        ward_tenant_id: activeTenantId,
+        date,
+        timeslot_id: timeslot_id || null,
+        note: note || 'Rückgabe an den Pool angefordert',
+        status: 'open',
+        fulfilled_by_assignment_id: null,
+        return_requested_assignment_id: String(return_requested_assignment_id),
+        created_by: req.user?.email || req.user?.sub || null,
+      };
+
+      const columns = Object.keys(row);
+      const values = columns.map((k) => row[k]);
+      const colList = columns.join(', ');
+      const placeholders = columns.map(() => '?').join(', ');
+      await db.execute(
+        `INSERT INTO rotation_demand (${colList}) VALUES (${placeholders})`,
+        values
+      );
+
+      // Notify rotation admins via realtime
+      try {
+        const adminUserIds = await getRotationAdminUserIds(db, groupId);
+        if (adminUserIds.length > 0) {
+          broadcastUserEvent({
+            eventName: 'rotation-demand',
+            payload: { demand: row, groupId, kind: 'return-request' },
+            userIds: adminUserIds,
+          });
+        }
+      } catch (realtimeErr) {
+        console.error('[rotations] broadcastUserEvent error:', realtimeErr.message);
+      }
+
+      return res.status(201).json({ demand: row });
     }
 
     await assertNoOpenDemandForCell(db, {
@@ -804,6 +880,7 @@ router.get('/demands', async (req, res) => {
     const [rows] = await db.execute(
       `SELECT d.id, d.rotation_workplace_id, d.group_id, d.ward_tenant_id, d.date,
               d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
+              d.return_requested_assignment_id,
               d.created_by, d.created_at, d.updated_at,
               w.name AS workplace_name, ts.label AS timeslot_label,
               a.employee_id AS fulfilled_employee_id,
@@ -830,6 +907,7 @@ router.get('/demands', async (req, res) => {
       note: r.note || null,
       status: r.status,
       fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
+      return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
       created_by: r.created_by || null,
       created_at: r.created_at || null,
       updated_at: r.updated_at || null,

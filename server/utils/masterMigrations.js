@@ -929,6 +929,20 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // Return-request flavour on rotation_demand. A ward can request the pool
+  // to take a Springer back (see docs/features/SPRINGERPOOL_ROTATION_V2.md).
+  // When non-null, this row is a "Rückgabe anfordern" request for that assignment.
+  await run('add_rotation_demand_return_requested_assignment_id', async () => {
+    await addColumnIfMissing(
+      'rotation_demand',
+      'return_requested_assignment_id',
+      'VARCHAR(36) DEFAULT NULL'
+    );
+    await dbPool.execute(
+      'CREATE INDEX IF NOT EXISTS idx_rd_return_req ON rotation_demand (return_requested_assignment_id)'
+    ).catch(() => { /* older MySQL without IF NOT EXISTS on index — ignore */ });
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'], duplicateReason: 'Spalte/Index bereits vorhanden' });
+
   // ===== PHASE: Workplace Links (read-only cross-tenant staffing mirror) =====
   // Lets e.g. a Radiology tenant's "CT" workplace show the staffing of the
   // MTR tenant's "CT1"/"CT2" workplaces (and vice versa) in the day view.

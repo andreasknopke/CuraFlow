@@ -25,6 +25,7 @@ export const ROTATION_DEMAND_WRITABLE_COLUMNS = new Set([
   'note',
   'status',
   'fulfilled_by_assignment_id',
+  'return_requested_assignment_id',
   'created_by',
 ]);
 
@@ -57,6 +58,49 @@ export async function assertNoOpenDemandForCell(masterDb, { rotationWorkplaceId,
     err.existingId = rows[0].id;
     throw err;
   }
+}
+
+/**
+ * Assert that no OPEN return-request exists for a given assignment.
+ * Prevents duplicate "Rückgabe anfordern" requests for the same Springer.
+ *
+ * @param {import('mysql2/promise').Pool} masterDb
+ * @param {string} assignmentId
+ * @throws {Error} with status 409 if a matching open return-request exists
+ */
+export async function assertNoOpenReturnRequestForAssignment(masterDb, assignmentId) {
+  const [rows] = await masterDb.execute(
+    `SELECT id FROM rotation_demand
+      WHERE return_requested_assignment_id = ?
+        AND status = 'open'
+      LIMIT 1`,
+    [assignmentId]
+  );
+  if (rows.length > 0) {
+    const err = new Error('Für diese Zuweisung wurde bereits eine Rückgabe angefordert');
+    err.status = 409;
+    err.existingId = rows[0].id;
+    throw err;
+  }
+}
+
+/**
+ * Cancel any open return-request demand that targets the given assignment.
+ * Used when the assignment is deleted by the pool — the request is moot.
+ *
+ * @param {import('mysql2/promise').Pool} masterDb
+ * @param {string} assignmentId
+ * @returns {Promise<number>} number of rows cancelled
+ */
+export async function cancelReturnRequestOnAssignmentDelete(masterDb, assignmentId) {
+  const [result] = await masterDb.execute(
+    `UPDATE rotation_demand
+        SET status = 'cancelled'
+      WHERE return_requested_assignment_id = ?
+        AND status = 'open'`,
+    [assignmentId]
+  );
+  return result.affectedRows;
 }
 
 /**

@@ -3420,11 +3420,14 @@ export default function ScheduleBoard() {
     // ============================================================
     //  ROTATION CELL DROP (Pool-Rotationen)
     //  Timeslot-Auswahl wie bei normalen Rotationen.
+    //  Für Ward-Tenants: Springer-Chip → Rückgabe an den Pool anfordern.
     // ============================================================
-    if (destinationDroppableId && destinationDroppableId.startsWith('rotationCell__')) {
+    if (destinationDroppableId && (destinationDroppableId.startsWith('rotationCell__') || destinationDroppableId.startsWith('rotationCellTslot__'))) {
+        const isTimeslotCell = destinationDroppableId.startsWith('rotationCellTslot__');
         const parts = destinationDroppableId.split('__');
-        const wpId = parts[1];
-        const destDate = parts[2];
+        const wpId = isTimeslotCell ? parts[1] : parts[1];
+        const destDate = isTimeslotCell ? parts[2] : parts[2];
+        const tsId = isTimeslotCell ? parts[3] : null;
         if (!wpId || !destDate) return;
 
         // Resolve doctor from sidebar, available, or shift drag
@@ -3444,6 +3447,37 @@ export default function ScheduleBoard() {
         const wp = rotationWorkplaces.find(w => String(w.id) === String(wpId));
         if (!wp) return;
 
+        // ────────────────────────────────────────────────────────────
+        //  WARD-TENANT: Springer zurück an den Pool anfordern
+        //  Im Ward-Tenant (wp.canWrite === false) gibt es keine
+        //  createRotationAssignment-Berechtigung. Statt dessen kann
+        //  ein Springer-Chip aus der Verfügbar-Reihe auf die
+        //  Pool-Tageszelle gezogen werden, um eine Rückgabe-Anfrage
+        //  (Demand mit return_requested_assignment_id) zu stellen.
+        // ────────────────────────────────────────────────────────────
+        if (wp.canWrite === false && normalizedDraggableId.startsWith('available-doc-')) {
+            const springerDoc = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
+                .find((d) => d._isSpringer && d.id === doctorId);
+            if (springerDoc?._assignmentId) {
+                const confirmed = window.confirm('Wollen Sie den Springer an den Pool zurückgeben?');
+                if (!confirmed) return;
+                api.createRotationDemand({
+                    rotation_workplace_id: wp.id,
+                    date: destDate,
+                    timeslot_id: tsId || null,
+                    return_requested_assignment_id: springerDoc._assignmentId,
+                    note: 'Rückgabe an den Pool angefordert',
+                }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                    toast.success('Rückgabe angefordert — Pool wurde benachrichtigt.');
+                }).catch((err) => {
+                    toast.error('Fehler beim Anfordern der Rückgabe: ' + (err?.message || ''));
+                });
+                return;
+            }
+        }
+
         const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
 
         // Build callback for timeslot selection (or direct creation)
@@ -3461,6 +3495,12 @@ export default function ScheduleBoard() {
                 toast.error('Fehler: ' + (err?.message || ''));
             });
         };
+
+        // Drop on a specific timeslot cell → no dialog, create directly
+        if (isTimeslotCell) {
+            doCreate(tsId);
+            return;
+        }
 
         if (hasTimeslots) {
             const options = wp.timeslots.map((ts) => ({
@@ -5132,7 +5172,7 @@ export default function ScheduleBoard() {
                                     }}
                                 </Draggable>
                             );
-                        }).concat(openDemands.map((demand) => {
+                        }).concat(openDemands.filter((d) => !d.return_requested_assignment_id).map((demand) => {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
                                 ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
@@ -5144,6 +5184,18 @@ export default function ScheduleBoard() {
                                     {tsLabel ? `Bedarf ${tsLabel}` : 'Bedarf'}
                                 </div>
                             );
+                        })).concat(openDemands.filter((d) => d.return_requested_assignment_id).map((demand) => {
+                            const tsLabel = demand.timeslot_label || (demand.timeslot_id
+                                ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                                : null);
+                            return (
+                                <div key={`return-${demand.id}`}
+                                     className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300 font-medium"
+                                     title={`Rückgabe angefordert: ${demand.note || ''}`.trim()}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
+                                    {tsLabel ? `Rückgabe ${tsLabel}` : 'Rückgabe'}
+                                </div>
+                            );
                         }));
                     }}
                 </DroppableCell>
@@ -5151,7 +5203,10 @@ export default function ScheduleBoard() {
         }
 
         // ============================================================
-        //  STATIONS-ANSICHT (!canWrite) — Timeslot-Sub-Zeilen (UNVERÄNDERT)
+        //  STATIONS-ANSICHT (!canWrite) — Timeslot-Sub-Zeilen
+        //  Jedes Timeslot-Sub-Feld ist einzeln droppable, damit ein
+        //  Springer-Chip auf ein konkretes Timeslot gezogen werden kann,
+        //  um die Rückgabe an den Pool anzufordern.
         // ============================================================
         if (hasTimeslots) {
             return (
@@ -5165,38 +5220,66 @@ export default function ScheduleBoard() {
                         );
                         const isCovered = tsAssignments.length > 0;
                         const demandStatus = tsDemand?.status;
+                        const hasReturnRequest = tsDemand?.status === 'open'
+                            && tsDemand?.return_requested_assignment_id;
                         return (
-                            <div
+                            <DroppableCell
                                 key={ts.id}
-                                className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer hover:bg-amber-50/40 ${isCovered ? 'bg-teal-50/30' : ''}`}
-                                onClick={() => openDemandFor(ts)}
-                                title={`${ts.label}${tsDemand ? ` · ${tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
+                                id={`rotationCellTslot__${workplace.id}__${dateStr}__${ts.id}`}
+                                isToday={isToday}
+                                isWeekend={isWeekend}
+                                isDisabled={false}
+                                isReadOnly={false}
+                                isAlternate={isAlternate}
+                                baseClassName={baseClassName}
+                                baseStyle={baseStyle}
+                                isCompact
                             >
-                                <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">{ts.label}</span>
-                                <div className="flex flex-1 flex-wrap gap-0.5">
-                                    {tsAssignments.map((assignment) => {
-                                        const empName = getEmpName(assignment);
-                                        return (
-                                            <span
-                                                key={assignment.id}
-                                                className="inline-block px-1 py-0.5 rounded border max-w-[100px] truncate bg-teal-100 border-teal-200 text-teal-800"
-                                                title={empName}
-                                            >
-                                                {empName}
+                                {() => (
+                                    <div
+                                        className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer hover:bg-amber-50/40 w-full ${isCovered ? 'bg-teal-50/30' : ''}`}
+                                        onClick={() => openDemandFor(ts)}
+                                        title={`${ts.label}${tsDemand ? ` · ${hasReturnRequest ? 'Rückgabe angefordert' : tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
+                                    >
+                                        <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">{ts.label}</span>
+                                        <div className="flex flex-1 flex-wrap gap-0.5">
+                                            {tsAssignments.map((assignment) => {
+                                                const empName = getEmpName(assignment);
+                                                const isOpenReturn = tsDemand?.status === 'open'
+                                                    && tsDemand?.return_requested_assignment_id
+                                                    && String(tsDemand.return_requested_assignment_id) === String(assignment.id);
+                                                return (
+                                                    <span
+                                                        key={assignment.id}
+                                                        className={`inline-block px-1 py-0.5 rounded border max-w-[100px] truncate ${
+                                                            isOpenReturn
+                                                                ? 'bg-purple-100 border-purple-300 text-purple-800'
+                                                                : 'bg-teal-100 border-teal-200 text-teal-800'
+                                                        }`}
+                                                        title={isOpenReturn ? `${empName} · Rückgabe angefordert` : empName}
+                                                    >
+                                                        {empName}
+                                                    </span>
+                                                );
+                                            })}
+                                        </div>
+                                        {demandStatus === 'open' && !hasReturnRequest && (
+                                            <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />
+                                        )}
+                                        {demandStatus === 'fulfilled' && (
+                                            <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block" title="Bedarf erfüllt" />
+                                        )}
+                                        {hasReturnRequest && (
+                                            <span className="shrink-0 text-[8px] px-1 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 font-medium" title="Rückgabe angefordert">
+                                                Rückgabe
                                             </span>
-                                        );
-                                    })}
-                                </div>
-                                {demandStatus === 'open' && (
-                                    <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400 inline-block" title="Bedarf offen" />
+                                        )}
+                                        {!isCovered && !tsDemand && (
+                                            <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
+                                        )}
+                                    </div>
                                 )}
-                                {demandStatus === 'fulfilled' && (
-                                    <span className="shrink-0 w-2 h-2 rounded-full bg-green-500 inline-block" title="Bedarf erfüllt" />
-                                )}
-                                {!isCovered && !tsDemand && (
-                                    <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
-                                )}
-                            </div>
+                            </DroppableCell>
                         );
                     })}
                 </div>
@@ -5204,39 +5287,76 @@ export default function ScheduleBoard() {
         }
 
         // Einfache Zelle (ohne Timeslots) — Station
+        // Droppable, damit ein Springer-Chip aus der Verfügbar-Reihe hier
+        // abgelegt werden kann, um die Rückgabe an den Pool anzufordern.
         const demand = cellDemands[0];
         return (
-            <div
-                className={`min-h-[40px] p-1 ${demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
-                onClick={() => openDemandFor(null)}
+            <DroppableCell
+                id={`rotationCell__${workplace.id}__${dateStr}`}
+                isToday={isToday}
+                isWeekend={isWeekend}
+                isDisabled={false}
+                isReadOnly={false}
+                isAlternate={isAlternate}
+                baseClassName={baseClassName}
+                baseStyle={baseStyle}
+                onContextMenu={demand?.status !== 'fulfilled' ? (e) => {
+                    e.preventDefault();
+                    openDemandFor(null);
+                } : undefined}
             >
-                <div className="flex flex-wrap gap-1">
-                    {assignments.map((assignment) => (
-                        <span
-                            key={assignment.id}
-                            className="inline-block text-[10px] px-1.5 py-0.5 rounded border shadow-sm max-w-[140px] truncate bg-teal-100 border-teal-200 text-teal-800"
-                            title={getEmpName(assignment)}
-                        >
-                            {getEmpName(assignment)}
-                        </span>
-                    ))}
-                    {demand?.status === 'open' && (
-                        <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-                            Bedarf offen
-                        </span>
-                    )}
-                    {demand?.status === 'fulfilled' && (
-                        <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            Erfüllt
-                        </span>
-                    )}
-                    {!demand && (
-                        <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5">+Bedarf</span>
-                    )}
-                </div>
-            </div>
+                {() => (
+                    <div
+                        className={`min-h-[40px] p-1 w-full ${demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
+                        onClick={() => openDemandFor(null)}
+                    >
+                        <div className="flex flex-wrap gap-1">
+                            {assignments.map((assignment) => {
+                                const empName = getEmpName(assignment);
+                                const isOpenReturn = cellDemands.some(
+                                    (d) => d.status === 'open'
+                                        && d.return_requested_assignment_id
+                                        && String(d.return_requested_assignment_id) === String(assignment.id)
+                                );
+                                return (
+                                    <span
+                                        key={assignment.id}
+                                        className={`inline-block text-[10px] px-1.5 py-0.5 rounded border shadow-sm max-w-[140px] truncate ${
+                                            isOpenReturn
+                                                ? 'bg-purple-100 border-purple-300 text-purple-800'
+                                                : 'bg-teal-100 border-teal-200 text-teal-800'
+                                        }`}
+                                        title={isOpenReturn ? `${empName} · Rückgabe angefordert` : empName}
+                                    >
+                                        {empName}
+                                    </span>
+                                );
+                            })}
+                            {demand?.status === 'open' && !demand.return_requested_assignment_id && (
+                                <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                                    Bedarf offen
+                                </span>
+                            )}
+                            {demand?.status === 'open' && demand.return_requested_assignment_id && (
+                                <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                                    Rückgabe angefordert
+                                </span>
+                            )}
+                            {demand?.status === 'fulfilled' && (
+                                <span className="inline-flex items-center gap-1 text-[9px] px-1 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                                    Erfüllt
+                                </span>
+                            )}
+                            {!demand && (
+                                <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5">+Bedarf</span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </DroppableCell>
         );
     };
 
