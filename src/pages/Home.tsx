@@ -14,7 +14,7 @@ export default function Home() {
     navigate(createPageUrl('AuthLogin'));
   };
 
-  const handleScheduleClick = (e) => {
+  const handleScheduleClick = (e: React.MouseEvent) => {
     if (!isAuthenticated) {
         e.preventDefault();
         handleLogin();

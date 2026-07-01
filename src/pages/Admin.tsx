@@ -1,4 +1,4 @@
-import React from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import UserManagement from '@/components/admin/UserManagement';
@@ -11,7 +11,7 @@ import { ShieldCheck } from 'lucide-react';
 
 export default function AdminPage() {
     const { user, isAuthenticated } = useAuth();
-    const [activeTab, setActiveTab] = React.useState('users');
+    const [activeTab, setActiveTab] = useState('users');
 
     if (!isAuthenticated) return <div>Bitte anmelden.</div>;
     if (user?.role !== 'admin') {

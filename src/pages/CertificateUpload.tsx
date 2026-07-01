@@ -9,9 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useDoctorQualifications, useQualifications } from '@/hooks/useQualifications';
 import { computeQualificationEvidenceSummary } from '@/lib/qualificationEvidence';
+import type { EvidenceSummary } from '@/lib/qualificationEvidence';
 
-function groupCertificatesByQualification(certificates = []) {
-  return certificates.reduce((acc, certificate) => {
+function groupCertificatesByQualification(certificates: any[] = []) {
+  return certificates.reduce((acc: Record<string, any[]>, certificate: any) => {
     if (!acc[certificate.qualification_id]) {
       acc[certificate.qualification_id] = [];
     }
@@ -29,24 +30,24 @@ export default function CertificateUploadPage() {
   }, [location.search]);
 
   const { qualifications, qualificationMap, isLoading: qualificationsLoading } = useQualifications();
-  const { doctorQualifications = [], isLoading: doctorQualificationsLoading } = useDoctorQualifications(user?.doctor_id);
+  const { doctorQualifications = [], isLoading: doctorQualificationsLoading } = useDoctorQualifications((user as any)?.doctor_id);
   const { data: allCertificates = [], isLoading: certificatesLoading } = useQuery({
-    queryKey: ['certificates-self-service', user?.doctor_id],
-    queryFn: () => api.listCertificates({ doctor_id: user.doctor_id }),
-    enabled: !!user?.doctor_id,
+    queryKey: ['certificates-self-service', (user as any)?.doctor_id],
+    queryFn: () => api.listCertificates({ doctor_id: (user as any).doctor_id }) as any,
+    enabled: !!(user as any)?.doctor_id,
   });
 
   const groupedCertificates = useMemo(() => groupCertificatesByQualification(allCertificates), [allCertificates]);
 
   const visibleQualifications = useMemo(() => {
-    return doctorQualifications
-      .map((doctorQualification) => {
-        const qualification = qualificationMap[doctorQualification.qualification_id];
+    const mapped = doctorQualifications
+      .map((doctorQualification: any) => {
+        const qualification: any = qualificationMap[doctorQualification.qualification_id];
         if (!qualification || qualification.requires_certificate !== true) {
           return null;
         }
 
-        const summary = computeQualificationEvidenceSummary({
+        const summary: EvidenceSummary = computeQualificationEvidenceSummary({
           qualification,
           certificates: groupedCertificates[qualification.id] || [],
         });
@@ -61,8 +62,8 @@ export default function CertificateUploadPage() {
           summary,
         };
       })
-      .filter(Boolean)
-      .sort((left, right) => {
+      .filter(Boolean);
+    return (mapped as any[]).sort((left: any, right: any) => {
         const leftPinned = left.qualification.id === selectedQualificationId ? 0 : 1;
         const rightPinned = right.qualification.id === selectedQualificationId ? 0 : 1;
         if (leftPinned !== rightPinned) return leftPinned - rightPinned;

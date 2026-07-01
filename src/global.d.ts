@@ -18,4 +18,17 @@ declare global {
     | undefined;
 }
 
+// During incremental TS conversion, .jsx components (forwardRef wrappers)
+// resolve to `IntrinsicAttributes & RefAttributes<any>` which lacks children
+// and custom props. Adding generic props here until components are .tsx.
+declare global {
+  namespace JSX {
+    interface IntrinsicAttributes {
+      children?: any;
+      className?: string;
+      [key: string]: any;
+    }
+  }
+}
+
 export {};
