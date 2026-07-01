@@ -94,9 +94,13 @@ async function fetchPartnerShifts(token, workplaceNames, from, to) {
     if (to) { dateFilter.push('s.date <= ?'); params.push(to); }
     const dateWhere = dateFilter.length > 0 ? `AND ${dateFilter.join(' AND ')}` : '';
     const [rows] = await pool.execute(
-      `SELECT s.date, s.position, s.start_time, s.end_time, d.name AS doctor_name
+      `SELECT s.date, s.position,
+              COALESCE(s.start_time, wt.start_time) AS start_time,
+              COALESCE(s.end_time, wt.end_time) AS end_time,
+              d.name AS doctor_name
          FROM ShiftEntry s
          LEFT JOIN Doctor d ON d.id = s.doctor_id
+         LEFT JOIN WorkplaceTimeslot wt ON wt.id = s.timeslot_id
         WHERE s.position IN (${placeholders})
           ${dateWhere}
         ORDER BY s.date ASC`,
