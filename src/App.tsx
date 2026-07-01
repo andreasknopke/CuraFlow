@@ -26,18 +26,8 @@ const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey: string = mainPage ?? Object.keys(Pages)[0];
 const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
 
-const LayoutWrapper = ({
-  children,
-  currentPageName,
-}: {
-  children: React.ReactNode;
-  currentPageName: string;
-}) =>
-  Layout ? (
-    <Layout currentPageName={currentPageName}>{children}</Layout>
-  ) : (
-    <>{children}</>
-  );
+const LayoutWrapper = ({ children }: { children: React.ReactNode }) =>
+  Layout ? <Layout>{children}</Layout> : <>{children}</>;
 
 // ── Authenticated App ────────────────────────────────────────────────────────
 
@@ -59,7 +49,7 @@ const AuthenticatedApp: React.FC = () => {
       <Route
         path="/"
         element={
-          <LayoutWrapper currentPageName={mainPageKey}>
+          <LayoutWrapper>
             <MainPage />
           </LayoutWrapper>
         }
@@ -69,7 +59,7 @@ const AuthenticatedApp: React.FC = () => {
           key={path}
           path={`/${path}`}
           element={
-            <LayoutWrapper currentPageName={path}>
+            <LayoutWrapper>
               <Page />
             </LayoutWrapper>
           }

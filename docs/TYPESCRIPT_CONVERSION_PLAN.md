@@ -19,41 +19,48 @@ Convert the CuraFlow frontend pages to TypeScript with strict checking, matching
 | JSX pages unconverted | 14 files in `src/pages/` |
 | JSX components unconverted | ~150 files (~50k lines); ScheduleBoard.jsx is 7k lines |
 | `src/types/` directory | Does not exist |
-| `strict` mode | `false` in both `tsconfig.json` and `jsconfig.json` |
-| Pre-existing TS errors | 4 (in `staffingUtils.ts`, `qualificationEvidence.ts`) |
-| E2E test coverage | 34 tests total; 5 dedicated ScheduleBoard tests (auto-fill, rendering, toolbar, clear-day buttons, error check) |
-| Drag-and-drop E2E coverage | None — Playwright mouse events cannot reliably trigger @hello-pangea/dnd drag operations. Drag-and-drop needs component-level tests with React Testing Library. |
-| eslint covers .ts/.tsx | No — only `.js`/`.jsx`/`.mjs`/`.cjs` |
+| `strict` mode | `false` |
+| Pre-existing TS errors | 0 — all fixed in Phase 0 |
+| E2E test coverage | 46 tests total; all 14 pages have smoke + schedule has 5 safety tests |
+| Drag-and-drop E2E coverage | None — Playwright cannot trigger @hello-pangea/dnd. Needs component tests with React Testing Library. |
+| eslint covers .ts/.tsx | No — `.ts,.tsx` requires `typescript-eslint` parser not yet installed |
 | Build status | `npm run build` passes |
+| Typecheck status | `npm run typecheck` passes with zero errors (`.tsx` now included in jsconfig) |
+| Page smoke coverage | 14/14 pages have root `data-testid` and E2E smoke test |
+
+## Progress
+
+- [x] **Pre-work**: Training E2E test fix (static dates → relative dates)
+- [x] **Pre-work**: ScheduleBoard testid additions + 5 safety E2E tests
+- [x] **Phase 0 — Groundwork** (single PR)
+  - [x] Fix 5 pre-existing TS errors in `.ts` files (`api/client.ts`, `lib/qualificationEvidence.ts`, `utils/staffingUtils.ts`)
+  - [x] Fix 7 hidden TS errors in `.tsx` files uncovered by including `src/**/*.tsx` in typecheck (`App.tsx`, `AuthProvider.tsx`, `Layout.tsx`, `PlanUpdateListener.jsx`)
+  - [x] Add root `data-testid` to 6 pages (Home, Help, MyDashboard, DataImport, ServiceStaffing, CertificateUpload)
+  - [x] Add smoke E2E tests for 6 untested pages (`e2e/specs/smoke/page-smoke.spec.ts`)
+  - [x] Update `jsconfig.json` to include `src/**/*.tsx` in typecheck scope
+  - [x] Verify: `npm run typecheck` zero errors, `npm run build` passes, `npm run test:e2e` 46 passed
+- [ ] **PR 1** — Create `src/types/`
+- [ ] **PR 2** — Convert Schedule, Home, Admin, CertificateUpload
+- [ ] **PR 3** — Convert AuthLogin, DataImport, Statistics
+- [ ] **PR 4** — Convert Staff, Training, Help
+- [ ] **PR 5** — Convert MyDashboard, ServiceStaffing, Vacation, WishList
+- [ ] **PR 6** — Convert `pages.config.js` → `pages.config.ts`
+- [ ] **PR 7** — Enable `strict: true`
 
 ## Execution Plan
 
-### Phase 0: Groundwork — 3 PRs
+### ✅ Phase 0: Groundwork — Complete
 
-**PR 0a — Fix pre-existing TS errors**
+All groundwork done in a single PR:
 
-Fix the 4 type errors currently surfacing in `lib/qualificationEvidence.ts` and `utils/staffingUtils.ts`. These block clean `npm run typecheck` and would interfere with later strict-mode enforcement.
+1. Fix 12 pre-existing/hidden TS errors across 5 files (`.ts` and `.tsx`)
+2. Add `data-testid` to 6 untested pages + E2E smoke tests
+3. Add ScheduleBoard testids + 5 ScheduleBoard safety E2E tests
+4. Fix training rotation E2E test (static → relative dates)
+5. Add `src/**/*.tsx` to `jsconfig.json` typecheck scope
+6. Update AGENTS.md/copilot-instructions.md with E2E verification
 
-- Verify: `npm run typecheck` exits with zero errors
-
-**PR 0b — Add missing E2E safety tests**
-
-Add E2E tests for critical uncovered areas before conversion begins. The highest-priority target is ScheduleBoard (7k lines), the core of the app:
-
-- **ScheduleBoard safety** (`e2e/specs/schedule/schedule-mutations.spec.ts`) — 5 tests: auto-fill preview + discard, seeded shift rendering, clear-day button visibility, toolbar elements presence, no "Datenbankproblem" toast. Requires `data-testid` additions to ScheduleBoard.jsx (auto-fill trigger, preview bar, preview apply/discard, clear-week, export).
-- **Untested pages** (Home, Help, MyDashboard, DataImport, ServiceStaffing, CertificateUpload) — 6 smoke specs, one per page. Navigate and assert page rendered.
-
-**Note:** Drag-and-drop (the core ScheduleBoard interaction) cannot be tested at the E2E level — Playwright mouse events do not reliably trigger `@hello-pangea/dnd`. Drag-and-drop needs component-level tests with React Testing Library and `@testing-library/user-event`, to be added before converting ScheduleBoard.jsx.
-
-- Verify: `npm run test:e2e` passes
-
-**PR 0c — Update linting and type-checking config**
-
-- Add `.ts` and `.tsx` patterns to `eslint.config.js` so converted files are linted
-- Add `src/**/*.tsx` to the include array in `jsconfig.json` so converted pages get type-checked
-- No code changes
-
-- Verify: `npm run lint` runs against .tsx files; `npm run typecheck` surfaces type errors in converted files
+**Verification:** `npm run typecheck` zero errors, `npm run build` passes, 46 E2E tests pass.
 
 ### Phase 1: Type Foundation — 1 PR
 
@@ -131,9 +138,7 @@ Add full typing: `Record<string, ComponentType>`, `LayoutProps` interface, typed
 
 | Phase | PR | Description | Files Changed |
 |-------|----|-------------|---------------|
-| 0 | 0a | Fix pre-existing TS errors | 2-3 source files |
-| 0 | 0b | Add E2E safety tests (ScheduleBoard + untested pages) | ~7 new spec files + ScheduleBoard testid additions |
-| 0 | 0c | Update eslint + jsconfig for .tsx | 2 config files |
+| 0 | ✅ | Fix TS errors + E2E safety tests + jsconfig | ~15 files |
 | 1 | 1 | Create `src/types/` | 4 new files |
 | 2 | 2 | Convert Schedule, Home, Admin, CertificateUpload | 4 renames + type imports |
 | 2 | 3 | Convert AuthLogin, DataImport, Statistics | 3 renames + type imports |
@@ -142,9 +147,7 @@ Add full typing: `Record<string, ComponentType>`, `LayoutProps` interface, typed
 | 3 | 6 | Convert `pages.config.js` → `pages.config.ts` | 1 rename + import update |
 | 4 | 7 | Enable `strict: true` | 1 config change + fixes across pages |
 
-**Total: 9 PRs (pages only).** Each PR is independently verifiable via `npm run build && npm run typecheck && npm run test:e2e`.
-
-For **component conversion** (ScheduleBoard, admin, settings, ui primitives — ~150 files, ~50k lines), a separate follow-up plan is needed with its own E2E + component test safety net.
+**Total: 7 PRs remaining (Phase 0 complete).** Each PR is independently verifiable via `npm run build && npm run typecheck && npm run test:e2e`.
 
 ## Verification Script
 
@@ -155,11 +158,3 @@ npm run build && npm run typecheck && npm run lint && npm run test:all && npm ru
 ```
 
 A page conversion is only complete when all five steps pass with zero errors.
-
-## Changes Made (Pre-Conversion)
-
-- **ScheduleBoard testids added**: `schedule-auto-fill-trigger`, `schedule-auto-fill-all`, `schedule-preview-bar`, `schedule-preview-apply`, `schedule-preview-discard`, `schedule-clear-week`, `schedule-export`
-- **SchedulePage POM extended**: New locators for auto-fill, preview, clear-week; `dragShiftOffGrid` method; updated `dragToTarget` with `locator.hover` approach
-- **Schedule safety E2E tests**: 5 new tests in `e2e/specs/schedule/schedule-mutations.spec.ts`
-- **E2E test fix**: Training rotation test updated to use relative dates (`addMonths(new Date(), 1)`) instead of static `seededSchedule.targetMonth`
-- **AGENTS.md + copilot-instructions.md**: Updated CI Readiness section to include `npm run test:all` and `npm run test:e2e`

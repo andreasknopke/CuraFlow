@@ -25,13 +25,21 @@ const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstre
  * @returns {{ hasWarning: boolean, warnings: Array<{ qualName: string, present: number, min: number }> }}
  */
 export function getAvailabilityWarnings({
-    doctors,
-    shifts,
-    dateStr,
+    doctors = [],
+    shifts = [],
+    dateStr = '',
     newAbsentDoctorId = null,
     qualificationMap = {},
     doctorQualByDoctor = {},
-    availabilityThresholds = []
+    availabilityThresholds = [],
+}: {
+    doctors?: { id: string; role?: string | null; exclude_from_staffing_plan?: boolean }[];
+    shifts?: { date: string; doctor_id: string; position: string }[];
+    dateStr?: string;
+    newAbsentDoctorId?: string | null;
+    qualificationMap?: Record<string, { name: string; id: string | number }>;
+    doctorQualByDoctor?: Record<string, { qualification_id: string | number }[]>;
+    availabilityThresholds?: { qualificationId: string | number; qualificationName?: string; min: number }[];
 }) {
     if (!availabilityThresholds || availabilityThresholds.length === 0) {
         return { hasWarning: false, warnings: [] };
@@ -49,7 +57,7 @@ export function getAvailabilityWarnings({
     }
 
     // Hilfsfunktion: Qualifikations-IDs eines Arztes
-    const getDocQualIds = (doctorId) => {
+    const getDocQualIds = (doctorId: string): string[] => {
         const entries = doctorQualByDoctor[doctorId];
         if (entries && entries.length > 0) {
             return entries.map(e => String(e.qualification_id));
@@ -72,7 +80,7 @@ export function getAvailabilityWarnings({
 
         const docsWithQual = doctors.filter(d => {
             const qualIds = getDocQualIds(d.id);
-            return qualIds.includes(qId);
+            return qualIds.includes(String(qId));
         });
 
         const total = docsWithQual.length;

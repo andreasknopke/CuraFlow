@@ -281,7 +281,7 @@ export default function DataImportPage() {
     };
 
     return (
-        <div className="container mx-auto max-w-3xl py-8">
+        <div className="container mx-auto max-w-3xl py-8" data-testid="dataimport-page">
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">

@@ -28,7 +28,7 @@ import {
   ChevronLeft,
   Palette,
 } from 'lucide-react';
-import { db, base44 } from '@/api/client';
+import { api, db, base44 } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import AccountMenu from '@/components/auth/AccountMenu';
@@ -81,7 +81,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // ── Global ticket dialog opener (used by ErrorBoundary) ───────────────────
 
   useEffect(() => {
-    (window as Record<string, unknown>).__openTicketDialog = (
+    (window as any).__openTicketDialog = (
       type: string,
       error: Error | null,
     ) => {
@@ -90,7 +90,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setIsTicketDialogOpen(true);
     };
     return () => {
-      delete (window as Record<string, unknown>).__openTicketDialog;
+      delete (window as any).__openTicketDialog;
     };
   }, []);
 
@@ -116,7 +116,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     queryKey: ['dashboardAlert', isAuthenticated, isReadOnly],
     queryFn: async () => {
       if (!isAuthenticated) return false;
-      const currentUser = await base44.auth.me();
+      const currentUser = await api.me();
       if (!currentUser) return false;
 
       // Admin: check for pending wishes
@@ -184,7 +184,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   };
 
   const handleLogin = () => {
-    base44.auth.redirectToLogin();
+    navigate(authLoginPath);
   };
 
   // ── Embedded schedule (no sidebar) ───────────────────────────────────────

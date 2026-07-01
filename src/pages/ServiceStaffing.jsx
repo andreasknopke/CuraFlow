@@ -639,7 +639,7 @@ export default function ServiceStaffingPage() {
     };
 
     return (
-        <div className="flex min-h-0 w-full max-w-none flex-col p-2 sm:p-4 lg:px-2 print:p-0 print:max-w-none">
+        <div className="flex min-h-0 w-full max-w-none flex-col p-2 sm:p-4 lg:px-2 print:p-0 print:max-w-none" data-testid="servicestaffing-page">
             {/* Header - Hidden on Print */}
             <div className="flex flex-col gap-4 mb-4 sm:mb-6 print:hidden">
                 <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">{servicesPageTitle}</h1>
