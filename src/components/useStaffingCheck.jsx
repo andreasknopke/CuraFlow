@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from "@/api/client";
-import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
+import { base44, db } from "@/api/client";
 
 export function useStaffingCheck(doctors, shifts) {
     const { data: settings = [] } = useQuery({
@@ -9,61 +8,65 @@ export function useStaffingCheck(doctors, shifts) {
         staleTime: 1000 * 60 * 5 // 5 minutes
     });
 
-    // Dynamische Facharzt-Rollen aus DB laden
-    const { specialistRoles } = useTeamRoles();
+    // Alle Arzt-Qualifikationen laden
+    const { data: allDoctorQualifications = [] } = useQuery({
+        queryKey: ['allDoctorQualifications'],
+        queryFn: () => db.DoctorQualification.list(),
+        staleTime: 1000 * 60 * 5,
+    });
 
-    const minPresentSpecialists = parseInt(settings.find(s => s.key === 'min_present_specialists')?.value || '2');
-    const minPresentAssistants = parseInt(settings.find(s => s.key === 'min_present_assistants')?.value || '4');
+    // Parse thresholds
+    const rawThresholds = settings.find(s => s.key === 'availability_thresholds')?.value;
+    const availabilityThresholds = rawThresholds ? (() => { try { return JSON.parse(rawThresholds); } catch { return []; } })() : [];
+
+    // Hilfsfunktion: Qualifikations-IDs eines Arztes
+    const getDoctorQualIds = (doctorId) => {
+        return allDoctorQualifications
+            .filter(dq => String(dq.doctor_id) === doctorId)
+            .map(dq => String(dq.qualification_id));
+    };
 
     const checkStaffing = (dateStr, newAbsentDoctorId = null) => {
         if (!doctors || !shifts) return null;
-
-        // 1. Total Staff
-        let totalSpecialists = 0;
-        let totalAssistants = 0;
-        doctors.forEach(d => {
-             if (d.role === 'Assistenzarzt') totalAssistants++;
-             else if (specialistRoles.includes(d.role)) totalSpecialists++;
-        });
-
-        // 2. Current Absences
-        let absentSpecialists = 0;
-        let absentAssistants = 0;
-        const absentDocIds = new Set();
+        if (!availabilityThresholds || availabilityThresholds.length === 0) return null;
 
         const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
+        // Aktuelle Abwesenheiten
+        const absentDocIds = new Set();
         shifts.forEach(s => {
             if (s.date === dateStr && ABSENCE_POSITIONS.includes(s.position)) {
                 absentDocIds.add(s.doctor_id);
             }
         });
-
-        // Add the new absence if provided and not already counted
         if (newAbsentDoctorId && !absentDocIds.has(newAbsentDoctorId)) {
             absentDocIds.add(newAbsentDoctorId);
         }
 
-        // Count based on unique IDs
-        absentDocIds.forEach(id => {
-            const doc = doctors.find(d => d.id === id);
-            if (doc) {
-                if (doc.role === 'Assistenzarzt') absentAssistants++;
-                else if (specialistRoles.includes(doc.role)) absentSpecialists++;
+        const warnings = [];
+
+        availabilityThresholds.forEach(threshold => {
+            const qId = threshold.qualificationId;
+            const qualName = threshold.qualificationName || qId;
+            const minCount = threshold.min;
+
+            // Ärzte mit dieser Qualifikation
+            const docsWithQual = doctors.filter(d => {
+                const qualIds = getDoctorQualIds(d.id);
+                return qualIds.includes(qId);
+            });
+
+            const total = docsWithQual.length;
+            const absent = docsWithQual.filter(d => absentDocIds.has(d.id)).length;
+            const present = total - absent;
+
+            if (present < minCount) {
+                warnings.push(`${qualName}: ${present} (Min: ${minCount})`);
             }
         });
 
-        const presentSpecialists = totalSpecialists - absentSpecialists;
-        const presentAssistants = totalAssistants - absentAssistants;
-
-        const specsLow = presentSpecialists < minPresentSpecialists;
-        const asstsLow = presentAssistants < minPresentAssistants;
-
-        if (specsLow || asstsLow) {
-            let msg = "Achtung: Mindestbesetzung unterschritten!";
-            if (specsLow) msg += `\nFachärzte: ${presentSpecialists} (Min: ${minPresentSpecialists})`;
-            if (asstsLow) msg += `\nAssistenzärzte: ${presentAssistants} (Min: ${minPresentAssistants})`;
-            return msg;
+        if (warnings.length > 0) {
+            return `Achtung: Mindestbesetzung unterschritten!\n${warnings.join('\n')}`;
         }
 
         return null;

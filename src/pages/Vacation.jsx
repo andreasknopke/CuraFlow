@@ -24,6 +24,7 @@ import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import { clampRangeToContract, getTrainingContractInfo, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { useQualifications, useAllDoctorQualifications } from '@/hooks/useQualifications';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
@@ -349,9 +350,31 @@ export default function VacationPage() {
   const rawVisibleTypes = systemSettings.find(s => s.key === 'overview_visible_types')?.value;
   const visibleTypes = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
 
-  const minPresentSpecialists = parseInt(systemSettings.find(s => s.key === 'min_present_specialists')?.value || '2');
-  const minPresentAssistants = parseInt(systemSettings.find(s => s.key === 'min_present_assistants')?.value || '4');
   const monthsPerRow = parseInt(systemSettings.find(s => s.key === 'vacation_months_per_row')?.value || '3');
+
+  // ─── Qualifikationsbasierte Verfügbarkeits-Grenzwerte ───
+  const { qualificationMap } = useQualifications();
+  const { byDoctor: doctorQualByDoctor } = useAllDoctorQualifications();
+
+  const rawThresholds = systemSettings.find(s => s.key === 'availability_thresholds')?.value;
+  const availabilityThresholds = useMemo(() => {
+    if (rawThresholds) {
+      try { return JSON.parse(rawThresholds); } catch { return []; }
+    }
+    // Migration: alte Schlüssel in neues Format konvertieren
+    const oldSpec = systemSettings.find(s => s.key === 'min_present_specialists')?.value;
+    const oldAsst = systemSettings.find(s => s.key === 'min_present_assistants')?.value;
+    const migrated = [];
+    if (oldSpec) {
+      const faId = Object.values(qualificationMap).find(q => q.name === 'Facharzt')?.id;
+      if (faId) migrated.push({ qualificationId: String(faId), qualificationName: 'Facharzt', min: parseInt(oldSpec) });
+    }
+    if (oldAsst) {
+      const aaId = Object.values(qualificationMap).find(q => q.name === 'Assistenzarzt')?.id;
+      if (aaId) migrated.push({ qualificationId: String(aaId), qualificationName: 'Assistenzarzt', min: parseInt(oldAsst) });
+    }
+    return migrated;
+  }, [rawThresholds, systemSettings, qualificationMap]);
 
   const customColors = React.useMemo(() => {
       const colors = {};
@@ -1044,8 +1067,9 @@ export default function VacationPage() {
             activeType={activeType}
             isReadOnly={isReadOnly}
             monthsPerRow={monthsPerRow}
-            minPresentSpecialists={minPresentSpecialists}
-            minPresentAssistants={minPresentAssistants}
+            availabilityThresholds={availabilityThresholds}
+            qualificationMap={qualificationMap}
+            doctorQualByDoctor={doctorQualByDoctor}
             />
       )}
       

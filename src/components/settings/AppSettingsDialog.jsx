@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from "@/api/client";
 import { 
@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Settings, AlertTriangle, Ban, Info } from 'lucide-react';
+import { Settings, AlertTriangle, Ban, Info, Plus, Trash2 } from 'lucide-react';
+import { useQualifications } from '@/hooks/useQualifications';
 
 export default function AppSettingsDialog() {
     const [isOpen, setIsOpen] = useState(false);
@@ -52,9 +53,70 @@ export default function AppSettingsDialog() {
     const rawVisibleTypes = settings.find(s => s.key === 'overview_visible_types')?.value;
     const visibleTypes = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : defaultVisibleTypes;
 
-    const minPresentSpecialists = parseInt(settings.find(s => s.key === 'min_present_specialists')?.value || '2');
-    const minPresentAssistants = parseInt(settings.find(s => s.key === 'min_present_assistants')?.value || '4');
     const monthsPerRow = settings.find(s => s.key === 'vacation_months_per_row')?.value || '3';
+
+    // ─── Verfügbarkeits-Grenzwerte (qualifikationsbasiert) ───
+    const { qualifications } = useQualifications();
+    const rawThresholds = settings.find(s => s.key === 'availability_thresholds')?.value;
+    const [thresholds, setThresholds] = useState([]);
+
+    useEffect(() => {
+        if (rawThresholds) {
+            try { setThresholds(JSON.parse(rawThresholds)); } catch { setThresholds([]); }
+        } else {
+            // Migration: alte Schlüssel in neues Format überführen
+            const oldSpec = parseInt(settings.find(s => s.key === 'min_present_specialists')?.value || '');
+            const oldAsst = parseInt(settings.find(s => s.key === 'min_present_assistants')?.value || '');
+            if (!isNaN(oldSpec) || !isNaN(oldAsst)) {
+                const migrated = [];
+                if (!isNaN(oldSpec)) {
+                    // Versuche "Facharzt"-Qualifikation zu finden
+                    const faQual = qualifications.find(q => q.name === 'Facharzt');
+                    if (faQual) migrated.push({ qualificationId: String(faQual.id), qualificationName: faQual.name, min: oldSpec });
+                }
+                if (!isNaN(oldAsst)) {
+                    const aaQual = qualifications.find(q => q.name === 'Assistenzarzt');
+                    if (aaQual) migrated.push({ qualificationId: String(aaQual.id), qualificationName: aaQual.name, min: oldAsst });
+                }
+                if (migrated.length > 0) {
+                    setThresholds(migrated);
+                    updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(migrated) });
+                }
+            }
+        }
+    }, [rawThresholds, settings, qualifications]);
+
+    // Verfügbare Qualifikationen (noch nicht in thresholds)
+    const usedQualIds = new Set(thresholds.map(t => t.qualificationId));
+    const availableQualifications = qualifications.filter(q => !usedQualIds.has(String(q.id)));
+
+    const addThreshold = () => {
+        if (availableQualifications.length === 0) return;
+        const q = availableQualifications[0];
+        const newEntry = { qualificationId: String(q.id), qualificationName: q.name, min: 1 };
+        const updated = [...thresholds, newEntry];
+        setThresholds(updated);
+        updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
+    };
+
+    const updateThreshold = (index, field, value) => {
+        const updated = thresholds.map((t, i) => {
+            if (i !== index) return t;
+            if (field === 'qualificationId') {
+                const q = qualifications.find(q => String(q.id) === value);
+                return { ...t, qualificationId: value, qualificationName: q ? q.name : t.qualificationName };
+            }
+            return { ...t, [field]: value };
+        });
+        setThresholds(updated);
+        updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
+    };
+
+    const removeThreshold = (index) => {
+        const updated = thresholds.filter((_, i) => i !== index);
+        setThresholds(updated);
+        updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
+    };
 
     const toggleVisibleType = (type) => {
         const newTypes = visibleTypes.includes(type) 
@@ -145,30 +207,60 @@ export default function AppSettingsDialog() {
                         <div className="border p-3 rounded-lg bg-slate-50 space-y-3">
                             <div className="space-y-0.5">
                                 <Label>Grenzwerte für Verfügbarkeit</Label>
-                                <p className="text-xs text-slate-500">Minimale Anzahl anwesenden Personals (Warnung bei Unterschreitung).</p>
+                                <p className="text-xs text-slate-500">Minimale Anzahl anwesenden Personals pro Qualifikation (Warnung bei Unterschreitung).</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label className="text-xs">Min. Fachpersonal (inkl. OA/CA)</Label>
+                            {thresholds.length === 0 && (
+                                <p className="text-xs text-slate-400 italic">Keine Grenzwerte definiert. Klicken Sie auf "Grenzwert hinzufügen", um einen anzulegen.</p>
+                            )}
+                            {thresholds.map((t, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                    <Select
+                                        value={t.qualificationId}
+                                        onValueChange={(val) => updateThreshold(idx, 'qualificationId', val)}
+                                    >
+                                        <SelectTrigger className="h-8 flex-1">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {qualifications
+                                                .filter(q => String(q.id) === t.qualificationId || !usedQualIds.has(String(q.id)) || usedQualIds.has(String(q.id)) && thresholds.findIndex(th => th.qualificationId === String(q.id)) === idx)
+                                                .map(q => (
+                                                <SelectItem key={q.id} value={String(q.id)}>
+                                                    {q.name}{q.short_label ? ` (${q.short_label})` : ''}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                     <Input 
                                         type="number" 
                                         min="0"
-                                        value={minPresentSpecialists}
-                                        onChange={(e) => updateSettingMutation.mutate({ key: 'min_present_specialists', value: e.target.value })}
-                                        className="h-8"
+                                        value={t.min}
+                                        onChange={(e) => updateThreshold(idx, 'min', parseInt(e.target.value) || 0)}
+                                        className="h-8 w-20 text-center"
                                     />
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-8 w-8 shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                        onClick={() => removeThreshold(idx)}
+                                        title="Entfernen"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
                                 </div>
-                                <div className="space-y-2">
-                                    <Label className="text-xs">Min. Assistenzpersonal</Label>
-                                    <Input 
-                                        type="number" 
-                                        min="0"
-                                        value={minPresentAssistants}
-                                        onChange={(e) => updateSettingMutation.mutate({ key: 'min_present_assistants', value: e.target.value })}
-                                        className="h-8"
-                                    />
-                                </div>
-                            </div>
+                            ))}
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="w-full h-8 text-xs"
+                                onClick={addThreshold}
+                                disabled={availableQualifications.length === 0}
+                            >
+                                <Plus className="h-3 w-3 mr-1" /> Grenzwert hinzufügen
+                            </Button>
+                            {qualifications.length === 0 && (
+                                <p className="text-xs text-amber-600">Bitte legen Sie zuerst Qualifikationen im Bereich "Qualifikationen" an.</p>
+                            )}
                         </div>
 
 

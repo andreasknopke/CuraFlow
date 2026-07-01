@@ -85,11 +85,25 @@ export class ShiftValidator {
     }
 
     _parseStaffingMinimums() {
+        // Neues qualifikationsbasiertes Format
+        const raw = this.systemSettings.find(s => s.key === 'availability_thresholds')?.value;
+        if (raw) {
+            try { return JSON.parse(raw); } catch { /* fall through */ }
+        }
+        // Migration: alte Schlüssel
         const get = (key, def) => parseInt(this.systemSettings.find(s => s.key === key)?.value || def);
-        return {
-            specialists: get('min_present_specialists', '2'),
-            assistants: get('min_present_assistants', '3')
-        };
+        const oldSpec = get('min_present_specialists', null);
+        const oldAsst = get('min_present_assistants', null);
+        const migrated = [];
+        if (oldSpec !== null) {
+            const faId = Object.values(this.qualificationMap).find(q => q.name === 'Facharzt')?.id;
+            if (faId) migrated.push({ qualificationId: String(faId), qualificationName: 'Facharzt', min: oldSpec });
+        }
+        if (oldAsst !== null) {
+            const aaId = Object.values(this.qualificationMap).find(q => q.name === 'Assistenzarzt')?.id;
+            if (aaId) migrated.push({ qualificationId: String(aaId), qualificationName: 'Assistenzarzt', min: oldAsst });
+        }
+        return migrated;
     }
 
     _getDoctorFte(doctorId, date) {
@@ -652,6 +666,7 @@ export class ShiftValidator {
     _checkStaffingMinimums(doctorId, dateStr, excludeShiftId) {
         const doctor = this.doctors.find(d => d.id === doctorId);
         if (!doctor) return {};
+        if (!this.staffingMinimums || this.staffingMinimums.length === 0) return {};
 
         const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
 
@@ -665,27 +680,27 @@ export class ShiftValidator {
         // Füge den neuen Abwesenden hinzu
         const allAbsent = new Set([...absentOnDate, doctorId]);
 
-        // Zähle verfügbare Ärzte (mit dynamischen Rollen)
-        const totalSpecialists = this.doctors.filter(d => this.specialistRoles.includes(d.role)).length;
-        const totalAssistants = this.doctors.filter(d => this.assistantRoles.includes(d.role)).length;
-
-        const absentSpecialists = this.doctors.filter(d => 
-            this.specialistRoles.includes(d.role) && allAbsent.has(d.id)
-        ).length;
-        const absentAssistants = this.doctors.filter(d => 
-            this.assistantRoles.includes(d.role) && allAbsent.has(d.id)
-        ).length;
-
-        const presentSpecialists = totalSpecialists - absentSpecialists;
-        const presentAssistants = totalAssistants - absentAssistants;
-
         const warnings = [];
-        if (presentSpecialists < this.staffingMinimums.specialists) {
-            warnings.push(`Nur ${presentSpecialists} Fachärzte anwesend (Min: ${this.staffingMinimums.specialists})`);
-        }
-        if (presentAssistants < this.staffingMinimums.assistants) {
-            warnings.push(`Nur ${presentAssistants} Assistenzärzte anwesend (Min: ${this.staffingMinimums.assistants})`);
-        }
+
+        this.staffingMinimums.forEach(threshold => {
+            const qId = threshold.qualificationId;
+            const qualName = threshold.qualificationName || this.qualificationMap[qId]?.name || qId;
+            const minCount = threshold.min;
+
+            // Ärzte mit dieser Qualifikation
+            const docsWithQual = this.doctors.filter(d => {
+                const qualIds = this.getDoctorQualIds(d.id);
+                return qualIds.includes(qId);
+            });
+
+            const total = docsWithQual.length;
+            const absent = docsWithQual.filter(d => allAbsent.has(d.id)).length;
+            const present = total - absent;
+
+            if (present < minCount) {
+                warnings.push(`Nur ${present} ${qualName} anwesend (Min: ${minCount})`);
+            }
+        });
 
         if (warnings.length > 0) {
             return { warning: `Mindestbesetzung unterschritten: ${warnings.join(', ')}` };

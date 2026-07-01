@@ -4,7 +4,6 @@ import { de } from 'date-fns/locale';
 import { AlertTriangle } from 'lucide-react';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { parseAnnualVacationDays } from './vacationBalance';
 
@@ -136,9 +135,7 @@ const VacationOverviewCell = memo(({
     return false;
 });
 
-export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, minPresentSpecialists = 2, minPresentAssistants = 4 }) {
-    // Dynamische Facharzt-Rollen aus DB laden
-    const { specialistRoles } = useTeamRoles();
+export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {} }) {
     
     const [dragStart, setDragStart] = useState(null);
     const [dragCurrent, setDragCurrent] = useState(null);
@@ -202,46 +199,56 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         return shiftLookup.get(`${dateStr}_${doctorId}`) || null;
     }, [shiftLookup]);
 
-    // Calculate absence counts per day
-    const dailyAbsences = React.useMemo(() => {
-        const counts = new Map(); // key: dateStr, val: { specialists: number, assistants: number, details: [] }
+    // Hilfsfunktion: gibt die Qualifikations-IDs eines Arztes zurück
+    const getDoctorQualificationIds = React.useCallback((doctorId) => {
+        const entries = doctorQualByDoctor[doctorId];
+        return entries ? entries.map(e => String(e.qualification_id)) : [];
+    }, [doctorQualByDoctor]);
+
+    // Berechne pro Qualifikation: Gesamtpersonal und abwesendes Personal pro Tag
+    const dailyAbsencesByQual = React.useMemo(() => {
+        // Map: dateStr → Map<qualificationId, { absent: number, absentNames: string[] }>
+        const byDate = new Map();
 
         shifts.forEach(s => {
-            // Count all absence types for the limit warning
             if (!["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"].includes(s.position)) return;
             
             const dStr = s.date;
             const doc = doctors.find(d => d.id === s.doctor_id);
             if (!doc) return;
 
-            if (!counts.has(dStr)) {
-                counts.set(dStr, { specialists: 0, assistants: 0, specialistDetails: [], assistantDetails: [] });
+            if (!byDate.has(dStr)) {
+                byDate.set(dStr, new Map());
             }
-            
-            const entry = counts.get(dStr);
-            
-            // Determine category (mit dynamischen Rollen)
-            if (doc.role === 'Assistenzarzt') {
-                entry.assistants++;
-                entry.assistantDetails.push(doc.name);
-            } else if (specialistRoles.includes(doc.role)) {
-                entry.specialists++;
-                entry.specialistDetails.push(doc.name);
-            }
-        });
-        return counts;
-    }, [shifts, doctors, specialistRoles]);
+            const qualMap = byDate.get(dStr);
+            const docQualIds = getDoctorQualificationIds(doc.id);
 
-    // Calculate total staff count
-    const totalStaff = React.useMemo(() => {
-        let specialists = 0;
-        let assistants = 0;
-        doctors.forEach(d => {
-             if (d.role === 'Assistenzarzt') assistants++;
-             else if (specialistRoles.includes(d.role)) specialists++;
+            docQualIds.forEach(qId => {
+                if (!qualMap.has(qId)) {
+                    qualMap.set(qId, { absent: 0, absentNames: [] });
+                }
+                const entry = qualMap.get(qId);
+                entry.absent++;
+                if (!entry.absentNames.includes(doc.name)) {
+                    entry.absentNames.push(doc.name);
+                }
+            });
         });
-        return { specialists, assistants };
-    }, [doctors, specialistRoles]);
+        return byDate;
+    }, [shifts, doctors, getDoctorQualificationIds]);
+
+    // Gesamtpersonal pro Qualifikation
+    const totalStaffByQual = React.useMemo(() => {
+        const totals = {};
+        doctors.forEach(d => {
+            const qIds = getDoctorQualificationIds(d.id);
+            qIds.forEach(qId => {
+                if (!totals[qId]) totals[qId] = 0;
+                totals[qId]++;
+            });
+        });
+        return totals;
+    }, [doctors, getDoctorQualificationIds]);
 
     const vacationCounts = React.useMemo(() => {
         const counts = {};
@@ -321,19 +328,32 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                 let headerClass = isHol ? 'bg-blue-100 text-blue-700' : isWknd ? 'bg-slate-100 text-slate-500' : 'bg-white';
                                                 if (isSchool && !isHol && !isWknd) headerClass = 'bg-green-50 text-green-700';
 
-                                                // Check Limits
+                                                // Check Limits (qualifikationsbasiert)
                                                 const dStr = format(d, 'yyyy-MM-dd');
-                                                const absences = dailyAbsences.get(dStr);
+                                                const absencesByQual = dailyAbsencesByQual.get(dStr);
                                                 let warning = null;
 
-                                                if (absences && !isWknd && !isHol) {
-                                                    const presentSpecialists = totalStaff.specialists - absences.specialists;
-                                                    const presentAssistants = totalStaff.assistants - absences.assistants;
-                                                    
-                                                    const specsLow = presentSpecialists < minPresentSpecialists;
-                                                    const asstsLow = presentAssistants < minPresentAssistants;
-                                                    
-                                                    if (specsLow || asstsLow) {
+                                                const lowThresholds = [];
+
+                                                if (absencesByQual && !isWknd && !isHol) {
+                                                    availabilityThresholds.forEach(t => {
+                                                        const qId = t.qualificationId;
+                                                        const total = totalStaffByQual[qId] || 0;
+                                                        const absent = absencesByQual.get(qId);
+                                                        const absentCount = absent ? absent.absent : 0;
+                                                        const present = total - absentCount;
+
+                                                        if (present < t.min) {
+                                                            lowThresholds.push({
+                                                                qualName: t.qualificationName || qualificationMap[qId]?.name || qId,
+                                                                present,
+                                                                min: t.min,
+                                                                absentNames: absent ? absent.absentNames : []
+                                                            });
+                                                        }
+                                                    });
+
+                                                    if (lowThresholds.length > 0) {
                                                         warning = (
                                                             <Popover>
                                                                 <PopoverTrigger asChild>
@@ -341,35 +361,28 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                                          <AlertTriangle className="w-3 h-3 text-red-600 bg-white rounded-full shadow-sm border border-red-200" fill="currentColor" fillOpacity={0.2} />
                                                                     </div>
                                                                 </PopoverTrigger>
-                                                                <PopoverContent className="w-64 p-3 z-50">
+                                                                <PopoverContent className="w-72 p-3 z-50">
                                                                     <div className="space-y-2">
                                                                         <h4 className="font-medium text-sm text-red-800 flex items-center gap-2 border-b pb-1">
                                                                             <AlertTriangle className="w-4 h-4" />
                                                                             Personalunterdeckung
                                                                         </h4>
-                                                                        <div className="text-xs space-y-2">
-                                                                            {specsLow && (
-                                                                                <div>
+                                                                        <div className="text-xs space-y-3">
+                                                                            {lowThresholds.map((lt, idx) => (
+                                                                                <div key={idx}>
                                                                                     <div className="font-semibold text-slate-700">
-                                                                                        Verfügbare Fachärzte: {presentSpecialists} (Min: {minPresentSpecialists})
+                                                                                        Verfügbare {lt.qualName}: {lt.present} (Min: {lt.min})
                                                                                     </div>
-                                                                                    <div className="text-slate-500 mb-1">Abwesend:</div>
-                                                                                    <ul className="list-disc list-inside text-slate-500 ml-1">
-                                                                                        {absences.specialistDetails.map(n => <li key={n}>{n}</li>)}
-                                                                                    </ul>
+                                                                                    {lt.absentNames.length > 0 && (
+                                                                                        <>
+                                                                                            <div className="text-slate-500 mb-1 mt-1">Abwesend:</div>
+                                                                                            <ul className="list-disc list-inside text-slate-500 ml-1">
+                                                                                                {lt.absentNames.map(n => <li key={n}>{n}</li>)}
+                                                                                            </ul>
+                                                                                        </>
+                                                                                    )}
                                                                                 </div>
-                                                                            )}
-                                                                            {asstsLow && (
-                                                                                <div>
-                                                                                     <div className="font-semibold text-slate-700">
-                                                                                        Verfügbare Ass.-Ärzte: {presentAssistants} (Min: {minPresentAssistants})
-                                                                                    </div>
-                                                                                    <div className="text-slate-500 mb-1">Abwesend:</div>
-                                                                                    <ul className="list-disc list-inside text-slate-500 ml-1">
-                                                                                        {absences.assistantDetails.map(n => <li key={n}>{n}</li>)}
-                                                                                    </ul>
-                                                                                </div>
-                                                                            )}
+                                                                            ))}
                                                                         </div>
                                                                     </div>
                                                                 </PopoverContent>
