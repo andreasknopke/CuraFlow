@@ -3065,6 +3065,14 @@ export default function ScheduleBoard() {
         const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every(wp => wp.canWrite === false);
         if (!isWardTenant || rotationAssignments.length === 0) return map;
 
+        // Assignments that already have an OPEN return-request must not be
+        // draggable again (dragging would produce a 409 "already requested").
+        const openReturnRequestAssignmentIds = new Set(
+            rotationDemands
+                .filter((d) => d.status === 'open' && d.return_requested_assignment_id)
+                .map((d) => String(d.return_requested_assignment_id))
+        );
+
         // Group rotation assignments by date
         const assignmentsByDate = new Map();
         for (const assignment of rotationAssignments) {
@@ -3076,7 +3084,7 @@ export default function ScheduleBoard() {
 
         // Create doctor-like synthetic entries. The `id` field is the central
         // employee_id so that parseAvailableDoctorId etc. resolve correctly.
-        // The draggableId in the Verf�gbar row will be available-doc-{id}-{dateStr},
+        // The draggableId in the Verfügbar row will be available-doc-{id}-{dateStr},
         // which flows through the EXACT SAME drag-drop handler as regular doctors.
         for (const day of weekDays) {
             if (!isValid(day)) continue;
@@ -3084,23 +3092,25 @@ export default function ScheduleBoard() {
             const assignments = assignmentsByDate.get(dateStr) || [];
             if (assignments.length === 0) continue;
 
-            const chips = assignments.map((assignment, idx) => ({
-                id: assignment.employee_id,
-                name: assignment.employee_name || `#${assignment.employee_id}`,
-                role: 'Arzt',
-                initials: `SP${idx + 1}`,
-                _isSpringer: true,
-                _assignmentId: assignment.id,
-                _employeeId: assignment.employee_id,
-                _employeeName: assignment.employee_name || `#${assignment.employee_id}`,
-                _groupId: assignment.group_id,
-                _springerLabel: `SP${idx + 1}`,
-            }));
+            const chips = assignments
+                .filter((assignment) => !openReturnRequestAssignmentIds.has(String(assignment.id)))
+                .map((assignment, idx) => ({
+                    id: assignment.employee_id,
+                    name: assignment.employee_name || `#${assignment.employee_id}`,
+                    role: 'Arzt',
+                    initials: `SP${idx + 1}`,
+                    _isSpringer: true,
+                    _assignmentId: assignment.id,
+                    _employeeId: assignment.employee_id,
+                    _employeeName: assignment.employee_name || `#${assignment.employee_id}`,
+                    _groupId: assignment.group_id,
+                    _springerLabel: `SP${idx + 1}`,
+                }));
             map.set(dateStr, chips);
         }
 
         return map;
-    }, [rotationAssignments, rotationWorkplaces, weekDays]);
+    }, [rotationAssignments, rotationDemands, rotationWorkplaces, weekDays]);
 
     // Combined: real available doctors + Springer placeholder chips (filtered by hidden set).
     // Used by the Verfügbar row rendering and drag clone — both flow through
@@ -3459,20 +3469,34 @@ export default function ScheduleBoard() {
             const springerDoc = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
                 .find((d) => d._isSpringer && d.id === doctorId);
             if (springerDoc?._assignmentId) {
+                const assignmentId = springerDoc._assignmentId;
                 const confirmed = window.confirm('Wollen Sie den Springer an den Pool zurückgeben?');
                 if (!confirmed) return;
+                // Optimistically hide the chip so the user can't re-trigger
+                // the request while the network round-trip is in flight (which
+                // would otherwise produce a 409 "already requested").
+                setHiddenSpringerChipIds((prev) => new Set([...prev, assignmentId]));
                 api.createRotationDemand({
                     rotation_workplace_id: wp.id,
                     date: destDate,
                     timeslot_id: tsId || null,
-                    return_requested_assignment_id: springerDoc._assignmentId,
+                    return_requested_assignment_id: assignmentId,
                     note: 'Rückgabe an den Pool angefordert',
                 }).then(() => {
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                     toast.success('Rückgabe angefordert — Pool wurde benachrichtigt.');
                 }).catch((err) => {
-                    toast.error('Fehler beim Anfordern der Rückgabe: ' + (err?.message || ''));
+                    // On error: re-show the chip so the user can retry.
+                    setHiddenSpringerChipIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(assignmentId);
+                        return next;
+                    });
+                    const msg = err?.status === 409
+                        ? 'Für diesen Springer wurde bereits eine Rückgabe angefordert.'
+                        : 'Fehler beim Anfordern der Rückgabe: ' + (err?.message || '');
+                    toast.error(msg);
                 });
                 return;
             }
