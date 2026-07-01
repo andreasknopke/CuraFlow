@@ -1094,6 +1094,7 @@ export default function ScheduleBoard() {
     });
 
     const linkedWorkplacesByName = visibleWorkplaceLinksData?.linkedWorkplaces || {};
+    const activeLinkTenantId = visibleWorkplaceLinksData?.tenantId || null;
 
     // ===== Springerpool-Rotationen (separates System) =====
     const { data: visibleRotationData } = useQuery({
@@ -4790,8 +4791,14 @@ export default function ScheduleBoard() {
     // showing the partner workplace staffing for the selected day (read-only).
     // Only shown in day view when workplace links exist.
     const renderLinkedWorkplaceButton = (rowName, dateStr) => {
-        const partners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
-        if (!partners || partners.length === 0) return null;
+        const rawPartners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
+        if (!rawPartners || rawPartners.length === 0) return null;
+        // Show only partners from OTHER tenants — own tenant's workplaces are
+        // already visible as separate rows in the schedule.
+        const partners = activeLinkTenantId
+            ? rawPartners.filter((p) => String(p.tenant_id) !== String(activeLinkTenantId))
+            : rawPartners;
+        if (partners.length === 0) return null;
         return (
             <Popover>
                 <PopoverTrigger asChild>
