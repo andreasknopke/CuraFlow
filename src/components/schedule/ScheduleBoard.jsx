@@ -1158,6 +1158,11 @@ export default function ScheduleBoard() {
     // These are hidden until the page is refreshed (they remain in rotation_assignments).
     const [hiddenSpringerChipIds, setHiddenSpringerChipIds] = useState(new Set());
 
+    // Set of `${doctorId}|${dateStr}` for ward employees that have been
+    // offered as Joker to the pool. Hides the doctor chip from the
+    // Verfügbar row until the page is refreshed.
+    const [hiddenJokerDoctorIds, setHiddenJokerDoctorIds] = useState(new Set());
+
     // Map shifts by `${shared_workplace_id}|${date}` for fast cell lookup.
     const crossTenantShiftsByCell = useMemo(() => {
         const map = new Map();
@@ -3060,13 +3065,14 @@ export default function ScheduleBoard() {
                 doctors.filter((doctor) =>
                     !assignedDocIds.has(doctor.id) &&
                     doctor.role !== 'Nicht-Radiologe' &&
-                    matchesAllQualificationFilters(doctor)
+                    matchesAllQualificationFilters(doctor) &&
+                    !hiddenJokerDoctorIds.has(`${doctor.id}|${dateStr}`)
                 )
             ));
         });
 
         return map;
-    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays]);
+    }, [availabilityBlockingDoctorIdsByDate, doctors, matchesAllQualificationFilters, sortDoctorsAlphabetically, weekDays, hiddenJokerDoctorIds]);
 
     // Springer placeholder chips for ward tenants in rotation networks.
     // Produces doctor-like objects that flow through the SAME rendering
@@ -3537,6 +3543,11 @@ export default function ScheduleBoard() {
                     `Wollen Sie ${doctorName} an den Springerpool übergeben?`
                 );
                 if (!confirmed) return;
+                // Hide the doctor chip from Verfügbar for this date so the
+                // ward can't accidentally re-offer the same person.
+                const sourceDateKey = sourceDroppableId.replace('available__', '');
+                const hideKey = `${doctorId}|${sourceDateKey}`;
+                setHiddenJokerDoctorIds((prev) => new Set([...prev, hideKey]));
                 api.createRotationDemand({
                     rotation_workplace_id: wp.id,
                     date: destDate,
@@ -3548,6 +3559,12 @@ export default function ScheduleBoard() {
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                     toast.success(`${doctorName} wurde dem Pool angeboten.`);
                 }).catch((err) => {
+                    // Re-show the chip so the user can retry
+                    setHiddenJokerDoctorIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(hideKey);
+                        return next;
+                    });
                     const msg = err?.status === 409
                         ? 'Für diesen Mitarbeiter existiert bereits ein Angebot in dieser Zelle.'
                         : 'Fehler bei der Joker-Übergabe: ' + (err?.message || '');
@@ -5297,12 +5314,33 @@ export default function ScheduleBoard() {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
                                 ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
+                            const jokerName = (demand.note || '').replace(/^Übergabe von /, '').replace(/ an den Pool gewünscht$/, '') || 'Mitarbeiter';
+                            const jokerLabel = tsLabel ? `Übergabe ${tsLabel}` : `Übergabe ${jokerName}`;
+                            const handleAcceptJoker = () => {
+                                const confirmed = window.confirm(
+                                    `Möchten Sie ${jokerName} an diesem Tag in den Springerpool übernehmen?`
+                                );
+                                if (!confirmed) return;
+                                api.createRotationAssignment(String(workplace.group_id), {
+                                    rotation_workplace_id: workplace.id,
+                                    date: dateStr,
+                                    employee_id: demand.offered_employee_id,
+                                    timeslot_id: demand.timeslot_id || undefined,
+                                }).then(() => {
+                                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                                    toast.success(`${jokerName} wurde in den Pool übernommen.`);
+                                }).catch((err) => {
+                                    toast.error('Fehler beim Übernehmen: ' + (err?.message || ''));
+                                });
+                            };
                             return (
                                 <div key={`joker-${demand.id}`}
-                                     className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 font-medium"
-                                     title={`Übergabe gewünscht: ${demand.note || ''}`.trim()}>
+                                     onClick={handleAcceptJoker}
+                                     className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-300 font-medium cursor-pointer hover:bg-blue-200"
+                                     title={`Klicken um ${jokerName} zu übernehmen — ${demand.note || ''}`.trim()}>
                                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                                    {tsLabel ? `Übergabe ${tsLabel}` : 'Übergabe gewünscht'}
+                                    {jokerLabel}
                                 </div>
                             );
                         })).concat(openDemands.filter((d) => d.return_requested_assignment_id).map((demand) => {
