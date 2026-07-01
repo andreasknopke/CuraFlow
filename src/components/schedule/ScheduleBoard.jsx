@@ -4828,20 +4828,17 @@ export default function ScheduleBoard() {
                                         <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
                                     </div>
                                     {shiftsForDay.length > 0 ? (
-                                        <div className="flex flex-wrap gap-1.5 ml-1">
+                                        <div className="space-y-1.5 ml-0.5">
                                             {shiftsForDay.map((s, idx) => (
-                                                <Badge
-                                                    key={idx}
-                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
-                                                    variant="outline"
-                                                >
-                                                    {s.doctor_name}
-                                                    {s.start_time && s.end_time
-                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
-                                                        : s.start_time
-                                                            ? ` (${s.start_time.slice(0, 5)})`
-                                                            : ''}
-                                                </Badge>
+                                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                                    <span className="flex-1 min-w-0 text-slate-700 font-medium truncate">{s.doctor_name}</span>
+                                                    {(s.start_time || s.end_time) && (
+                                                        <span className="flex-shrink-0 text-[11px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                                            {s.start_time ? s.start_time.slice(0, 5) : '??'}
+                                                            {s.end_time ? `–${s.end_time.slice(0, 5)}` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             ))}
                                         </div>
                                     ) : (
@@ -4894,20 +4891,17 @@ export default function ScheduleBoard() {
                                         <span className="text-sm font-medium text-slate-700">{partner.workplace_name}</span>
                                     </div>
                                     {shiftsForDay.length > 0 ? (
-                                        <div className="flex flex-wrap gap-1.5 ml-1">
+                                        <div className="space-y-1.5 ml-0.5">
                                             {shiftsForDay.map((s, idx) => (
-                                                <Badge
-                                                    key={idx}
-                                                    className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
-                                                    variant="outline"
-                                                >
-                                                    {s.doctor_name}
-                                                    {s.start_time && s.end_time
-                                                        ? ` (${s.start_time.slice(0, 5)}–${s.end_time.slice(0, 5)})`
-                                                        : s.start_time
-                                                            ? ` (${s.start_time.slice(0, 5)})`
-                                                            : ''}
-                                                </Badge>
+                                                <div key={`cell-shift-${idx}`} className="flex items-center gap-2 text-sm">
+                                                    <span className="flex-1 min-w-0 text-slate-700 font-medium truncate">{s.doctor_name}</span>
+                                                    {(s.start_time || s.end_time) && (
+                                                        <span className="flex-shrink-0 text-[11px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">
+                                                            {s.start_time ? s.start_time.slice(0, 5) : '??'}
+                                                            {s.end_time ? `–${s.end_time.slice(0, 5)}` : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             ))}
                                         </div>
                                     ) : (
