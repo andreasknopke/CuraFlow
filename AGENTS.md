@@ -273,7 +273,8 @@ This application runs in hospital environments. Security failures can have regul
 - Before considering work complete, verify:
   - `npm run lint` passes (in project root)
   - `npm run build` succeeds
-  - All new and existing tests pass
+  - `npm run test:all` passes (unit + component + server tests)
+  - `npm run test:e2e` passes (full-stack E2E, requires Docker)
   - No TypeScript/JSDoc type errors (`npm run typecheck`)
 
 ---
@@ -287,6 +288,10 @@ Before handing off any change, verify locally:
 npm run lint          # ESLint must pass with zero errors
 npm run build         # Vite production build must succeed
 npm run typecheck     # Type checking must pass
+
+# Tests
+npm run test:all      # Unit + component + server tests must pass
+npm run test:e2e      # E2E tests must pass (requires Docker)
 
 # Backend (from server/ directory)
 node --check index.js # Syntax check
