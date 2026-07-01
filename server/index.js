@@ -776,32 +776,34 @@ async function ensureTablesExist() {
         }
       }
       
-      // Seed default data for TeamRole
+      // Seed default data for TeamRole — ergänzt fehlende Rollen, löscht keine bestehenden
       if (table.name === 'TeamRole') {
-        const [existing] = await db.execute('SELECT COUNT(*) as cnt FROM TeamRole');
-        if (existing[0].cnt === 0) {
-          const defaultRoles = [
-            { id: crypto.randomUUID(), name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
-            { id: crypto.randomUUID(), name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann Hintergrunddienste übernehmen' },
-            { id: crypto.randomUUID(), name: 'Facharzt', priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann alle Dienste übernehmen' },
-            { id: crypto.randomUUID(), name: 'Assistenzarzt', priority: 3, is_specialist: false, can_do_foreground_duty: true, can_do_background_duty: false, excluded_from_statistics: false, description: 'Kann Vordergrunddienste übernehmen' },
-            { id: crypto.randomUUID(), name: 'Nicht-Radiologe', priority: 4, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Wird in Statistiken nicht gezählt' },
-            { id: crypto.randomUUID(), name: 'Pflegekraft', priority: 5, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Pflegerische Betreuung der Patienten' },
-            { id: crypto.randomUUID(), name: 'MTR', priority: 6, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Radiologieassistenz' },
-            { id: crypto.randomUUID(), name: 'MTL', priority: 7, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Laborassistenz' },
-            { id: crypto.randomUUID(), name: 'MTA', priority: 8, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Assistenz' },
-            { id: crypto.randomUUID(), name: 'Physician Assistant', priority: 9, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Unterstützung der ärztlichen Tätigkeit' },
-            { id: crypto.randomUUID(), name: 'Hilfskraft', priority: 10, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Unterstützung im Praxisalltag' },
-            { id: crypto.randomUUID(), name: 'Student', priority: 11, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Student in der Ausbildung' },
-            { id: crypto.randomUUID(), name: 'Hospitant', priority: 12, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Hospitant zur Orientierung' },
-          ];
-          for (const role of defaultRoles) {
+        const [existing] = await db.execute('SELECT name FROM TeamRole');
+        const existingNames = new Set(existing.map(r => r.name));
+        const defaultRoles = [
+          { id: crypto.randomUUID(), name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
+          { id: crypto.randomUUID(), name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann Hintergrunddienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Facharzt', priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann alle Dienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Assistenzarzt', priority: 3, is_specialist: false, can_do_foreground_duty: true, can_do_background_duty: false, excluded_from_statistics: false, description: 'Kann Vordergrunddienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Nicht-Radiologe', priority: 4, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Wird in Statistiken nicht gezählt' },
+          { id: crypto.randomUUID(), name: 'Pflegekraft', priority: 5, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Pflegerische Betreuung der Patienten' },
+          { id: crypto.randomUUID(), name: 'MTR', priority: 6, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Radiologieassistenz' },
+          { id: crypto.randomUUID(), name: 'MTL', priority: 7, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Laborassistenz' },
+          { id: crypto.randomUUID(), name: 'MTA', priority: 8, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Medizinisch-technische Assistenz' },
+          { id: crypto.randomUUID(), name: 'Physician Assistant', priority: 9, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Unterstützung der ärztlichen Tätigkeit' },
+          { id: crypto.randomUUID(), name: 'Hilfskraft', priority: 10, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Unterstützung im Praxisalltag' },
+          { id: crypto.randomUUID(), name: 'Student', priority: 11, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Student in der Ausbildung' },
+          { id: crypto.randomUUID(), name: 'Hospitant', priority: 12, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Hospitant zur Orientierung' },
+        ];
+        const missingRoles = defaultRoles.filter(r => !existingNames.has(r.name));
+        if (missingRoles.length > 0) {
+          for (const role of missingRoles) {
             await db.execute(
               'INSERT IGNORE INTO TeamRole (id, name, priority, is_specialist, can_do_foreground_duty, can_do_background_duty, excluded_from_statistics, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
               [role.id, role.name, role.priority, role.is_specialist, role.can_do_foreground_duty, role.can_do_background_duty, role.excluded_from_statistics, role.description]
             );
           }
-          console.log('✅ TeamRole table seeded with defaults');
+          console.log(`✅ TeamRole seeded ${missingRoles.length} missing default roles`);
         }
       }
       console.log(`✅ Table ${table.name} ready`);

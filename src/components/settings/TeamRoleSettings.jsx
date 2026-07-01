@@ -47,12 +47,10 @@ export const DEFAULT_TEAM_ROLES = [
 export function useTeamRoles() {
     const { data: teamRoles = [], isLoading, refetch } = useQuery({
         queryKey: ['teamRoles'],
-        queryFn: () => db.TeamRole.list(),
-        select: (data) => {
-            if (!data || data.length === 0) {
-                return DEFAULT_TEAM_ROLES;
-            }
-            return data.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
+        queryFn: async () => {
+            // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
+            const roles = await initializeDefaultRoles();
+            return roles.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
         },
     });
 
@@ -118,21 +116,23 @@ export function useTeamRoles() {
     };
 }
 
-// Initialisiert Standard-Rollen in der Datenbank falls noch keine vorhanden
+// Initialisiert Standard-Rollen in der Datenbank — ergänzt fehlende, löscht keine bestehenden
 export async function initializeDefaultRoles() {
     try {
         const existing = await db.TeamRole.list();
-        if (existing && existing.length > 0) {
-            console.log('TeamRoles already initialized');
+        const existingNames = new Set((existing || []).map(r => r.name));
+        const missingRoles = DEFAULT_TEAM_ROLES.filter(r => !existingNames.has(r.name));
+
+        if (missingRoles.length === 0) {
             return existing;
         }
 
-        console.log('Initializing default team roles...');
-        for (const role of DEFAULT_TEAM_ROLES) {
+        console.log(`Adding ${missingRoles.length} missing default team roles...`);
+        for (const role of missingRoles) {
             await db.TeamRole.create(role);
         }
-        console.log('Default team roles created');
-        return DEFAULT_TEAM_ROLES;
+        console.log('Missing default team roles created');
+        return [...(existing || []), ...missingRoles];
     } catch (error) {
         console.error('Failed to initialize team roles:', error);
         return DEFAULT_TEAM_ROLES;
@@ -287,11 +287,8 @@ export default function TeamRoleSettings() {
     const { data: teamRoles = [], isLoading } = useQuery({
         queryKey: ['teamRoles'],
         queryFn: async () => {
-            const roles = await db.TeamRole.list();
-            // Initialisiere Defaults falls leer
-            if (!roles || roles.length === 0) {
-                return initializeDefaultRoles();
-            }
+            // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
+            const roles = await initializeDefaultRoles();
             return roles.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
         },
     });
