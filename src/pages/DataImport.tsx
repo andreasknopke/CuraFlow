@@ -90,7 +90,7 @@ export default function DataImportPage() {
 
             // Import ShiftEntry
             if (data.data.ShiftEntry && data.data.ShiftEntry.length > 0) {
-                const shifts = data.data.ShiftEntry.filter(s => s.date && oldToNewDoctorId[s.doctor_id]);
+                const shifts = data.data.ShiftEntry.filter((s: any) => s.date && oldToNewDoctorId[s.doctor_id]);
                 addLog(`${shifts.length} gültige ShiftEntries gefunden (von ${data.data.ShiftEntry.length})`);
                 
                 let imported = 0;
@@ -98,7 +98,7 @@ export default function DataImportPage() {
                 const batchSize = 20;
                 
                 for (let i = 0; i < shifts.length; i += batchSize) {
-                    const batch = shifts.slice(i, i + batchSize).map(s => ({
+                    const batch = shifts.slice(i, i + batchSize).map((s: any) => ({
                         date: s.date,
                         position: s.position,
                         doctor_id: oldToNewDoctorId[s.doctor_id],
@@ -134,14 +134,14 @@ export default function DataImportPage() {
 
             // Import StaffingPlanEntry
             if (data.data.StaffingPlanEntry && data.data.StaffingPlanEntry.length > 0) {
-                const entries = data.data.StaffingPlanEntry.filter(s => oldToNewDoctorId[s.doctor_id]);
+                const entries = data.data.StaffingPlanEntry.filter((s: any) => oldToNewDoctorId[s.doctor_id]);
                 addLog(`${entries.length} StaffingPlanEntries gefunden`);
                 
                 let imported = 0;
                 const batchSize = 20;
                 
                 for (let i = 0; i < entries.length; i += batchSize) {
-                    const batch = entries.slice(i, i + batchSize).map(s => ({
+                    const batch = entries.slice(i, i + batchSize).map((s: any) => ({
                         doctor_id: oldToNewDoctorId[s.doctor_id],
                         year: s.year,
                         month: s.month,
@@ -170,7 +170,7 @@ export default function DataImportPage() {
 
             // Import TrainingRotation
             if (data.data.TrainingRotation && data.data.TrainingRotation.length > 0) {
-                const entries = data.data.TrainingRotation.filter(s => 
+                const entries = data.data.TrainingRotation.filter((s: any) => 
                     s.start_date && s.end_date && oldToNewDoctorId[s.doctor_id]
                 );
                 addLog(`${entries.length} TrainingRotations gefunden`);
@@ -196,7 +196,7 @@ export default function DataImportPage() {
 
             // Import ScheduleNote
             if (data.data.ScheduleNote && data.data.ScheduleNote.length > 0) {
-                const entries = data.data.ScheduleNote.filter(s => s.date);
+                const entries = data.data.ScheduleNote.filter((s: any) => s.date);
                 addLog(`${entries.length} ScheduleNotes gefunden`);
                 
                 let imported = 0;
@@ -256,7 +256,7 @@ export default function DataImportPage() {
 
             // Import WishRequest
             if (data.data.WishRequest && data.data.WishRequest.length > 0) {
-                const entries = data.data.WishRequest.filter(w => w.date && oldToNewDoctorId[w.doctor_id]);
+                const entries = data.data.WishRequest.filter((w: any) => w.date && oldToNewDoctorId[w.doctor_id]);
                 addLog(`${entries.length} gültige WishRequests gefunden (von ${data.data.WishRequest.length})`);
                 
                 let imported = 0;
@@ -293,7 +293,7 @@ export default function DataImportPage() {
 
         } catch (err) {
             setStatus('error');
-            addLog(`Fehler: ${err.message}`, 'error');
+            addLog(`Fehler: ${(err as any).message}`, 'error');
         }
     };
 

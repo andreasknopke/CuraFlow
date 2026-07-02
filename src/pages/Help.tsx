@@ -46,7 +46,7 @@ const ROLE_COLORS = [
     'bg-slate-100 text-slate-700',   // 4+ - andere
 ];
 
-function getRoleColor(priority) {
+function getRoleColor(priority: any) {
     return ROLE_COLORS[Math.min(priority ?? 4, ROLE_COLORS.length - 1)];
 }
 
@@ -559,7 +559,7 @@ export default function HelpPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="space-y-3">
-                                {teamRoles.map((role, index) => (
+                                {teamRoles.map((role: any, index: any) => (
                                     <div key={role.id || role.name} className="flex items-center gap-3">
                                         <Badge variant="secondary" className={`w-28 ${getRoleColor(role.priority ?? index)}`}>
                                             {role.name}
