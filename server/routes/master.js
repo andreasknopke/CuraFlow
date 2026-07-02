@@ -3585,7 +3585,7 @@ async function checkPpugvConnectivity() {
     const dns = PPUGV_HOST;
     const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(dns);
     if (isIp) {
-      resolve({ type: 'DNS', target: dns, status: 'ok', detail: 'IP-Adresse (keine Auflösung nötig)' });
+      resolve({ type: 'DNS', target: dns, status: 'info', detail: 'IP-Adresse (keine Auflösung nötig)' });
     } else {
       const lookup = setTimeout(() => resolve({ type: 'DNS', target: dns, status: 'error', detail: 'Timeout nach 3s' }), 3000);
       import('dns').then((dnsMod) => {
@@ -3593,7 +3593,7 @@ async function checkPpugvConnectivity() {
           clearTimeout(lookup);
           resolve(err
             ? { type: 'DNS', target: dns, status: 'error', detail: err.message }
-            : { type: 'DNS', target: dns, status: 'ok', detail: 'Auflösung erfolgreich' });
+            : { type: 'DNS', target: dns, status: 'info', detail: 'Auflösung erfolgreich' });
         });
       }).catch(() => clearTimeout(lookup));
     }
@@ -3640,20 +3640,41 @@ async function checkPpugvConnectivity() {
 
   for (const r of results) {
     const c = r.status === 'fulfilled' ? r.value : { type: '?', target: '?', status: 'error', detail: r.reason?.message || 'Unbekannter Fehler' };
-    const icon = c.status === 'ok' ? ' ✅' : c.status === 'skip' ? ' ⏭' : ' ❌';
-    console.log(`  ${icon} ${c.type.padEnd(12)} ${c.target.padEnd(28)} ${c.status.padEnd(6)}  ${c.detail}`);
+    const icon = c.status === 'ok' ? ' ✅' : c.status === 'info' ? ' ℹ️' : c.status === 'skip' ? ' ⏭' : ' ❌';
+    console.log(`  ${icon} ${c.type.padEnd(12)} ${(c.target || '').padEnd(28)} ${c.status.padEnd(6)}  ${c.detail}`);
   }
 
-  const anyOk = results.some(r => r.status === 'fulfilled' && r.value?.status === 'ok');
-  const anyConfigured = results.some(r => r.status === 'fulfilled' && r.value?.status !== 'skip');
+  // Nur mysql2 und phpMyAdmin sind fuer den Datenabruf relevant (nicht DNS)
+  const relevantResults = results
+    .filter(r => r.status === 'fulfilled' && r.value?.type !== 'DNS')
+    .map(r => r.value);
+  const anyServiceOk = relevantResults.some(c => c.status === 'ok');
+  const anyServiceConfigured = relevantResults.some(c => c.status !== 'skip');
+
+  // DNS-Info: Auflösung ok oder IP-Adresse (dann ist der Host grundsätzlich erreichbar)
+  const dnsResult = results.find(r => r.status === 'fulfilled' && r.value?.type === 'DNS');
+  const dnsReachable = dnsResult?.value?.status === 'ok' || dnsResult?.value?.status === 'info';
+  const mysqlOk = relevantResults.some(c => c.type === 'mysql2' && c.status === 'ok');
+  const pmaConfigured = relevantResults.some(c => c.type === 'phpMyAdmin' && c.status !== 'skip');
+
   console.log(separator);
-  if (anyOk) {
-    console.log('  ✅ Mindestens ein PPUGV-Zugang ist erreichbar – Background-Refresh wird funktionieren.');
-  } else if (!anyConfigured) {
+  if (anyServiceOk) {
+    if (mysqlOk) {
+      console.log(`  ✅ mysql2-Direktverbindung zu ${PPUGV_HOST}:${PPUGV_PORT} ist erreichbar –`);
+      console.log('     Background-Refresh ueber mysql2 wird funktionieren.');
+    } else {
+      console.log('  ✅ phpMyAdmin ist erreichbar – Background-Refresh ueber HTTP wird funktionieren.');
+    }
+  } else if (!anyServiceConfigured) {
     console.log('  ⏭  PPUGV nicht konfiguriert – Cache nur via manuellen Upload verfuegbar.');
+    console.log('     Setze PPUGV_HOST/USER/PASSWORD (mysql2) oder PPUGV_PMA_BASE (phpMyAdmin).');
+  } else if (dnsReachable && !mysqlOk && !pmaConfigured) {
+    console.log(`  ⚠️  Host ${PPUGV_HOST} ist erreichbar, aber Port ${PPUGV_PORT} blockiert (Firewall).`);
+    console.log('     → Konfiguriere PPUGV_PMA_BASE fuer phpMyAdmin-Fallback,');
+    console.log('     → Oder lade Daten manuell ueber POST /api/master/ppugv/upload hoch.');
   } else {
     console.log('  ⚠️  Alle PPUGV-Zugaenge sind derzeit nicht erreichbar (Firewall?).');
-    console.log('     Der Cache kann trotzdem ueber POST /api/master/ppugv/upload befuellt werden.');
+    console.log('     → Cache kann ueber POST /api/master/ppugv/upload befuellt werden.');
   }
   console.log(separator);
   console.log('');
