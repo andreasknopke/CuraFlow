@@ -35,20 +35,20 @@ export const normalizeCustomTimeslotEndMinutes = (option, timeValue) => {
         return defaultEndMinutes;
     }
 
-    // Allow end times beyond the slot's original end — no upper cap.
-    // Only enforce minimum duration past the slot start.
     const startMinutes = Number(option?.effectiveStartMinutes ?? option?.slotStartMinutes);
-    if (!Number.isFinite(startMinutes)) {
+    const maxEndMinutes = Number(option?.slotEndMinutes);
+    if (!Number.isFinite(startMinutes) || !Number.isFinite(maxEndMinutes)) {
         return defaultEndMinutes;
     }
 
     let normalizedEndMinutes = parsedMinutes;
-    // If the parsed time is at or before the start, assume it's an overnight shift
-    if (normalizedEndMinutes <= startMinutes) {
+    // Only treat as overnight when the slot actually spans past midnight
+    if (maxEndMinutes > 24 * 60 && normalizedEndMinutes <= startMinutes) {
         normalizedEndMinutes += 24 * 60;
     }
 
-    return Math.max(normalizedEndMinutes, startMinutes + MIN_CUSTOM_TIMESLOT_DURATION_MINUTES);
+    const minEndMinutes = Math.min(maxEndMinutes, startMinutes + MIN_CUSTOM_TIMESLOT_DURATION_MINUTES);
+    return Math.min(maxEndMinutes, Math.max(minEndMinutes, normalizedEndMinutes));
 };
 
 export const buildInitialCustomTimeslotEndMinutesByOption = (options = [], initialSelection = null) => {
