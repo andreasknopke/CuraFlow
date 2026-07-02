@@ -498,12 +498,14 @@ router.get('/visible-rotations', async (req, res) => {
         `SELECT a.id, a.rotation_workplace_id, a.date, a.employee_id,
                 a.timeslot_id, a.note,
                 w.name AS workplace_name, w.group_id,
-                e.first_name, e.last_name
+                COALESCE(e.first_name, e_direct.first_name) AS first_name,
+                COALESCE(e.last_name, e_direct.last_name) AS last_name
            FROM rotation_assignment a
            JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
            LEFT JOIN EmployeeTenantAssignment eta
                   ON eta.tenant_doctor_id COLLATE utf8mb4_general_ci = a.employee_id COLLATE utf8mb4_general_ci
            LEFT JOIN Employee e ON e.id = eta.employee_id
+           LEFT JOIN Employee e_direct ON e_direct.id COLLATE utf8mb4_unicode_ci = a.employee_id COLLATE utf8mb4_unicode_ci
           WHERE a.rotation_workplace_id IN (${wpPlaceholders})
             ${dateWhere}
           ORDER BY a.date ASC, w.name ASC`,
