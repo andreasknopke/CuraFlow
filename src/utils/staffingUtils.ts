@@ -71,7 +71,7 @@ export function getAvailabilityWarnings({
         return [];
     };
 
-    const warnings = [];
+    const warnings: any[] = [];
 
     availabilityThresholds.forEach(threshold => {
         const qId = threshold.qualificationId;

@@ -59,7 +59,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const [ticketDialogType, setTicketDialogType] = useState<string | undefined>(
     undefined,
   );
-  const [ticketDialogError, setTicketDialogError] = useState<Error | null>(null);
+  const [ticketDialogError, setTicketDialogError] = useState<Error | null | undefined>(null);
   const { getSectionName } = useSectionConfig();
   const servicesCaption = getSectionName('Dienste');
   const rotationsCaption = getSectionName('Rotationen');
@@ -448,7 +448,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         open={isTicketDialogOpen}
         onOpenChange={setIsTicketDialogOpen}
         initialType={ticketDialogType}
-        initialError={ticketDialogError}
+        initialError={ticketDialogError as any}
       />
     </div>
   );

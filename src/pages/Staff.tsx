@@ -91,7 +91,7 @@ export default function StaffPage() {
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       
       // Defaults matching ScheduleBoard
-      const defaults = {
+      const defaults: Record<string, { bg: string; text: string }> = {
           "Chefarzt": { bg: "#fee2e2", text: "#991b1b" },
           "Oberarzt": { bg: "#dbeafe", text: "#1e40af" },
           "Facharzt": { bg: "#dcfce7", text: "#166534" },
@@ -496,7 +496,7 @@ export default function StaffPage() {
           </TabsContent>
 
           <TabsContent value="qualifications" className="mt-0 min-h-0 flex-1 overflow-hidden">
-              <QualificationOverview doctors={doctors} isReadOnly={isReadOnly} />
+              <QualificationOverview doctors={doctors as any} isReadOnly={isReadOnly} />
           </TabsContent>
 
           <TabsContent value="staffing" className="mt-0 min-h-0 flex-1 overflow-hidden">

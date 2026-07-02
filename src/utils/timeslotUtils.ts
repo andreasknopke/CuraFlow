@@ -81,7 +81,7 @@ export function calculateDurationMinutes(startTime: string, endTime: string): nu
  */
 export function calculateShiftHours(
   shift: ShiftEntry,
-  timeslot: TimeslotLike | null,
+  timeslot: TimeslotLike | null | undefined,
   defaultHours = 8,
 ): number {
   if (!timeslot) {

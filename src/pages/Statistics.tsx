@@ -17,7 +17,7 @@ import WorkingTimeReport from "@/components/statistics/WorkingTimeReport";
 import { useToast } from '@/components/ui/use-toast';
 import { exportStatisticsCsv, exportStatisticsExcel, exportStatisticsPdf } from '@/components/statistics/exportUtils';
 
-const COLORS = {
+const COLORS: Record<string, string> = {
     // Default colors - used as fallback. Actual colors come from workplace data.
     "CT": "#10b981", // emerald-500
     "MRT": "#06b6d4", // cyan-500
@@ -28,7 +28,7 @@ const COLORS = {
 };
 
 // Colors assigned by service_type
-const SERVICE_TYPE_COLORS = {
+const SERVICE_TYPE_COLORS: Record<number, string> = {
     1: "#3b82f6", // blue-500 - Bereitschaftsdienst
     2: "#6366f1", // indigo-500 - Rufbereitschaftsdienst
     3: "#f59e0b", // amber-500 - Schichtdienst

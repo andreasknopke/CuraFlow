@@ -40,5 +40,5 @@ export interface PagesConfig {
 export const pagesConfig: PagesConfig = {
     mainPage: "Schedule",
     Pages: PAGES,
-    Layout: __Layout,
+    Layout: __Layout as ComponentType<any>,
 };

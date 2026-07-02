@@ -121,7 +121,7 @@ export default function AuthLoginPage() {
                                 type="email"
                                 placeholder="name@beispiel.de"
                                 value={email}
-                                onChange={(e) => setEmail(e.target.value)}
+                                onChange={(e: any) => setEmail(e.target.value)}
                                 required
                                 autoComplete="email"
                                 autoFocus
@@ -137,7 +137,7 @@ export default function AuthLoginPage() {
                                     type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={(e: any) => setPassword(e.target.value)}
                                     required
                                     autoComplete="current-password"
                                     className="pr-10"
@@ -179,7 +179,7 @@ export default function AuthLoginPage() {
             <TenantSelectionDialog
                 open={needsTenantSelection}
                 onComplete={completeTenantSelection}
-                tenants={allowedTenants}
+                tenants={allowedTenants as any}
                 hasFullAccess={hasFullTenantAccess}
                 isAdmin={user?.role === 'admin'}
             />
