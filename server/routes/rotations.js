@@ -545,7 +545,7 @@ router.get('/visible-rotations', async (req, res) => {
            FROM rotation_demand d
            JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
            LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
-           LEFT JOIN Employee e_offer ON e_offer.id = d.offered_employee_id
+           LEFT JOIN Employee e_offer ON e_offer.id COLLATE utf8mb4_unicode_ci = d.offered_employee_id COLLATE utf8mb4_unicode_ci
           WHERE ${demandWhere}
           ORDER BY d.date ASC`,
         demandParams
