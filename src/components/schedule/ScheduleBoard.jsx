@@ -3191,10 +3191,11 @@ export default function ScheduleBoard() {
             if (alreadyAssigned) continue;
             const doc = doctorByCentralEmployeeId.get(String(demand.offered_employee_id));
             const centralEmp = centralEmployeesById.get(String(demand.offered_employee_id));
-            const name = doc?.name
+            const name = demand.offered_employee_name
+                || doc?.name
                 || (centralEmp ? `${centralEmp.first_name || ''} ${centralEmp.last_name || ''}`.trim() : '')
                 || `#${demand.offered_employee_id}`;
-            const initials = doc?.initials || name.slice(0, 2).toUpperCase();
+            const initials = doc?.initials || formatChipLabel(name);
             const chips = map.get(dateStr) || [];
             chips.push({
                 id: String(demand.offered_employee_id),

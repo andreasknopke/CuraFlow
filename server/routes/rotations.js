@@ -540,10 +540,12 @@ router.get('/visible-rotations', async (req, res) => {
                 d.timeslot_id, d.note, d.status, d.fulfilled_by_assignment_id,
                 d.return_requested_assignment_id,
                 d.offered_employee_id,
+                e_offer.first_name AS offered_first, e_offer.last_name AS offered_last,
                 w.name AS workplace_name, ts.label AS timeslot_label
            FROM rotation_demand d
            JOIN rotation_workplace w ON w.id = d.rotation_workplace_id
            LEFT JOIN rotation_timeslot ts ON ts.id = d.timeslot_id
+           LEFT JOIN Employee e_offer ON e_offer.id = d.offered_employee_id
           WHERE ${demandWhere}
           ORDER BY d.date ASC`,
         demandParams
@@ -560,6 +562,7 @@ router.get('/visible-rotations', async (req, res) => {
         fulfilled_by_assignment_id: r.fulfilled_by_assignment_id ? String(r.fulfilled_by_assignment_id) : null,
         return_requested_assignment_id: r.return_requested_assignment_id ? String(r.return_requested_assignment_id) : null,
         offered_employee_id: r.offered_employee_id ? String(r.offered_employee_id) : null,
+        offered_employee_name: [r.offered_first, r.offered_last].filter(Boolean).join(' ') || null,
         workplace_name: r.workplace_name,
         timeslot_label: r.timeslot_label || null,
         canManage: canWriteRotationGroup(ctx, Number(r.group_id)),
