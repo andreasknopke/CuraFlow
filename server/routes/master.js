@@ -3390,46 +3390,148 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
 //   PPUGV_DATABASE (default: ppugv)
 // =============================================================================
 
-let ppugvPool = null;
 let ppugvRefreshInProgress = false;
 
-function getPpugvPool() {
-  if (ppugvPool) return ppugvPool;
+// PPUGV-Zugangsdaten aus Umgebungsvariablen (gesetzt via PHP/.env-Inhalt)
+const PPUGV_PMA_HOST = process.env.PPUGV_PMA_HOST || process.env.PHP_Host || '10.10.199.14';
+const PPUGV_PMA_USER = process.env.PPUGV_PMA_USER || process.env.PHP_User || 'ppugv_user';
+const PPUGV_PMA_PASSWORD = process.env.PPUGV_PMA_PASSWORD || process.env.PHP_Passwort || '';
+const PPUGV_PMA_DATABASE = process.env.PPUGV_PMA_DATABASE || process.env.PHP_Datenbank || 'ppugv';
+const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_PMA_HOST}/phpmyadmin`;
 
-  const host = process.env.PPUGV_HOST || '10.10.199.14';
-  const port = parseInt(process.env.PPUGV_PORT || '3306', 10);
-  const user = process.env.PPUGV_USER || 'ppugv_user';
-  const password = process.env.PPUGV_PASSWORD || '7pFdXr66]yjZyJ8';
-  const database = process.env.PPUGV_DATABASE || 'ppugv';
+// Einziger Session-Cookie-Jar – wird bei jedem Refresh neu befuellt
+let pmaSessionCookie = null;
 
-  if (!host || !user || !database) {
-    return null;
+/**
+ * Meldet sich per POST an phpMyAdmin an und speichert das Session-Cookie.
+ * Wird von fetchPpugvExportJson() automatisch aufgerufen, wenn kein Cookie existiert.
+ */
+async function pmaLogin() {
+  const loginUrl = `${PPUGV_PMA_BASE}/index.php`;
+
+  const body = new URLSearchParams({
+    pma_username: PPUGV_PMA_USER,
+    pma_password: PPUGV_PMA_PASSWORD,
+    server: '1',
+    lang: 'de',
+  });
+
+  const response = await fetch(loginUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
+    },
+    body: body.toString(),
+    redirect: 'manual', // Keine Redirects automatisch folgen – wir brauchen nur das Cookie
+  });
+
+  // Set-Cookie-Header parsen
+  const setCookie = response.headers.get('set-cookie');
+  if (!setCookie) {
+    throw new Error(`phpMyAdmin-Login fehlgeschlagen – kein Session-Cookie erhalten (HTTP ${response.status})`);
   }
 
-  try {
-    ppugvPool = createPool({
-      host,
-      port,
-      user,
-      password,
-      database,
-      waitForConnections: true,
-      connectionLimit: 3,
-      queueLimit: 0,
-      dateStrings: true,
-      timezone: '+00:00',
+  // phpMyAdmin-Cookie extrahieren (meist `phpMyAdmin=...`)
+  const cookieMatch = setCookie.match(/(phpMyAdmin=[^;]+)/);
+  if (!cookieMatch) {
+    throw new Error(`phpMyAdmin-Login fehlgeschlagen – unbekanntes Cookie-Format: ${setCookie.substring(0, 80)}`);
+  }
+
+  pmaSessionCookie = cookieMatch[1];
+  console.log(`[PPUGV-PMA] Login erfolgreich – Session: ${pmaSessionCookie.substring(0, 30)}…`);
+}
+
+/**
+ * Ruft die ppugv-Export-Tabelle via phpMyAdmin-Export-URL als JSON ab.
+ * Loggt bei Bedarf vorher ein (wenn Session-Cookie fehlt oder abgelaufen ist).
+ *
+ * @returns {Promise<Array>} Array von Objekten (eine Zeile pro Datensatz)
+ */
+async function fetchPpugvExportJson() {
+  if (!pmaSessionCookie) {
+    await pmaLogin();
+  }
+
+  const exportUrl = `${PPUGV_PMA_BASE}/export.php`
+    + `?db=${encodeURIComponent(PPUGV_PMA_DATABASE)}`
+    + `&table=export`
+    + `&sql_query=${encodeURIComponent('SELECT * FROM export ORDER BY rec_id')}`
+    + `&export_type=server`
+    + `&export_method=quick`
+    + `&format=json`;
+
+  const response = await fetch(exportUrl, {
+    method: 'GET',
+    headers: {
+      'Cookie': pmaSessionCookie,
+      'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
+    },
+    redirect: 'manual',
+  });
+
+  // 302 → Session abgelaufen – einmalig neu anmelden und wiederholen
+  if (response.status === 302 || response.status === 301) {
+    console.log('[PPUGV-PMA] Session abgelaufen – erneuter Login…');
+    pmaSessionCookie = null;
+    await pmaLogin();
+
+    // Zweiter Versuch mit frischem Cookie
+    const retryResponse = await fetch(exportUrl, {
+      method: 'GET',
+      headers: {
+        'Cookie': pmaSessionCookie,
+        'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
+      },
     });
-    return ppugvPool;
-  } catch (err) {
-    console.error('[PPUGV] Failed to create pool:', err.message);
-    return null;
+
+    if (!retryResponse.ok) {
+      throw new Error(`phpMyAdmin-Export fehlgeschlagen (Versuch 2): HTTP ${retryResponse.status}`);
+    }
+
+    return retryResponse.json();
   }
+
+  if (!response.ok) {
+    throw new Error(`phpMyAdmin-Export fehlgeschlagen: HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Normalisiert ein vom phpMyAdmin-Export geliefertes JSON-Objekt in das
+ * von ppugv_daily_cache erwartete Format.
+ *
+ * phpMyAdmin liefert Objekte mit keys wie "stationsname", "fabschluessel", etc.
+ * – identisch zur MySQL-Spalte. Manche Werte koennen Strings sein (auch Zahlen).
+ */
+function normalizePpugvRow(row) {
+  return {
+    stationsname: String(row.stationsname || ''),
+    fabschluessel: parseInt(row.fabschluessel, 10) || 0,
+    fabname: String(row.fabname || ''),
+    monat: String(row.monat || ''),
+    schicht: String(row.schicht || ''),
+    anzahl: parseInt(row.anzahl, 10) || 0,
+    betten: parseInt(row.betten, 10) || 0,
+    pfl_sen_ber: String(row.pfl_sen_ber || ''),
+    patienten: parseInt(row.patienten, 10) || 0,
+    belegung: parseFloat(String(row.belegung).replace(',', '.')) || 0,
+    pflegekraefte_ist: parseFloat(String(row.pflegekraefte_ist).replace(',', '.')) || 0,
+    hebammen_ist: parseFloat(String(row.hebammen_ist).replace(',', '.')) || 0,
+    hilfskraefte_ist: parseFloat(String(row.hilfskraefte_ist).replace(',', '.')) || 0,
+    anmerkungen: String(row.anmerkungen || ''),
+    frostung: String(row.frostung || ''),
+    frostungsdatum: row.frostungsdatum || null,
+  };
 }
 
 /**
  * Fuehrt den eigentlichen Refresh asynchron im Hintergrund aus.
+ *
  * - Setzt Status in ppugv_cache_meta auf 'running'
- * - Pollt die ppugv-Export-Tabelle (kann bis zu 15 Minuten dauern)
+ * - Holt die ppugv-Export-Tabelle via phpMyAdmin-Export-URL (HTTP, kein MySQL)
  * - Schreibt Ergebnisse transaktional in ppugv_daily_cache
  * - Fehler werden geloggt, der CuraFlow-Server bleibt voll nutzbar
  *
@@ -3441,17 +3543,11 @@ async function runPpugvRefreshInBackground() {
     return;
   }
 
-  const sourcePool = getPpugvPool();
-  if (!sourcePool) {
-    console.error('[PPUGV-BG] Keine PPUGV-Datenbank konfiguriert.');
-    return;
-  }
-
   ppugvRefreshInProgress = true;
   const today = new Date().toISOString().split('T')[0];
   const startTime = Date.now();
 
-  console.log(`[PPUGV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh...`);
+  console.log(`[PPUGV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh (via phpMyAdmin)...`);
 
   try {
     // Status auf "running" setzen
@@ -3462,27 +3558,25 @@ async function runPpugvRefreshInBackground() {
       [today]
     );
 
-    // LANGSAMER DB-POLL – blockiert NICHT den Request-Response, da wir
-    // nicht innerhalb eines Request-Handlers sind. Der Event-Loop bleibt
-    // frei fuer andere Requests, weil wir hier im Hintergrund laufen.
-    console.log('[PPUGV-BG] Starte Poll der ppugv-Export-Tabelle (kann bis zu 15 Min dauern)...');
-    const [sourceRows] = await sourcePool.execute(
-      'SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum FROM export ORDER BY rec_id'
-    );
+    // Daten via phpMyAdmin-Export abrufen (HTTP, kein direkter MySQL-Zugriff)
+    console.log(`[PPUGV-BG] Rufe ppugv-Export via ${PPUGV_PMA_BASE} ab…`);
+    const rawJson = await fetchPpugvExportJson();
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[PPUGV-BG] Poll abgeschlossen nach ${elapsed}s – ${sourceRows.length} Datensaetze`);
+    console.log(`[PPUGV-BG] Export abgeschlossen nach ${elapsed}s – ${rawJson.length} Zeilen erhalten`);
 
-    if (sourceRows.length === 0) {
+    if (!Array.isArray(rawJson) || rawJson.length === 0) {
       await db.execute(
-        "UPDATE ppugv_cache_meta SET status = 'error', row_count = 0, error_message = 'Keine Daten in der Export-Tabelle gefunden' WHERE cache_date = ?",
+        "UPDATE ppugv_cache_meta SET status = 'error', row_count = 0, error_message = 'Keine Daten vom phpMyAdmin-Export erhalten' WHERE cache_date = ?",
         [today]
       );
-      console.warn('[PPUGV-BG] Keine Daten in der Export-Tabelle gefunden.');
+      console.warn('[PPUGV-BG] Keine Daten vom phpMyAdmin-Export erhalten.');
       return;
     }
 
-    // Transaktional in den Cache schreiben – eigener Connection-Handle
-    // damit wir bei langem Write nicht den Pool blockieren.
+    // Normalisieren
+    const sourceRows = rawJson.map(normalizePpugvRow);
+
+    // Transaktional in den Cache schreiben
     const connection = await db.getConnection();
     try {
       await connection.beginTransaction();
@@ -3674,10 +3768,9 @@ router.get('/ppugv/stations', async (req, res, next) => {
  */
 router.post('/ppugv/refresh', async (req, res, next) => {
   try {
-    const sourcePool = getPpugvPool();
-    if (!sourcePool) {
+    if (!PPUGV_PMA_HOST || !PPUGV_PMA_USER || !PPUGV_PMA_PASSWORD || !PPUGV_PMA_DATABASE) {
       return res.status(503).json({
-        error: 'PPUGV-Datenbank nicht konfiguriert. Setzen Sie PPUGV_HOST, PPUGV_USER, PPUGV_PASSWORD, PPUGV_DATABASE.',
+        error: 'PPUGV-Zugang nicht konfiguriert. Setzen Sie PHP_Host, PHP_User, PHP_Passwort, PHP_Datenbank (oder PPUGV_PMA_*).',
       });
     }
 
