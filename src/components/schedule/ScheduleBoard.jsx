@@ -3240,11 +3240,28 @@ export default function ScheduleBoard() {
         return map;
     }, [jokerChipsByDate, doctorByCentralEmployeeId]);
 
+    // Fallback doctor map for springer shifts rendered in grid cells.
+    // The shift's doctor_id is the central employee ID, which won't be
+    // in the local doctorById. This map provides display data for them.
+    // Built from raw springerChipsByDate (NOT allDisplayDocsByDate) so
+    // that hiding the chip from Verfügbar doesn't break grid rendering.
+    const springerDoctorById = useMemo(() => {
+        const map = new Map();
+        for (const [, docs] of springerChipsByDate) {
+            for (const doc of docs) {
+                if (doc._isSpringer && !map.has(doc.id)) {
+                    map.set(doc.id, doc);
+                }
+            }
+        }
+        return map;
+    }, [springerChipsByDate]);
+
     // Springer assignment IDs whose central employee already has a local ShiftEntry
     // for the same date. Derived from currentWeekShifts so that deleting a shift
     // (which triggers ['shifts', ...] invalidation) automatically re-shows the
     // Springer chip in Verfügbar — no hiddenSpringerChipIds race condition needed.
-    // This is the KEY fix for Bug 2 (chip verschwindet dauerhaft nach Zurückziehen).
+    // MUST be defined AFTER springerDoctorById (referenced in closure).
     const springerDoctorIdByDateWithLocalShift = useMemo(() => {
         const dateMap = new Map(); // dateStr → Set<central_employee_id>
         for (const shift of currentWeekShifts) {
@@ -3276,23 +3293,6 @@ export default function ScheduleBoard() {
         }
         return map;
     }, [availableDoctorsByDate, springerChipsByDate, jokerChipsByDate, hiddenSpringerChipIds, springerDoctorIdByDateWithLocalShift, weekDays]);
-
-    // Fallback doctor map for springer shifts rendered in grid cells.
-    // The shift's doctor_id is the central employee ID, which won't be
-    // in the local doctorById. This map provides display data for them.
-    // Built from raw springerChipsByDate (NOT allDisplayDocsByDate) so
-    // that hiding the chip from Verfügbar doesn't break grid rendering.
-    const springerDoctorById = useMemo(() => {
-        const map = new Map();
-        for (const [, docs] of springerChipsByDate) {
-            for (const doc of docs) {
-                if (doc._isSpringer && !map.has(doc.id)) {
-                    map.set(doc.id, doc);
-                }
-            }
-        }
-        return map;
-    }, [springerChipsByDate]);
 
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
