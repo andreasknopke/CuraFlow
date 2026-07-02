@@ -5159,7 +5159,7 @@ export default function ScheduleBoard() {
                 <PopoverTrigger asChild>
                     <button
                         type="button"
-                        className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-white/80 text-teal-500 hover:text-teal-700 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-0.5 right-0.5 z-10 p-0.5 rounded bg-white/80 text-teal-500 hover:text-teal-700 hover:bg-white shadow-sm opacity-0 group-hover/cell:opacity-100 transition-opacity"
                         title="Verknüpfte Arbeitsplätze anzeigen"
                     >
                         <Link2 className="w-3 h-3" />
@@ -6190,7 +6190,7 @@ export default function ScheduleBoard() {
                                                               />
                                                           )
                                                       ) : (
-                                                          <div className="flex flex-col h-full relative">
+                                                          <div className="flex flex-col h-full relative group/cell">
                                                               <DroppableCell
                                                                   id={cellId}
                                                                   isToday={isToday}
@@ -7304,7 +7304,7 @@ export default function ScheduleBoard() {
                                                 />
                                             )
                                         ) : (
-                                            <div className="flex flex-col h-full relative">
+                                            <div className="flex flex-col h-full relative group/cell">
                                                 <DroppableCell 
                                                     id={cellId}
                                                     testId={`schedule-cell-${encodeScheduleTargetId(cellId)}`}
