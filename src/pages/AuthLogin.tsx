@@ -56,7 +56,7 @@ export default function AuthLoginPage() {
         }
     }, [isAuthenticated, isLoading, needsTenantSelection, loginComplete, navigate, redirectTarget]);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setError('');
         setIsSubmitting(true);
@@ -69,7 +69,7 @@ export default function AuthLoginPage() {
             // Warte kurz damit React die States aktualisieren kann
             setTimeout(() => setLoginComplete(true), 100);
         } catch (err) {
-            setError(err.message || 'Anmeldung fehlgeschlagen');
+            setError((err as Error).message || 'Anmeldung fehlgeschlagen');
             setLoginComplete(false);
         } finally {
             setIsSubmitting(false);

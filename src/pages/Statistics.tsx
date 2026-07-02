@@ -40,6 +40,22 @@ const MONTHS = [
     "Juli", "August", "September", "Oktober", "November", "Dezember"
 ];
 
+interface DoctorStat {
+  id: string;
+  name: string;
+  role: string;
+  totalDienste: number;
+  totalRotationen: number;
+  breakdown: Record<string, number>;
+}
+
+interface MonthlyStat {
+  name: string;
+  monthIndex: number;
+  dienste: number;
+  rotationen: number;
+}
+
 export default function StatisticsPage() {
     const { user } = useAuth();
     const { toast } = useToast();
@@ -51,14 +67,14 @@ export default function StatisticsPage() {
     // 1. Fetch Data
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors'],
-        queryFn: () => db.Doctor.list(),
+        queryFn: () => db.Doctor.list() as Promise<{ id: string; name: string; role: string; order?: number }[]>,
         enabled: isAdmin,
         select: (data) => data.sort((a, b) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list(null, 1000),
+        queryFn: () => db.Workplace.list() as Promise<{ name: string; category: string; order?: number; service_type?: number }[]>,
         enabled: isAdmin,
     });
 
@@ -67,11 +83,11 @@ export default function StatisticsPage() {
         enabled: isAdmin,
         queryFn: async () => {
             try {
-                return await db.ShiftEntry.filter({
+                return (await db.ShiftEntry.filter({
                     date: { "$gte": `${year}-01-01`, "$lte": `${year}-12-31` }
-                }, null, 5000) || [];
+                }) || []) as { date: string; position: string; doctor_id: string }[];
             } catch {
-                const all = await db.ShiftEntry.list(null, 5000);
+                const all = (await db.ShiftEntry.list()) as { date: string; position: string; doctor_id: string }[];
                 return all.filter(s => s.date.startsWith(year));
             }
         },
@@ -80,15 +96,15 @@ export default function StatisticsPage() {
     const { data: wishes = [], isLoading: isLoadingWishes } = useQuery({
         queryKey: ['wishes', year, month],
         enabled: isAdmin,
-        queryFn: () => {
+        queryFn: async () => {
             if (month === 'all') {
-                return db.WishRequest.filter({
+                return (await db.WishRequest.filter({
                     target_month: { "$gte": `${year}-01`, "$lte": `${year}-12` }
-                });
+                })) as unknown[];
             }
 
             const targetMonth = `${year}-${String(parseInt(month, 10) + 1).padStart(2, '0')}`;
-            return db.WishRequest.filter({ target_month: targetMonth });
+            return (await db.WishRequest.filter({ target_month: targetMonth })) as unknown[];
         },
     });
 
@@ -96,7 +112,7 @@ export default function StatisticsPage() {
 
     // 3. Aggregation Logic
     const stats = useMemo(() => {
-        if (isLoading) return { byDoctor: [], byMonth: [], totals: {}, rotationItems: [], serviceItems: [] };
+        if (isLoading) return { byDoctor: [] as DoctorStat[], byMonth: [] as MonthlyStat[], totals: { dienste: 0, rotationen: 0 }, rotationItems: [] as string[], serviceItems: [] as string[] };
 
         // Dynamic Rotation Items from Workplaces
         const rotationItems = workplaces
@@ -118,8 +134,8 @@ export default function StatisticsPage() {
             serviceItems.push("Dienst Vordergrund", "Dienst Hintergrund", "Spätdienst");
         }
 
-        const doctorStats = {};
-        const monthlyStats = Array.from({ length: 12 }, (_, i) => ({
+        const doctorStats: Record<string, DoctorStat> = {};
+        const monthlyStats: MonthlyStat[] = Array.from({ length: 12 }, (_, i) => ({
             name: MONTHS[i],
             monthIndex: i,
             dienste: 0,
@@ -130,18 +146,19 @@ export default function StatisticsPage() {
         // Initialize doctor stats
         doctors.forEach(doc => {
             if (doc.role === 'Nicht-Radiologe') return;
+            const breakdown: Record<string, number> = {};
+            // Init breakdown keys
+            [...serviceItems, ...rotationItems].forEach(item => {
+                breakdown[item] = 0;
+            });
             doctorStats[doc.id] = {
                 id: doc.id,
                 name: doc.name,
                 role: doc.role,
                 totalDienste: 0,
                 totalRotationen: 0,
-                breakdown: {}
+                breakdown,
             };
-            // Init breakdown keys
-            [...serviceItems, ...rotationItems].forEach(item => {
-                doctorStats[doc.id].breakdown[item] = 0;
-            });
         });
 
         // Process shifts
@@ -193,7 +210,7 @@ export default function StatisticsPage() {
     const selectedPeriodLabel = month === "all" ? "Ganzes Jahr" : MONTHS[parseInt(month)];
     const exportTitle = `Statistik ${year} - ${selectedPeriodLabel}`;
 
-    const handleExport = (exporter) => {
+    const handleExport = (exporter: (params: { stats: unknown; year: string; month: string; title: string }) => void) => {
         try {
             exporter({ stats, year, month, title: exportTitle });
         } catch (error) {
@@ -296,6 +313,7 @@ export default function StatisticsPage() {
                             title="Jahresverlauf" 
                             description="Entwicklung der Dienste und Zuweisungen über die Monate"
                             defaultHeight="h-[300px]"
+                            className=""
                         >
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={stats.byMonth} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

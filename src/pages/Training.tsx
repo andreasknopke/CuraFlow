@@ -43,7 +43,7 @@ export default function TrainingPage() {
   // Fetch Doctors (only Assistenzärzte typically, but let's allow all for now or filter)
   const { data: doctors = [] } = useQuery({
     queryKey: ['doctors'],
-    queryFn: () => db.Doctor.list(),
+        queryFn: () => db.Doctor.list() as Promise<{ id: string; name: string; role: string; order: number; central_employee_id?: string | null; is_active: boolean; [key: string]: unknown }[]>,
     select: (data) => data.sort((a, b) => {
         const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
         if (roleDiff !== 0) return roleDiff;
@@ -69,14 +69,14 @@ export default function TrainingPage() {
   // Fetch Workplaces for dynamic modalities
   const { data: workplaces = [] } = useQuery({
     queryKey: ['workplaces'],
-    queryFn: () => db.Workplace.list(null, 1000),
+    queryFn: () => db.Workplace.list() as Promise<{ id: string; name: string; category: string; color?: string | null; order?: number; is_active: boolean }[]>,
   });
 
     const { data: masterEmployees = [] } = useQuery({
         queryKey: ['master-central-employees-for-training'],
         queryFn: async () => {
             try {
-                const result = await api.request('/api/master/employees');
+                const result = await api.request('/api/master/employees') as { employees?: { contract_start?: string; contract_end?: string; id: string; name: string; [key: string]: unknown }[] };
                 return result.employees || [];
             } catch {
                 return [];
@@ -113,37 +113,36 @@ export default function TrainingPage() {
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
   // Fetch Rotations
-  const { data: rotations = [] } = useQuery({
+  const { data: rotations = [] as { doctor_id: string; start_date: string; end_date: string; modality: string; id: string }[] } = useQuery({
     queryKey: ['trainingRotations'],
-    queryFn: () => db.TrainingRotation.list(),
+    queryFn: () => db.TrainingRotation.list() as Promise<{ doctor_id: string; start_date: string; end_date: string; modality: string; id: string }[]>,
   });
 
   // Fetch all shifts for the year (needed for transfer dialog conflict detection)
-  const { data: allShifts = [] } = useQuery({
+  const { data: allShifts = [] as unknown[] } = useQuery({
     queryKey: ['shifts', selectedYear],
     queryFn: () => db.ShiftEntry.filter({
         date: { $gte: `${selectedYear}-01-01`, $lte: `${selectedYear}-12-31` }
-    }, null, 5000),
+    }) as Promise<{ id: string; date: string; position: string; doctor_id: string }[]>,
     staleTime: 30 * 1000,
-    keepPreviousData: true,
   });
 
   // Fetch staffing plan entries for availability checks
-  const { data: staffingPlanEntries = [] } = useQuery({
+  const { data: staffingPlanEntries = [] as unknown[] } = useQuery({
     queryKey: ['staffingPlanEntries', selectedYear],
-    queryFn: () => db.StaffingPlanEntry.filter({ year: selectedYear }),
+    queryFn: () => db.StaffingPlanEntry.filter({ year: selectedYear }) as Promise<unknown[]>,
   });
 
   // Fetch system settings for months per row setting
   const { data: systemSettings = [] } = useQuery({
     queryKey: ['systemSettings'],
-    queryFn: () => db.SystemSetting.list(),
+    queryFn: () => db.SystemSetting.list() as Promise<{ key: string; value?: string | null }[]>,
   });
 
   // Fetch color settings from DB for custom rotation colors
   const { data: colorSettings = [] } = useQuery({
       queryKey: ['colorSettings'],
-      queryFn: () => db.ColorSetting.list(),
+      queryFn: () => db.ColorSetting.list() as Promise<{ name: string; category: string; bg_color?: string | null; text_color?: string | null }[]>,
       staleTime: 10 * 60 * 1000,
       refetchOnWindowFocus: false,
   });
@@ -179,7 +178,7 @@ export default function TrainingPage() {
   }, [rotations, selectedDoctorId, selectedYear]);
 
     const replaceRotationRangeMutation = useMutation({
-        mutationFn: ({ doctorId, startDate, endDate, modality }) => api.atomicOperation(
+        mutationFn: ({ doctorId, startDate, endDate, modality }: { doctorId: string; startDate: string; endDate: string; modality: string | null }) => api.atomicOperation(
             'replaceTrainingRotationRange',
             'TrainingRotation',
             {
@@ -192,7 +191,7 @@ export default function TrainingPage() {
             }
         ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['trainingRotations'] }),
-        onError: (error) => {
+        onError: (error: Error) => {
             toast({
                 variant: 'destructive',
                 title: 'Rotation konnte nicht gespeichert werden',
@@ -204,14 +203,14 @@ export default function TrainingPage() {
 
   // Bulk operations for transferring training to scheduler
   const bulkCreateShiftMutation = useMutation({
-    mutationFn: (data) => db.ShiftEntry.bulkCreate(data),
+    mutationFn: (data: Record<string, unknown>[]) => db.ShiftEntry.bulkCreate(data),
     onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: ['shifts', selectedYear] });
     },
   });
 
   const bulkDeleteShiftMutation = useMutation({
-    mutationFn: async (ids) => {
+    mutationFn: async (ids: string[]) => {
         await Promise.all(ids.map(id => db.ShiftEntry.delete(id)));
     },
     onSuccess: () => {
@@ -626,6 +625,7 @@ export default function TrainingPage() {
                          placeholder="Person auswählen"
                          searchPlaceholder="Person suchen..."
                          triggerClassName="w-[200px]"
+                         contentClassName=""
                          triggerTestId="training-doctor-select-trigger"
                          optionTestIdPrefix="training-doctor-option-"
                         />

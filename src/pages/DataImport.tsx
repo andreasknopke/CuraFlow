@@ -7,26 +7,43 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Upload, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 
+type ImportStatus = 'idle' | 'parsing' | 'importing' | 'done' | 'error';
+
+interface ImportLogEntry {
+  msg: string;
+  type: string;
+  time: string;
+}
+
+interface ImportResults {
+  [key: string]: { imported: number; skipped: number } | number;
+}
+
+interface ImportCount {
+  imported: number;
+  skipped: number;
+}
+
 export default function DataImportPage() {
-    const [status, setStatus] = useState('idle'); // idle, parsing, importing, done, error
+    const [status, setStatus] = useState<ImportStatus>('idle');
     const [progress, setProgress] = useState(0);
-    const [log, setLog] = useState([]);
-    const [results, setResults] = useState(null);
+    const [log, setLog] = useState<ImportLogEntry[]>([]);
+    const [results, setResults] = useState<ImportResults | null>(null);
 
     // Fetch current doctors to build name->id mapping
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],
-        queryFn: () => base44.entities.Doctor.list()
+        queryFn: () => base44.entities.Doctor.list() as Promise<{ id: string; name: string }[]>,
     });
 
-    const addLog = (msg, type = 'info') => {
+    const addLog = (msg: string, type = 'info'): void => {
         setLog(prev => [...prev, { msg, type, time: new Date().toLocaleTimeString() }]);
     };
 
-    const delay = (ms) => new Promise(r => setTimeout(r, ms));
+    const delay = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
-    const handleFileUpload = async (event) => {
-        const file = event.target.files[0];
+    const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+        const file = event.target.files?.[0];
         if (!file) return;
 
         setStatus('parsing');
@@ -44,23 +61,23 @@ export default function DataImportPage() {
             }
 
             // Build doctor name -> new ID mapping
-            const doctorNameToNewId = {};
+            const doctorNameToNewId: Record<string, string> = {};
             doctors.forEach(d => {
                 doctorNameToNewId[d.name] = d.id;
             });
             addLog(`${doctors.length} Personen für ID-Mapping geladen`);
 
             // Build old doctor ID -> name mapping from import data
-            const oldIdToName = {};
+            const oldIdToName: Record<string, string> = {};
             if (data.data.Doctor) {
-                data.data.Doctor.forEach(d => {
+                (data.data.Doctor as { id: string; name: string }[]).forEach(d => {
                     oldIdToName[d.id] = d.name;
                 });
                 addLog(`${data.data.Doctor.length} Personen in Import-Datei gefunden`);
             }
 
             // Build old ID -> new ID mapping
-            const oldToNewDoctorId = {};
+            const oldToNewDoctorId: Record<string, string> = {};
             Object.entries(oldIdToName).forEach(([oldId, name]) => {
                 if (doctorNameToNewId[name]) {
                     oldToNewDoctorId[oldId] = doctorNameToNewId[name];
@@ -69,7 +86,7 @@ export default function DataImportPage() {
             addLog(`${Object.keys(oldToNewDoctorId).length} ID-Zuordnungen erstellt`);
 
             setStatus('importing');
-            const importResults = {};
+            const importResults: ImportResults = {};
 
             // Import ShiftEntry
             if (data.data.ShiftEntry && data.data.ShiftEntry.length > 0) {
@@ -363,7 +380,7 @@ export default function DataImportPage() {
                                     <li key={key} className="flex justify-between">
                                         <span>{key}:</span>
                                         <span className="font-medium">
-                                            {typeof val === 'object' ? `${val.imported} (${val.skipped} übersprungen)` : val}
+                                            {typeof val === 'object' && val !== null ? `${(val as { imported: number; skipped: number }).imported} (${(val as { imported: number; skipped: number }).skipped} übersprungen)` : String(val)}
                                         </span>
                                     </li>
                                 ))}

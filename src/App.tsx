@@ -20,11 +20,14 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import CertificateUploadPage from '@/pages/CertificateUpload';
 import React from 'react';
 
+import type { ComponentType } from 'react';
+
 // ── Extract page config ──────────────────────────────────────────────────────
 
 const { Pages, Layout, mainPage } = pagesConfig;
 const mainPageKey: string = mainPage ?? Object.keys(Pages)[0];
-const MainPage = mainPageKey ? Pages[mainPageKey] : <></>;
+const FallbackPage: ComponentType = () => <></>;
+const MainPage: ComponentType = mainPageKey ? Pages[mainPageKey] : FallbackPage;
 
 const LayoutWrapper = ({ children }: { children: React.ReactNode }) =>
   Layout ? <Layout>{children}</Layout> : <>{children}</>;

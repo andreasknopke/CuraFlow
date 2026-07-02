@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import Admin from './pages/Admin';
 import AuthLogin from './pages/AuthLogin';
 import DataImport from './pages/DataImport';
@@ -11,10 +12,10 @@ import Statistics from './pages/Statistics';
 import Training from './pages/Training';
 import Vacation from './pages/Vacation';
 import WishList from './pages/WishList';
-import __Layout from './Layout.jsx';
+import __Layout from './Layout';
 
 
-export const PAGES = {
+export const PAGES: Record<string, ComponentType> = {
     "Admin": Admin,
     "AuthLogin": AuthLogin,
     "DataImport": DataImport,
@@ -28,9 +29,15 @@ export const PAGES = {
     "Training": Training,
     "Vacation": Vacation,
     "WishList": WishList,
+};
+
+export interface PagesConfig {
+    mainPage: string;
+    Pages: Record<string, ComponentType>;
+    Layout: ComponentType;
 }
 
-export const pagesConfig = {
+export const pagesConfig: PagesConfig = {
     mainPage: "Schedule",
     Pages: PAGES,
     Layout: __Layout,

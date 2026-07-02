@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from "@/components/ui/button";
@@ -39,9 +39,9 @@ export default function StaffPage() {
   const isAdmin = user?.role === 'admin';
 
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingDoctor, setEditingDoctor] = useState(null);
+  const [editingDoctor, setEditingDoctor] = useState<{ id: string; central_employee_id?: string | null; [key: string]: unknown } | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [selectedQualificationIds, setSelectedQualificationIds] = useState([]);
+  const [selectedQualificationIds, setSelectedQualificationIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
 
   // Dynamische Rollenprioritäten aus DB laden
@@ -53,7 +53,7 @@ export default function StaffPage() {
 
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
-    queryFn: () => db.Doctor.list(),
+        queryFn: () => db.Doctor.list() as Promise<{ id: string; name: string; role: string; order: number; initials?: string | null; is_active: boolean; [key: string]: unknown }[]>,
     enabled: isAdmin,
     select: (data) => data.sort((a, b) => {
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
@@ -64,7 +64,7 @@ export default function StaffPage() {
 
   const { data: colorSettings = [] } = useQuery({
       queryKey: ['colorSettings'],
-      queryFn: () => db.ColorSetting.list(),
+      queryFn: () => db.ColorSetting.list() as Promise<{ name: string; category: string; bg_color: string; text_color: string }[]>,
       enabled: isAdmin,
   });
 
@@ -86,7 +86,7 @@ export default function StaffPage() {
     });
   }, [doctors, doctorQualsByDoctor, selectedQualificationIds]);
 
-  const getRoleColor = (role) => {
+  const getRoleColor = (role: string) => {
       const setting = colorSettings.find(s => s.name === role && s.category === 'role');
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       
@@ -104,9 +104,9 @@ export default function StaffPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data) => {
+    mutationFn: async (data: { _qualificationIds?: string[]; central_employee_id?: string | null; [key: string]: unknown }) => {
       const { _qualificationIds, ...doctorData } = data;
-      const result = await db.Doctor.create({...doctorData, order: doctors.length});
+      const result = await db.Doctor.create({...doctorData, order: doctors.length}) as { id: string };
       await syncTenantDoctorCentralLink({
         doctorId: result?.id,
         tenantId: getActiveTokenId(),
@@ -133,13 +133,13 @@ export default function StaffPage() {
       queryClient.invalidateQueries({ queryKey: ["allDoctorQualifications"] });
       setIsFormOpen(false);
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error?.message || "Teammitglied konnte nicht gespeichert werden.");
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data, previousCentralEmployeeId }) => {
+    mutationFn: async ({ id, data, previousCentralEmployeeId }: { id: string; data: Record<string, unknown>; previousCentralEmployeeId?: string | null }) => {
       const result = await db.Doctor.update(id, data);
       await syncTenantDoctorCentralLink({
         doctorId: id,
@@ -155,20 +155,20 @@ export default function StaffPage() {
       setIsFormOpen(false);
       setEditingDoctor(null);
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast.error(error?.message || "Änderungen konnten nicht gespeichert werden.");
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => db.Doctor.delete(id),
+    mutationFn: (id: string) => db.Doctor.delete(id),
     onSuccess: () => {
       trackDbChange();
       queryClient.invalidateQueries({ queryKey: ["doctors"] });
     },
   });
 
-  const handleSave = (data) => {
+  const handleSave = (data: { _qualificationIds?: string[]; [key: string]: unknown }) => {
     if (editingDoctor) {
       // Bei Bearbeitung keine Qualifikationen über das Formular senden
       // (werden weiterhin über den Editor selbst gesteuert)
@@ -183,7 +183,7 @@ export default function StaffPage() {
     }
   };
 
-  const handleEdit = (doctor) => {
+  const handleEdit = (doctor: { id: string; central_employee_id?: string | null; [key: string]: unknown }) => {
     setEditingDoctor(doctor);
     setIsFormOpen(true);
   };
@@ -193,14 +193,14 @@ export default function StaffPage() {
     setIsFormOpen(true);
   };
 
-  const handleFormOpenChange = (open) => {
+  const handleFormOpenChange = (open: boolean) => {
     setIsFormOpen(open);
     if (!open) {
       setEditingDoctor(null);
     }
   };
 
-  const handleQualificationToggle = (qualificationId) => {
+  const handleQualificationToggle = (qualificationId: string) => {
     setSelectedQualificationIds((current) => (
       current.includes(qualificationId)
         ? current.filter((id) => id !== qualificationId)
@@ -208,7 +208,7 @@ export default function StaffPage() {
     ));
   };
 
-  const handleDragEnd = (result) => {
+  const handleDragEnd = (result: DropResult) => {
     if (selectedQualificationIds.length > 0) return;
     if (!result.destination) return;
     
@@ -300,17 +300,18 @@ export default function StaffPage() {
                           <CommandList>
                             <CommandEmpty>Keine Qualifikation gefunden.</CommandEmpty>
                             {activeQualifications.map((qualification) => {
-                              const isSelected = selectedQualificationIds.includes(qualification.id);
+                              const isSelected = selectedQualificationIds.includes(qualification.id as string);
                               return (
                                 <CommandItem
-                                  key={qualification.id}
+                                  key={qualification.id as string}
                                   value={`${qualification.name} ${qualification.short_label || ''}`}
-                                  onSelect={() => handleQualificationToggle(qualification.id)}
+                                  onSelect={() => handleQualificationToggle(qualification.id as string)}
                                 >
                                   <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 text-transparent'}`}>
                                     <Check className="h-3 w-3" />
                                   </div>
                                   <Badge
+                                    variant="secondary"
                                     style={{
                                       backgroundColor: qualification.color_bg || '#e0e7ff',
                                       color: qualification.color_text || '#3730a3'
@@ -458,13 +459,13 @@ export default function StaffPage() {
                                                                        </Button>
                                                                    </AlertDialogTrigger>
                                                                   <AlertDialogContent>
-                                                                      <AlertDialogHeader>
+                                                                      <AlertDialogHeader className="">
                                                                           <AlertDialogTitle>Sind Sie sicher?</AlertDialogTitle>
                                                                           <AlertDialogDescription>
                                                                               Diese Aktion kann nicht rückgängig gemacht werden.
                                                                           </AlertDialogDescription>
                                                                       </AlertDialogHeader>
-                                                                      <AlertDialogFooter>
+                                                                      <AlertDialogFooter className="">
                                                                           <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                                                                            <AlertDialogAction
                                                                                onClick={() => deleteMutation.mutate(doctor.id)}

@@ -561,7 +561,7 @@ export default function HelpPage() {
                             <div className="space-y-3">
                                 {teamRoles.map((role, index) => (
                                     <div key={role.id || role.name} className="flex items-center gap-3">
-                                        <Badge className={`w-28 ${getRoleColor(role.priority ?? index)}`}>
+                                        <Badge variant="secondary" className={`w-28 ${getRoleColor(role.priority ?? index)}`}>
                                             {role.name}
                                         </Badge>
                                         <div className="flex-1">
