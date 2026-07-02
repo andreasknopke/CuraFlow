@@ -1432,34 +1432,34 @@ export class EntityClient {
     this.entityName = entityName;
   }
 
-  async list(options: Record<string, unknown> = {}): Promise<unknown> {
+  async list(options: Record<string, any> = {}): Promise<any> {
     return api.list(this.entityName, options);
   }
 
   async filter(
-    query: Record<string, unknown>,
-    options: Record<string, unknown> = {},
-  ): Promise<unknown> {
+    query: Record<string, any>,
+    options: Record<string, any> = {},
+  ): Promise<any> {
     return api.filter(this.entityName, query, options);
   }
 
-  async get(id: string): Promise<unknown> {
+  async get(id: string): Promise<any> {
     return api.get(this.entityName, id);
   }
 
-  async create(data: Record<string, unknown>): Promise<unknown> {
+  async create(data: Record<string, any>): Promise<any> {
     return api.create(this.entityName, data);
   }
 
-  async update(id: string, data: Record<string, unknown>): Promise<unknown> {
+  async update(id: string, data: Record<string, any>): Promise<any> {
     return api.update(this.entityName, id, data);
   }
 
-  async delete(id: string): Promise<unknown> {
+  async delete(id: string): Promise<any> {
     return api.delete(this.entityName, id);
   }
 
-  async bulkCreate(dataArray: Record<string, unknown>[]): Promise<unknown> {
+  async bulkCreate(dataArray: Record<string, any>[]): Promise<any> {
     return api.bulkCreate(this.entityName, dataArray);
   }
 }

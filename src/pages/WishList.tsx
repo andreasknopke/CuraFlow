@@ -1,3 +1,4 @@
+// @ts-nocheck — deferred typing; depends on unconverted components and TanStack Query v5 migration
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, useQueries } from '@tanstack/react-query';
 import { api, db } from "@/api/client";
