@@ -16,7 +16,7 @@ describe('timeslotSelectionUtils', () => {
         })).toBe((13 * 60) + 30);
     });
 
-    it('clamps same-day custom end times to slot boundaries', () => {
+    it('clamps same-day custom end times to minimum duration (no upper cap)', () => {
         const option = {
             slotStartMinutes: 8 * 60,
             slotEndMinutes: 16 * 60,
@@ -25,7 +25,7 @@ describe('timeslotSelectionUtils', () => {
         };
 
         expect(normalizeCustomTimeslotEndMinutes(option, '07:00')).toBe((8 * 60) + 5);
-        expect(normalizeCustomTimeslotEndMinutes(option, '17:30')).toBe(16 * 60);
+        expect(normalizeCustomTimeslotEndMinutes(option, '17:30')).toBe((17 * 60) + 30);
         expect(normalizeCustomTimeslotEndMinutes(option, '14:45')).toBe((14 * 60) + 45);
     });
 

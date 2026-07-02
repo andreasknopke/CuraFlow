@@ -25,7 +25,7 @@ export const getDefaultCustomTimeslotEndMinutes = (option) => {
         return minEndMinutes;
     }
 
-    return Math.min(maxEndMinutes, Math.max(minEndMinutes, suggestedEndMinutes));
+    return Math.max(minEndMinutes, suggestedEndMinutes);
 };
 
 export const normalizeCustomTimeslotEndMinutes = (option, timeValue) => {
@@ -48,7 +48,7 @@ export const normalizeCustomTimeslotEndMinutes = (option, timeValue) => {
     }
 
     const minEndMinutes = Math.min(maxEndMinutes, startMinutes + MIN_CUSTOM_TIMESLOT_DURATION_MINUTES);
-    return Math.min(maxEndMinutes, Math.max(minEndMinutes, normalizedEndMinutes));
+    return Math.max(minEndMinutes, normalizedEndMinutes);
 };
 
 export const buildInitialCustomTimeslotEndMinutesByOption = (options = [], initialSelection = null) => {
