@@ -3392,12 +3392,33 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
 
 let ppugvRefreshInProgress = false;
 
-// PPUGV-Zugangsdaten aus Umgebungsvariablen (gesetzt via PHP/.env-Inhalt)
-const PPUGV_PMA_HOST = process.env.PPUGV_PMA_HOST || process.env.PHP_Host || '10.10.199.14';
-const PPUGV_PMA_USER = process.env.PPUGV_PMA_USER || process.env.PHP_User || 'ppugv_user';
-const PPUGV_PMA_PASSWORD = process.env.PPUGV_PMA_PASSWORD || process.env.PHP_Passwort || '';
-const PPUGV_PMA_DATABASE = process.env.PPUGV_PMA_DATABASE || process.env.PHP_Datenbank || 'ppugv';
-const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_PMA_HOST}/phpmyadmin`;
+// PPUGV-Zugangsdaten aus Umgebungsvariablen.
+// Unterstuetzte Quellen (absteigende Prioritaet):
+//   1. PPUGV_HOST / PPUGV_USER / PPUGV_PASSWORD     (bereits in Coolify gesetzt, fuer phpMyAdmin-Login)
+//   2. PHP_Host / PHP_User / PHP_Passwort             (aus PHP/.env, kompatibel)
+//   3. PPUGV_PMA_HOST / PPUGV_PMA_USER / PPUGV_PMA_PASSWORD (explizit)
+//   4. hartcodierte Defaults (nur als letzte Reserve)
+//
+// Wichtig: PPUGV_PORT (3306) war fuer MySQL – fuer phpMyAdmin wird Port 80/443 verwendet.
+// Setze PPUGV_PMA_PORT=80 (oder 443) wenn abweichend.
+const PPUGV_PMA_HOST = process.env.PPUGV_PMA_HOST
+  || process.env.PHP_Host
+  || process.env.PPUGV_HOST
+  || '10.10.199.14';
+const PPUGV_PMA_PORT = process.env.PPUGV_PMA_PORT || '80';
+const PPUGV_PMA_USER = process.env.PPUGV_PMA_USER
+  || process.env.PHP_User
+  || process.env.PPUGV_USER
+  || 'ppugv_user';
+const PPUGV_PMA_PASSWORD = process.env.PPUGV_PMA_PASSWORD
+  || process.env.PHP_Passwort
+  || process.env.PPUGV_PASSWORD
+  || '';
+const PPUGV_PMA_DATABASE = process.env.PPUGV_PMA_DATABASE
+  || process.env.PHP_Datenbank
+  || 'ppugv';
+const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE
+  || `http://${PPUGV_PMA_HOST}:${PPUGV_PMA_PORT}/phpmyadmin`;
 
 // Einziger Session-Cookie-Jar – wird bei jedem Refresh neu befuellt
 let pmaSessionCookie = null;
