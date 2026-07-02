@@ -3383,149 +3383,121 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
 // Refresh-Laeufe.
 //
 // Umgebungvariablen:
-//   PPUGV_HOST     (default: 10.10.199.14)
-//   PPUGV_PORT     (default: 3306)
-//   PPUGV_USER     (default: ppugv_user)
-//   PPUGV_PASSWORD (default: 7pFdXr66]yjZyJ8)
-//   PPUGV_DATABASE (default: ppugv)
+//   Primär (mysql2-Direktverbindung):
+//     PPUGV_HOST     (default: 10.10.199.14)
+//     PPUGV_PORT     (default: 3306)
+//     PPUGV_USER     (default: ppugv_user)
+//     PPUGV_PASSWORD
+//     PPUGV_DATABASE (default: ppugv)
+//   Fallback (phpMyAdmin via HTTP, z.B. bei Firewall):
+//     PPUGV_PMA_BASE (z.B. http://10.10.199.14/phpmyadmin)
+//   Alias-Namen (für Coolify-Kompatibilität):
+//     PHP_Host, PHP_User, PHP_Passwort, PHP_Datenbank
+//
+// Startup-Logging: Beim Serverstart wird automatisch geprüft, ob DNS,
+// mysql2-Port und phpMyAdmin erreichbar sind – siehe checkPpugvConnectivity().
 // =============================================================================
 
 let ppugvRefreshInProgress = false;
 
-// PPUGV-Zugangsdaten aus Umgebungsvariablen.
-// Unterstuetzte Quellen (absteigende Prioritaet):
-//   1. PPUGV_HOST / PPUGV_USER / PPUGV_PASSWORD     (bereits in Coolify gesetzt, fuer phpMyAdmin-Login)
-//   2. PHP_Host / PHP_User / PHP_Passwort             (aus PHP/.env, kompatibel)
-//   3. PPUGV_PMA_HOST / PPUGV_PMA_USER / PPUGV_PMA_PASSWORD (explizit)
-//   4. hartcodierte Defaults (nur als letzte Reserve)
-//
-// Wichtig: PPUGV_PORT (3306) war fuer MySQL – fuer phpMyAdmin wird Port 80/443 verwendet.
-// Setze PPUGV_PMA_PORT=80 (oder 443) wenn abweichend.
-const PPUGV_PMA_HOST = process.env.PPUGV_PMA_HOST
+// PPUGV-Zugangsdaten (mysql2-Direktverbindung, primär)
+const PPUGV_HOST = process.env.PPUGV_HOST
   || process.env.PHP_Host
-  || process.env.PPUGV_HOST
   || '10.10.199.14';
-const PPUGV_PMA_PORT = process.env.PPUGV_PMA_PORT || '80';
-const PPUGV_PMA_USER = process.env.PPUGV_PMA_USER
+const PPUGV_PORT = parseInt(process.env.PPUGV_PORT || '3306', 10);
+const PPUGV_USER = process.env.PPUGV_USER
   || process.env.PHP_User
-  || process.env.PPUGV_USER
   || 'ppugv_user';
-const PPUGV_PMA_PASSWORD = process.env.PPUGV_PMA_PASSWORD
+const PPUGV_PASSWORD = process.env.PPUGV_PASSWORD
   || process.env.PHP_Passwort
-  || process.env.PPUGV_PASSWORD
   || '';
-const PPUGV_PMA_DATABASE = process.env.PPUGV_PMA_DATABASE
+const PPUGV_DATABASE = process.env.PPUGV_DATABASE
   || process.env.PHP_Datenbank
   || 'ppugv';
-const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE
-  || `http://${PPUGV_PMA_HOST}:${PPUGV_PMA_PORT}/phpmyadmin`;
 
-// Einziger Session-Cookie-Jar – wird bei jedem Refresh neu befuellt
+// phpMyAdmin-Fallback (wenn Direktverbindung scheitert, z.B. von extern)
+const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || '';
+
+let ppugvPool = null;
 let pmaSessionCookie = null;
 
-/**
- * Meldet sich per POST an phpMyAdmin an und speichert das Session-Cookie.
- * Wird von fetchPpugvExportJson() automatisch aufgerufen, wenn kein Cookie existiert.
- */
+function getPpugvPool() {
+  if (ppugvPool) return ppugvPool;
+  if (!PPUGV_HOST || !PPUGV_USER || !PPUGV_DATABASE) return null;
+  try {
+    ppugvPool = createPool({
+      host: PPUGV_HOST,
+      port: PPUGV_PORT,
+      user: PPUGV_USER,
+      password: PPUGV_PASSWORD,
+      database: PPUGV_DATABASE,
+      waitForConnections: true,
+      connectionLimit: 2,
+      queueLimit: 0,
+      dateStrings: true,
+      timezone: '+00:00',
+      connectTimeout: 15000,
+    });
+    return ppugvPool;
+  } catch (err) {
+    console.error('[PPUGV] Pool-Erstellung fehlgeschlagen:', err.message);
+    return null;
+  }
+}
+
+// ===== phpMyAdmin-Fallback (nur wenn mysql2 nicht geht) =====
+
 async function pmaLogin() {
   const loginUrl = `${PPUGV_PMA_BASE}/index.php`;
-
   const body = new URLSearchParams({
-    pma_username: PPUGV_PMA_USER,
-    pma_password: PPUGV_PMA_PASSWORD,
-    server: '1',
-    lang: 'de',
+    pma_username: PPUGV_USER,
+    pma_password: PPUGV_PASSWORD,
+    server: '1', lang: 'de',
   });
-
   const response = await fetch(loginUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
-    },
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'CuraFlow-PPUGV-Cache/1.0' },
     body: body.toString(),
-    redirect: 'manual', // Keine Redirects automatisch folgen – wir brauchen nur das Cookie
-  });
-
-  // Set-Cookie-Header parsen
-  const setCookie = response.headers.get('set-cookie');
-  if (!setCookie) {
-    throw new Error(`phpMyAdmin-Login fehlgeschlagen – kein Session-Cookie erhalten (HTTP ${response.status})`);
-  }
-
-  // phpMyAdmin-Cookie extrahieren (meist `phpMyAdmin=...`)
-  const cookieMatch = setCookie.match(/(phpMyAdmin=[^;]+)/);
-  if (!cookieMatch) {
-    throw new Error(`phpMyAdmin-Login fehlgeschlagen – unbekanntes Cookie-Format: ${setCookie.substring(0, 80)}`);
-  }
-
-  pmaSessionCookie = cookieMatch[1];
-  console.log(`[PPUGV-PMA] Login erfolgreich – Session: ${pmaSessionCookie.substring(0, 30)}…`);
-}
-
-/**
- * Ruft die ppugv-Export-Tabelle via phpMyAdmin-Export-URL als JSON ab.
- * Loggt bei Bedarf vorher ein (wenn Session-Cookie fehlt oder abgelaufen ist).
- *
- * @returns {Promise<Array>} Array von Objekten (eine Zeile pro Datensatz)
- */
-async function fetchPpugvExportJson() {
-  if (!pmaSessionCookie) {
-    await pmaLogin();
-  }
-
-  const exportUrl = `${PPUGV_PMA_BASE}/export.php`
-    + `?db=${encodeURIComponent(PPUGV_PMA_DATABASE)}`
-    + `&table=export`
-    + `&sql_query=${encodeURIComponent('SELECT * FROM export ORDER BY rec_id')}`
-    + `&export_type=server`
-    + `&export_method=quick`
-    + `&format=json`;
-
-  const response = await fetch(exportUrl, {
-    method: 'GET',
-    headers: {
-      'Cookie': pmaSessionCookie,
-      'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
-    },
     redirect: 'manual',
   });
+  const setCookie = response.headers.get('set-cookie');
+  if (!setCookie) throw new Error(`phpMyAdmin-Login fehlgeschlagen (HTTP ${response.status})`);
+  const cookieMatch = setCookie.match(/(phpMyAdmin=[^;]+)/);
+  if (!cookieMatch) throw new Error(`phpMyAdmin-Cookie nicht gefunden`);
+  pmaSessionCookie = cookieMatch[1];
+}
 
-  // 302 → Session abgelaufen – einmalig neu anmelden und wiederholen
-  if (response.status === 302 || response.status === 301) {
-    console.log('[PPUGV-PMA] Session abgelaufen – erneuter Login…');
+async function fetchPpugvViaPma() {
+  if (!PPUGV_PMA_BASE) throw new Error('PPUGV_PMA_BASE nicht gesetzt');
+  if (!pmaSessionCookie) await pmaLogin();
+
+  const exportUrl = `${PPUGV_PMA_BASE}/export.php`
+    + `?db=${encodeURIComponent(PPUGV_DATABASE)}&table=export`
+    + `&sql_query=${encodeURIComponent('SELECT * FROM export ORDER BY rec_id')}`
+    + `&export_type=server&export_method=quick&format=json`;
+
+  const doFetch = async (cookie) => {
+    const res = await fetch(exportUrl, {
+      method: 'GET',
+      headers: { 'Cookie': cookie, 'User-Agent': 'CuraFlow-PPUGV-Cache/1.0' },
+      redirect: 'manual',
+    });
+    if ((res.status === 302 || res.status === 301) && cookie) return null; // Session expired
+    if (!res.ok) throw new Error(`phpMyAdmin-Export: HTTP ${res.status}`);
+    return res.json();
+  };
+
+  let data = await doFetch(pmaSessionCookie);
+  if (data === null) {
     pmaSessionCookie = null;
     await pmaLogin();
-
-    // Zweiter Versuch mit frischem Cookie
-    const retryResponse = await fetch(exportUrl, {
-      method: 'GET',
-      headers: {
-        'Cookie': pmaSessionCookie,
-        'User-Agent': 'CuraFlow-PPUGV-Cache/1.0',
-      },
-    });
-
-    if (!retryResponse.ok) {
-      throw new Error(`phpMyAdmin-Export fehlgeschlagen (Versuch 2): HTTP ${retryResponse.status}`);
-    }
-
-    return retryResponse.json();
+    data = await doFetch(pmaSessionCookie);
   }
-
-  if (!response.ok) {
-    throw new Error(`phpMyAdmin-Export fehlgeschlagen: HTTP ${response.status}`);
-  }
-
-  return response.json();
+  return data;
 }
 
 /**
- * Normalisiert ein vom phpMyAdmin-Export geliefertes JSON-Objekt in das
- * von ppugv_daily_cache erwartete Format.
- *
- * phpMyAdmin liefert Objekte mit keys wie "stationsname", "fabschluessel", etc.
- * – identisch zur MySQL-Spalte. Manche Werte koennen Strings sein (auch Zahlen).
+ * Normalisiert ein vom phpMyAdmin-Export geliefertes JSON-Objekt.
  */
 function normalizePpugvRow(row) {
   return {
@@ -3549,12 +3521,154 @@ function normalizePpugvRow(row) {
 }
 
 /**
+ * Schreibt normalisierte PPUGV-Zeilen transaktional in den Cache.
+ * Wird sowohl vom Background-Refresh als auch vom manuellen Upload genutzt.
+ *
+ * @param {string} cacheDate - Datum als 'YYYY-MM-DD'
+ * @param {Array} normalizedRows - normalisierte Zeilen (via normalizePpugvRow)
+ */
+async function writePpugvDataToCache(cacheDate, normalizedRows) {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    await connection.execute('DELETE FROM ppugv_daily_cache WHERE cache_date = ?', [cacheDate]);
+
+    const insertSql = `INSERT INTO ppugv_daily_cache 
+      (cache_date, stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+    for (const row of normalizedRows) {
+      await connection.execute(insertSql, [
+        cacheDate,
+        row.stationsname,
+        row.fabschluessel,
+        row.fabname,
+        row.monat,
+        row.schicht,
+        row.anzahl,
+        row.betten,
+        row.pfl_sen_ber || '',
+        row.patienten,
+        row.belegung,
+        row.pflegekraefte_ist,
+        row.hebammen_ist,
+        row.hilfskraefte_ist,
+        row.anmerkungen || '',
+        row.frostung,
+        row.frostungsdatum,
+      ]);
+    }
+
+    await connection.execute(
+      'UPDATE ppugv_cache_meta SET status = ?, row_count = ?, refreshed_at = NOW() WHERE cache_date = ?',
+      ['ok', normalizedRows.length, cacheDate]
+    );
+
+    await connection.commit();
+    return { success: true, count: normalizedRows.length };
+  } catch (txError) {
+    await connection.rollback();
+    throw txError;
+  } finally {
+    connection.release();
+  }
+}
+
+// ===== Startup-Connectivity-Check (non-blocking, loggt Erreichbarkeit) =====
+
+async function checkPpugvConnectivity() {
+  const checks = [];
+
+  // 1) DNS / Host-Auflösung prüfen
+  checks.push(new Promise((resolve) => {
+    const dns = PPUGV_HOST;
+    const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(dns);
+    if (isIp) {
+      resolve({ type: 'DNS', target: dns, status: 'ok', detail: 'IP-Adresse (keine Auflösung nötig)' });
+    } else {
+      const lookup = setTimeout(() => resolve({ type: 'DNS', target: dns, status: 'error', detail: 'Timeout nach 3s' }), 3000);
+      import('dns').then((dnsMod) => {
+        dnsMod.default.resolve(dns, (err) => {
+          clearTimeout(lookup);
+          resolve(err
+            ? { type: 'DNS', target: dns, status: 'error', detail: err.message }
+            : { type: 'DNS', target: dns, status: 'ok', detail: 'Auflösung erfolgreich' });
+        });
+      }).catch(() => clearTimeout(lookup));
+    }
+  }));
+
+  // 2) mysql2-Direktverbindung prüfen (TCP connect + SELECT 1)
+  checks.push((async () => {
+    const pool = getPpugvPool();
+    if (!pool) return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: 'skip', detail: 'Nicht konfiguriert (Host/User/Datenbank fehlen)' };
+    try {
+      const conn = await pool.getConnection();
+      const [rows] = await conn.execute('SELECT 1 AS ok');
+      conn.release();
+      const ok = rows?.[0]?.ok === 1;
+      return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: ok ? 'ok' : 'error', detail: ok ? 'Verbindung + Query OK' : 'SELECT 1 lieferte unerwartetes Ergebnis' };
+    } catch (err) {
+      return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: 'error', detail: `${err.code || err.message}` };
+    }
+  })());
+
+  // 3) phpMyAdmin HTTP-Erreichbarkeit prüfen
+  checks.push((async () => {
+    if (!PPUGV_PMA_BASE) return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE || '(nicht gesetzt)', status: 'skip', detail: 'PPUGV_PMA_BASE nicht konfiguriert' };
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(PPUGV_PMA_BASE, { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
+      clearTimeout(to);
+      return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'ok', detail: `HTTP ${res.status} – Antwort empfangen` };
+    } catch (err) {
+      if (err.name === 'AbortError') return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'error', detail: 'Timeout nach 8s' };
+      return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'error', detail: err.message };
+    }
+  })());
+
+  // Ergebnisse abwarten & ausgeben
+  const results = await Promise.allSettled(checks);
+  const separator = '─'.repeat(58);
+
+  console.log('');
+  console.log('╔' + separator + '╗');
+  console.log('║        🔌 PPUGV-Connectivity-Check (Startup)                  ║');
+  console.log('╚' + separator + '╝');
+
+  for (const r of results) {
+    const c = r.status === 'fulfilled' ? r.value : { type: '?', target: '?', status: 'error', detail: r.reason?.message || 'Unbekannter Fehler' };
+    const icon = c.status === 'ok' ? ' ✅' : c.status === 'skip' ? ' ⏭' : ' ❌';
+    console.log(`  ${icon} ${c.type.padEnd(12)} ${c.target.padEnd(28)} ${c.status.padEnd(6)}  ${c.detail}`);
+  }
+
+  const anyOk = results.some(r => r.status === 'fulfilled' && r.value?.status === 'ok');
+  const anyConfigured = results.some(r => r.status === 'fulfilled' && r.value?.status !== 'skip');
+  console.log(separator);
+  if (anyOk) {
+    console.log('  ✅ Mindestens ein PPUGV-Zugang ist erreichbar – Background-Refresh wird funktionieren.');
+  } else if (!anyConfigured) {
+    console.log('  ⏭  PPUGV nicht konfiguriert – Cache nur via manuellen Upload verfuegbar.');
+  } else {
+    console.log('  ⚠️  Alle PPUGV-Zugaenge sind derzeit nicht erreichbar (Firewall?).');
+    console.log('     Der Cache kann trotzdem ueber POST /api/master/ppugv/upload befuellt werden.');
+  }
+  console.log(separator);
+  console.log('');
+}
+
+// Startup-Check non-blocking ausfuehren
+checkPpugvConnectivity().catch((err) => console.error('[PPUGV-CONNECT] Fehler im Startup-Check:', err.message));
+
+/**
  * Fuehrt den eigentlichen Refresh asynchron im Hintergrund aus.
  *
- * - Setzt Status in ppugv_cache_meta auf 'running'
- * - Holt die ppugv-Export-Tabelle via phpMyAdmin-Export-URL (HTTP, kein MySQL)
- * - Schreibt Ergebnisse transaktional in ppugv_daily_cache
- * - Fehler werden geloggt, der CuraFlow-Server bleibt voll nutzbar
+ * Strategie (2 Wege + Fallback):
+ *   1. PRIMARY: mysql2-Direktverbindung (schnell, da Server im Krankenhaus-Netz)
+ *   2. FALLBACK: phpMyAdmin-Export per HTTP (wenn mysql2 nicht geht, z.B. Firewall)
+ *   3. NOTFALL: Manueller JSON-Upload ueber POST /api/master/ppugv/upload
  *
  * Das Mutex ppugvRefreshInProgress verhindert doppelte Ausfuehrungen.
  */
@@ -3568,7 +3682,7 @@ async function runPpugvRefreshInBackground() {
   const today = new Date().toISOString().split('T')[0];
   const startTime = Date.now();
 
-  console.log(`[PPUGV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh (via phpMyAdmin)...`);
+  console.log(`[PPUGV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh...`);
 
   try {
     // Status auf "running" setzen
@@ -3579,81 +3693,65 @@ async function runPpugvRefreshInBackground() {
       [today]
     );
 
-    // Daten via phpMyAdmin-Export abrufen (HTTP, kein direkter MySQL-Zugriff)
-    console.log(`[PPUGV-BG] Rufe ppugv-Export via ${PPUGV_PMA_BASE} ab…`);
-    const rawJson = await fetchPpugvExportJson();
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[PPUGV-BG] Export abgeschlossen nach ${elapsed}s – ${rawJson.length} Zeilen erhalten`);
+    // ----- VERSICH 1: mysql2-Direktverbindung (primary) -----
+    let sourceRows = null;
+    const pool = getPpugvPool();
 
-    if (!Array.isArray(rawJson) || rawJson.length === 0) {
+    if (pool) {
+      try {
+        console.log(`[PPUGV-BG] Versuche mysql2-Direktverbindung zu ${PPUGV_HOST}:${PPUGV_PORT}...`);
+        const [rows] = await pool.execute(
+          'SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum FROM export ORDER BY rec_id'
+        );
+        sourceRows = rows;
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`[PPUGV-BG] mysql2 erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
+      } catch (dbErr) {
+        console.warn(`[PPUGV-BG] mysql2 fehlgeschlagen: ${dbErr.code || dbErr.message} – versuche phpMyAdmin-Fallback...`);
+        sourceRows = null;
+      }
+    } else {
+      console.log('[PPUGV-BG] Kein mysql2-Pool konfiguriert – versuche phpMyAdmin...');
+    }
+
+    // ----- VERSICH 2: phpMyAdmin-Fallback (wenn mysql2 nicht geklappt hat) -----
+    if (!sourceRows && PPUGV_PMA_BASE) {
+      try {
+        console.log(`[PPUGV-BG] Versuche phpMyAdmin via ${PPUGV_PMA_BASE}...`);
+        const rawJson = await fetchPpugvViaPma();
+        if (Array.isArray(rawJson) && rawJson.length > 0) {
+          sourceRows = rawJson.map(normalizePpugvRow);
+          const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+          console.log(`[PPUGV-BG] phpMyAdmin erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
+        }
+      } catch (pmaErr) {
+        console.warn(`[PPUGV-BG] phpMyAdmin fehlgeschlagen: ${pmaErr.message}`);
+      }
+    }
+
+    // ----- NICHTS FUNKTIONIERT -----
+    if (!sourceRows || sourceRows.length === 0) {
+      const msg = !sourceRows
+        ? 'Keine Verbindung zur ppugv-Datenbank (mysql2 + phpMyAdmin-Fallback fehlgeschlagen). Nutze manuellen Upload.'
+        : 'Keine Daten in der Export-Tabelle gefunden.';
+      console.error(`[PPUGV-BG] ${msg}`);
       await db.execute(
-        "UPDATE ppugv_cache_meta SET status = 'error', row_count = 0, error_message = 'Keine Daten vom phpMyAdmin-Export erhalten' WHERE cache_date = ?",
-        [today]
+        "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
+        [msg, today]
       );
-      console.warn('[PPUGV-BG] Keine Daten vom phpMyAdmin-Export erhalten.');
       return;
     }
 
-    // Normalisieren
-    const sourceRows = rawJson.map(normalizePpugvRow);
-
-    // Transaktional in den Cache schreiben
-    const connection = await db.getConnection();
-    try {
-      await connection.beginTransaction();
-
-      await connection.execute('DELETE FROM ppugv_daily_cache WHERE cache_date = ?', [today]);
-
-      const insertSql = `INSERT INTO ppugv_daily_cache 
-        (cache_date, stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-      for (const row of sourceRows) {
-        await connection.execute(insertSql, [
-          today,
-          row.stationsname,
-          row.fabschluessel,
-          row.fabname,
-          row.monat,
-          row.schicht,
-          row.anzahl,
-          row.betten,
-          row.pfl_sen_ber || '',
-          row.patienten,
-          row.belegung,
-          row.pflegekraefte_ist,
-          row.hebammen_ist,
-          row.hilfskraefte_ist,
-          row.anmerkungen || '',
-          row.frostung,
-          row.frostungsdatum,
-        ]);
-      }
-
-      await connection.execute(
-        'UPDATE ppugv_cache_meta SET status = ?, row_count = ?, refreshed_at = NOW() WHERE cache_date = ?',
-        ['ok', sourceRows.length, today]
-      );
-
-      await connection.commit();
-      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`[PPUGV-BG] ${new Date().toISOString()} Refresh erfolgreich – ${sourceRows.length} Datensaetze in ${totalTime}s`);
-    } catch (txError) {
-      await connection.rollback();
-      await db.execute(
-        "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
-        [txError.message, today]
-      );
-      console.error(`[PPUGV-BG] Transaktionsfehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, txError.message);
-    } finally {
-      connection.release();
-    }
+    // ----- IN CACHE SCHREIBEN -----
+    const result = await writePpugvDataToCache(today, sourceRows);
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PPUGV-BG] ${new Date().toISOString()} Refresh erfolgreich – ${result.count} Datensaetze in ${totalTime}s`);
   } catch (error) {
-    console.error(`[PPUGV-BG] Fehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, error.message);
+    console.error(`[PPUGV-BG] Fehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, error.code || error.message);
     try {
       await db.execute(
         "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
-        [error.message, today]
+        [(error.message || String(error)).substring(0, 500), today]
       );
     } catch (metaError) {
       console.error('[PPUGV-BG] Konnte Meta-Status nicht aktualisieren:', metaError.message);
@@ -3789,9 +3887,12 @@ router.get('/ppugv/stations', async (req, res, next) => {
  */
 router.post('/ppugv/refresh', async (req, res, next) => {
   try {
-    if (!PPUGV_PMA_HOST || !PPUGV_PMA_USER || !PPUGV_PMA_PASSWORD || !PPUGV_PMA_DATABASE) {
+    const hasMysqlConfig = !!(PPUGV_HOST && PPUGV_USER && PPUGV_PASSWORD);
+    const hasPmaConfig = !!PPUGV_PMA_BASE;
+
+    if (!hasMysqlConfig && !hasPmaConfig) {
       return res.status(503).json({
-        error: 'PPUGV-Zugang nicht konfiguriert. Setzen Sie PHP_Host, PHP_User, PHP_Passwort, PHP_Datenbank (oder PPUGV_PMA_*).',
+        error: 'PPUGV-Zugang nicht konfiguriert. Setzen Sie PPUGV_HOST/USER/PASSWORD (mysql2) oder PPUGV_PMA_BASE (phpMyAdmin).',
       });
     }
 
@@ -3809,7 +3910,7 @@ router.post('/ppugv/refresh', async (req, res, next) => {
 
     res.status(202).json({
       status: 'started',
-      message: 'PPUGV-Cache-Refresh wurde im Hintergrund gestartet. Dies kann bis zu 15 Minuten dauern. Der Status kann ueber /api/master/ppugv/meta abgefragt werden.',
+      message: 'PPUGV-Cache-Refresh wurde im Hintergrund gestartet. Der Status kann ueber /api/master/ppugv/meta abgefragt werden.',
     });
   } catch (error) {
     console.error('[PPUGV] refresh error:', error.message);
@@ -3832,6 +3933,51 @@ router.get('/ppugv/meta', async (req, res, next) => {
     });
   } catch (error) {
     console.error('[PPUGV] meta error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/ppugv/upload
+ * Manueller JSON-Upload als Notfall, wenn weder mysql2 noch phpMyAdmin funktionieren.
+ *
+ * Erwartet ein JSON-Array von Export-Zeilen (gleiches Schema wie die export-Tabelle).
+ * Speichert die Daten transaktional im Cache und setzt ppugv_cache_meta auf 'ok'.
+ */
+router.post('/ppugv/upload', async (req, res, next) => {
+  try {
+    const { data, cacheDate: customDate } = req.body;
+
+    if (!Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ error: 'Erwarte JSON-Array unter "data".' });
+    }
+
+    if (data.length > 50000) {
+      return res.status(400).json({ error: 'Maximal 50.000 Datensätze erlaubt.' });
+    }
+
+    const today = customDate || new Date().toISOString().split('T')[0];
+
+    // Status setzen
+    await db.execute(
+      `INSERT INTO ppugv_cache_meta (cache_date, refreshed_at, status, row_count)
+       VALUES (?, NOW(), 'running', 0)
+       ON DUPLICATE KEY UPDATE status = 'running', refreshed_at = NOW(), error_message = NULL`,
+      [today]
+    );
+
+    const sourceRows = data.map(normalizePpugvRow);
+    const result = await writePpugvDataToCache(today, sourceRows);
+
+    console.log(`[PPUGV-UPLOAD] ${result.count} Datensaetze fuer ${today} gespeichert.`);
+    res.status(201).json({
+      status: 'ok',
+      count: result.count,
+      cacheDate: today,
+      message: `${result.count} Datensaetze erfolgreich gespeichert.`,
+    });
+  } catch (error) {
+    console.error('[PPUGV-UPLOAD] Fehler:', error.message);
     next(error);
   }
 });
