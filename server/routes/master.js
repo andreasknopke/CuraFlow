@@ -3368,4 +3368,358 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
   }
 });
 
+// =============================================================================
+// PPUGV STATISTIK (Pflegepersonaluntergrenzen-Verordnung)
+// =============================================================================
+//
+// Diese Routes liefern die PPUGV-Auswertungen, die bisher nur im legacy PHP-
+// Frontend unter /PHP/ verfuegbar waren. Die Daten werden 1x taeglich aus der
+// ppugv-Datenbank (Export-Tabelle) in die master-eigene Cache-Tabelle
+// (ppugv_daily_cache) uebernommen und dort fuer schnelle Abfragen vorgehalten.
+//
+// WICHTIG: Der Refresh (Poll der ppugv-DB) kann bis zu 15 Minuten dauern und
+// laeuft daher IMMER asynchron im Hintergrund, ohne den Request-Response-Zyklus
+// zu blockieren. Ein Mutex (ppugvRefreshInProgress) verhindert parallele
+// Refresh-Laeufe.
+//
+// Umgebungvariablen:
+//   PPUGV_HOST     (default: 10.10.199.14)
+//   PPUGV_PORT     (default: 3306)
+//   PPUGV_USER     (default: ppugv_user)
+//   PPUGV_PASSWORD (default: 7pFdXr66]yjZyJ8)
+//   PPUGV_DATABASE (default: ppugv)
+// =============================================================================
+
+let ppugvPool = null;
+let ppugvRefreshInProgress = false;
+
+function getPpugvPool() {
+  if (ppugvPool) return ppugvPool;
+
+  const host = process.env.PPUGV_HOST || '10.10.199.14';
+  const port = parseInt(process.env.PPUGV_PORT || '3306', 10);
+  const user = process.env.PPUGV_USER || 'ppugv_user';
+  const password = process.env.PPUGV_PASSWORD || '7pFdXr66]yjZyJ8';
+  const database = process.env.PPUGV_DATABASE || 'ppugv';
+
+  if (!host || !user || !database) {
+    return null;
+  }
+
+  try {
+    ppugvPool = createPool({
+      host,
+      port,
+      user,
+      password,
+      database,
+      waitForConnections: true,
+      connectionLimit: 3,
+      queueLimit: 0,
+      dateStrings: true,
+      timezone: '+00:00',
+    });
+    return ppugvPool;
+  } catch (err) {
+    console.error('[PPUGV] Failed to create pool:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Fuehrt den eigentlichen Refresh asynchron im Hintergrund aus.
+ * - Setzt Status in ppugv_cache_meta auf 'running'
+ * - Pollt die ppugv-Export-Tabelle (kann bis zu 15 Minuten dauern)
+ * - Schreibt Ergebnisse transaktional in ppugv_daily_cache
+ * - Fehler werden geloggt, der CuraFlow-Server bleibt voll nutzbar
+ *
+ * Das Mutex ppugvRefreshInProgress verhindert doppelte Ausfuehrungen.
+ */
+async function runPpugvRefreshInBackground() {
+  if (ppugvRefreshInProgress) {
+    console.log('[PPUGV-BG] Refresh bereits in Gang – abbrechen.');
+    return;
+  }
+
+  const sourcePool = getPpugvPool();
+  if (!sourcePool) {
+    console.error('[PPUGV-BG] Keine PPUGV-Datenbank konfiguriert.');
+    return;
+  }
+
+  ppugvRefreshInProgress = true;
+  const today = new Date().toISOString().split('T')[0];
+  const startTime = Date.now();
+
+  console.log(`[PPUGV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh...`);
+
+  try {
+    // Status auf "running" setzen
+    await db.execute(
+      `INSERT INTO ppugv_cache_meta (cache_date, refreshed_at, status, row_count)
+       VALUES (?, NOW(), 'running', 0)
+       ON DUPLICATE KEY UPDATE status = 'running', refreshed_at = NOW(), error_message = NULL`,
+      [today]
+    );
+
+    // LANGSAMER DB-POLL – blockiert NICHT den Request-Response, da wir
+    // nicht innerhalb eines Request-Handlers sind. Der Event-Loop bleibt
+    // frei fuer andere Requests, weil wir hier im Hintergrund laufen.
+    console.log('[PPUGV-BG] Starte Poll der ppugv-Export-Tabelle (kann bis zu 15 Min dauern)...');
+    const [sourceRows] = await sourcePool.execute(
+      'SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum FROM export ORDER BY rec_id'
+    );
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PPUGV-BG] Poll abgeschlossen nach ${elapsed}s – ${sourceRows.length} Datensaetze`);
+
+    if (sourceRows.length === 0) {
+      await db.execute(
+        "UPDATE ppugv_cache_meta SET status = 'error', row_count = 0, error_message = 'Keine Daten in der Export-Tabelle gefunden' WHERE cache_date = ?",
+        [today]
+      );
+      console.warn('[PPUGV-BG] Keine Daten in der Export-Tabelle gefunden.');
+      return;
+    }
+
+    // Transaktional in den Cache schreiben – eigener Connection-Handle
+    // damit wir bei langem Write nicht den Pool blockieren.
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      await connection.execute('DELETE FROM ppugv_daily_cache WHERE cache_date = ?', [today]);
+
+      const insertSql = `INSERT INTO ppugv_daily_cache 
+        (cache_date, stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+      for (const row of sourceRows) {
+        await connection.execute(insertSql, [
+          today,
+          row.stationsname,
+          row.fabschluessel,
+          row.fabname,
+          row.monat,
+          row.schicht,
+          row.anzahl,
+          row.betten,
+          row.pfl_sen_ber || '',
+          row.patienten,
+          row.belegung,
+          row.pflegekraefte_ist,
+          row.hebammen_ist,
+          row.hilfskraefte_ist,
+          row.anmerkungen || '',
+          row.frostung,
+          row.frostungsdatum,
+        ]);
+      }
+
+      await connection.execute(
+        'UPDATE ppugv_cache_meta SET status = ?, row_count = ?, refreshed_at = NOW() WHERE cache_date = ?',
+        ['ok', sourceRows.length, today]
+      );
+
+      await connection.commit();
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[PPUGV-BG] ${new Date().toISOString()} Refresh erfolgreich – ${sourceRows.length} Datensaetze in ${totalTime}s`);
+    } catch (txError) {
+      await connection.rollback();
+      await db.execute(
+        "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
+        [txError.message, today]
+      );
+      console.error(`[PPUGV-BG] Transaktionsfehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, txError.message);
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error(`[PPUGV-BG] Fehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, error.message);
+    try {
+      await db.execute(
+        "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
+        [error.message, today]
+      );
+    } catch (metaError) {
+      console.error('[PPUGV-BG] Konnte Meta-Status nicht aktualisieren:', metaError.message);
+    }
+  } finally {
+    ppugvRefreshInProgress = false;
+    const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[PPUGV-BG] Refresh beendet (${totalTime}s) – Mutex freigegeben.`);
+  }
+}
+
+/**
+ * Sofortige, erzwungene Cache-Abfrage: Prueft, ob der Cache leer ist.
+ * Wenn ja -> startet asynchrone Hintergrundaktualisierung und antwortet
+ * sofort mit Status "building".
+ */
+async function ensurePpugvCacheAsync() {
+  if (ppugvRefreshInProgress) {
+    return 'running'; // Laueft bereits
+  }
+
+  try {
+    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppugv_daily_cache');
+    const count = Number(row[0]?.cnt || 0);
+
+    if (count === 0) {
+      // Cache ist leer – starte Hintergrund-Refresh (fire & forget)
+      console.log('[PPUGV] Cache leer – starte asynchronen Hintergrund-Refresh.');
+      runPpugvRefreshInBackground().catch((err) => {
+        console.error('[PPUGV] Unerwarteter Fehler im Hintergrund-Refresh:', err.message);
+      });
+      return 'triggered';
+    }
+
+    // Cache ist gefuellt – nichts zu tun
+    return 'ready';
+  } catch (error) {
+    // Tabelle existiert vielleicht noch nicht – das ist ok
+    console.warn('[PPUGV] ensurePpugvCache konnte Cache nicht prüfen:', error.message);
+    return 'error';
+  }
+}
+
+/**
+ * GET /api/master/ppugv
+ * Liefert die gecachten PPUGV-Exportdaten.
+ *
+ * Verhalten bei leerem Cache:
+ *   Der erste Aufruf startet automatisch einen asynchronen Hintergrund-Refresh
+ *   und antwortet sofort mit {"status":"building", "message":"..."}.
+ *   Der Client (Frontend) kann dann polling-mässig den Status pruefen
+ *   (GET /api/master/ppugv/meta) und erneut laden.
+ *
+ * Query-Parameter:
+ *   station  – Filter auf Stationsname (optional)
+ *   monat    – Filter auf Monatsname (optional, z.B. "Januar")
+ *   jahr     – Filter auf Jahr (optional, 4-stellig)
+ */
+router.get('/ppugv', async (req, res, next) => {
+  try {
+    // Pruefe Cache-Zustand (triggert ggf. Hintergrund-Refresh)
+    const cacheStatus = await ensurePpugvCacheAsync();
+
+    const { station, monat, jahr } = req.query;
+    let sql = 'SELECT * FROM ppugv_daily_cache WHERE 1=1';
+    const params = [];
+
+    if (station) {
+      sql += ' AND stationsname LIKE ?';
+      params.push(`%${station}%`);
+    }
+    if (monat) {
+      sql += ' AND monat = ?';
+      params.push(monat);
+    }
+    if (jahr) {
+      sql += ' AND YEAR(frostungsdatum) = ?';
+      params.push(parseInt(jahr, 10));
+    }
+
+    sql += ' ORDER BY stationsname, FIELD(monat,\'Januar\',\'Februar\',\'März\',\'April\',\'Mai\',\'Juni\',\'Juli\',\'August\',\'September\',\'Oktober\',\'November\',\'Dezember\'), schicht';
+
+    const [rows] = await db.execute(sql, params);
+
+    // Cache-Metadaten abrufen
+    const [metaRows] = await db.execute(
+      'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 1'
+    );
+
+    // Wenn der Cache gerade leer war und wir einen Refresh gestartet haben,
+    // signalisieren wir das dem Client
+    const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
+    const isEmpty = rows.length === 0;
+
+    res.json({
+      data: rows,
+      meta: metaRows[0] || null,
+      count: rows.length,
+      cacheStatus, // "ready" | "triggered" | "running" | "error"
+      building: isBuilding,
+      message: isBuilding
+        ? 'PPUGV-Cache wird im Hintergrund aufgebaut (kann bis zu 15 Minuten dauern). Bitte Seite neu laden.'
+        : isEmpty
+          ? 'Keine gecachten Daten vorhanden.'
+          : null,
+    });
+  } catch (error) {
+    console.error('[PPUGV] GET error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/stations
+ * Liefert die Liste der verfuegbaren Stationen (fuer Dropdown-Filter).
+ */
+router.get('/ppugv/stations', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT DISTINCT stationsname, MIN(fabschluessel) AS fabschluessel, MIN(fabname) AS fabname FROM ppugv_daily_cache GROUP BY stationsname ORDER BY stationsname'
+    );
+    res.json({ stations: rows });
+  } catch (error) {
+    console.error('[PPUGV] stations error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/ppugv/refresh
+ * Startet eine sofortige Aktualisierung des Caches im Hintergrund.
+ * Die Antwort kommt sofort (HTTP 202) – der Refresh laeuft asynchron weiter.
+ */
+router.post('/ppugv/refresh', async (req, res, next) => {
+  try {
+    const sourcePool = getPpugvPool();
+    if (!sourcePool) {
+      return res.status(503).json({
+        error: 'PPUGV-Datenbank nicht konfiguriert. Setzen Sie PPUGV_HOST, PPUGV_USER, PPUGV_PASSWORD, PPUGV_DATABASE.',
+      });
+    }
+
+    if (ppugvRefreshInProgress) {
+      return res.status(409).json({
+        status: 'already_running',
+        message: 'Ein Refresh laeuft bereits im Hintergrund. Bitte warten.',
+      });
+    }
+
+    // Fire & Forget – der Refresh laeuft asynchron, der Request antwortet sofort
+    runPpugvRefreshInBackground().catch((err) => {
+      console.error('[PPUGV] Unerwarteter Fehler im Hintergrund-Refresh:', err.message);
+    });
+
+    res.status(202).json({
+      status: 'started',
+      message: 'PPUGV-Cache-Refresh wurde im Hintergrund gestartet. Dies kann bis zu 15 Minuten dauern. Der Status kann ueber /api/master/ppugv/meta abgefragt werden.',
+    });
+  } catch (error) {
+    console.error('[PPUGV] refresh error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/meta
+ * Liefert die Cache-Metadaten (letzte Aktualisierung, Status, laufender Refresh).
+ */
+router.get('/ppugv/meta', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute(
+      'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 10'
+    );
+    res.json({
+      meta: rows,
+      refreshInProgress: ppugvRefreshInProgress,
+    });
+  } catch (error) {
+    console.error('[PPUGV] meta error:', error.message);
+    next(error);
+  }
+});
+
 export default router;

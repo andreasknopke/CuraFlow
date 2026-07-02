@@ -33,6 +33,9 @@ e2e/.auth/
 *.sln
 *.sw?
 
+# PHP legacy frontend (must NEVER appear on GitHub)
+PHP/
+
 # Excel files
 *.xlsx
 *.xls

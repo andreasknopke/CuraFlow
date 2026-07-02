@@ -14,6 +14,7 @@ import MasterWorkTimeModels from '@/master/pages/MasterWorkTimeModels';
 import MasterPayScaleTariffs from '@/master/pages/MasterPayScaleTariffs';
 import MasterEmployeeCreate from '@/master/pages/MasterEmployeeCreate';
 import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDetail';
+import MasterPPUGV from '@/master/pages/MasterPPUGV';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -80,6 +81,7 @@ export default function MasterApp() {
                       <Route path="/fehlzeiten" element={<MasterAbsences />} />
                       <Route path="/feiertage" element={<MasterHolidays />} />
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />
+                      <Route path="/ppugv" element={<MasterPPUGV />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MasterLayout>

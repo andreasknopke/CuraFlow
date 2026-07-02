@@ -993,5 +993,52 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // ===== PPUGV Daily Cache (Pflegepersonaluntergrenzen-Verordnung) =====
+  // Speichert taeglich gecachte PPUGV-Exportdaten aus der legacy ppugv-Datenbank.
+  // Wird 1x taeglich per Cron-Job (server/scripts/refresh-ppugv-cache.js) aktualisiert.
+  await run('create_ppugv_daily_cache_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS ppugv_daily_cache (
+        id INT NOT NULL AUTO_INCREMENT,
+        cache_date DATE NOT NULL,
+        stationsname VARCHAR(100) NOT NULL,
+        fabschluessel INT NOT NULL,
+        fabname VARCHAR(50) NOT NULL,
+        monat VARCHAR(15) NOT NULL,
+        schicht VARCHAR(20) NOT NULL,
+        anzahl INT NOT NULL,
+        betten INT NOT NULL,
+        pfl_sen_ber VARCHAR(100) NOT NULL DEFAULT '',
+        patienten INT NOT NULL,
+        belegung DECIMAL(5,2) NOT NULL,
+        pflegekraefte_ist DECIMAL(5,2) NOT NULL,
+        hebammen_ist DECIMAL(5,2) NOT NULL,
+        hilfskraefte_ist DECIMAL(5,2) NOT NULL,
+        anmerkungen VARCHAR(50) NOT NULL DEFAULT '',
+        frostung VARCHAR(4) NOT NULL,
+        frostungsdatum DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_cache_date (cache_date),
+        KEY idx_station (stationsname),
+        KEY idx_monat (monat)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('add_ppugv_cache_metadata', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS ppugv_cache_meta (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        cache_date DATE NOT NULL,
+        refreshed_at DATETIME NOT NULL,
+        status ENUM('ok','error','running') DEFAULT 'ok',
+        row_count INT DEFAULT 0,
+        error_message TEXT DEFAULT NULL,
+        UNIQUE KEY idx_cache_date (cache_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }
