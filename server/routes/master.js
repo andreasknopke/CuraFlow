@@ -3416,7 +3416,8 @@ const PPUGV_DATABASE = process.env.PPUGV_DATABASE
   || 'ppugv';
 
 // phpMyAdmin-Fallback (wenn Direktverbindung scheitert, z.B. von extern)
-const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || '';
+// Default: leitet sich aus PPUGV_HOST ab, z.B. http://10.10.199.14/phpmyadmin
+const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_HOST}/phpmyadmin`;
 
 let ppugvPool = null;
 let pmaSessionCookie = null;
