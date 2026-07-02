@@ -3238,8 +3238,23 @@ export default function ScheduleBoard() {
                 });
             }
         }
+        // Also seed from rotationAssignments with resolved employee_name
+        // so that Joker employees from other tenants (not in doctorByCentralEmployeeId)
+        // are still resolvable by name in renderRotationCell.
+        for (const assignment of rotationAssignments) {
+            const empId = String(assignment.employee_id);
+            if (!map.has(empId) && assignment.employee_name && !assignment.employee_name.startsWith('#')) {
+                map.set(empId, {
+                    id: empId,
+                    name: assignment.employee_name,
+                    role: 'Arzt',
+                    initials: formatChipLabel(assignment.employee_name),
+                    _isJoker: true,
+                });
+            }
+        }
         return map;
-    }, [jokerChipsByDate, doctorByCentralEmployeeId]);
+    }, [jokerChipsByDate, doctorByCentralEmployeeId, rotationAssignments]);
 
     // Fallback doctor map for springer shifts rendered in grid cells.
     // The shift's doctor_id is the central employee ID, which won't be
