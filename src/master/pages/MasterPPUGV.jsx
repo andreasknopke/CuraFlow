@@ -211,17 +211,23 @@ export default function MasterPPUGV() {
   const [exportLoading, setExportLoading] = useState(null);
 
   // PPBV-Daten (Soll/Ist-Vergleich – erweiterte ppugv-Daten)
-  const { data: ppbvData, isLoading: ppbvLoading, refetch: refetchPpbv } = useQuery({
+  const { data: ppbvData, isLoading: ppbvLoading } = useQuery({
     queryKey: ['ppbv-data', selectedYear],
     queryFn: async () => {
       const qs = selectedYear ? `?jahr=${selectedYear}` : '';
       return await api.request(`/api/master/ppbv${qs}`);
     },
     enabled: activeTab === 'ppbv',
+    refetchInterval: (query) => {
+      const state = query.state.data;
+      if (state?.building) return 10000;
+      return false;
+    },
   });
 
   const ppbvRows = ppbvData?.data || [];
   const ppbvMeta = ppbvData?.meta;
+  const ppbvBuilding = ppbvData?.building === true;
 
   // PPBV-Refresh
   const ppbvRefreshMutation = useMutation({
@@ -863,8 +869,8 @@ export default function MasterPPUGV() {
                   : <>⏳ Cache leer</>}
             </Badge>
             <Button variant="outline" size="sm" onClick={() => ppbvRefreshMutation.mutate()}
-              disabled={ppbvRefreshMutation.isPending}>
-              {ppbvRefreshMutation.isPending ? (
+              disabled={ppbvRefreshMutation.isPending || ppbvBuilding}>
+              {ppbvRefreshMutation.isPending || ppbvBuilding ? (
                 <Loader2 className="w-4 h-4 mr-1 animate-spin" />
               ) : <RefreshCw className="w-4 h-4 mr-1" />}
               Refresh
@@ -888,6 +894,11 @@ export default function MasterPPUGV() {
             <CardContent>
               {ppbvLoading ? (
                 <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
+              ) : ppbvBuilding ? (
+                <div className="flex items-center justify-center py-12 text-blue-500">
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  <span>PPBV-Cache wird im Hintergrund aufgebaut – Daten erscheinen automatisch…</span>
+                </div>
               ) : ppbvRows.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">
                   <Server className="w-8 h-8 mx-auto mb-2 opacity-50" />

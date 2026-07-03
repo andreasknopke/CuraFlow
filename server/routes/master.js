@@ -4584,6 +4584,29 @@ function sanitizePpbvRows(rows) {
   return Array.from(groups.values());
 }
 
+/**
+ * Prueft, ob der ppbv-Cache leer ist, und startet ggf. einen
+ * asynchronen Background-Refresh (fire & forget).
+ */
+async function ensurePpbvCacheAsync() {
+  if (ppbvRefreshInProgress) return 'running';
+  try {
+    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppbv_daily_cache');
+    const count = Number(row[0]?.cnt || 0);
+    if (count === 0) {
+      console.log('[PPBV] Cache leer – starte asynchronen Hintergrund-Refresh.');
+      runPpbvRefreshInBackground().catch((err) => {
+        console.error('[PPBV] Unerwarteter Fehler im Hintergrund-Refresh:', err.message);
+      });
+      return 'triggered';
+    }
+    return 'ready';
+  } catch (error) {
+    console.warn('[PPBV] ensurePpbvCache konnte Cache nicht prüfen:', error.message);
+    return 'error';
+  }
+}
+
 async function runPpbvRefreshInBackground() {
   if (ppbvRefreshInProgress) {
     console.log('[PPBV-BG] Refresh bereits in Gang – abbrechen.');
@@ -4687,9 +4710,13 @@ async function runPpbvRefreshInBackground() {
  * GET /api/master/ppbv
  * Liefert die gecachten PPBV-Exportdaten (mit vollstaendigem Soll/Ist-Vergleich)
  * Query: station, monat, jahr
+ *
+ * Verhalten bei leerem Cache: startet automatisch asynchronen Background-Refresh
+ * und antwortet mit building:true (analog zu ppugv).
  */
 router.get('/ppbv', async (req, res, next) => {
   try {
+    const cacheStatus = await ensurePpbvCacheAsync();
     const { station, monat, jahr } = req.query;
     let sql = 'SELECT * FROM ppbv_daily_cache WHERE 1=1';
     const params = [];
@@ -4705,11 +4732,19 @@ router.get('/ppbv', async (req, res, next) => {
     const sanitized = sanitizePpbvRows(rows);
     const [metaRows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 1');
 
+    const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
+
     res.json({
       data: sanitized,
       meta: metaRows[0] || null,
       count: sanitized.length,
-      cacheStatus: sanitized.length > 0 ? 'ready' : 'empty',
+      cacheStatus,
+      building: isBuilding,
+      message: isBuilding
+        ? 'PPBV-Cache wird im Hintergrund aufgebaut.'
+        : sanitized.length === 0
+          ? 'Keine gecachten PPBV-Daten vorhanden.'
+          : null,
     });
   } catch (error) {
     console.error('[PPBV] GET error:', error.message);
