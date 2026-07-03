@@ -1042,15 +1042,19 @@ export async function runMasterMigrations(dbPool) {
 
   // PPUGV: Jahr-Spalte hinzufügen (für year-over-year Vergleiche)
   await run('add_ppugv_daily_cache_jahr_column', async () => {
-    // Prüfen ob Spalte bereits existiert
-    const [cols] = await dbPool.execute('SHOW COLUMNS FROM ppugv_daily_cache LIKE ?', ['jahr']);
-    if (cols.length === 0) {
-      await dbPool.execute(`
-        ALTER TABLE ppugv_daily_cache
-        ADD COLUMN jahr INT NOT NULL DEFAULT 0 AFTER schicht,
-        ADD INDEX idx_jahr (jahr)
-      `);
+    const changed = await addColumnIfMissing('ppugv_daily_cache', 'jahr', 'INT NOT NULL DEFAULT 0');
+    if (changed) {
+      // Nachträglich befüllen aus frostungsdatum
+      try {
+        await dbPool.execute(
+          'UPDATE ppugv_daily_cache SET jahr = YEAR(frostungsdatum) WHERE jahr = 0 AND frostungsdatum IS NOT NULL'
+        );
+      } catch (err) {
+        // nicht kritisch – die Spalte existiert dann, wird nach und nach gefüllt
+        console.warn('[Migration] ppugv_daily_cache.jahr backfill warning:', err.message);
+      }
     }
+    return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_COLUMN'], duplicateReason: 'Spalte existiert bereits' });
 
   return results;

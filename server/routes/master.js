@@ -3473,6 +3473,24 @@ async function ppugvReadonlyQuery(sql, params = []) {
   return result;
 }
 
+// Prueft, ob die 'jahr'-Spalte in ppugv_daily_cache existiert (einmal gecacht).
+// Falls eine Migration noch nicht gelaufen ist, fallback auf YEAR(frostungsdatum).
+let ppugvHasJahrColumn = null;
+async function hasJahrColumn() {
+  if (ppugvHasJahrColumn !== null) return ppugvHasJahrColumn;
+  try {
+    const [cols] = await db.execute('SHOW COLUMNS FROM ppugv_daily_cache LIKE ?', ['jahr']);
+    ppugvHasJahrColumn = cols.length > 0;
+    if (!ppugvHasJahrColumn) {
+      console.warn('[PPUGV] jahr-Spalte fehlt in ppugv_daily_cache – nutze YEAR(frostungsdatum) als Fallback. Migration läuft evtl. noch nicht.');
+    }
+  } catch (err) {
+    console.warn('[PPUGV] SHOW COLUMNS fehlgeschlagen – nutze YEAR(frostungsdatum):', err.message);
+    ppugvHasJahrColumn = false;
+  }
+  return ppugvHasJahrColumn;
+}
+
 // ===== phpMyAdmin-Fallback (nur wenn mysql2 nicht geht) =====
 
 async function pmaLogin() {
@@ -3928,7 +3946,9 @@ router.get('/ppugv', async (req, res, next) => {
       params.push(monat);
     }
     if (jahr) {
-      sql += ' AND jahr = ?';
+      // Fallback auf YEAR(frostungsdatum), falls jahr-Spalte fehlt (Migration nicht gelaufen)
+      const yearFilter = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
+      sql += ` AND ${yearFilter} = ?`;
       params.push(parseInt(jahr, 10));
     }
 
@@ -3997,9 +4017,10 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
     const { jahr } = req.query;
     const year = parseInt(jahr, 10) || new Date().getFullYear();
 
-    // Alle Rohdaten fuer das Jahr laden
+    // Alle Rohdaten fuer das Jahr laden (mit Fallback falls jahr-Spalte fehlt)
+    const yearFilter = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
     const [rows] = await db.execute(
-      `SELECT * FROM ppugv_daily_cache WHERE jahr = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
+      `SELECT * FROM ppugv_daily_cache WHERE ${yearFilter} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
       [year]
     );
 
@@ -4108,8 +4129,9 @@ router.get('/ppugv/trends', async (req, res, next) => {
       : [new Date().getFullYear() - 2, new Date().getFullYear() - 1, new Date().getFullYear()];
 
     const allData = [];
+    const yearColumn = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
     for (const year of years) {
-      let sql = 'SELECT * FROM ppugv_daily_cache WHERE jahr = ?';
+      let sql = `SELECT * FROM ppugv_daily_cache WHERE ${yearColumn} = ?`;
       const params = [year];
       if (station && station !== 'all') {
         sql += ' AND stationsname LIKE ?';
