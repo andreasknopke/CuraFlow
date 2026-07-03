@@ -1057,5 +1057,66 @@ export async function runMasterMigrations(dbPool) {
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_COLUMN'], duplicateReason: 'Spalte existiert bereits' });
 
+  // ===== PPBV Daily Cache (Pflegepersonaluntergrenzen-Besetzung-Vergleich) =====
+  // Die ppbv-Datenbank enthaelt die VOLLSTAENDIGE Version der InEK-Meldung
+  // mit Soll/Ist-Vergleich, Ausfallzeiten und Azubis – quasi der Nachfolger
+  // von ppugv mit deutlich mehr Spalten. Wir cachen wie bei ppugv daily.
+  await run('create_ppbv_daily_cache_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS ppbv_daily_cache (
+        id INT NOT NULL AUTO_INCREMENT,
+        cache_date DATE NOT NULL,
+        stationsname VARCHAR(100) NOT NULL,
+        fabschluessel INT NOT NULL,
+        fabname VARCHAR(50) NOT NULL,
+        kategorie VARCHAR(50) NOT NULL DEFAULT '',
+        monat VARCHAR(15) NOT NULL,
+        schicht VARCHAR(20) NOT NULL,
+        jahr INT NOT NULL DEFAULT 0,
+        anzahl INT NOT NULL,
+        betten INT NOT NULL,
+        teilstat INT NOT NULL DEFAULT 0,
+        gyngeb VARCHAR(5) NOT NULL DEFAULT 'nein',
+        patienten INT NOT NULL,
+        belegung DECIMAL(5,2) NOT NULL,
+        fachkraefte_soll DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_soll_1 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_soll_2 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_soll_3 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        fuehrungskraft DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_ist_1 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_ist_2 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        ausfall_ist_3 DECIMAL(5,2) NOT NULL DEFAULT 0,
+        fachkraefte_ist DECIMAL(5,2) NOT NULL DEFAULT 0,
+        hebammen_ist DECIMAL(5,2) NOT NULL DEFAULT 0,
+        hilfskraefte_ist DECIMAL(5,2) NOT NULL DEFAULT 0,
+        azubi_ist DECIMAL(5,2) NOT NULL DEFAULT 0,
+        anmerkungen VARCHAR(50) NOT NULL DEFAULT '',
+        frostung VARCHAR(4) NOT NULL DEFAULT 'nein',
+        frostungsdatum DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        KEY idx_ppbv_cache_date (cache_date),
+        KEY idx_ppbv_station (stationsname),
+        KEY idx_ppbv_jahr (jahr),
+        KEY idx_ppbv_monat (monat)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_ppbv_cache_metadata', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS ppbv_cache_meta (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        cache_date DATE NOT NULL,
+        refreshed_at DATETIME NOT NULL,
+        status ENUM('ok','error','running') DEFAULT 'ok',
+        row_count INT DEFAULT 0,
+        error_message TEXT DEFAULT NULL,
+        UNIQUE KEY idx_ppbv_cache_date (cache_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }

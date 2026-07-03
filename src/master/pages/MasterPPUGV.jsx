@@ -39,6 +39,7 @@ import {
   TrendingUp,
   Building2,
   Table2,
+  Scale,
   Download,
   FileSpreadsheet,
   FileText,
@@ -68,7 +69,8 @@ const TABS = [
   { key: 'stations', label: 'Stationen', icon: Activity },
   { key: 'fab', label: 'Fachabteilungen', icon: Building2 },
   { key: 'trends', label: 'Jahresvergleich', icon: TrendingUp },
-  { key: 'table', label: 'Detailtabelle', icon: Table2 },
+  { key: 'ppbv', label: 'Soll/Ist-Vergleich', icon: Scale },
+  { key: 'table', label: 'InEK-Tabelle', icon: Table2 },
 ];
 
 const YEAR_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4'];
@@ -207,6 +209,54 @@ export default function MasterPPUGV() {
   }, [selectedYear]);
 
   const [exportLoading, setExportLoading] = useState(null);
+
+  // PPBV-Daten (Soll/Ist-Vergleich – erweiterte ppugv-Daten)
+  const { data: ppbvData, isLoading: ppbvLoading, refetch: refetchPpbv } = useQuery({
+    queryKey: ['ppbv-data', selectedYear],
+    queryFn: async () => {
+      const qs = selectedYear ? `?jahr=${selectedYear}` : '';
+      return await api.request(`/api/master/ppbv${qs}`);
+    },
+    enabled: activeTab === 'ppbv',
+  });
+
+  const ppbvRows = ppbvData?.data || [];
+  const ppbvMeta = ppbvData?.meta;
+
+  // PPBV-Refresh
+  const ppbvRefreshMutation = useMutation({
+    mutationFn: async () => await api.request('/api/master/ppbv/refresh', { method: 'POST' }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['ppbv-data'] });
+      queryClient.invalidateQueries({ queryKey: ['ppbv-meta'] });
+    },
+  });
+
+  // PPBV-Download
+  const downloadPpbvExport = useCallback(async (format) => {
+    try {
+      const url = `/api/master/ppbv/export/${format}?jahr=${selectedYear}`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (!response.ok) throw new Error(`PPBV-Export fehlgeschlagen: HTTP ${response.status}`);
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const fileName = match?.[1] || `PPBV_${selectedYear}.xlsx`;
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('[PPBV-Export]', err.message);
+      alert('PPBV-Export fehlgeschlagen: ' + err.message);
+    }
+  }, [selectedYear]);
 
   // Cleanup beim Unmount
   useEffect(() => {
@@ -786,7 +836,184 @@ export default function MasterPPUGV() {
         </>
       )}
 
-      {/* ===== TAB 4: InEK-Export-Tabelle ===== */}
+      {/* ===== TAB 4: PPBV Soll/Ist-Vergleich ===== */}
+      {activeTab === 'ppbv' && (
+        <>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="w-24">
+                  <SelectValue placeholder="Jahr" />
+                </SelectTrigger>
+                <SelectContent>
+                  {years.map((y) => (<SelectItem key={y} value={y}>{y}</SelectItem>))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Badge variant="outline" className={`text-xs flex items-center gap-1 ${
+              ppbvMeta?.status === 'ok' ? 'bg-green-50 text-green-700' :
+              ppbvMeta?.status === 'error' ? 'bg-red-50 text-red-700' :
+              'bg-gray-50 text-gray-600'
+            }`}>
+              {ppbvMeta?.status === 'ok'
+                ? <>✅ {ppbvMeta.row_count} Datensätze</>
+                : ppbvMeta?.status === 'error'
+                  ? <>❌ {ppbvMeta.error_message?.substring(0, 50)}</>
+                  : <>⏳ Cache leer</>}
+            </Badge>
+            <Button variant="outline" size="sm" onClick={() => ppbvRefreshMutation.mutate()}
+              disabled={ppbvRefreshMutation.isPending}>
+              {ppbvRefreshMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+              ) : <RefreshCw className="w-4 h-4 mr-1" />}
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => downloadPpbvExport('inek')}
+              disabled={ppbvRows.length === 0}>
+              <FileSpreadsheet className="w-4 h-4 mr-1" />
+              InEK-Excel (PPBV)
+            </Button>
+          </div>
+
+          {/* Soll/Ist-Vergleich Diagramm */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Scale className="w-5 h-5" />
+                Soll/Ist-Vergleich – Pflegefachkräfte (VK)
+              </CardTitle>
+              <CardDescription>{selectedYear} – Ø VK pro Monat (Tag + Nacht gemittelt)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {ppbvLoading ? (
+                <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
+              ) : ppbvRows.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Server className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p>Keine PPBV-Daten. Klicke auf "Refresh" um den Cache zu füllen.</p>
+                  <p className="text-sm mt-1">Die ppbv-DB ist auf demselben MySQL-Server wie ppugv, nur andere Datenbank.</p>
+                </div>
+              ) : (
+                <>
+                  <ResponsiveContainer width="100%" height={350}>
+                    <BarChart data={MONTH_ORDER.map(m => {
+                      const monthRows = ppbvRows.filter(r => r.monat === m);
+                      const tag = monthRows.filter(r => r.schicht === 'Tag');
+                      const nacht = monthRows.filter(r => r.schicht === 'Nacht');
+                      return {
+                        name: m,
+                        soll: tag.reduce((s, r) => s + Number(r.fachkraefte_soll || 0), 0) / Math.max(tag.length, 1),
+                        ist: tag.reduce((s, r) => s + Number(r.fachkraefte_ist || 0), 0) / Math.max(tag.length, 1),
+                        sollNacht: nacht.reduce((s, r) => s + Number(r.fachkraefte_soll || 0), 0) / Math.max(nacht.length, 1),
+                        istNacht: nacht.reduce((s, r) => s + Number(r.fachkraefte_ist || 0), 0) / Math.max(nacht.length, 1),
+                      };
+                    }).filter(m => m.soll > 0 || m.ist > 0)}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                      <YAxis tick={{ fontSize: 12 }} />
+                      <Tooltip />
+                      <Legend />
+                      <Bar dataKey="soll" name="Pflege Soll (Tag)" fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="ist" name="Pflege Ist (Tag)" fill={CHART_COLORS.pflegekraefte} radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="sollNacht" name="Pflege Soll (Nacht)" fill="#cbd5e1" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="istNacht" name="Pflege Ist (Nacht)" fill="#818cf8" radius={[2, 2, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+
+                  {/* Ausfallzeiten-Diagramm */}
+                  <div className="mt-8">
+                    <h3 className="text-sm font-medium text-slate-700 mb-3">Ausfallzeiten (VK) – gemittelt über alle Stationen</h3>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={MONTH_ORDER.map(m => {
+                        const monthRows = ppbvRows.filter(r => r.monat === m && r.schicht === 'Tag');
+                        const avg = (field) => monthRows.reduce((s, r) => s + Number(r[field] || 0), 0) / Math.max(monthRows.length, 1);
+                        return {
+                          name: m,
+                          urlaub: avg('ausfall_soll_1'),
+                          krank: avg('ausfall_soll_2'),
+                          sonst: avg('ausfall_soll_3'),
+                        };
+                      }).filter(m => m.urlaub > 0 || m.krank > 0)}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Legend />
+                        <Bar dataKey="urlaub" name="Wochenfeiertage/Urlaub" fill="#f59e0b" stackId="a" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="krank" name="AU/Schutzfristen" fill="#ef4444" stackId="a" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="sonst" name="Sonstige" fill="#8b5cf6" stackId="a" radius={[2, 2, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* PPBV Detailtabelle */}
+          {ppbvRows.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Table2 className="w-5 h-5" />
+                  PPBV Soll/Ist-Vergleich – Detaildaten
+                </CardTitle>
+                <CardDescription>
+                  {ppbvRows.length} Datensätze – InEK-Excel enthält alle 26 Spalten
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="whitespace-nowrap">Station</TableHead>
+                        <TableHead>Monat</TableHead>
+                        <TableHead>Schicht</TableHead>
+                        <TableHead className="text-right">Soll (VK)</TableHead>
+                        <TableHead className="text-right">Ist (VK)</TableHead>
+                        <TableHead className="text-right" title="Abweichung Ist − Soll">Δ</TableHead>
+                        <TableHead className="text-right">Urlaub</TableHead>
+                        <TableHead className="text-right">AU</TableHead>
+                        <TableHead className="text-right">Sonst</TableHead>
+                        <TableHead className="text-right">Azubis</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {ppbvRows.map((row, idx) => {
+                        const soll = Number(row.fachkraefte_soll || 0);
+                        const ist = Number(row.fachkraefte_ist || 0);
+                        const diff = ist - soll;
+                        return (
+                          <TableRow key={row.id || idx}>
+                            <TableCell className="font-medium whitespace-nowrap">{row.stationsname}</TableCell>
+                            <TableCell>{row.monat}</TableCell>
+                            <TableCell>
+                              <Badge variant={row.schicht === 'Nacht' ? 'secondary' : 'default'} className="text-xs">{row.schicht}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right">{formatDecimal(soll)}</TableCell>
+                            <TableCell className="text-right">{formatDecimal(ist)}</TableCell>
+                            <TableCell className={`text-right font-medium ${diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {diff >= 0 ? '+' : ''}{formatDecimal(diff)}
+                            </TableCell>
+                            <TableCell className="text-right">{formatDecimal(row.ausfall_soll_1)}</TableCell>
+                            <TableCell className="text-right">{formatDecimal(row.ausfall_soll_2)}</TableCell>
+                            <TableCell className="text-right">{formatDecimal(row.ausfall_soll_3)}</TableCell>
+                            <TableCell className="text-right">{formatDecimal(row.azubi_ist)}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ===== TAB 5: InEK-Export-Tabelle ===== */}
       {activeTab === 'table' && (
         <Card>
           <CardHeader>

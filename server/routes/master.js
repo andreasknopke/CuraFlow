@@ -3420,6 +3420,52 @@ const PPUGV_DATABASE = process.env.PPUGV_DATABASE
 // Default: leitet sich aus PPUGV_HOST ab, z.B. http://10.10.199.14/phpmyadmin
 const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_HOST}/phpmyadmin`;
 
+// ===== PPBV (Nachfolge-DB von ppugv mit vollstaendigem Soll/Ist-Vergleich) =====
+// Laeuft auf demselben MySQL-Server, nur andere Datenbank (Default: "ppbv")
+// reused PPUGV_HOST/PORT/USER/PASSWORD – nur Datenbankname unterscheidet sich.
+const PPBV_DATABASE = process.env.PPBV_DATABASE || 'ppbv';
+let ppbvPool = null;
+
+function getPpbvPool() {
+  if (ppbvPool) return ppbvPool;
+  if (!PPUGV_HOST || !PPUGV_USER || !PPBV_DATABASE) return null;
+  try {
+    ppbvPool = createPool({
+      host: PPUGV_HOST,
+      port: PPUGV_PORT,
+      user: PPUGV_USER,
+      password: PPUGV_PASSWORD,
+      database: PPBV_DATABASE,
+      waitForConnections: true,
+      connectionLimit: 2,
+      queueLimit: 0,
+      dateStrings: true,
+      timezone: '+00:00',
+      connectTimeout: 15000,
+    });
+    return ppbvPool;
+  } catch (err) {
+    console.error('[PPBV] Pool-Erstellung fehlgeschlagen:', err.message);
+    return null;
+  }
+}
+
+// PPBV Read-Only-Schutz wie bei PPUGV
+async function ppbvReadonlyQuery(sql, params = []) {
+  const pool = getPpbvPool();
+  if (!pool) throw new Error('PPBV-Pool nicht verfuegbar');
+  const normalizedSql = String(sql).trim().toUpperCase();
+  const allowedPrefixes = ['SELECT', 'SHOW', 'DESCRIBE', 'DESC ', 'EXPLAIN'];
+  const isReadOnly = allowedPrefixes.some(p => normalizedSql.startsWith(p));
+  if (!isReadOnly) {
+    throw new Error(`PPBV: Schreibzugriff blockiert (nur SELECT erlaubt): ${String(sql).substring(0, 80)}...`);
+  }
+  if (String(sql).includes(';') && !String(sql).trim().endsWith(';')) {
+    throw new Error('PPBV: Mehrfach-Statement erkannt und blockiert');
+  }
+  return await pool.execute(sql, params);
+}
+
 let ppugvPool = null;
 let pmaSessionCookie = null;
 
@@ -4490,6 +4536,324 @@ router.get('/ppugv/export/csv', async (req, res, next) => {
     res.send('\ufeff' + csvHeader + csvRows);
   } catch (error) {
     console.error('[PPUGV-CSV] error:', error.message);
+    next(error);
+  }
+});
+
+// ============================================================================
+// ===== PPBV – Pflegepersonaluntergrenzen-Besetzung-Vergleich          ======
+// ============================================================================
+// Die ppbv-Datenbank ist der VOLLSTAENDIGERE Nachfolger von ppugv:
+//   - Im Gegensatz zu ppugv enthaelt sie Soll-Ist-Vergleich
+//   - Ausfallzeiten (Urlaub, Kranks Praxisreflexion, sonstiges)
+//   - Fuehrungskraefte und Azubis separat
+//   - Kategorie (Normalstation/Intensiv) und gyngeb fuer Geburtshilfe
+//
+// Wir cachen die export-Tabelle daily wie bei ppugv.
+// ===========================================================================
+
+let ppbvRefreshInProgress = false;
+let ppbvHasJahrColumn = null;
+
+async function hasPpbvJahrColumn() {
+  if (ppbvHasJahrColumn !== null) return ppbvHasJahrColumn;
+  try {
+    const [cols] = await db.execute('SHOW COLUMNS FROM ppbv_daily_cache LIKE ?', ['jahr']);
+    ppbvHasJahrColumn = cols.length > 0;
+    if (!ppbvHasJahrColumn) {
+      console.warn('[PPBV] jahr-Spalte fehlt – nutze YEAR(frostungsdatum) als Fallback.');
+    }
+  } catch (err) {
+    console.warn('[PPBV] SHOW COLUMNS fehlgeschlagen – nutze YEAR(frostungsdatum):', err.message);
+    ppbvHasJahrColumn = false;
+  }
+  return ppbvHasJahrColumn;
+}
+
+function sanitizePpbvRows(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.stationsname}|${row.monat}|${row.schicht}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, row);
+    } else if (Number(row.belegung) > Number(existing.belegung)) {
+      groups.set(key, row);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+async function runPpbvRefreshInBackground() {
+  if (ppbvRefreshInProgress) {
+    console.log('[PPBV-BG] Refresh bereits in Gang – abbrechen.');
+    return;
+  }
+  ppbvRefreshInProgress = true;
+  const today = new Date().toISOString().split('T')[0];
+  const startTime = Date.now();
+  console.log(`[PPBV-BG] ${new Date().toISOString()} Starte Hintergrund-Refresh...`);
+
+  try {
+    await db.execute(
+      `INSERT INTO ppbv_cache_meta (cache_date, refreshed_at, status, row_count)
+       VALUES (?, NOW(), 'running', 0)
+       ON DUPLICATE KEY UPDATE status = 'running', refreshed_at = NOW(), error_message = NULL`,
+      [today]
+    );
+
+    let sourceRows = null;
+    try {
+      console.log(`[PPBV-BG] Versuche mysql2-Direktverbindung zu ${PPUGV_HOST}:${PPUGV_PORT} DB=${PPBV_DATABASE}...`);
+      const [rows] = await ppbvReadonlyQuery(
+        'SELECT stationsname, fabschluessel, fabname, kategorie, monat, schicht, anzahl, betten, teilstat, gyngeb, patienten, belegung, fachkraefte_soll, ausfall_soll_1, ausfall_soll_2, ausfall_soll_3, fuehrungskraft, ausfall_ist_1, ausfall_ist_2, ausfall_ist_3, fachkraefte_ist, hebammen_ist, hilfskraefte_ist, azubi_ist, anmerkungen, frostung, frostungsdatum FROM export ORDER BY rec_id'
+      );
+      sourceRows = rows;
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[PPBV-BG] mysql2 erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
+    } catch (dbErr) {
+      console.warn(`[PPBV-BG] mysql2 fehlgeschlagen: ${dbErr.code || dbErr.message}`);
+      await db.execute(
+        "UPDATE ppbv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
+        [`PPBV nicht erreichbar: ${dbErr.message}. MySQL-Datenbank '${PPBV_DATABASE}' fehlt evtl. auf ${PPUGV_HOST}.`, today]
+      );
+      return;
+    }
+
+    if (!sourceRows || sourceRows.length === 0) {
+      await db.execute(
+        "UPDATE ppbv_cache_meta SET status = 'error', error_message = 'Keine Daten in der ppbv.export-Tabelle gefunden' WHERE cache_date = ?",
+        [today]
+      );
+      return;
+    }
+
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.execute('DELETE FROM ppbv_daily_cache WHERE cache_date = ?', [today]);
+      const insertSql = `INSERT INTO ppbv_daily_cache
+        (cache_date, stationsname, fabschluessel, fabname, kategorie, monat, schicht, jahr, anzahl, betten, teilstat, gyngeb, patienten, belegung, fachkraefte_soll, ausfall_soll_1, ausfall_soll_2, ausfall_soll_3, fuehrungskraft, ausfall_ist_1, ausfall_ist_2, ausfall_ist_3, fachkraefte_ist, hebammen_ist, hilfskraefte_ist, azubi_ist, anmerkungen, frostung, frostungsdatum)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+      for (const row of sourceRows) {
+        let jahr = 0;
+        if (row.frostungsdatum) {
+          const d = new Date(row.frostungsdatum);
+          if (!isNaN(d.getTime())) jahr = d.getFullYear();
+        }
+        await connection.execute(insertSql, [
+          today, String(row.stationsname || ''), parseInt(row.fabschluessel, 10) || 0, String(row.fabname || ''),
+          String(row.kategorie || ''), String(row.monat || ''), String(row.schicht || ''), jahr,
+          parseInt(row.anzahl, 10) || 0, parseInt(row.betten, 10) || 0, parseInt(row.teilstat, 10) || 0,
+          String(row.gyngeb || 'nein'), parseInt(row.patienten, 10) || 0, parseFloat(row.belegung) || 0,
+          parseFloat(row.fachkraefte_soll) || 0, parseFloat(row.ausfall_soll_1) || 0, parseFloat(row.ausfall_soll_2) || 0,
+          parseFloat(row.ausfall_soll_3) || 0, parseFloat(row.fuehrungskraft) || 0,
+          parseFloat(row.ausfall_ist_1) || 0, parseFloat(row.ausfall_ist_2) || 0, parseFloat(row.ausfall_ist_3) || 0,
+          parseFloat(row.fachkraefte_ist) || 0, parseFloat(row.hebammen_ist) || 0,
+          parseFloat(row.hilfskraefte_ist) || 0, parseFloat(row.azubi_ist) || 0,
+          String(row.anmerkungen || ''), String(row.frostung || 'nein'), row.frostungsdatum,
+        ]);
+      }
+      await connection.execute(
+        'UPDATE ppbv_cache_meta SET status = ?, row_count = ?, refreshed_at = NOW() WHERE cache_date = ?',
+        ['ok', sourceRows.length, today]
+      );
+      await connection.commit();
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(`[PPBV-BG] Refresh erfolgreich – ${sourceRows.length} Datensaetze in ${totalTime}s`);
+    } catch (txError) {
+      await connection.rollback();
+      throw txError;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error(`[PPBV-BG] Fehler:`, error.code || error.message);
+    try {
+      await db.execute(
+        "UPDATE ppbv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
+        [(error.message || String(error)).substring(0, 500), today]
+      );
+    } catch (metaError) {
+      console.error('[PPBV-BG] Konnte Meta-Status nicht aktualisieren:', metaError.message);
+    }
+  } finally {
+    ppbvRefreshInProgress = false;
+    console.log(`[PPBV-BG] Refresh beendet – Mutex freigegeben.`);
+  }
+}
+
+/**
+ * GET /api/master/ppbv
+ * Liefert die gecachten PPBV-Exportdaten (mit vollstaendigem Soll/Ist-Vergleich)
+ * Query: station, monat, jahr
+ */
+router.get('/ppbv', async (req, res, next) => {
+  try {
+    const { station, monat, jahr } = req.query;
+    let sql = 'SELECT * FROM ppbv_daily_cache WHERE 1=1';
+    const params = [];
+    if (station) { sql += ' AND stationsname LIKE ?'; params.push(`%${station}%`); }
+    if (monat) { sql += ' AND monat = ?'; params.push(monat); }
+    if (jahr) {
+      const yearCol = await hasPpbvJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
+      sql += ` AND ${yearCol} = ?`;
+      params.push(parseInt(jahr, 10));
+    }
+    sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
+    const [rows] = await db.execute(sql, params);
+    const sanitized = sanitizePpbvRows(rows);
+    const [metaRows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 1');
+
+    res.json({
+      data: sanitized,
+      meta: metaRows[0] || null,
+      count: sanitized.length,
+      cacheStatus: sanitized.length > 0 ? 'ready' : 'empty',
+    });
+  } catch (error) {
+    console.error('[PPBV] GET error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/ppbv/refresh
+ * Startet Hintergrund-Refresh der ppbv-Daten
+ */
+router.post('/ppbv/refresh', async (req, res, next) => {
+  try {
+    if (!PPUGV_HOST || !PPUGV_USER) {
+      return res.status(503).json({ error: 'PPBV-Zugang nicht konfiguriert (PPUGV_HOST/USER).' });
+    }
+    if (ppbvRefreshInProgress) {
+      return res.status(409).json({ status: 'already_running', message: 'Ein Refresh laeuft bereits.' });
+    }
+    runPpbvRefreshInBackground().catch((err) => console.error('[PPBV] Fehler:', err.message));
+    res.status(202).json({ status: 'started', message: 'PPBV-Cache-Refresh im Hintergrund gestartet.' });
+  } catch (error) {
+    console.error('[PPBV] refresh error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppbv/meta
+ * Liefert ppbv-Cache-Metadaten + Status
+ */
+router.get('/ppbv/meta', async (req, res, next) => {
+  try {
+    const [rows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 10');
+    res.json({ meta: rows, refreshInProgress: ppbvRefreshInProgress });
+  } catch (error) {
+    console.error('[PPBV] meta error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppbv/export/inek
+ * InEK-Excel-Export der PPBV-Daten – VOLLSTAENDIG mit allen Soll/Ist-Spalten.
+ *
+ * Im Gegensatz zu ppugv enthaelt dieser Export:
+ *   - fachkraefte_soll, fuehrungskraft (Soll-Personalbesetzung)
+ *   - ausfall_soll_1/2/3 (Urlaub/Krank/Sonst, Soll)
+ *   - ausfall_ist_1/2/3 (Urlaub/Krank/Sonst, Ist)
+ *   - azubi_ist (Auszubildende)
+ */
+router.get('/ppbv/export/inek', async (req, res, next) => {
+  try {
+    const { jahr } = req.query;
+    const year = parseInt(jahr, 10) || new Date().getFullYear();
+    const yearCol = await hasPpbvJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
+    const [rows] = await db.execute(
+      `SELECT * FROM ppbv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
+      [year]
+    );
+    const data = sanitizePpbvRows(rows);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'CuraFlow PPBV-Export';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('InEK-Meldung (PPBV)', { views: [{ state: 'frozen', ySplit: 7 }] });
+
+    ws.getCell('A1').value = 'Vorlage zur PPBV-Nachweismeldung – vollstaendige Version (CuraFlow-Export)';
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('A1:Z1');
+    ws.getCell('A3').value = 'Institutionskennzeichen (IK)';
+    ws.getCell('B3').value = '261300118';
+    ws.getCell('A4').value = 'Jahr';
+    ws.getCell('B4').value = year;
+    ws.getCell('A5').value = 'Quartal';
+    ws.getCell('B5').value = '1-4';
+    ws.getCell('A3').font = ws.getCell('A4').font = ws.getCell('A5').font = { bold: true };
+
+    const headerStyle = {
+      font: { bold: true },
+      alignment: { horizontal: 'left', wrapText: true, vertical: 'top' },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } },
+      border: { top: { style: 'thin' }, bottom: { style: 'thin' } },
+    };
+    const headers = [
+      'Standortkennzeichen', 'Verwendeter Name der Station',
+      'Fachabteilungsschlüssel § 21 KHEntgG', 'Verwendeter Name der Fachabteilung',
+      'Kategorie der Station', 'Monat', 'Schicht',
+      'Anzahl Schichten im Monat', 'Anzahl Betten',
+      'Anzahl teilstationäre Behandlungsplätze', 'Station im Bereich Geburtshilfe',
+      'Anzahl Patienten', 'durchschnittliche Patientenbelegung',
+      'Pflegefachkräfte (Soll) VZÄ § 4 Abs. 1 PPBV',
+      'Ausfall (Wochenfeiertage, Urlaub) Soll § 4 Abs. 4 Nr. 2',
+      'Ausfall (AU, Schutzfristen) Soll § 4 Abs. 4 Nr. 1',
+      'Ausfall (sonstige) Soll § 4 Abs. 4 Nr. 3',
+      'Leitende Pflegefachkräfte (Soll) § 4 Abs. 5',
+      'Ausfall (Wochenfeiertage, Urlaub) Ist § 6 Abs. 7',
+      'Ausfall (AU, Schutzfristen) Ist § 6 Abs. 7',
+      'Ausfall (sonstige) Ist § 6 Abs. 7',
+      'Pflegefachkräfte (Ist) VZÄ § 6 PPBV',
+      'Hebammen (Ist) VZÄ § 6 PPBV',
+      'Pflegehilfskräfte (Ist) VZÄ § 6 PPBV',
+      'Auszubildende (Ist) VZÄ § 6 PPBV',
+      'Anmerkung',
+    ];
+    headers.forEach((title, idx) => {
+      const cell = ws.getCell(1 + idx, 7);
+      cell.value = title;
+      cell.style = headerStyle;
+    });
+    ws.getRow(7).height = 60;
+
+    data.forEach((row, i) => {
+      const r = i + 8;
+      const values = [
+        '771003000', row.stationsname, String(row.fabschluessel), row.fabname,
+        row.kategorie || '', row.monat, row.schicht, row.anzahl, row.betten,
+        row.teilstat || 0, row.gyngeb || 'nein', row.patienten, Number(row.belegung),
+        Number(row.fachkraefte_soll) || 0, Number(row.ausfall_soll_1) || 0,
+        Number(row.ausfall_soll_2) || 0, Number(row.ausfall_soll_3) || 0,
+        Number(row.fuehrungskraft) || 0, Number(row.ausfall_ist_1) || 0,
+        Number(row.ausfall_ist_2) || 0, Number(row.ausfall_ist_3) || 0,
+        Number(row.fachkraefte_ist) || 0, Number(row.hebammen_ist) || 0,
+        Number(row.hilfskraefte_ist) || 0, Number(row.azubi_ist) || 0,
+        row.anmerkungen || '',
+      ];
+      values.forEach((v, idx) => {
+        const cell = ws.getCell(idx + 1, r);
+        cell.value = v;
+        cell.alignment = { horizontal: 'left' };
+      });
+    });
+
+    const colWidths = [25, 50, 50, 50, 30, 10, 20, 10, 10, 10, 10, 10, 15, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 30];
+    colWidths.forEach((w, i) => ws.getColumn(i + 1).width = w);
+
+    const fileName = `PPBV_InEK_${year}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    const buffer = await wb.xlsx.writeBuffer();
+    res.send(Buffer.from(buffer));
+    console.log(`[PPBV-EXPORT] InEK-Excel exportiert: ${data.length} Zeilen, Jahr ${year}`);
+  } catch (error) {
+    console.error('[PPBV-EXPORT] error:', error.message);
     next(error);
   }
 });
