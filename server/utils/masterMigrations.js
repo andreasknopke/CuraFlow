@@ -1040,5 +1040,18 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // PPUGV: Jahr-Spalte hinzufügen (für year-over-year Vergleiche)
+  await run('add_ppugv_daily_cache_jahr_column', async () => {
+    // Prüfen ob Spalte bereits existiert
+    const [cols] = await dbPool.execute('SHOW COLUMNS FROM ppugv_daily_cache LIKE ?', ['jahr']);
+    if (cols.length === 0) {
+      await dbPool.execute(`
+        ALTER TABLE ppugv_daily_cache
+        ADD COLUMN jahr INT NOT NULL DEFAULT 0 AFTER schicht,
+        ADD INDEX idx_jahr (jahr)
+      `);
+    }
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME', 'ER_DUP_COLUMN'], duplicateReason: 'Spalte existiert bereits' });
+
   return results;
 }

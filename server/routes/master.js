@@ -3438,12 +3438,39 @@ function getPpugvPool() {
       dateStrings: true,
       timezone: '+00:00',
       connectTimeout: 15000,
+      // SAFETY: CuraFlow darf niemals in die externe PPUGV-Datenbank schreiben!
+      // Der Pool-User hat zwar vollen Zugriff, aber wir verbieten Schreib-SQL
+      // auf Applikationsebene als zusätzliche Schutzschicht (Defense in Depth).
     });
     return ppugvPool;
   } catch (err) {
     console.error('[PPUGV] Pool-Erstellung fehlgeschlagen:', err.message);
     return null;
   }
+}
+
+// SAFETY: Diese Funktion ist der EINZIGE Weg, wie auf den ppugv-Pool zugegriffen
+// werden darf. Sie stellet sicher, dass NUR Lesezugriff (SELECT) erfolgt.
+// Alle Anfragen gegen die externe ppugv-DB MUESSEN ueber diese Funktion laufen.
+async function ppugvReadonlyQuery(sql, params = []) {
+  const pool = getPpugvPool();
+  if (!pool) throw new Error('PPUGV-Pool nicht verfuegbar');
+
+  // Schutz-Schicht 1: Nur SELECT/SHOW/DESCRIBE/EXPLAIN erlauben
+  const normalizedSql = String(sql).trim().toUpperCase();
+  const allowedPrefixes = ['SELECT', 'SHOW', 'DESCRIBE', 'DESC ', 'EXPLAIN'];
+  const isReadOnly = allowedPrefixes.some(p => normalizedSql.startsWith(p));
+  if (!isReadOnly) {
+    throw new Error(`PPUGV: Schreibzugriff blockiert (nur SELECT erlaubt): ${String(sql).substring(0, 80)}...`);
+  }
+
+  // Schutz-Schicht 2: Triviales Semikolon-Multi-Statement-Injection abfangen
+  if (String(sql).includes(';') && !String(sql).trim().endsWith(';')) {
+    throw new Error('PPUGV: Mehrfach-Statement erkannt und blockiert');
+  }
+
+  const result = await pool.execute(sql, params);
+  return result;
 }
 
 // ===== phpMyAdmin-Fallback (nur wenn mysql2 nicht geht) =====
@@ -3501,12 +3528,18 @@ async function fetchPpugvViaPma() {
  * Normalisiert ein vom phpMyAdmin-Export geliefertes JSON-Objekt.
  */
 function normalizePpugvRow(row) {
+  let jahr = 0;
+  if (row.frostungsdatum) {
+    const d = new Date(row.frostungsdatum);
+    if (!isNaN(d.getTime())) jahr = d.getFullYear();
+  }
   return {
     stationsname: String(row.stationsname || ''),
     fabschluessel: parseInt(row.fabschluessel, 10) || 0,
     fabname: String(row.fabname || ''),
     monat: String(row.monat || ''),
     schicht: String(row.schicht || ''),
+    jahr,
     anzahl: parseInt(row.anzahl, 10) || 0,
     betten: parseInt(row.betten, 10) || 0,
     pfl_sen_ber: String(row.pfl_sen_ber || ''),
@@ -3519,6 +3552,53 @@ function normalizePpugvRow(row) {
     frostung: String(row.frostung || ''),
     frostungsdatum: row.frostungsdatum || null,
   };
+}
+
+// ===== Sanitizer: Entfernt Duplikate (gleiche Station/Monat/Schicht) =====
+// Im legacy-Export gibt es oft mehrere Zeilen pro Monat, von denen einige
+// Belegung=0 haben (Platzhalter). Wir behalten pro Gruppe die Zeile mit
+// der hoechsten Belegung – das ist mit hoechster Wahrscheinlichkeit der
+// korrekte Datensatz. Falls alle Belegung=0 haben, behalten wir den ersten.
+const MONTH_ORDER_SQL = "FIELD(monat,'Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember')";
+
+function sanitizePpugvRows(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = `${row.stationsname}|${row.monat}|${row.schicht}`;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, row);
+    } else if (Number(row.belegung) > Number(existing.belegung)) {
+      groups.set(key, row);
+    }
+  }
+  return Array.from(groups.values());
+}
+
+// ===== FAB (Fachabteilungs-) Aggregation =====
+// Fasst Stationen zusammen, die denselben fabschluessel haben.
+// Mehrere Stationen teilen sich eine FAB (z.B. ALIM, IN3, RPG → 0100 Innere Medizin).
+// Stationen mit mehreren FABs (Komma-getrennt) werden der ersten FAB zugeordnet.
+// Die Logik folgt der PHP-Export-Tabelle (ppugv_export.php).
+
+const PPUGV_FAB_MAP = [
+  { fabschluessel: 100,  fabname: 'Innere Medizin',                     stations: ['ALIM','IN3','IN5','RPG','TK','OTK'] },
+  { fabschluessel: 1500, fabname: 'Allgemeine Chirurgie',               stations: ['CHI','GZ','TZS'] },
+  { fabschluessel: 2400, fabname: 'Frauenheilkunde und Geburtshilfe',    stations: ['GYN','ENTB'] },
+  { fabschluessel: 3600, fabname: 'Intensivmedizin',                    stations: ['ITS','ITSB'] },
+  { fabschluessel: 1200, fabname: 'Neonatologie / Pädiatrie',           stations: ['NEOI','SLB'] },
+];
+
+function getFabForStation(stationsname) {
+  for (const fab of PPUGV_FAB_MAP) {
+    if (fab.stations.some(s => stationsname.includes(s))) return fab;
+  }
+  return null; // unbekannte Station bleibt eigenstaendig
+}
+
+async function fetchQuery(sql, params) {
+  const [rows] = await db.execute(sql, params);
+  return rows;
 }
 
 /**
@@ -3536,8 +3616,8 @@ async function writePpugvDataToCache(cacheDate, normalizedRows) {
     await connection.execute('DELETE FROM ppugv_daily_cache WHERE cache_date = ?', [cacheDate]);
 
     const insertSql = `INSERT INTO ppugv_daily_cache 
-      (cache_date, stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      (cache_date, stationsname, fabschluessel, fabname, monat, schicht, jahr, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     for (const row of normalizedRows) {
       await connection.execute(insertSql, [
@@ -3547,6 +3627,7 @@ async function writePpugvDataToCache(cacheDate, normalizedRows) {
         row.fabname,
         row.monat,
         row.schicht,
+        row.jahr || 0,
         row.anzahl,
         row.betten,
         row.pfl_sen_ber || '',
@@ -3602,12 +3683,11 @@ async function checkPpugvConnectivity() {
 
   // 2) mysql2-Direktverbindung prüfen (TCP connect + SELECT 1)
   checks.push((async () => {
-    const pool = getPpugvPool();
-    if (!pool) return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: 'skip', detail: 'Nicht konfiguriert (Host/User/Datenbank fehlen)' };
+    if (!PPUGV_HOST || !PPUGV_USER || !PPUGV_DATABASE) {
+      return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: 'skip', detail: 'Nicht konfiguriert (Host/User/Datenbank fehlen)' };
+    }
     try {
-      const conn = await pool.getConnection();
-      const [rows] = await conn.execute('SELECT 1 AS ok');
-      conn.release();
+      const [rows] = await ppugvReadonlyQuery('SELECT 1 AS ok');
       const ok = rows?.[0]?.ok === 1;
       return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: ok ? 'ok' : 'error', detail: ok ? 'Verbindung + Query OK' : 'SELECT 1 lieferte unerwartetes Ergebnis' };
     } catch (err) {
@@ -3715,14 +3795,13 @@ async function runPpugvRefreshInBackground() {
       [today]
     );
 
-    // ----- VERSICH 1: mysql2-Direktverbindung (primary) -----
+    // ----- VERSUCH 1: mysql2-Direktverbindung (primary, READ-ONLY) -----
     let sourceRows = null;
-    const pool = getPpugvPool();
 
-    if (pool) {
+    if (PPUGV_HOST && PPUGV_USER && PPUGV_DATABASE) {
       try {
         console.log(`[PPUGV-BG] Versuche mysql2-Direktverbindung zu ${PPUGV_HOST}:${PPUGV_PORT}...`);
-        const [rows] = await pool.execute(
+        const [rows] = await ppugvReadonlyQuery(
           'SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, pfl_sen_ber, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, anmerkungen, frostung, frostungsdatum FROM export ORDER BY rec_id'
         );
         sourceRows = rows;
@@ -3834,7 +3913,6 @@ async function ensurePpugvCacheAsync() {
  */
 router.get('/ppugv', async (req, res, next) => {
   try {
-    // Pruefe Cache-Zustand (triggert ggf. Hintergrund-Refresh)
     const cacheStatus = await ensurePpugvCacheAsync();
 
     const { station, monat, jahr } = req.query;
@@ -3850,32 +3928,35 @@ router.get('/ppugv', async (req, res, next) => {
       params.push(monat);
     }
     if (jahr) {
-      sql += ' AND YEAR(frostungsdatum) = ?';
+      sql += ' AND jahr = ?';
       params.push(parseInt(jahr, 10));
     }
 
-    sql += ' ORDER BY stationsname, FIELD(monat,\'Januar\',\'Februar\',\'März\',\'April\',\'Mai\',\'Juni\',\'Juli\',\'August\',\'September\',\'Oktober\',\'November\',\'Dezember\'), schicht';
+    sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
 
     const [rows] = await db.execute(sql, params);
 
-    // Cache-Metadaten abrufen
+    // Sanitizer: Duplikate (gleiche Station/Monat/Schicht) entfernen,
+    // die Zeile mit hoechster Belegung behalten
+    const sanitized = sanitizePpugvRows(rows);
+
+    // Cache-Metadaten
     const [metaRows] = await db.execute(
       'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 1'
     );
 
-    // Wenn der Cache gerade leer war und wir einen Refresh gestartet haben,
-    // signalisieren wir das dem Client
     const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
-    const isEmpty = rows.length === 0;
+    const isEmpty = sanitized.length === 0;
 
     res.json({
-      data: rows,
+      data: sanitized,
       meta: metaRows[0] || null,
-      count: rows.length,
-      cacheStatus, // "ready" | "triggered" | "running" | "error"
+      count: sanitized.length,
+      rawCount: rows.length,
+      cacheStatus,
       building: isBuilding,
       message: isBuilding
-        ? 'PPUGV-Cache wird im Hintergrund aufgebaut (kann bis zu 15 Minuten dauern). Bitte Seite neu laden.'
+        ? 'PPUGV-Cache wird im Hintergrund aufgebaut.'
         : isEmpty
           ? 'Keine gecachten Daten vorhanden.'
           : null,
@@ -3888,7 +3969,6 @@ router.get('/ppugv', async (req, res, next) => {
 
 /**
  * GET /api/master/ppugv/stations
- * Liefert die Liste der verfuegbaren Stationen (fuer Dropdown-Filter).
  */
 router.get('/ppugv/stations', async (req, res, next) => {
   try {
@@ -3898,6 +3978,174 @@ router.get('/ppugv/stations', async (req, res, next) => {
     res.json({ stations: rows });
   } catch (error) {
     console.error('[PPUGV] stations error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/fabstats
+ * Aggregierte PPUGV-Daten auf Fachabteilungs-Ebene (FAB).
+ * Fasst Stationen mit gleichem fabschluessel zusammen – analog zur
+ * InEK-Meldetabelle im PHP-Frontend.
+ *
+ * Query-Parameter:
+ *   jahr – 4-stellig (optional, default: aktuelles Jahr)
+ *   fab  – fabschluessel (optional, z.B. "0100" fuer Innere Medizin)
+ */
+router.get('/ppugv/fabstats', async (req, res, next) => {
+  try {
+    const { jahr } = req.query;
+    const year = parseInt(jahr, 10) || new Date().getFullYear();
+
+    // Alle Rohdaten fuer das Jahr laden
+    const [rows] = await db.execute(
+      `SELECT * FROM ppugv_daily_cache WHERE jahr = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
+      [year]
+    );
+
+    const sanitized = sanitizePpugvRows(rows);
+
+    // Nach FAB gruppieren
+    const fabMap = new Map();
+    for (const row of sanitized) {
+      const fab = getFabForStation(row.stationsname);
+      const key = fab ? `${fab.fabschluessel}|${fab.fabname}` : `${row.fabschluessel}|${row.fabname}`;
+      if (!fabMap.has(key)) {
+        fabMap.set(key, {
+          fabschluessel: fab ? fab.fabschluessel : row.fabschluessel,
+          fabname: fab ? fab.fabname : row.fabname,
+          monate: {},
+          stationen: new Set(),
+        });
+      }
+      const entry = fabMap.get(key);
+      entry.stationen.add(row.stationsname);
+
+      if (!entry.monate[row.monat]) {
+        entry.monate[row.monat] = {
+          monat: row.monat,
+          tag: { patienten: 0, belegung: 0, pflege: 0, hilfe: 0, hebamme: 0, anzahl: 0, betten: 0 },
+          nacht: { patienten: 0, belegung: 0, pflege: 0, hilfe: 0, hebamme: 0, anzahl: 0, betten: 0 },
+        };
+      }
+      const m = entry.monate[row.monat];
+      const target = row.schicht === 'Nacht' ? m.nacht : m.tag;
+      target.patienten += Number(row.patienten);
+      target.belegung += Number(row.belegung);
+      target.pflege += Number(row.pflegekraefte_ist);
+      target.hilfe += Number(row.hilfskraefte_ist);
+      target.hebamme += Number(row.hebammen_ist);
+      target.anzahl += Number(row.anzahl);
+      if (row.betten > target.betten) target.betten = Number(row.betten);
+    }
+
+    // FABs in Array umwandeln + Monate sortieren
+    const fabArray = Array.from(fabMap.values()).map(fab => ({
+      ...fab,
+      stationen: Array.from(fab.stationen).sort(),
+      monate: Object.values(fab.monate).sort((a, b) => {
+        const ma = MONTH_ORDER_SQL.indexOf(a.monat);
+        const mb = MONTH_ORDER_SQL.indexOf(b.monat);
+        return ma - mb;
+      }),
+    }));
+
+    // Gesamt-KH aggregieren (alle FABs)
+    const gesamtMonate = {};
+    for (const fab of fabArray) {
+      for (const m of fab.monate) {
+        if (!gesamtMonate[m.monat]) {
+          gesamtMonate[m.monat] = {
+            monat: m.monat,
+            tag: { patienten: 0, belegung: 0, pflege: 0, hilfe: 0, hebamme: 0, anzahl: 0, betten: 0 },
+            nacht: { patienten: 0, belegung: 0, pflege: 0, hilfe: 0, hebamme: 0, anzahl: 0, betten: 0 },
+          };
+        }
+        const g = gesamtMonate[m.monat];
+        for (const shift of ['tag', 'nacht']) {
+          g[shift].patienten += m[shift].patienten;
+          g[shift].belegung += m[shift].belegung;
+          g[shift].pflege += m[shift].pflege;
+          g[shift].hilfe += m[shift].hilfe;
+          g[shift].hebamme += m[shift].hebamme;
+          g[shift].anzahl += m[shift].anzahl;
+          if (m[shift].betten > g[shift].betten) g[shift].betten = m[shift].betten;
+        }
+      }
+    }
+
+    res.json({
+      jahr: year,
+      fabs: fabArray,
+      gesamt: Object.values(gesamtMonate).sort((a, b) => {
+        const ma = MONTH_ORDER_SQL.indexOf(a.monat);
+        const mb = MONTH_ORDER_SQL.indexOf(b.monat);
+        return ma - mb;
+      }),
+    });
+  } catch (error) {
+    console.error('[PPUGV] fabstats error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/trends
+ * Vergleichsdaten fuer Jahrgangsvergleiche und Trends.
+ *
+ * Query-Parameter:
+ *   station – Stationsname (optional, default: alle)
+ *   jahre   – Komma-getrennte Jahresliste (optional, default: letzte 3 Jahre)
+ *
+ * Liefert monatliche Durchschnittswerte fuer jedes angefragte Jahr,
+ * aufgeschluesselt nach Station/FAB.
+ */
+router.get('/ppugv/trends', async (req, res, next) => {
+  try {
+    const { station, jahre } = req.query;
+    const years = jahre
+      ? jahre.split(',').map(y => parseInt(y.trim(), 10)).filter(y => !isNaN(y))
+      : [new Date().getFullYear() - 2, new Date().getFullYear() - 1, new Date().getFullYear()];
+
+    const allData = [];
+    for (const year of years) {
+      let sql = 'SELECT * FROM ppugv_daily_cache WHERE jahr = ?';
+      const params = [year];
+      if (station && station !== 'all') {
+        sql += ' AND stationsname LIKE ?';
+        params.push(`%${station}%`);
+      }
+      sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
+      const [rows] = await db.execute(sql, params);
+      const sanitized = sanitizePpugvRows(rows);
+      allData.push({ year, rows: sanitized });
+    }
+
+    // Monatliche Kennzahlen pro Jahr aufbereiten
+    const monthlyTrend = {};
+    for (const MONTH of ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']) {
+      monthlyTrend[MONTH] = { monat: MONTH };
+      for (const { year, rows } of allData) {
+        const monthRows = rows.filter(r => r.monat === MONTH);
+        const tagRows = monthRows.filter(r => r.schicht === 'Tag');
+        const nachtRows = monthRows.filter(r => r.schicht === 'Nacht');
+
+        monthlyTrend[MONTH][`patienten_${year}`] = tagRows.reduce((s, r) => s + Number(r.patienten), 0);
+        monthlyTrend[MONTH][`belegung_${year}`] = tagRows.length > 0
+          ? tagRows.reduce((s, r) => s + Number(r.belegung), 0) / tagRows.length : 0;
+        monthlyTrend[MONTH][`pflege_${year}`] = tagRows.reduce((s, r) => s + Number(r.pflegekraefte_ist), 0);
+        monthlyTrend[MONTH][`hilfe_${year}`] = tagRows.reduce((s, r) => s + Number(r.hilfskraefte_ist), 0);
+        monthlyTrend[MONTH][`hebamme_${year}`] = tagRows.reduce((s, r) => s + Number(r.hebammen_ist), 0);
+        monthlyTrend[MONTH][`patienten_nacht_${year}`] = nachtRows.reduce((s, r) => s + Number(r.patienten), 0);
+      }
+    }
+
+    res.json({
+      years,
+      monate: Object.values(monthlyTrend),
+    });
+  } catch (error) {
+    console.error('[PPUGV] trends error:', error.message);
     next(error);
   }
 });
@@ -3955,51 +4203,6 @@ router.get('/ppugv/meta', async (req, res, next) => {
     });
   } catch (error) {
     console.error('[PPUGV] meta error:', error.message);
-    next(error);
-  }
-});
-
-/**
- * POST /api/master/ppugv/upload
- * Manueller JSON-Upload als Notfall, wenn weder mysql2 noch phpMyAdmin funktionieren.
- *
- * Erwartet ein JSON-Array von Export-Zeilen (gleiches Schema wie die export-Tabelle).
- * Speichert die Daten transaktional im Cache und setzt ppugv_cache_meta auf 'ok'.
- */
-router.post('/ppugv/upload', async (req, res, next) => {
-  try {
-    const { data, cacheDate: customDate } = req.body;
-
-    if (!Array.isArray(data) || data.length === 0) {
-      return res.status(400).json({ error: 'Erwarte JSON-Array unter "data".' });
-    }
-
-    if (data.length > 50000) {
-      return res.status(400).json({ error: 'Maximal 50.000 Datensätze erlaubt.' });
-    }
-
-    const today = customDate || new Date().toISOString().split('T')[0];
-
-    // Status setzen
-    await db.execute(
-      `INSERT INTO ppugv_cache_meta (cache_date, refreshed_at, status, row_count)
-       VALUES (?, NOW(), 'running', 0)
-       ON DUPLICATE KEY UPDATE status = 'running', refreshed_at = NOW(), error_message = NULL`,
-      [today]
-    );
-
-    const sourceRows = data.map(normalizePpugvRow);
-    const result = await writePpugvDataToCache(today, sourceRows);
-
-    console.log(`[PPUGV-UPLOAD] ${result.count} Datensaetze fuer ${today} gespeichert.`);
-    res.status(201).json({
-      status: 'ok',
-      count: result.count,
-      cacheDate: today,
-      message: `${result.count} Datensaetze erfolgreich gespeichert.`,
-    });
-  } catch (error) {
-    console.error('[PPUGV-UPLOAD] Fehler:', error.message);
     next(error);
   }
 });
