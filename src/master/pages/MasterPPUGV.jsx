@@ -39,6 +39,11 @@ import {
   TrendingUp,
   Building2,
   Table2,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 const MONTH_ORDER = [
@@ -169,6 +174,40 @@ export default function MasterPPUGV() {
     enabled: activeTab === 'trends',
   });
 
+  // Datenqualitaets-Check
+  const { data: qualityData } = useQuery({
+    queryKey: ['ppugv-quality'],
+    queryFn: async () => await api.request('/api/master/ppugv/quality'),
+  });
+
+  // Export-Download
+  const downloadExport = useCallback(async (format) => {
+    try {
+      const url = `/api/master/ppugv/export/${format}?jahr=${selectedYear}`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+      });
+      if (!response.ok) throw new Error(`Export fehlgeschlagen: HTTP ${response.status}`);
+      const blob = await response.blob();
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const fileName = match?.[1] || `PPUGV_${selectedYear}.${format === 'inek' ? 'xlsx' : 'csv'}`;
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      console.error('[PPUGV-Export]', err.message);
+      alert('Export fehlgeschlagen: ' + err.message);
+    }
+  }, [selectedYear]);
+
+  const [exportLoading, setExportLoading] = useState(null);
+
   // Cleanup beim Unmount
   useEffect(() => {
     return () => {
@@ -286,11 +325,25 @@ export default function MasterPPUGV() {
             Pflegepersonaluntergrenzen-Verordnung – Monatliche Auswertung
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <Badge variant="outline" className={`text-xs ${statusInfo.color} flex items-center gap-1`}>
             <StatusIcon className={`w-3 h-3 ${isBuilding || meta?.status === 'running' ? 'animate-spin' : ''}`} />
             {statusInfo.label}
           </Badge>
+          {/* Datenqualitaets-Badge */}
+          {qualityData?.years?.length > 0 && (() => {
+            const y = qualityData.years.find(y => y.jahr === Number(selectedYear));
+            if (!y) return null;
+            const isComplete = y.komplett;
+            return (
+              <Badge variant="outline" className={`text-xs flex items-center gap-1 ${
+                isComplete ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`} title={`Erwartet: ${y.erwartet} Zeilen (14 Stationen × 12 Monate × 2 Schichten)`}>
+                {isComplete ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                {y.rowCount}/{y.erwartet} Datensätze ({y.abdeckung}%)
+              </Badge>
+            );
+          })()}
           <Button
             variant="outline"
             size="sm"
@@ -304,8 +357,61 @@ export default function MasterPPUGV() {
             )}
             {isBuilding ? 'Wird geladen…' : 'Aktualisieren'}
           </Button>
+          {/* Export-Buttons */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => { setExportLoading('inek'); await downloadExport('inek'); setExportLoading(null); }}
+            disabled={exportLoading !== null || rows.length === 0}
+            title="InEK-Excel-Meldung (formatiert wie PHP-Original)"
+          >
+            {exportLoading === 'inek' ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4 mr-1" />
+            )}
+            InEK-Excel
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => { setExportLoading('csv'); await downloadExport('csv'); setExportLoading(null); }}
+            disabled={exportLoading !== null || rows.length === 0}
+            title="CSV-Export für externe Systeme"
+          >
+            {exportLoading === 'csv' ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <FileText className="w-4 h-4 mr-1" />
+            )}
+            CSV
+          </Button>
         </div>
       </div>
+
+      {/* Datenqualitaets-Warnung bei unvollstaendigen Daten */}
+      {qualityData?.years?.length > 0 && (() => {
+        const y = qualityData.years.find(y => y.jahr === Number(selectedYear));
+        if (!y || y.komplett) return null;
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-amber-900 text-sm">
+                Möglicherweise unvollständige Daten für {selectedYear}
+              </p>
+              <p className="text-amber-700 text-sm mt-1">
+                Gefunden: {y.rowCount} von erwarteten {y.erwartet} Datensätzen ({y.abdeckung}%).
+                Stationen: {y.stationen}/14, Monate: {y.monate}/12.
+                {' '}
+                {y.stationen < 14 && 'Einige Stationen fehlen. '}
+                {y.monate < 12 && 'Nicht alle Monate sind vorhanden. '}
+                Bitte ggf. im PHP-System den Export für das Quartal aktualisieren und CuraFlow-Refresh erneut auslösen.
+              </p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Building-Banner */}
       {isBuilding && (

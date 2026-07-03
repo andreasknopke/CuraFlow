@@ -10,6 +10,7 @@
 
 import express from 'express';
 import crypto from 'crypto';
+import ExcelJS from 'exceljs';
 import { createPool } from 'mysql2/promise';
 import { db, getTenantDb } from '../index.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
@@ -4225,6 +4226,270 @@ router.get('/ppugv/meta', async (req, res, next) => {
     });
   } catch (error) {
     console.error('[PPUGV] meta error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/quality
+ * Datenqualitaets-Check: vergleicht Zeilen pro Jahr/Quartal mit Erwartung
+ * (14 Stationen x 3 Monate x 2 Schichten = 84 pro Quartal, 336 pro Jahr).
+ *
+ * Prueft die Vollstaendigkeit der aus dem PHP-System kommenden export-Daten.
+ */
+router.get('/ppugv/quality', async (req, res, next) => {
+  try {
+    const hasJahr = await hasJahrColumn();
+    const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
+
+    // Zeilen pro Jahr zaehlen
+    const [yearRows] = await db.execute(
+      `SELECT ${yearCol} AS jahr, COUNT(*) AS cnt,
+              COUNT(DISTINCT stationsname) AS stationen,
+              COUNT(DISTINCT monat) AS monate
+       FROM ppugv_daily_cache
+       GROUP BY ${yearCol}
+       ORDER BY ${yearCol} DESC`
+    );
+
+    // Erwartete Werte aus PHP-Original
+    const EXPECTED_STATIONS = 14;
+    const EXPECTED_MONTHS_FULL_YEAR = 12;
+    const EXPECTED_SHIFT = 2;
+    const expectedPerYear = EXPECTED_STATIONS * EXPECTED_MONTHS_FULL_YEAR * EXPECTED_SHIFT;
+
+    const years = yearRows.map(r => ({
+      jahr: Number(r.jahr),
+      rowCount: Number(r.cnt),
+      stationen: Number(r.stationen),
+      monate: Number(r.monate),
+      erwartet: expectedPerYear,
+      komplett: Number(r.cnt) >= expectedPerYear * 0.95,
+      abdeckung: Math.round((Number(r.cnt) / expectedPerYear) * 100),
+    }));
+
+    // Quartals-Check fuer aktuelles Jahr
+    const currentYear = new Date().getFullYear();
+    const currentYearRow = years.find(y => y.jahr === currentYear);
+    let quarterly = null;
+    if (currentYearRow) {
+      const [qRows] = await db.execute(
+        `SELECT QUARTER(frostungsdatum) AS q, COUNT(*) AS cnt,
+                COUNT(DISTINCT stationsname) AS stationen
+         FROM ppugv_daily_cache
+         WHERE ${yearCol} = ?
+         GROUP BY QUARTER(frostungsdatum)
+         ORDER BY q`,
+        [currentYear]
+      );
+      quarterly = qRows.map(r => ({
+        quartal: Number(r.q),
+        rowCount: Number(r.cnt),
+        stationen: Number(r.stationen),
+        erwartet: EXPECTED_STATIONS * 3 * EXPECTED_SHIFT,
+      }));
+    }
+
+    res.json({
+      expectedPerYear,
+      expectedPerQuarter: EXPECTED_STATIONS * 3 * EXPECTED_SHIFT,
+      expectedStations: EXPECTED_STATIONS,
+      years,
+      quarterly,
+      hasJahrColumn: hasJahr,
+    });
+  } catch (error) {
+    console.error('[PPUGV] quality error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/export/inek
+ * Exportiert die PPUGV-Daten als formatierte Excel-Datei (.xlsx) im
+ * InEK-Meldeformat – analog zu PHP/ppugv_excelexport.php.
+ *
+ * Query: jahr (optional, default aktuelles Jahr)
+ */
+router.get('/ppugv/export/inek', async (req, res, next) => {
+  try {
+    const { jahr } = req.query;
+    const year = parseInt(jahr, 10) || new Date().getFullYear();
+
+    const hasJahr = await hasJahrColumn();
+    const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
+    const [rows] = await db.execute(
+      `SELECT * FROM ppugv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
+      [year]
+    );
+    const data = sanitizePpugvRows(rows);
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'CuraFlow PPUGV-Export';
+    wb.created = new Date();
+    const ws = wb.addWorksheet('InEK-Meldung', {
+      views: [{ state: 'frozen', ySplit: 7 }],
+    });
+
+    // === KOPFZEILE (wie PHP-Original) ===
+    ws.getCell('A1').value = 'Vorlage zur PPUGV-Nachweismeldung (CuraFlow-Export)';
+    ws.getCell('A1').font = { bold: true, size: 14 };
+    ws.mergeCells('A1:Z1');
+
+    ws.getCell('A3').value = 'Institutionskennzeichen (IK)';
+    ws.getCell('B3').value = '261300118';
+    ws.getCell('A4').value = 'Jahr';
+    ws.getCell('B4').value = year;
+    ws.getCell('A5').value = 'Quartal';
+    ws.getCell('B5').value = '1-4';
+    ws.getCell('A3').font = ws.getCell('A4').font = ws.getCell('A5').font = { bold: true };
+
+    // === HEADER-ZEILE (Zeile 7) ===
+    const headerStyle = {
+      font: { bold: true },
+      alignment: { horizontal: 'left', wrapText: true, vertical: 'top' },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } },
+      border: { top: { style: 'thin' }, bottom: { style: 'thin' } },
+    };
+    const headers = [
+      'Standortkennzeichen',
+      'Verwendeter Name der Station',
+      'Fachabteilungsschlüssel nach den Daten nach § 21 KHEntgG (ggf. kommasepariert)',
+      'Verwendeter Name der Fachabteilung (ggf. kommasepariert)',
+      'Kategorie der Station',
+      'Monat',
+      'Schicht (Tag-/Nachtschicht oder 24-Stunden-Zeitraum)',
+      'Anzahl der Schichten im Monat',
+      'Anzahl Betten',
+      'Anzahl teilstationäre Behandlungsplätze',
+      'Station im Bereich Geburtshilfe (ja/nein)',
+      'Anzahl Patienten',
+      'durchschnittliche Patientenbelegung',
+      'Pflegefachkräfte (Soll) in VZÄ § 4 Abs. 1 / § 5 Abs. 1 PPBV',
+      'Ausfallzeiten (Wochenfeiertage, Urlaub) – Pflegefachkräfte Soll VZÄ § 4 Abs. 4 Nr. 2',
+      'Ausfallzeiten (Arbeitsunfähigkeit, Schutzfristen) – Pflegefachkräfte Soll VZÄ § 4 Abs. 4 Nr. 1',
+      'Ausfallzeiten (sonstige) – Pflegefachkräfte Soll VZÄ § 4 Abs. 4 Nr. 3',
+      'Leitende Pflegefachkräfte (Soll) VZÄ § 4 Abs. 5',
+      'Ausfallzeiten (Wochenfeiertage, Urlaub) – Ist VZÄ § 6 Abs. 7 i.V.m. § 4 Abs. 4 Nr. 2',
+      'Ausfallzeiten (Arbeitsunfähigkeit, Schutzfristen) – Ist VZÄ § 6 Abs. 7 i.V.m. § 4 Abs. 4 Nr. 1',
+      'Ausfallzeiten (sonstige) – Ist VZÄ § 6 Abs. 7 i.V.m. § 4 Abs. 4 Nr. 3',
+      'durchschnittlich eingesetzte Pflegefachkräfte (Ist) VZÄ § 6 PPBV',
+      'durchschnittlich eingesetzte Hebammen (Ist) VZÄ § 6 PPBV',
+      'durchschnittlich eingesetzte Pflegehilfskräfte (Ist) VZÄ § 6 PPBV',
+      'durchschnittlich eingesetzte Auszubildende (Ist) VZÄ § 6 PPBV',
+      'Anmerkung',
+    ];
+    headers.forEach((title, idx) => {
+      const cell = ws.getCell(1 + idx, 7);
+      cell.value = title;
+      cell.style = headerStyle;
+    });
+    ws.getRow(7).height = 60;
+
+    // === DATENZEILEN ===
+    data.forEach((row, i) => {
+      const r = i + 8;
+      // Leere Felder für Spalten, die wir im Cache nicht have (Soll-Ausfallzeiten etc.)
+      const gyngeb = /gyn|entb/i.test(row.stationsname) ? 'ja' : 'nein';
+      const category = /its/i.test(row.stationsname) ? 'Intensivstation Erwachsene' : 'Normalstation Erwachsene';
+
+      const values = [
+        '771003000',                                          // A: Standort
+        row.stationsname,                                     // B: Station
+        String(row.fabschluessel),                            // C: FAB-Schlüssel
+        row.fabname,                                          // D: FAB-Name
+        category,                                             // E: Kategorie
+        row.monat,                                            // F: Monat
+        row.schicht,                                          // G: Schicht
+        row.anzahl,                                           // H: Anzahl Schichten
+        row.betten,                                           // I: Betten
+        '',                                                   // J: Teilstationär
+        gyngeb,                                               // K: Geburtshilfe
+        row.patienten,                                        // L: Patienten
+        Number(row.belegung),                                 // M: Belegung
+        '',                                                   // N: Pflege Soll
+        '',                                                   // O-Q: Soll-Ausfallzeiten
+        '',
+        '',
+        '',                                                   // R: Leitende Soll
+        '',                                                   // S-U: Ist-Ausfallzeiten
+        '',
+        '',
+        Number(row.pflegekraefte_ist),                        // V: Pflege Ist
+        Number(row.hebammen_ist),                             // W: Hebammen Ist
+        Number(row.hilfskraefte_ist),                         // X: Hilfskräfte Ist
+        '',                                                   // Y: Azubis (nicht im Cache)
+        row.anmerkungen || '',                                // Z: Anmerkung
+      ];
+      values.forEach((v, idx) => {
+        const cell = ws.getCell(idx + 1, r);
+        cell.value = v;
+        cell.alignment = { horizontal: 'left' };
+      });
+    });
+
+    // === SPALTENBREITEN ===
+    const colWidths = [25, 50, 50, 50, 30, 10, 20, 10, 10, 10, 10, 10, 15, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 30];
+    colWidths.forEach((w, i) => {
+      ws.getColumn(i + 1).width = w;
+    });
+
+    // === RESPONSE ===
+    const fileName = `PPUGV_InEK_${year}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    const buffer = await wb.xlsx.writeBuffer();
+    res.send(Buffer.from(buffer));
+    console.log(`[PPUGV-EXPORT] InEK-Excel exportiert: ${data.length} Zeilen, Jahr ${year}`);
+  } catch (error) {
+    console.error('[PPUGV-EXPORT] error:', error.message);
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/ppugv/export/csv
+ * CSV-Export der Rohdaten (sanitized) – fuer Import in externe Systeme.
+ */
+router.get('/ppugv/export/csv', async (req, res, next) => {
+  try {
+    const { jahr } = req.query;
+    const year = parseInt(jahr, 10) || new Date().getFullYear();
+
+    const hasJahr = await hasJahrColumn();
+    const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
+    const [rows] = await db.execute(
+      `SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, frostung
+       FROM ppugv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
+      [year]
+    );
+    const data = sanitizePpugvRows(rows);
+
+    const csvHeader = 'Station;FAB-Schlüssel;Fachabteilung;Monat;Schicht;Schichten;Betten;Patienten;Belegung;Pflege;Hebammen;Hilfskräfte;Frostung\n';
+    const csvRows = data.map(r => [
+      `"${r.stationsname}"`,
+      r.fabschluessel,
+      `"${r.fabname}"`,
+      r.monat,
+      r.schicht,
+      r.anzahl,
+      r.betten,
+      r.patienten,
+      Number(r.belegung).toFixed(2).replace('.', ','),
+      Number(r.pflegekraefte_ist).toFixed(2).replace('.', ','),
+      Number(r.hebammen_ist).toFixed(2).replace('.', ','),
+      Number(r.hilfskraefte_ist).toFixed(2).replace('.', ','),
+      r.frostung,
+    ].join(';')).join('\n');
+
+    const fileName = `PPUGV_Export_${year}_${new Date().toISOString().split('T')[0]}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    // BOM fuer korrekte UTF-8 Erkennung in Excel
+    res.send('\ufeff' + csvHeader + csvRows);
+  } catch (error) {
+    console.error('[PPUGV-CSV] error:', error.message);
     next(error);
   }
 });
