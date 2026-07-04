@@ -12,7 +12,7 @@ import {
   AlertTriangle, UserPlus, Loader2, ChevronDown,
   ChevronRight, Users, Link2,
 } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import EmployeeSelect from '@/components/staff/EmployeeSelect';
 
 // ============ TYPES ============
 
@@ -367,6 +367,13 @@ export default function MasterStammdatImport() {
   }, [linkSelections, handleAnalyze]);
 
   // ============ FILTERING ============
+
+  const stammdatLinkOptions = (analysis?.no_match || []).map(s => ({
+    value: String(s.stammdat_id),
+    label: `${s.last_name}, ${s.first_name}`,
+    description: `${s.personalnummer} — ${s.position || 'o.A.'}`,
+    searchText: `${s.last_name} ${s.first_name} ${s.personalnummer} ${s.position || ''}`,
+  }));
 
   const filterEmployees = (list) => {
     if (!list) return [];
@@ -757,31 +764,27 @@ export default function MasterStammdatImport() {
                         )}
                       </div>
 
-                      {/* Manual matching dropdown */}
+                      {/* Manual matching searchable combobox */}
                       {(!noMatch || noMatch.length > 0) && (
                         <div className="mt-3 pt-3 border-t border-rose-100 flex items-center gap-3">
                           <Label className="text-xs text-slate-500 whitespace-nowrap">Stammdaten-Eintrag zuordnen:</Label>
-                          <Select
-                            value={selectedStammdatId || '__none__'}
-                            onValueChange={(v) => setLinkSelections(prev => ({ ...prev, [emp.id]: v === '__none__' ? null : parseInt(v, 10) }))}
-                            disabled={isLinking}
-                          >
-                            <SelectTrigger className="max-w-xs h-8 text-xs">
-                              <SelectValue placeholder="Stammdaten-Eintrag wählen…" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__none__">— Bitte wählen —</SelectItem>
-                              {noMatch.map(s => (
-                                <SelectItem key={s.stammdat_id} value={String(s.stammdat_id)}>
-                                  {s.last_name}, {s.first_name} ({s.personalnummer}) — {s.position || 'o.A.'}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex-1 min-w-0">
+                            <EmployeeSelect
+                              value={selectedStammdatId ? String(selectedStammdatId) : ''}
+                              onValueChange={(v) => setLinkSelections(prev => ({ ...prev, [emp.id]: v ? parseInt(v, 10) : null }))}
+                              options={stammdatLinkOptions}
+                              placeholder="Stammdaten-Eintrag suchen…"
+                              searchPlaceholder="Name oder Personalnummer suchen…"
+                              emptyText="Keine passenden Einträge"
+                              disabled={isLinking}
+                              triggerClassName="h-8 text-xs"
+                              contentClassName="w-[380px]"
+                            />
+                          </div>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 h-8 text-xs"
+                            className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 h-8 text-xs flex-shrink-0"
                             disabled={!selectedStammdatId || isLinking}
                             onClick={() => handleLinkStammdat(emp.id)}
                           >
