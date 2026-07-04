@@ -1,0 +1,909 @@
+import { format, addDays, isWeekend, parseISO } from 'date-fns';
+import type { Doctor, ShiftEntry, Workplace, WishRequest, SystemSetting, StaffingPlanEntry, WorkplaceTimeslot, WorkplaceQualification } from '@/types';
+import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
+import { getAutoFreiDate } from '@/utils/autoFrei';
+import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
+import { computeVacationBalance } from '@/components/vacation/vacationBalance';
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export interface ValidationResult {
+    canProceed: boolean;
+    blockers: string[];
+    warnings: string[];
+}
+
+interface CheckResult {
+    blocker?: string;
+    warning?: string;
+}
+
+interface SharedShift {
+    employee_id: string;
+    date: string;
+    workplace_name?: string;
+    workplace_category?: string;
+    affects_availability?: boolean;
+    allows_rotation_concurrently?: boolean;
+}
+
+interface ShiftValidatorOptions {
+    doctors?: Doctor[];
+    shifts?: ShiftEntry[];
+    workplaces?: Workplace[];
+    wishes?: WishRequest[];
+    systemSettings?: SystemSetting[];
+    staffingEntries?: StaffingPlanEntry[];
+    specialistRoles?: string[];
+    timeslots?: WorkplaceTimeslot[];
+    qualificationMap?: Record<string, { id: string; name: string }>;
+    getDoctorQualIds?: (doctorId: string) => string[];
+    wpQualsByWorkplace?: Record<string, WorkplaceQualification[]>;
+    sharedShifts?: SharedShift[];
+    getPublicHolidayDatesForYear?: (year: number) => string[] | null;
+    employeeRelationships?: Map<string, string[]>;
+}
+
+interface TimeSlot {
+    start_time?: string;
+    end_time?: string;
+    label?: string;
+    overlap_tolerance_minutes?: number;
+}
+
+// Hilfsfunktion für Fehlermeldungen
+function formatTimeRange(slot: TimeSlot | null | undefined): string {
+    if (!slot) return '';
+    const start = slot.start_time?.substring(0, 5) || '00:00';
+    const end = slot.end_time?.substring(0, 5) || '23:59';
+    return `${start}-${end}`;
+}
+
+// Standard Facharzt-Rollen (Fallback wenn nicht aus DB geladen)
+export const DEFAULT_SPECIALIST_ROLES: string[] = ["Chefarzt", "Oberarzt", "Facharzt"];
+export const DEFAULT_ASSISTANT_ROLES: string[] = ["Assistenzarzt"];
+
+/**
+ * Zentrale Validierungsschicht für alle ShiftEntry-Operationen
+ * Wird von ScheduleBoard, ServiceStaffing und Wish-Genehmigung verwendet
+ */
+
+export class ShiftValidator {
+    doctors: Doctor[];
+    shifts: ShiftEntry[];
+    sharedShifts: SharedShift[];
+    workplaces: Workplace[];
+    wishes: WishRequest[];
+    systemSettings: SystemSetting[];
+    staffingEntries: StaffingPlanEntry[];
+    specialistRoles: string[];
+    assistantRoles: string[];
+    timeslots: WorkplaceTimeslot[];
+    qualificationMap: Record<string, { id: string; name: string }>;
+    getDoctorQualIds: (doctorId: string) => string[];
+    wpQualsByWorkplace: Record<string, WorkplaceQualification[]>;
+    getPublicHolidayDatesForYear: (year: number) => string[] | null;
+    employeeRelationships: Map<string, string[]>;
+
+    private _customCategories: Record<string, unknown>;
+    absenceBlockingRules: Record<string, boolean>;
+    limits: { foreground: number; background: number; weekend: number };
+    staffingMinimums: Array<{ qualificationId: string; qualificationName?: string; min: number }>;
+
+    constructor(options: ShiftValidatorOptions) {
+        const {
+            doctors, shifts, workplaces, wishes, systemSettings, staffingEntries,
+            specialistRoles, timeslots, qualificationMap, getDoctorQualIds,
+            wpQualsByWorkplace, sharedShifts, getPublicHolidayDatesForYear,
+            employeeRelationships
+        } = options;
+
+        this.doctors = doctors || [];
+        this.shifts = shifts || [];
+        this.sharedShifts = sharedShifts || [];
+        this.workplaces = workplaces || [];
+        this.wishes = wishes || [];
+        this.systemSettings = systemSettings || [];
+        this.staffingEntries = staffingEntries || [];
+        // Dynamische Facharzt-Rollen aus DB, mit Fallback
+        this.specialistRoles = specialistRoles || DEFAULT_SPECIALIST_ROLES;
+        this.assistantRoles = DEFAULT_ASSISTANT_ROLES;
+        // Timeslots für Überlappungsprüfung
+        this.timeslots = timeslots || [];
+        // Qualifikationsdaten
+        this.qualificationMap = qualificationMap || {};
+        this.getDoctorQualIds = getDoctorQualIds || (() => []);
+        this.wpQualsByWorkplace = wpQualsByWorkplace || {};
+        // Optional holiday hook for vacation-overshoot rule
+        this.getPublicHolidayDatesForYear = getPublicHolidayDatesForYear || (() => null);
+        // Mitarbeiterbeziehungen mit Dienstkonflikt (employee_id → [related_employee_id, ...])
+        this.employeeRelationships = employeeRelationships || new Map();
+
+        // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
+        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
+
+        // Parse settings
+        this.absenceBlockingRules = this._parseAbsenceRules();
+        this.limits = this._parseLimits();
+        this.staffingMinimums = this._parseStaffingMinimums();
+    }
+
+    /**
+     * Prüft ob eine Kategorie Mehrfachbesetzung erlaubt
+     */
+    _categoryAllowsMultiple(categoryName: string): boolean {
+        return categoryAllowsMultiple(categoryName, this._customCategories);
+    }
+
+    /**
+     * Prüft ob ein Arbeitsplatz Mehrfachbesetzung erlaubt.
+     * Nutzt workplace.allows_multiple wenn gesetzt, sonst Kategorie-Default.
+     */
+    _workplaceAllowsMultiple(workplace: Workplace): boolean {
+        return workplaceAllowsMultiple(workplace, this._customCategories);
+    }
+
+    _parseAbsenceRules(): Record<string, boolean> {
+        const setting = this.systemSettings.find(s => s.key === 'absence_blocking_rules');
+        return setting ? JSON.parse(setting.value || '{}') : {
+            "Urlaub": true, "Schichturlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
+        };
+    }
+
+    _parseLimits(): { foreground: number; background: number; weekend: number } {
+        const get = (key: string, def: string): number => parseInt(this.systemSettings.find(s => s.key === key)?.value || def);
+        return {
+            foreground: get('limit_fore_services', '4'),
+            background: get('limit_back_services', '12'),
+            weekend: get('limit_weekend_services', '1')
+        };
+    }
+
+    _parseStaffingMinimums(): Array<{ qualificationId: string; qualificationName?: string; min: number }> {
+        // Neues qualifikationsbasiertes Format
+        const raw = this.systemSettings.find(s => s.key === 'availability_thresholds')?.value;
+        if (raw) {
+            try { return JSON.parse(raw); } catch { /* fall through */ }
+        }
+        // Migration: alte Schlüssel
+        const get = (key: string, def: string | null): number => parseInt(this.systemSettings.find(s => s.key === key)?.value || def || '0');
+        const oldSpec = get('min_present_specialists', null);
+        const oldAsst = get('min_present_assistants', null);
+        const migrated: Array<{ qualificationId: string; qualificationName?: string; min: number }> = [];
+        if (oldSpec !== 0) {
+            const faId = Object.values(this.qualificationMap).find(q => q.name === 'Facharzt')?.id;
+            if (faId) migrated.push({ qualificationId: String(faId), qualificationName: 'Facharzt', min: oldSpec });
+        }
+        if (oldAsst !== 0) {
+            const aaId = Object.values(this.qualificationMap).find(q => q.name === 'Assistenzarzt')?.id;
+            if (aaId) migrated.push({ qualificationId: String(aaId), qualificationName: 'Assistenzarzt', min: oldAsst });
+        }
+        return migrated;
+    }
+
+    _getDoctorFte(doctorId: string, date: Date): number {
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        
+        const entry = this.staffingEntries.find(e => 
+            e.doctor_id === doctorId && e.year === year && e.month === month
+        );
+
+        if (entry) {
+            const val = String(entry.value).replace(',', '.');
+            const num = parseFloat(val);
+            if (isNaN(num)) return 0;
+            return num;
+        }
+
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        return doctor?.fte ?? 1.0;
+    }
+
+    /**
+     * Hauptvalidierungsmethode
+     * @returns {{ canProceed: boolean, blockers: string[], warnings: string[] }}
+     */
+    validate(doctorId: string, dateStr: string, position: string, options: { excludeShiftId?: string | null; silent?: boolean; skipLimits?: boolean; timeslotId?: string | null } = {}): ValidationResult {
+        const { 
+            excludeShiftId = null,  // Bei Updates: eigene Shift-ID ausschließen
+            skipLimits = false,     // Limits überspringen (für Massenoperationen)
+            timeslotId = null,      // Ziel-Timeslot-ID (neu für Timeslot-Feature)
+        } = options;
+
+        const result: ValidationResult = {
+            canProceed: true,
+            blockers: [],
+            warnings: []
+        };
+
+        const date = new Date(dateStr);
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor) {
+            result.blockers.push('Person nicht gefunden');
+            result.canProceed = false;
+            return result;
+        }
+
+        // 1. Abwesenheits-Konflikte prüfen
+        const absenceResult = this._checkAbsenceConflicts(doctorId, dateStr, position, excludeShiftId);
+        if (absenceResult.blocker) {
+            result.blockers.push(absenceResult.blocker);
+            result.canProceed = false;
+        }
+        if (absenceResult.warning) {
+            result.warnings.push(absenceResult.warning);
+        }
+
+        // 2. Dienst/Rotation-Konflikte prüfen
+        const conflictResult = this._checkServiceRotationConflicts(doctorId, dateStr, position, excludeShiftId);
+        if (conflictResult.blocker) {
+            result.blockers.push(conflictResult.blocker);
+            result.canProceed = false;
+        }
+
+        // 3. Aufeinanderfolgende Tage prüfen
+        const consecutiveResult = this._checkConsecutiveDays(doctorId, dateStr, position, excludeShiftId);
+        if (consecutiveResult.blocker) {
+            result.blockers.push(consecutiveResult.blocker);
+            result.canProceed = false;
+        }
+
+        // 4. Dienstlimits prüfen (nur Warnung, kein Blocker)
+        if (!skipLimits) {
+            const limitResult = this._checkServiceLimits(doctorId, dateStr, position, excludeShiftId);
+            if (limitResult.warning) {
+                result.warnings.push(limitResult.warning);
+            }
+        }
+
+        // 5. Mindestbesetzung prüfen (nur für Abwesenheiten)
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
+        if (absencePositions.includes(position)) {
+            const staffingResult = this._checkStaffingMinimums(doctorId, dateStr, excludeShiftId);
+            if (staffingResult.warning) {
+                result.warnings.push(staffingResult.warning);
+            }
+        }
+
+        // 5b. Urlaubskontingent-Überschreitung prüfen (nur für "Urlaub")
+        if (position === 'Urlaub') {
+            const overshootResult = this._checkVacationOvershoot(doctorId, dateStr, excludeShiftId);
+            if (overshootResult.warning) {
+                result.warnings.push(overshootResult.warning);
+            }
+        }
+
+        // 6. Qualifikationsanforderungen prüfen
+        const qualResult = this._checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId);
+        if (qualResult.blocker) {
+            result.blockers.push(qualResult.blocker);
+            result.canProceed = false;
+        }
+        if (qualResult.warning) {
+            result.warnings.push(qualResult.warning);
+        }
+
+        // 7. Timeslot-Überlappung prüfen (nur wenn Timeslots aktiviert)
+        if (timeslotId || this._workplaceHasTimeslots(position)) {
+            const overlapResult = this._checkTimeslotOverlaps(
+                doctorId, dateStr, position, timeslotId, excludeShiftId
+            );
+            if (overlapResult.blocker) {
+                result.blockers.push(overlapResult.blocker);
+                result.canProceed = false;
+            }
+            if (overlapResult.warning) {
+                result.warnings.push(overlapResult.warning);
+            }
+        }
+
+        // 8. Mitarbeiterbeziehungen mit Dienstkonflikt prüfen (nur für echte Dienste)
+        const relationshipResult = this._checkRelationshipConflicts(doctorId, dateStr, position, excludeShiftId);
+        if (relationshipResult.blocker) {
+            result.blockers.push(relationshipResult.blocker);
+            result.canProceed = false;
+        }
+        if (relationshipResult.warning) {
+            result.warnings.push(relationshipResult.warning);
+        }
+
+        return result;
+    }
+
+    /**
+     * Prüft Qualifikationsanforderungen eines Arbeitsplatzes gegen Mitarbeiter-Qualifikationen
+     * Pflicht-Qualifikationen → Blocker (override-fähig)
+     * Sollte-Qualifikationen → Bevorzugung (nur für Priorisierung)
+     * Sollte-nicht-Qualifikationen → Warnung (override-fähig)
+     * Nicht-Qualifikationen → harter Blocker
+     * 
+     * Ausbildungsmodus: Bei Mehrfachbesetzung werden die Checks ausgesetzt,
+     * wenn bereits mind. 1 qualifizierter Mitarbeiter eingeteilt ist.
+     */
+    _checkQualificationRequirements(doctorId: string, position: string, dateStr: string, excludeShiftId: string | null): CheckResult {
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (!workplace) return {};
+
+        const wpQuals = this.wpQualsByWorkplace[workplace.id] || [];
+        if (wpQuals.length === 0) return {};
+
+        const docQualIds = this.getDoctorQualIds(doctorId);
+
+        // Nicht-Qualifikationen: Mitarbeiter darf KEINE der ausgeschlossenen Qualifikationen haben
+        // Dies ist ein harter Blocker (kein Override möglich)
+        const excludedQuals = wpQuals.filter(wq => !wq.is_mandatory && wq.is_excluded);
+        if (excludedQuals.length > 0) {
+            const violatedExclusions = excludedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
+            if (violatedExclusions.length > 0) {
+                const names = violatedExclusions
+                    .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                    .join(', ');
+                return { blocker: `Ausgeschlossen: Mitarbeiter hat Ausschlusskriterium „${names}" – darf hier nicht eingeteilt werden.` };
+            }
+        }
+
+        // Sollte-nicht-Qualifikationen: Mitarbeiter hat eine Qualifikation, die hier unerwünscht ist
+        const discouragedQuals = wpQuals.filter(wq => wq.is_mandatory && wq.is_excluded);
+        const violatedDiscouraged = discouragedQuals.filter(wq => docQualIds.includes(wq.qualification_id));
+
+        const mandatoryQuals = wpQuals.filter(wq => wq.is_mandatory && !wq.is_excluded);
+        const preferredQuals = wpQuals.filter(wq => !wq.is_mandatory && !wq.is_excluded);
+
+        // Mehrfachbesetzung / Ausbildungsmodus:
+        // Nur bei Arbeitsplätzen die Mehrfachbesetzung erlauben (nicht bei Single-Slot,
+        // da dort der neue Eintrag den bestehenden ersetzt)
+        const allowsMultiple = this._workplaceAllowsMultiple(workplace);
+        if (dateStr && allowsMultiple) {
+            const otherAssignments = this.shifts.filter(s =>
+                s.position === position &&
+                s.date === dateStr &&
+                s.doctor_id !== doctorId &&
+                s.id !== excludeShiftId
+            );
+
+            if (otherAssignments.length > 0) {
+                // Prüfe ob mindestens ein bereits eingeteilter Kollege alle Pflicht-Qualifikationen hat
+                const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...preferredQuals.map(wq => wq.qualification_id)];
+                const hasQualifiedColleague = otherAssignments.some(s => {
+                    const colleagueQuals = this.getDoctorQualIds(s.doctor_id || '');
+                    return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
+                });
+
+                if (hasQualifiedColleague) {
+                    return {};
+                }
+            }
+        }
+
+        // Pflicht-Qualifikationen prüfen
+        const missingMandatory = mandatoryQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+        if (missingMandatory.length > 0) {
+            const names = missingMandatory
+                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                .join(', ');
+            return { blocker: `Fehlende Pflicht-Qualifikation: ${names}` };
+        }
+
+        // Sollte-nicht-Qualifikationen: Warnung wenn Mitarbeiter unerwünschte Qualifikation hat
+        if (violatedDiscouraged.length > 0) {
+            const names = violatedDiscouraged
+                .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                .join(', ');
+            return { warning: `Sollte nicht: Mitarbeiter hat Qualifikation „${names}" – nur zuweisen wenn kein anderer verfügbar.` };
+        }
+
+        // Sollte-Qualifikationen: Warnung wenn Arzt die bevorzugte Qualifikation NICHT hat
+        // (Fallback: nur zuweisen wenn kein qualifizierter Arzt verfügbar)
+        if (preferredQuals.length > 0) {
+            const missingPreferred = preferredQuals.filter(wq => !docQualIds.includes(wq.qualification_id));
+            if (missingPreferred.length > 0) {
+                const names = missingPreferred
+                    .map(wq => this.qualificationMap[wq.qualification_id]?.name || '?')
+                    .join(', ');
+                return { warning: `Fehlende Sollte-Qualifikation: ${names} – nur zuweisen wenn kein qualifizierter Arzt verfügbar.` };
+            }
+        }
+
+        return {};
+    }
+
+    /**
+     * Prüft ob ein Arbeitsplatz Timeslots aktiviert hat
+     */
+    _workplaceHasTimeslots(position: string): boolean {
+        const workplace = this.workplaces.find(w => w.name === position);
+        return workplace?.timeslots_enabled === true;
+    }
+
+    /**
+     * Prüft, ob das Eintragen eines weiteren "Urlaub"-Shifts das
+     * Jahreskontingent des Mitarbeiters überschreiten würde.
+     *
+     * - Nur aktiv für position === 'Urlaub'.
+     * - Verwendet denselben Pure-Helper wie das DoctorYearView-Resturlaub-Widget
+     *   und das Master-Backend, damit Tenant- und Master-Sicht niemals
+     *   auseinanderlaufen.
+     * - Wenn die bereits vorhandene Schicht am Tag ein Duplikat ist
+     *   (excludeShiftId), zählt `candidateDate` sie nicht doppelt.
+     * - Feiertage werden über den optionalen `getPublicHolidayDatesForYear`
+     *   bezogen. Ohne diesen Hook werden Wochenenden + Feiertage ignoriert
+     *   und alle "Urlaub"-Tage gezählt — strenger als mit Hook, aber nie
+     *   falsch-negativ (kein stilles Übersehen).
+     */
+    _checkVacationOvershoot(doctorId: string, dateStr: string, excludeShiftId: string | null): CheckResult {
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor) return {};
+
+        const year = Number(String(dateStr).slice(0, 4));
+        const holidays = this.getPublicHolidayDatesForYear(year) || null;
+
+        // Filter to the doctor's existing Urlaub shifts, excluding the one
+        // currently being edited (so updates don't count the row twice).
+        const existingUrlaub = this.shifts.filter((s) =>
+            s.doctor_id === doctorId
+            && s.position === 'Urlaub'
+            && s.id !== excludeShiftId
+        );
+
+        const balance = computeVacationBalance({
+            shifts: existingUrlaub,
+            year,
+            annualVacationDays: (doctor as Doctor & { vacation_days?: number }).vacation_days,
+            publicHolidayDates: holidays,
+            candidateDate: dateStr,
+        });
+
+        if (!balance.overshoot) return {};
+
+        const days = Math.abs(balance.remaining);
+        return {
+            warning: `Urlaubskontingent überschritten: ${days} Tag${days === 1 ? '' : 'e'} über dem Jahresanspruch (${balance.total} Tage).`,
+        };
+    }
+
+    /**
+     * Prüft ob ein Mitarbeiter in überlappenden Zeitfenstern eingeteilt ist
+     */
+    _checkTimeslotOverlaps(doctorId: string, dateStr: string, newPosition: string, newTimeslotId: string | null, excludeShiftId: string | null): CheckResult {
+        // Alle ShiftEntries des Mitarbeiters am Tag laden
+        const doctorShifts = this.shifts.filter(s => 
+            s.doctor_id === doctorId && 
+            s.date === dateStr &&
+            s.id !== excludeShiftId
+        );
+
+        if (doctorShifts.length === 0) {
+            return {}; // Keine anderen Schichten an diesem Tag
+        }
+
+        // Neues Timeslot laden
+        const newTimeslot = newTimeslotId 
+            ? this.timeslots.find(t => t.id === newTimeslotId)
+            : null;
+
+        // Wenn kein Timeslot angegeben und Position hat keine Timeslots, ist es ganztägig
+        const newWorkplace = this.workplaces.find(w => w.name === newPosition);
+        const newEffectiveSlot = newTimeslot || 
+            (newWorkplace?.timeslots_enabled ? null : createFullDayTimeslot());
+
+        if (!newEffectiveSlot) {
+            // Timeslot-Position ohne konkreten Timeslot - das ist ein Problem
+            return { warning: 'Bitte wählen Sie ein Zeitfenster aus.' };
+        }
+
+        // Toleranz ermitteln
+        const tolerance = newTimeslot?.overlap_tolerance_minutes || 
+            newWorkplace?.default_overlap_tolerance_minutes || 0;
+
+        // Prüfe gegen alle anderen Schichten des Mitarbeiters
+        for (const existingShift of doctorShifts) {
+            const existingTimeslot = existingShift.timeslot_id
+                ? this.timeslots.find(t => t.id === existingShift.timeslot_id)
+                : null;
+
+            const existingWorkplace = this.workplaces.find(w => w.name === existingShift.position);
+            const existingEffectiveSlot = existingTimeslot || 
+                (existingWorkplace?.timeslots_enabled ? null : createFullDayTimeslot());
+
+            if (!existingEffectiveSlot) {
+                continue; // Existierender Eintrag hat keinen gültigen Slot
+            }
+
+            // Überlappung prüfen
+            if (timeslotsOverlap(newEffectiveSlot, existingEffectiveSlot, tolerance)) {
+                const existingLabel = existingTimeslot?.label || existingShift.position;
+                const newLabel = newTimeslot?.label || newPosition;
+                return { 
+                    blocker: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot)}.`
+                };
+            }
+        }
+
+        return {};
+    }
+
+    _checkAbsenceConflicts(doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null): CheckResult {
+        const newWorkplace = this.workplaces.find(w => w.name === newPosition);
+        if (newWorkplace?.allows_absence_overlap === true) {
+            return {};
+        }
+
+        const doctorShifts = this.shifts.filter(s => 
+            s.doctor_id === doctorId && 
+            s.date === dateStr &&
+            s.id !== excludeShiftId
+        );
+
+        for (const shift of doctorShifts) {
+            const isBlocking = this.absenceBlockingRules[shift.position];
+            
+            if (typeof isBlocking === 'boolean') {
+                if (isBlocking) {
+                    return { blocker: `Mitarbeiter ist bereits als "${shift.position}" eingetragen (blockiert).` };
+                } else {
+                    return { warning: `Konflikt: Mitarbeiter ist "${shift.position}".` };
+                }
+            }
+        }
+
+        return {};
+    }
+
+    _getDoctorSharedShifts(doctorId: string, dateStr: string): SharedShift[] {
+        const doctor = this.doctors.find((entry) => entry.id === doctorId);
+        const centralEmployeeId = doctor?.central_employee_id;
+        if (!centralEmployeeId) {
+            return [];
+        }
+
+        return this.sharedShifts.filter((shift) =>
+            String(shift.employee_id) === String(centralEmployeeId)
+            && String(shift.date).slice(0, 10) === dateStr
+        );
+    }
+
+    _checkServiceRotationConflicts(doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null): CheckResult {
+        const doctorShifts = this.shifts.filter(s => 
+            s.doctor_id === doctorId && 
+            s.date === dateStr &&
+            s.id !== excludeShiftId
+        );
+        const doctorSharedShifts = this._getDoctorSharedShifts(doctorId, dateStr);
+
+        // Check if new position is a non-availability-affecting workplace
+        const newWorkplace = this.workplaces.find(w => w.name === newPosition);
+        
+        // If the NEW position doesn't affect availability, only check for absences (handled elsewhere)
+        // Skip rotation/service conflict checks
+        if (newWorkplace?.affects_availability === false) {
+            return {};
+        }
+
+        const isAvailabilityBlockingNonService = (workplace: Workplace | undefined): boolean => (
+            !!workplace
+            && workplace.category !== 'Dienste'
+            && workplace.affects_availability !== false
+        );
+
+        const rotationPositions = this.workplaces.filter(w => w.category === 'Rotationen').map(w => w.name);
+        const exclusiveServices = this.workplaces
+            .filter(w => w.category === 'Dienste' && (w as Workplace & { allows_rotation_concurrently?: boolean }).allows_rotation_concurrently === false)
+            .map(w => w.name);
+
+        const isNewRotation = rotationPositions.includes(newPosition);
+        const isNewAvailabilityBlockingNonService = isAvailabilityBlockingNonService(newWorkplace);
+        const newServiceWorkplace = this.workplaces.find(w => w.name === newPosition && w.category === 'Dienste');
+        const isNewService = !!newServiceWorkplace;
+
+        // Neuer availability-relevanter Nicht-Dienst-Bereich + existierender exklusiver Dienst
+        if (isNewAvailabilityBlockingNonService) {
+            const conflict = doctorShifts.find(s => exclusiveServices.includes(s.position));
+            if (conflict) {
+                return {
+                    blocker: isNewRotation
+                        ? `Konflikt: "${conflict.position}" blockiert Rotation.`
+                        : `Konflikt: "${conflict.position}" blockiert diesen Bereich.`
+                };
+            }
+
+            const sharedConflict = doctorSharedShifts.find((shift) =>
+                shift.workplace_category === 'Dienste'
+                && shift.affects_availability !== false
+                && shift.allows_rotation_concurrently === false
+            );
+            if (sharedConflict) {
+                return {
+                    blocker: isNewRotation
+                        ? `Konflikt: "${sharedConflict.workplace_name}" blockiert Rotation.`
+                        : `Konflikt: "${sharedConflict.workplace_name}" blockiert diesen Bereich.`
+                };
+            }
+        }
+
+        // Neuer exklusiver Dienst + existierender availability-relevanter Nicht-Dienst-Bereich
+        if (isNewService && (newServiceWorkplace as Workplace & { allows_rotation_concurrently?: boolean }).allows_rotation_concurrently === false) {
+            const conflict = doctorShifts.find(s => {
+                const existingWorkplace = this.workplaces.find(w => w.name === s.position);
+                return isAvailabilityBlockingNonService(existingWorkplace);
+            });
+            if (conflict) {
+                const existingWorkplace = this.workplaces.find(w => w.name === conflict.position);
+                return {
+                    blocker: existingWorkplace?.category === 'Rotationen'
+                        ? `Mitarbeiter ist bereits in Rotation "${conflict.position}" eingetragen.`
+                        : `Konflikt: Bereich "${conflict.position}" ist nicht mit diesem Dienst kombinierbar.`
+                };
+            }
+        }
+
+        return {};
+    }
+
+    _checkConsecutiveDays(doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null): CheckResult {
+        // Check if this position allows consecutive days (from workplace config)
+        const workplace = this.workplaces.find(w => w.name === newPosition);
+        
+        // Only apply consecutive days check for "Dienste" category
+        // Rotations, Demos, and other categories should not have this restriction
+        if (!workplace || workplace.category !== 'Dienste') {
+            return {};
+        }
+        
+        // Determine consecutive mode: 'forbidden' | 'allowed' | 'preferred'
+        // Backward compat: old boolean false → 'forbidden', true/undefined → 'allowed'
+        const mode = workplace.consecutive_days_mode
+            || (workplace as Workplace & { allows_consecutive_days?: boolean }).allows_consecutive_days === false ? 'forbidden' : 'allowed';
+        
+        // Only block if mode is 'forbidden'
+        if (mode !== 'forbidden') {
+            return {};
+        }
+
+        const currentDate = new Date(dateStr);
+        const prevDateStr = format(addDays(currentDate, -1), 'yyyy-MM-dd');
+        const nextDateStr = format(addDays(currentDate, 1), 'yyyy-MM-dd');
+
+        const hasConsecutive = this.shifts.some(s => 
+            s.doctor_id === doctorId && 
+            s.position === newPosition && 
+            s.id !== excludeShiftId &&
+            (s.date === prevDateStr || s.date === nextDateStr)
+        );
+
+        if (hasConsecutive) {
+            return { blocker: `"${newPosition}" ist nicht an aufeinanderfolgenden Tagen erlaubt.` };
+        }
+
+        return {};
+    }
+
+    _checkServiceLimits(doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null): CheckResult {
+        const workplace = this.workplaces.find(w => w.name === newPosition);
+        if (!workplace || workplace.category !== 'Dienste') return {};
+
+        // Get all service workplaces to identify foreground/background by service_type
+        const serviceWorkplaces = this.workplaces.filter(w => w.category === 'Dienste');
+        const sortedServices = [...serviceWorkplaces].sort((a, b) => (a.order || 0) - (b.order || 0));
+        
+        // Build sets of position names by service_type
+        const foregroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 1).map(w => w.name));
+        const backgroundPositions = new Set(serviceWorkplaces.filter(w => w.service_type === 2).map(w => w.name));
+        
+        // Legacy fallback: if no service_type set, use old convention
+        if (foregroundPositions.size === 0 && backgroundPositions.size === 0 && sortedServices.length > 0) {
+            foregroundPositions.add(sortedServices[0].name);
+            sortedServices.slice(1).forEach(w => backgroundPositions.add(w.name));
+        }
+
+        const date = new Date(dateStr);
+        const isFG = foregroundPositions.has(newPosition);
+        const isBG = backgroundPositions.has(newPosition);
+        const isWknd = isWeekend(date) && isFG;
+
+        let countFG = 0, countBG = 0, countWknd = 0;
+        const monthStr = format(date, 'yyyy-MM');
+
+        this.shifts.forEach(s => {
+            if (s.doctor_id !== doctorId) return;
+            if (!s.date.startsWith(monthStr)) return;
+            if (s.id === excludeShiftId) return;
+
+            if (foregroundPositions.has(s.position)) {
+                countFG++;
+                const sDate = parseISO(s.date);
+                if (isWeekend(sDate)) countWknd++;
+            }
+            if (backgroundPositions.has(s.position)) countBG++;
+        });
+
+        if (isFG) countFG++;
+        if (isBG) countBG++;
+        if (isWknd) countWknd++;
+
+        const fte = this._getDoctorFte(doctorId, date);
+        const adjFG = Math.round(this.limits.foreground * fte);
+        const adjBG = Math.round(this.limits.background * fte);
+
+        const warnings: string[] = [];
+        if (isFG && countFG > adjFG) warnings.push(`${countFG}. Bereitschaftsdienst (Limit: ${adjFG})`);
+        if (isBG && countBG > adjBG) warnings.push(`${countBG}. Rufbereitschaftsdienst (Limit: ${adjBG})`);
+        if (isWknd && countWknd > this.limits.weekend) warnings.push(`${countWknd}. Wochenenddienst (Limit: ${this.limits.weekend})`);
+
+        if (warnings.length > 0) {
+            return { warning: `Dienstlimit überschritten: ${warnings.join(', ')}` };
+        }
+
+        return {};
+    }
+
+    _checkStaffingMinimums(doctorId: string, dateStr: string, excludeShiftId: string | null): CheckResult {
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor) return {};
+        if (!this.staffingMinimums || this.staffingMinimums.length === 0) return {};
+
+        const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
+
+        // Zähle aktuelle Abwesenheiten (ohne diese neue)
+        const absentOnDate = this.shifts.filter(s => 
+            s.date === dateStr && 
+            ABSENCE_POSITIONS.includes(s.position) &&
+            s.id !== excludeShiftId
+        ).map(s => s.doctor_id || '');
+
+        // Füge den neuen Abwesenden hinzu
+        const allAbsent = new Set([...absentOnDate, doctorId]);
+
+        const warnings: string[] = [];
+
+        this.staffingMinimums.forEach(threshold => {
+            const qId = threshold.qualificationId;
+            const qualName = threshold.qualificationName || this.qualificationMap[qId]?.name || qId;
+            const minCount = threshold.min;
+
+            // Ärzte mit dieser Qualifikation
+            const docsWithQual = this.doctors.filter(d => {
+                const qualIds = this.getDoctorQualIds(d.id);
+                return qualIds.includes(qId);
+            });
+
+            const total = docsWithQual.length;
+            const absent = docsWithQual.filter(d => allAbsent.has(d.id)).length;
+            const present = total - absent;
+
+            if (present < minCount) {
+                warnings.push(`Nur ${present} ${qualName} anwesend (Min: ${minCount})`);
+            }
+        });
+
+        if (warnings.length > 0) {
+            return { warning: `Mindestbesetzung unterschritten: ${warnings.join(', ')}` };
+        }
+
+        return {};
+    }
+
+    /**
+     * Prüft ob Auto-Frei am direkten Folgetag erstellt werden soll.
+     * Samstage, Sonntage und Feiertage lösen kein verschobenes Auto-Frei aus.
+     * @returns {string|null} - Datum für Auto-Frei oder null
+     */
+    shouldCreateAutoFrei(position: string, dateStr: string, isPublicHoliday: boolean): string | null {
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (!(workplace as Workplace & { auto_off?: boolean }).auto_off) return null;
+
+        return getAutoFreiDate(dateStr, isPublicHoliday);
+    }
+
+    /**
+     * Findet Auto-Frei-Einträge die gelöscht werden sollten wenn ein Dienst entfernt wird
+     * @returns {object|null} - Der zu löschende Shift oder null
+     */
+    findAutoFreiToCleanup(doctorId: string, dateStr: string, position: string): ShiftEntry | null {
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (!(workplace as Workplace & { auto_off?: boolean }).auto_off) return null;
+
+        const nextDay = addDays(parseISO(dateStr), 1);
+        const nextDayStr = format(nextDay, 'yyyy-MM-dd');
+
+        const autoFreiShift = this.shifts.find(s => 
+            s.date === nextDayStr && 
+            s.doctor_id === doctorId && 
+            s.position === 'Frei' &&
+            (s.note?.includes('Autom.') || s.note?.includes('Freizeitausgleich'))
+        );
+
+        return autoFreiShift || null;
+    }
+
+    /**
+     * Prüft ob eine Position Auto-Off auslöst
+     */
+    isAutoOffPosition(position: string): boolean {
+        const workplace = this.workplaces.find(w => w.name === position);
+        return !!(workplace as Workplace & { auto_off?: boolean }).auto_off;
+    }
+
+    /**
+     * Prüft Mitarbeiterbeziehungen mit aktiviertem Dienstkonflikt.
+     * Wenn zwei Mitarbeiter, die in einer Beziehung mit shift_conflict=true stehen,
+     * am selben Tag für einen echten Dienst (keine Routine wie Rotationen/Konsile)
+     * eingeteilt werden, wird eine Warnung ausgegeben.
+     * 
+     * Die Prüfung ist auf "echte Dienste" beschränkt:
+     * - Freizeit/Abwesenheits-Positionen (Frei, Urlaub, Krank, etc.) werden ignoriert
+     * - Routine-Kategorien (Rotationen, Konsile, etc.) werden ignoriert
+     */
+    _checkRelationshipConflicts(doctorId: string, dateStr: string, position: string, excludeShiftId: string | null): CheckResult {
+        // Nur prüfen wenn Beziehungsdaten vorhanden sind
+        if (!this.employeeRelationships || this.employeeRelationships.size === 0) {
+            return {};
+        }
+
+        // Nur echte Dienste prüfen – keine Abwesenheiten
+        const absencePositions = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar",
+                                  "Fortbildung", "Kongress", "Elternzeit", "Mutterschutz", "Verfügbar"];
+        if (absencePositions.includes(position)) return {};
+
+        // Nur Dienste-Kategorie prüfen – keine Routine (Rotationen, Konsile etc.)
+        const workplace = this.workplaces.find(w => w.name === position);
+        if (workplace && workplace.category !== 'Dienste') {
+            return {};
+        }
+
+        const doctor = this.doctors.find(d => d.id === doctorId);
+        if (!doctor || !doctor.central_employee_id) return {};
+
+        const centralId = String(doctor.central_employee_id);
+
+        // Alle related employees mit shift_conflict für diesen Mitarbeiter finden
+        const relatedEmployeeIds = this.employeeRelationships.get(centralId);
+        if (!relatedEmployeeIds || relatedEmployeeIds.length === 0) return {};
+
+        // Prüfen, ob einer der related employees am selben Tag einen echten Dienst hat
+        const conflictingDoctorNames: string[] = [];
+
+        for (const relCentralId of relatedEmployeeIds) {
+            // Finde alle lokalen Doctors die zu diesem central employee gehören
+            const doctorsWithRelation = this.doctors.filter(
+                d => String(d.central_employee_id) === relCentralId
+            );
+
+            for (const relDoctor of doctorsWithRelation) {
+                const hasRealShift = this.shifts.some(s =>
+                    s.doctor_id === relDoctor.id
+                    && s.date === dateStr
+                    && s.id !== excludeShiftId
+                    && !absencePositions.includes(s.position)
+                );
+
+                // Auch sharedShifts (Gruppendienste) prüfen
+                const hasSharedShift = this.sharedShifts.some(s =>
+                    String(s.employee_id) === relCentralId
+                    && String(s.date).slice(0, 10) === dateStr
+                );
+
+                if (hasRealShift || hasSharedShift) {
+                    const docName = relDoctor.name || `${(relDoctor as Doctor & { first_name?: string; last_name?: string }).first_name || ''} ${(relDoctor as Doctor & { first_name?: string; last_name?: string }).last_name || ''}`.trim() || 'Unbekannt';
+                    conflictingDoctorNames.push(docName);
+                }
+            }
+        }
+
+        if (conflictingDoctorNames.length > 0) {
+            const names = [...new Set(conflictingDoctorNames)].join(', ');
+            return {
+                warning: `Dienstkonflikt: „${names}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag ebenfalls für einen Dienst eingeteilt.`
+            };
+        }
+
+        return {};
+    }
+}
+
+/**
+ * Hook-artige Factory-Funktion für einfache Integration
+ */
+export function createShiftValidator(data: ShiftValidatorOptions): ShiftValidator {
+    return new ShiftValidator(data);
+}
