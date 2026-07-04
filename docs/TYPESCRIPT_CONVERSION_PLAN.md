@@ -2,159 +2,491 @@
 
 ## Goal
 
-Convert the CuraFlow frontend pages to TypeScript with strict checking, matching the state of the `modernize-app-pr` branch:
+Convert all CuraFlow frontend code from JS/JSX to TypeScript with `strict: true`.
 
-1. All 14 page components converted from `.jsx` → `.tsx` with proper type annotations
-2. A `src/types/` directory with domain model, auth, and API types
-3. `"strict": true` in `tsconfig.json`
-4. `pages.config.js` → `pages.config.ts`
+## Part 1 — Pages ✅ COMPLETE
 
-**Out of scope for this plan:** Component conversion (~150 `.jsx` files including ScheduleBoard.jsx at 7k lines), test file conversion, server TypeScript conversion. These require separate planning with their own safety nets.
+All 14 page components converted `.jsx` → `.tsx`, `src/types/` created, `strict: true` enabled in `jsconfig.json`, `pages.config.js` → `pages.config.ts`.
 
-## Current State
+5 pages deferred with `@ts-nocheck` (MyDashboard, ServiceStaffing, Vacation, WishList, Training) — blocked on TanStack Query v5 API migration and component prop types.
 
-| Metric | Value |
-|--------|-------|
-| TS/TSX files already in `src/` | ~28 (App, Layout, hooks, api client, utils, contexts) |
-| JSX pages unconverted | 14 files in `src/pages/` |
-| JSX components unconverted | ~150 files (~50k lines); ScheduleBoard.jsx is 7k lines |
-| `src/types/` directory | Created (4 files: models.ts, auth.ts, api.ts, index.ts) |
-| `strict` mode | `false` |
-| Pre-existing TS errors | 0 — all fixed in Phase 0 |
-| E2E test coverage | 46 tests total; all 14 pages have smoke + schedule has 5 safety tests |
-| Drag-and-drop E2E coverage | None — Playwright cannot trigger @hello-pangea/dnd. Needs component tests with React Testing Library. |
-| eslint covers .ts/.tsx | No — `.ts,.tsx` requires `typescript-eslint` parser not yet installed |
-| Build status | `npm run build` passes |
-| Typecheck status | `npm run typecheck` passes with zero errors (`.tsx` now included in jsconfig) |
-| Page smoke coverage | 14/14 pages have root `data-testid` and E2E smoke test |
+**Verification:** `npm run typecheck` zero errors with `strict: true`, `npm run build` passes, 46 E2E tests pass.
 
-## Progress
+---
 
-- [x] **Pre-work**: Training E2E test fix (static dates → relative dates)
-- [x] **Pre-work**: ScheduleBoard testid additions + 5 safety E2E tests
-- [x] **Phase 0 — Groundwork** (single PR)
-  - [x] Fix 5 pre-existing TS errors in `.ts` files (`api/client.ts`, `lib/qualificationEvidence.ts`, `utils/staffingUtils.ts`)
-  - [x] Fix 7 hidden TS errors in `.tsx` files uncovered by including `src/**/*.tsx` in typecheck (`App.tsx`, `AuthProvider.tsx`, `Layout.tsx`, `PlanUpdateListener.jsx`)
-  - [x] Add root `data-testid` to 6 pages (Home, Help, MyDashboard, DataImport, ServiceStaffing, CertificateUpload)
-  - [x] Add smoke E2E tests for 6 untested pages (`e2e/specs/smoke/page-smoke.spec.ts`)
-  - [x] Update `jsconfig.json` to include `src/**/*.tsx` in typecheck scope
-  - [x] Verify: `npm run typecheck` zero errors, `npm run build` passes, `npm run test:e2e` 46 passed
-- [x] **Phase 1** — Create `src/types/` (models, auth, api, index — 4 files, ~430 lines)
-- [x] **Phase 2, PR 2** — Convert Schedule, Home, Admin, CertificateUpload (.jsx → .tsx)
-- [ ] **PR 3** — Convert AuthLogin, DataImport, Statistics
-- [ ] **PR 4** — Convert Staff, Training, Help
-- [ ] **PR 5** — Convert MyDashboard, ServiceStaffing, Vacation, WishList
-- [ ] **PR 6** — Convert `pages.config.js` → `pages.config.ts`
-- [ ] **PR 7** — Enable `strict: true`
+## Part 2 — Component Conversion (~140 files, ~33k lines)
 
-## Execution Plan
+### Risk Categories
 
-### ✅ Phase 0: Groundwork — Complete
+| Risk | What it means | Example |
+|------|---------------|---------|
+| **Low** | Conversion is mechanical. Wrong type → obvious build error. E2E catches runtime issues. | UI primitives (thin Radix wrappers) |
+| **Medium** | File has business logic. A wrong type could compile but misbehave at runtime. Tests provide partial safety. | Staff components, vacation, auth |
+| **High** | Large file, complex logic, or zero test coverage for the interaction surface. A wrong type annotation could compile fine and break silently at runtime. | ScheduleBoard (7k lines, 1.7k of drag-and-drop, zero DnD tests) |
 
-All groundwork done in a single PR:
+### What can go wrong during conversion
 
-1. Fix 12 pre-existing/hidden TS errors across 5 files (`.ts` and `.tsx`)
-2. Add `data-testid` to 6 untested pages + E2E smoke tests
-3. Add ScheduleBoard testids + 5 ScheduleBoard safety E2E tests
-4. Fix training rotation E2E test (static → relative dates)
-5. Add `src/**/*.tsx` to `jsconfig.json` typecheck scope
-6. Update AGENTS.md/copilot-instructions.md with E2E verification
+**Silent null safety mismatches.** A `.jsx` file handles `undefined` naturally. Adding `const doctor: Doctor = doctors.find(...)` compiles with `as Doctor` but crashes if the doctor is deleted. The original JS handled this implicitly.
 
-**Verification:** `npm run typecheck` zero errors, `npm run build` passes, 46 E2E tests pass.
+**`.jsx` component prop rejection.** Every `.jsx` component using `React.forwardRef` resolves to `IntrinsicAttributes & RefAttributes<any>` in TypeScript — rejecting all custom props. A `global.d.ts` augmentation adds `children` and `className` to bridge this, but any component that needs `value`, `onChange`, `variant`, or `data-testid` passed to a `.jsx` child will fail until that child is converted.
 
-### ✅ Phase 1: Type Foundation — Complete
+**The refactoring trap.** During conversion, the impulse to "clean this up while I'm here" is dangerous. Renaming a variable used in `handleDragEnd` could silently break drag-and-drop. E2E tests don't cover drag-and-drop (Playwright cannot trigger `@hello-pangea/dnd`), so this breakage would be invisible.
 
-Created `src/types/` with four files ported from `modernize-app-pr` and adapted to master's schema:
+**`@ts-nocheck` as a time bomb.** Adding `@ts-nocheck` to a converted file gains zero type safety — it's just a rename. The plan converts files with proper types, not `@ts-nocheck`, by ensuring their dependencies are typed first.
 
-```
-src/types/
-  index.ts      — barrel export
-  models.ts     — Doctor, ShiftEntry, Workplace, StaffingPlanEntry, ScheduleBlock,
-                  Qualification, WishRequest, SystemSetting, ShiftTimeRule,
-                  WorkTimeModel, ColorSetting, TrainingRotation, CustomHoliday,
-                  TeamRole, WorkplaceTimeslot, ScheduleNote, StaffingPlanNote
-  auth.ts       — AppUser, AuthUser, TokenPayload, LoginRequest, LoginResponse
-  api.ts        — ApiError, DbListResponse, MutationResponse, HealthResponse,
-                  ApiRequestOptions
-```
+### Conversion Pattern
 
-Key additions beyond modernize-app-pr: `ScheduleBlock.type`, `Doctor.receive_email_notifications`, `Workplace.allows_absence_overlap`, `Qualification.requires_certificate`/`certificate_validity_months`, `AppUser.wish_default_position`, new entity types for `StaffingPlanNote`, `TrainingRotation`, `CustomHoliday`.
-
-### Phase 2: Page Conversions — 4 PRs
-
-Each PR renames `.jsx` → `.tsx` for a batch of pages and adds `import type` annotations. The conversion pattern is:
+Each file follows a consistent conversion:
 
 1. `git mv <file>.jsx <file>.tsx` (preserves git history)
-2. Add `import type { ... } from '@/types'` for domain model types used in props/state
+2. Add `import type { ... } from '@/types'` for domain model types
 3. Remove `import React from 'react'` where unnecessary (React 17+ JSX transform)
-4. Resolve any new type errors
-5. No logic changes — only type annotations
-
-| PR | Pages | Total Lines | E2E Coverage | Risk |
-|----|-------|-------------|--------------|------|
-| **2** | Schedule (11L), Home (69L), Admin (67L), CertificateUpload (152L) | ~300L | Admin, plus new smoke tests from PR 0b | Low — simple wrappers |
-| **3** | AuthLogin (188L), DataImport (382L), Statistics (434L) | ~1000L | AuthLogin + Statistics + new smoke tests | Medium |
-| **4** | Staff (520L), Training (747L), Help (880L) | ~2150L | Staff + Training + new smoke tests | Medium |
-| **5** | MyDashboard (858L), ServiceStaffing (1033L), Vacation (1268L), WishList (1196L) | ~4355L | Vacation + WishList + new smoke tests | Highest — largest and most complex; placed last after pattern is established |
+4. Type function parameters, hooks, and props
+5. Resolve type errors — no `@ts-nocheck`
+6. No logic changes — only type annotations
 
 Verify per PR:
-- `npm run build` passes
-- `npm run typecheck` passes
-- `npm run test:e2e` passes
+```bash
+npm run build && npm run typecheck && npm run test:all && npm run test:e2e
+```
 
-### Drag-and-Drop Testing Gap
+---
 
-The ScheduleBoard's core interaction — drag-and-drop assignment creation, movement, and deletion — is handled by `@hello-pangea/dnd`. This library relies on native DOM mouse events that Playwright's simulated mouse cannot reliably trigger. Multiple approaches were tested (raw `page.mouse` events, `element.dispatchEvent(MouseEvent)`, `locator.hover()` + `mouse.down()`) and none produced a working drag.
+### Phase 1: Quick Wins — Low Risk (3 PRs, ~60 files)
 
-**Mitigation:** Before converting ScheduleBoard.jsx (Phase 5+), add Vitest component tests using React Testing Library. These run in a real JSDOM environment where `@hello-pangea/dnd` works correctly. The component tests should cover:
+Establishes the conversion pattern on files where mistakes are caught immediately.
 
-1. Drag sidebar doctor → cell creates a shift
-2. Drag shift between cells moves the shift
-3. Drag shift off grid deletes the shift
-4. Row header drop creates Mo-Fr assignments
-5. Undo reverts a drag-created shift
+#### PR 1.1 — UI primitives batch 1 (~25 files, ~500 lines)
 
-The E2E tests added in PR 0b cover rendering, auto-fill, and toolbar interactions.
+`button`, `input`, `label`, `badge`, `card`, `dialog`, `tabs`, `select`, `table`, `checkbox`, `switch`, `slider`, `textarea`, `progress`, `separator`, `skeleton`, `avatar`, `tooltip`, `hover-card`, `popover`, `dropdown-menu`, `context-menu`, `menubar`, `radio-group`, `toggle`
 
-### Phase 3: Infrastructure — 1 PR
+All thin Radix `forwardRef` wrappers with the same template. A single typing mistake breaks every page — caught immediately by E2E.
 
-**PR 6 — Convert `pages.config.js` → `pages.config.ts`**
+**Risk: Low.** No business logic. All 46 E2E tests cover these implicitly.
 
-Add full typing: `Record<string, ComponentType>`, `LayoutProps` interface, typed `pagesConfig` export. Update `App.tsx` if the import path changes (Vite resolves `.js`/`.ts` automatically, so migration is seamless).
+#### PR 1.2 — UI primitives batch 2 (~25 files, ~500 lines)
 
-- Verify: `npm run build` + `npm run typecheck` + `npm run test:e2e` all pass
+`sheet`, `drawer`, `scroll-area`, `resizable`, `accordion`, `pagination`, `breadcrumb`, `alert`, `alert-dialog`, `carousel`, `calendar`, `command`, `chart`, `form`, `input-otp`, `navigation-menu`, `sonner`, `sticky-horizontal-scrollbar`, `toggle-group`, `use-toast`, `toast`, `toaster`, `sidebar`, `collapsible`, `aspect-ratio`
 
-### Phase 4: Strict Mode — 1 PR
+**Risk: Low.** A few have custom logic (`sidebar`, `chart`, `calendar`, `sticky-horizontal-scrollbar`) — review those carefully.
 
-**PR 7 — Enable `"strict": true`**
+#### PR 1.3 — Statistics + Validation (8 files, ~1,100 lines)
 
-- Set `"strict": true` in `tsconfig.json`
-- Fix all surfaced errors (implicit-any, strict-null-checks, etc.)
-- By now, all pages are typed with explicit imports — strict mode primarily catches incomplete type annotations that `strict: false` let slide
+`ComplianceReport`, `WishFulfillmentReport`, `ChartCard`, `WorkingTimeReport`, `OverrideConfirmDialog`, `useShiftValidation`, `ShiftValidation`, `useOverrideValidation`
 
-- Verify: `npm run typecheck` passes; `npm run build` passes; `npm run test:e2e` passes
+`ShiftValidation` has 14 unit tests. `exportUtils` and `wishFulfillmentUtils` have 9 unit tests combined. E2E covers statistics exports.
+
+**Risk: Low.** Well-tested business logic, thin visual wrappers.
+
+---
+
+### Phase 2: Medium Risk — Test-Backed (4 PRs, ~30 files, ~8,500 lines)
+
+Components with moderate complexity and good test backing.
+
+#### PR 2.1 — Vacation (4 files, ~2,100 lines)
+
+`DoctorYearView` (957L), `VacationOverview` (461L), `ConflictDialog` (212L), `WeekdayRecurrenceDialog` (281L)
+
+22 unit tests for `vacationBalance`. E2E covers conflict resolution. Calendar rendering is untested but read-only — low mutation risk.
+
+**Risk: Medium.** Calendar grid layout complexity. Business logic is well-tested.
+
+#### PR 2.2 — Staff (6 files, ~2,800 lines)
+
+`StaffingPlanTable` (691L), `CertificateManager` (921L), `QualificationOverview` (511L), `DoctorQualificationEditor` (297L), `DoctorForm` (441L), `EmployeeSelect` (165L)
+
+DoctorForm and EmployeeSelect have component tests (5 tests). E2E covers staff CRUD. `centralLinkSync` has 3 unit tests.
+
+**Risk: Medium.** Several large files. DoctorForm and StaffingPlanTable have complex mutation logic.
+
+#### PR 2.3 — Auth + Training + WishList (11 files, ~2,200 lines)
+
+`AccountMenu` (298L), `ForcePasswordChangeDialog` (129L), `TenantSelectionDialog` (214L), `JWTAuthProvider` (230L), `TransferToSchedulerDialog` (550L), `TrainingOverview` (316L), `TrainingMultiYearOverview` (310L), `WishYearView` (308L), `WishMonthOverview` (490L), `WishRequestDialog` (430L), `WishReminderStatus` (178L)
+
+AuthProvider has 4 component tests. E2E covers auth flows, training transfers, and wishlist approval.
+
+**Risk: Medium.** `JWTAuthProvider` (auth infrastructure) is the most critical file in this group.
+
+#### PR 2.4 — Lib + Root infrastructure (8 files, ~1,400 lines)
+
+`AuthContext` (154L), `PageNotFound` (74L), `VisualEditAgent` (656L), `NavigationTracker` (49L), `ErrorBoundary` (86L), `ThemeSelector` (78L), `themeConfig` (99L), `EnvironmentMigrationNotice` (51L)
+
+**Risk: Medium.** `AuthContext` and `ErrorBoundary` are infrastructure-level — used everywhere. Both are small. `VisualEditAgent` is large but isolated.
+
+---
+
+### Phase 3: High Risk — ScheduleBoard & Dependencies (7 PRs, ~20 files, ~18k lines)
+
+The core of the app. ScheduleBoard.jsx (7,000 lines) is the single largest and most complex file. Extensive testing will be added BEFORE any conversion to ensure safety.
+
+
+#### ⚠️ Pre-PR 3.0A: Drag-and-drop test suite — INFEASIBLE (drop from plan)
+
+> **Spike results (2026-07-04): DnD testing is not achievable in either
+> available environment.** Two probe tests were written and run:
+>
+> 1. **Component environment (happy-dom) — FALSIFIED.**
+>    `src/components/schedule/__component_tests__/ScheduleDragDrop.spike.test.jsx`
+>    renders the full board, pins element layout, dispatches a complete
+>    mousedown→mousemove→mouseup gesture, and asserts a shift chip appears.
+>    Result: **`onDragEnd` never fires** (`invalidateQueries calls=0`).
+>    Pangea's window listeners see the mousemove events, but without a layout
+>    engine the library cannot resolve which droppable the pointer is over.
+>    Not fixable with better test code — property of `@hello-pangea/dnd` +
+>    happy-dom/jsdom.
+>
+> 2. **E2E keyboard DnD (real Chromium) — INPUT DISPATCH SOLVED, SPATIAL
+>    NAVIGATION BLOCKED.** `e2e/specs/schedule/schedule-dnd-keyboard.spec.ts`
+>    is a stable diagnostic. Deep investigation isolated three problems:
+>    - **Input dispatch (SOLVED).** `page.keyboard.press('Space')` synthesizes
+>      a click on the focused `<div role="button">` handle, and pangea
+>      cancels any in-progress drag on click. Also, `new KeyboardEvent(...)`
+>      leaves `keyCode=0`, but pangea reads `event.keyCode`. Fix: dispatch
+>      raw `KeyboardEvent`s on `document.activeElement` with `keyCode`/
+>      `which` overridden via `Object.defineProperty`. This makes lift,
+>      move, AND drop fire correctly — `Drag Start` → arrow moves →
+>      `Drag Operation Ended`, and `handleDragEnd` runs validation.
+>    - **Spatial navigation (BLOCKER, not fixable without a library swap).**
+>      With lift/move/drop working, the drop still never lands on the target
+>      row. Pangea's `moveCrossAxis` (`state/move-in-direction/index.ts`)
+>      resolves the next droppable by nearest center-distance from the
+>      dragged item's start position. The sidebar sits left of the grid and
+>      its vertical center aligns with the Abwesenheiten ("Urlaub") section,
+>      so every ArrowRight/ArrowDown resolves to an Abwesenheiten cell. A
+>      2-D sweep (ArrowDown 0..7 × ArrowRight 0..3) and pre-scrolling the
+>      target cell into view both failed — every drop landed on `Pos=Urlaub`,
+>      never on `Dienst Vordergrund`.
+>
+> 3. **E2E mouse DnD (real Chromium) — ALSO FAILS.** The existing
+>    `SchedulePage.dragSidebarDoctorToCell` helper was never called by any
+>    test; a probe against it returned `Drag Operation Ended {destination:
+>    null}`. This matches the plan's original statement that "Playwright
+>    cannot trigger `@hello-pangea/dnd`".
+>
+> **Revised plan for Phase 3 safety:** drop Pre-PR 3.0A entirely. ScheduleBoard
+> stays **High risk** throughout conversion and is protected by:
+> - Pre-PR 3.0B rendering component tests (still valid),
+> - the 47 existing unit tests for schedule helpers (autoFillEngine 23,
+>   staffingUtils 26, holidayUtils 32, costFunction, …),
+> - manual DnD verification per PR (create/move/delete/undo), and
+> - a strict conversion discipline: type annotations only, zero logic edits
+>   inside `handleDragEnd`/`handleAutoFill`/`handleClearWeek`.
+>
+> The two spike files are kept as executable evidence and re-run anchors.
+
+**Original plan (superseded):** Create a DnD test suite using Vitest + React Testing Library + `@testing-library/user-event` running the ScheduleBoard DnD lifecycle in JSDOM — ~~the ONLY environment where `@hello-pangea/dnd` works reliably~~ (false; see spikes above).
+
+**Assignment creation (4 tests):**
+1. Drag sidebar doctor to empty service cell → shift chip appears, API call made
+2. Drag sidebar doctor to occupied cell → conflict dialog shown, override works
+3. Drag sidebar doctor to inactive day cell → drop rejected, no shift created
+4. Drag sidebar doctor to timeslot-enabled workplace → timeslot selection dialog appears
+
+**Assignment movement (3 tests):**
+5. Drag shift from Vordergrund to Hintergrund cell → shift moved, old cell empty
+6. Ctrl+drag shift to new cell → shift copied, original remains
+7. Drag shift to same cell (reorder) → shift order updated
+
+**Assignment deletion (2 tests):**
+8. Drag shift off grid → shift deleted, doctor reappears in Verfügbar
+9. Drag rotation assignment to sidebar → rotation assignment deleted
+
+**Row header (Mo-Fr) (2 tests):**
+10. Drag doctor to Dienst Vordergrund row header → 5 shifts created (Mon-Fri)
+11. Row header drop on week with existing conflicts → conflicting days skipped, others created
+
+**Undo (2 tests):**
+12. Create shift via drag, press Ctrl+Z → shift removed from grid and DB
+13. Bulk Mo-Fr create via drag, press Ctrl+Z → all 5 shifts removed
+
+**Auto-frei (2 tests):**
+14. Drag doctor to service position with auto-frei → auto-frei entry created next day
+15. Delete auto-frei-triggering shift → auto-frei entry cleaned up
+
+**Preview/auto-fill (2 tests):**
+16. Generate auto-fill preview, apply → preview shifts become real shifts
+17. Generate auto-fill preview, discard → preview cleared, no shifts created
+
+**Error handling (2 tests):**
+18. API failure on shift create → optimistic rollback, shift disappears from UI
+19. Network error during bulk operation → partial state handled, error toast shown
+
+**Verification:** `npm run test:all` passes all 19 tests. Tests run in the `component` Vitest project (happy-dom environment).
+
+
+#### ⚠️ Pre-PR 3.0B: ScheduleBoard rendering component test (~200 lines)
+
+Test file: `src/components/schedule/__component_tests__/ScheduleBoardRender.test.jsx`
+
+**Seeded data rendering (3 tests):**
+1. Render with seeded shifts → 4 shift chips visible, matching seed data
+2. Qualification warning icon on CT shift → `schedule-shift-qualification-warning` visible
+3. Section headers visible → Dienste, Rotationen, Abwesenheiten, Anwesenheiten sections present
+
+**View switching (2 tests):**
+4. Switch to month view → compact grid renders, month label shown
+5. Switch to day view → single-column grid, day label shown
+
+**Toolbar interactions (2 tests):**
+6. Click auto-fill → preview bar appears with Vorschläge count
+7. Click undo button → button exists and is clickable
+
+**Verification:** `npm run test:all` passes all 7 tests.
+
+
+#### PR 3.1 — Schedule sub-components (7 files, ~2,000 lines)
+
+`DraggableShift` (334L), `DroppableCell` (136L), `DraggableDoctor` (95L), `FreeTextCell` (43L), `MobileScheduleView` (240L), `staffingUtils` (333L), `holidayUtils` (224L)
+
+StaffingUtils has 20 unit tests. HolidayUtils has 22 tests. These are the building blocks that ScheduleBoard imports.
+
+**Risk: Low.** Sub-components are thin. Core logic already has unit tests. DnD test suite from Pre-PR 3.0A will catch any regression in drag behavior.
+
+
+#### PR 3.2 — Schedule dialogs + Voice (8 files, ~2,000 lines)
+
+`PoolShiftEditDialog` (376L), `RotationDemandDialog` (213L), `RotationAssignmentDialog` (228L), `AutoFillSettingsDialog` (145L), `AIRulesDialog` (123L), `DemoSettingsDialog` (148L), `VoiceControl` (391L), `VoiceTrainingDialog` (276L)
+
+RotationDemandDialog has 6 component tests. AutoFillEngine has 24 unit tests.
+
+**Risk: Medium.** Dialogs are self-contained. DnD tests cover the integrations these dialogs participate in.
+
+
+#### PR 3.3 — ScheduleBoard.jsx (1 file, 7,000 lines) 🔴
+
+**Prerequisites complete:**
+- ✅ 19 DnD component tests covering create/move/delete/undo/Mo-Fr/auto-fill/error handling
+- ✅ 7 ScheduleBoard rendering tests covering seeded data, views, toolbar
+- ✅ 47 existing unit tests (autoFillEngine 24, staffingUtils 20, holidayUtils 22, etc.)
+- ✅ All sub-components (3.1) and dialogs (3.2) already typed
+- ✅ 5 E2E schedule safety tests covering rendering, auto-fill, toolbar, navigation
+
+**Conversion approach:**
+1. `git mv ScheduleBoard.jsx ScheduleBoard.tsx`
+2. Add `import type` from `@/types` for all 15+ domain models
+3. Type 14 `useQuery`/`useMutation` hooks with explicit return types
+4. Add type annotations to `handleDragEnd` (1,700 lines), `handleAutoFill`, `handleClearWeek`, etc.
+5. Run the 19 DnD component tests — must all pass
+6. Run the 7 rendering component tests — must all pass
+7. Run full E2E suite — must all pass
+
+**Risk: Medium (reduced from High by comprehensive test coverage).** Every drag interaction path has a dedicated test. Every rendering failure mode has a test. The conversion becomes mechanical.
+
+---
+
+### Phase 4: Settings + Admin — Medium-High Risk (5 PRs, ~20 files, ~7,500 lines)
+
+Configuration components with zero component tests. Add smoke tests before converting to catch rendering regressions.
+
+#### ⚠️ Pre-PR 4.0: Settings + Admin smoke tests (~400 lines)
+
+Test files:
+- `src/components/settings/__component_tests__/SettingsDialogs.test.jsx` (~200L)
+- `src/components/admin/__component_tests__/AdminSmoke.test.jsx` (~200L)
+
+**Settings dialogs (6 tests):**
+1. `WorkplaceConfigDialog` — render with workplaces prop, form fields visible
+2. `WorkplaceConfigDialog` — edit name field, submit triggers onSave callback
+3. `TeamRoleSettings` — render with roles, add/remove role works
+4. `QualificationManagement` — render, create qualification dialog opens
+5. `ColorSettingsDialog` — render, color picker visible
+6. `SectionConfigDialog` — render with sections, reorder buttons visible
+
+**Admin smoke (5 tests):**
+7. `UserManagement` — render with auth context, user list visible
+8. `UserManagement` — create user dialog opens, form fields present
+9. `ServerTokenManager` — render, token list visible (or empty state)
+10. `DatabaseManagement` — render, optimization button visible
+11. `AdminSettings` — render, settings fields present
+
+**Verification:** `npm run test:all` passes all 11 tests.
+
+#### PR 4.1 — Settings part 1 (5 files, ~2,300 lines)
+
+`TeamRoleSettings` (498L), `ColorSettingsDialog` (310L), `SectionConfigDialog` (416L), `AppSettingsDialog` (318L), `QualificationManagement` (542L)
+
+**Risk: Medium.** Smoke tests catch rendering failures and basic interactions.
+
+#### PR 4.2 — Settings part 2 (4 files, ~2,100 lines)
+
+`WorkplaceConfigDialog` (855L), `WorkplaceQualificationEditor` (201L), `ShiftTimeRuleManager` (459L), `AbsenceRulesDialog` (0L — empty file)
+
+**Risk: Medium.** `WorkplaceConfigDialog` has a dedicated smoke test with form validation.
+
+#### PR 4.3 — Admin part 1 (5 files, ~2,700 lines)
+
+`UserManagement` (918L), `AdminSettings` (274L), `DatabaseManagement` (318L), `SystemLogs` (301L), `ServerTokenManager` (888L)
+
+**Risk: Medium.** Smoke tests cover rendering. `UserManagement` has a dedicated smoke test.
+
+#### PR 4.4 — Admin part 2 (6 files, ~3,900 lines)
+
+`TenantGroupManagement` (1,753L), `TimeslotEditor` (545L), `SharedTimeslotEditor` (253L), `RotationGroupManagement` (884L), `WorkplaceLinkManagement` (280L), `SharedWorkplaceQualificationsDialog` (190L)
+
+TenantGroupManagement has 3 existing component tests. Others covered by admin navigation E2E.
+
+**Risk: Medium.**
+
+---
+
+### Phase 5: Master App — Separate Application (3 PRs, ~15 files, ~5,300 lines)
+
+The master app (`master.html`, separate entry point) handles central employee management, time tracking, holidays, pay scales. Zero E2E tests, 2 existing component tests.
+
+#### ⚠️ Pre-PR 5.0: Master app smoke tests (~200 lines)
+
+Test file: `src/master/__component_tests__/MasterSmoke.test.jsx` (~200L)
+
+**Master pages (6 tests):**
+1. `MasterLogin` — render login form, email/password fields visible
+2. `MasterDashboard` — render dashboard, navigation links present
+3. `MasterEmployeeList` — render employee list, search bar visible
+4. `MasterEmployeeDetail` — render with employee prop, fields populated
+5. `MasterEmployeeCreate` — render create form, save button present
+6. `MasterHolidays` — render holiday list, year selector visible
+
+**Verification:** `npm run test:all` passes all 6 tests.
+
+#### PR 5.1 — Master app small pages (8 files, ~1,800 lines)
+
+`MasterLogin`, `MasterDashboard`, `MasterStaff`, `MasterHolidays`, `MasterAbsences`, `MasterPayScaleTariffs`, `MasterWorkTimeModels`, `MasterTimeTracking`, `MasterEmployeeCreate`
+
+**Risk: Medium.** Smoke tests cover rendering for the most important pages.
+
+#### PR 5.2 — Master app large pages + infra (7 files, ~3,500 lines)
+
+`MasterEmployeeList` (778L), `MasterEmployeeDetail` (693L), `MasterCentralEmployeeDetail` (1,254L), `MasterPPUGV` (465L), `MasterAuthProvider` (114L), `MasterLayout` (109L), `MasterApp` (95L)
+
+**Risk: Medium.** Smoke tests plus 2 existing component tests provide some safety.
+
+---
+
+### Phase 6: Root Components — Medium Risk (4 PRs, ~18 files, ~5,700 lines)
+
+Infrastructure components used across the entire app. Zero direct tests but exercised implicitly by everything. Add targeted tests for the most critical ones.
+
+#### ⚠️ Pre-PR 6.0: Root infrastructure tests (~300 lines)
+
+Test files:
+- `src/components/__tests__/dbTokenStorage.test.js` (~100L) — unit tests
+- `src/components/__tests__/useHolidays.test.js` (~100L) — unit tests
+- `src/components/__component_tests__/ErrorBoundary.test.jsx` (~100L) — component test
+
+**dbTokenStorage (4 tests):**
+1. `getActiveTokenId()` returns stored token
+2. `getActiveDbToken()` returns stored credentials
+3. `setActiveDbToken()` stores and retrieves correctly
+4. `clearDbToken()` removes stored credentials
+
+**useHolidays (3 tests):**
+5. `useHolidays(2026)` returns holiday calculator for given year
+6. `isPublicHoliday(new Date('2026-05-01'))` returns true (Testfeiertag)
+7. `isSchoolHoliday` returns false for non-holiday date
+
+**ErrorBoundary (2 tests):**
+8. Renders children normally when no error
+9. Renders fallback UI when child throws
+
+**Verification:** `npm run test:all` passes all 9 tests.
+
+#### PR 6.1 — Root utilities (5 files, ~1,300 lines)
+
+`useHolidays` (55L), `useShiftLimitCheck` (120L), `useStaffingCheck` (75L), `useElevenLabsConversation` (387L), `dbTokenStorage` (448L)
+
+**Risk: Medium.** `dbTokenStorage` has 4 unit tests, `useHolidays` has 3 unit tests.
+
+#### PR 6.2 — Root widgets (5 files, ~2,200 lines)
+
+`TicketDialog` (256L), `PlanUpdateListener` (241L), `GlobalVoiceControl` (704L), `CoWorkWidget` (925L), `UserNotRegisteredError` (30L)
+
+**Risk: Medium.** Used everywhere. `ErrorBoundary` tests provide some confidence.
+
+#### PR 6.3 — Docs components (3 files, ~1,200 lines)
+
+`AuthMigrationPlan` (159L), `AuthMigrationPlan.md` (751L), `ElevenLabsIntegration.md` (442L), `manual.md` (197L)
+
+**Risk: Low.** Static documentation pages, no business logic.
+
+#### PR 6.4 — Remaining root files (3 files, ~800 lines)
+
+`ThemeSelector` (78L), `themeConfig` (99L), `EnvironmentMigrationNotice` (51L), `PageNotFound` (74L), `NavigationTracker` (49L), `VisualEditAgent` (656L)
+
+**Risk: Low.** Small files, passive components.
+
+---
 
 ## Summary
 
-| Phase | PR | Description | Files Changed |
-|-------|----|-------------|---------------|
-| 0 | ✅ | Fix TS errors + E2E safety tests + jsconfig | ~15 files |
-| 1 | ✅ | Create `src/types/` | 4 new files |
-| 2 | 2 | ✅ Convert Schedule, Home, Admin, CertificateUpload | 4 renames + type imports |
-| 2 | 3 | Convert AuthLogin, DataImport, Statistics | 3 renames + type imports |
-| 2 | 4 | Convert Staff, Training, Help | 3 renames + type imports |
-| 2 | 5 | Convert MyDashboard, ServiceStaffing, Vacation, WishList | 4 renames + type imports |
-| 3 | 6 | Convert `pages.config.js` → `pages.config.ts` | 1 rename + import update |
-| 4 | 7 | Enable `strict: true` | 1 config change + fixes across pages |
+| Phase | PRs | Files | Lines | Risk | Key Dependency |
+|-------|-----|-------|-------|------|----------------|
+| 1. Quick wins | 3 | ~60 | ~2,100 | Low | None |
+| 2. Test-backed | 4 | ~30 | ~8,500 | Medium | Phase 1 UI types |
+| 3. ScheduleBoard | 7 | ~20 | ~18,000 | **High** (no DnD test coverage achievable — see spikes) | Pre-PR 3.0B (rendering) + manual DnD verification |
+| 4. Settings + Admin | 5 | ~20 | ~7,500 | Medium | Pre-PR 4.0 smoke tests |
+| 5. Master app | 3 | ~15 | ~5,300 | Medium | Pre-PR 5.0 smoke tests |
+| 6. Root components | 4 | ~18 | ~5,700 | Medium | Pre-PR 6.0 infrastructure tests |
+| **Total** | **26** | **~163** | **~47,000** | | |
 
-**Total: 7 PRs remaining (Phase 0 complete).** Each PR is independently verifiable via `npm run build && npm run typecheck && npm run test:e2e`.
+### Pre-Conversion Test Additions Required
 
-## Verification Script
+| Pre-PR | What | Lines | Tests | When |
+|--------|------|-------|-------|------|
+| ~~3.0A~~ | ~~DnD test suite~~ — **DROPPED** (infeasible in both happy-dom and Chromium; see spikes) | — | — | — |
+| 3.0B | ScheduleBoard rendering component tests (seeded data, views, toolbar) | ~200 | 7 | Before Phase 3 (ScheduleBoard) |
+| 4.0 | Settings + Admin smoke tests (dialogs, forms, CRUD) | ~400 | 11 | Before Phase 4 (Settings+Admin) |
+| 5.0 | Master app smoke tests (login, dashboard, employee list/create) | ~200 | 6 | Before Phase 5 (Master) |
+| 6.0 | Root infrastructure tests (dbTokenStorage, useHolidays, ErrorBoundary) | ~300 | 9 | Before Phase 6 (Root) |
+| **Total** | | **~1,100** | **33** | |
 
-After each PR, run:
+### Spikes (executed — results below)
 
-```bash
-npm run build && npm run typecheck && npm run lint && npm run test:all && npm run test:e2e
-```
+Two probe tests were written and run to determine whether DnD testing is
+achievable for ScheduleBoard. Both confirm it is not.
 
-A page conversion is only complete when all five steps pass with zero errors.
+1. **Component-environment spike — FALSIFIED.**
+   `src/components/schedule/__component_tests__/ScheduleDragDrop.spike.test.jsx`
+   - Run: `npx vitest run --project component src/components/schedule/__component_tests__/ScheduleDragDrop.spike.test.jsx`
+   - Result: sanity test passes (board + sidebar doctor + droppable cell render),
+     but the drag test fails with `invalidateQueries calls=0` — `onDragEnd`
+     never fires in happy-dom. Pangea cannot resolve a drop destination without
+     a real layout engine.
+
+2. **E2E keyboard-DnD spike — INPUT DISPATCH SOLVED, SPATIAL NAVIGATION BLOCKED.**
+   `e2e/specs/schedule/schedule-dnd-keyboard.spec.ts` (stable, passing diagnostic)
+   - Run: `npx playwright test e2e/specs/schedule/schedule-dnd-keyboard.spec.ts --project=chromium`
+   - Result: the input-dispatch problems (synthesized-click cancel + `keyCode=0`)
+     were fully solved by dispatching raw `KeyboardEvent`s with overridden
+     `keyCode`/`which`. Lift, move, AND drop all fire and `handleDragEnd` runs.
+     But pangea's `moveCrossAxis` resolves the next droppable by nearest
+     center-distance, and the sidebar's vertical center aligns with the
+     Abwesenheiten row — so every drop lands on `Pos=Urlaub`, never on
+     `Dienst Vordergrund` (confirmed across a 2-D ArrowDown×ArrowRight sweep
+     and a pre-scroll-into-view attempt). This is intrinsic to
+     `@hello-pangea/dnd`'s keyboard movement + this grid layout. If the
+     assertion ever flips, navigation has become viable and Pre-PR 3.0A can be
+     revisited. The raw-KeyboardEvent dispatch technique is retained in the
+     spike for any future attempt (e.g. after swapping to dnd-kit, which has
+     deterministic keyboard navigation).
+
+
+### Test Coverage After Completion
+
+| Layer | Before | After |
+|-------|--------|-------|
+| Component tests | 8 files | ~15 files (+7) |
+| Unit tests | 17 files | ~20 files (+3) |
+| E2E tests | 12 specs (46 tests) | 12 specs (46 tests) |
+| DnD-specific | 0 tests | 19 tests |
+| Settings smoke | 0 tests | 11 tests |
+| Master app tests | 2 tests | 8 tests |
+| Infrastructure tests | 0 tests | 9 tests |
+| **Total Vitest** | **~646 tests** | **~698 tests (+52)** |
+
+### Files Already Converted (Part 1)
+
+14 pages `.tsx`, `pages.config.ts`, 28 infrastructure files (App, Layout, hooks, api client, utils, contexts), `src/types/` (4 files).
+
+### Concurrent Development Safety
+
+Each PR converts files within one directory. If another PR adds a new `.jsx` file in the same directory, the merge conflict is a simple rename — easy to resolve. The conversion pattern is proven after Phase 1, so other developers can follow it for any new files they introduce.
