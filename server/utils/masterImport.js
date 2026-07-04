@@ -341,6 +341,12 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
         break;
 
       case 'AMBIGUOUS':
+        // Ausgeschiedene MA (> contract_end) nicht zur händischen Zuordnung
+        // zwingen – sie werden direkt als neue Einträge behandelt.
+        if (!employee.is_active) {
+          results.no_match.push(entry);
+          break;
+        }
         entry.candidates = matchResult.matches.map(m => ({
           id: m.id,
           last_name: m.last_name,
