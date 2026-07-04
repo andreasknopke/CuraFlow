@@ -3442,6 +3442,19 @@ const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_HOST}/phpmy
 const PPBV_DATABASE = process.env.PPBV_DATABASE || 'ppbv';
 let ppbvPool = null;
 
+// ===== Stammdaten-Import (MA-Stammdaten, selber Server wie PPUGV) =====
+const STAMMDAT_DATABASE = process.env.STAMMDAT_DATABASE || 'mitarbeiter';
+
+function getStammdatConfig() {
+  return {
+    host: PPUGV_HOST,
+    port: PPUGV_PORT,
+    user: PPUGV_USER,
+    password: PPUGV_PASSWORD,
+    database: STAMMDAT_DATABASE,
+  };
+}
+
 function getPpbvPool() {
   if (ppbvPool) return ppbvPool;
   if (!PPUGV_HOST || !PPUGV_USER || !PPBV_DATABASE) return null;
@@ -4918,7 +4931,7 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
  */
 router.get('/employees/stammdat/analyze', async (req, res, next) => {
   try {
-    const results = await analyzeStammdatImport(db);
+    const results = await analyzeStammdatImport(db, getStammdatConfig());
     res.json(results);
   } catch (error) {
     console.error('[Master stammdat] Analyze error:', error);
@@ -4943,7 +4956,7 @@ router.post('/employees/stammdat/import', async (req, res, next) => {
       return res.status(400).json({ error: 'decisions array is required' });
     }
 
-    const result = await executeStammdatImport(db, decisions, req.user.sub);
+    const result = await executeStammdatImport(db, decisions, req.user.sub, getStammdatConfig());
 
     console.log(
       `[Master stammdat] Import complete: ${result.created} created, ${result.updated} updated, ` +

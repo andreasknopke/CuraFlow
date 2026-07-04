@@ -6,14 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
-import { useMasterAuth } from '@/master/MasterAuthProvider';
+import { api } from '@/api/client';
 import {
   Database, Download, Search, CheckCircle2,
   AlertTriangle, UserPlus, Loader2, ChevronDown,
   ChevronRight,
 } from 'lucide-react';
-
-const API_BASE = '/api/master';
 
 // ============ TYPES ============
 
@@ -59,7 +57,7 @@ function StatCard({ icon: Icon, label, value, color, variant = 'default' }) {
   );
 }
 
-function EmployeeRow({ employee, category, onDecision, selectedCandidateId, onSelectCandidate }) {
+function EmployeeRow({ employee, category, isChecked, onDecision, selectedCandidateId, onSelectCandidate }) {
   const [expanded, setExpanded] = useState(false);
 
   const categoryColors = {
@@ -86,7 +84,7 @@ function EmployeeRow({ employee, category, onDecision, selectedCandidateId, onSe
         </button>
 
         <Checkbox
-          checked={!!onDecision?.(employee.stammdat_id)?.action === 'apply'}
+          checked={isChecked}
           onCheckedChange={(checked) => {
             if (checked) {
               const decision = { stammdat_id: employee.stammdat_id, action: 'apply' };
@@ -204,7 +202,6 @@ function EmployeeRow({ employee, category, onDecision, selectedCandidateId, onSe
 // ============ MAIN PAGE ============
 
 export default function MasterStammdatImport() {
-  const { accessToken } = useMasterAuth();
 
   const [analyzing, setAnalyzing] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -220,23 +217,6 @@ export default function MasterStammdatImport() {
 
   // ============ API CALLS ============
 
-  const apiCall = useCallback(async (url, options = {}) => {
-    const res = await fetch(`${API_BASE}${url}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      ...options,
-    });
-
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `HTTP ${res.status}`);
-    }
-
-    return res.json();
-  }, [accessToken]);
-
   // Analyze
   const handleAnalyze = useCallback(async () => {
     setAnalyzing(true);
@@ -246,7 +226,7 @@ export default function MasterStammdatImport() {
     setCandidateSelections({});
 
     try {
-      const result = await apiCall('/employees/stammdat/analyze');
+      const result = await api.request('/api/master/employees/stammdat/analyze');
       setAnalysis(result);
 
       // Auto-decide exact matches
@@ -260,18 +240,17 @@ export default function MasterStammdatImport() {
       }
       setDecisions(autoDecisions);
 
-      toast({
-        title: 'Analyse abgeschlossen',
-        description: `${result.total_source_employees} Mitarbeiter gefunden — ` +
-          `${result.exact_matches.length} eindeutig, ${result.ambiguous.length} uneindeutig, ${result.no_match.length} neu`,
-      });
+      toast.success(
+        `Analyse abgeschlossen — ${result.total_source_employees} MA gefunden: ` +
+        `${result.exact_matches.length} eindeutig, ${result.ambiguous.length} uneindeutig, ${result.no_match.length} neu`
+      );
     } catch (err) {
       setError(err.message);
-      toast({ title: 'Analyse fehlgeschlagen', description: err.message, variant: 'destructive' });
+      toast.error(`Analyse fehlgeschlagen: ${err.message}`);
     } finally {
       setAnalyzing(false);
     }
-  }, [apiCall, toast]);
+  }, []);
 
   // Execute import
   const handleImport = useCallback(async () => {
@@ -288,7 +267,7 @@ export default function MasterStammdatImport() {
     });
 
     if (finalDecisions.length === 0) {
-      toast({ title: 'Keine Auswahl', description: 'Bitte mindestens einen Mitarbeiter auswählen.', variant: 'destructive' });
+      toast.warning('Bitte mindestens einen Mitarbeiter auswählen.');
       return;
     }
 
@@ -296,24 +275,23 @@ export default function MasterStammdatImport() {
     setError(null);
 
     try {
-      const result = await apiCall('/employees/stammdat/import', {
+      const result = await api.request('/api/master/employees/stammdat/import', {
         method: 'POST',
         body: JSON.stringify({ decisions: finalDecisions }),
       });
       setImportResult(result);
 
-      toast({
-        title: 'Import abgeschlossen',
-        description: `${result.created} erstellt, ${result.updated} aktualisiert, ` +
-          `${result.skipped} übersprungen, ${result.errors.length} Fehler`,
-      });
+      toast.success(
+        `Import abgeschlossen — ${result.created} erstellt, ${result.updated} aktualisiert, ` +
+        `${result.skipped} übersprungen, ${result.errors.length} Fehler`
+      );
     } catch (err) {
       setError(err.message);
-      toast({ title: 'Import fehlgeschlagen', description: err.message, variant: 'destructive' });
+      toast.error(`Import fehlgeschlagen: ${err.message}`);
     } finally {
       setImporting(false);
     }
-  }, [decisions, candidateSelections, apiCall, toast]);
+  }, [decisions, candidateSelections]);
 
   // ============ DECISION HELPERS ============
 
@@ -487,6 +465,7 @@ export default function MasterStammdatImport() {
                     key={emp.stammdat_id}
                     employee={emp}
                     category="EXACT_MATCH"
+                    isChecked={decisions[emp.stammdat_id]?.action === 'apply'}
                     onDecision={handleDecision}
                   />
                 ))}
@@ -503,6 +482,7 @@ export default function MasterStammdatImport() {
                     key={emp.stammdat_id}
                     employee={emp}
                     category="AMBIGUOUS"
+                    isChecked={decisions[emp.stammdat_id]?.action === 'apply'}
                     onDecision={handleDecision}
                     selectedCandidateId={candidateSelections[emp.stammdat_id]}
                     onSelectCandidate={handleSelectCandidate}
@@ -521,6 +501,7 @@ export default function MasterStammdatImport() {
                     key={emp.stammdat_id}
                     employee={emp}
                     category="NO_MATCH"
+                    isChecked={decisions[emp.stammdat_id]?.action === 'apply'}
                     onDecision={handleDecision}
                   />
                 ))}

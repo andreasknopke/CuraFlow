@@ -1,9 +1,10 @@
 /**
  * Stammdaten-Import Utility
  *
- * Connects to the external "stammdat" personnel master database,
- * matches employees against the MasterDB Employee table, and provides
- * a migration workflow with three categories:
+ * Connects to the external "stammdat" personnel master table
+ * (database "mitarbeiter", same server as PPUGV), matches employees
+ * against the MasterDB Employee table, and provides a migration
+ * workflow with three categories:
  *   - EXACT_MATCH:  unambiguous match → automatic update
  *   - AMBIGUOUS:    same last name, multiple candidates → manual review
  *   - NO_MATCH:     no existing employee found → create new
@@ -16,32 +17,35 @@
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 
-// ============ CONFIGURATION ============
-
-const STAMMDAT_DB_CONFIG = {
-  host: process.env.STAMMDAT_DB_HOST || 'localhost',
-  port: parseInt(process.env.STAMMDAT_DB_PORT || '3306', 10),
-  user: process.env.STAMMDAT_DB_USER || 'root',
-  password: process.env.STAMMDAT_DB_PASSWORD || '',
-  database: process.env.STAMMDAT_DB_NAME || 'mitarbeiter',
-  charset: 'utf8mb4',
-  connectTimeout: 10000,
-};
-
 // ============ HELPERS ============
 
 /**
- * Connect to the stammdat database
+ * Connect to the external MySQL server where the "mitarbeiter" database lives.
+ * Reuses the same credentials as PPUGV/PPBV – only the database name differs.
+ *
+ * @param {{ host, port, user, password, database }} config
  */
-function getStammdatPool() {
-  return createPool(STAMMDAT_DB_CONFIG);
+function getStammdatPool(config) {
+  return createPool({
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    password: config.password,
+    database: config.database,
+    waitForConnections: true,
+    connectionLimit: 2,
+    queueLimit: 0,
+    dateStrings: true,
+    timezone: '+00:00',
+    connectTimeout: 15000,
+  });
 }
 
 /**
  * Fetch all rows from stammdat table
  */
-async function fetchStammdatRows() {
-  const pool = getStammdatPool();
+async function fetchStammdatRows(config) {
+  const pool = getStammdatPool(config);
   try {
     const [rows] = await pool.query('SELECT * FROM stammdat ORDER BY personalnummer, ma_arbeits_kst');
     return rows;
@@ -294,8 +298,8 @@ async function syncCostCenters(dbPool, employeeId, costCenters) {
  * 4. Categorize into EXACT_MATCH / AMBIGUOUS / NO_MATCH
  * 5. Return results for UI review
  */
-export async function analyzeStammdatImport(dbPool) {
-  const sourceRows = await fetchStammdatRows();
+export async function analyzeStammdatImport(dbPool, stammdatConfig) {
+  const sourceRows = await fetchStammdatRows(stammdatConfig);
   const grouped = groupByPersonalnummer(sourceRows);
   const existingEmployees = await fetchExistingEmployees(dbPool);
 
@@ -363,9 +367,9 @@ export async function analyzeStammdatImport(dbPool) {
  * @param {Array} decisions - Array of { stammdat_id, action: 'apply'|'skip', existing_employee_id? }
  * @param {string} createdBy - User ID performing the import
  */
-export async function executeStammdatImport(dbPool, decisions, createdBy) {
+export async function executeStammdatImport(dbPool, decisions, createdBy, stammdatConfig) {
   // Fetch source data
-  const sourceRows = await fetchStammdatRows();
+  const sourceRows = await fetchStammdatRows(stammdatConfig);
   const grouped = groupByPersonalnummer(sourceRows);
   const existingEmployees = await fetchExistingEmployees(dbPool);
 
