@@ -388,6 +388,87 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
 }
 
 /**
+ * Link an existing CuraFlow Employee to a stammdat entry (by stammdat_id).
+ * Fetches the stammdat source row, builds employee data, and updates the
+ * Employee record with position, email, cost-centers, etc.
+ *
+ * @param {object}   dbPool          - MasterDB pool
+ * @param {string}   employeeId      - UUID of the existing Employee record
+ * @param {number}   stammdatId      - stammdat.id to link to
+ * @param {string}   createdBy       - User ID performing the action
+ * @param {object}   stammdatConfig  - DB connection config for source
+ * @returns {{ success: boolean, employee: object }}
+ */
+export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, createdBy, stammdatConfig) {
+  // Fetch the stammdat row(s) for this ID
+  const pool = getStammdatPool(stammdatConfig);
+  let rows;
+  try {
+    const [result] = await pool.query(
+      'SELECT * FROM stammdat WHERE id = ? ORDER BY ma_arbeits_kst',
+      [stammdatId]
+    );
+    rows = result;
+  } finally {
+    await pool.end();
+  }
+
+  if (!rows || rows.length === 0) {
+    throw new Error(`Stammdat-Eintrag mit ID ${stammdatId} nicht gefunden`);
+  }
+
+  const { employee: stammdatEmployee, costCenters } = buildEmployeeFromRows(rows);
+
+  // Verify the CuraFlow Employee exists
+  const [existing] = await dbPool.execute('SELECT id FROM Employee WHERE id = ?', [employeeId]);
+  if (existing.length === 0) {
+    throw new Error('Mitarbeiter nicht in CuraFlow gefunden');
+  }
+
+  // Update the Employee with stammdat fields
+  const fields = [
+    'stammdat_id', 'salutation', 'title', 'position',
+    'cost_center', 'cost_center_name', 'email',
+    'contract_start', 'contract_end',
+    'entry_email_sent', 'exit_email_sent',
+    'source_system', 'is_active', 'exit_date', 'exit_reason',
+  ];
+
+  const updates = [];
+  const values = [];
+  for (const field of fields) {
+    if (stammdatEmployee[field] !== undefined) {
+      updates.push(`${field} = ?`);
+      values.push(stammdatEmployee[field] ?? null);
+    }
+  }
+  // Always sync payroll_id and names
+  updates.push('payroll_id = ?', 'last_name = ?', 'first_name = ?');
+  values.push(stammdatEmployee.payroll_id ?? null, stammdatEmployee.last_name, stammdatEmployee.first_name ?? null);
+
+  values.push(employeeId);
+  await dbPool.execute(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
+
+  // Sync cost centers
+  if (costCenters.length > 0) {
+    await syncCostCenters(dbPool, employeeId, costCenters);
+  }
+
+  console.log(`[Master stammdat] Linked CuraFlow employee ${employeeId} to stammdat ${stammdatId} by user ${createdBy}`);
+
+  return {
+    success: true,
+    employee: {
+      id: employeeId,
+      last_name: stammdatEmployee.last_name,
+      first_name: stammdatEmployee.first_name,
+      position: stammdatEmployee.position,
+      stammdat_id: stammdatId,
+    },
+  };
+}
+
+/**
  * Compute a field-level diff between old and new employee data.
  * Returns only fields that would actually change.
  */

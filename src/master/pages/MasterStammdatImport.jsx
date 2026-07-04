@@ -10,8 +10,9 @@ import { api } from '@/api/client';
 import {
   Database, Download, Search, CheckCircle2,
   AlertTriangle, UserPlus, Loader2, ChevronDown,
-  ChevronRight, Users,
+  ChevronRight, Users, Link2,
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // ============ TYPES ============
 
@@ -211,6 +212,8 @@ export default function MasterStammdatImport() {
   const [analysis, setAnalysis] = useState(null);
   const [decisions, setDecisions] = useState({});
   const [candidateSelections, setCandidateSelections] = useState({});
+  const [linkSelections, setLinkSelections] = useState({});
+  const [linking, setLinking] = useState({});
   const [importResult, setImportResult] = useState(null);
   const [error, setError] = useState(null);
 
@@ -225,6 +228,8 @@ export default function MasterStammdatImport() {
     setImportResult(null);
     setDecisions({});
     setCandidateSelections({});
+    setLinkSelections({});
+    setLinking({});
 
     try {
       const result = await api.request('/api/master/employees/stammdat/analyze');
@@ -337,6 +342,29 @@ export default function MasterStammdatImport() {
   const handleSelectCandidate = useCallback((stammdatId, candidateId) => {
     setCandidateSelections(prev => ({ ...prev, [stammdatId]: candidateId }));
   }, []);
+
+  const handleLinkStammdat = useCallback(async (curaflowEmployeeId) => {
+    const stammdatId = linkSelections[curaflowEmployeeId];
+    if (!stammdatId) {
+      toast.warning('Bitte einen Stammdaten-Eintrag auswählen.');
+      return;
+    }
+
+    setLinking(prev => ({ ...prev, [curaflowEmployeeId]: true }));
+    try {
+      await api.request('/api/master/employees/stammdat/link', {
+        method: 'POST',
+        body: JSON.stringify({ employee_id: curaflowEmployeeId, stammdat_id: stammdatId }),
+      });
+      toast.success('Verknüpfung hergestellt — Mitarbeiter wurde mit Stammdaten aktualisiert.');
+      // Re-run analysis to refresh all tabs
+      handleAnalyze();
+    } catch (err) {
+      toast.error(`Verknüpfung fehlgeschlagen: ${err.message}`);
+    } finally {
+      setLinking(prev => ({ ...prev, [curaflowEmployeeId]: false }));
+    }
+  }, [linkSelections, handleAnalyze]);
 
   // ============ FILTERING ============
 
@@ -697,33 +725,86 @@ export default function MasterStammdatImport() {
                 {(!analysis.unmatched_in_curaflow || analysis.unmatched_in_curaflow.length === 0) && (
                   <p className="text-sm text-slate-400 py-8 text-center">Alle CuraFlow-Mitarbeiter haben eine Entsprechung in den Stammdaten.</p>
                 )}
-                {analysis.unmatched_in_curaflow?.map(emp => (
-                  <div key={emp.id} className="border border-rose-200 rounded-lg bg-white p-3 flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
-                      <Users className="w-4 h-4 text-rose-600" />
+                {analysis.unmatched_in_curaflow?.map(emp => {
+                  const isLinking = linking[emp.id];
+                  const selectedStammdatId = linkSelections[emp.id];
+
+                  return (
+                    <div key={emp.id} className="border border-rose-200 rounded-lg bg-white p-3">
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
+                          <Users className="w-4 h-4 text-rose-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-900 text-sm">
+                            {emp.last_name}{emp.first_name ? `, ${emp.first_name}` : ''}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {emp.payroll_id && <span>PNr: {emp.payroll_id}</span>}
+                            {emp.email && <span className="ml-3">{emp.email}</span>}
+                            {!emp.payroll_id && !emp.email && 'Keine weiteren Daten'}
+                          </p>
+                        </div>
+                        {emp.has_stammdat_id && (
+                          <Badge variant="outline" className="text-xs text-rose-600 border-rose-300 whitespace-nowrap">
+                            Stammdat-Verknüpfung veraltet
+                          </Badge>
+                        )}
+                        {!emp.has_stammdat_id && (
+                          <Badge variant="outline" className="text-xs text-slate-500 whitespace-nowrap">
+                            Keine Stammdaten-Verknüpfung
+                          </Badge>
+                        )}
+                      </div>
+
+                      {/* Manual matching dropdown */}
+                      {(!noMatch || noMatch.length > 0) && (
+                        <div className="mt-3 pt-3 border-t border-rose-100 flex items-center gap-3">
+                          <Label className="text-xs text-slate-500 whitespace-nowrap">Stammdaten-Eintrag zuordnen:</Label>
+                          <Select
+                            value={selectedStammdatId || '__none__'}
+                            onValueChange={(v) => setLinkSelections(prev => ({ ...prev, [emp.id]: v === '__none__' ? null : parseInt(v, 10) }))}
+                            disabled={isLinking}
+                          >
+                            <SelectTrigger className="max-w-xs h-8 text-xs">
+                              <SelectValue placeholder="Stammdaten-Eintrag wählen…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__">— Bitte wählen —</SelectItem>
+                              {noMatch.map(s => (
+                                <SelectItem key={s.stammdat_id} value={String(s.stammdat_id)}>
+                                  {s.last_name}, {s.first_name} ({s.personalnummer}) — {s.position || 'o.A.'}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 h-8 text-xs"
+                            disabled={!selectedStammdatId || isLinking}
+                            onClick={() => handleLinkStammdat(emp.id)}
+                          >
+                            {isLinking ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Link2 className="w-3.5 h-3.5" />
+                            )}
+                            Verknüpfen
+                          </Button>
+                        </div>
+                      )}
+
+                      {(!noMatch || noMatch.length === 0) && (
+                        <div className="mt-3 pt-3 border-t border-rose-100">
+                          <p className="text-xs text-slate-400">
+                            Keine offenen Stammdaten-Einträge zum Verknüpfen verfügbar.
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-900 text-sm">
-                        {emp.last_name}{emp.first_name ? `, ${emp.first_name}` : ''}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {emp.payroll_id && <span>PNr: {emp.payroll_id}</span>}
-                        {emp.email && <span className="ml-3">{emp.email}</span>}
-                        {!emp.payroll_id && !emp.email && 'Keine weiteren Daten'}
-                      </p>
-                    </div>
-                    {emp.has_stammdat_id && (
-                      <Badge variant="outline" className="text-xs text-rose-600 border-rose-300 whitespace-nowrap">
-                        Stammdat-Verknüpfung veraltet
-                      </Badge>
-                    )}
-                    {!emp.has_stammdat_id && (
-                      <Badge variant="outline" className="text-xs text-slate-500 whitespace-nowrap">
-                        Keine Stammdaten-Verknüpfung
-                      </Badge>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </div>

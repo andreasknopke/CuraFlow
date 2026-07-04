@@ -55,6 +55,7 @@ export default function MasterCentralEmployeeDetail() {
         last_name: employee.last_name || '',
         first_name: employee.first_name || '',
         former_name: employee.former_name || '',
+        title: employee.title || '',
         payroll_id: employee.payroll_id || '',
         date_of_birth: employee.date_of_birth || '',
         email: employee.email || '',
@@ -298,7 +299,9 @@ export default function MasterCentralEmployeeDetail() {
                   onChange={(v) => updateField('former_name', v)} />
               </div>
               <Separator />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FieldRow label="Titel" icon={Award} value={form.title} editMode={editMode}
+                  onChange={(v) => updateField('title', v)} />
                 <FieldRow label="Personalnummer" icon={Hash} value={form.payroll_id} editMode={editMode}
                   onChange={(v) => updateField('payroll_id', v)} />
                 <FieldRow label="Geburtsdatum" icon={CalendarDays} value={form.date_of_birth} editMode={editMode}

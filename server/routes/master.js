@@ -28,7 +28,7 @@ import {
 import { broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
-import { analyzeStammdatImport, executeStammdatImport } from '../utils/masterImport.js';
+import { analyzeStammdatImport, executeStammdatImport, linkStammdatToEmployee } from '../utils/masterImport.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -4978,6 +4978,31 @@ router.post('/employees/stammdat/import', async (req, res, next) => {
     res.json(result);
   } catch (error) {
     console.error('[Master stammdat] Import error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees/stammdat/link
+ * Manually link an existing CuraFlow Employee to a stammdat source entry.
+ * Body: { employee_id: string, stammdat_id: number }
+ * Updates the Employee with stammdat fields (position, email, cost-center, etc.)
+ */
+router.post('/employees/stammdat/link', async (req, res, next) => {
+  try {
+    const { employee_id, stammdat_id } = req.body;
+
+    if (!employee_id || !stammdat_id) {
+      return res.status(400).json({ error: 'employee_id and stammdat_id are required' });
+    }
+
+    const result = await linkStammdatToEmployee(
+      db, employee_id, stammdat_id, req.user.sub, getStammdatConfig()
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[Master stammdat] Link error:', error);
     next(error);
   }
 });
