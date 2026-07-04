@@ -28,7 +28,7 @@ import {
 import { broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
-import { analyzeStammdatImport, executeStammdatImport, linkStammdatToEmployee } from '../utils/masterImport.js';
+import { analyzeStammdatImport, executeStammdatImport, linkStammdatToEmployee, importCostCentersFromStammdat } from '../utils/masterImport.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -5003,6 +5003,117 @@ router.post('/employees/stammdat/link', async (req, res, next) => {
     res.json(result);
   } catch (error) {
     console.error('[Master stammdat] Link error:', error);
+    next(error);
+  }
+});
+
+// ===== Cost Centers (Kostenstellen) =====
+
+/**
+ * GET /api/master/cost-centers
+ * List all cost centers with optional tenant assignment info.
+ * Query: ?search=term, ?tenant_id=xxx
+ */
+router.get('/cost-centers', async (req, res, next) => {
+  try {
+    const { search, tenant_id } = req.query;
+    const tokens = await getAllTenantTokens(req.user.sub);
+
+    let ccSql = 'SELECT cc.* FROM CostCenter cc WHERE 1=1';
+    const ccParams = [];
+
+    if (search) {
+      ccSql += ' AND (cc.code LIKE ? OR cc.name LIKE ?)';
+      const like = `%${search}%`;
+      ccParams.push(like, like);
+    }
+
+    if (tenant_id) {
+      ccSql += ' AND EXISTS (SELECT 1 FROM TenantCostCenter tcc WHERE tcc.cost_center_code = cc.code AND tcc.tenant_id = ?)';
+      ccParams.push(tenant_id);
+    }
+
+    ccSql += ' ORDER BY cc.code';
+    const [costCenters] = await db.execute(ccSql, ccParams);
+
+    // Get all tenant assignments
+    const [links] = await db.execute(
+      'SELECT tcc.tenant_id, tcc.cost_center_code, dt.name as tenant_name FROM TenantCostCenter tcc JOIN db_tokens dt ON tcc.tenant_id = dt.id ORDER BY dt.name'
+    );
+
+    const linkMap = {};
+    for (const link of links) {
+      if (!linkMap[link.cost_center_code]) linkMap[link.cost_center_code] = [];
+      if (tokens.some(t => String(t.id) === String(link.tenant_id))) {
+        linkMap[link.cost_center_code].push({ tenant_id: link.tenant_id, tenant_name: link.tenant_name });
+      }
+    }
+
+    res.json({
+      cost_centers: costCenters.map(cc => ({
+        ...cc,
+        tenants: linkMap[cc.code] || [],
+      })),
+      tenants: tokens.map(t => ({ id: t.id, name: t.name })),
+    });
+  } catch (error) {
+    console.error('[Master cost-centers] List error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/cost-centers/import
+ * Bootstrap: import all unique KST codes from the stammdat dump.
+ * The KST list is extracted from PHP/stammdat.sql at build time.
+ */
+router.post('/cost-centers/import', async (req, res, next) => {
+  try {
+    const result = await importCostCentersFromStammdat(db, getStammdatConfig());
+    console.log(`[Master cost-centers] Bootstrap import: ${result.imported} entries`);
+    res.json(result);
+  } catch (error) {
+    console.error('[Master cost-centers] Import error:', error);
+    next(error);
+  }
+});
+
+/**
+ * PUT /api/master/tenants/:tenantId/cost-centers
+ * Set which cost centers are linked to a tenant.
+ * Body: { cost_center_codes: string[] }
+ */
+router.put('/tenants/:tenantId/cost-centers', async (req, res, next) => {
+  try {
+    const { tenantId } = req.params;
+    const { cost_center_codes } = req.body;
+
+    const tokens = await getAllTenantTokens(req.user.sub);
+    if (!tokens.some(t => String(t.id) === String(tenantId))) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+
+    if (!Array.isArray(cost_center_codes)) {
+      return res.status(400).json({ error: 'cost_center_codes muss ein Array sein' });
+    }
+
+    // Delete existing
+    await db.execute('DELETE FROM TenantCostCenter WHERE tenant_id = ?', [tenantId]);
+
+    // Insert new
+    for (const code of cost_center_codes) {
+      try {
+        await db.execute(
+          'INSERT IGNORE INTO TenantCostCenter (tenant_id, cost_center_code) VALUES (?, ?)',
+          [tenantId, code]
+        );
+      } catch { /* skip if cost center doesn't exist */ }
+    }
+
+    console.log(`[Master cost-centers] Tenant ${tenantId} linked to ${cost_center_codes.length} cost centers by user ${req.user.email}`);
+    res.json({ success: true, tenant_id: tenantId, linked: cost_center_codes.length });
+  } catch (error) {
+    console.error('[Master cost-centers] Link error:', error);
     next(error);
   }
 });

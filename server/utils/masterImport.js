@@ -171,6 +171,39 @@ function matchEmployee(sourceEmployee, existingEmployees) {
   return { category: 'AMBIGUOUS', matches: lastNameMatches, employee: sourceEmployee };
 }
 
+/**
+ * Bootstrap: import all unique cost center codes from the stammdat
+ * source DB into the CostCenter lookup table.
+ *
+ * @param {object} dbPool         - MasterDB pool
+ * @param {object} stammdatConfig - DB connection config for source
+ * @returns {{ imported: number, total: number }}
+ */
+export async function importCostCentersFromStammdat(dbPool, stammdatConfig) {
+  const rows = await fetchStammdatRows(stammdatConfig);
+  const seen = new Map();
+  for (const row of rows) {
+    const code = String(row.kst || '').trim();
+    const name = String(row.kst_bez || '').trim();
+    if (code && !seen.has(code)) {
+      seen.set(code, name);
+    }
+  }
+
+  let imported = 0;
+  for (const [code, name] of seen) {
+    try {
+      await dbPool.execute(
+        'INSERT IGNORE INTO CostCenter (code, name, source_system) VALUES (?, ?, ?)',
+        [code, name, 'stammdat']
+      );
+      imported++;
+    } catch { /* skip duplicates */ }
+  }
+
+  return { success: true, imported, total: seen.size };
+}
+
 // ============ IMPORT OPERATIONS ============
 
 /**

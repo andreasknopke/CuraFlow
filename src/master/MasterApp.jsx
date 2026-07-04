@@ -16,6 +16,7 @@ import MasterEmployeeCreate from '@/master/pages/MasterEmployeeCreate';
 import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDetail';
 import MasterPPUGV from '@/master/pages/MasterPPUGV';
 import MasterStammdatImport from '@/master/pages/MasterStammdatImport';
+import MasterCostCenters from '@/master/pages/MasterCostCenters';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -84,6 +85,7 @@ export default function MasterApp() {
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />
                       <Route path="/ppugv" element={<MasterPPUGV />} />
                       <Route path="/stammdat-import" element={<MasterStammdatImport />} />
+                      <Route path="/kostenstellen" element={<MasterCostCenters />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MasterLayout>

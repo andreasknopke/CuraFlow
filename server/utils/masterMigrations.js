@@ -1199,5 +1199,33 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // ===== Cost Center Lookup & Tenant-CostCenter Linking =====
+  // CostCenter holds unique KST codes imported from the external
+  // stammdat personnel database. TenantCostCenter links each department
+  // (tenant) to one or more cost centers for reporting/PPUGV purposes.
+  await run('create_cost_center_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS CostCenter (
+        code VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        source_system VARCHAR(50) DEFAULT 'stammdat',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('create_tenant_cost_center_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS TenantCostCenter (
+        tenant_id VARCHAR(255) ${fkTableSuffix} NOT NULL,
+        cost_center_code VARCHAR(50) NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (tenant_id, cost_center_code),
+        CONSTRAINT fk_tcc_tenant FOREIGN KEY (tenant_id) REFERENCES db_tokens(id) ON DELETE CASCADE,
+        CONSTRAINT fk_tcc_cost_center FOREIGN KEY (cost_center_code) REFERENCES CostCenter(code) ON DELETE CASCADE
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
   return results;
 }
