@@ -127,7 +127,10 @@ function pinLayout(sourceHandle, targetCell) {
   });
 }
 
-describe('SPIKE: ScheduleBoard drag-and-drop in happy-dom', () => {
+// The drag test is permanently skipped — the spike proved that
+// @hello-pangea/dnd cannot resolve drop destinations in happy-dom
+// (no CSS layout engine). See TYPESCRIPT_CONVERSION_PLAN.md Pre-PR 3.0A.
+describe.skip('SPIKE: ScheduleBoard drag-and-drop in happy-dom', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
