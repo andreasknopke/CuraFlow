@@ -10,7 +10,7 @@ import { api } from '@/api/client';
 import {
   Database, Download, Search, CheckCircle2,
   AlertTriangle, UserPlus, Loader2, ChevronDown,
-  ChevronRight,
+  ChevronRight, Users,
 } from 'lucide-react';
 
 // ============ TYPES ============
