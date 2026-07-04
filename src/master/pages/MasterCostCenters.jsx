@@ -67,12 +67,12 @@ function TenantPopover({ costCenterCode, linkedTenants, allTenants, onToggle }) 
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-0" align="end">
-        <div className="px-3 py-2 border-b">
+        <div className="px-3 py-2 border-b shrink-0">
           <p className="text-xs font-medium text-slate-700">
             Mandanten für <code className="text-indigo-600">{costCenterCode}</code>
           </p>
         </div>
-        <ScrollArea className="max-h-64">
+        <div className="overflow-y-auto max-h-64">
           <div className="p-2 space-y-0.5">
             {allTenants.length === 0 && (
               <p className="text-xs text-slate-400 px-2 py-2">Keine Mandanten verfügbar</p>
@@ -93,7 +93,7 @@ function TenantPopover({ costCenterCode, linkedTenants, allTenants, onToggle }) 
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   );
