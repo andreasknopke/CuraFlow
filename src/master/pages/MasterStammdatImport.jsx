@@ -200,6 +200,32 @@ function EmployeeRow({ employee, category, isChecked, onDecision, selectedCandid
   );
 }
 
+function SelectAllBar({ items, decisions, itemKey, onDecision, label }) {
+  const allChecked = items.length > 0 && items.every(item => decisions[item[itemKey]]?.action === 'apply');
+  const someChecked = items.some(item => decisions[item[itemKey]]?.action === 'apply');
+  const isIndeterminate = someChecked && !allChecked;
+
+  const handleToggleAll = () => {
+    const newAction = allChecked ? 'skip' : 'apply';
+    for (const item of items) {
+      onDecision({ [itemKey]: item[itemKey], action: newAction });
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-1 py-1">
+      <Checkbox
+        checked={allChecked}
+        data-state={isIndeterminate ? 'indeterminate' : undefined}
+        onCheckedChange={handleToggleAll}
+      />
+      <span className="text-xs text-slate-500">
+        {allChecked ? `${label} abwählen` : `${label} auswählen`}
+      </span>
+    </div>
+  );
+}
+
 // ============ MAIN PAGE ============
 
 export default function MasterStammdatImport() {
@@ -696,6 +722,15 @@ export default function MasterStammdatImport() {
                 {ambiguous.length === 0 && (
                   <p className="text-sm text-slate-400 py-8 text-center">Keine uneindeutigen Einträge</p>
                 )}
+                {ambiguous.length > 0 && (
+                  <SelectAllBar
+                    items={ambiguous}
+                    decisions={decisions}
+                    itemKey="stammdat_id"
+                    onDecision={handleDecision}
+                    label="Alle uneindeutigen"
+                  />
+                )}
                 {ambiguous.map(emp => (
                   <EmployeeRow
                     key={emp.stammdat_id}
@@ -714,6 +749,15 @@ export default function MasterStammdatImport() {
               <>
                 {noMatch.length === 0 && (
                   <p className="text-sm text-slate-400 py-8 text-center">Keine neuen Mitarbeiter</p>
+                )}
+                {noMatch.length > 0 && (
+                  <SelectAllBar
+                    items={noMatch}
+                    decisions={decisions}
+                    itemKey="stammdat_id"
+                    onDecision={handleDecision}
+                    label="Alle neuen"
+                  />
                 )}
                 {noMatch.map(emp => (
                   <EmployeeRow
