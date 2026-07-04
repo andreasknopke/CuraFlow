@@ -191,6 +191,45 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+
+          {/* Zentrale Verknüpfung bei Neuanlage: zuerst */}
+          {!doctor && (
+            <div className="border rounded-lg p-4 bg-indigo-50/50 space-y-2">
+              <Label className="text-base flex items-center gap-1.5">
+                <Link2 className="w-4 h-4" />
+                Mit zentralem Mitarbeiter verknüpfen
+              </Label>
+              <p className="text-xs text-slate-500 -mt-1">
+                Daten aus der zentralen Mitarbeiterverwaltung übernehmen. Bei Auswahl werden Name,
+                E-Mail und Soll-Stunden automatisch ausgefüllt.
+              </p>
+              <EmployeeSelect
+                value={formData.central_employee_id || '__none__'}
+                onValueChange={(value) => {
+                  const empId = value === '__none__' ? '' : value;
+                  setFormData(prev => {
+                    const updated = { ...prev, central_employee_id: empId };
+                    if (empId) {
+                      const emp = centralEmployees.find(e => e.id === empId);
+                      if (emp) {
+                        const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
+                        if (fullName && !prev.name) updated.name = fullName;
+                        if (emp.email && !prev.email) updated.email = emp.email;
+                        if (emp.email && !prev.google_email) updated.google_email = emp.email;
+                        if (emp.target_hours_per_week != null) updated.target_weekly_hours = emp.target_hours_per_week;
+                      }
+                    }
+                    return updated;
+                  });
+                }}
+                options={centralEmployeeOptions}
+                placeholder="Zentralen Mitarbeiter suchen..."
+                searchPlaceholder="Name suchen..."
+                triggerClassName="bg-white"
+              />
+            </div>
+          )}
+
           <div className="grid gap-2">
             <Label htmlFor="name">Name</Label>
               <Input
@@ -382,7 +421,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               />
           </div>
           
-          {/* Zentrale Mitarbeiterverknüpfung */}
+          {/* Zentrale Mitarbeiterverknüpfung (nur bei Bearbeitung) */}
+          {doctor && (
           <div className="border rounded-lg p-3 bg-slate-50 space-y-2">
             <div className="flex items-center justify-between">
               <Label className="text-base flex items-center gap-1.5">
@@ -400,28 +440,32 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
               value={formData.central_employee_id || '__none__'}
               onValueChange={(value) => {
                 const empId = value === '__none__' ? '' : value;
-                setFormData({ ...formData, central_employee_id: empId });
-                if (empId) {
-                  const emp = centralEmployees.find((employee) => employee.id === empId);
-                  if (emp) {
-                    const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
-                    if (fullName && !formData.name) {
-                      setFormData((prev) => ({ ...prev, central_employee_id: empId, name: fullName }));
+                setFormData(prev => {
+                  const updated = { ...prev, central_employee_id: empId };
+                  if (empId) {
+                    const emp = centralEmployees.find(e => e.id === empId);
+                    if (emp) {
+                      const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
+                      if (fullName && !prev.name) updated.name = fullName;
+                      if (emp.email && !prev.email) updated.email = emp.email;
+                      if (emp.target_hours_per_week != null) updated.target_weekly_hours = emp.target_hours_per_week;
                     }
                   }
-                }
-              }}
-              options={centralEmployeeOptions}
-              placeholder="Nicht verknüpft (lokaler Mitarbeiter)"
-              searchPlaceholder="Zentralen Mitarbeiter suchen..."
-              triggerClassName="bg-white"
-            />
-            <p className="text-[11px] text-slate-400">
-              Verknüpfte Mitarbeiter erben Vertragsdaten (Arbeitszeit, Urlaub) aus der Zentrale.
-            </p>
-          </div>
+                  return updated;
+            });
+          }}
+          options={centralEmployeeOptions}
+          placeholder="Nicht verknüpft (lokaler Mitarbeiter)"
+          searchPlaceholder="Zentralen Mitarbeiter suchen..."
+          triggerClassName="bg-white"
+        />
+        <p className="text-[11px] text-slate-400">
+          Verknüpfte Mitarbeiter erben Vertragsdaten (Arbeitszeit, Urlaub) aus der Zentrale.
+        </p>
+      </div>
+      )}
 
-          {/* Qualifikations-Zuordnung immer anzeigen */}
+      {/* Qualifikations-Zuordnung immer anzeigen */}
           <div className="border rounded-lg p-3 bg-slate-50">
               <DoctorQualificationEditor 
                 doctorId={doctor?.id} 

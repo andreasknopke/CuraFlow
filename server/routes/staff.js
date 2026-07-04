@@ -42,6 +42,7 @@ router.get('/central-employees', async (req, res, next) => {
 
     const [rows] = await db.execute(
       `SELECT e.id, e.first_name, e.last_name, e.target_hours_per_week, e.work_time_model_id,
+              e.email, e.position,
               wtm.name AS work_time_model_name,
               wtm.hours_per_week AS model_hours_per_week,
               eta.tenant_doctor_id
