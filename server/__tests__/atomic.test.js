@@ -97,7 +97,7 @@ describe('toSqlValue', () => {
   });
 
   it('handles date-only Date objects', () => {
-    const date = new Date(2026, 0, 1);
+    const date = new Date(Date.UTC(2026, 0, 1));
     const result = toSqlValue(date);
     expect(result).toContain('2026-01-01');
   });

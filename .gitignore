@@ -31,6 +31,7 @@ e2e/.auth/
 *.ntvs*
 *.njsproj
 *.sln
+*.sql
 *.sw?
 
 # PHP legacy frontend (must NEVER appear on GitHub)

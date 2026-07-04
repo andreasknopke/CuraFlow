@@ -15,6 +15,7 @@ import MasterPayScaleTariffs from '@/master/pages/MasterPayScaleTariffs';
 import MasterEmployeeCreate from '@/master/pages/MasterEmployeeCreate';
 import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDetail';
 import MasterPPUGV from '@/master/pages/MasterPPUGV';
+import MasterStammdatImport from '@/master/pages/MasterStammdatImport';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +83,7 @@ export default function MasterApp() {
                       <Route path="/feiertage" element={<MasterHolidays />} />
                       <Route path="/zeiterfassung" element={<MasterTimeTracking />} />
                       <Route path="/ppugv" element={<MasterPPUGV />} />
+                      <Route path="/stammdat-import" element={<MasterStammdatImport />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MasterLayout>

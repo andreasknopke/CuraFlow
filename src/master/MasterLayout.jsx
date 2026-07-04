@@ -4,7 +4,7 @@ import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
   Menu, ChevronLeft, Shield,
-  Users, CalendarX2, Clock, CalendarDays, Timer, Scale, BarChart3,
+  Users, CalendarX2, Clock, CalendarDays, Timer, Scale, BarChart3, Database,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CoWorkWidget from '@/components/CoWorkWidget';
@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { path: '/tarifvertraege', label: 'Tarifverträge', icon: Scale },
   { path: '/zeiterfassung', label: 'Zeiterfassung', icon: Clock },
   { path: '/ppugv', label: 'PPUGV-Statistik', icon: BarChart3 },
+  { path: '/stammdat-import', label: 'Stammdaten-Import', icon: Database },
 ];
 
 export default function MasterLayout({ children }) {

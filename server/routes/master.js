@@ -28,6 +28,7 @@ import {
 import { broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
+import { analyzeStammdatImport, executeStammdatImport } from '../utils/masterImport.js';
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -1963,6 +1964,8 @@ router.post('/employees', async (req, res, next) => {
       contract_type, contract_start, contract_end, probation_end,
       target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes,
       payscale_tariff_id, payscale_group_id, payscale_level,
+      salutation, title, position, cost_center, cost_center_name,
+      entry_email_sent, exit_email_sent, source_system, stammdat_id,
     } = req.body;
 
     if (!last_name || !last_name.trim()) {
@@ -1974,8 +1977,10 @@ router.post('/employees', async (req, res, next) => {
       `INSERT INTO Employee (id, last_name, first_name, former_name, date_of_birth, email, phone, address,
         contract_type, contract_start, contract_end, probation_end,
         target_hours_per_week, vacation_days_annual, payroll_id, work_time_model_id, notes, created_by,
-        payscale_tariff_id, payscale_group_id, payscale_level)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        payscale_tariff_id, payscale_group_id, payscale_level,
+        salutation, title, position, cost_center, cost_center_name,
+        entry_email_sent, exit_email_sent, source_system, stammdat_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         last_name.trim(),
@@ -1998,6 +2003,15 @@ router.post('/employees', async (req, res, next) => {
         payscale_tariff_id || null,
         payscale_group_id || null,
         payscale_level != null ? parseInt(payscale_level, 10) : null,
+        salutation?.trim() || null,
+        title?.trim() || null,
+        position?.trim() || null,
+        cost_center?.trim() || null,
+        cost_center_name?.trim() || null,
+        entry_email_sent ? 1 : 0,
+        exit_email_sent ? 1 : 0,
+        source_system?.trim() || null,
+        stammdat_id != null ? parseInt(stammdat_id, 10) : null,
       ]
     );
 
@@ -2029,6 +2043,8 @@ router.put('/employees/:id', async (req, res, next) => {
       'target_hours_per_week', 'vacation_days_annual', 'payroll_id', 'work_time_model_id',
       'is_active', 'exit_date', 'exit_reason', 'notes',
       'payscale_tariff_id', 'payscale_group_id', 'payscale_level',
+      'salutation', 'title', 'position', 'cost_center', 'cost_center_name',
+      'entry_email_sent', 'exit_email_sent', 'source_system', 'stammdat_id',
     ];
 
     const updates = [];
@@ -4889,6 +4905,54 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
     console.log(`[PPBV-EXPORT] InEK-Excel exportiert: ${data.length} Zeilen, Jahr ${year}`);
   } catch (error) {
     console.error('[PPBV-EXPORT] error:', error.message);
+    next(error);
+  }
+});
+
+// ===== Stammdaten-Import (from external personnel master database) =====
+
+/**
+ * GET /api/master/employees/stammdat/analyze
+ * Analyze the stammdat source DB and return categorized matching results.
+ * No data is written — this is a dry-run for review.
+ */
+router.get('/employees/stammdat/analyze', async (req, res, next) => {
+  try {
+    const results = await analyzeStammdatImport(db);
+    res.json(results);
+  } catch (error) {
+    console.error('[Master stammdat] Analyze error:', error);
+    next(error);
+  }
+});
+
+/**
+ * POST /api/master/employees/stammdat/import
+ * Execute the stammdat import with user decisions.
+ * Body: { decisions: [{ stammdat_id, action: 'apply'|'skip', existing_employee_id? }] }
+ *
+ * - action 'apply' with existing_employee_id → update that specific employee
+ * - action 'apply' without existing_employee_id → auto-match or create
+ * - action 'skip' → skip this employee
+ */
+router.post('/employees/stammdat/import', async (req, res, next) => {
+  try {
+    const { decisions } = req.body;
+
+    if (!decisions || !Array.isArray(decisions) || decisions.length === 0) {
+      return res.status(400).json({ error: 'decisions array is required' });
+    }
+
+    const result = await executeStammdatImport(db, decisions, req.user.sub);
+
+    console.log(
+      `[Master stammdat] Import complete: ${result.created} created, ${result.updated} updated, ` +
+      `${result.skipped} skipped, ${result.errors.length} errors (by user ${req.user.email})`
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('[Master stammdat] Import error:', error);
     next(error);
   }
 });

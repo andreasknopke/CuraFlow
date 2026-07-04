@@ -800,6 +800,87 @@ export async function runMasterMigrations(dbPool) {
     return changed || SKIPPED;
   }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
 
+  // ===== PHASE: Stammdaten-Import (Master Data from external personnel DB) =====
+  // Diese Spalten speichern Daten aus der externen Stammdaten-DB (PHP/stammdat.sql),
+  // auch wenn sie im CuraFlow-Frontend aktuell noch nicht genutzt werden.
+  // Ziel: vollstàndige Persistierung aller Quelldaten für spàtere Auswertungen.
+
+  await run('add_employee_stammdat_source_fields', async () => {
+    let changed = false;
+
+    if (!(await hasColumn('Employee', 'stammdat_id'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN stammdat_id INT DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'salutation'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN salutation VARCHAR(10) DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'title'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN title VARCHAR(35) DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'position'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN position VARCHAR(50) DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'cost_center'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN cost_center VARCHAR(8) DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'cost_center_name'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN cost_center_name VARCHAR(50) DEFAULT NULL');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'entry_email_sent'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN entry_email_sent BOOLEAN DEFAULT FALSE');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'exit_email_sent'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN exit_email_sent BOOLEAN DEFAULT FALSE');
+      changed = true;
+    }
+    if (!(await hasColumn('Employee', 'source_system'))) {
+      await dbPool.execute('ALTER TABLE Employee ADD COLUMN source_system VARCHAR(50) DEFAULT NULL');
+      changed = true;
+    }
+
+    // Index for stammdat lookup
+    await dbPool.execute(
+      'CREATE INDEX IF NOT EXISTS idx_employee_stammdat_id ON Employee (stammdat_id)'
+    ).catch(() => { /* older MySQL without IF NOT EXISTS on index */ });
+
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalten bereits vorhanden', skippedReason: 'Spalten bereits vorhanden' });
+
+  // Employees with multiple cost centers (one row per cost-center split)
+  await run('create_employee_cost_center_table', async () => {
+    await dbPool.execute(`
+      CREATE TABLE IF NOT EXISTS EmployeeCostCenter (
+        id VARCHAR(36) PRIMARY KEY,
+        employee_id VARCHAR(36) NOT NULL,
+        cost_center_number TINYINT UNSIGNED NOT NULL COMMENT 'ma_arbeits_kst: 1=primary, 2=secondary, etc.',
+        cost_center_share DECIMAL(5,2) NOT NULL DEFAULT 100 COMMENT 'ma_kst_anteil: percentage on this KST',
+        cost_center_code VARCHAR(8) DEFAULT NULL COMMENT 'kst',
+        cost_center_name VARCHAR(50) DEFAULT NULL COMMENT 'kst_bez',
+        valid_from DATE DEFAULT NULL COMMENT 'von',
+        valid_until DATE DEFAULT NULL COMMENT 'bis',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_ecc_employee (employee_id),
+        INDEX idx_ecc_cost_center (cost_center_code),
+        CONSTRAINT fk_ecc_employee FOREIGN KEY (employee_id) REFERENCES Employee(id) ON DELETE CASCADE
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+  }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
+
+  await run('add_employee_cost_center_cascade_indexes', async () => {
+    // Additional index for unique constraint per employee+cost_center_number
+    await dbPool.execute(
+      'CREATE INDEX IF NOT EXISTS idx_ecc_employee_kst_num ON EmployeeCostCenter (employee_id, cost_center_number)'
+    ).catch(() => { /* older MySQL */ });
+  }, { duplicateCodes: ['ER_DUP_KEYNAME'], duplicateReason: 'Index bereits vorhanden' });
+
   // ===== PHASE: Springerpool-Rotationen (separates System, analog tenant_group) =====
   // Rotationen sind KEINE Dienste — sie haben eigene Tabellen, eigene Routes,
   // eigene Berechtigungen. Sie nutzen tenant_group als Vorbild, sind aber
