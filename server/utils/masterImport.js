@@ -361,17 +361,82 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
 }
 
 /**
+ * Compute a field-level diff between old and new employee data.
+ * Returns only fields that would actually change.
+ */
+function computeUpdateDiff(existingEmployee, newData) {
+  const fieldMap = {
+    payroll_id: 'payroll_id',
+    last_name: 'last_name',
+    first_name: 'first_name',
+    salutation: 'salutation',
+    title: 'title',
+    position: 'position',
+    cost_center: 'cost_center',
+    cost_center_name: 'cost_center_name',
+    email: 'email',
+    contract_start: 'contract_start',
+    contract_end: 'contract_end',
+    entry_email_sent: 'entry_email_sent',
+    exit_email_sent: 'exit_email_sent',
+    source_system: 'source_system',
+    stammdat_id: 'stammdat_id',
+    is_active: 'is_active',
+    exit_date: 'exit_date',
+    exit_reason: 'exit_reason',
+  };
+
+  const changes = {};
+  for (const [newKey, dbCol] of Object.entries(fieldMap)) {
+    const oldVal = existingEmployee[dbCol] ?? null;
+    const newVal = newData[newKey] ?? null;
+
+    // Normalize for comparison
+    const oldNorm = oldVal === null || oldVal === undefined ? null
+      : typeof oldVal === 'boolean' ? (oldVal ? 1 : 0)
+      : oldVal;
+    const newNorm = newVal === null || newVal === undefined ? null
+      : typeof newVal === 'boolean' ? (newVal ? 1 : 0)
+      : newVal;
+
+    if (String(oldNorm) !== String(newNorm)) {
+      changes[dbCol] = { old: oldVal, new: newVal };
+    }
+  }
+  return changes;
+}
+
+/**
  * Execute the import for a specific set of entries.
  *
- * @param {object} dbPool - MasterDB pool
- * @param {Array} decisions - Array of { stammdat_id, action: 'apply'|'skip', existing_employee_id? }
- * @param {string} createdBy - User ID performing the import
+ * @param {object}   dbPool            - MasterDB pool
+ * @param {Array}    decisions         - [{ stammdat_id, action, existing_employee_id? }]
+ * @param {string}   createdBy         - User ID performing the import
+ * @param {object}   stammdatConfig    - DB connection config for source
+ * @param {object}   options           - { dryRun?: boolean }
  */
-export async function executeStammdatImport(dbPool, decisions, createdBy, stammdatConfig) {
+export async function executeStammdatImport(dbPool, decisions, createdBy, stammdatConfig, options = {}) {
+  const { dryRun = false } = options;
+
   // Fetch source data
   const sourceRows = await fetchStammdatRows(stammdatConfig);
   const grouped = groupByPersonalnummer(sourceRows);
   const existingEmployees = await fetchExistingEmployees(dbPool);
+
+  // In dry-run mode, also fetch full employee data for diff computation
+  let existingFullDataMap = new Map();
+  if (dryRun) {
+    const [fullRows] = await dbPool.execute(
+      `SELECT id, last_name, first_name, payroll_id, email,
+        salutation, title, position, cost_center, cost_center_name,
+        contract_start, contract_end, entry_email_sent, exit_email_sent,
+        source_system, stammdat_id, is_active, exit_date, exit_reason
+       FROM Employee`
+    );
+    for (const row of fullRows) {
+      existingFullDataMap.set(row.id, row);
+    }
+  }
 
   const decisionMap = new Map();
   for (const d of decisions) {
@@ -379,11 +444,19 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
   }
 
   const result = {
+    dry_run: dryRun,
     created: 0,
     updated: 0,
     skipped: 0,
     errors: [],
     details: [],
+    // Dry-run only: detailed previews
+    preview: dryRun ? {
+      creates: [],
+      updates: [],
+      skips: [],
+      cost_center_changes: [],
+    } : undefined,
   };
 
   for (const [personalnummer, rows] of grouped) {
@@ -401,24 +474,109 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
 
     if (!decision || decision.action === 'skip') {
       result.skipped++;
-      result.details.push({
+      const detail = {
         stammdat_id: employee.stammdat_id,
         personalnummer: Number(personalnummer),
         name: `${employee.first_name} ${employee.last_name}`,
         action: 'skipped',
-      });
+      };
+      result.details.push(detail);
+      if (dryRun) {
+        result.preview.skips.push(detail);
+      }
       continue;
     }
 
-    try {
-      // Determine which existing employee to update (if any)
-      let existingId = null;
-      if (decision.existing_employee_id) {
-        existingId = decision.existing_employee_id;
-      } else if (matchResult.category === 'EXACT_MATCH') {
-        existingId = matchResult.matches[0].id;
+    // Determine which existing employee to update (if any)
+    let existingId = null;
+    if (decision.existing_employee_id) {
+      existingId = decision.existing_employee_id;
+    } else if (matchResult.category === 'EXACT_MATCH') {
+      existingId = matchResult.matches[0].id;
+    }
+
+    // ========== DRY-RUN: compute preview without writing ==========
+    if (dryRun) {
+      if (existingId) {
+        const oldData = existingFullDataMap.get(existingId);
+        const diff = computeUpdateDiff(oldData || {}, employee);
+
+        if (Object.keys(diff).length === 0) {
+          // No changes — would be a no-op update
+          const detail = {
+            stammdat_id: employee.stammdat_id,
+            personalnummer: Number(personalnummer),
+            name: `${employee.first_name} ${employee.last_name}`,
+            action: 'update_noop',
+            existing_employee_id: existingId,
+            changes: {},
+          };
+          result.details.push(detail);
+          result.preview.updates.push(detail);
+          result.skipped++;
+        } else {
+          const detail = {
+            stammdat_id: employee.stammdat_id,
+            personalnummer: Number(personalnummer),
+            name: `${employee.first_name} ${employee.last_name}`,
+            action: 'update_preview',
+            existing_employee_id: existingId,
+            existing_name: oldData ? `${oldData.first_name || ''} ${oldData.last_name || ''}`.trim() : '',
+            changes: diff,
+            cost_centers: costCenters.length,
+          };
+          result.details.push(detail);
+          result.preview.updates.push(detail);
+          result.updated++;
+        }
+      } else {
+        const detail = {
+          stammdat_id: employee.stammdat_id,
+          personalnummer: Number(personalnummer),
+          name: `${employee.first_name} ${employee.last_name}`,
+          action: 'create_preview',
+          data: {
+            payroll_id: employee.payroll_id,
+            last_name: employee.last_name,
+            first_name: employee.first_name,
+            salutation: employee.salutation,
+            title: employee.title,
+            position: employee.position,
+            cost_center: employee.cost_center,
+            cost_center_name: employee.cost_center_name,
+            email: employee.email,
+            contract_start: employee.contract_start,
+            contract_end: employee.contract_end,
+            is_active: employee.is_active,
+            entry_email_sent: employee.entry_email_sent,
+            exit_email_sent: employee.exit_email_sent,
+            source_system: employee.source_system,
+            cost_centers: costCenters.length,
+          },
+        };
+        result.details.push(detail);
+        result.preview.creates.push(detail);
+        result.created++;
       }
 
+      if (costCenters.length > 1) {
+        result.preview.cost_center_changes.push({
+          name: `${employee.first_name} ${employee.last_name}`,
+          personalnummer: Number(personalnummer),
+          cost_center_count: costCenters.length,
+          splits: costCenters.map(cc => ({
+            number: cc.cost_center_number,
+            share: cc.cost_center_share,
+            code: cc.cost_center_code,
+            name: cc.cost_center_name,
+          })),
+        });
+      }
+      continue;
+    }
+
+    // ========== LIVE MODE: actually write ==========
+    try {
       const upsertResult = await upsertEmployee(dbPool, employee, existingId, createdBy);
       const targetId = upsertResult.id;
 

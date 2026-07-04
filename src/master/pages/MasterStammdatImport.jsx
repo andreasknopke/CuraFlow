@@ -205,6 +205,7 @@ export default function MasterStammdatImport() {
 
   const [analyzing, setAnalyzing] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [dryRunning, setDryRunning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const [analysis, setAnalysis] = useState(null);
@@ -252,20 +253,53 @@ export default function MasterStammdatImport() {
     }
   }, []);
 
-  // Execute import
-  const handleImport = useCallback(async () => {
+  // Shared: build decisions array from UI state
+  const buildDecisions = useCallback(() => {
     const decisionEntries = Object.values(decisions);
     const toApply = decisionEntries.filter(d => d.action === 'apply');
 
-    // Merge candidate selections for ambiguous entries
-    const finalDecisions = toApply.map(d => {
+    return toApply.map(d => {
       const selection = candidateSelections[d.stammdat_id];
       if (selection) {
         return { ...d, existing_employee_id: selection };
       }
       return d;
     });
+  }, [decisions, candidateSelections]);
 
+  // Dry-Run: preview without writing
+  const handleDryRun = useCallback(async () => {
+    const finalDecisions = buildDecisions();
+    if (finalDecisions.length === 0) {
+      toast.warning('Bitte mindestens einen Mitarbeiter auswählen.');
+      return;
+    }
+
+    setDryRunning(true);
+    setError(null);
+    setImportResult(null);
+
+    try {
+      const result = await api.request('/api/master/employees/stammdat/import', {
+        method: 'POST',
+        body: JSON.stringify({ decisions: finalDecisions, dryRun: true }),
+      });
+      setImportResult(result);
+
+      toast.success(
+        `Vorschau: ${result.created} würden erstellt, ${result.updated} aktualisiert, ${result.skipped} übersprungen`
+      );
+    } catch (err) {
+      setError(err.message);
+      toast.error(`Vorschau fehlgeschlagen: ${err.message}`);
+    } finally {
+      setDryRunning(false);
+    }
+  }, [buildDecisions]);
+
+  // Execute import (live)
+  const handleImport = useCallback(async () => {
+    const finalDecisions = buildDecisions();
     if (finalDecisions.length === 0) {
       toast.warning('Bitte mindestens einen Mitarbeiter auswählen.');
       return;
@@ -273,11 +307,12 @@ export default function MasterStammdatImport() {
 
     setImporting(true);
     setError(null);
+    setImportResult(null);
 
     try {
       const result = await api.request('/api/master/employees/stammdat/import', {
         method: 'POST',
-        body: JSON.stringify({ decisions: finalDecisions }),
+        body: JSON.stringify({ decisions: finalDecisions, dryRun: false }),
       });
       setImportResult(result);
 
@@ -291,7 +326,7 @@ export default function MasterStammdatImport() {
     } finally {
       setImporting(false);
     }
-  }, [decisions, candidateSelections]);
+  }, [buildDecisions]);
 
   // ============ DECISION HELPERS ============
 
@@ -380,8 +415,21 @@ export default function MasterStammdatImport() {
               {exactMatches.length + ambiguous.length + noMatch.length} ausgewählt
             </span>
             <Button
+              onClick={handleDryRun}
+              disabled={dryRunning || importing || totalSelected === 0}
+              variant="outline"
+              className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+            >
+              {dryRunning ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
+              Vorschau / Dry Run
+            </Button>
+            <Button
               onClick={handleImport}
-              disabled={importing || totalSelected === 0}
+              disabled={importing || dryRunning || totalSelected === 0}
               variant="default"
               className="gap-2 bg-emerald-600 hover:bg-emerald-700"
             >
@@ -404,7 +452,7 @@ export default function MasterStammdatImport() {
       )}
 
       {/* Import result */}
-      {importResult && (
+      {importResult && !importResult.dry_run && (
         <Card className="border-emerald-200 bg-emerald-50">
           <CardContent className="p-4">
             <h3 className="font-semibold text-emerald-800 mb-2">Import-Ergebnis</h3>
@@ -428,6 +476,138 @@ export default function MasterStammdatImport() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Dry-Run preview */}
+      {importResult?.dry_run && importResult.preview && (
+        <div className="space-y-4">
+          {/* Summary */}
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-4">
+              <h3 className="font-semibold text-amber-800 mb-2 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" />
+                Vorschau (Dry Run) — keine Daten wurden geschrieben
+              </h3>
+              <div className="grid grid-cols-4 gap-3 text-sm">
+                <div><span className="font-medium text-amber-700">{importResult.created}</span> würden erstellt</div>
+                <div><span className="font-medium text-amber-700">{importResult.updated}</span> würden aktualisiert</div>
+                <div><span className="font-medium text-slate-600">{importResult.skipped}</span> übersprungen</div>
+                <div><span className="font-medium text-red-600">{importResult.errors.length}</span> Fehler</div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Creates */}
+          {importResult.preview.creates.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-indigo-700 mb-3">
+                  🆕 Neu anzulegen ({importResult.preview.creates.length})
+                </h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {importResult.preview.creates.map((item, i) => (
+                    <div key={i} className="border border-indigo-200 rounded p-3 bg-indigo-50/30">
+                      <p className="font-medium text-indigo-900">
+                        {item.data?.last_name}, {item.data?.first_name}
+                        <span className="text-xs text-indigo-500 ml-2">PNr {item.personalnummer}</span>
+                      </p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-xs">
+                        <div><span className="text-slate-400">Position:</span> {item.data?.position || '—'}</div>
+                        <div><span className="text-slate-400">E-Mail:</span> {item.data?.email || '—'}</div>
+                        <div><span className="text-slate-400">KST:</span> {item.data?.cost_center} — {item.data?.cost_center_name}</div>
+                        <div><span className="text-slate-400">Vertrag:</span> {item.data?.contract_start || '—'} → {item.data?.contract_end || '—'}</div>
+                        <div><span className="text-slate-400">Anrede:</span> {item.data?.salutation || '—'}</div>
+                        <div><span className="text-slate-400">Titel:</span> {item.data?.title || '—'}</div>
+                        <div><span className="text-slate-400">Aktiv:</span> {item.data?.is_active ? 'Ja' : 'Nein'}</div>
+                        <div><span className="text-slate-400">KST-Splits:</span> {item.data?.cost_centers || 0}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Updates */}
+          {importResult.preview.updates.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-amber-700 mb-3">
+                  ✏️ Würden aktualisiert ({importResult.preview.updates.length})
+                </h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {importResult.preview.updates.map((item, i) => (
+                    <div key={i} className={`border rounded p-3 ${Object.keys(item.changes || {}).length === 0 ? 'border-slate-200 bg-slate-50' : 'border-amber-200 bg-amber-50/30'}`}>
+                      <p className="font-medium text-amber-900">
+                        {item.name}
+                        <span className="text-xs text-amber-500 ml-2">PNr {item.personalnummer}</span>
+                        {item.existing_name && (
+                          <span className="text-xs text-slate-400 ml-2">→ existiert als: {item.existing_name}</span>
+                        )}
+                      </p>
+                      {Object.keys(item.changes || {}).length === 0 ? (
+                        <p className="text-xs text-slate-400 mt-2">Keine Änderungen (bereits aktuell)</p>
+                      ) : (
+                        <div className="mt-2 space-y-1">
+                          {Object.entries(item.changes || {}).map(([field, diff]) => (
+                            <div key={field} className="text-xs flex items-start gap-2">
+                              <code className="text-slate-500 min-w-[140px]">{field}:</code>
+                              <span className="text-red-500 line-through">{String(diff.old ?? '—')}</span>
+                              <span className="text-slate-300">→</span>
+                              <span className="text-emerald-600 font-medium">{String(diff.new ?? '—')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {item.cost_centers > 1 && (
+                        <p className="text-xs text-slate-400 mt-2">+ {item.cost_centers} Kostenstellen</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Skips */}
+          {importResult.preview.skips.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-slate-600 mb-2">
+                  ⊘ Übersprungen ({importResult.preview.skips.length})
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {importResult.preview.skips.map(s => s.name).join(', ')}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Cost center changes */}
+          {importResult.preview.cost_center_changes?.length > 0 && (
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="font-semibold text-slate-700 mb-3">
+                  📊 Kostenstellen-Änderungen ({importResult.preview.cost_center_changes.length} MA)
+                </h3>
+                <div className="space-y-2">
+                  {importResult.preview.cost_center_changes.map((cc, i) => (
+                    <div key={i} className="border border-slate-200 rounded p-2 text-xs">
+                      <span className="font-medium">{cc.name}</span> (PNr {cc.personalnummer}): {cc.cost_center_count} KST-Zeilen
+                      <div className="mt-1 space-y-0.5">
+                        {cc.splits.map((s, j) => (
+                          <span key={j} className="inline-block bg-slate-100 rounded px-1.5 py-0.5 mr-1 mb-1">
+                            #{s.number}: {s.share}% → {s.code} {s.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* Tabs */}

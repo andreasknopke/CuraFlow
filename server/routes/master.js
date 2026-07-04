@@ -4950,18 +4950,30 @@ router.get('/employees/stammdat/analyze', async (req, res, next) => {
  */
 router.post('/employees/stammdat/import', async (req, res, next) => {
   try {
-    const { decisions } = req.body;
+    const { decisions, dryRun } = req.body;
 
     if (!decisions || !Array.isArray(decisions) || decisions.length === 0) {
       return res.status(400).json({ error: 'decisions array is required' });
     }
 
-    const result = await executeStammdatImport(db, decisions, req.user.sub, getStammdatConfig());
+    const dryRunEnabled = dryRun === true || dryRun === 'true';
 
-    console.log(
-      `[Master stammdat] Import complete: ${result.created} created, ${result.updated} updated, ` +
-      `${result.skipped} skipped, ${result.errors.length} errors (by user ${req.user.email})`
+    const result = await executeStammdatImport(
+      db, decisions, req.user.sub, getStammdatConfig(),
+      { dryRun: dryRunEnabled }
     );
+
+    if (dryRunEnabled) {
+      console.log(
+        `[Master stammdat] Dry-run complete: ${result.created} would-create, ${result.updated} would-update, ` +
+        `${result.skipped} skipped (by user ${req.user.email})`
+      );
+    } else {
+      console.log(
+        `[Master stammdat] Import complete: ${result.created} created, ${result.updated} updated, ` +
+        `${result.skipped} skipped, ${result.errors.length} errors (by user ${req.user.email})`
+      );
+    }
 
     res.json(result);
   } catch (error) {
