@@ -5118,4 +5118,56 @@ router.put('/tenants/:tenantId/cost-centers', async (req, res, next) => {
   }
 });
 
+/**
+ * PUT /api/master/cost-centers/:code/tenants/:tenantId
+ * Link a single cost center to a single tenant.
+ */
+router.put('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
+  try {
+    const { code, tenantId } = req.params;
+
+    const tokens = await getAllTenantTokens(req.user.sub);
+    if (!tokens.some(t => String(t.id) === String(tenantId))) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+
+    await db.execute(
+      'INSERT IGNORE INTO TenantCostCenter (tenant_id, cost_center_code) VALUES (?, ?)',
+      [tenantId, code]
+    );
+
+    console.log(`[Master cost-centers] Linked CC ${code} to tenant ${tenantId} by user ${req.user.email}`);
+    res.json({ success: true, cost_center_code: code, tenant_id: tenantId, linked: true });
+  } catch (error) {
+    console.error('[Master cost-centers] Single-link error:', error);
+    next(error);
+  }
+});
+
+/**
+ * DELETE /api/master/cost-centers/:code/tenants/:tenantId
+ * Unlink a single cost center from a single tenant.
+ */
+router.delete('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
+  try {
+    const { code, tenantId } = req.params;
+
+    const tokens = await getAllTenantTokens(req.user.sub);
+    if (!tokens.some(t => String(t.id) === String(tenantId))) {
+      return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+    }
+
+    await db.execute(
+      'DELETE FROM TenantCostCenter WHERE tenant_id = ? AND cost_center_code = ?',
+      [tenantId, code]
+    );
+
+    console.log(`[Master cost-centers] Unlinked CC ${code} from tenant ${tenantId} by user ${req.user.email}`);
+    res.json({ success: true, cost_center_code: code, tenant_id: tenantId, linked: false });
+  } catch (error) {
+    console.error('[Master cost-centers] Single-unlink error:', error);
+    next(error);
+  }
+});
+
 export default router;
