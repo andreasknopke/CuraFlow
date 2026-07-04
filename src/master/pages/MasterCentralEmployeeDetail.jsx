@@ -61,6 +61,7 @@ export default function MasterCentralEmployeeDetail() {
         phone: employee.phone || '',
         address: employee.address || '',
         contract_type: employee.contract_type || '',
+        position: employee.position || '',
         contract_start: employee.contract_start || '',
         contract_end: employee.contract_end || '',
         probation_end: employee.probation_end || '',
@@ -372,6 +373,11 @@ export default function MasterCentralEmployeeDetail() {
                     <p className="text-sm">{currentModel ? `${currentModel.name} (${currentModel.hours_per_week}h/W)` : '–'}</p>
                   )}
                 </div>
+              </div>
+              <Separator />
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FieldRow label="Funktion (Beschäftigt als)" icon={Briefcase} value={form.position}
+                  editMode={editMode} onChange={(v) => updateField('position', v)} />
               </div>
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
