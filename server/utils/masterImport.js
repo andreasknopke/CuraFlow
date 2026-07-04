@@ -329,7 +329,7 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
       is_active: employee.is_active,
       cost_center_splits: costCenters.filter(cc => cc.cost_center_number > 1).length,
       source_data: employee,
-      cost_centers,
+      cost_centers: costCenters,
     };
 
     switch (matchResult.category) {
