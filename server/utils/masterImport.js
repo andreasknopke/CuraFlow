@@ -303,12 +303,16 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
   const grouped = groupByPersonalnummer(sourceRows);
   const existingEmployees = await fetchExistingEmployees(dbPool);
 
+  // Track which existing Employee IDs were matched from stammdat
+  const matchedEmployeeIds = new Set();
+
   const results = {
     total_source_employees: grouped.size,
     total_source_rows: sourceRows.length,
     exact_matches: [],
     ambiguous: [],
     no_match: [],
+    unmatched_in_curaflow: [],
   };
 
   for (const [personalnummer, rows] of grouped) {
@@ -337,6 +341,7 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
         entry.existing_employee_id = matchResult.matches[0].id;
         entry.existing_last_name = matchResult.matches[0].last_name;
         entry.existing_first_name = matchResult.matches[0].first_name;
+        matchedEmployeeIds.add(matchResult.matches[0].id);
         results.exact_matches.push(entry);
         break;
 
@@ -354,6 +359,9 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
           payroll_id: m.payroll_id,
           email: m.email,
         }));
+        // Track all candidates as "matched" since they DO appear in stammdat under
+        // a name variant — the ambiguity is already visible in the AMBIGUOUS tab.
+        matchResult.matches.forEach(m => matchedEmployeeIds.add(m.id));
         results.ambiguous.push(entry);
         break;
 
@@ -362,6 +370,19 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
         break;
     }
   }
+
+  // Find CuraFlow employees that were NEVER referenced by any stammdat row
+  results.unmatched_in_curaflow = existingEmployees
+    .filter(emp => !matchedEmployeeIds.has(emp.id))
+    .map(emp => ({
+      id: emp.id,
+      last_name: emp.last_name,
+      first_name: emp.first_name,
+      payroll_id: emp.payroll_id,
+      email: emp.email,
+      stammdat_id: emp.stammdat_id,
+      has_stammdat_id: !!emp.stammdat_id,
+    }));
 
   return results;
 }

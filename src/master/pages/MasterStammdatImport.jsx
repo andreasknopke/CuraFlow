@@ -383,6 +383,9 @@ export default function MasterStammdatImport() {
           <StatCard icon={Users} label="Eindeutige MA" value={analysis.exact_matches.length} color="bg-emerald-100 text-emerald-600" variant="success" />
           <StatCard icon={AlertTriangle} label="Uneindeutig" value={analysis.ambiguous.length} color="bg-amber-100 text-amber-600" variant="warning" />
           <StatCard icon={UserPlus} label="Neu anzulegen" value={analysis.no_match.length} color="bg-indigo-100 text-indigo-600" variant="info" />
+          {analysis.unmatched_in_curaflow?.length > 0 && (
+            <StatCard icon={Users} label="Nur in CuraFlow" value={analysis.unmatched_in_curaflow.length} color="bg-rose-100 text-rose-600" variant="default" />
+          )}
         </div>
       )}
 
@@ -618,6 +621,7 @@ export default function MasterStammdatImport() {
               { key: 'exact_match', label: 'Eindeutige Matches', count: exactMatches.length, color: 'text-emerald-600 border-emerald-600' },
               { key: 'ambiguous', label: 'Uneindeutig (manuell prüfen)', count: ambiguous.length, color: 'text-amber-600 border-amber-600' },
               { key: 'no_match', label: 'Neu anzulegen', count: noMatch.length, color: 'text-indigo-600 border-indigo-600' },
+              { key: 'unmatched_curaflow', label: 'Nur in CuraFlow', count: analysis.unmatched_in_curaflow?.length || 0, color: 'text-rose-600 border-rose-600' },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -684,6 +688,41 @@ export default function MasterStammdatImport() {
                     isChecked={decisions[emp.stammdat_id]?.action === 'apply'}
                     onDecision={handleDecision}
                   />
+                ))}
+              </>
+            )}
+
+            {activeTab === 'unmatched_curaflow' && (
+              <>
+                {(!analysis.unmatched_in_curaflow || analysis.unmatched_in_curaflow.length === 0) && (
+                  <p className="text-sm text-slate-400 py-8 text-center">Alle CuraFlow-Mitarbeiter haben eine Entsprechung in den Stammdaten.</p>
+                )}
+                {analysis.unmatched_in_curaflow?.map(emp => (
+                  <div key={emp.id} className="border border-rose-200 rounded-lg bg-white p-3 flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center flex-shrink-0">
+                      <Users className="w-4 h-4 text-rose-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 text-sm">
+                        {emp.last_name}{emp.first_name ? `, ${emp.first_name}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {emp.payroll_id && <span>PNr: {emp.payroll_id}</span>}
+                        {emp.email && <span className="ml-3">{emp.email}</span>}
+                        {!emp.payroll_id && !emp.email && 'Keine weiteren Daten'}
+                      </p>
+                    </div>
+                    {emp.has_stammdat_id && (
+                      <Badge variant="outline" className="text-xs text-rose-600 border-rose-300 whitespace-nowrap">
+                        Stammdat-Verknüpfung veraltet
+                      </Badge>
+                    )}
+                    {!emp.has_stammdat_id && (
+                      <Badge variant="outline" className="text-xs text-slate-500 whitespace-nowrap">
+                        Keine Stammdaten-Verknüpfung
+                      </Badge>
+                    )}
+                  </div>
                 ))}
               </>
             )}
