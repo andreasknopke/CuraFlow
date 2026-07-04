@@ -1,29 +1,51 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import type { ReactNode } from 'react';
 import { base44 } from "@/api/client";
 
-const AuthContext = createContext({
-    isAuthenticated: false,
-    isReadOnly: true,
-    user: null,
-    isLoading: true,
-    login: async () => {},
-    logout: () => {},
-    refreshUser: async () => {},
-    updateMe: async () => {}
-});
+interface AppUser {
+  id: number;
+  email: string;
+  role: string;
+  full_name?: string;
+  [key: string]: unknown;
+}
 
-export const useAuth = () => useContext(AuthContext);
+interface AuthContextType {
+  isAuthenticated: boolean;
+  isReadOnly: boolean;
+  user: AppUser | null;
+  isLoading: boolean;
+  token: string | null;
+  login: (email: string, password: string) => Promise<unknown>;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
+  updateMe: (data: Record<string, unknown>) => Promise<AppUser>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export const useAuth = (): AuthContextType => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within a JWTAuthProvider');
+  }
+  return context;
+};
 
 const TOKEN_KEY = 'radioplan_jwt_token';
 
-export const JWTAuthProvider = ({ children }) => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [user, setUser] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [token, setToken] = useState(null);
+interface JWTAuthProviderProps {
+  children: ReactNode;
+}
+
+export const JWTAuthProvider = ({ children }: JWTAuthProviderProps) => {
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+    const [user, setUser] = useState<AppUser | null>(null);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [token, setToken] = useState<string | null>(null);
 
     // Get stored token
-    const getStoredToken = () => {
+    const getStoredToken = (): string | null => {
         try {
             return localStorage.getItem(TOKEN_KEY);
         } catch (e) {
@@ -32,7 +54,7 @@ export const JWTAuthProvider = ({ children }) => {
     };
 
     // Store token
-    const storeToken = (newToken) => {
+    const storeToken = (newToken: string | null): void => {
         try {
             if (newToken) {
                 localStorage.setItem(TOKEN_KEY, newToken);
@@ -45,7 +67,7 @@ export const JWTAuthProvider = ({ children }) => {
     };
 
     // API call helper with auth
-    const authFetch = useCallback(async (action, data = {}) => {
+    const authFetch = useCallback(async (action: string, data: Record<string, unknown> = {}) => {
         const currentToken = token || getStoredToken();
         
         const response = await base44.functions.invoke('auth', {
@@ -104,7 +126,7 @@ export const JWTAuthProvider = ({ children }) => {
     }, []);
 
     // Login function
-    const login = async (email, password) => {
+    const login = async (email: string, password: string) => {
         const response = await fetch(
             `${window.location.origin}/api/functions/auth`,
             {
@@ -165,7 +187,7 @@ export const JWTAuthProvider = ({ children }) => {
     };
 
     // Update current user
-    const updateMe = async (data) => {
+    const updateMe = async (data: Record<string, unknown>): Promise<AppUser> => {
         const currentToken = token || getStoredToken();
         if (!currentToken) throw new Error('Nicht eingeloggt');
 
@@ -215,7 +237,7 @@ export const JWTAuthProvider = ({ children }) => {
 export const useAuthFetch = () => {
     const { token } = useAuth();
 
-    return async (url, options = {}) => {
+    return async (url: string, options: RequestInit = {}) => {
         const currentToken = token || localStorage.getItem(TOKEN_KEY);
         
         return fetch(url, {

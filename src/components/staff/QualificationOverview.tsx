@@ -20,12 +20,33 @@ import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import type { Doctor } from '@/types';
+
+interface PendingQualification {
+    id: string;
+    name: string;
+    statusLabel: string;
+}
+
+interface ReminderCandidate {
+    doctor_id: string;
+    doctor_name: string;
+    qualification_ids: string[];
+    pendingQualifications: PendingQualification[];
+    recipientEmails: string[];
+    hasCentralLink: boolean;
+}
+
+interface QualificationOverviewProps {
+    doctors?: Doctor[];
+    isReadOnly?: boolean;
+}
 
 /**
  * Interaktive Übersichts-Matrix: Welcher Mitarbeiter hat welche Qualifikation.
  * Qualifikationen können direkt per Klick gesetzt/entfernt werden.
  */
-export default function QualificationOverview({ doctors = [], isReadOnly = false }) {
+export default function QualificationOverview({ doctors = [], isReadOnly = false }: QualificationOverviewProps) {
     const queryClient = useQueryClient();
     const { toast } = useToast();
     const { qualifications, qualificationMap, isLoading: qualsLoading } = useQualifications();
@@ -38,7 +59,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
         queryFn: () => api.listCertificates(),
     });
     const certKeySet = useMemo(() => {
-        const set = new Set();
+        const set = new Set<string>();
         for (const c of allCertificates) {
             set.add(`${c.doctor_id}:${c.qualification_id}`);
         }
@@ -52,13 +73,13 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
     });
 
     // Confirmation dialog state when assigning a cert-required qualification
-    const [pendingAssign, setPendingAssign] = useState(null); // { doctorId, qual }
+    const [pendingAssign, setPendingAssign] = useState<{ doctorId: string; qual: any } | null>(null);
     const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
-    const [selectedReminderDoctorIds, setSelectedReminderDoctorIds] = useState([]);
+    const [selectedReminderDoctorIds, setSelectedReminderDoctorIds] = useState<string[]>([]);
     const [isSendingReminders, setIsSendingReminders] = useState(false);
 
     const assignMutation = useMutation({
-        mutationFn: (data) => db.DoctorQualification.create(data),
+        mutationFn: (data: { doctor_id: string; qualification_id: string }) => db.DoctorQualification.create(data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['allDoctorQualifications'] });
             queryClient.invalidateQueries({ queryKey: ['doctorQualifications'] });
@@ -66,14 +87,14 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
     });
 
     const removeMutation = useMutation({
-        mutationFn: (id) => db.DoctorQualification.delete(id),
+        mutationFn: (id: string) => db.DoctorQualification.delete(id),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['allDoctorQualifications'] });
             queryClient.invalidateQueries({ queryKey: ['doctorQualifications'] });
         },
     });
 
-    const handleToggle = useCallback((doctorId, qualId) => {
+    const handleToggle = useCallback((doctorId: string, qualId: string) => {
         if (isReadOnly) return;
         const doctorEntries = byDoctor[doctorId] || [];
         const existing = doctorEntries.find(dq => dq.qualification_id === qualId);
@@ -102,13 +123,13 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
     const activeQuals = useMemo(() => qualifications.filter(q => q.is_active !== false), [qualifications]);
     const isLoading = qualsLoading || dqLoading || certsLoading;
 
-    const reminderCandidates = useMemo(() => {
-        const usersByDoctor = loginUsers.reduce((acc, user) => {
+    const reminderCandidates = useMemo((): ReminderCandidate[] => {
+        const usersByDoctor: Record<string, any[]> = loginUsers.reduce((acc, user) => {
             if (!user?.doctor_id || !user?.email) return acc;
             if (!acc[user.doctor_id]) acc[user.doctor_id] = [];
             acc[user.doctor_id].push(user);
             return acc;
-        }, {});
+        }, {} as Record<string, any[]>);
 
         return doctors
             .map((doctor) => {
@@ -120,7 +141,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                         const hasQual = !!dqEntry;
                         const requiresCert = qual.requires_certificate === true;
                         const hasCert = certKeySet.has(`${doctor.id}:${qual.id}`);
-                        const certStatus = dqEntry?.certificate_status || null;
+                        const certStatus = (dqEntry as any)?.certificate_status || null;
                         const missingCert = hasQual && requiresCert && !hasCert;
                         const certWarning = hasQual && requiresCert && (
                             missingCert
@@ -141,7 +162,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                             statusLabel,
                         };
                     })
-                    .filter(Boolean);
+                    .filter(Boolean) as PendingQualification[];
 
                 return {
                     doctor_id: doctor.id,
@@ -161,7 +182,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
 
     const excludedReminderCandidates = reminderCandidates.length - eligibleReminderCandidates.length;
 
-    const toggleReminderDoctor = useCallback((doctorId) => {
+    const toggleReminderDoctor = useCallback((doctorId: string) => {
         setSelectedReminderDoctorIds((current) => (
             current.includes(doctorId)
                 ? current.filter((id) => id !== doctorId)
@@ -194,7 +215,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                 description: `${result.sent_count || 0} E-Mail(s) wurden verschickt.`,
             });
             setIsReminderDialogOpen(false);
-        } catch (error) {
+        } catch (error: any) {
             toast({
                 variant: 'destructive',
                 title: 'Versand fehlgeschlagen',
@@ -252,7 +273,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                 setIsReminderDialogOpen(true);
                             }}
                         >
-                            {usersLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                            {usersLoading ? <Loader2 className="h-4 h-4 animate-spin" /> : <Mail className="h-4 h-4" />}
                             Zertifikats-Erinnerung
                         </Button>
                     )}
@@ -308,8 +329,8 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                             const isPending = assignMutation.isPending || removeMutation.isPending;
                                             const requiresCert = qual.requires_certificate === true;
                                             const hasCert = certKeySet.has(`${doctor.id}:${qual.id}`);
-                                            const certStatus = dqEntry?.certificate_status || null;
-                                            const certValidUntil = dqEntry?.certificate_valid_until || dqEntry?.expiry_date || null;
+                                            const certStatus = (dqEntry as any)?.certificate_status || null;
+                                            const certValidUntil = (dqEntry as any)?.certificate_valid_until || dqEntry?.expiry_date || null;
                                             const missingCert = hasQual && requiresCert && !hasCert;
                                             const certWarning = hasQual && requiresCert && (
                                                 missingCert
@@ -427,7 +448,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                 <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <Mail className="h-5 w-5" /> Zertifikats-Erinnerungen senden
+                            <Mail className="h-5 h-5" /> Zertifikats-Erinnerungen senden
                         </DialogTitle>
                         <DialogDescription>
                             Beruecksichtigt werden nur Mitarbeiter mit offenem oder ungueltigem Nachweis, aktivem regulaerem Login, doctor_id-Verknuepfung und zentraler Mitarbeiter-Verknuepfung.
@@ -500,7 +521,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                             Abbrechen
                         </Button>
                         <Button type="button" onClick={handleSendReminders} disabled={isSendingReminders || selectedReminderDoctorIds.length === 0}>
-                            {isSendingReminders ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+                            {isSendingReminders ? <Loader2 className="mr-2 h-4 h-4 animate-spin" /> : <Mail className="mr-2 h-4 h-4" />}
                             Erinnerung senden
                         </Button>
                     </DialogFooter>

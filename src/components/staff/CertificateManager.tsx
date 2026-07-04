@@ -22,18 +22,92 @@ import {
     normalizeEvidenceRole,
     normalizeRequirementMode,
 } from '@/lib/qualificationEvidence';
+import type { DoctorQualification } from '@/types';
 
 const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
 const MAX_SIZE = 5 * 1024 * 1024;
 const WARN_DAYS = 60;
 
-function isAllowedFile(file) {
+// ─── Internal types ────────────────────────────────────────────────────────────
+
+interface CertificateItem {
+    id?: string | number;
+    [key: string]: unknown;
+}
+
+interface AnalysisBadgeProps {
+    cert: CertificateItem;
+}
+
+interface UploadCheckResult {
+    upload_allowed?: boolean;
+    analysis?: {
+        status?: string;
+        scope_detected?: string;
+        confidence?: number;
+        reasoning?: string;
+        detected_granted_date?: string;
+        detected_expiry_date?: string;
+        [key: string]: unknown;
+    };
+}
+
+interface UploadCheckNoticeProps {
+    checkResult: UploadCheckResult | null;
+    isChecking: boolean;
+}
+
+interface RoleSelectorProps {
+    value: string;
+    onChange: (value: string) => void;
+    disabled?: boolean;
+    compact?: boolean;
+}
+
+interface CertificateManagerProps {
+    doctorId: string | null;
+    qualificationId: string | null;
+    qualificationName?: string;
+    qualificationDescription?: string;
+    qualificationRequirementMode?: string;
+    qualificationValidityMonths?: number | null;
+    qualificationRefreshValidityMonths?: number | null;
+    qualificationBaseLabel?: string;
+    qualificationRefreshLabel?: string;
+    doctorQualificationId?: string | null;
+    doctorQualification?: (DoctorQualification & { certificate_status?: string; certificate_valid_until?: string }) | null;
+    canEdit?: boolean;
+}
+
+interface ExpiryStatus {
+    kind: 'expired' | 'soon' | 'ok';
+    days: number;
+    label: string;
+}
+
+interface SummaryBadge {
+    cls: string;
+    icon: React.ReactNode;
+    label: string;
+}
+
+interface QualificationConfig {
+    certificate_requirement_mode: string;
+    certificate_validity_months?: number | null;
+    certificate_refresh_validity_months?: number | null;
+    certificate_base_label?: string;
+    certificate_refresh_label?: string;
+}
+
+// ─── Helper functions ────────────────────────────────────────────────────────
+
+function isAllowedFile(file: File): boolean {
     if (!file) return false;
     if (ALLOWED_TYPES.includes(file.type)) return true;
     return file.type === '' && /\.(pdf|jpe?g|png)$/i.test(file.name || '');
 }
 
-function extractFileFromDataTransfer(dataTransfer) {
+function extractFileFromDataTransfer(dataTransfer: DataTransfer | null): File | null {
     const items = Array.from(dataTransfer?.items || []);
     for (const item of items) {
         if (item.kind !== 'file') continue;
@@ -45,7 +119,7 @@ function extractFileFromDataTransfer(dataTransfer) {
     return files[0] || null;
 }
 
-function formatDate(value) {
+function formatDate(value: string | Date | null | undefined): string {
     if (!value) return '–';
     try {
         const d = typeof value === 'string' ? parseISO(value) : value;
@@ -55,7 +129,7 @@ function formatDate(value) {
     }
 }
 
-function getExpiryStatus(expiry_date) {
+function getExpiryStatus(expiry_date: string | Date | null | undefined): ExpiryStatus | null {
     if (!expiry_date) return null;
     const d = typeof expiry_date === 'string' ? parseISO(expiry_date) : expiry_date;
     if (!isValid(d)) return null;
@@ -65,11 +139,11 @@ function getExpiryStatus(expiry_date) {
     return { kind: 'ok', days, label: `Gültig bis ${formatDate(expiry_date)}` };
 }
 
-function getCertificateDisplayExpiry(cert, summary) {
-    return summary?.certificate_valid_until_by_id?.[cert.id] || cert.expiry_date || null;
+function getCertificateDisplayExpiry(cert: CertificateItem, summary: any): string | null {
+    return summary?.certificate_valid_until_by_id?.[cert.id] || (cert.expiry_date as string) || null;
 }
 
-function getRoleLabel(role, baseLabel, refreshLabel) {
+function getRoleLabel(role: string, baseLabel: string, refreshLabel: string): string {
     if (role === 'refresh') return refreshLabel || 'Verlängerung / Auffrischung';
     if (role === 'base') return baseLabel || 'Grundnachweis';
     if (role === 'recertification') return 'Neuerwerb / Rezertifizierung';
@@ -77,7 +151,7 @@ function getRoleLabel(role, baseLabel, refreshLabel) {
     return 'Nachweis';
 }
 
-function getSummaryBadge(summary) {
+function getSummaryBadge(summary: any): SummaryBadge {
     switch (summary?.status) {
         case 'valid':
             return {
@@ -106,11 +180,13 @@ function getSummaryBadge(summary) {
     }
 }
 
-function AnalysisBadge({ cert }) {
-    const status = cert.analysis_status;
+// ─── Sub-Components ───────────────────────────────────────────────────────────
+
+function AnalysisBadge({ cert }: AnalysisBadgeProps) {
+    const status = cert.analysis_status as string;
     if (!status || status === 'skipped') return null;
 
-    const map = {
+    const map: Record<string, { cls: string; icon: React.ReactNode; label: string }> = {
         pending:  { cls: 'bg-slate-100 text-slate-600 border-slate-300', icon: <Loader2 className="w-2.5 h-2.5 mr-1 animate-spin" />, label: 'KI-Prüfung läuft...' },
         passed:   { cls: 'bg-emerald-50 text-emerald-700 border-emerald-300', icon: <ShieldCheck className="w-2.5 h-2.5 mr-1" />, label: 'KI-geprüft' },
         warning:  { cls: 'bg-amber-50 text-amber-700 border-amber-300', icon: <ShieldAlert className="w-2.5 h-2.5 mr-1" />, label: 'KI: Scope passt evtl. nicht' },
@@ -119,10 +195,10 @@ function AnalysisBadge({ cert }) {
     };
     const cfg = map[status] || map.error;
 
-    const tooltipParts = [];
+    const tooltipParts: string[] = [];
     if (cert.analysis_scope_detected) tooltipParts.push(`Erkannt: ${cert.analysis_scope_detected}`);
-    if (typeof cert.analysis_confidence === 'number') tooltipParts.push(`Konfidenz: ${(cert.analysis_confidence * 100).toFixed(0)}%`);
-    if (cert.analysis_reasoning) tooltipParts.push(cert.analysis_reasoning);
+    if (typeof cert.analysis_confidence === 'number') tooltipParts.push(`Konfidenz: ${(cert.analysis_confidence as number * 100).toFixed(0)}%`);
+    if (cert.analysis_reasoning) tooltipParts.push(cert.analysis_reasoning as string);
 
     return (
         <div className="mt-1">
@@ -135,13 +211,13 @@ function AnalysisBadge({ cert }) {
                 {cfg.label}
             </Badge>
             {(status === 'warning' || status === 'failed' || status === 'error') && cert.analysis_reasoning && (
-                <div className="text-[11px] text-slate-600 mt-1 italic">{cert.analysis_reasoning}</div>
+                <div className="text-[11px] text-slate-600 mt-1 italic">{cert.analysis_reasoning as string}</div>
             )}
         </div>
     );
 }
 
-function UploadCheckNotice({ checkResult, isChecking }) {
+function UploadCheckNotice({ checkResult, isChecking }: UploadCheckNoticeProps) {
     if (isChecking) {
         return (
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 flex items-center gap-2">
@@ -201,6 +277,8 @@ function UploadCheckNotice({ checkResult, isChecking }) {
     );
 }
 
+// ─── Main Component ──────────────────────────────────────────────────────────
+
 export default function CertificateManager({
     doctorId,
     qualificationId,
@@ -214,23 +292,23 @@ export default function CertificateManager({
     doctorQualificationId = null,
     doctorQualification = null,
     canEdit = true,
-}) {
+}: CertificateManagerProps) {
     const requirementMode = normalizeRequirementMode(qualificationRequirementMode);
     const { toast } = useToast();
-    const fileInputRef = useRef(null);
-    const checkRequestRef = useRef(0);
-    const dragDepthRef = useRef(0);
-    const [pendingFile, setPendingFile] = useState(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const checkRequestRef = useRef<number>(0);
+    const dragDepthRef = useRef<number>(0);
+    const [pendingFile, setPendingFile] = useState<File | null>(null);
     const [isDragActive, setIsDragActive] = useState(false);
-    const [pendingEvidenceRole, setPendingEvidenceRole] = useState(
+    const [pendingEvidenceRole, setPendingEvidenceRole] = useState<string>(
         requirementMode === 'base_refresh' ? 'base' : 'single'
     );
     const [grantedDate, setGrantedDate] = useState('');
     const [expiryDate, setExpiryDate] = useState('');
     const [notes, setNotes] = useState('');
-    const [approvalToken, setApprovalToken] = useState(null);
-    const [checkResult, setCheckResult] = useState(null);
-    const [editId, setEditId] = useState(null);
+    const [approvalToken, setApprovalToken] = useState<string | null>(null);
+    const [checkResult, setCheckResult] = useState<UploadCheckResult | null>(null);
+    const [editId, setEditId] = useState<string | null>(null);
     const [editEvidenceRole, setEditEvidenceRole] = useState('single');
     const [editGranted, setEditGranted] = useState('');
     const [editExpiry, setEditExpiry] = useState('');
@@ -249,19 +327,19 @@ export default function CertificateManager({
     const normalizedCertificates = useMemo(() => {
         return certificates.map((cert) => ({
             ...cert,
-            evidence_role: normalizeEvidenceRole(cert.evidence_role, requirementMode),
+            evidence_role: normalizeEvidenceRole(cert.evidence_role as string, requirementMode),
         }));
     }, [certificates, requirementMode]);
 
     const sorted = useMemo(() => {
         return [...normalizedCertificates].sort((a, b) => {
-            const ax = a.expiry_date || a.uploaded_at || '';
-            const bx = b.expiry_date || b.uploaded_at || '';
+            const ax = (a.expiry_date || a.uploaded_at || '') as string;
+            const bx = (b.expiry_date || b.uploaded_at || '') as string;
             return String(bx).localeCompare(String(ax));
         });
     }, [normalizedCertificates]);
 
-    const qualificationConfig = useMemo(() => ({
+    const qualificationConfig: QualificationConfig = useMemo(() => ({
         certificate_requirement_mode: requirementMode,
         certificate_validity_months: qualificationValidityMonths,
         certificate_refresh_validity_months: qualificationRefreshValidityMonths,
@@ -283,7 +361,7 @@ export default function CertificateManager({
     const summaryBadge = useMemo(() => getSummaryBadge(summary), [summary]);
 
     const groupedCertificates = useMemo(() => {
-        const buckets = {
+        const buckets: Record<string, CertificateItem[]> = {
             single: [],
             base: [],
             refresh: [],
@@ -291,7 +369,7 @@ export default function CertificateManager({
             recertification: [],
         };
         for (const cert of sorted) {
-            const role = normalizeEvidenceRole(cert.evidence_role, requirementMode);
+            const role = normalizeEvidenceRole(cert.evidence_role as string, requirementMode);
             if (!buckets[role]) buckets[role] = [];
             buckets[role].push(cert);
         }
@@ -310,8 +388,8 @@ export default function CertificateManager({
                 {
                     id: '__pending__',
                     evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode),
-                    granted_date: grantedDate || checkResult.analysis?.detected_granted_date || null,
-                    expiry_date: expiryDate || checkResult.analysis?.detected_expiry_date || null,
+                    granted_date: grantedDate || (checkResult.analysis?.detected_granted_date as string) || null,
+                    expiry_date: expiryDate || (checkResult.analysis?.detected_expiry_date as string) || null,
                     uploaded_at: new Date().toISOString(),
                 },
             ],
@@ -327,7 +405,7 @@ export default function CertificateManager({
         expiryDate,
     ]);
 
-    const processSelectedFile = async (file) => {
+    const processSelectedFile = async (file: File) => {
         if (!file) return;
         if (!isAllowedFile(file)) {
             toast({ variant: 'destructive', title: 'Dateityp nicht erlaubt', description: 'Erlaubt: PDF, JPEG, PNG.' });
@@ -360,12 +438,12 @@ export default function CertificateManager({
             });
             if (checkRequestRef.current !== requestId) return;
 
-            setCheckResult(result);
-            setApprovalToken(result.approval_token || null);
-            setGrantedDate(result.analysis?.detected_granted_date || '');
-            setExpiryDate(result.analysis?.detected_expiry_date || '');
+            setCheckResult(result as UploadCheckResult);
+            setApprovalToken((result as any).approval_token || null);
+            setGrantedDate((result as any).analysis?.detected_granted_date || '');
+            setExpiryDate((result as any).analysis?.detected_expiry_date || '');
 
-            if (result.upload_allowed) {
+            if ((result as any).upload_allowed) {
                 toast({
                     title: 'Zertifikat geprüft',
                     description: 'Scope passt. Erkannte Daten wurden übernommen, Upload ist freigegeben.',
@@ -374,10 +452,10 @@ export default function CertificateManager({
                 toast({
                     variant: 'destructive',
                     title: 'Upload gesperrt',
-                    description: result.analysis?.reasoning || 'Die KI konnte kein passendes Zertifikat bestätigen.',
+                    description: (result as any).analysis?.reasoning || 'Die KI konnte kein passendes Zertifikat bestätigen.',
                 });
             }
-        } catch (err) {
+        } catch (err: any) {
             if (checkRequestRef.current !== requestId) return;
             setApprovalToken(null);
             setCheckResult({
@@ -391,27 +469,27 @@ export default function CertificateManager({
         }
     };
 
-    const handleFileChange = async (e) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        await processSelectedFile(file);
+        await processSelectedFile(file!);
         e.target.value = '';
     };
 
-    const handleDragEnter = (e) => {
+    const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         dragDepthRef.current += 1;
         setIsDragActive(true);
     };
 
-    const handleDragOver = (e) => {
+    const handleDragOver = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect = 'copy';
         if (!isDragActive) setIsDragActive(true);
     };
 
-    const handleDragLeave = (e) => {
+    const handleDragLeave = (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
@@ -420,7 +498,7 @@ export default function CertificateManager({
         }
     };
 
-    const handleDrop = async (e) => {
+    const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         e.stopPropagation();
         dragDepthRef.current = 0;
@@ -433,7 +511,7 @@ export default function CertificateManager({
         await processSelectedFile(file);
     };
 
-    const handlePaste = async (e) => {
+    const handlePaste = async (e: React.ClipboardEvent) => {
         const items = Array.from(e.clipboardData?.items || []);
         const pastedImage = items.find((item) => item.kind === 'file' && item.type.startsWith('image/'));
         if (!pastedImage) return;
@@ -484,47 +562,47 @@ export default function CertificateManager({
             });
             toast({ title: 'Zertifikat hochgeladen', description: `${pendingFile.name} wurde mit bestätigtem Scope gespeichert.` });
             resetUploadForm();
-        } catch (err) {
+        } catch (err: any) {
             toast({ variant: 'destructive', title: 'Upload fehlgeschlagen', description: err.message });
         }
     };
 
-    const handleReanalyze = async (cert) => {
+    const handleReanalyze = async (cert: CertificateItem) => {
         try {
             await reanalyzeCertificate({
-                id: cert.id,
+                id: String(cert.id),
                 qualification_name: qualificationName,
                 qualification_description: qualificationDescription,
             });
             toast({ title: 'Analyse gestartet', description: 'Ergebnis erscheint in Kürze.' });
-        } catch (err) {
+        } catch (err: any) {
             toast({ variant: 'destructive', title: 'Analyse fehlgeschlagen', description: err.message });
         }
     };
 
-    const handleDelete = async (cert) => {
+    const handleDelete = async (cert: CertificateItem) => {
         try {
-            await deleteCertificate(cert.id);
-            toast({ title: 'Zertifikat gelöscht', description: cert.file_name });
-        } catch (err) {
+            await deleteCertificate(String(cert.id));
+            toast({ title: 'Zertifikat gelöscht', description: cert.file_name as string });
+        } catch (err: any) {
             toast({ variant: 'destructive', title: 'Löschen fehlgeschlagen', description: err.message });
         }
     };
 
-    const handleView = async (cert) => {
+    const handleView = async (cert: CertificateItem) => {
         try {
-            await openCertificateInNewTab(cert.id);
-        } catch (err) {
+            await openCertificateInNewTab(String(cert.id));
+        } catch (err: any) {
             toast({ variant: 'destructive', title: 'Datei kann nicht geöffnet werden', description: err.message });
         }
     };
 
-    const startEdit = (cert) => {
-        setEditId(cert.id);
-        setEditEvidenceRole(normalizeEvidenceRole(cert.evidence_role, requirementMode));
-        setEditGranted(cert.granted_date || '');
-        setEditExpiry(cert.expiry_date || '');
-        setEditNotes(cert.notes || '');
+    const startEdit = (cert: CertificateItem) => {
+        setEditId(String(cert.id));
+        setEditEvidenceRole(normalizeEvidenceRole(cert.evidence_role as string, requirementMode));
+        setEditGranted((cert.granted_date as string) || '');
+        setEditExpiry((cert.expiry_date as string) || '');
+        setEditNotes((cert.notes as string) || '');
     };
 
     const cancelEdit = () => {
@@ -547,14 +625,14 @@ export default function CertificateManager({
             });
             toast({ title: 'Zertifikat aktualisiert' });
             cancelEdit();
-        } catch (err) {
+        } catch (err: any) {
             toast({ variant: 'destructive', title: 'Speichern fehlgeschlagen', description: err.message });
         }
     };
 
     const isUploadAllowed = !!pendingFile && !!approvalToken && checkResult?.upload_allowed === true;
 
-    const renderRoleSelector = ({ value, onChange, disabled = false, compact = false }) => {
+    const renderRoleSelector = ({ value, onChange, disabled = false, compact = false }: RoleSelectorProps) => {
         if (requirementMode !== 'base_refresh') return null;
         const options = [
             { value: 'base', label: qualificationBaseLabel },
@@ -579,12 +657,12 @@ export default function CertificateManager({
         );
     };
 
-    const renderCertificateRow = (cert) => {
+    const renderCertificateRow = (cert: CertificateItem) => {
         const displayExpiryDate = getCertificateDisplayExpiry(cert, summary);
         const status = getExpiryStatus(displayExpiryDate);
-        const isEditing = editId === cert.id;
+        const isEditing = editId === String(cert.id);
         return (
-            <li key={cert.id} className="bg-white border rounded p-2 text-sm">
+            <li key={String(cert.id)} className="bg-white border rounded p-2 text-sm">
                 <div className="flex items-start gap-2">
                     <FileText className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
                     <div className="flex-1 min-w-0">
@@ -593,20 +671,20 @@ export default function CertificateManager({
                                 type="button"
                                 onClick={() => handleView(cert)}
                                 className="font-medium text-slate-800 truncate text-left hover:text-indigo-600"
-                                title={cert.file_name}
+                                title={cert.file_name as string}
                             >
-                                {cert.file_name}
+                                {cert.file_name as string}
                             </button>
                             {requirementMode === 'base_refresh' && (
                                 <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-300">
-                                    {getRoleLabel(cert.evidence_role, qualificationBaseLabel, qualificationRefreshLabel)}
+                                    {getRoleLabel(cert.evidence_role as string, qualificationBaseLabel, qualificationRefreshLabel)}
                                 </Badge>
                             )}
                         </div>
                         <div className="text-xs text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
-                            <span>Ausgestellt: {formatDate(cert.granted_date)}</span>
+                            <span>Ausgestellt: {formatDate(cert.granted_date as string)}</span>
                             <span>Gültig bis: {formatDate(displayExpiryDate)}</span>
-                            <span>{(cert.file_size / 1024).toFixed(0)} KB</span>
+                            <span>{((cert.file_size as number) / 1024).toFixed(0)} KB</span>
                         </div>
                         {status && (
                             <Badge
@@ -625,7 +703,7 @@ export default function CertificateManager({
                         )}
                         <AnalysisBadge cert={cert} />
                         {cert.notes && (
-                            <div className="text-xs text-slate-500 mt-1 italic">{cert.notes}</div>
+                            <div className="text-xs text-slate-500 mt-1 italic">{cert.notes as string}</div>
                         )}
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
@@ -681,7 +759,7 @@ export default function CertificateManager({
                                     <AlertDialogHeader>
                                         <AlertDialogTitle>Zertifikat löschen?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            „{cert.file_name}" wird unwiderruflich gelöscht.
+                                            „{cert.file_name as string}" wird unwiderruflich gelöscht.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
@@ -742,7 +820,7 @@ export default function CertificateManager({
         );
     };
 
-    const renderCertificateSection = (title, role, items, emptyText) => (
+    const renderCertificateSection = (title: string, role: string, items: CertificateItem[], emptyText: string) => (
         <div className="space-y-2">
             <div className="flex items-center gap-2">
                 <div className="text-xs font-semibold text-slate-600">{title}</div>

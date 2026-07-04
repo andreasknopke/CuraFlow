@@ -1,11 +1,58 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isWeekend, parseISO, isAfter, addDays } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { cn } from "@/lib/utils";
 import { isWishOnDate, hasWishRange, getWishStartDate, getWishEndDate } from '@/utils/wishRange';
 import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import type { Doctor, WishRequest, ShiftEntry } from '@/types/models';
 
-export default function WishYearView({ doctor, year, wishes, shifts, contractInfo, occupiedWishDates, onToggle, onRangeSelect, minSelectableDate, activeType, isSchoolHoliday, isPublicHoliday }) {
+interface ContractInfo {
+  contractStart?: string;
+  contractEnd?: string;
+  contractRangeLabel: string;
+  remainingLabel: string;
+  remainingTone: string;
+}
+
+interface DayStatus {
+  type: 'absence' | 'wish';
+  label: string;
+  data?: WishRequest;
+}
+
+interface WishYearViewProps {
+  doctor: Doctor;
+  year: number;
+  wishes: WishRequest[];
+  shifts: ShiftEntry[];
+  contractInfo?: ContractInfo | null;
+  occupiedWishDates?: Set<string>;
+  onToggle?: (date: Date, wish: WishRequest | null, dateKeys?: string[]) => void;
+  onRangeSelect?: (start: Date, end: Date) => void;
+  minSelectableDate?: Date | null;
+  activeType?: string;
+  isSchoolHoliday?: (date: Date) => boolean;
+  isPublicHoliday?: (date: Date) => boolean;
+}
+
+interface MonthCalendarProps {
+  month: Date;
+  getDayStatus: (date: Date) => DayStatus | null;
+  occupiedWishDates?: Set<string>;
+  onDateClick?: WishYearViewProps['onToggle'];
+  onDayMouseDown?: (date: Date, event: MouseEvent) => void;
+  onDayMouseEnter?: (date: Date) => void;
+  onDayMouseUp?: () => void;
+  dragSelectedDateKeys?: Set<string>;
+  minSelectableDate?: Date | null;
+  contractInfo?: ContractInfo | null;
+  isSchoolHoliday?: (date: Date) => boolean;
+  isPublicHoliday?: (date: Date) => boolean;
+  showOccupiedDates: boolean;
+}
+
+export default function WishYearView({ doctor, year, wishes, shifts, contractInfo, occupiedWishDates, onToggle, onRangeSelect, minSelectableDate, activeType, isSchoolHoliday, isPublicHoliday }: WishYearViewProps) {
   // Wunschmarkierung ist immer ausgeschaltet
   const showOccupiedDates = false;
   const months = eachMonthOfInterval({
@@ -13,16 +60,16 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
     end: endOfYear(new Date(year, 0, 1))
   });
 
-  const [isDragging, setIsDragging] = useState(false);
-  const [dragStartDate, setDragStartDate] = useState(null);
-  const [dragCurrentDate, setDragCurrentDate] = useState(null);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [dragStartDate, setDragStartDate] = useState<Date | null>(null);
+  const [dragCurrentDate, setDragCurrentDate] = useState<Date | null>(null);
 
   const dragSelectedDateKeys = useMemo(() => {
-    if (!dragStartDate || !dragCurrentDate) return new Set();
+    if (!dragStartDate || !dragCurrentDate) return new Set<string>();
 
     let start = parseISO(format(dragStartDate, 'yyyy-MM-dd'));
     let end = parseISO(format(dragCurrentDate, 'yyyy-MM-dd'));
-    if (!start || !end) return new Set();
+    if (!start || !end) return new Set<string>();
 
     if (isAfter(start, end)) {
       const temp = start;
@@ -30,7 +77,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
       end = temp;
     }
 
-    const keys = new Set();
+    const keys = new Set<string>();
     let cursor = start;
     while (!isAfter(cursor, end)) {
       keys.add(format(cursor, 'yyyy-MM-dd'));
@@ -68,7 +115,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
     return () => window.removeEventListener('mouseup', handleWindowMouseUp);
   });
 
-  const handleDayMouseDown = (date, event) => {
+  const handleDayMouseDown = (date: Date, event: MouseEvent) => {
     if (event.button !== 0) return;
     event.preventDefault();
     setIsDragging(true);
@@ -76,7 +123,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
     setDragCurrentDate(date);
   };
 
-  const handleDayMouseEnter = (date) => {
+  const handleDayMouseEnter = (date: Date) => {
     if (!isDragging) return;
     setDragCurrentDate(date);
   };
@@ -85,7 +132,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
     finishDragSelection();
   };
 
-  const getDayStatus = (date) => {
+  const getDayStatus = (date: Date): DayStatus | null => {
     const dateStr = format(date, 'yyyy-MM-dd');
     
     // 1. Check Absences (ShiftEntry)
@@ -144,7 +191,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
   );
 }
 
-function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, minSelectableDate, contractInfo, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }) {
+function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, onDayMouseDown, onDayMouseEnter, onDayMouseUp, dragSelectedDateKeys, minSelectableDate, contractInfo, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, showOccupiedDates }: MonthCalendarProps) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -174,7 +221,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           let colorClass = "";
           let content = format(date, 'd');
           let title = isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '';
-          let style = {};
+          let style: React.CSSProperties = {};
 
           // Green border if ANYONE has a wish here (only if enabled)
           const dateStr = format(date, 'yyyy-MM-dd');
@@ -193,6 +240,9 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           // Let's modify getDayStatus in parent or fetch it here if passed.
           // Actually, status currently comes from parent getDayStatus. 
           // We need to update getDayStatus signature in parent WishList.js (wait, it's in WishYearView.js)
+          
+          // Wait, `getDayStatus` is defined inside `WishYearView` component in the same file.
+          // I need to update `getDayStatus` in `WishYearView` to return the full wish object.
           
           // Wait, `getDayStatus` is defined inside `WishYearView` component in the same file.
           // I need to update `getDayStatus` in `WishYearView` to return the full wish object.
@@ -265,7 +315,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
               }
           }
 
-          const finalStyle = {
+          const finalStyle: React.CSSProperties = {
               ...style,
               ...(status ? {} : (isOccupied ? { boxShadow: "inset 0 0 0 2px #34d399" } : {}))
           };

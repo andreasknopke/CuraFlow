@@ -4,11 +4,11 @@ import { useAuth } from './AuthContext';
 import { base44 } from "@/api/client";
 import { pagesConfig } from '@/pages.config';
 
-export default function NavigationTracker() {
+export default function NavigationTracker(): null {
     const location = useLocation();
     const { isAuthenticated } = useAuth();
     const { Pages, mainPage } = pagesConfig;
-    const mainPageKey = mainPage ?? Object.keys(Pages)[0];
+    const mainPageKey: string = mainPage ?? Object.keys(Pages)[0];
 
     // Post navigation changes to parent window
     useEffect(() => {
@@ -22,20 +22,20 @@ export default function NavigationTracker() {
     useEffect(() => {
         // Extract page name from pathname
         const pathname = location.pathname;
-        let pageName;
-        
+        let pageName: string | null;
+
         if (pathname === '/' || pathname === '') {
             pageName = mainPageKey;
         } else {
             // Remove leading slash and get the first segment
             const pathSegment = pathname.replace(/^\//, '').split('/')[0];
-            
+
             // Try case-insensitive lookup in Pages config
             const pageKeys = Object.keys(Pages);
             const matchedKey = pageKeys.find(
                 key => key.toLowerCase() === pathSegment.toLowerCase()
             );
-            
+
             pageName = matchedKey || null;
         }
 

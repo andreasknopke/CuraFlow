@@ -5,17 +5,34 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, Calendar, Trash2, Info } from 'lucide-react';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
+import type { ShiftEntry, Workplace } from '@/types';
+
+interface Conflict {
+  date: string;
+  existingShift: ShiftEntry;
+  newPosition: string;
+  conflictType: string;
+}
+
+interface ConflictDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  conflicts: Conflict[];
+  doctorName: string;
+  onConfirm: (result: { proceed: boolean; keepOptionalServices: boolean; deleteIds: string[]; overwriteIds: string[] }) => void;
+  onCancel?: () => void;
+}
 
 // Defines which positions can optionally co-exist
 // Dienstreise is compatible with all service positions (category-based)
 // Legacy fallback: hardcoded position names (only used if workplace data not available)
-const OPTIONAL_COEXIST_LEGACY = {
+const OPTIONAL_COEXIST_LEGACY: Record<string, string[]> = {
     "Dienstreise": ["Dienst Vordergrund", "Dienst Hintergrund", "Spätdienst"],
 };
 
 // Categorizes conflict types
 // Pass workplaces array optionally for dynamic lookup
-export const categorizeConflict = (newPosition, existingPosition, workplaces = []) => {
+export const categorizeConflict = (newPosition: string, existingPosition: string, workplaces: Workplace[] = []): string => {
     // Dynamic: Dienstreise can co-exist with any service (category='Dienste')
     if (newPosition === 'Dienstreise' && workplaces.length > 0) {
         const existingWp = workplaces.find(w => w.name === existingPosition);
@@ -49,11 +66,11 @@ export const categorizeConflict = (newPosition, existingPosition, workplaces = [
 export default function ConflictDialog({ 
     open, 
     onOpenChange, 
-    conflicts, // Array of { date, existingShift, newPosition, conflictType }
+    conflicts,
     doctorName,
-    onConfirm, // Called with { proceed: boolean, keepOptional: boolean, selectedConflicts: [] }
+    onConfirm,
     onCancel
-}) {
+}: ConflictDialogProps) {
     const [keepOptionalServices, setKeepOptionalServices] = useState(true);
     
     const optionalConflicts = conflicts.filter(c => c.conflictType === 'optional');
@@ -83,8 +100,8 @@ export default function ConflictDialog({
     };
     
     // Group conflicts by type for display
-    const groupByPosition = (arr) => {
-        const groups = {};
+    const groupByPosition = (arr: Conflict[]): Record<string, Conflict[]> => {
+        const groups: Record<string, Conflict[]> = {};
         arr.forEach(c => {
             const pos = c.existingShift.position;
             if (!groups[pos]) groups[pos] = [];
@@ -93,7 +110,7 @@ export default function ConflictDialog({
         return groups;
     };
     
-    const formatDateRange = (dates) => {
+    const formatDateRange = (dates: Conflict[]): string => {
         if (dates.length === 0) return '';
         if (dates.length === 1) return format(new Date(dates[0].date), 'dd.MM.yyyy', { locale: de });
         if (dates.length <= 3) return dates.map(d => format(new Date(d.date), 'dd.MM.', { locale: de })).join(', ');

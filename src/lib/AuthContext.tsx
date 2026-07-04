@@ -1,17 +1,38 @@
-import { createContext, useState, useContext, useEffect } from 'react';
+import { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
 import { base44 } from "@/api/client";
 import { appParams } from '@/lib/app-params';
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
 
-const AuthContext = createContext();
+interface AuthError {
+  type: string;
+  message: string;
+}
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+interface AuthContextType {
+  user: any;
+  isAuthenticated: boolean;
+  isLoadingAuth: boolean;
+  isLoadingPublicSettings: boolean;
+  authError: AuthError | null;
+  appPublicSettings: any;
+  logout: (shouldRedirect?: boolean) => void;
+  navigateToLogin: () => void;
+  checkAppState: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+interface AuthProviderProps {
+  children: ReactNode;
+}
+
+export const AuthProvider = ({ children }: AuthProviderProps) => {
+  const [user, setUser] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
-  const [authError, setAuthError] = useState(null);
-  const [appPublicSettings, setAppPublicSettings] = useState(null); // Contains only { id, public_settings }
+  const [authError, setAuthError] = useState<AuthError | null>(null);
+  const [appPublicSettings, setAppPublicSettings] = useState<any>(null); // Contains only { id, public_settings }
 
   useEffect(() => {
     checkAppState();
@@ -21,7 +42,7 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingPublicSettings(true);
       setAuthError(null);
-      
+
       // First, check app public settings (with token if available)
       // This will tell us if auth is required, user not registered, etc.
       const appClient = createAxiosClient({
@@ -32,11 +53,11 @@ export const AuthProvider = ({ children }) => {
         token: appParams.token, // Include token if available
         interceptResponses: true
       });
-      
+
       try {
         const publicSettings = await appClient.get(`/prod/public-settings/by-id/${appParams.appId}`);
         setAppPublicSettings(publicSettings);
-        
+
         // If we got the app public settings successfully, check if user is authenticated
         if (appParams.token) {
           await checkUserAuth();
@@ -45,9 +66,9 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(false);
         }
         setIsLoadingPublicSettings(false);
-      } catch (appError) {
+      } catch (appError: any) {
         console.error('App state check failed:', appError);
-        
+
         // Handle app-level errors
         if (appError.status === 403 && appError.data?.extra_data?.reason) {
           const reason = appError.data.extra_data.reason;
@@ -76,7 +97,7 @@ export const AuthProvider = ({ children }) => {
         setIsLoadingPublicSettings(false);
         setIsLoadingAuth(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Unexpected error:', error);
       setAuthError({
         type: 'unknown',
@@ -95,11 +116,11 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('User auth check failed:', error);
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
-      
+
       // If user auth fails, it might be an expired token
       if (error.status === 401 || error.status === 403) {
         setAuthError({
@@ -110,10 +131,10 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = (shouldRedirect = true) => {
+  const logout = (shouldRedirect: boolean = true) => {
     setUser(null);
     setIsAuthenticated(false);
-    
+
     if (shouldRedirect) {
       // Use the SDK's logout method which handles token cleanup and redirect
       base44.auth.logout(window.location.href);
@@ -129,9 +150,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated,
       isLoadingAuth,
       isLoadingPublicSettings,
       authError,
@@ -145,7 +166,7 @@ export const AuthProvider = ({ children }) => {
   );
 };
 
-export const useAuth = () => {
+export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an AuthProvider');

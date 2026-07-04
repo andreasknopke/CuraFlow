@@ -12,16 +12,17 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
 import { getDoctorEffectiveFte, getMonthlyEffectiveFte, getStatusCodeRatioForMonth } from "@/components/schedule/staffingUtils";
+import type { Doctor, StaffingPlanEntry, StaffingPlanNote } from '@/types';
 
 const FTE_CODES = ["EZ", "KO", "MS", "BV", "OU"];
-const FTE_CODE_LABELS = {
+const FTE_CODE_LABELS: Record<string, string> = {
     "EZ": "Elternzeit",
     "MS": "Mutterschutz",
     "KO": "Krank ohne Entgelt",
     "BV": "Beschäftigungsverbot",
     "OU": "Andere Organisationseinheit"
 };
-const FTE_CODE_COLORS = {
+const FTE_CODE_COLORS: Record<string, { bg: string; text: string; color: string }> = {
     "EZ": { bg: "bg-orange-50", text: "text-orange-700", color: "rgb(255 247 237)" },
     "MS": { bg: "bg-pink-50", text: "text-pink-700", color: "rgb(253 242 248)" },
     "KO": { bg: "bg-red-50", text: "text-red-700", color: "rgb(254 242 242)" },
@@ -29,7 +30,33 @@ const FTE_CODE_COLORS = {
     "OU": { bg: "bg-blue-50", text: "text-blue-700", color: "rgb(239 246 255)" }
 };
 
-function getStatusColor(value, ratio) {
+interface StaffingPlanInputProps {
+    value: string;
+    onChange: (value: string) => void;
+    disabled?: boolean;
+    className?: string;
+}
+
+interface StaffingPlanNoteInputProps {
+    value: string;
+    onChange: (value: string) => void;
+    disabled?: boolean;
+}
+
+interface EditDialogState {
+    open: boolean;
+    doctorId: string | null;
+    doctorName: string;
+    month: number | null;
+    currentValue: string;
+}
+
+interface StaffingPlanTableProps {
+    doctors: Doctor[];
+    isReadOnly?: boolean;
+}
+
+function getStatusColor(value: string, ratio: number): string {
     const base = FTE_CODE_COLORS[value]?.color || "rgb(241 245 249)";
     const alpha = Math.max(0.2, ratio);
     return base.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
@@ -37,7 +64,7 @@ function getStatusColor(value, ratio) {
 
 // --- Sub-Components ---
 
-const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className }) => {
+const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className }: StaffingPlanInputProps) => {
     // We manage local state for responsiveness
     const [value, setValue] = useState(initialValue);
 
@@ -68,9 +95,9 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
         }
     };
 
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            e.target.blur();
+            e.currentTarget.blur();
         }
     };
 
@@ -86,7 +113,7 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
     );
 };
 
-const StaffingPlanNoteInput = ({ value: initialValue, onChange, disabled }) => {
+const StaffingPlanNoteInput = ({ value: initialValue, onChange, disabled }: StaffingPlanNoteInputProps) => {
     const [value, setValue] = useState(initialValue);
 
     useEffect(() => {
@@ -113,16 +140,16 @@ const StaffingPlanNoteInput = ({ value: initialValue, onChange, disabled }) => {
 
 // --- Main Component ---
 
-export default function StaffingPlanTable({ doctors, isReadOnly }) {
+export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanTableProps) {
     const queryClient = useQueryClient();
     const [year, setYear] = useState(new Date().getFullYear());
 
-    const getDoctorDisplayName = (doctor) => {
+    const getDoctorDisplayName = (doctor: Doctor) => {
         const name = doctor?.name;
         return typeof name === 'string' && name.trim() ? name : 'Unbenannt';
     };
 
-    const getDoctorRoleBadge = (doctor) => {
+    const getDoctorRoleBadge = (doctor: Doctor) => {
         const role = doctor?.role;
         if (typeof role !== 'string' || !role.trim()) {
             return '--';
@@ -132,17 +159,17 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     };
     
     // Dialog state for cell editing
-    const [editDialog, setEditDialog] = useState({
+    const [editDialog, setEditDialog] = useState<EditDialogState>({
         open: false,
         doctorId: null,
         doctorName: "",
         month: null,
         currentValue: ""
     });
-    const [dialogInputType, setDialogInputType] = useState("number"); // "number" or "code"
+    const [dialogInputType, setDialogInputType] = useState<string>("number"); // "number" or "code"
     const [dialogValue, setDialogValue] = useState("");
     const [dialogCode, setDialogCode] = useState("EZ");
-    const [dialogApplyMode, setDialogApplyMode] = useState("single"); // "single", "following" or "range"
+    const [dialogApplyMode, setDialogApplyMode] = useState<string>("single"); // "single", "following" or "range"
     const [dialogStartDate, setDialogStartDate] = useState("");
     const [dialogEndDate, setDialogEndDate] = useState("");
 
@@ -167,7 +194,14 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     // --- Mutations ---
     const updateEntryMutation = useMutation({
-        mutationFn: async ({ doctor_id, month, value, oldValue, statusStartDay, statusEndDay }) => {
+        mutationFn: async ({ doctor_id, month, value, oldValue, statusStartDay, statusEndDay }: {
+            doctor_id: string;
+            month: number;
+            value: string;
+            oldValue?: string;
+            statusStartDay?: number;
+            statusEndDay?: number;
+        }) => {
             return api.upsertStaffing({
                 doctor_id,
                 year,
@@ -179,7 +213,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             });
         },
         onSuccess: () => queryClient.invalidateQueries(["staffingPlanEntries", year]),
-        onError: (err) => {
+        onError: (err: any) => {
             alert("Fehler beim Speichern: " + (err.response?.data?.message || err.message));
             // Force refresh to show current data
             queryClient.invalidateQueries(["staffingPlanEntries", year]);
@@ -187,7 +221,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     });
 
     const updateTargetMutation = useMutation({
-        mutationFn: async (value) => {
+        mutationFn: async (value: string) => {
             const key = `staffing_target_${year}`;
             const existing = systemSettings.find(s => s.key === key);
             if (existing) {
@@ -200,7 +234,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
     });
 
     const saveNoteMutation = useMutation({
-        mutationFn: async ({ doctor_id, year, note }) => {
+        mutationFn: async ({ doctor_id, year, note }: {
+            doctor_id: string;
+            year: number;
+            note: string;
+        }) => {
             const existing = notes.find(n => n.doctor_id === doctor_id && n.year === year);
             if (existing) {
                 if (!note || !note.trim()) {
@@ -213,17 +251,17 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             return db.StaffingPlanNote.create({ doctor_id, year, note });
         },
         onSuccess: () => queryClient.invalidateQueries(["staffingPlanNotes", year]),
-        onError: (err) => {
+        onError: (err: any) => {
             console.error("Fehler beim Speichern der Notiz:", err);
         },
     });
 
     // --- Helpers ---
-    const formatNumber = (num) => {
+    const formatNumber = (num: number) => {
         return num.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     };
 
-    const getEntryValue = (doctorId, month) => {
+    const getEntryValue = (doctorId: string, month: number) => {
         const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
         if (entry) {
             // Ensure DB values are formatted too if they are simple numbers like "1"
@@ -260,7 +298,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         return formatNumber(defaultFte);
     };
 
-    const parseFTE = (doc, month) => {
+    const parseFTE = (doc: Doctor, month: number) => {
         if (doc && month !== undefined) {
             return getMonthlyEffectiveFte(doc, year, month, entries);
         }
@@ -284,19 +322,19 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
 
     const yearlyAverageTotal = monthlyTotals.reduce((a, b) => a + b, 0) / 12;
 
-    const handleValueChange = (doctorId, month, newValue, statusStartDay, statusEndDay) => {
+    const handleValueChange = (doctorId: string, month: number, newValue: string, statusStartDay?: number, statusEndDay?: number) => {
         // Get current known value for optimistic check
         const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
         const oldValue = entry ? entry.value : undefined; // undefined for new entries implies "expecting nothing"
 
-        const payload = { doctor_id: doctorId, month, value: newValue, oldValue };
+        const payload: any = { doctor_id: doctorId, month, value: newValue, oldValue };
         if (statusStartDay !== undefined) payload.statusStartDay = statusStartDay;
         if (statusEndDay !== undefined) payload.statusEndDay = statusEndDay;
 
         updateEntryMutation.mutate(payload);
     };
 
-    const openEditDialog = (doctorId, doctorName, month, currentValue) => {
+    const openEditDialog = (doctorId: string, doctorName: string, month: number, currentValue: string) => {
         if (isReadOnly) return;
 
         // Determine if current value is a code or number
@@ -314,8 +352,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         setDialogValue(isCode ? "" : currentValue);
         setDialogCode(isCode ? currentValue : "EZ");
         setDialogApplyMode("single");
-        const startDay = entry?.status_start_day || 1;
-        const endDay = entry?.status_end_day || new Date(year, month, 0).getDate();
+        const startDay = (entry as any)?.status_start_day || 1;
+        const endDay = (entry as any)?.status_end_day || new Date(year, month, 0).getDate();
         setDialogStartDate(`${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`);
         setDialogEndDate(`${year}-12-31`);
     };
@@ -335,10 +373,10 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             }
         }
 
-        let startMonth = month;
-        let endMonth = month;
-        let rangeStartDate = null;
-        let rangeEndDate = null;
+        let startMonth = month!;
+        let endMonth = month!;
+        let rangeStartDate: Date | null = null;
+        let rangeEndDate: Date | null = null;
 
         if (dialogApplyMode === "range") {
             rangeStartDate = new Date(dialogStartDate);
@@ -355,18 +393,18 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
             let statusEndDay = undefined;
 
             if (dialogApplyMode === "range") {
-                statusStartDay = m === startMonth ? rangeStartDate.getDate() : 1;
-                statusEndDay = m === endMonth ? rangeEndDate.getDate() : daysInMonth;
+                statusStartDay = m === startMonth ? rangeStartDate!.getDate() : 1;
+                statusEndDay = m === endMonth ? rangeEndDate!.getDate() : daysInMonth;
             }
 
-            handleValueChange(doctorId, m, formattedValue, statusStartDay, statusEndDay);
+            handleValueChange(doctorId!, m, formattedValue, statusStartDay, statusEndDay);
         }
 
         setEditDialog({ ...editDialog, open: false });
     };
 
     // "Ges." column per doctor
-    const getDoctorAverage = (doctorId) => {
+    const getDoctorAverage = (doctorId: string) => {
         const doc = visibleDoctors.find(d => d.id === doctorId);
         if (!doc) return 0;
         let sum = 0;
@@ -376,12 +414,12 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
         return sum / 12;
     };
 
-    const getNoteForDoctor = (doctorId) => {
+    const getNoteForDoctor = (doctorId: string) => {
         const note = notes.find(n => n.doctor_id === doctorId && n.year === year);
         return note ? note.note || "" : "";
     };
 
-    const handleNoteSave = (doctorId, value) => {
+    const handleNoteSave = (doctorId: string, value: string) => {
         saveNoteMutation.mutate({ doctor_id: doctorId, year, note: value });
     };
 
@@ -455,7 +493,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }) {
                                             }
 
                                             // Determine text color for numbers
-                                            const numVal = parseFTE(val);
+                                            const numVal = parseFTE(doc, month);
                                             if (!isNaN(numVal) && numVal < 1 && numVal > 0) { textColor = "text-slate-500"; }
                                             if (numVal >= 1) { textColor = "text-slate-900 font-medium"; }
 

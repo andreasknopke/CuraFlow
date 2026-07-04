@@ -13,6 +13,80 @@ import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { computeVacationBalance } from './vacationBalance';
+import type { Doctor, ShiftEntry, ColorSetting } from '@/types';
+
+interface ContractInfo {
+  contractStart?: string;
+  contractEnd?: string;
+}
+
+interface VacationBalance {
+  total: number;
+  taken: number;
+  planned: number;
+  remaining: number;
+  overshoot: boolean;
+}
+
+interface ShiftEntitlement {
+  employee_id?: string | null;
+  shift_vacation_days?: number | null;
+  carried_over?: boolean;
+  carried_over_from_year?: number;
+  expires_at?: string | null;
+}
+
+interface DoctorYearViewProps {
+  doctor: Doctor & { vacation_days?: number };
+  year: number;
+  shifts: ShiftEntry[];
+  onToggle: (date: Date, status: string | null, e: React.MouseEvent) => void;
+  onRangeSelect?: (start: Date, end: Date) => void;
+  activeType?: string;
+  rangeStart?: Date | null;
+  contractInfo?: ContractInfo;
+  customColors?: Record<string, React.CSSProperties | string>;
+  isSchoolHoliday?: (date: Date) => boolean;
+  isPublicHoliday?: (date: Date) => boolean;
+  dayTestIdPrefix?: string;
+}
+
+interface MonthCalendarProps {
+  month: Date;
+  getShiftStatus: (date: Date) => string | null;
+  onDateClick: (date: Date, e: React.MouseEvent) => void;
+  onMouseDown: (date: Date) => void;
+  onMouseEnter: (date: Date) => void;
+  dragStart: Date | null;
+  dragCurrent: Date | null;
+  isDragging: boolean;
+  activeType?: string;
+  rangeStart?: Date | null;
+  contractInfo?: ContractInfo;
+  isDateDisabled: (date: Date) => boolean;
+  customColors?: Record<string, React.CSSProperties | string>;
+  getCustomColor: (position: string) => React.CSSProperties | null;
+  isSchoolHoliday: (date: Date) => boolean;
+  isPublicHoliday: (date: Date) => boolean;
+  dayTestIdPrefix?: string;
+}
+
+interface VacationBalanceBoxProps {
+  balance: VacationBalance;
+}
+
+interface ShiftVacationBoxProps {
+  balance: VacationBalance;
+  entitlement: ShiftEntitlement | null;
+  draft: string;
+  onDraftChange: (value: string) => void;
+  onSave: () => void;
+  isSaving: boolean;
+  canCarryOver: boolean;
+  isCarrying: boolean;
+  onCarryOver: () => void;
+  year: number;
+}
 
 export default function DoctorYearView({
   doctor,
@@ -27,9 +101,9 @@ export default function DoctorYearView({
   isSchoolHoliday,
   isPublicHoliday,
   dayTestIdPrefix = 'year-day',
-}) {
-  const [dragStart, setDragStart] = useState(null);
-  const [dragCurrent, setDragCurrent] = useState(null);
+}: DoctorYearViewProps) {
+  const [dragStart, setDragStart] = useState<Date | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
@@ -54,20 +128,20 @@ export default function DoctorYearView({
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, [isDragging, dragStart, dragCurrent, onRangeSelect]);
 
-  const handleMouseDown = (date) => {
+  const handleMouseDown = (date: Date) => {
       // Only left click
       setDragStart(date);
       setDragCurrent(date);
       setIsDragging(true);
   };
 
-  const handleMouseEnter = (date) => {
+  const handleMouseEnter = (date: Date) => {
       if (isDragging) {
           setDragCurrent(date);
       }
   };
 
-  const { data: colorSettings = [] } = useQuery({
+  const { data: colorSettings = [] } = useQuery<ColorSetting[]>({
     queryKey: ['colorSettings'],
     queryFn: () => db.ColorSetting.list(),
     staleTime: 1000 * 60 * 10, // 10 minutes
@@ -76,7 +150,7 @@ export default function DoctorYearView({
     refetchOnWindowFocus: false,
   });
 
-  const getCustomColor = (position) => {
+  const getCustomColor = (position: string): React.CSSProperties | null => {
       const setting = colorSettings.find(s => s.name === position && s.category === 'position');
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       if (DEFAULT_COLORS.positions[position]) return { backgroundColor: DEFAULT_COLORS.positions[position].bg, color: DEFAULT_COLORS.positions[position].text };
@@ -96,7 +170,7 @@ export default function DoctorYearView({
   // Kalender/Dienstplan-Emails gehen an die Kalender-Adresse
   const doctorEmail = doctor?.google_email || doctor?.email;
 
-  const generateAbsenceICS = (absences) => {
+  const generateAbsenceICS = (absences: ShiftEntry[]): string => {
       const events = absences.map(shift => {
           const d = new Date(shift.date);
           const dateStr = d.toISOString().split('T')[0].replaceAll('-', '');
@@ -158,9 +232,9 @@ export default function DoctorYearView({
 
           alert('E-Mail erfolgreich gesendet!');
           setEmailDialogOpen(false);
-      } catch (error) {
+      } catch (error: unknown) {
           console.error('Failed to send email:', error);
-          alert('Fehler beim Senden der E-Mail: ' + error.message);
+          alert('Fehler beim Senden der E-Mail: ' + (error instanceof Error ? error.message : String(error)));
       } finally {
           setIsSendingEmail(false);
       }
@@ -180,7 +254,11 @@ export default function DoctorYearView({
   // We only fire the request when we have a doctor.id (i.e. the year
   // view is showing a specific employee) and skip silently on error so
   // the box degrades gracefully for unlinked doctors.
-  const { data: centralAbsencePayload } = useQuery({
+  const { data: centralAbsencePayload } = useQuery<{
+    absences?: ShiftEntry[];
+    employee_id?: string | null;
+    vacation_days_annual?: number | null;
+  }>({
     queryKey: ['central-absences', year, doctor?.id],
     queryFn: async () => {
       if (!doctor?.id) return { absences: [] };
@@ -199,7 +277,7 @@ export default function DoctorYearView({
   // it once per day to build the set, then hand it to the pure balance
   // helper. Memoised by year + holiday-impl so toggling years refetches.
   const publicHolidayDates = useMemo(() => {
-    const set = new Set();
+    const set = new Set<string>();
     const start = startOfYear(new Date(year, 0, 1));
     const end = endOfYear(new Date(year, 0, 1));
     for (const d of eachDayOfInterval({ start, end })) {
@@ -217,7 +295,7 @@ export default function DoctorYearView({
   //   2. The central absences fetched above, which are authoritative for
   //      doctors that have been linked + migrated.
   // Dedup is by `date` — a date that exists in both sources counts once.
-  const vacationBalance = useMemo(() => {
+  const vacationBalance = useMemo((): VacationBalance | null => {
     if (!doctor) return null;
 
     const localShifts = (shifts || []).filter(
@@ -250,7 +328,7 @@ export default function DoctorYearView({
   // Only available for doctors that are linked to a central Employee,
   // because the entitlement is a property of the central record, not
   // the tenant-local Doctor row.
-  const { data: shiftEntitlement } = useQuery({
+  const { data: shiftEntitlement } = useQuery<ShiftEntitlement | null>({
     queryKey: ['shift-vacation-entitlement', year, doctor?.id],
     queryFn: async () => {
       if (!doctor?.id) return null;
@@ -270,7 +348,7 @@ export default function DoctorYearView({
 
   // Live shift-vacation balance. Same merge logic as `vacationBalance`
   // but scoped to position 'Schichturlaub' and the year-specific entitlement.
-  const shiftVacationBalance = useMemo(() => {
+  const shiftVacationBalance = useMemo((): VacationBalance | null => {
     if (!doctor) return null;
     const localShifts = (shifts || []).filter(
       (s) => s.doctor_id === doctor.id || !s.doctor_id
@@ -298,7 +376,7 @@ export default function DoctorYearView({
   const [carryDialogOpen, setCarryDialogOpen] = useState(false);
   const [hasCarriedThisYear, setHasCarriedThisYear] = useState(false);
   const entitlementKey = ['shift-vacation-entitlement', year, doctor?.id];
-  const nextYearKey = (nextYear) => ['shift-vacation-entitlement', nextYear, doctor?.id];
+  const nextYearKey = (nextYear: number) => ['shift-vacation-entitlement', nextYear, doctor?.id];
 
   useEffect(() => {
     // Reset the draft when the loaded value changes (year switch, refetch).
@@ -310,7 +388,7 @@ export default function DoctorYearView({
   }, [shiftEntitlement]);
 
   const saveShiftVacationMutation = useMutation({
-    mutationFn: (shiftVacationDays) =>
+    mutationFn: (shiftVacationDays: number) =>
       api.request('/api/vacation/shift-entitlement', {
         method: 'PUT',
         body: JSON.stringify({
@@ -323,7 +401,7 @@ export default function DoctorYearView({
       queryClient.invalidateQueries({ queryKey: entitlementKey });
       toast({ title: 'Gespeichert', description: 'Schichturlaub aktualisiert.' });
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       toast({
         title: 'Fehler',
         description: err.message || 'Speichern fehlgeschlagen.',
@@ -342,7 +420,7 @@ export default function DoctorYearView({
           doctorId: doctor?.id,
         }),
       }),
-    onSuccess: (result) => {
+    onSuccess: (result: { carried_days: number }) => {
       queryClient.invalidateQueries({ queryKey: entitlementKey });
       queryClient.invalidateQueries({ queryKey: nextYearKey(year + 1) });
       setCarryDialogOpen(false);
@@ -352,7 +430,7 @@ export default function DoctorYearView({
         description: `${result.carried_days} Tag(e) Schichturlaub ins Jahr ${year + 1} übertragen.`,
       });
     },
-    onError: (err) => {
+    onError: (err: Error) => {
       toast({
         title: 'Übertrag nicht möglich',
         description: err.message || 'Der Übertrag ist fehlgeschlagen.',
@@ -376,13 +454,13 @@ export default function DoctorYearView({
     shiftVacationRemainder > 0 &&
     !carryOverMutation.isPending;
 
-  const getShiftStatus = (date) => {
+  const getShiftStatus = (date: Date): string | null => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const shift = shifts.find(s => s.date === dateStr);
     return shift ? shift.position : null;
   };
 
-    const isDateDisabled = (date) => !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+    const isDateDisabled = (date: Date): boolean => !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
@@ -417,7 +495,7 @@ export default function DoctorYearView({
       {shiftVacationBalance && (
         <ShiftVacationBox
           balance={shiftVacationBalance}
-          entitlement={shiftEntitlement}
+          entitlement={shiftEntitlement ?? null}
           draft={shiftVacationDraft}
           onDraftChange={setShiftVacationDraft}
           onSave={() => {
@@ -563,7 +641,7 @@ export default function DoctorYearView({
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix }) {
+function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix }: MonthCalendarProps) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -601,7 +679,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
 
           // Color mapping
           let colorClass = "";
-          let style = {};
+          let style: React.CSSProperties = {};
 
           const dynamicColor = status ? getCustomColor(status) : null;
 
@@ -613,7 +691,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
               colorClass = "text-slate-300 cursor-not-allowed";
           } else if (customColors && customColors[status]) {
               const colorVal = customColors[status];
-              if (typeof colorVal === 'object' && colorVal.backgroundColor) {
+              if (typeof colorVal === 'object' && colorVal !== null && 'backgroundColor' in colorVal) {
                   // Inline style object (new format from Training & Vacation)
                   style = colorVal;
                   colorClass = "hover:opacity-90 font-medium";
@@ -694,8 +772,8 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
  * banner + AlertTriangle so planers immediately see when a Mitarbeiter
  * has been overbooked.
  */
-function VacationBalanceBox({ balance }) {
-  const colorMap = {
+function VacationBalanceBox({ balance }: VacationBalanceBoxProps) {
+  const colorMap: Record<string, string> = {
     slate: 'text-slate-900',
     blue: 'text-blue-700',
     emerald: 'text-emerald-700',
@@ -787,7 +865,7 @@ function ShiftVacationBox({
   isCarrying,
   onCarryOver,
   year,
-}) {
+}: ShiftVacationBoxProps) {
   const isLinked = Boolean(entitlement?.employee_id);
 
   const cards = [

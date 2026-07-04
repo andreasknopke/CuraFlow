@@ -1,4 +1,24 @@
-export const THEMES = [
+interface Theme {
+  id: string;
+  name: string;
+  primary: string;
+  gray: string;
+}
+
+interface ColorShade {
+  50: string;
+  100: string;
+  200: string;
+  300: string;
+  400: string;
+  500: string;
+  600: string;
+  700: string;
+  800: string;
+  900: string;
+}
+
+export const THEMES: Theme[] = [
     { id: 'default', name: 'Standard (Indigo)', primary: 'indigo', gray: 'slate' },
     { id: 'ocean', name: 'Ozean (Blau)', primary: 'blue', gray: 'slate' },
     { id: 'forest', name: 'Wald (Smaragd)', primary: 'emerald', gray: 'stone' },
@@ -13,7 +33,7 @@ export const THEMES = [
 
 // Mapping of Tailwind colors to hex values for overrides
 // We focus on the shades used most often: 50, 100, 200, 300, 400, 500, 600, 700, 800, 900
-export const COLOR_PALETTES = {
+export const COLOR_PALETTES: Record<string, ColorShade> = {
     indigo: {
         50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3', 900: '#312e81'
     },
@@ -52,7 +72,7 @@ export const COLOR_PALETTES = {
     }
 };
 
-export const generateThemeCss = (themeId) => {
+export const generateThemeCss = (themeId: string): string => {
     const theme = THEMES.find(t => t.id === themeId) || THEMES[0];
     if (theme.id === 'default') return ''; // No override needed
 
@@ -60,7 +80,7 @@ export const generateThemeCss = (themeId) => {
     const grayPalette = COLOR_PALETTES[theme.gray];
 
     let css = `/* Theme: ${theme.name} */\n`;
-    
+
     // Override Indigo (Primary)
     if (primaryPalette) {
         Object.keys(primaryPalette).forEach(shade => {

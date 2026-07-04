@@ -21,6 +21,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import type { ShiftEntry } from '@/types';
+
+interface AbsenceType {
+  id: string;
+  bgColor: string;
+  textColor: string;
+  label: string;
+}
+
+interface WeekdayRecurrenceDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  absenceTypes: AbsenceType[];
+  activeType: string;
+  selectedYear: number;
+  selectedDoctorId: string;
+  onApply: (affectedDates: string[], existingShifts: ShiftEntry[]) => void;
+}
 
 const WEEKDAYS = [
   { index: 1, short: 'Mo', long: 'Montag' },
@@ -32,7 +50,7 @@ const WEEKDAYS = [
   { index: 0, short: 'So', long: 'Sonntag' },
 ];
 
-function getJSWeekday(date) {
+function getJSWeekday(date: Date): number {
   return getDay(date);
 }
 
@@ -44,8 +62,8 @@ export default function WeekdayRecurrenceDialog({
   selectedYear,
   selectedDoctorId,
   onApply,
-}) {
-  const [selectedWeekdays, setSelectedWeekdays] = useState([]);
+}: WeekdayRecurrenceDialogProps) {
+  const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([]);
   const [rangeStart, setRangeStart] = useState(`${selectedYear}-01-01`);
   const [rangeEnd, setRangeEnd] = useState(`${selectedYear}-12-31`);
 
@@ -54,7 +72,7 @@ export default function WeekdayRecurrenceDialog({
   const isRangeValid = isValid(parsedStart) && isValid(parsedEnd) && !isAfter(parsedStart, parsedEnd);
 
   // Fetch existing shifts for the full range
-  const { data: existingShifts = [] } = useQuery({
+  const { data: existingShifts = [] } = useQuery<ShiftEntry[]>({
     queryKey: ['shifts', 'recurrence', rangeStart, rangeEnd, selectedDoctorId],
     queryFn: () =>
       db.ShiftEntry.filter({
@@ -66,7 +84,7 @@ export default function WeekdayRecurrenceDialog({
   });
 
   // Reset state when dialog opens
-  const handleOpenChange = (next) => {
+  const handleOpenChange = (next: boolean) => {
     if (next) {
       setSelectedWeekdays([]);
       setRangeStart(`${selectedYear}-01-01`);
@@ -75,7 +93,7 @@ export default function WeekdayRecurrenceDialog({
     onOpenChange(next);
   };
 
-  const toggleWeekday = (index) => {
+  const toggleWeekday = (index: number) => {
     setSelectedWeekdays((prev) =>
       prev.includes(index)
         ? prev.filter((d) => d !== index)
@@ -278,4 +296,3 @@ export default function WeekdayRecurrenceDialog({
     </Dialog>
   );
 }
-

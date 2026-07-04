@@ -12,6 +12,41 @@ import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRole
 import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
 import { toast } from "sonner";
 import { Mail, Loader2, Link2, Unlink } from "lucide-react";
+import type { Doctor } from '@/types';
+
+interface CentralEmployee {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  target_hours_per_week?: number;
+  model_hours_per_week?: number;
+  work_time_model_name?: string;
+}
+
+interface DoctorFormData {
+  id?: string;
+  name: string;
+  initials: string;
+  role?: string;
+  email?: string;
+  google_email?: string;
+  fte: number;
+  target_weekly_hours?: string | number;
+  contract_end_date?: string;
+  exclude_from_staffing_plan?: boolean;
+  central_employee_id?: string;
+  part_time_model?: string;
+  vacation_days?: number;
+  _qualificationIds?: string[];
+}
+
+interface DoctorFormProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  doctor?: (Doctor & { vacation_days?: number; part_time_model?: string }) | null;
+  onSubmit: (data: DoctorFormData) => void;
+}
 
 // Fallback falls Rollen noch nicht geladen
 const FALLBACK_ROLES = DEFAULT_TEAM_ROLES.map(r => r.name);
@@ -24,7 +59,7 @@ const COLORS = [
   { label: "Grau", value: "bg-gray-100 text-gray-800" },
 ];
 
-export function getCentralWeeklyHours(employee, fallbackValue = '') {
+export function getCentralWeeklyHours(employee: CentralEmployee | undefined, fallbackValue: string | number = ''): string | number {
   if (!employee) {
     return fallbackValue;
   }
@@ -32,7 +67,7 @@ export function getCentralWeeklyHours(employee, fallbackValue = '') {
   return employee.target_hours_per_week ?? employee.model_hours_per_week ?? fallbackValue;
 }
 
-export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
+export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: DoctorFormProps) {
   // Dynamisch Rollen aus DB laden
   const { roleNames, isLoading: rolesLoading } = useTeamRoles();
   const availableRoles = roleNames.length > 0 ? roleNames : FALLBACK_ROLES;
@@ -60,7 +95,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
   });
 
   const [sendingTestMail, setSendingTestMail] = useState(false);
-  const [selectedQualIds, setSelectedQualIds] = useState([]);
+  const [selectedQualIds, setSelectedQualIds] = useState<string[]>([]);
 
   const centralEmployeeOptions = React.useMemo(() => (
     [
@@ -71,7 +106,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         sortLabel: '',
         keywords: ['lokal', 'keine zentrale verknupfung'],
       },
-      ...centralEmployees.map((employee) => {
+      ...centralEmployees.map((employee: CentralEmployee) => {
         const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
         return {
           value: employee.id,
@@ -98,14 +133,14 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         body: JSON.stringify({ to: email }),
       });
       toast.success(result.message || `Testmail an ${email} gesendet`);
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message || "Testmail konnte nicht gesendet werden");
     } finally {
       setSendingTestMail(false);
     }
   };
 
-  const [formData, setFormData] = useState(
+  const [formData, setFormData] = useState<DoctorFormData>(
     doctor || {
       name: "",
       initials: "",
@@ -121,7 +156,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
         fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
         target_weekly_hours: doctor.target_weekly_hours || '',
         central_employee_id: doctor.central_employee_id || '',
-        part_time_model: doctor.part_time_model || 'reduced_daily',
+        part_time_model: (doctor as DoctorFormData).part_time_model || 'reduced_daily',
       });
       // Für Bearbeitung keine separaten selectedQualIds – wird über den Editor selbst gesteuert
       setSelectedQualIds([]);
@@ -143,13 +178,13 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     }
   }, [doctor, open]);
 
-  const handleToggleQual = (qualId) => {
+  const handleToggleQual = (qualId: string) => {
     setSelectedQualIds(prev =>
       prev.includes(qualId) ? prev.filter(id => id !== qualId) : [...prev, qualId]
     );
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
     // Kürzel-Validierung: Prüfen ob bereits vergeben
@@ -173,10 +208,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
     const dataToSubmit = {
         ...formData,
         initials: trimmedInitials,
-        fte: Math.round((parseFloat(formData.fte) || 1.0) * 100) / 100,
+        fte: Math.round((parseFloat(formData.fte as any) || 1.0) * 100) / 100,
         target_weekly_hours: formData.central_employee_id
           ? undefined  // Zentral verknüpft → nicht lokal überschreiben
-          : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours) : null),
+          : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours as any) : null),
         central_employee_id: formData.central_employee_id || null,
         _qualificationIds: selectedQualIds,  // für Staff.jsx
     };
@@ -210,7 +245,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                   setFormData(prev => {
                     const updated = { ...prev, central_employee_id: empId };
                     if (empId) {
-                      const emp = centralEmployees.find(e => e.id === empId);
+                      const emp = centralEmployees.find((e: CentralEmployee) => e.id === empId);
                       if (emp) {
                         const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
                         if (fullName && !prev.name) updated.name = fullName;
@@ -291,7 +326,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                 disabled={!formData.email || sendingTestMail}
                 title="Testmail senden"
               >
-                {sendingTestMail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                {sendingTestMail ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 h-4" />}
               </Button>
             </div>
           </div>
@@ -303,7 +338,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                 type="email"
                 value={formData.google_email || ''}
                 onChange={(e) => setFormData({ ...formData, google_email: e.target.value })}
-              placeholder="name@klinik.de"
+                placeholder="name@klinik.de"
             />
           </div>
 
@@ -318,7 +353,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                     min="0"
                     max="1"
                     value={formData.fte !== undefined ? formData.fte : 1.0}
-                    onChange={(e) => setFormData({ ...formData, fte: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, fte: e.target.value as any })}
                 />
             </div>
             <div className="grid gap-2">
@@ -330,7 +365,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                       data-testid="staff-form-target-hours-readonly"
                       type="number"
                       value={(() => {
-                        const emp = centralEmployees.find(e => e.id === formData.central_employee_id);
+                        const emp = centralEmployees.find((e: CentralEmployee) => e.id === formData.central_employee_id);
                         return getCentralWeeklyHours(emp, formData.target_weekly_hours || '');
                       })()}
                       disabled
@@ -354,7 +389,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
             </div>
           </div>
 
-          {parseFloat(formData.fte) < 1.0 && (
+          {parseFloat(formData.fte as any) < 1.0 && (
             <div className="grid gap-2 border rounded-lg p-3 bg-slate-50">
               <Label className="text-base">Arbeitszeitmodell (Teilzeit)</Label>
               <p className="text-xs text-slate-500 -mt-1">
@@ -443,7 +478,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }) {
                 setFormData(prev => {
                   const updated = { ...prev, central_employee_id: empId };
                   if (empId) {
-                    const emp = centralEmployees.find(e => e.id === empId);
+                    const emp = centralEmployees.find((e: CentralEmployee) => e.id === empId);
                     if (emp) {
                       const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
                       if (fullName && !prev.name) updated.name = fullName;
