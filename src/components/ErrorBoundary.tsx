@@ -2,35 +2,47 @@ import React from 'react';
 import { AlertTriangle, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  onError?: (error: Error | null) => void;
+  fallback?: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: React.ErrorInfo | null;
+}
+
 /**
  * ErrorBoundary – fängt unbehandelte React-Fehler ab
  * und zeigt einen Dialog an, um einen automatischen Bug-Report zu erstellen.
  */
-export default class ErrorBoundary extends React.Component {
-  constructor(props) {
+export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null, errorInfo: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError(error: Error): Pick<ErrorBoundaryState, 'hasError' | 'error'> {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error, errorInfo) {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     this.setState({ errorInfo });
     console.error('[ErrorBoundary] Unbehandelter Fehler:', error, errorInfo);
   }
 
-  handleReportBug = () => {
+  handleReportBug = (): void => {
     // TicketDialog öffnen – wir setzen ein Flag im window, das der Dialog ausliest
-    window.__openTicketDialog?.('bug', this.state.error);
+    (window as any).__openTicketDialog?.('bug', this.state.error);
   };
 
-  handleReload = () => {
+  handleReload = (): void => {
     window.location.reload();
   };
 
-  render() {
+  render(): React.ReactNode {
     if (this.state.hasError) {
       // Falls ein onError-Callback gesetzt ist, rufe ihn auf
       if (this.props.onError) {
@@ -50,7 +62,7 @@ export default class ErrorBoundary extends React.Component {
             </div>
             <h2 className="text-xl font-bold text-slate-900 mb-2">Ein Fehler ist aufgetreten</h2>
             <p className="text-sm text-slate-600 mb-6">
-              Entschuldigung, es gab einen unerwarteten Fehler. 
+              Entschuldigung, es gab einen unerwarteten Fehler.
               Sie können einen Bug-Report senden, damit wir das Problem beheben können.
             </p>
 

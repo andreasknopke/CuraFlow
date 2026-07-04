@@ -12,13 +12,39 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
-const normalizeText = (value) =>
+interface EmployeeOption {
+  value: string;
+  label: string;
+  description?: string;
+  searchText?: string;
+  keywords?: string[];
+  sortLabel?: string;
+  triggerLabel?: string;
+  itemClassName?: string;
+}
+
+interface EmployeeSelectProps {
+  value: string;
+  onValueChange: (value: string) => void;
+  options: EmployeeOption[];
+  placeholder?: string;
+  searchPlaceholder?: string;
+  emptyText?: string;
+  disabled?: boolean;
+  triggerClassName?: string;
+  contentClassName?: string;
+  align?: 'start' | 'center' | 'end';
+  triggerTestId?: string;
+  optionTestIdPrefix?: string;
+}
+
+const normalizeText = (value: string): string =>
   String(value || '')
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
-const compareLabels = (left, right, direction) => {
+const compareLabels = (left: string, right: string, direction: string): number => {
   const multiplier = direction === 'desc' ? -1 : 1;
   return multiplier * left.localeCompare(right, 'de', { sensitivity: 'base' });
 };
@@ -36,10 +62,10 @@ export default function EmployeeSelect({
   align = 'start',
   triggerTestId,
   optionTestIdPrefix,
-}) {
+}: EmployeeSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
-  const [sortDirection, setSortDirection] = React.useState('asc');
+  const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('asc');
 
   const selectedOption = React.useMemo(
     () => options.find((option) => option.value === value) ?? null,

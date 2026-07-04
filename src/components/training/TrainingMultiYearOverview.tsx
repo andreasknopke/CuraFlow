@@ -2,11 +2,80 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import type { Doctor } from '@/types/models';
 
 const MONTHS = Array.from({ length: 12 }, (_, monthIndex) => monthIndex);
 const DISABLED_SEGMENT = '__disabled__';
 
-function getSegmentStyle(modality, customColors) {
+interface TrainingRotation {
+  id: string;
+  doctor_id: string;
+  start_date: string;
+  end_date: string;
+  modality: string;
+  [key: string]: unknown;
+}
+
+interface Segment {
+  modality: string;
+  days: number;
+}
+
+interface SegmentStyle {
+  backgroundColor: string;
+  color: string;
+  backgroundImage?: string;
+}
+
+interface ColorConfig {
+  backgroundColor: string;
+  color: string;
+}
+
+interface ContractInfo {
+  contractStart?: string;
+  contractEnd?: string;
+  [key: string]: unknown;
+}
+
+interface DragCell {
+  doctorId: string;
+  year: number;
+  month: number;
+}
+
+interface MonthCellData {
+  key: string;
+  year: number;
+  monthIndex: number;
+  monthDate: Date;
+  daysInMonth: number;
+  contractEndOffsetPercent: string | null;
+  segments: Segment[];
+  tooltip: string;
+}
+
+interface DoctorCells {
+  doctor: Doctor;
+  cells: MonthCellData[];
+}
+
+interface TrainingMultiYearOverviewProps {
+  centerYear: number;
+  doctors: Doctor[];
+  rotations: TrainingRotation[];
+  contractInfoByDoctorId?: Record<string, ContractInfo>;
+  customColors?: Record<string, string | ColorConfig>;
+  yearsToShow?: number;
+  activeModality?: string | null;
+  onMonthClick?: (doctorId: string, year: number, month: number) => void;
+  onRangeSelect?: (doctorId: string, startDate: Date, endDate: Date) => void;
+  isReadOnly?: boolean;
+  isMutating?: boolean;
+  getDoctorContractInfo?: (doctorId: string) => ContractInfo | undefined;
+}
+
+function getSegmentStyle(modality: string, customColors: Record<string, string | ColorConfig>): SegmentStyle {
   if (modality === DISABLED_SEGMENT) {
     return {
       backgroundColor: '#e2e8f0',
@@ -36,7 +105,15 @@ function getSegmentStyle(modality, customColors) {
   };
 }
 
-function buildMonthTooltip({ doctorName, year, monthDate, segments, daysInMonth }) {
+interface BuildMonthTooltipParams {
+  doctorName: string;
+  year: number;
+  monthDate: Date;
+  segments: Segment[];
+  daysInMonth: number;
+}
+
+function buildMonthTooltip({ doctorName, year, monthDate, segments, daysInMonth }: BuildMonthTooltipParams): string {
   const monthLabel = format(monthDate, 'LLLL yyyy', { locale: de });
   const summary = segments
     .map((segment) => `${segment.modality === DISABLED_SEGMENT ? 'außer Vertrag' : (segment.modality || 'Frei')}: ${segment.days} ${segment.days === 1 ? 'Tag' : 'Tage'}`)
@@ -45,7 +122,7 @@ function buildMonthTooltip({ doctorName, year, monthDate, segments, daysInMonth 
   return `${doctorName} – ${monthLabel}\n${summary || `Frei: ${daysInMonth} Tage`}`;
 }
 
-function isMonthWithinContract(monthDate, contractInfo) {
+function isMonthWithinContract(monthDate: Date, contractInfo?: ContractInfo | null): boolean {
   if (!contractInfo || !contractInfo.contractStart) {
     return true;
   }
@@ -69,9 +146,9 @@ export default function TrainingMultiYearOverview({
   isReadOnly = false,
   isMutating = false,
   getDoctorContractInfo,
-}) {
-  const [dragStart, setDragStart] = useState(null);
-  const [dragCurrent, setDragCurrent] = useState(null);
+}: TrainingMultiYearOverviewProps) {
+  const [dragStart, setDragStart] = useState<DragCell | null>(null);
+  const [dragCurrent, setDragCurrent] = useState<DragCell | null>(null);
 
   const visibleYears = React.useMemo(() => {
     const offset = Math.floor(yearsToShow / 2);
@@ -79,7 +156,7 @@ export default function TrainingMultiYearOverview({
   }, [centerYear, yearsToShow]);
 
   const rotationLookup = React.useMemo(() => {
-    const lookup = new Map();
+    const lookup = new Map<string, string | null>();
     const firstYear = visibleYears[0];
     const lastYear = visibleYears[visibleYears.length - 1];
     const visibleStart = startOfYear(new Date(firstYear, 0, 1));
@@ -113,7 +190,7 @@ export default function TrainingMultiYearOverview({
           const monthEnd = endOfMonth(monthDate);
           const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
           const daysInMonth = getDaysInMonth(monthDate);
-          const segments = [];
+          const segments: Segment[] = [];
           const contractInfo = contractInfoByDoctorId[doctor.id];
 
           days.forEach((day) => {
@@ -154,12 +231,12 @@ export default function TrainingMultiYearOverview({
       return {
         doctor,
         cells,
-      };
+      } as DoctorCells;
     });
   }, [contractInfoByDoctorId, doctors, rotationLookup, visibleYears]);
 
   // Drag selection helpers
-  const isCellInDragSelection = useCallback((cell, doctorId, dragStart, dragCurrent) => {
+  const isCellInDragSelection = useCallback((cell: MonthCellData, doctorId: string, dragStart: DragCell | null, dragCurrent: DragCell | null): boolean => {
     if (!dragStart || !dragCurrent) return false;
     if (dragStart.doctorId !== doctorId) return false;
     const startIndex = dragStart.year * 12 + dragStart.month;
@@ -174,12 +251,13 @@ export default function TrainingMultiYearOverview({
   useEffect(() => {
     if (!dragStart) return;
 
-    const handleMouseMove = (e) => {
-      const target = e.target.closest('td[data-doctor-id]');
-      if (target) {
-        const doctorId = target.dataset.doctorId;
-        const year = parseInt(target.dataset.year, 10);
-        const month = parseInt(target.dataset.month, 10);
+    const handleMouseMove = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      const closestTd = target?.closest('td[data-doctor-id]') as HTMLElement | null;
+      if (closestTd) {
+        const doctorId = closestTd.dataset.doctorId;
+        const year = parseInt(closestTd.dataset.year || '0', 10);
+        const month = parseInt(closestTd.dataset.month || '0', 10);
         if (doctorId === dragStart.doctorId) {
           setDragCurrent({ doctorId, year, month });
         }
@@ -252,7 +330,7 @@ export default function TrainingMultiYearOverview({
             </tr>
           </thead>
           <tbody>
-            {monthCells.map(({ doctor, cells }) => (
+            {monthCells.map(({ doctor, cells }: DoctorCells) => (
               <tr key={doctor.id} className="hover:bg-slate-50/60">
                 <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
                   <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id]) || undefined}>{doctor.name}</div>

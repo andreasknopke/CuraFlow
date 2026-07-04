@@ -5,6 +5,20 @@ import { Label } from '@/components/ui/label';
 import { Award, Check, FileCheck } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
 import CertificateManager from '@/components/staff/CertificateManager';
+import type { Qualification, DoctorQualification } from '@/types';
+
+interface DoctorQualificationEditorProps {
+  doctorId: string | null;
+  selectedQualIds?: string[];
+  onToggle?: (qualId: string) => void;
+  compact?: boolean;
+}
+
+interface DoctorQualificationBadgesProps {
+  doctorId: string;
+  qualificationMap?: Record<string, Qualification>;
+  allDoctorQualifications?: Record<string, DoctorQualification[]>;
+}
 
 /**
  * Editor-Komponente zum Zuweisen/Entfernen von Qualifikationen für einen einzelnen Mitarbeiter.
@@ -16,7 +30,7 @@ import CertificateManager from '@/components/staff/CertificateManager';
  * @param {Function} [props.onToggle] - Callback beim Aktivieren/Deaktivieren einer Qualifikation (nur bei doctorId null)
  * @param {boolean} [props.compact] - Kompakte Darstellung (Badges zum Anklicken)
  */
-export default function DoctorQualificationEditor({ doctorId, selectedQualIds = [], onToggle, compact = false }) {
+export default function DoctorQualificationEditor({ doctorId, selectedQualIds = [], onToggle, compact = false }: DoctorQualificationEditorProps) {
     const queryClient = useQueryClient();
     const { qualifications, qualificationsByCategory, categories, isLoading: qualsLoading } = useQualifications();
 
@@ -27,7 +41,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
     });
 
     const assignMutation = useMutation({
-        mutationFn: (qualificationId) => db.DoctorQualification.create({
+        mutationFn: (qualificationId: string) => db.DoctorQualification.create({
             doctor_id: doctorId,
             qualification_id: qualificationId,
         }),
@@ -38,7 +52,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
     });
 
     const removeMutation = useMutation({
-        mutationFn: (dqId) => db.DoctorQualification.delete(dqId),
+        mutationFn: (dqId: string) => db.DoctorQualification.delete(dqId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['doctorQualifications', doctorId] });
             queryClient.invalidateQueries({ queryKey: ['allDoctorQualifications'] });
@@ -68,7 +82,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
         ? activeQuals.filter(q => q.requires_certificate === true && assignedQualIds.includes(q.id))
         : [];
     const toggleHandler = doctorId
-        ? (qualId) => {
+        ? (qualId: string) => {
             const existingAssignment = doctorQuals.find(dq => dq.qualification_id === qualId);
             if (existingAssignment) {
                 removeMutation.mutate(existingAssignment.id);
@@ -102,7 +116,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             <button
                                 key={qual.id}
                                 type="button"
-                                onClick={() => toggleHandler(qual.id)}
+                                onClick={() => toggleHandler!(qual.id)}
                                 aria-pressed={isAssigned}
                                 data-testid={`doctor-qualification-toggle-${qual.id}`}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
@@ -178,7 +192,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             {catQuals.map(qual => {
                                 const isAssigned = assignedQualIds.includes(qual.id);
                                 const requiresCert = qual.requires_certificate === true;
-                                const handleToggle = () => toggleHandler(qual.id);
+                                const handleToggle = () => toggleHandler!(qual.id);
                                 return (
                                     <button
                                         key={qual.id}
@@ -264,7 +278,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
  * Readonly Badge-Anzeige der Qualifikationen eines Mitarbeiters.
  * Für die Team-Liste und den Dienstplan.
  */
-export function DoctorQualificationBadges({ doctorId, qualificationMap, allDoctorQualifications }) {
+export function DoctorQualificationBadges({ doctorId, qualificationMap, allDoctorQualifications }: DoctorQualificationBadgesProps) {
     // Get this doctor's qualification IDs
     const doctorQualIds = allDoctorQualifications
         ? (allDoctorQualifications[doctorId] || []).map(dq => dq.qualification_id)

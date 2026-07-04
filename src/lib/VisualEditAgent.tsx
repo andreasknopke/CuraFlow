@@ -8,12 +8,36 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { twMerge } from 'tailwind-merge'
+import { twMerge } from 'tailwind-merge';
 
-export default function VisualEditAgent() {
-	// this functions job is to receive first a message from the parent window, to set or unset visual edits mode. 
+interface ElementPosition {
+  top: number;
+  left: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
+interface VisualEditMessage {
+  type: string;
+  data?: {
+    enabled?: boolean;
+    classes?: string;
+    content?: string;
+    replace?: boolean;
+    visualSelectorId?: string;
+    isDragging?: boolean;
+    isOpen?: boolean;
+  };
+}
+
+export default function VisualEditAgent(): null {
+	// this functions job is to receive first a message from the parent window, to set or unset visual edits mode.
 	// once in visual edits mode, every hover over an elelmnt that has linenumbers should show an overlay, when clicked - it should stick the overlay and send a message to the parent window with the selected element
-	// then, the parent window will have an editor, allow for changes to the tailwind css classes of the selected element, and send the updated css classes back to the iframe. 
+	// then, the parent window will have an editor, allow for changes to the tailwind css classes of the selected element, and send the updated css classes back to the iframe.
 	// the iframe will then update the css classes of the selected element.
 
 	// State and refs
@@ -23,13 +47,13 @@ export default function VisualEditAgent() {
 	const isPopoverDraggingRef = useRef(false);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 	const isDropdownOpenRef = useRef(false);
-	const hoverOverlaysRef = useRef([]); // Multiple overlays for hover
-	const selectedOverlaysRef = useRef([]); // Multiple overlays for selection
-	const currentHighlightedElementsRef = useRef([]); // Multiple elements for hover
-	const selectedElementIdRef = useRef(null); // Store the visual selector ID
+	const hoverOverlaysRef = useRef<HTMLDivElement[]>([]); // Multiple overlays for hover
+	const selectedOverlaysRef = useRef<HTMLDivElement[]>([]); // Multiple overlays for selection
+	const currentHighlightedElementsRef = useRef<Element[]>([]); // Multiple elements for hover
+	const selectedElementIdRef = useRef<string | null>(null); // Store the visual selector ID
 
 	// Create overlay element
-	const createOverlay = (isSelected = false) => {
+	const createOverlay = (isSelected: boolean = false): HTMLDivElement => {
 		const overlay = document.createElement('div');
 		overlay.style.position = 'absolute';
 		overlay.style.pointerEvents = 'none';
@@ -48,11 +72,11 @@ export default function VisualEditAgent() {
 	};
 
 	// Position overlay relative to element
-	const positionOverlay = (overlay, element, isSelected = false) => {
+	const positionOverlay = (overlay: HTMLDivElement, element: Element, isSelected: boolean = false): void => {
 		if (!element || !isVisualEditModeRef.current) return;
 
 		// Force layout recalculation
-		void element.offsetWidth;
+		void (element as HTMLElement).offsetWidth;
 
 		const rect = element.getBoundingClientRect();
 		overlay.style.top = `${rect.top + window.scrollY}px`;
@@ -85,7 +109,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Find elements by ID - first try data-source-location, fallback to data-visual-selector-id
-	const findElementsById = (id) => {
+	const findElementsById = (id: string): Element[] => {
 		if (!id) return [];
 		const sourceElements = [...document.querySelectorAll(`[data-source-location="${id}"]`)];
 		if (sourceElements.length > 0) {
@@ -95,7 +119,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Clear hover overlays
-	const clearHoverOverlays = () => {
+	const clearHoverOverlays = (): void => {
 		hoverOverlaysRef.current.forEach(overlay => {
 			if (overlay && overlay.parentNode) {
 				overlay.remove();
@@ -106,7 +130,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Handle mouse over event
-	const handleMouseOver = (e) => {
+	const handleMouseOver = (e: MouseEvent): void => {
 		if (!isVisualEditModeRef.current || isPopoverDraggingRef.current) return;
 
 		// Prevent hover effects when a dropdown is open
@@ -116,21 +140,20 @@ export default function VisualEditAgent() {
 		}
 
 		// Prevent hover effects on SVG path elements
-		if (e.target.tagName.toLowerCase() === 'path') {
+		if ((e.target as Element).tagName.toLowerCase() === 'path') {
 			clearHoverOverlays();
 			return;
 		}
 
 		// Support both data-source-location and data-visual-selector-id
-		const element = e.target.closest('[data-source-location], [data-visual-selector-id]');
+		const element = (e.target as Element).closest('[data-source-location], [data-visual-selector-id]');
 		if (!element) {
 			clearHoverOverlays();
 			return;
 		}
 
-		// Prefer data-source-location, fallback to data-visual-selector-id  
-		const selectorId = element.dataset.sourceLocation || element.dataset.visualSelectorId;
-		const useSourceLocation = !!element.dataset.sourceLocation;
+		// Prefer data-source-location, fallback to data-visual-selector-id
+		const selectorId = (element as HTMLElement).dataset.sourceLocation || (element as HTMLElement).dataset.visualSelectorId;
 
 		// Skip if this element is already selected
 		if (selectedElementIdRef.current === selectorId) {
@@ -139,7 +162,7 @@ export default function VisualEditAgent() {
 		}
 
 		// Find all elements with the same ID
-		const elements = findElementsById(selectorId, useSourceLocation);
+		const elements = findElementsById(selectorId!);
 
 		// Clear previous hover overlays
 		clearHoverOverlays();
@@ -156,13 +179,13 @@ export default function VisualEditAgent() {
 	};
 
 	// Handle mouse out event
-	const handleMouseOut = () => {
+	const handleMouseOut = (): void => {
 		if (isPopoverDraggingRef.current) return;
 		clearHoverOverlays();
 	};
 
 	// Handle element click
-	const handleElementClick = (e) => {
+	const handleElementClick = (e: MouseEvent): void => {
 		if (!isVisualEditModeRef.current) return;
 
 		// Close dropdowns when clicking anywhere in iframe if a dropdown is open
@@ -179,7 +202,7 @@ export default function VisualEditAgent() {
 		}
 
 		// Prevent clicking on SVG path elements
-		if (e.target.tagName.toLowerCase() === 'path') {
+		if ((e.target as Element).tagName.toLowerCase() === 'path') {
 			return;
 		}
 
@@ -189,14 +212,13 @@ export default function VisualEditAgent() {
 		e.stopImmediatePropagation();
 
 		// Support both data-source-location and data-visual-selector-id
-		const element = e.target.closest('[data-source-location], [data-visual-selector-id]');
+		const element = (e.target as Element).closest('[data-source-location], [data-visual-selector-id]');
 		if (!element) {
 			return;
 		}
 
 		// Prefer data-source-location, fallback to data-visual-selector-id
-		const visualSelectorId = element.dataset.sourceLocation || element.dataset.visualSelectorId;
-		const useSourceLocation = !!element.dataset.sourceLocation;
+		const visualSelectorId = (element as HTMLElement).dataset.sourceLocation || (element as HTMLElement).dataset.visualSelectorId;
 
 		// Clear any existing selected overlays
 		selectedOverlaysRef.current.forEach(overlay => {
@@ -207,7 +229,7 @@ export default function VisualEditAgent() {
 		selectedOverlaysRef.current = [];
 
 		// Find all elements with the same ID
-		const elements = findElementsById(visualSelectorId, useSourceLocation);
+		const elements = findElementsById(visualSelectorId!);
 
 		// Create selected overlays for all matching elements
 		elements.forEach(el => {
@@ -224,7 +246,7 @@ export default function VisualEditAgent() {
 
 		// Calculate element position for popover positioning
 		const rect = element.getBoundingClientRect();
-		const elementPosition = {
+		const elementPosition: ElementPosition = {
 			top: rect.top,
 			left: rect.left,
 			right: rect.right,
@@ -239,20 +261,20 @@ export default function VisualEditAgent() {
 		const elementData = {
 			type: 'element-selected',
 			tagName: element.tagName,
-			classes: element.className?.baseVal || element.className || '',
+			classes: (element as HTMLElement).className?.baseVal || (element as HTMLElement).className || '',
 			visualSelectorId: visualSelectorId,
-			content: element.innerText,
-			dataSourceLocation: element.dataset.sourceLocation,
-			isDynamicContent: element.dataset.dynamicContent === 'true',
-			linenumber: element.dataset.linenumber, // Keep for backward compatibility
-			filename: element.dataset.filename, // Keep for backward compatibility
+			content: (element as HTMLElement).innerText,
+			dataSourceLocation: (element as HTMLElement).dataset.sourceLocation,
+			isDynamicContent: (element as HTMLElement).dataset.dynamicContent === 'true',
+			linenumber: (element as HTMLElement).dataset.linenumber, // Keep for backward compatibility
+			filename: (element as HTMLElement).dataset.filename, // Keep for backward compatibility
 			position: elementPosition // Add position data for popover
 		};
 		window.parent.postMessage(elementData, '*');
 	};
 
 	// Unselect the current element
-	const unselectElement = () => {
+	const unselectElement = (): void => {
 		// Clear selected overlays
 		selectedOverlaysRef.current.forEach(overlay => {
 			if (overlay && overlay.parentNode) {
@@ -265,7 +287,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Update element classes by visual selector ID
-	const updateElementClasses = (visualSelectorId, classes, replace = false) => {
+	const updateElementClasses = (visualSelectorId: string, classes: string, replace: boolean = false): void => {
 		// Find all elements with the same visual selector ID
 		const elements = findElementsById(visualSelectorId);
 
@@ -277,11 +299,11 @@ export default function VisualEditAgent() {
 		elements.forEach(element => {
 			if (replace) {
 				// For reverts, replace classes completely
-				element.className = classes;
+				(element as HTMLElement).className = classes;
 			} else {
 				// For normal updates, merge with existing classes
-				const currentClasses = element.className?.baseVal || element.className || '';
-				element.className = twMerge(currentClasses, classes);
+				const currentClasses = (element as HTMLElement).className?.baseVal || (element as HTMLElement).className || '';
+				(element as HTMLElement).className = twMerge(currentClasses, classes);
 			}
 		});
 
@@ -298,7 +320,7 @@ export default function VisualEditAgent() {
 
 			// Reposition hover overlays if needed
 			if (currentHighlightedElementsRef.current.length > 0) {
-				const hoveredId = currentHighlightedElementsRef.current[0]?.dataset?.visualSelectorId;
+				const hoveredId = (currentHighlightedElementsRef.current[0] as HTMLElement).dataset?.visualSelectorId;
 				if (hoveredId === visualSelectorId) {
 					hoverOverlaysRef.current.forEach((overlay, index) => {
 						if (index < currentHighlightedElementsRef.current.length) {
@@ -311,7 +333,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Update element content by visual selector ID
-	const updateElementContent = (visualSelectorId, content) => {
+	const updateElementContent = (visualSelectorId: string, content: string): void => {
 		// Find all elements with the same visual selector ID
 		const elements = findElementsById(visualSelectorId);
 
@@ -321,7 +343,7 @@ export default function VisualEditAgent() {
 
 		// Update content for all matching elements
 		elements.forEach((element) => {
-			element.innerText = content;
+			(element as HTMLElement).innerText = content;
 		});
 
 		// Use a small delay to allow the browser to recalculate layout before repositioning
@@ -338,7 +360,7 @@ export default function VisualEditAgent() {
 	};
 
 	// Toggle visual edit mode
-	const toggleVisualEditMode = (isEnabled) => {
+	const toggleVisualEditMode = (isEnabled: boolean): void => {
 		setIsVisualEditMode(isEnabled);
 		isVisualEditModeRef.current = isEnabled;
 
@@ -376,8 +398,8 @@ export default function VisualEditAgent() {
 		// Add IDs to elements that don't have them but have linenumbers
 		const elementsWithLineNumber = document.querySelectorAll('[data-linenumber]:not([data-visual-selector-id])');
 		elementsWithLineNumber.forEach((el, index) => {
-			const id = `visual-id-${el.dataset.filename}-${el.dataset.linenumber}-${index}`;
-			el.dataset.visualSelectorId = id;
+			const id = `visual-id-${(el as HTMLElement).dataset.filename}-${(el as HTMLElement).dataset.linenumber}-${index}`;
+			(el as HTMLElement).dataset.visualSelectorId = id;
 		});
 
 		// Handle scroll events to update popover position
@@ -399,7 +421,7 @@ export default function VisualEditAgent() {
 						rect.right > 0
 					);
 
-					const elementPosition = {
+					const elementPosition: ElementPosition = {
 						top: rect.top,
 						left: rect.left,
 						right: rect.right,
@@ -420,15 +442,15 @@ export default function VisualEditAgent() {
 			}
 		};
 
-		const handleMessage = (event) => {
+		const handleMessage = (event: MessageEvent) => {
 			// Check origin if desired
 			//if (event.origin !== 'parent-origin') return;
 
-			const message = event.data;
+			const message = event.data as VisualEditMessage;
 
 			switch (message.type) {
 				case 'toggle-visual-edit-mode':
-					toggleVisualEditMode(message.data.enabled);
+					toggleVisualEditMode(message.data?.enabled ?? false);
 					break;
 
 				case 'update-classes':
@@ -436,7 +458,7 @@ export default function VisualEditAgent() {
 						// Update with the visual selector ID
 						// Pass replace flag if provided (used for reverts)
 						updateElementClasses(
-							message.data.visualSelectorId,
+							message.data.visualSelectorId!,
 							message.data.classes,
 							message.data.replace || false
 						);
@@ -456,7 +478,7 @@ export default function VisualEditAgent() {
 				case 'update-content':
 					if (message.data && message.data.content !== undefined) {
 						updateElementContent(
-							message.data.visualSelectorId,
+							message.data.visualSelectorId!,
 							message.data.content
 						);
 					} else {
@@ -483,7 +505,7 @@ export default function VisualEditAgent() {
 								rect.right > 0
 							);
 
-							const elementPosition = {
+							const elementPosition: ElementPosition = {
 								top: rect.top,
 								left: rect.left,
 								right: rect.right,
@@ -602,14 +624,14 @@ export default function VisualEditAgent() {
 			// Check if mutations affect relevant elements
 			const needsUpdate = mutations.some(mutation => {
 				// Check if the target or its children have data-visual-selector-id
-				const hasVisualId = (node) => {
+				const hasVisualId = (node: Node): boolean => {
 					if (node.nodeType === Node.ELEMENT_NODE) {
-						if (node.dataset && node.dataset.visualSelectorId) {
+						if ((node as HTMLElement).dataset && (node as HTMLElement).dataset.visualSelectorId) {
 							return true;
 						}
 						// Check children
-						for (let i = 0; i < node.children.length; i++) {
-							if (hasVisualId(node.children[i])) {
+						for (let i = 0; i < (node as HTMLElement).children.length; i++) {
+							if (hasVisualId((node as HTMLElement).children[i])) {
 								return true;
 							}
 						}

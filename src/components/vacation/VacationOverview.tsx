@@ -6,23 +6,87 @@ import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scr
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { parseAnnualVacationDays } from './vacationBalance';
+import type { Doctor, ShiftEntry } from '@/types';
+
+interface ContractInfo {
+  contractStart?: string;
+  contractEnd?: string;
+}
+
+interface AvailabilityThreshold {
+  qualificationId: string;
+  qualificationName?: string;
+  min: number;
+}
+
+interface DragInfo {
+  isDragging: boolean;
+  dragStart: Date | null;
+  dragCurrent: Date | null;
+  dragDoctorId: string | null;
+}
+
+interface VacationOverviewCellProps {
+  date: Date;
+  doctor: Doctor & { vacation_days?: number };
+  status: string | null;
+  contractInfo: ContractInfo | null;
+  isWeekend: boolean;
+  isHoliday: boolean;
+  isSchoolHoliday: boolean;
+  visibleTypes: string[];
+  customColors: Record<string, React.CSSProperties>;
+  dragInfo: DragInfo;
+  onMouseDown: (date: Date, doctorId: string) => void;
+  onMouseEnter: (date: Date, doctorId: string) => void;
+  onToggle: (date: Date, status: string | null, doctorId: string, e: React.MouseEvent) => void;
+}
+
+interface QualificationMapEntry {
+  id: string;
+  name: string;
+}
+
+interface DoctorQualEntry {
+  qualification_id: string;
+}
+
+interface VacationOverviewProps {
+  year: number;
+  doctors: (Doctor & { vacation_days?: number })[];
+  shifts: ShiftEntry[];
+  contractInfoByDoctorId?: Record<string, ContractInfo>;
+  entitlementByDoctorId?: Record<string, number>;
+  isSchoolHoliday: (date: Date) => boolean;
+  isPublicHoliday: (date: Date) => boolean;
+  visibleTypes?: string[];
+  customColors?: Record<string, React.CSSProperties>;
+  onToggle?: (date: Date, status: string | null, doctorId: string, e: React.MouseEvent) => void;
+  onRangeSelect?: (start: Date, end: Date, doctorId: string) => void;
+  activeType?: string;
+  isReadOnly?: boolean;
+  monthsPerRow?: number;
+  availabilityThresholds?: AvailabilityThreshold[];
+  qualificationMap?: Record<string, QualificationMapEntry>;
+  doctorQualByDoctor?: Record<string, DoctorQualEntry[]>;
+}
 
 // Memoized Cell Component
-const VacationOverviewCell = memo(({ 
-    date, 
-    doctor, 
-    status, 
+const VacationOverviewCell = memo(function VacationOverviewCell({
+    date,
+    doctor,
+    status,
     contractInfo,
-    isWeekend, 
-    isHoliday, 
-    isSchoolHoliday, 
-    visibleTypes, 
-    customColors, 
-    dragInfo, 
-    onMouseDown, 
-    onMouseEnter, 
-    onToggle 
-}) => {
+    isWeekend,
+    isHoliday,
+    isSchoolHoliday,
+    visibleTypes,
+    customColors,
+    dragInfo,
+    onMouseDown,
+    onMouseEnter,
+    onToggle
+}: VacationOverviewCellProps) {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
     const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
     const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo.contractEnd;
@@ -36,7 +100,7 @@ const VacationOverviewCell = memo(({
     });
 
     let content = "";
-    let style = {};
+    let style: React.CSSProperties = {};
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none relative";
 
     const isVisible = status && (visibleTypes.length === 0 || visibleTypes.includes(status));
@@ -91,7 +155,7 @@ const VacationOverviewCell = memo(({
             )}
         </td>
     );
-}, (prevProps, nextProps) => {
+}, function areEqual(prevProps: VacationOverviewCellProps, nextProps: VacationOverviewCellProps): boolean {
     // Custom comparison function for performance
     
     // Check basic props first
@@ -135,11 +199,11 @@ const VacationOverviewCell = memo(({
     return false;
 });
 
-export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {} }) {
+export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {} }: VacationOverviewProps) {
     
-    const [dragStart, setDragStart] = useState(null);
-    const [dragCurrent, setDragCurrent] = useState(null);
-    const [dragDoctorId, setDragDoctorId] = useState(null);
+    const [dragStart, setDragStart] = useState<Date | null>(null);
+    const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
+    const [dragDoctorId, setDragDoctorId] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
@@ -158,7 +222,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         return () => window.removeEventListener('mouseup', handleMouseUp);
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
-    const handleMouseDown = React.useCallback((date, doctorId) => {
+    const handleMouseDown = React.useCallback((date: Date, doctorId: string) => {
         if (isReadOnly) return;
         setDragStart(date);
         setDragCurrent(date);
@@ -166,7 +230,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         setIsDragging(true);
     }, [isReadOnly]);
 
-    const handleMouseEnter = React.useCallback((date, doctorId) => {
+    const handleMouseEnter = React.useCallback((date: Date, _doctorId: string) => {
         // Only update state if it's relevant to avoid renders?
         // But we need to update dragCurrent to visualize.
         // The Cell component memoization will prevent full table re-render.
@@ -179,7 +243,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     
     // Optimize shift lookup
     const shiftLookup = React.useMemo(() => {
-        const lookup = new Map();
+        const lookup = new Map<string, string>();
         shifts.forEach(s => {
             lookup.set(`${s.date}_${s.doctor_id}`, s.position);
         });
@@ -187,13 +251,13 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     }, [shifts]);
 
     // Helper to check status using lookup
-    const getStatus = React.useCallback((date, doctorId) => {
+    const getStatus = React.useCallback((date: Date, doctorId: string): string | null => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return shiftLookup.get(`${dateStr}_${doctorId}`) || null;
     }, [shiftLookup]);
 
     // Hilfsfunktion: gibt die Qualifikations-IDs eines Arztes zurück
-    const getDoctorQualificationIds = React.useCallback((doctorId) => {
+    const getDoctorQualificationIds = React.useCallback((doctorId: string): string[] => {
         // 1. Explizite Qualifikationen aus der Join-Tabelle
         const entries = doctorQualByDoctor[doctorId];
         if (entries && entries.length > 0) {
@@ -211,7 +275,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     // Berechne pro Qualifikation: Gesamtpersonal und abwesendes Personal pro Tag
     const dailyAbsencesByQual = React.useMemo(() => {
         // Map: dateStr → Map<qualificationId, { absent: number, absentNames: string[] }>
-        const byDate = new Map();
+        const byDate = new Map<string, Map<string, { absent: number; absentNames: string[] }>>();
 
         shifts.forEach(s => {
             if (!["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"].includes(s.position)) return;
@@ -223,14 +287,14 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
             if (!byDate.has(dStr)) {
                 byDate.set(dStr, new Map());
             }
-            const qualMap = byDate.get(dStr);
+            const qualMap = byDate.get(dStr)!;
             const docQualIds = getDoctorQualificationIds(doc.id);
 
             docQualIds.forEach(qId => {
                 if (!qualMap.has(qId)) {
                     qualMap.set(qId, { absent: 0, absentNames: [] });
                 }
-                const entry = qualMap.get(qId);
+                const entry = qualMap.get(qId)!;
                 entry.absent++;
                 if (!entry.absentNames.includes(doc.name)) {
                     entry.absentNames.push(doc.name);
@@ -242,7 +306,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
 
     // Gesamtpersonal pro Qualifikation
     const totalStaffByQual = React.useMemo(() => {
-        const totals = {};
+        const totals: Record<string, number> = {};
         doctors.forEach(d => {
             const qIds = getDoctorQualificationIds(d.id);
             qIds.forEach(qId => {
@@ -254,14 +318,14 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     }, [doctors, getDoctorQualificationIds]);
 
     // Handler wrapper for toggle (muss NACH dailyAbsencesByQual/totalStaffByQual stehen wg. TDZ)
-    const handleToggle = React.useCallback((date, status, docId, e) => {
+    const handleToggle = React.useCallback((date: Date, status: string | null, docId: string, e: React.MouseEvent) => {
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
             onToggle && onToggle(date, status, docId, e);
         }
     }, [isDragging, dragStart, dragCurrent, onToggle]);
 
     const vacationCounts = React.useMemo(() => {
-        const counts = {};
+        const counts: Record<string, number> = {};
         doctors.forEach(doc => {
             counts[doc.id] = 0;
         });
@@ -280,7 +344,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     }, [shifts, doctors, isPublicHoliday]);
 
     const monthChunks = React.useMemo(() => {
-        const chunks = [];
+        const chunks: number[][] = [];
         for (let i = 0; i < 12; i += monthsPerRow) {
             const chunk = [];
             for (let j = 0; j < monthsPerRow && (i + j) < 12; j++) {
@@ -292,7 +356,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     }, [monthsPerRow]);
 
     // Drag info object for memoization
-    const dragInfo = React.useMemo(() => ({
+    const dragInfo = React.useMemo((): DragInfo => ({
         isDragging,
         dragStart,
         dragCurrent,
@@ -341,9 +405,9 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                 // Check Limits (qualifikationsbasiert)
                                                 const dStr = format(d, 'yyyy-MM-dd');
                                                 const absencesByQual = dailyAbsencesByQual.get(dStr);
-                                                let warning = null;
+                                                let warning: React.ReactNode = null;
 
-                                                const lowThresholds = [];
+                                                const lowThresholds: Array<{ qualName: string; present: number; min: number; absentNames: string[] }> = [];
 
                                                 if (absencesByQual && !isWknd && !isHol) {
                                                     availabilityThresholds.forEach(t => {

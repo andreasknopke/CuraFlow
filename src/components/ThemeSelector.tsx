@@ -6,9 +6,14 @@ import { useAuth } from '@/components/AuthProvider';
 import { THEMES, COLOR_PALETTES } from '@/components/themeConfig';
 import { Palette, Check } from 'lucide-react';
 
-export default function ThemeSelector({ open, onOpenChange }) {
+interface ThemeSelectorProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export default function ThemeSelector({ open, onOpenChange }: ThemeSelectorProps) {
     const { user, refreshUser } = useAuth();
-    const [selectedTheme, setSelectedTheme] = useState('default');
+    const [selectedTheme, setSelectedTheme] = useState<string>('default');
 
     useEffect(() => {
         if (user?.theme) {
@@ -33,13 +38,13 @@ export default function ThemeSelector({ open, onOpenChange }) {
                         Design auswählen
                     </DialogTitle>
                 </DialogHeader>
-                
+
                 <div className="flex-1 overflow-y-auto px-6 py-4">
                 <div className="grid grid-cols-2 gap-3">
                     {THEMES.map(theme => {
                         const isSelected = selectedTheme === theme.id;
                         return (
-                            <div 
+                            <div
                                 key={theme.id}
                                 className={`
                                     relative flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
@@ -48,11 +53,11 @@ export default function ThemeSelector({ open, onOpenChange }) {
                                 onClick={() => setSelectedTheme(theme.id)}
                             >
                                 <div className="w-8 h-8 rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden border border-slate-100">
-                                    <div 
-                                        className="w-full h-full" 
-                                        style={{ 
-                                            background: `linear-gradient(135deg, ${COLOR_PALETTES[theme.primary]?.[500] || '#6366f1'}, ${COLOR_PALETTES[theme.primary]?.[700] || '#4338ca'})` 
-                                        }} 
+                                    <div
+                                        className="w-full h-full"
+                                        style={{
+                                            background: `linear-gradient(135deg, ${COLOR_PALETTES[theme.primary]?.[500] || '#6366f1'}, ${COLOR_PALETTES[theme.primary]?.[700] || '#4338ca'})`
+                                        }}
                                     />
                                 </div>
                                 <div className="flex-1">
