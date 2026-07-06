@@ -22,6 +22,7 @@ interface CentralEmployee {
   target_hours_per_week?: number;
   model_hours_per_week?: number;
   work_time_model_name?: string;
+  position?: string;
   cost_center?: string;
   cost_center_name?: string;
 }
@@ -71,7 +72,7 @@ export function getCentralWeeklyHours(employee: CentralEmployee | undefined, fal
 
 export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: DoctorFormProps) {
   // Dynamisch Rollen aus DB laden
-  const { roleNames, isLoading: rolesLoading } = useTeamRoles();
+  const { roleNames, refetch: refetchRoles, isLoading: rolesLoading } = useTeamRoles();
   const availableRoles = roleNames.length > 0 ? roleNames : FALLBACK_ROLES;
   
   // Default-Rolle (letzte in der Liste, typischerweise niedrigste Priorität)
@@ -134,6 +135,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
       ...filteredCentralEmployees.map((employee: CentralEmployee) => {
         const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
         const descParts = [];
+        if (employee.position) descParts.push(employee.position);
         if (employee.work_time_model_name) descParts.push(employee.work_time_model_name);
         if (employee.cost_center_name) descParts.push(`KST ${employee.cost_center_name}`);
         else if (employee.cost_center) descParts.push(`KST ${employee.cost_center}`);
@@ -142,7 +144,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
           label: fullName,
           triggerLabel: fullName,
           description: descParts.join(' · ') || undefined,
-          searchText: [employee.first_name, employee.last_name, employee.work_time_model_name, employee.cost_center, employee.cost_center_name].filter(Boolean).join(' '),
+          searchText: [employee.first_name, employee.last_name, employee.position, employee.work_time_model_name, employee.cost_center, employee.cost_center_name].filter(Boolean).join(' '),
           sortLabel: fullName,
         };
       }),
@@ -265,7 +267,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
               </Label>
               <p className="text-xs text-slate-500 -mt-1">
                 Daten aus der zentralen Mitarbeiterverwaltung übernehmen. Bei Auswahl werden Name,
-                E-Mail und Soll-Stunden automatisch ausgefüllt.
+                E-Mail, Soll-Stunden und Funktion automatisch ausgefüllt.
               </p>
 
               {/* Kostenstellen-Filter, wenn der Mandant mit KST verknüpft ist */}
@@ -309,23 +311,57 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
 
               <EmployeeSelect
                 value={formData.central_employee_id || '__none__'}
-                onValueChange={(value) => {
+                onValueChange={async (value) => {
                   const empId = value === '__none__' ? '' : value;
-                  setFormData(prev => {
-                    const updated = { ...prev, central_employee_id: empId };
-                    if (empId) {
-                      const emp = filteredCentralEmployees.find((e: CentralEmployee) => e.id === empId)
-                        || centralEmployees.find((e: CentralEmployee) => e.id === empId);
+
+                  if (empId) {
+                    const emp = filteredCentralEmployees.find((e: CentralEmployee) => e.id === empId)
+                      || centralEmployees.find((e: CentralEmployee) => e.id === empId);
+
+                    // Position („Beschäftigt als") aus der Zentrale übernehmen
+                    if (emp?.position) {
+                      const positionName = emp.position.trim();
+                      const exists = roleNames.some(r => r.toLowerCase() === positionName.toLowerCase());
+
+                      if (!exists) {
+                        // Neue Funktion anlegen (mit Standard-Priorität hinten anfügen)
+                        try {
+                          const maxPriority = roleNames.length;
+                          await db.TeamRole.create({
+                            name: positionName,
+                            priority: maxPriority,
+                            is_specialist: false,
+                            can_do_foreground_duty: true,
+                            can_do_background_duty: false,
+                            excluded_from_statistics: false,
+                            description: `Aus zentraler Mitarbeiterverwaltung übernommen (${emp.position})`,
+                          });
+                          await refetchRoles();
+                          toast.success(`Funktion „${positionName}" wurde automatisch angelegt.`);
+                        } catch (err) {
+                          console.error('Fehler beim Anlegen der Funktion:', err);
+                          toast.error(`Funktion „${positionName}" konnte nicht angelegt werden.`);
+                        }
+                      }
+                    }
+
+                    setFormData(prev => {
+                      const updated = { ...prev, central_employee_id: empId };
                       if (emp) {
                         const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
                         if (fullName && !prev.name) updated.name = fullName;
                         if (emp.email && !prev.email) updated.email = emp.email;
                         if (emp.email && !prev.google_email) updated.google_email = emp.email;
                         if (emp.target_hours_per_week != null) updated.target_weekly_hours = emp.target_hours_per_week;
+                        if (emp.position) {
+                          updated.role = emp.position.trim();
+                        }
                       }
-                    }
-                    return updated;
-                  });
+                      return updated;
+                    });
+                  } else {
+                    setFormData(prev => ({ ...prev, central_employee_id: '' }));
+                  }
                 }}
                 options={centralEmployeeOptions}
                 placeholder="Zentralen Mitarbeiter suchen..."
