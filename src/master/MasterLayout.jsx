@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { path: '/ppugv', label: 'PPUGV-Statistik', icon: BarChart3 },
   { path: '/stammdat-import', label: 'Stammdaten-Import', icon: Database },
   { path: '/kostenstellen', label: 'Kostenstellen', icon: Building2 },
+  { path: '/tisoware', label: 'Tisoware DB', icon: Database },
 ];
 
 export default function MasterLayout({ children }) {

@@ -31,6 +31,7 @@ import groupsRouter from './routes/groups.js';
 import rotationsRouter from './routes/rotations.js';
 import workplaceLinksRouter from './routes/workplaceLinks.js';
 import vacationRouter from './routes/vacation.js';
+import tisowareRouter from './routes/tisoware.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
 
@@ -572,6 +573,7 @@ app.use('/api/schedule', aiAutofillRouter);
 app.use('/api/master', masterRouter);
 app.use('/api/certificates', certificatesRouter);
 app.use('/api/groups', groupsRouter);
+app.use('/api/master/tisoware', tisowareRouter);
 app.use('/api/rotations', rotationsRouter);
 app.use('/api/workplace-links', workplaceLinksRouter);
 

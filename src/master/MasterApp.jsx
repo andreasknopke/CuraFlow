@@ -17,6 +17,7 @@ import MasterCentralEmployeeDetail from '@/master/pages/MasterCentralEmployeeDet
 import MasterPPUGV from '@/master/pages/MasterPPUGV';
 import MasterStammdatImport from '@/master/pages/MasterStammdatImport';
 import MasterCostCenters from '@/master/pages/MasterCostCenters';
+import MasterTisoware from '@/master/pages/MasterTisoware';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -86,6 +87,7 @@ export default function MasterApp() {
                       <Route path="/ppugv" element={<MasterPPUGV />} />
                       <Route path="/stammdat-import" element={<MasterStammdatImport />} />
                       <Route path="/kostenstellen" element={<MasterCostCenters />} />
+                      <Route path="/tisoware" element={<MasterTisoware />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MasterLayout>
