@@ -40,21 +40,48 @@ router.get('/central-employees', async (req, res, next) => {
       return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
     }
 
-    const [rows] = await db.execute(
-      `SELECT e.id, e.first_name, e.last_name, e.target_hours_per_week, e.work_time_model_id,
-              e.email, e.position,
-              wtm.name AS work_time_model_name,
-              wtm.hours_per_week AS model_hours_per_week,
-              eta.tenant_doctor_id
-         FROM Employee e
-         LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
-         LEFT JOIN EmployeeTenantAssignment eta
-           ON eta.employee_id COLLATE utf8mb4_general_ci = e.id COLLATE utf8mb4_general_ci
-          AND eta.tenant_id = ?
-        WHERE e.is_active = 1
-        ORDER BY e.last_name ASC, e.first_name ASC`,
-      [tenantId]
-    );
+    // Tenant-verknüpfte Kostenstellen abrufen
+    let tenantCostCenters = [];
+    try {
+      const [ccRows] = await db.execute(
+        `SELECT cc.code, cc.name
+           FROM TenantCostCenter tcc
+           JOIN CostCenter cc ON tcc.cost_center_code = cc.code
+          WHERE tcc.tenant_id = ?
+          ORDER BY cc.code`,
+        [tenantId]
+      );
+      tenantCostCenters = ccRows;
+    } catch {
+      // Tabellen existieren ggf. noch nicht
+    }
+
+    const { cost_center } = req.query;
+
+    let sql = `
+      SELECT e.id, e.first_name, e.last_name, e.target_hours_per_week, e.work_time_model_id,
+             e.email, e.position,
+             e.cost_center, e.cost_center_name,
+             wtm.name AS work_time_model_name,
+             wtm.hours_per_week AS model_hours_per_week,
+             eta.tenant_doctor_id
+        FROM Employee e
+        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
+        LEFT JOIN EmployeeTenantAssignment eta
+          ON eta.employee_id COLLATE utf8mb4_general_ci = e.id COLLATE utf8mb4_general_ci
+         AND eta.tenant_id = ?
+       WHERE e.is_active = 1
+    `;
+    const params = [tenantId];
+
+    if (cost_center) {
+      sql += ' AND e.cost_center = ?';
+      params.push(cost_center);
+    }
+
+    sql += ' ORDER BY e.last_name ASC, e.first_name ASC';
+
+    const [rows] = await db.execute(sql, params);
 
     res.json({
       employees: rows.map((row) => ({
@@ -62,6 +89,7 @@ router.get('/central-employees', async (req, res, next) => {
         target_hours_per_week: resolveEmployeeTargetWeeklyHours(row),
         is_linked_to_current_tenant: !!row.tenant_doctor_id,
       })),
+      tenantCostCenters,
     });
   } catch (error) {
     next(error);

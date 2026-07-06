@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from "@/components/settings/TeamRoleSettings";
 import DoctorQualificationEditor from "@/components/staff/DoctorQualificationEditor";
 import { toast } from "sonner";
-import { Mail, Loader2, Link2, Unlink } from "lucide-react";
+import { Mail, Loader2, Link2, Unlink, Filter } from "lucide-react";
 import type { Doctor } from '@/types';
 
 interface CentralEmployee {
@@ -22,6 +22,8 @@ interface CentralEmployee {
   target_hours_per_week?: number;
   model_hours_per_week?: number;
   work_time_model_name?: string;
+  cost_center?: string;
+  cost_center_name?: string;
 }
 
 interface DoctorFormData {
@@ -94,6 +96,29 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     },
   });
 
+  const { data: centralEmployeesMeta = {} } = useQuery({
+    queryKey: ["central-employees-meta"],
+    queryFn: async () => {
+      try {
+        const res = await api.request('/api/staff/central-employees');
+        return { tenantCostCenters: res.tenantCostCenters || [] };
+      } catch {
+        return { tenantCostCenters: [] };
+      }
+    },
+  });
+
+  const { tenantCostCenters = [] } = centralEmployeesMeta;
+
+  const [selectedCostCenter, setSelectedCostCenter] = React.useState<string | null>(null);
+  const costCenterFilterActive = selectedCostCenter !== null;
+
+  // Gefilterte Liste: nur Mitarbeiter der gewählten Kostenstelle
+  const filteredCentralEmployees = React.useMemo(() => {
+    if (!costCenterFilterActive) return centralEmployees;
+    return centralEmployees.filter((e: CentralEmployee) => e.cost_center === selectedCostCenter);
+  }, [centralEmployees, selectedCostCenter, costCenterFilterActive]);
+
   const [sendingTestMail, setSendingTestMail] = useState(false);
   const [selectedQualIds, setSelectedQualIds] = useState<string[]>([]);
 
@@ -106,19 +131,23 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
         sortLabel: '',
         keywords: ['lokal', 'keine zentrale verknupfung'],
       },
-      ...centralEmployees.map((employee: CentralEmployee) => {
+      ...filteredCentralEmployees.map((employee: CentralEmployee) => {
         const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
+        const descParts = [];
+        if (employee.work_time_model_name) descParts.push(employee.work_time_model_name);
+        if (employee.cost_center_name) descParts.push(`KST ${employee.cost_center_name}`);
+        else if (employee.cost_center) descParts.push(`KST ${employee.cost_center}`);
         return {
           value: employee.id,
           label: fullName,
           triggerLabel: fullName,
-          description: employee.work_time_model_name || undefined,
-          searchText: [employee.first_name, employee.last_name, employee.work_time_model_name].filter(Boolean).join(' '),
+          description: descParts.join(' · ') || undefined,
+          searchText: [employee.first_name, employee.last_name, employee.work_time_model_name, employee.cost_center, employee.cost_center_name].filter(Boolean).join(' '),
           sortLabel: fullName,
         };
       }),
     ]
-  ), [centralEmployees]);
+  ), [filteredCentralEmployees]);
 
   const handleSendTestMail = async () => {
     const email = formData.email;
@@ -238,6 +267,46 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 Daten aus der zentralen Mitarbeiterverwaltung übernehmen. Bei Auswahl werden Name,
                 E-Mail und Soll-Stunden automatisch ausgefüllt.
               </p>
+
+              {/* Kostenstellen-Filter, wenn der Mandant mit KST verknüpft ist */}
+              {tenantCostCenters.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <Filter className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="text-xs text-slate-500 mr-1">Kostenstelle:</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCostCenter(null)}
+                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                      !costCenterFilterActive
+                        ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
+                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    Alle
+                  </button>
+                  {tenantCostCenters.map((cc: { code: string; name: string }) => (
+                    <button
+                      key={cc.code}
+                      type="button"
+                      onClick={() => setSelectedCostCenter(cc.code)}
+                      className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                        selectedCostCenter === cc.code
+                          ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                      title={`Nur Mitarbeiter der Kostenstelle ${cc.code} anzeigen`}
+                    >
+                      {cc.code}{cc.name ? ` – ${cc.name}` : ''}
+                    </button>
+                  ))}
+                  {costCenterFilterActive && (
+                    <span className="text-xs text-slate-400 ml-1">
+                      ({filteredCentralEmployees.length} Mitarbeiter)
+                    </span>
+                  )}
+                </div>
+              )}
+
               <EmployeeSelect
                 value={formData.central_employee_id || '__none__'}
                 onValueChange={(value) => {
@@ -245,7 +314,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                   setFormData(prev => {
                     const updated = { ...prev, central_employee_id: empId };
                     if (empId) {
-                      const emp = centralEmployees.find((e: CentralEmployee) => e.id === empId);
+                      const emp = filteredCentralEmployees.find((e: CentralEmployee) => e.id === empId)
+                        || centralEmployees.find((e: CentralEmployee) => e.id === empId);
                       if (emp) {
                         const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
                         if (fullName && !prev.name) updated.name = fullName;
