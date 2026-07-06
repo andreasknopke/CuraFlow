@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -30,6 +30,7 @@ export default function WishRequestDialog({
     initialDraft,
     rangeWishes
 }) {
+    const dialogContentRef = useRef<HTMLDivElement | null>(null);
     const [formData, setFormData] = useState({
         type: 'service',
         position: '',
@@ -95,6 +96,14 @@ export default function WishRequestDialog({
             }
         }
     }, [isOpen, wish, activePosition, initialDraft, date]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        requestAnimationFrame(() => {
+            dialogContentRef.current?.focus({ preventScroll: true });
+        });
+    }, [isOpen]);
 
     // Check if approval is required based on settings
     const getRequiresApproval = () => {
@@ -204,7 +213,12 @@ export default function WishRequestDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:left-2 max-sm:top-2 max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-1rem)] max-sm:translate-x-0 max-sm:translate-y-0" data-testid="wish-request-dialog">
+            <DialogContent
+                ref={dialogContentRef}
+                onOpenAutoFocus={(event) => event.preventDefault()}
+                className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:left-2 max-sm:top-2 max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-1rem)] max-sm:translate-x-0 max-sm:translate-y-0"
+                data-testid="wish-request-dialog"
+            >
                 <DialogHeader className="px-4 sm:px-6 pt-6 pb-0 shrink-0">
                     <DialogTitle className="pr-8">
                         Wunsch für {format(date, 'EEEE, d. MMMM yyyy', { locale: de })}
