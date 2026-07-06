@@ -170,6 +170,13 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     return roles;
   }, [availableRoles, formData.central_employee_id, formData.role]);
 
+  // Wenn formData.role eine noch nicht in roleNames vorhandene Rolle ist,
+  // forcieren wir einen neuen key für den Select. Radix Select erkennt
+  // den value sonst nicht, wenn die Option beim ersten Mount fehlte.
+  const selectRoleKey = formData.role && !roleNames.some(r => r.toLowerCase() === formData.role.toLowerCase())
+    ? `role-${formData.role}`
+    : 'role-default';
+
   // Set für bereits asynchron angelegte Rollen (Schutz vor doppelter Anlage)
   const createdRolesRef = React.useRef(new Set<string>());
 
@@ -420,6 +427,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
             <div className="grid gap-2">
               <Label htmlFor="role">Funktion</Label>
               <Select
+                key={selectRoleKey}
                 value={formData.role}
                 onValueChange={(value) => setFormData({ ...formData, role: value })}
               >
