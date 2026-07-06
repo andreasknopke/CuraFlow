@@ -81,7 +81,7 @@ export async function getTisowarePool() {
 }
 
 /**
- * Test connection — returns { success, serverVersion?, error? } never throws.
+ * Test connection — returns { success, serverVersion?, error?, code? } never throws.
  */
 export async function testTisowareConnection() {
   try {
@@ -89,7 +89,12 @@ export async function testTisowareConnection() {
     const result = await p.request().query('SELECT 1 AS connected');
     return { success: true, serverVersion: result.recordset?.[0] };
   } catch (err) {
-    return { success: false, error: err.message };
+    return {
+      success: false,
+      error: err.message,
+      code: err.code || null,
+      sqlNumber: err.number || null,
+    };
   }
 }
 
@@ -266,26 +271,93 @@ export function isMockMode() {
 }
 
 /**
- * Connection status info — always succeeds, includes mock flag.
+ * Connection status info — always succeeds, includes structured diagnosis.
  */
 export async function getConnectionStatus() {
   if (isMockMode()) {
     return { connected: true, mock: true, message: 'Mock-Modus aktiv (TISO_MOCK=true)' };
   }
 
-  if (!process.env.TISO_SERVER) {
-    return { connected: false, mock: false, message: 'TISO_SERVER nicht konfiguriert' };
+  const server = process.env.TISO_SERVER || '';
+  const user = process.env.TISO_USER || '';
+  const pass = process.env.TISO_PASS || '';
+
+  if (!server) {
+    return {
+      connected: false,
+      mock: false,
+      diagnosis: 'Server nicht konfiguriert',
+      message: 'TISO_SERVER ist nicht gesetzt.',
+      hint: 'Setze die ENV-Variablen TISO_SERVER, TISO_USER und TISO_PASS im Deployment.',
+    };
   }
 
+  if (!user || !pass) {
+    return {
+      connected: false,
+      mock: false,
+      diagnosis: 'Credentials nicht konfiguriert',
+      message: 'TISO_USER oder TISO_PASS ist nicht gesetzt.',
+      hint: 'Setze TISO_USER und TISO_PASS als ENV-Variablen.',
+    };
+  }
+
+  // Try a real connection
   try {
     const result = await testTisowareConnection();
     if (result.success) {
-      return { connected: true, mock: false, message: `Verbunden mit ${process.env.TISO_SERVER}` };
+      return { connected: true, mock: false, message: `Verbunden mit ${server}` };
     }
-    return { connected: false, mock: false, message: `Fehler: ${result.error}` };
+
+    // testTisowareConnection caught the error — analyze it
+    return {
+      connected: false,
+      mock: false,
+      message: result.error?.substring(0, 200) || 'Verbindung fehlgeschlagen',
+      diagnosis: diagnoseError(result.error, result.code),
+      code: result.code || null,
+    };
   } catch (err) {
-    return { connected: false, mock: false, message: err.message };
+    return {
+      connected: false,
+      mock: false,
+      message: err.message?.substring(0, 200) || 'Unbekannter Fehler',
+      diagnosis: diagnoseError(err.message, err.code),
+      code: err.code || null,
+    };
   }
+}
+
+/**
+ * Analyse a Tisoware connection error and return a human-readable diagnosis.
+ */
+function diagnoseError(message, code) {
+  const msg = (message || '').toLowerCase();
+  const codeStr = (code || '').toUpperCase();
+
+  if (codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
+    return 'Server antwortet nicht — Timeout. Prüfe Host/IP, Port und Firewall.';
+  }
+  if (codeStr === 'ECONNREFUSED') {
+    return 'Verbindung abgelehnt — Port ist geschlossen oder SQL Server läuft nicht.';
+  }
+  if (codeStr === 'ECONNRESET') {
+    return 'Verbindung wurde zurückgesetzt — möglicherweise SSL/TLS-Problem oder Firewall.';
+  }
+  if (codeStr === 'ELOGIN' || msg.includes('login failed')) {
+    return 'Anmeldung fehlgeschlagen — Benutzername oder Passwort falsch.';
+  }
+  if (codeStr === 'EINSTLOOKUP' || codeStr === 'EINSTANCE') {
+    return 'SQL Server-Instanz wurde nicht gefunden. Prüfe den Instanznamen (Host\Instanz).';
+  }
+  if (codeStr === 'ENOTFOUND' || codeStr === 'ENOENT') {
+    return 'Hostname konnte nicht aufgelöst werden. Prüfe TISO_SERVER.';
+  }
+  if (msg.includes('cannot open database') || msg.includes('datenbank')) {
+    return 'Datenbank "tisoware" nicht gefunden oder nicht zugänglich.';
+  }
+
+  return `Fehler: ${(message || 'Unbekannt').substring(0, 200)}`;
 }
 
 // ============ EXPORT WRAPPERS (mock-aware) ============
