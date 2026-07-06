@@ -120,7 +120,7 @@ export default function DemoSettingsDialog() {
           Demo-Zeiten
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-sm:max-w-[95vw] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Konfiguration Demonstrationen & Konsile</DialogTitle>
           <DialogDescription>

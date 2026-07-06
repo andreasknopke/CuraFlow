@@ -283,7 +283,7 @@ export default function SectionConfigDialog() {
                     <Settings2 className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-3xl">
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-3xl max-sm:max-w-[95vw]">
                 <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
                     <DialogTitle>Panel-Konfiguration</DialogTitle>
                 </DialogHeader>

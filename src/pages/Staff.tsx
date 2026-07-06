@@ -96,7 +96,21 @@ export default function StaffPage() {
           "Oberarzt": { bg: "#dbeafe", text: "#1e40af" },
           "Facharzt": { bg: "#dcfce7", text: "#166534" },
           "Assistenzarzt": { bg: "#fef9c3", text: "#854d0e" },
-          "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" }
+          "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" },
+          "MFA": { bg: "#dcfce7", text: "#166534" },
+          "Pflegefachkraft": { bg: "#dbeafe", text: "#1e40af" },
+          "KAPH": { bg: "#fef9c3", text: "#854d0e" },
+          "Azubi MFA": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi PFF": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi PFM": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi PFFP": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi ATA": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi OTA": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi MTR": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi MTL": { bg: "#ffedd5", text: "#9a3412" },
+          "Azubi KAPH": { bg: "#ffedd5", text: "#9a3412" },
+          "Studentische Hilfskraft": { bg: "#f1f5f9", text: "#1e293b" },
+          "Pflegerische Hilfskraft": { bg: "#f1f5f9", text: "#1e293b" }
       };
       
       if (defaults[role]) return { backgroundColor: defaults[role].bg, color: defaults[role].text };

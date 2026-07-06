@@ -256,7 +256,7 @@ export default function TransferToSchedulerDialog({
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" data-testid="training-transfer-dialog">
+            <DialogContent className="max-w-4xl max-sm:max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" data-testid="training-transfer-dialog">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <CalendarDays className="w-5 h-5 text-emerald-600" />

@@ -132,7 +132,7 @@ export default function AppSettingsDialog() {
                     <Settings className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-sm:max-w-[95vw]">
                 <DialogHeader>
                     <DialogTitle>Allgemeine Einstellungen</DialogTitle>
                 </DialogHeader>

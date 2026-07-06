@@ -39,7 +39,21 @@ export const DEFAULT_COLORS = {
         "Oberarzt": { bg: "#dbeafe", text: "#1e40af" }, // blue-100, blue-800
         "Facharzt": { bg: "#dcfce7", text: "#166534" }, // green-100, green-800
         "Assistenzarzt": { bg: "#fef9c3", text: "#854d0e" }, // yellow-100, yellow-800
-        "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" } // gray-200, gray-800
+        "Nicht-Radiologe": { bg: "#e5e7eb", text: "#1f2937" }, // gray-200, gray-800
+        "MFA": { bg: "#dcfce7", text: "#166534" }, // green-100, green-800
+        "Pflegefachkraft": { bg: "#dbeafe", text: "#1e40af" }, // blue-100, blue-800
+        "KAPH": { bg: "#fef9c3", text: "#854d0e" }, // yellow-100, yellow-800
+        "Azubi MFA": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi PFF": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi PFM": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi PFFP": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi ATA": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi OTA": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi MTR": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi MTL": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Azubi KAPH": { bg: "#ffedd5", text: "#9a3412" }, // orange-100, orange-800
+        "Studentische Hilfskraft": { bg: "#f1f5f9", text: "#1e293b" }, // slate-100, slate-800
+        "Pflegerische Hilfskraft": { bg: "#f1f5f9", text: "#1e293b" } // slate-100, slate-800
     },
     absences: {
         "Urlaub": { bg: "#22c55e", text: "#ffffff" }, // green-500
