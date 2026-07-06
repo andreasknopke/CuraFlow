@@ -20,23 +20,28 @@ import sql from 'mssql';
 
 // ─── Connection pool ─────────────────────────────────────────────────────────
 
-let tisowareConfig = null;
 let pool = null;
 let poolPromise = null;
 
 // ─── Connection state cache (avoids blocking on repeated failed attempts) ────
 
-const CONNECTION_CACHE_TTL = 30_000; // 30 seconds
+const CONNECTION_CACHE_TTL = 5_000; // 5 seconds (short: allows quick retry after config change)
 const connectionCache = {
   state: 'unknown', // 'unknown' | 'connected' | 'failed'
   timestamp: 0,
   error: null,
   code: null,
+  configHash: '', // tracks env state to invalidate cache on config change
 };
 
-function buildConfig() {
-  if (tisowareConfig) return tisowareConfig;
+/**
+ * Compute a hash of the current ENV config for cache invalidation.
+ */
+function currentConfigHash() {
+  return `${process.env.TISO_SERVER || ''}|${process.env.TISO_USER || ''}|${process.env.TISO_PASS || ''}`;
+}
 
+function buildConfig() {
   const server = process.env.TISO_SERVER || '';
   const user = process.env.TISO_USER || '';
   const password = process.env.TISO_PASS || '';
@@ -49,11 +54,14 @@ function buildConfig() {
     [host, instanceName] = server.split('\\', 2);
   } else if (server.includes(',')) {
     const [h, p] = server.split(',', 2);
-    host = h;
-    port = parseInt(p, 10) || 1433;
+    host = h.trim();
+    port = parseInt(p.trim(), 10) || 1433;
   }
 
-  tisowareConfig = {
+  // Validate: if we have a raw IP and no port and no instance, use default 1433
+  // (no special action needed, that's already the default)
+
+  return {
     server: host,
     port,
     user,
@@ -69,11 +77,9 @@ function buildConfig() {
       min: 0,
       idleTimeoutMillis: 30000,
     },
-    connectionTimeout: 3000,  // Fail fast after 3s instead of default 30s
+    connectionTimeout: 3000,
     requestTimeout: 15000,
   };
-
-  return tisowareConfig;
 }
 
 /**
@@ -84,14 +90,22 @@ function resetConnectionCache() {
   connectionCache.timestamp = 0;
   connectionCache.error = null;
   connectionCache.code = null;
+  connectionCache.configHash = currentConfigHash();
 }
 
 /**
  * Get (or create) the Tisoware SQL Server connection pool.
  * Uses connection cache to avoid blocking on repeated failed attempts.
+ * If ENV vars changed since last attempt, cache is automatically invalidated.
  * @throws {Error} with rich metadata if connection fails or was recently failed.
  */
 export async function getTisowarePool(forceFresh = false) {
+  // Auto-invalidate cache if config changed
+  if (connectionCache.configHash && connectionCache.configHash !== currentConfigHash()) {
+    resetConnectionCache();
+    await closeTisowarePool();
+  }
+
   // If forced fresh, clear cache and pool
   if (forceFresh) {
     resetConnectionCache();
