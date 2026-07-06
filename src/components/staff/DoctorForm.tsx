@@ -114,9 +114,6 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   const [selectedCostCenter, setSelectedCostCenter] = React.useState<string | null>(null);
   const costCenterFilterActive = selectedCostCenter !== null;
 
-  // Ermittelt, ob beim Wechsel des zentralen Mitarbeiters alle Felder neu befüllt werden müssen
-  const lastSelectedCentralIdRef = React.useRef<string | null>(null);
-
   // Gefilterte Liste: nur Mitarbeiter der gewählten Kostenstelle
   const filteredCentralEmployees = React.useMemo(() => {
     if (!costCenterFilterActive) return centralEmployees;
@@ -125,6 +122,48 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
 
   const [sendingTestMail, setSendingTestMail] = useState(false);
   const [selectedQualIds, setSelectedQualIds] = useState<string[]>([]);
+
+  // Effektive Rollenliste: vorhandene + ggf. die aus dem aktuell gewählten
+  // zentralen Mitarbeiter, damit der Select immer einen Value anzeigen kann.
+  const effectiveRoles = React.useMemo(() => {
+    const roles = [...availableRoles];
+    if (formData.central_employee_id && formData.role && !roles.some(r => r.toLowerCase() === formData.role!.toLowerCase())) {
+      roles.push(formData.role);
+    }
+    return roles;
+  }, [availableRoles, formData.central_employee_id, formData.role]);
+
+  // Set für bereits asynchron angelegte Rollen (Schutz vor doppelter Anlage)
+  const createdRolesRef = React.useRef(new Set<string>());
+
+  // Sobald eine zentrale Verknüpfung mit einer neuen Rolle aktiv ist, lege
+  // die Rolle asynchron in der TeamRole-Tabelle an.
+  React.useEffect(() => {
+    if (doctor) return; // Nur bei Neuanlage
+    if (!formData.central_employee_id || !formData.role) return;
+    const roleName = formData.role;
+    if (!roleName.trim()) return;
+    if (createdRolesRef.current.has(roleName)) return;
+
+    if (!roleNames.some(r => r.toLowerCase() === roleName.toLowerCase())) {
+      createdRolesRef.current.add(roleName);
+      db.TeamRole.create({
+        name: roleName,
+        priority: roleNames.length,
+        is_specialist: false,
+        can_do_foreground_duty: true,
+        can_do_background_duty: false,
+        excluded_from_statistics: false,
+        description: `Aus zentraler Mitarbeiterverwaltung übernommen (${roleName})`,
+      }).then(() => {
+        refetchRoles();
+        toast.success(`Funktion „${roleName}" wurde automatisch angelegt.`);
+      }).catch((err) => {
+        console.error('Fehler beim Anlegen der Funktion:', err);
+        toast.error(`Funktion „${roleName}" konnte nicht angelegt werden.`);
+      });
+    }
+  }, [formData.central_employee_id, formData.role]);
 
   const centralEmployeeOptions = React.useMemo(() => (
     [
@@ -314,61 +353,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
 
               <EmployeeSelect
                 value={formData.central_employee_id || '__none__'}
-                onValueChange={async (value) => {
+                onValueChange={(value) => {
                   const empId = value === '__none__' ? '' : value;
 
-                  if (empId) {
-                    const emp = filteredCentralEmployees.find((e: CentralEmployee) => e.id === empId)
-                      || centralEmployees.find((e: CentralEmployee) => e.id === empId);
-
-                    // Position („Beschäftigt als") aus der Zentrale übernehmen
-                    let resolvedRole = '';
-                    if (emp?.position) {
-                      resolvedRole = emp.position.trim();
-                      const exists = roleNames.some(r => r.toLowerCase() === resolvedRole.toLowerCase());
-
-                      if (!exists) {
-                        try {
-                          await db.TeamRole.create({
-                            name: resolvedRole,
-                            priority: roleNames.length,
-                            is_specialist: false,
-                            can_do_foreground_duty: true,
-                            can_do_background_duty: false,
-                            excluded_from_statistics: false,
-                            description: `Aus zentraler Mitarbeiterverwaltung übernommen (${emp.position})`,
-                          });
-                          await refetchRoles();
-                          toast.success(`Funktion „${resolvedRole}" wurde automatisch angelegt.`);
-                        } catch (err) {
-                          console.error('Fehler beim Anlegen der Funktion:', err);
-                          toast.error(`Funktion „${resolvedRole}" konnte nicht angelegt werden.`);
-                        }
-                      }
-                    }
-
-                    // Beim Wechsel zu einem anderen Mitarbeiter: alle Felder neu setzen
-                    const isSwitch = lastSelectedCentralIdRef.current !== null
-                      && lastSelectedCentralIdRef.current !== empId;
-                    lastSelectedCentralIdRef.current = empId;
-
-                    setFormData(prev => {
-                      const base = isSwitch
-                        ? { name: '', initials: '', role: defaultRole, email: '', google_email: '' }
-                        : {};
-                      const updated = { ...prev, ...base, central_employee_id: empId };
-                      if (emp) {
-                        const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ');
-                        if (fullName) updated.name = fullName;
-                        if (emp.email) updated.email = emp.email;
-                        if (emp.email) updated.google_email = emp.email;
-                        if (emp.target_hours_per_week != null) updated.target_weekly_hours = emp.target_hours_per_week;
-                        if (resolvedRole) updated.role = resolvedRole;
-                      }
-                      return updated;
-                    });
-                  } else {
-                    lastSelectedCentralIdRef.current = null;
+                  if (!empId) {
                     setFormData(prev => ({
                       ...prev,
                       central_employee_id: '',
@@ -379,7 +367,26 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                       google_email: '',
                       target_weekly_hours: '',
                     }));
+                    return;
                   }
+
+                  const emp = filteredCentralEmployees.find((e: CentralEmployee) => e.id === empId)
+                    || centralEmployees.find((e: CentralEmployee) => e.id === empId);
+                  if (!emp) return;
+
+                  const fullName = [emp.first_name, emp.last_name].filter(Boolean).join(' ') || '';
+                  const roleFromPosition = emp.position?.trim() || '';
+
+                  setFormData({
+                    ...formData,
+                    central_employee_id: empId,
+                    name: fullName,
+                    initials: '',
+                    email: emp.email || '',
+                    google_email: emp.email || '',
+                    target_weekly_hours: emp.target_hours_per_week ?? '',
+                    ...(roleFromPosition ? { role: roleFromPosition } : {}),
+                  });
                 }}
                 options={centralEmployeeOptions}
                 placeholder="Zentralen Mitarbeiter suchen..."
@@ -421,7 +428,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableRoles.map((role) => (
+                  {effectiveRoles.map((role) => (
                     <SelectItem key={role} value={role}>
                       {role}
                     </SelectItem>
