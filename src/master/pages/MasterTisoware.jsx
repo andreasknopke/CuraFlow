@@ -44,17 +44,19 @@ export default function MasterTisoware() {
   const [previewTable, setPreviewTable] = useState(null);
 
   // ── Connection status ──
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const { data: status, isLoading: statusLoading, isError: statusError, error: statusFetchError } = useQuery({
     queryKey: ['tisoware-status'],
     queryFn: () => api.request('/api/master/tisoware/status', { skipDbToken: true }),
-    refetchInterval: 60_000,
+    refetchInterval: 30_000,
+    retry: false,
   });
 
   // ── Table list ──
-  const { data: tablesData, isLoading: tablesLoading, refetch: refetchTables } = useQuery({
+  const { data: tablesData, isLoading: tablesLoading, isError: tablesError, error: tablesQueryError, refetch: refetchTables } = useQuery({
     queryKey: ['tisoware-tables'],
     queryFn: () => api.request('/api/master/tisoware/tables', { skipDbToken: true }),
     enabled: activeTab === 'browse',
+    retry: false,
   });
   const tables = tablesData?.tables ?? [];
 
@@ -158,6 +160,84 @@ export default function MasterTisoware() {
         </Card>
       )}
 
+      {/* Connection error diagnosis card — shown when not connected and not in mock mode */}
+      {/* Also shown when status fetch itself failed (503/502 from Express) */}
+      {!statusLoading && statusError && !status?.mock && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-4 pb-3 space-y-2">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                  <Unplug className="w-4 h-4 text-red-600" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-red-900 mb-1">
+                  ⚠ Tisoware nicht verbunden
+                </h3>
+                <p className="text-sm text-red-800 font-medium mb-1">
+                  {status?.diagnosis || statusFetchError?.message || 'Server nicht erreichbar'}
+                </p>
+                {status?.detail && (
+                  <p className="text-xs text-red-600 font-mono mt-1 mb-1 bg-red-100/50 p-1.5 rounded">
+                    {status.detail}
+                  </p>
+                )}
+                {status?.hint && (
+                  <p className="text-xs text-red-700 mt-1 flex items-start gap-1">
+                    <span className="font-medium">Lösungsansatz:</span>
+                    <span>{status.hint}</span>
+                  </p>
+                )}
+                {status?.code && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Fehlercode: <code className="bg-red-100 px-1 rounded">{status.code}</code>
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!statusLoading && status && !status.connected && !status.mock && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-4 pb-3 space-y-2">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center">
+                  <Unplug className="w-4 h-4 text-red-600" />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-red-900 mb-1">
+                  ⚠ Tisoware nicht verbunden
+                </h3>
+                <p className="text-sm text-red-800 font-medium mb-1">
+                  {status.diagnosis || status.message || 'Unbekannter Fehler'}
+                </p>
+                {status.detail && (
+                  <p className="text-xs text-red-600 font-mono mt-1 mb-1 bg-red-100/50 p-1.5 rounded">
+                    {status.detail}
+                  </p>
+                )}
+                {status.hint && (
+                  <p className="text-xs text-red-700 mt-1 flex items-start gap-1">
+                    <span className="font-medium">Lösungsansatz:</span>
+                    <span>{status.hint}</span>
+                  </p>
+                )}
+                {status.code && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Fehlercode: <code className="bg-red-100 px-1 rounded">{status.code}</code>
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Main tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
@@ -200,6 +280,20 @@ export default function MasterTisoware() {
                 <div className="flex items-center justify-center py-12 text-slate-400">
                   <Loader2 className="w-6 h-6 animate-spin mr-2" />
                   Lade Tabellen…
+                </div>
+              ) : tablesError ? (
+                <div className="flex flex-col items-center justify-center py-10 px-6 text-center">
+                  <Unplug className="w-8 h-8 text-red-400 mb-3" />
+                  <p className="text-sm font-medium text-red-700 mb-1">
+                    Tisoware nicht verbunden
+                  </p>
+                  <p className="text-xs text-red-500 max-w-md">
+                    {tablesQueryError?.detail || tablesQueryError?.diagnosis || tablesQueryError?.message || 'Verbindung zum Tisoware-Server fehlgeschlagen.'}
+                  </p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchTables()}>
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                    Erneut versuchen
+                  </Button>
                 </div>
               ) : tables.length === 0 ? (
                 <div className="flex items-center justify-center py-12 text-slate-400">

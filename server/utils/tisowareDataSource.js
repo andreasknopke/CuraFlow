@@ -10,13 +10,29 @@
  *   TISO_SERVER — Server hostname\instance or host,port (e.g. "SQLAGL13\TISOWARE")
  *
  * If Tisoware is not reachable (local dev), set TISO_MOCK=true to use mock data.
+ *
+ * Connection caching: Failed attempts are cached for 30s so subsequent calls
+ * fail instantly instead of blocking on connection timeout.
+ * Connection timeout is 3s — fast failure is preferred over long waits.
  */
 
 import sql from 'mssql';
 
+// ─── Connection pool ─────────────────────────────────────────────────────────
+
 let tisowareConfig = null;
 let pool = null;
 let poolPromise = null;
+
+// ─── Connection state cache (avoids blocking on repeated failed attempts) ────
+
+const CONNECTION_CACHE_TTL = 30_000; // 30 seconds
+const connectionCache = {
+  state: 'unknown', // 'unknown' | 'connected' | 'failed'
+  timestamp: 0,
+  error: null,
+  code: null,
+};
 
 function buildConfig() {
   if (tisowareConfig) return tisowareConfig;
@@ -53,26 +69,81 @@ function buildConfig() {
       min: 0,
       idleTimeoutMillis: 30000,
     },
-    connectionTimeout: 10000,
-    requestTimeout: 30000,
+    connectionTimeout: 3000,  // Fail fast after 3s instead of default 30s
+    requestTimeout: 15000,
   };
 
   return tisowareConfig;
 }
 
 /**
- * Get (or create) the Tisoware SQL Server connection pool.
+ * Reset the connection cache — forces a fresh connection attempt on next call.
  */
-export async function getTisowarePool() {
-  if (poolPromise) return poolPromise;
+function resetConnectionCache() {
+  connectionCache.state = 'unknown';
+  connectionCache.timestamp = 0;
+  connectionCache.error = null;
+  connectionCache.code = null;
+}
+
+/**
+ * Get (or create) the Tisoware SQL Server connection pool.
+ * Uses connection cache to avoid blocking on repeated failed attempts.
+ * @throws {Error} with rich metadata if connection fails or was recently failed.
+ */
+export async function getTisowarePool(forceFresh = false) {
+  // If forced fresh, clear cache and pool
+  if (forceFresh) {
+    resetConnectionCache();
+    await closeTisowarePool();
+  }
+
+  // Fast path: cache says we're recently connected
+  if (connectionCache.state === 'connected' && pool) {
+    return pool;
+  }
+
+  // Fast path: cache says we recently failed (< TTL ago)
+  if (
+    connectionCache.state === 'failed' &&
+    Date.now() - connectionCache.timestamp < CONNECTION_CACHE_TTL
+  ) {
+    const err = new Error(connectionCache.error || 'Tisoware nicht verbunden (Fehler zwischengespeichert)');
+    err.code = connectionCache.code || 'ECACHED';
+    err.tisoware = true;
+    err.cached = true;
+    throw err;
+  }
+
+  // Need to connect — attempt pool creation
+  // Prevent concurrent attempts
+  if (poolPromise) {
+    return poolPromise;
+  }
 
   poolPromise = (async () => {
     try {
       const config = buildConfig();
       pool = await sql.connect(config);
+
+      // Cache success
+      connectionCache.state = 'connected';
+      connectionCache.timestamp = Date.now();
+      connectionCache.error = null;
+      connectionCache.code = null;
+
       return pool;
     } catch (err) {
+      // Cache failure
+      connectionCache.state = 'failed';
+      connectionCache.timestamp = Date.now();
+      connectionCache.error = err.message;
+      connectionCache.code = err.code || null;
+
+      // Reset pool promise so next call can retry (after TTL)
       poolPromise = null;
+      pool = null;
+
       throw err;
     }
   })();
@@ -80,12 +151,15 @@ export async function getTisowarePool() {
   return poolPromise;
 }
 
+// ─── Low-level query functions ───────────────────────────────────────────────
+
 /**
  * Test connection — returns { success, serverVersion?, error?, code? } never throws.
+ * Always does a fresh connection attempt (for probing).
  */
 export async function testTisowareConnection() {
   try {
-    const p = await getTisowarePool();
+    const p = await getTisowarePool(true); // force fresh
     const result = await p.request().query('SELECT 1 AS connected');
     return { success: true, serverVersion: result.recordset?.[0] };
   } catch (err) {
@@ -101,7 +175,7 @@ export async function testTisowareConnection() {
 /**
  * Run a read-only query against Tisoware.
  * Only SELECT / WITH queries are permitted.
- * maxRows caps the result set (default 1000).
+ * Uses the connection cache — fails fast if not connected.
  */
 export async function queryTisoware(query, maxRows = 1000) {
   const normalized = query.trim().toUpperCase();
@@ -109,7 +183,7 @@ export async function queryTisoware(query, maxRows = 1000) {
     throw Object.assign(new Error('Only SELECT / WITH queries are allowed'), { status: 400 });
   }
 
-  const p = await getTisowarePool();
+  const p = await getTisowarePool(); // uses cache — may throw instantly
   const result = await p.request().query(query);
 
   const rows = (result.recordset || []).slice(0, maxRows);
@@ -272,6 +346,7 @@ export function isMockMode() {
 
 /**
  * Connection status info — always succeeds, includes structured diagnosis.
+ * Performs a fresh connection attempt.
  */
 export async function getConnectionStatus() {
   if (isMockMode()) {
@@ -302,28 +377,36 @@ export async function getConnectionStatus() {
     };
   }
 
-  // Try a real connection
+  // Fresh connection attempt — uses forceFresh=true to bypass cache
   try {
     const result = await testTisowareConnection();
     if (result.success) {
-      return { connected: true, mock: false, message: `Verbunden mit ${server}` };
+      return {
+        connected: true,
+        mock: false,
+        message: `Verbunden mit ${server}`,
+        diagnosis: 'Verbindung hergestellt',
+      };
     }
 
-    // testTisowareConnection caught the error — analyze it
     return {
       connected: false,
       mock: false,
-      message: result.error?.substring(0, 200) || 'Verbindung fehlgeschlagen',
+      message: diagnoseError(result.error, result.code),
       diagnosis: diagnoseError(result.error, result.code),
+      detail: result.error?.substring(0, 300) || null,
       code: result.code || null,
+      hint: getHintForError(result.code),
     };
   } catch (err) {
     return {
       connected: false,
       mock: false,
-      message: err.message?.substring(0, 200) || 'Unbekannter Fehler',
+      message: diagnoseError(err.message, err.code),
       diagnosis: diagnoseError(err.message, err.code),
+      detail: err.message?.substring(0, 300) || 'Unbekannter Fehler',
       code: err.code || null,
+      hint: getHintForError(err.code),
     };
   }
 }
@@ -336,10 +419,10 @@ function diagnoseError(message, code) {
   const codeStr = (code || '').toUpperCase();
 
   if (codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
-    return 'Server antwortet nicht — Timeout. Prüfe Host/IP, Port und Firewall.';
+    return 'Server antwortet nicht — Verbindungsaufbau abgebrochen (Timeout 3s).';
   }
   if (codeStr === 'ECONNREFUSED') {
-    return 'Verbindung abgelehnt — Port ist geschlossen oder SQL Server läuft nicht.';
+    return 'Verbindung abgelehnt — SQL Server läuft nicht oder Port ist blockiert.';
   }
   if (codeStr === 'ECONNRESET') {
     return 'Verbindung wurde zurückgesetzt — möglicherweise SSL/TLS-Problem oder Firewall.';
@@ -348,16 +431,40 @@ function diagnoseError(message, code) {
     return 'Anmeldung fehlgeschlagen — Benutzername oder Passwort falsch.';
   }
   if (codeStr === 'EINSTLOOKUP' || codeStr === 'EINSTANCE') {
-    return 'SQL Server-Instanz wurde nicht gefunden. Prüfe den Instanznamen (Host\Instanz).';
+    return 'SQL Server-Instanz wurde nicht gefunden — Host\\Instanz-Format prüfen.';
   }
   if (codeStr === 'ENOTFOUND' || codeStr === 'ENOENT') {
-    return 'Hostname konnte nicht aufgelöst werden. Prüfe TISO_SERVER.';
+    return 'Hostname nicht auflösbar — TISO_SERVER prüfen.';
   }
-  if (msg.includes('cannot open database') || msg.includes('datenbank')) {
-    return 'Datenbank "tisoware" nicht gefunden oder nicht zugänglich.';
+  if (codeStr === 'ECACHED') {
+    return 'Tisoware aktuell nicht verfügbar (vorheriger Fehler zwischengespeichert). Nächster Versuch in 30s.';
+  }
+  if (msg.includes('cannot open database') || (msg.includes('datenbank') && msg.includes('nicht'))) {
+    return 'Datenbank "tisoware" wurde nicht gefunden.';
   }
 
-  return `Fehler: ${(message || 'Unbekannt').substring(0, 200)}`;
+  return `${(message || 'Unbekannter Fehler').substring(0, 200)}`;
+}
+
+function getHintForError(code) {
+  const codeStr = (code || '').toUpperCase();
+
+  if (codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
+    return 'Prüfe: (1) TISO_SERVER ist korrekt (Host\\Instanz oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) 3s Timeout — ist der Server aus diesem Netz erreichbar?';
+  }
+  if (codeStr === 'ECONNREFUSED') {
+    return 'Prüfe: (1) SQL Server Dienst läuft (2) Port 1433 (oder konfigurierter Port) ist offen.';
+  }
+  if (codeStr === 'ELOGIN') {
+    return 'Prüfe: (1) TISO_USER und TISO_PASS sind korrekt (2) Der Benutzer hat Zugriff auf die tisoware-Datenbank.';
+  }
+  if (codeStr === 'EINSTLOOKUP' || codeStr === 'EINSTANCE') {
+    return 'Prüfe: (1) Format ist HOST\\INSTANZ (2) SQL Server Browser-Dienst läuft.';
+  }
+  if (codeStr === 'ENOTFOUND') {
+    return 'Prüfe: (1) Der Hostname ist korrekt geschrieben (2) DNS funktioniert.';
+  }
+  return 'Siehe Server-Log für Details.';
 }
 
 // ============ EXPORT WRAPPERS (mock-aware) ============
