@@ -204,7 +204,7 @@ export default function WishRequestDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:left-2 max-sm:right-2 max-sm:top-2 max-sm:w-auto max-sm:max-w-none max-sm:max-h-[calc(100dvh-1rem)] max-sm:translate-x-0 max-sm:translate-y-0" data-testid="wish-request-dialog">
+            <DialogContent className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:left-2 max-sm:top-2 max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-1rem)] max-sm:translate-x-0 max-sm:translate-y-0" data-testid="wish-request-dialog">
                 <DialogHeader className="px-4 sm:px-6 pt-6 pb-0 shrink-0">
                     <DialogTitle className="pr-8">
                         Wunsch für {format(date, 'EEEE, d. MMMM yyyy', { locale: de })}
