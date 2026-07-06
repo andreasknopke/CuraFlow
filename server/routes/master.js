@@ -21,6 +21,7 @@ import {
   syncEmployeeWorkSettingsToTenantDoctors,
 } from '../utils/masterEmployeeWorkSettings.js';
 import {
+  ensureCentralAbsenceTables,
   migrateLinkedAssignmentsToCentral,
   migrateTenantDoctorAbsencesToCentral,
   seedTenantDoctorAbsencesFromCentral,
@@ -957,7 +958,10 @@ router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async 
 
 /**
  * GET /api/master/absences?year=2026&month=02&tenantId=xxx
- * Absences across all tenants for a given month
+ * Absences across all tenants for a given month.
+ *
+ * Primary source: CentralAbsenceEntry (master DB).
+ * Fallback: tenant ShiftEntry for doctors not yet linked to a central employee.
  */
 router.get('/absences', async (req, res, next) => {
   try {
@@ -970,14 +974,59 @@ router.get('/absences', async (req, res, next) => {
 
     const absenceTypes = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress'];
 
-    const entries = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    const allEntries = [];
+
+    // ── 1) Primary source: CentralAbsenceEntry in master DB ──────────────
+    try {
+      await ensureCentralAbsenceTables(db);
+
+      let centralSql = `
+        SELECT cae.date, cae.position, cae.note, cae.source_tenant_id,
+               CONCAT(COALESCE(e.last_name,''), ', ', COALESCE(e.first_name,'')) AS employee_name
+        FROM CentralAbsenceEntry cae
+        LEFT JOIN Employee e ON cae.employee_id = e.id
+        WHERE cae.date >= ? AND cae.date <= ?
+      `;
+      const centralParams = [startDate, endDate];
+
+      if (tenantId && tenantId !== 'all') {
+        centralSql += ' AND cae.source_tenant_id = ?';
+        centralParams.push(tenantId);
+      }
+
+      centralSql += ' ORDER BY cae.date, employee_name';
+
+      const [centralRows] = await db.execute(centralSql, centralParams);
+
+      // Resolve tenant id → display name
+      const [tokens] = await db.execute('SELECT id, name FROM db_tokens');
+      const tenantNames = Object.fromEntries(tokens.map(t => [t.id, t.name]));
+
+      for (const r of centralRows) {
+        allEntries.push({
+          date: typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd'),
+          type: r.position,
+          staffName: r.employee_name,
+          note: r.note || null,
+          tenantId: r.source_tenant_id || null,
+          tenantName: tenantNames[r.source_tenant_id] || 'Unbekannt',
+        });
+      }
+    } catch (e) {
+      console.warn('[Master absences] CentralAbsenceEntry query failed:', e.message);
+    }
+
+    // ── 2) Fallback: unlinked doctors still store absences in tenant DB ──
+    const tenantEntries = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
       try {
         const placeholders = absenceTypes.map(() => '?').join(',');
         const [rows] = await pool.execute(
-          `SELECT se.date, se.position, se.note, d.name as doctor_name
+          `SELECT se.date, se.position, se.note, d.name AS doctor_name
            FROM ShiftEntry se
            JOIN Doctor d ON se.doctor_id = d.id
-           WHERE se.date >= ? AND se.date <= ? AND se.position IN (${placeholders})
+           WHERE se.date >= ? AND se.date <= ?
+             AND se.position IN (${placeholders})
+             AND (d.central_employee_id IS NULL OR d.central_employee_id = '')
            ORDER BY se.date, d.name`,
           [startDate, endDate, ...absenceTypes]
         );
@@ -995,14 +1044,19 @@ router.get('/absences', async (req, res, next) => {
       }
     });
 
-    // Summary: count by type
+    allEntries.push(...tenantEntries);
+
+    // ── 3) Global sort by date, then name ────────────────────────────────
+    allEntries.sort((a, b) => a.date.localeCompare(b.date) || a.staffName.localeCompare(b.staffName));
+
+    // ── 4) Summary: count by type ────────────────────────────────────────
     const summary = {};
     absenceTypes.forEach(t => { summary[t] = 0; });
-    entries.forEach(e => {
-      if (summary[e.type] !== undefined) summary[e.type]++;
+    allEntries.forEach(e => {
+      if (Object.prototype.hasOwnProperty.call(summary, e.type)) summary[e.type]++;
     });
 
-    res.json({ entries, summary });
+    res.json({ entries: allEntries, summary });
   } catch (error) {
     next(error);
   }
