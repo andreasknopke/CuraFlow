@@ -284,11 +284,11 @@ export default function SectionConfigDialog() {
                 </Button>
             </DialogTrigger>
             <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-3xl max-sm:max-w-[95vw]">
-                <DialogHeader className="shrink-0 px-6 pt-6 pb-0">
+                <DialogHeader className="shrink-0 px-4 sm:px-6 pt-6 pb-0">
                     <DialogTitle>Panel-Konfiguration</DialogTitle>
                 </DialogHeader>
                 
-                <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+                <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 min-w-0">
                     <p className="text-sm text-slate-500">
                         Passen Sie die Bezeichnungen und Reihenfolge der Bereiche an. Ziehen Sie die Einträge, um die Reihenfolge zu ändern.
                     </p>

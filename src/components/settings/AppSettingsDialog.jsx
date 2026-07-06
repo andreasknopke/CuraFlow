@@ -168,7 +168,7 @@ export default function AppSettingsDialog() {
                                 <Label>Anzuzeigende Abwesenheitstypen (Jahresübersicht)</Label>
                                 <p className="text-xs text-slate-500">Wählen Sie, welche Einträge in der Jahresübersicht sichtbar sein sollen.</p>
                             </div>
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 {defaultVisibleTypes.map(type => (
                                     <div key={type} className="flex items-center space-x-2">
                                         <Switch 
@@ -277,13 +277,13 @@ export default function AppSettingsDialog() {
                             </div>
                             
                             <div className="space-y-2">
-                                <div className="flex items-center justify-between text-xs font-medium text-slate-500 uppercase px-2">
+                                <div className="flex items-center justify-between text-xs font-medium text-slate-500 uppercase px-2 gap-2">
                                     <span>Abwesenheitsart</span>
-                                    <span>Verhalten bei Konflikt</span>
+                                    <span className="shrink-0">Verhalten bei Konflikt</span>
                                 </div>
                                 {["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"].map(type => (
-                                    <div key={type} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 shadow-sm">
-                                        <div className="font-medium text-slate-900 text-sm">{type}</div>
+                                    <div key={type} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200 shadow-sm gap-2">
+                                        <div className="font-medium text-slate-900 text-sm shrink-0">{type}</div>
                                         <div className="flex items-center gap-3">
                                             <div className={`text-xs font-medium flex items-center gap-1 w-24 justify-end ${absenceRules[type] ? 'text-red-600' : 'text-amber-600'}`}>
                                                 {absenceRules[type] ? (
