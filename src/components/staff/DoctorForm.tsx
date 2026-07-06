@@ -123,6 +123,43 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   const [sendingTestMail, setSendingTestMail] = useState(false);
   const [selectedQualIds, setSelectedQualIds] = useState<string[]>([]);
 
+  const [formData, setFormData] = useState<DoctorFormData>(
+    doctor || {
+      name: "",
+      initials: "",
+      role: defaultRole,
+      google_email: "",
+    }
+  );
+
+  // Formular-Reset bei Änderung von doctor/open
+  useEffect(() => {
+    if (doctor) {
+      setFormData({
+        ...doctor,
+        fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
+        target_weekly_hours: doctor.target_weekly_hours || '',
+        central_employee_id: doctor.central_employee_id || '',
+        part_time_model: (doctor as DoctorFormData).part_time_model || 'reduced_daily',
+      });
+      setSelectedQualIds([]);
+    } else if (open) {
+      setFormData({
+        name: "",
+        initials: "",
+        role: defaultRole,
+        google_email: "",
+        fte: 1.0,
+        target_weekly_hours: '',
+        contract_end_date: "",
+        exclude_from_staffing_plan: false,
+        central_employee_id: '',
+        part_time_model: 'reduced_daily',
+      });
+      setSelectedQualIds([]);
+    }
+  }, [doctor, open]);
+
   // Effektive Rollenliste: vorhandene + ggf. die aus dem aktuell gewählten
   // zentralen Mitarbeiter, damit der Select immer einen Value anzeigen kann.
   const effectiveRoles = React.useMemo(() => {
@@ -139,7 +176,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   // Sobald eine zentrale Verknüpfung mit einer neuen Rolle aktiv ist, lege
   // die Rolle asynchron in der TeamRole-Tabelle an.
   React.useEffect(() => {
-    if (doctor) return; // Nur bei Neuanlage
+    if (doctor) return;
     if (!formData.central_employee_id || !formData.role) return;
     const roleName = formData.role;
     if (!roleName.trim()) return;
@@ -212,44 +249,6 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
       setSendingTestMail(false);
     }
   };
-
-  const [formData, setFormData] = useState<DoctorFormData>(
-    doctor || {
-      name: "",
-      initials: "",
-      role: defaultRole,
-      google_email: "",
-    }
-  );
-
-  useEffect(() => {
-    if (doctor) {
-      setFormData({
-        ...doctor,
-        fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
-        target_weekly_hours: doctor.target_weekly_hours || '',
-        central_employee_id: doctor.central_employee_id || '',
-        part_time_model: (doctor as DoctorFormData).part_time_model || 'reduced_daily',
-      });
-      // Für Bearbeitung keine separaten selectedQualIds – wird über den Editor selbst gesteuert
-      setSelectedQualIds([]);
-    } else if (open) {
-      // Neuanlage: zurücksetzen
-      setFormData({
-        name: "",
-        initials: "",
-        role: defaultRole,
-        google_email: "",
-        fte: 1.0,
-        target_weekly_hours: '',
-        contract_end_date: "",
-        exclude_from_staffing_plan: false,
-        central_employee_id: '',
-        part_time_model: 'reduced_daily',
-      });
-      setSelectedQualIds([]);
-    }
-  }, [doctor, open]);
 
   const handleToggleQual = (qualId: string) => {
     setSelectedQualIds(prev =>
