@@ -4059,11 +4059,35 @@ async function ensurePpugvCacheAsync() {
  *   monat    – Filter auf Monatsname (optional, z.B. "Januar")
  *   jahr     – Filter auf Jahr (optional, 4-stellig)
  */
+// Hilfsfunktion: Monatsname → Index (1=Januar … 12=Dezember)
+const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const monthIndex = (name) => MONTH_NAMES.indexOf(name) + 1; // 0 wenn unbekannt
+
+/**
+ * Markiert Zeilen, deren Monat in der Zukunft liegt, als is_estimated und
+ * filtert sie ggf. heraus (es sei denn include_future=true).
+ */
+function applyFutureMonthFilter(rows, jahr, includeFuture) {
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
+  const requestedYear = parseInt(jahr, 10) || currentYear;
+
+  const withEstimate = rows.map(r => ({
+    ...r,
+    is_estimated: requestedYear === currentYear && monthIndex(r.monat) > currentMonth,
+  }));
+
+  if (includeFuture === true || includeFuture === 'true') {
+    return withEstimate;
+  }
+  return withEstimate.filter(r => !r.is_estimated);
+}
+
 router.get('/ppugv', async (req, res, next) => {
   try {
     const cacheStatus = await ensurePpugvCacheAsync();
 
-    const { station, monat, jahr } = req.query;
+    const { station, monat, jahr, include_future } = req.query;
     let sql = 'SELECT * FROM ppugv_daily_cache WHERE 1=1';
     const params = [];
 
@@ -4090,19 +4114,23 @@ router.get('/ppugv', async (req, res, next) => {
     // die Zeile mit hoechster Belegung behalten
     const sanitized = sanitizePpugvRows(rows);
 
+    // Zukunftsfilter: is_estimated setzen, ggf. ausblenden
+    const data = applyFutureMonthFilter(sanitized, jahr, include_future);
+
     // Cache-Metadaten
     const [metaRows] = await db.execute(
       'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 1'
     );
 
     const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
-    const isEmpty = sanitized.length === 0;
+    const isEmpty = data.length === 0;
 
     res.json({
-      data: sanitized,
+      data,
       meta: metaRows[0] || null,
-      count: sanitized.length,
+      count: data.length,
       rawCount: rows.length,
+      estimatedCount: data.filter(r => r.is_estimated).length,
       cacheStatus,
       building: isBuilding,
       message: isBuilding
@@ -4253,7 +4281,7 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
  */
 router.get('/ppugv/trends', async (req, res, next) => {
   try {
-    const { station, jahre } = req.query;
+    const { station, jahre, include_future } = req.query;
     const years = jahre
       ? jahre.split(',').map(y => parseInt(y.trim(), 10)).filter(y => !isNaN(y))
       : [new Date().getFullYear() - 2, new Date().getFullYear() - 1, new Date().getFullYear()];
@@ -4270,7 +4298,8 @@ router.get('/ppugv/trends', async (req, res, next) => {
       sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
       const [rows] = await db.execute(sql, params);
       const sanitized = sanitizePpugvRows(rows);
-      allData.push({ year, rows: sanitized });
+      const filtered = applyFutureMonthFilter(sanitized, String(year), include_future);
+      allData.push({ year, rows: filtered });
     }
 
     // Monatliche Kennzahlen pro Jahr aufbereiten
@@ -4800,7 +4829,7 @@ async function runPpbvRefreshInBackground() {
 router.get('/ppbv', async (req, res, next) => {
   try {
     const cacheStatus = await ensurePpbvCacheAsync();
-    const { station, monat, jahr } = req.query;
+    const { station, monat, jahr, include_future } = req.query;
     let sql = 'SELECT * FROM ppbv_daily_cache WHERE 1=1';
     const params = [];
     if (station) { sql += ' AND stationsname LIKE ?'; params.push(`%${station}%`); }
@@ -4813,19 +4842,22 @@ router.get('/ppbv', async (req, res, next) => {
     sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
     const [rows] = await db.execute(sql, params);
     const sanitized = sanitizePpbvRows(rows);
+    const data = applyFutureMonthFilter(sanitized, jahr, include_future);
     const [metaRows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 1');
 
     const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
 
     res.json({
-      data: sanitized,
+      data,
       meta: metaRows[0] || null,
-      count: sanitized.length,
+      count: data.length,
+      rawCount: rows.length,
+      estimatedCount: data.filter(r => r.is_estimated).length,
       cacheStatus,
       building: isBuilding,
       message: isBuilding
         ? 'PPBV-Cache wird im Hintergrund aufgebaut.'
-        : sanitized.length === 0
+        : data.length === 0
           ? 'Keine gecachten PPBV-Daten vorhanden.'
           : null,
     });

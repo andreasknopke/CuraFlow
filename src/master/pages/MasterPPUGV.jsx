@@ -24,7 +24,7 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-
+  Cell,
 } from 'recharts';
 import {
   BarChart3,
@@ -83,6 +83,7 @@ export default function MasterPPUGV() {
   const queryClient = useQueryClient();
   const [selectedStation, setSelectedStation] = useState('all');
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [showFutureMonths, setShowFutureMonths] = useState(false);
   const [chartMode, setChartMode] = useState('staffing');
   const [refreshStarted, setRefreshStarted] = useState(false);
   const [activeTab, setActiveTab] = useState('stations');
@@ -111,11 +112,12 @@ export default function MasterPPUGV() {
 
   // PPUGV-Daten laden – auto-poll wenn building
   const { data, isLoading, isError, error, refetch: refetchData } = useQuery({
-    queryKey: ['ppugv-data', selectedStation, selectedYear],
+    queryKey: ['ppugv-data', selectedStation, selectedYear, showFutureMonths],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedStation && selectedStation !== 'all') params.set('station', selectedStation);
       if (selectedYear) params.set('jahr', selectedYear);
+      if (showFutureMonths) params.set('include_future', 'true');
       const qs = params.toString();
       const result = await api.request(`/api/master/ppugv${qs ? `?${qs}` : ''}`);
 
@@ -157,20 +159,23 @@ export default function MasterPPUGV() {
 
   // FAB-Daten (Fachabteilungs-Aggregation)
   const { data: fabData } = useQuery({
-    queryKey: ['ppugv-fab', selectedYear],
+    queryKey: ['ppugv-fab', selectedYear, showFutureMonths],
     queryFn: async () => {
-      return await api.request(`/api/master/ppugv/fabstats?jahr=${selectedYear}`);
+      let url = `/api/master/ppugv/fabstats?jahr=${selectedYear}`;
+      if (showFutureMonths) url += '&include_future=true';
+      return await api.request(url);
     },
     enabled: activeTab === 'fab',
   });
 
   // Trend-Daten (Jahresvergleich)
   const { data: trendData, isLoading: trendLoading } = useQuery({
-    queryKey: ['ppugv-trends', selectedStation, compareYears],
+    queryKey: ['ppugv-trends', selectedStation, compareYears, showFutureMonths],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedStation && selectedStation !== 'all') params.set('station', selectedStation);
       params.set('jahre', compareYears.join(','));
+      if (showFutureMonths) params.set('include_future', 'true');
       return await api.request(`/api/master/ppugv/trends?${params.toString()}`);
     },
     enabled: activeTab === 'trends',
@@ -212,10 +217,13 @@ export default function MasterPPUGV() {
 
   // PPBV-Daten (Soll/Ist-Vergleich – erweiterte ppugv-Daten)
   const { data: ppbvData, isLoading: ppbvLoading } = useQuery({
-    queryKey: ['ppbv-data', selectedYear],
+    queryKey: ['ppbv-data', selectedYear, showFutureMonths],
     queryFn: async () => {
-      const qs = selectedYear ? `?jahr=${selectedYear}` : '';
-      return await api.request(`/api/master/ppbv${qs}`);
+      const params = new URLSearchParams();
+      if (selectedYear) params.set('jahr', selectedYear);
+      if (showFutureMonths) params.set('include_future', 'true');
+      const qs = params.toString();
+      return await api.request(`/api/master/ppbv${qs ? `?${qs}` : ''}`);
     },
     enabled: activeTab === 'ppbv',
     refetchInterval: (query) => {
@@ -300,10 +308,12 @@ export default function MasterPPUGV() {
           belegung_nacht: 0,
           patienten_tag: 0,
           patienten_nacht: 0,
+          is_estimated: false,
         });
       }
 
       const entry = monthMap.get(row.monat);
+      if (row.is_estimated) entry.is_estimated = true;
       if (row.schicht === 'Tag') {
         entry.pflege_tag += Number(row.pflegekraefte_ist);
         entry.hilfe_tag += Number(row.hilfskraefte_ist);
@@ -545,6 +555,23 @@ export default function MasterPPUGV() {
                 </SelectContent>
               </Select>
             </div>
+            {/* Toggle: Zukunftsmonate ein-/ausblenden */}
+            <div className="flex items-center gap-1.5 ml-auto">
+              <button
+                onClick={() => setShowFutureMonths(p => !p)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
+                }`}
+                title={showFutureMonths ? 'Zukunftsmonate werden angezeigt (als Vorjahresdaten markiert)' : 'Zukunftsmonate ausgeblendet'}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  showFutureMonths ? 'translate-x-4.5' : 'translate-x-1'
+                }`} />
+              </button>
+              <span className="text-xs text-slate-500 select-none">
+                {showFutureMonths ? 'Platzhalter sichtbar' : 'Nur echte Daten'}
+              </span>
+            </div>
           </div>
 
           <Card>
@@ -583,27 +610,64 @@ export default function MasterPPUGV() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
+                      <Tooltip
+                        formatter={(value, name, props) => {
+                          if (props?.payload?.is_estimated) {
+                            return [value, `${name} ⚠️ Vorjahresdaten`];
+                          }
+                          return [value, name];
+                        }}
+                      />
                       <Legend />
-                      <Bar dataKey="pflege_tag" name="Pflegekräfte (Tag)" fill={CHART_COLORS.pflegekraefte} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="hilfe_tag" name="Hilfskräfte (Tag)" fill={CHART_COLORS.hilfskraefte} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="hebamme_tag" name="Hebammen (Tag)" fill={CHART_COLORS.hebammen} radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="pflege_tag" name="Pflegekräfte (Tag)" fill={CHART_COLORS.pflegekraefte} radius={[2, 2, 0, 0]}>
+                        {chartData().map((entry, idx) => (
+                          <Cell key={idx} fillOpacity={entry.is_estimated ? 0.35 : 1} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="hilfe_tag" name="Hilfskräfte (Tag)" fill={CHART_COLORS.hilfskraefte} radius={[2, 2, 0, 0]}>
+                        {chartData().map((entry, idx) => (
+                          <Cell key={idx} fillOpacity={entry.is_estimated ? 0.35 : 1} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="hebamme_tag" name="Hebammen (Tag)" fill={CHART_COLORS.hebammen} radius={[2, 2, 0, 0]}>
+                        {chartData().map((entry, idx) => (
+                          <Cell key={idx} fillOpacity={entry.is_estimated ? 0.35 : 1} />
+                        ))}
+                      </Bar>
                     </BarChart>
                   ) : (
                     <LineChart data={chartData()}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
+                      <Tooltip
+                        formatter={(value, name, props) => {
+                          if (props?.payload?.is_estimated) {
+                            return [value, `${name} ⚠️ Vorjahresdaten`];
+                          }
+                          return [value, name];
+                        }}
+                      />
                       <Legend />
-                      <Line type="monotone" dataKey="patienten_tag" name="Patienten (Tag)" stroke={CHART_COLORS.patienten} strokeWidth={2} dot={{ r: 3 }} />
-                      <Line type="monotone" dataKey="belegung_tag" name="Belegung (Tag)" stroke={CHART_COLORS.belegung} strokeWidth={2} dot={{ r: 3 }} />
+                      <Line type="monotone" dataKey="patienten_tag" name="Patienten (Tag)" stroke={CHART_COLORS.patienten} strokeWidth={2} dot={{ r: 3 }} strokeDasharray={chartData().some(d => d.is_estimated) ? '5 3' : '0'} />
+                      <Line type="monotone" dataKey="belegung_tag" name="Belegung (Tag)" stroke={CHART_COLORS.belegung} strokeWidth={2} dot={{ r: 3 }} strokeDasharray={chartData().some(d => d.is_estimated) ? '5 3' : '0'} />
                     </LineChart>
                   )}
                 </ResponsiveContainer>
               )}
             </CardContent>
           </Card>
+
+          {/* Hinweis bei geschätzten Daten */}
+          {data?.estimatedCount > 0 && (
+            <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 -mt-4">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>
+                {data.estimatedCount} Datensätze für zukünftige Monate basieren auf Vorjahreswerten (als <strong>Vorjahresdaten</strong> markiert).
+                {' '}Schalte auf <strong>„Platzhalter sichtbar"</strong> um alle Monate anzuzeigen, oder lass sie ausgeblendet für aussagekräftigere Charts.
+              </span>
+            </div>
+          )}
 
           <Card>
             <CardHeader>
@@ -612,7 +676,7 @@ export default function MasterPPUGV() {
                 Monatsdaten pro Station
               </CardTitle>
               <CardDescription>
-                {data?.count ?? 0} Datensätze – Tag- und Nachtschicht pro Station und Monat
+                {data?.count ?? 0} Datensätze {data?.estimatedCount > 0 ? `(davon ${data.estimatedCount} als Vorjahresdaten geschätzt)` : ''} – Tag- und Nachtschicht pro Station und Monat
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -635,13 +699,16 @@ export default function MasterPPUGV() {
                         <TableHead className="text-right">Hebammen (VK)</TableHead>
                         <TableHead className="text-right">Hilfskräfte (VK)</TableHead>
                         <TableHead>Frostung</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rows.map((row, idx) => (
-                        <TableRow key={row.id || idx}>
+                        <TableRow key={row.id || idx} className={row.is_estimated ? 'bg-amber-50/50' : ''}>
                           <TableCell className="font-medium whitespace-nowrap">{row.stationsname}</TableCell>
-                          <TableCell>{row.monat}</TableCell>
+                          <TableCell>
+                            <span className={row.is_estimated ? 'italic text-slate-500' : ''}>{row.monat}</span>
+                          </TableCell>
                           <TableCell>
                             <Badge variant={row.schicht === 'Nacht' ? 'secondary' : 'default'} className="text-xs">{row.schicht}</Badge>
                           </TableCell>
@@ -654,6 +721,11 @@ export default function MasterPPUGV() {
                             {row.frostung === 'ja' ? (
                               <Badge variant="outline" className="text-green-700 bg-green-50 text-xs border-green-200">✓ Frostung</Badge>
                             ) : (<span className="text-xs text-slate-400">–</span>)}
+                          </TableCell>
+                          <TableCell>
+                            {row.is_estimated ? (
+                              <Badge variant="outline" className="text-amber-700 bg-amber-50 text-xs border-amber-200" title="Daten aus Vorjahr geschätzt">⚠️ Vorjahr</Badge>
+                            ) : null}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -793,6 +865,22 @@ export default function MasterPPUGV() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowFutureMonths(p => !p)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
+                }`}
+                title={showFutureMonths ? 'Zukunftsmonate werden angezeigt (als Vorjahresdaten markiert)' : 'Zukunftsmonate ausgeblendet'}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  showFutureMonths ? 'translate-x-4.5' : 'translate-x-1'
+                }`} />
+              </button>
+              <span className="text-xs text-slate-500 select-none">
+                {showFutureMonths ? 'Platzhalter sichtbar' : 'Nur echte Daten'}
+              </span>
+            </div>
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-slate-400" />
               <Select value={trendMetric} onValueChange={setTrendMetric}>
@@ -857,6 +945,22 @@ export default function MasterPPUGV() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowFutureMonths(p => !p)}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                  showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
+                }`}
+                title={showFutureMonths ? 'Zukunftsmonate werden angezeigt (als Vorjahresdaten markiert)' : 'Zukunftsmonate ausgeblendet'}
+              >
+                <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                  showFutureMonths ? 'translate-x-4.5' : 'translate-x-1'
+                }`} />
+              </button>
+              <span className="text-xs text-slate-500 select-none">
+                {showFutureMonths ? 'Platzhalter sichtbar' : 'Nur echte Daten'}
+              </span>
+            </div>
             <Badge variant="outline" className={`text-xs flex items-center gap-1 ${
               ppbvMeta?.status === 'ok' ? 'bg-green-50 text-green-700' :
               ppbvMeta?.status === 'error' ? 'bg-red-50 text-red-700' :
@@ -889,7 +993,7 @@ export default function MasterPPUGV() {
                 <Scale className="w-5 h-5" />
                 Soll/Ist-Vergleich – Pflegefachkräfte (VK)
               </CardTitle>
-              <CardDescription>{selectedYear} – Ø VK pro Monat (Tag + Nacht gemittelt)</CardDescription>
+              <CardDescription>{selectedYear} – Ø VK pro Monat (Tag + Nacht gemittelt){ppbvData?.estimatedCount > 0 ? ` – ${ppbvData.estimatedCount} geschätzte Datensätze` : ''}</CardDescription>
             </CardHeader>
             <CardContent>
               {ppbvLoading ? (
@@ -914,23 +1018,65 @@ export default function MasterPPUGV() {
                       const nacht = monthRows.filter(r => r.schicht === 'Nacht');
                       return {
                         name: m,
+                        is_estimated: monthRows.some(r => r.is_estimated),
                         soll: tag.reduce((s, r) => s + Number(r.fachkraefte_soll || 0), 0) / Math.max(tag.length, 1),
                         ist: tag.reduce((s, r) => s + Number(r.fachkraefte_ist || 0), 0) / Math.max(tag.length, 1),
                         sollNacht: nacht.reduce((s, r) => s + Number(r.fachkraefte_soll || 0), 0) / Math.max(nacht.length, 1),
                         istNacht: nacht.reduce((s, r) => s + Number(r.fachkraefte_ist || 0), 0) / Math.max(nacht.length, 1),
                       };
-                    }).filter(m => m.soll > 0 || m.ist > 0)}>
+                    })}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} />
-                      <Tooltip />
+                      <Tooltip
+                        formatter={(value, name, props) => {
+                          if (props?.payload?.is_estimated) {
+                            return [value, `${name} ⚠️ Vorjahresdaten`];
+                          }
+                          return [value, name];
+                        }}
+                      />
                       <Legend />
-                      <Bar dataKey="soll" name="Pflege Soll (Tag)" fill="#94a3b8" radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="ist" name="Pflege Ist (Tag)" fill={CHART_COLORS.pflegekraefte} radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="sollNacht" name="Pflege Soll (Nacht)" fill="#cbd5e1" radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="istNacht" name="Pflege Ist (Nacht)" fill="#818cf8" radius={[2, 2, 0, 0]} />
+                      <Bar dataKey="soll" name="Pflege Soll (Tag)" fill="#94a3b8" radius={[2, 2, 0, 0]}>
+                        {MONTH_ORDER.map((m, idx) => {
+                          const monthRows = ppbvRows.filter(r => r.monat === m);
+                          const estimated = monthRows.some(r => r.is_estimated);
+                          return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                        })}
+                      </Bar>
+                      <Bar dataKey="ist" name="Pflege Ist (Tag)" fill={CHART_COLORS.pflegekraefte} radius={[2, 2, 0, 0]}>
+                        {MONTH_ORDER.map((m, idx) => {
+                          const monthRows = ppbvRows.filter(r => r.monat === m);
+                          const estimated = monthRows.some(r => r.is_estimated);
+                          return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                        })}
+                      </Bar>
+                      <Bar dataKey="sollNacht" name="Pflege Soll (Nacht)" fill="#cbd5e1" radius={[2, 2, 0, 0]}>
+                        {MONTH_ORDER.map((m, idx) => {
+                          const monthRows = ppbvRows.filter(r => r.monat === m);
+                          const estimated = monthRows.some(r => r.is_estimated);
+                          return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                        })}
+                      </Bar>
+                      <Bar dataKey="istNacht" name="Pflege Ist (Nacht)" fill="#818cf8" radius={[2, 2, 0, 0]}>
+                        {MONTH_ORDER.map((m, idx) => {
+                          const monthRows = ppbvRows.filter(r => r.monat === m);
+                          const estimated = monthRows.some(r => r.is_estimated);
+                          return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                        })}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
+
+                  {/* Hinweis bei geschätzten PPBV-Daten */}
+                  {ppbvData?.estimatedCount > 0 && (
+                    <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4 mb-2">
+                      <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                      <span>
+                        {ppbvData.estimatedCount} Datensätze für zukünftige Monate basieren auf Vorjahreswerten (als <strong>Vorjahresdaten</strong> markiert).
+                      </span>
+                    </div>
+                  )}
 
                   {/* Ausfallzeiten-Diagramm */}
                   <div className="mt-8">
@@ -938,22 +1084,46 @@ export default function MasterPPUGV() {
                     <ResponsiveContainer width="100%" height={250}>
                       <BarChart data={MONTH_ORDER.map(m => {
                         const monthRows = ppbvRows.filter(r => r.monat === m && r.schicht === 'Tag');
+                        const estimated = monthRows.some(r => r.is_estimated);
                         const avg = (field) => monthRows.reduce((s, r) => s + Number(r[field] || 0), 0) / Math.max(monthRows.length, 1);
                         return {
                           name: m,
+                          is_estimated: estimated,
                           urlaub: avg('ausfall_soll_1'),
                           krank: avg('ausfall_soll_2'),
                           sonst: avg('ausfall_soll_3'),
                         };
-                      }).filter(m => m.urlaub > 0 || m.krank > 0)}>
+                      })}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 12 }} />
-                        <Tooltip />
+                        <Tooltip
+                          formatter={(value, name, props) => {
+                            if (props?.payload?.is_estimated) {
+                              return [value, `${name} ⚠️ Vorjahresdaten`];
+                            }
+                            return [value, name];
+                          }}
+                        />
                         <Legend />
-                        <Bar dataKey="urlaub" name="Wochenfeiertage/Urlaub" fill="#f59e0b" stackId="a" radius={[2, 2, 0, 0]} />
-                        <Bar dataKey="krank" name="AU/Schutzfristen" fill="#ef4444" stackId="a" radius={[2, 2, 0, 0]} />
-                        <Bar dataKey="sonst" name="Sonstige" fill="#8b5cf6" stackId="a" radius={[2, 2, 0, 0]} />
+                        <Bar dataKey="urlaub" name="Wochenfeiertage/Urlaub" fill="#f59e0b" stackId="a" radius={[2, 2, 0, 0]}>
+                          {MONTH_ORDER.map((m, idx) => {
+                            const estimated = ppbvRows.some(r => r.monat === m && r.is_estimated);
+                            return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                          })}
+                        </Bar>
+                        <Bar dataKey="krank" name="AU/Schutzfristen" fill="#ef4444" stackId="a" radius={[2, 2, 0, 0]}>
+                          {MONTH_ORDER.map((m, idx) => {
+                            const estimated = ppbvRows.some(r => r.monat === m && r.is_estimated);
+                            return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                          })}
+                        </Bar>
+                        <Bar dataKey="sonst" name="Sonstige" fill="#8b5cf6" stackId="a" radius={[2, 2, 0, 0]}>
+                          {MONTH_ORDER.map((m, idx) => {
+                            const estimated = ppbvRows.some(r => r.monat === m && r.is_estimated);
+                            return <Cell key={idx} fillOpacity={estimated ? 0.35 : 1} />;
+                          })}
+                        </Bar>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -971,7 +1141,7 @@ export default function MasterPPUGV() {
                   PPBV Soll/Ist-Vergleich – Detaildaten
                 </CardTitle>
                 <CardDescription>
-                  {ppbvRows.length} Datensätze – InEK-Excel enthält alle 26 Spalten
+                  {ppbvRows.length} Datensätze {ppbvData?.estimatedCount > 0 ? `(davon ${ppbvData.estimatedCount} als Vorjahresdaten geschätzt)` : ''} – InEK-Excel enthält alle 26 Spalten
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -989,6 +1159,7 @@ export default function MasterPPUGV() {
                         <TableHead className="text-right">AU</TableHead>
                         <TableHead className="text-right">Sonst</TableHead>
                         <TableHead className="text-right">Azubis</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -997,9 +1168,11 @@ export default function MasterPPUGV() {
                         const ist = Number(row.fachkraefte_ist || 0);
                         const diff = ist - soll;
                         return (
-                          <TableRow key={row.id || idx}>
+                          <TableRow key={row.id || idx} className={row.is_estimated ? 'bg-amber-50/50' : ''}>
                             <TableCell className="font-medium whitespace-nowrap">{row.stationsname}</TableCell>
-                            <TableCell>{row.monat}</TableCell>
+                            <TableCell>
+                              <span className={row.is_estimated ? 'italic text-slate-500' : ''}>{row.monat}</span>
+                            </TableCell>
                             <TableCell>
                               <Badge variant={row.schicht === 'Nacht' ? 'secondary' : 'default'} className="text-xs">{row.schicht}</Badge>
                             </TableCell>
@@ -1012,6 +1185,11 @@ export default function MasterPPUGV() {
                             <TableCell className="text-right">{formatDecimal(row.ausfall_soll_2)}</TableCell>
                             <TableCell className="text-right">{formatDecimal(row.ausfall_soll_3)}</TableCell>
                             <TableCell className="text-right">{formatDecimal(row.azubi_ist)}</TableCell>
+                            <TableCell>
+                              {row.is_estimated ? (
+                                <Badge variant="outline" className="text-amber-700 bg-amber-50 text-xs border-amber-200" title="Daten aus Vorjahr geschätzt">⚠️ Vorjahr</Badge>
+                              ) : null}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
