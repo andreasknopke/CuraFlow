@@ -821,7 +821,7 @@ export class ShiftValidator {
      */
     isAutoOffPosition(position: string): boolean {
         const workplace = this.workplaces.find(w => w.name === position);
-        return !!(workplace as Workplace & { auto_off?: boolean }).auto_off;
+        return workplace ? !!(workplace as Workplace & { auto_off?: boolean }).auto_off : false;
     }
 
     /**
