@@ -204,7 +204,7 @@ export default function WishRequestDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[500px] p-0 flex flex-col max-h-[90vh]" data-testid="wish-request-dialog">
+            <DialogContent className="sm:max-w-[500px] max-sm:max-w-[95vw] p-0 flex flex-col max-h-[90vh]" data-testid="wish-request-dialog">
                 <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
                     <DialogTitle>
                         Wunsch für {format(date, 'EEEE, d. MMMM yyyy', { locale: de })}
@@ -242,7 +242,7 @@ export default function WishRequestDialog({
                         <RadioGroup 
                             value={formData.type} 
                             onValueChange={(val) => setFormData({...formData, type: val})}
-                            className="flex gap-4"
+                            className="flex flex-wrap gap-x-4 gap-y-2"
                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                         >
                             <div className="flex items-center space-x-2">
@@ -286,7 +286,7 @@ export default function WishRequestDialog({
                             </div>
 
                             {formData.range_enabled && (
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1">
                                         <Label>Von</Label>
                                         <Input
@@ -383,13 +383,14 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <DialogFooter className="shrink-0 bg-white border-t px-6 py-4 sm:flex-row sm:items-end sm:justify-between">
+                <DialogFooter className="shrink-0 bg-white border-t px-6 py-4 gap-3 sm:flex-row sm:items-end sm:justify-between">
                     {wish || rangeWishes?.length > 1 ? (
                         <Button 
                             data-testid="wish-delete-button"
                             variant="destructive" 
                             onClick={handleDelete}
                             type="button"
+                            className="w-full sm:w-auto"
                         >
                             <Trash2 className="w-4 h-4 mr-2" />
                             Löschen
@@ -397,7 +398,7 @@ export default function WishRequestDialog({
                     ) : (
                         <div />
                     )}
-                    <div className="flex items-end gap-3 sm:ml-auto">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 sm:ml-auto">
                         <div className="space-y-1 min-w-0">
                             <Label className="text-xs text-slate-500">Priorität</Label>
                             <Select 
@@ -405,7 +406,7 @@ export default function WishRequestDialog({
                                 onValueChange={(val) => setFormData({...formData, priority: val})}
                                 disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             >
-                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px]">
+                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px] w-full sm:w-auto">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -416,10 +417,10 @@ export default function WishRequestDialog({
                             </Select>
                         </div>
                         <div className="flex gap-2">
-                            <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button">
+                            <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button" className="flex-1 sm:flex-none">
                                 Abbrechen
                             </Button>
-                            <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}>
+                            <Button data-testid="wish-save-button" onClick={handleSubmit} disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract} className="flex-1 sm:flex-none">
                                 Speichern
                             </Button>
                         </div>

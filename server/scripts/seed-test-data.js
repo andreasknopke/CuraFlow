@@ -47,6 +47,20 @@ const teamRoles = [
   ['role-auxiliary', 'Hilfskraft', 10, false, false, false, false, 'Unterstützung im Praxisalltag'],
   ['role-student', 'Student', 11, false, false, false, false, 'Student in der Ausbildung'],
   ['role-intern', 'Hospitant', 12, false, false, false, false, 'Hospitant zur Orientierung'],
+  ['role-mfa', 'MFA', 13, false, false, false, false, 'Medizinische Fachangestellte'],
+  ['role-pflegefachkraft', 'Pflegefachkraft', 14, false, false, false, false, 'Pflegerische Betreuung der Patienten'],
+  ['role-kaph', 'KAPH', 15, false, false, false, false, 'Krankenpflegehilfe'],
+  ['role-azubi-mfa', 'Azubi MFA', 16, false, false, false, false, 'Auszubildende/r Medizinische Fachangestellte'],
+  ['role-azubi-pff', 'Azubi PFF', 17, false, false, false, false, 'Auszubildende/r Pflegefachkraft'],
+  ['role-azubi-pfm', 'Azubi PFM', 18, false, false, false, false, 'Auszubildende/r Pflegefachmann/-frau'],
+  ['role-azubi-pffp', 'Azubi PFFP', 19, false, false, false, false, 'Auszubildende/r Pflegefachkraft (Praktikum)'],
+  ['role-azubi-ata', 'Azubi ATA', 20, false, false, false, false, 'Auszubildende/r Anästhesietechnische Assistenz'],
+  ['role-azubi-ota', 'Azubi OTA', 21, false, false, false, false, 'Auszubildende/r Operationstechnische Assistenz'],
+  ['role-azubi-mtr', 'Azubi MTR', 22, false, false, false, false, 'Auszubildende/r Medizinischer Technologe Radiologie'],
+  ['role-azubi-mtl', 'Azubi MTL', 23, false, false, false, false, 'Auszubildende/r Medizinischer Technologe Labor'],
+  ['role-azubi-kaph', 'Azubi KAPH', 24, false, false, false, false, 'Auszubildende/r Krankenpflegehilfe'],
+  ['role-studentische-hilfskraft', 'Studentische Hilfskraft', 25, false, false, false, false, 'Studentische Unterstützung im Praxisalltag'],
+  ['role-pflegerische-hilfskraft', 'Pflegerische Hilfskraft', 26, false, false, false, false, 'Unterstützung in der Pflege'],
 ];
 
 const doctors = [

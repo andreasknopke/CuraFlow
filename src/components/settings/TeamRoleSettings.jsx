@@ -41,6 +41,20 @@ export const DEFAULT_TEAM_ROLES = [
     { name: "Hilfskraft", priority: 10, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Unterstützung im Praxisalltag" },
     { name: "Student", priority: 11, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Student in der Ausbildung" },
     { name: "Hospitant", priority: 12, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Hospitant zur Orientierung" },
+    { name: "MFA", priority: 13, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Medizinische Fachangestellte" },
+    { name: "Pflegefachkraft", priority: 14, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Pflegerische Betreuung der Patienten" },
+    { name: "KAPH", priority: 15, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Krankenpflegehilfe" },
+    { name: "Azubi MFA", priority: 16, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Medizinische Fachangestellte" },
+    { name: "Azubi PFF", priority: 17, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Pflegefachkraft" },
+    { name: "Azubi PFM", priority: 18, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Pflegefachmann/-frau" },
+    { name: "Azubi PFFP", priority: 19, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Pflegefachkraft (Praktikum)" },
+    { name: "Azubi ATA", priority: 20, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Anästhesietechnische Assistenz" },
+    { name: "Azubi OTA", priority: 21, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Operationstechnische Assistenz" },
+    { name: "Azubi MTR", priority: 22, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Medizinischer Technologe Radiologie" },
+    { name: "Azubi MTL", priority: 23, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Medizinischer Technologe Labor" },
+    { name: "Azubi KAPH", priority: 24, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Auszubildende/r Krankenpflegehilfe" },
+    { name: "Studentische Hilfskraft", priority: 25, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Studentische Unterstützung im Praxisalltag" },
+    { name: "Pflegerische Hilfskraft", priority: 26, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Unterstützung in der Pflege" },
 ];
 
 // Hook zum Laden der Team-Rollen mit Fallback auf Defaults

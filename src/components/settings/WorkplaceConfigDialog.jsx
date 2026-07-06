@@ -248,7 +248,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                     <Settings className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl h-[85vh] flex flex-col">
+            <DialogContent className="max-w-3xl max-sm:max-w-[95vw] h-[85vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>Konfiguration: Arbeitsplätze & Dienste</DialogTitle>
                 </DialogHeader>
