@@ -69,14 +69,15 @@ export default function AIRulesDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-2 mt-4">
+        <div className="flex flex-col sm:flex-row gap-2 mt-4">
             <Input 
                 placeholder="Neue Regel hinzufügen (z.B. 'Maximal 2 Spätdienste pro Woche')" 
                 value={newRule}
                 onChange={(e) => setNewRule(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                className="flex-1"
             />
-            <Button onClick={handleAdd} disabled={!newRule.trim()}>
+            <Button onClick={handleAdd} disabled={!newRule.trim()} className="w-full sm:w-auto">
                 <Plus className="w-4 h-4" />
             </Button>
         </div>

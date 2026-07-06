@@ -288,7 +288,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                     {/* Add category input */}
                     {showAddCategory && (
                         <div className="space-y-2 py-2 px-3 bg-slate-50 rounded-md mt-2">
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                 <Input
                                     placeholder="Name der neuen Kategorie (z.B. OP Säle)"
                                     value={newCategoryName}
@@ -297,14 +297,16 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                     className="flex-1"
                                     autoFocus
                                 />
-                                <Button size="sm" onClick={handleAddCategory}>
-                                    <Plus className="w-4 h-4 mr-1" /> Erstellen
-                                </Button>
-                                <Button size="sm" variant="ghost" onClick={() => { setShowAddCategory(false); setNewCategoryName(""); setNewCategoryAllowsMultiple(true); }}>
-                                    <X className="w-4 h-4" />
-                                </Button>
+                                <div className="flex gap-2">
+                                    <Button size="sm" onClick={handleAddCategory} className="flex-1 sm:flex-none">
+                                        <Plus className="w-4 h-4 mr-1" /> Erstellen
+                                    </Button>
+                                    <Button size="sm" variant="ghost" onClick={() => { setShowAddCategory(false); setNewCategoryName(""); setNewCategoryAllowsMultiple(true); }}>
+                                        <X className="w-4 h-4" />
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 pl-1">
+                            <div className="flex flex-wrap items-center gap-2 pl-1">
                                 <Switch
                                     checked={newCategoryAllowsMultiple}
                                     onCheckedChange={setNewCategoryAllowsMultiple}

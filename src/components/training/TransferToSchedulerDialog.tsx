@@ -370,7 +370,7 @@ export default function TransferToSchedulerDialog({
                     /* Preview Mode */
                     <div className="flex-1 overflow-hidden flex flex-col gap-4 py-2">
                         {/* Summary */}
-                        <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg">
                             <div className="text-center">
                                 <div className="text-2xl font-bold text-emerald-600">{transferPreview.entries.length}</div>
                                 <div className="text-sm text-slate-600">Einträge erstellen</div>

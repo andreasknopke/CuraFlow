@@ -204,17 +204,17 @@ export default function WishRequestDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[500px] max-sm:max-w-[95vw] p-0 flex flex-col max-h-[90vh]" data-testid="wish-request-dialog">
-                <DialogHeader className="px-6 pt-6 pb-0 shrink-0">
-                    <DialogTitle>
+            <DialogContent className="sm:max-w-[500px] p-0 flex flex-col max-h-[90vh] overflow-hidden" data-testid="wish-request-dialog">
+                <DialogHeader className="px-4 sm:px-6 pt-6 pb-0 shrink-0 min-w-0">
+                    <DialogTitle className="pr-8 break-words leading-snug">
                         Wunsch für {format(date, 'EEEE, d. MMMM yyyy', { locale: de })}
                     </DialogTitle>
-                    <p className="text-sm text-slate-500">
+                    <p className="pr-8 text-sm text-slate-500 break-words">
                         Arzt: {doctorName}
                     </p>
                 </DialogHeader>
 
-                <div className="px-6 shrink-0">
+                <div className="px-4 sm:px-6 shrink-0 min-w-0">
                     {isBlockedByDeadline && (
                         <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm mb-2 flex items-start">
                             <AlertTriangle className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
@@ -236,13 +236,13 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <div className="overflow-y-auto overflow-x-hidden flex-1 px-6 py-4 space-y-6">
+                <div className="overflow-y-auto overflow-x-hidden flex-1 px-4 sm:px-6 py-4 space-y-6 min-w-0">
                     <div className="space-y-3">
                         <Label>Art des Wunsches</Label>
                         <RadioGroup 
                             value={formData.type} 
                             onValueChange={(val) => setFormData({...formData, type: val})}
-                            className="flex flex-wrap gap-x-4 gap-y-2"
+                            className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-2 min-w-0"
                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                         >
                             <div className="flex items-center space-x-2">
@@ -383,7 +383,7 @@ export default function WishRequestDialog({
                     )}
                 </div>
 
-                <DialogFooter className="shrink-0 bg-white border-t px-6 py-4 gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <DialogFooter className="shrink-0 bg-white border-t px-4 sm:px-6 py-4 gap-3 sm:flex-row sm:items-end sm:justify-between min-w-0">
                     {wish || rangeWishes?.length > 1 ? (
                         <Button 
                             data-testid="wish-delete-button"
@@ -398,15 +398,15 @@ export default function WishRequestDialog({
                     ) : (
                         <div />
                     )}
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 sm:ml-auto">
-                        <div className="space-y-1 min-w-0">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3 sm:ml-auto min-w-0 w-full sm:w-auto">
+                        <div className="space-y-1 min-w-0 w-full sm:w-auto">
                             <Label className="text-xs text-slate-500">Priorität</Label>
                             <Select 
                                 value={formData.priority} 
                                 onValueChange={(val) => setFormData({...formData, priority: val})}
                                 disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             >
-                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px] w-full sm:w-auto">
+                                <SelectTrigger data-testid="wish-priority-trigger" className="h-9 w-full sm:min-w-[110px] sm:w-auto">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -416,7 +416,7 @@ export default function WishRequestDialog({
                                 </SelectContent>
                             </Select>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 w-full sm:w-auto">
                             <Button data-testid="wish-cancel-button" variant="outline" onClick={onClose} type="button" className="flex-1 sm:flex-none">
                                 Abbrechen
                             </Button>
