@@ -25,7 +25,7 @@ let poolPromise = null;
 
 // ─── Connection state cache (avoids blocking on repeated failed attempts) ────
 
-const CONNECTION_CACHE_TTL = 5_000; // 5 seconds (short: allows quick retry after config change)
+const CONNECTION_CACHE_TTL = 8_000; // 8 seconds (short: allows quick retry after config change)
 const connectionCache = {
   state: 'unknown', // 'unknown' | 'connected' | 'failed'
   timestamp: 0,
@@ -43,8 +43,14 @@ function currentConfigHash() {
 
 function buildConfig() {
   const server = process.env.TISO_SERVER || '';
-  const user = process.env.TISO_USER || '';
-  const password = process.env.TISO_PASS || '';
+  const passwordRaw = process.env.TISO_PASS || '';
+
+  // Strip surrounding quotes (pass from .env-/Coolify-Quoting)
+  let password = passwordRaw;
+  if ((password.startsWith('"') && password.endsWith('"')) ||
+      (password.startsWith("'") && password.endsWith("'"))) {
+    password = password.slice(1, -1);
+  }
 
   let host = server;
   let instanceName = null;
@@ -58,28 +64,42 @@ function buildConfig() {
     port = parseInt(p.trim(), 10) || 1433;
   }
 
-  // Validate: if we have a raw IP and no port and no instance, use default 1433
-  // (no special action needed, that's already the default)
-
   return {
     server: host,
     port,
-    user,
-    password,
-    database: 'tisoware',
+    authentication: {
+      type: 'default',
+      options: {
+        userName: process.env.TISO_USER || '',
+        password,
+      },
+    },
     options: {
+      database: 'tisoware',
       encrypt: false,
       trustServerCertificate: true,
+      tdsVersion: '7_3',
       ...(instanceName ? { instanceName } : {}),
     },
     pool: {
-      max: 5,
+      max: 2,
       min: 0,
       idleTimeoutMillis: 30000,
     },
-    connectionTimeout: 3000,
+    connectionTimeout: 5000,
     requestTimeout: 15000,
   };
+}
+
+/**
+ * Tried-and-true fallback config without tdsVersion override.
+ * Used as retry if the initial connection attempt fails with ELOGIN.
+ */
+function buildFallbackConfig() {
+  const cfg = buildConfig();
+  // Remove tdsVersion to let tedious negotiate automatically
+  delete cfg.options.tdsVersion;
+  return cfg;
 }
 
 /**
@@ -138,7 +158,18 @@ export async function getTisowarePool(forceFresh = false) {
   poolPromise = (async () => {
     try {
       const config = buildConfig();
-      pool = await sql.connect(config);
+      try {
+        pool = await sql.connect(config);
+      } catch (firstErr) {
+        // If ELOGIN with TDS 7.3, retry with auto-negotiated TDS version
+        if (firstErr.code === 'ELOGIN' && config.options.tdsVersion === '7_3') {
+          console.warn('[TISOWARE] ELOGIN with TDS 7.3 — retrying with default TDS version');
+          const fallbackConfig = buildFallbackConfig();
+          pool = await sql.connect(fallbackConfig);
+        } else {
+          throw firstErr;
+        }
+      }
 
       // Cache success
       connectionCache.state = 'connected';
@@ -378,6 +409,7 @@ export async function getConnectionStatus() {
       diagnosis: 'Server nicht konfiguriert',
       message: 'TISO_SERVER ist nicht gesetzt.',
       hint: 'Setze die ENV-Variablen TISO_SERVER, TISO_USER und TISO_PASS im Deployment.',
+      passwordDiag: null,
     };
   }
 
@@ -388,8 +420,27 @@ export async function getConnectionStatus() {
       diagnosis: 'Credentials nicht konfiguriert',
       message: 'TISO_USER oder TISO_PASS ist nicht gesetzt.',
       hint: 'Setze TISO_USER und TISO_PASS als ENV-Variablen.',
+      passwordDiag: {
+        length: 0,
+        effectiveLength: 0,
+        containsHash: false,
+        surroundedByQuotes: false,
+      },
     };
   }
+
+  // Password diagnostics (for debugging)
+  const passDiag = {
+    rawLength: pass.length,
+    hasLeadingQuote: pass.startsWith('"') || pass.startsWith("'"),
+    hasTrailingQuote: pass.endsWith('"') || pass.endsWith("'"),
+    surroundedByQuotes: (pass.startsWith('"') && pass.endsWith('"')) || (pass.startsWith("'") && pass.endsWith("'")),
+    containsHash: pass.includes('#'),
+  };
+  // Calculate effective length (without surrounding quotes)
+  const effectivePass = passDiag.surroundedByQuotes ? pass.slice(1, -1) : pass;
+  passDiag.effectiveLength = effectivePass.length;
+  passDiag.effectiveContainsHash = effectivePass.includes('#');
 
   // Fresh connection attempt — uses forceFresh=true to bypass cache
   try {
@@ -400,6 +451,7 @@ export async function getConnectionStatus() {
         mock: false,
         message: `Verbunden mit ${server}`,
         diagnosis: 'Verbindung hergestellt',
+        passwordDiag: passDiag,
       };
     }
 
@@ -411,6 +463,7 @@ export async function getConnectionStatus() {
       detail: result.error?.substring(0, 300) || null,
       code: result.code || null,
       hint: getHintForError(result.code),
+      passwordDiag: passDiag,
     };
   } catch (err) {
     return {
@@ -421,6 +474,7 @@ export async function getConnectionStatus() {
       detail: err.message?.substring(0, 300) || 'Unbekannter Fehler',
       code: err.code || null,
       hint: getHintForError(err.code),
+      passwordDiag: passDiag,
     };
   }
 }
