@@ -109,6 +109,13 @@ function buildMsConnStr($srv) {
 
 function buildFreeTdsConnStr($srv, $tdsVer) {
     global $user, $pass;
+    // Wenn $srv "tisoware" ist (aus freetds.conf), nutze Servername=
+    if ($srv === 'tisoware') {
+        return sprintf(
+            'Driver={FreeTDS};Servername=tisoware;Database=tisoware;UID=%s;PWD=%s;ClientCharset=UTF-8;',
+            $user, $pass
+        );
+    }
     return sprintf(
         'Driver={FreeTDS};Server=%s;Port=1433;Database=tisoware;UID=%s;PWD=%s;TDS_Version=%s;ClientCharset=UTF-8;',
         $srv, $user, $pass, $tdsVer
@@ -155,10 +162,27 @@ if (!$conn) {
     $lastError = $capture ?: odbc_errormsg() ?: 'unknown error';
     file_put_contents('php://stderr', sprintf("[PHP] MS ODBC failed: %s – trying FreeTDS\n", $lastError));
 
+    // FreeTDS braucht eine freetds.conf – generiere sie dynamisch
+    $tdsConf = tempnam(sys_get_temp_dir(), 'freetds_');
+    file_put_contents($tdsConf, sprintf(
+        "[tisoware]\n\thost = %s\n\tport = 1433\n\ttds version = 7.0\n\tclient charset = UTF-8\n",
+        $baseHost
+    ));
+    putenv('FREETDSCONF=' . $tdsConf);
+    $_ENV['FREETDSCONF'] = $tdsConf; // für odbc_connect
+
+    file_put_contents('php://stderr', sprintf(
+        "[PHP] Generated freetds.conf at %s\n", $tdsConf
+    ));
+
     [$conn, $capture] = tryConnect(
-        buildFreeTdsConnStr($baseHost, '7.0'),
+        buildFreeTdsConnStr('tisoware', '7.0'),  // SERVERNAME = tisoware (aus freetds.conf)
         "FreeTDS TDS 7.0 ($baseHost:1433)"
     );
+
+    unlink($tdsConf); // cleanup
+    putenv('FREETDSCONF'); // reset
+
     if ($conn) {
         file_put_contents('php://stderr', "[PHP] Connected via FreeTDS TDS 7.0\n");
     }
@@ -169,10 +193,23 @@ if (!$conn) {
     $lastError = $capture ?: odbc_errormsg() ?: $lastError;
     file_put_contents('php://stderr', sprintf("[PHP] FreeTDS 7.0 failed: %s – trying TDS 5.0\n", $lastError));
 
+    // Eigene freetds.conf mit TDS 5.0
+    $tdsConf = tempnam(sys_get_temp_dir(), 'freetds_');
+    file_put_contents($tdsConf, sprintf(
+        "[tisoware]\n\thost = %s\n\tport = 1433\n\ttds version = 5.0\n\tclient charset = UTF-8\n",
+        $baseHost
+    ));
+    putenv('FREETDSCONF=' . $tdsConf);
+    $_ENV['FREETDSCONF'] = $tdsConf;
+
     [$conn, $capture] = tryConnect(
-        buildFreeTdsConnStr($baseHost, '5.0'),
+        buildFreeTdsConnStr('tisoware', '5.0'),
         "FreeTDS TDS 5.0 ($baseHost:1433)"
     );
+
+    unlink($tdsConf);
+    putenv('FREETDSCONF');
+
     if ($conn) {
         file_put_contents('php://stderr', "[PHP] Connected via FreeTDS TDS 5.0\n");
     }
