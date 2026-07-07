@@ -109,19 +109,20 @@ file_put_contents('php://stderr', sprintf(
 ));
 
 // Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver).
-// Kein @-Operator — wir wollen die ODBC-Warnung im ob-Buffer!
-ob_start();
+// Kein @-Operator: wir wollen die ODBC-Warnung sehen.
+// set_error_handler fängt sie, weil display_errors=0 ist.
+$odbcCapture = '';
+set_error_handler(function ($severity, $msg) use (&$odbcCapture) {
+    if (stripos($msg, 'odbc') !== false || stripos($msg, 'SQL') !== false) {
+        $odbcCapture = $msg;
+    }
+});
 $conn = odbc_connect($connStr, $user, $pass);
-$warnings = ob_get_clean();
+restore_error_handler();
 
 if (!$conn) {
-    // Try multiple error sources
     $phpErr = odbc_errormsg();
-    $lastErr = error_get_last();
-    $lastErrStr = $lastErr ? sprintf('%s in %s:%d', $lastErr['message'], $lastErr['file'], $lastErr['line']) : '';
-    $warnStr = trim($warnings ?? '');
-
-    $detail = $phpErr ?: $warnStr ?: $lastErrStr ?: 'Could not connect to Tisoware SQL Server (no error detail available)';
+    $detail = $phpErr ?: $odbcCapture ?: 'Could not connect to Tisoware SQL Server (no error detail available)';
     error('ODBC connection failed', 'EODBC_CONNECT', $detail);
 }
 

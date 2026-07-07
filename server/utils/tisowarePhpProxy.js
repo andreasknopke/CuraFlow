@@ -113,6 +113,10 @@ function runPhp(sql, timeout) {
         // Try to parse JSON even on non-zero exit
         try {
           const parsed = JSON.parse(stdout);
+          // If PHP has detail, great. Otherwise fallback to stderr content
+          if (!parsed.detail && stderr) {
+            parsed.detail = stderr.substring(0, 1000);
+          }
           resolve(parsed);
         } catch {
           const errMsg = stderr

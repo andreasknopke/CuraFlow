@@ -170,6 +170,7 @@ function tisowareErrorHandler(err, req, res, next) {
   console.error('[TISOWARE]', analysis.diagnosis, {
     code: analysis.code,
     message: err?.message?.substring(0, 200),
+    detail: err?.detail?.substring(0, 400),
     stack: err?.stack?.substring(0, 400),
     path: req.originalUrl,
   });
