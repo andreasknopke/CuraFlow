@@ -88,10 +88,13 @@ if (!extension_loaded('odbc')) {
     error('PHP ODBC extension not loaded', 'EPHP_NO_ODBC', 'Install php-odbc package');
 }
 
-// ─── Connect to Tisoware (exactly like ppugv_station.php) ───────────────────
+// ─── Connect to Tisoware ────────────────────────────────────────────────────
 
+// Build connection string.
+// Connect Timeout=10 → ODBC bricht nach 10s ab statt ewig zu hängen
+// (wichtig: von Coolify aus ist der SQL Server evtl. nicht direkt erreichbar)
 $connStr = sprintf(
-    'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes',
+    'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10',
     $server,
     $user,
     $pass
