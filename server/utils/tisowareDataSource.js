@@ -48,7 +48,9 @@ function resetConnectionCache() {
 
 export async function testTisowareConnection() {
   // No cache bypass — we always test fresh via PHP
-  const result = await testPhpConnection();
+  // Timeout: 60s — ODBC Driver 18 kann bei SQL-Browser-/Named-Instance-Lookup
+  // oder Firewall-Blocks lange hängen, bevor es einen Fehler meldet.
+  const result = await testPhpConnection(60000);
   return result.success
     ? { success: true, serverVersion: result.serverVersion }
     : { success: false, error: result.error, code: result.code };

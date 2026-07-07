@@ -99,6 +99,17 @@ function runPhp(sql, timeout) {
       const signalStr = signal ? ` (signal: ${signal})` : '';
 
       if (exitCode !== 0 || !stdout) {
+        // SIGTERM → timeout. ODBC connection hangs (SQL Browser / firewall)
+        if (signal === 'SIGTERM') {
+          resolve({
+            success: false,
+            error: `PHP connection timed out after ${timeout}ms — SQL Server antwortet nicht`,
+            code: 'ETIMEOUT',
+            detail: `Der PHP-ODBC-Verbindungsversuch wurde nach ${timeout}ms abgebrochen. Der SQL Server (${process.env.TISO_SERVER || 'unbekannt'}) ist vermutlich nicht erreichbar.`,
+          });
+          return;
+        }
+
         // Try to parse JSON even on non-zero exit
         try {
           const parsed = JSON.parse(stdout);
