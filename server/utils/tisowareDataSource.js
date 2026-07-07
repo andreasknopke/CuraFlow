@@ -2,8 +2,8 @@
  * Tisoware Data Source
  *
  * Provides access to the Tisoware time-tracking SQL Server database.
- * Uses Microsoft ODBC Driver 18 for SQL Server via the `odbc` npm package.
- * Same driver as the PHP implementation.
+ * Uses a PHP CLI proxy that connects via Microsoft ODBC Driver 18 —
+ * exactly the same stack as the production PHP frontend.
  *
  * Connection is configured via ENV vars:
  *   TISO_USER   — SQL Server login
@@ -14,14 +14,12 @@
  *
  * Connection caching: Failed attempts are cached for 30s so subsequent calls
  * fail instantly instead of blocking on connection timeout.
- * Connection timeout is 3s — fast failure is preferred over long waits.
  */
 
 import {
-  testOdbcConnection,
-  queryOdbc,
-  closeOdbcPool,
-} from './tisowareOdbc.js';
+  queryViaPhp,
+  testPhpConnection,
+} from './tisowarePhpProxy.js';
 
 // ─── Connection state cache (avoids blocking on repeated failed attempts) ────
 
@@ -34,9 +32,6 @@ const connectionCache = {
   configHash: '',
 };
 
-/**
- * Compute a hash of the current ENV config for cache invalidation.
- */
 function currentConfigHash() {
   return `${process.env.TISO_SERVER || ''}|${process.env.TISO_USER || ''}|${process.env.TISO_PASS || ''}`;
 }
@@ -49,56 +44,14 @@ function resetConnectionCache() {
   connectionCache.configHash = currentConfigHash();
 }
 
-// ─── Connection management ───────────────────────────────────────────────────
-
-async function getTisowareConnection(forceFresh = false) {
-  if (connectionCache.configHash && connectionCache.configHash !== currentConfigHash()) {
-    resetConnectionCache();
-    await closeOdbcPool();
-  }
-
-  if (forceFresh) {
-    resetConnectionCache();
-    await closeOdbcPool();
-  }
-
-  if (connectionCache.state === 'connected') {
-    return true;
-  }
-
-  if (connectionCache.state === 'failed' && Date.now() - connectionCache.timestamp < CONNECTION_CACHE_TTL) {
-    const err = new Error(connectionCache.error || 'Tisoware nicht verbunden');
-    err.code = connectionCache.code || 'ECACHED';
-    err.tisoware = true;
-    throw err;
-  }
-
-  try {
-    const result = await testOdbcConnection();
-    if (result.success) {
-      connectionCache.state = 'connected';
-      connectionCache.timestamp = Date.now();
-      connectionCache.error = null;
-      connectionCache.code = null;
-      return true;
-    }
-    throw new Error(result.error || 'Connection failed');
-  } catch (err) {
-    connectionCache.state = 'failed';
-    connectionCache.timestamp = Date.now();
-    connectionCache.error = err.message;
-    connectionCache.code = err.code || null;
-    throw err;
-  }
-}
-
 // ─── Query functions ─────────────────────────────────────────────────────────
 
 export async function testTisowareConnection() {
-  const result = await testOdbcConnection();
+  // No cache bypass — we always test fresh via PHP
+  const result = await testPhpConnection();
   return result.success
     ? { success: true, serverVersion: result.serverVersion }
-    : result;
+    : { success: false, error: result.error, code: result.code };
 }
 
 export async function queryTisoware(query, maxRows = 1000) {
@@ -106,12 +59,11 @@ export async function queryTisoware(query, maxRows = 1000) {
   if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
     throw Object.assign(new Error('Only SELECT / WITH queries are allowed'), { status: 400 });
   }
-  await getTisowareConnection();
-  return queryOdbc(query, maxRows);
+  return queryViaPhp(query);
 }
 
 export async function closeTisowarePool() {
-  await closeOdbcPool();
+  // No persistent pool to close — PHP processes are ephemeral
   resetConnectionCache();
 }
 
