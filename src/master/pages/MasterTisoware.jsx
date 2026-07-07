@@ -325,9 +325,15 @@ export default function MasterTisoware() {
                     <p className="text-xs text-amber-700 font-medium">
                       ⚠ PHP nicht verfügbar
                     </p>
-                    <p className="text-xs text-slate-500">
-                      Weder php-cli noch ODBC Driver 18 sind im Container installiert.
-                    </p>
+                    {phpCheck.data?.error ? (
+                      <p className="text-xs text-red-600 font-mono bg-red-50 p-1.5 rounded">
+                        {phpCheck.data.error}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        Weder php-cli noch ODBC Driver 18 sind im Container installiert.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

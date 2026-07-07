@@ -139,26 +139,49 @@ function runPhp(sql, timeout) {
 /**
  * Quick check if PHP + ODBC are available.
  * Returns { php_available, php_version, odbc_loaded, drivers? }
+ *
+ * Runs two steps:
+ *   1. `php --version`  →  is php-cli installed?
+ *   2. `php -r '...'`   →  ODBC extension + drivers
+ * If step 1 fails, php is truly missing (ENOENT).
+ * If step 1 passes but step 2 fails, we report the PHP + ODBC error.
  */
 export async function checkPhpAvailable() {
-  const cmd = `php -r 'echo json_encode(["version" => PHP_VERSION, "odbc" => extension_loaded("odbc") ? array_values(odbc_drivers()) : false]);'`;
-  return new Promise((resolve) => {
-    exec(cmd, { env: process.env, timeout: 5000 }, (err, stdout, stderr) => {
+  // Step 1: is PHP executable reachable?
+  try {
+    await execPromise('php --version', 5000);
+  } catch (err) {
+    return { php_available: false, error: `PHP not found: ${err.message}` };
+  }
+
+  // Step 2: query ODBC drivers
+  try {
+    const stdout = await execPromise(
+      `php -r 'echo json_encode(["version" => PHP_VERSION, "odbc" => extension_loaded("odbc") ? array_values(odbc_drivers()) : false]);'`,
+      5000
+    );
+    const data = JSON.parse(stdout);
+    return {
+      php_available: true,
+      php_version: data.version,
+      odbc_loaded: data.odbc !== false,
+      odbc_drivers: data.odbc,
+    };
+  } catch (err) {
+    return { php_available: false, error: `PHP/ODBC query failed: ${err.message}` };
+  }
+}
+
+// Small helper: promisified exec that returns stdout (not full result)
+function execPromise(cmd, timeout) {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { env: process.env, timeout, maxBuffer: 1024 * 100 }, (err, stdout, stderr) => {
       if (err) {
-        resolve({ php_available: false, error: err.message });
+        const detail = stderr ? ` (stderr: ${stderr.substring(0, 200)})` : '';
+        reject(new Error(`${err.message}${detail}`));
         return;
       }
-      try {
-        const data = JSON.parse(stdout);
-        resolve({
-          php_available: true,
-          php_version: data.version,
-          odbc_loaded: data.odbc !== false,
-          odbc_drivers: data.odbc,
-        });
-      } catch {
-        resolve({ php_available: false, error: 'Invalid JSON output', output: stdout.substring(0, 200) });
-      }
+      resolve(stdout.trim());
     });
   });
 }
