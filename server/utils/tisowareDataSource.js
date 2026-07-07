@@ -2,7 +2,8 @@
  * Tisoware Data Source
  *
  * Provides access to the Tisoware time-tracking SQL Server database.
- * Uses mssql (tedious) driver — pure JS, no ODBC/native deps needed.
+ * Uses Microsoft ODBC Driver 18 for SQL Server via the `odbc` npm package.
+ * Same driver as the PHP implementation.
  *
  * Connection is configured via ENV vars:
  *   TISO_USER   — SQL Server login
@@ -16,22 +17,21 @@
  * Connection timeout is 3s — fast failure is preferred over long waits.
  */
 
-import sql from 'mssql';
-
-// ─── Connection pool ─────────────────────────────────────────────────────────
-
-let pool = null;
-let poolPromise = null;
+import {
+  testOdbcConnection,
+  queryOdbc,
+  closeOdbcPool,
+} from './tisowareOdbc.js';
 
 // ─── Connection state cache (avoids blocking on repeated failed attempts) ────
 
-const CONNECTION_CACHE_TTL = 8_000; // 8 seconds (short: allows quick retry after config change)
+const CONNECTION_CACHE_TTL = 8_000;
 const connectionCache = {
-  state: 'unknown', // 'unknown' | 'connected' | 'failed'
+  state: 'unknown',
   timestamp: 0,
   error: null,
   code: null,
-  configHash: '', // tracks env state to invalidate cache on config change
+  configHash: '',
 };
 
 /**
@@ -41,53 +41,6 @@ function currentConfigHash() {
   return `${process.env.TISO_SERVER || ''}|${process.env.TISO_USER || ''}|${process.env.TISO_PASS || ''}`;
 }
 
-function buildConfig() {
-  const server = process.env.TISO_SERVER || '';
-  const passwordRaw = process.env.TISO_PASS || '';
-
-  // Strip surrounding quotes (pass from .env-/Coolify-Quoting)
-  let password = passwordRaw;
-  if ((password.startsWith('"') && password.endsWith('"')) ||
-      (password.startsWith("'") && password.endsWith("'"))) {
-    password = password.slice(1, -1);
-  }
-
-  let host = server;
-  let instanceName = null;
-  let port = 1433;
-
-  if (server.includes('\\')) {
-    [host, instanceName] = server.split('\\', 2);
-  } else if (server.includes(',')) {
-    const [h, p] = server.split(',', 2);
-    host = h.trim();
-    port = parseInt(p.trim(), 10) || 1433;
-  }
-
-  return {
-    server: host,
-    port,
-    user: process.env.TISO_USER || '',
-    password,
-    options: {
-      database: 'tisoware',
-      encrypt: false,
-      trustServerCertificate: true,
-      ...(instanceName ? { instanceName } : {}),
-    },
-    pool: {
-      max: 2,
-      min: 0,
-      idleTimeoutMillis: 30000,
-    },
-    connectionTimeout: 5000,
-    requestTimeout: 15000,
-  };
-}
-
-/**
- * Reset the connection cache — forces a fresh connection attempt on next call.
- */
 function resetConnectionCache() {
   connectionCache.state = 'unknown';
   connectionCache.timestamp = 0;
@@ -96,123 +49,70 @@ function resetConnectionCache() {
   connectionCache.configHash = currentConfigHash();
 }
 
-/**
- * Get (or create) the Tisoware SQL Server connection pool.
- * Uses connection cache to avoid blocking on repeated failed attempts.
- * If ENV vars changed since last attempt, cache is automatically invalidated.
- * @throws {Error} with rich metadata if connection fails or was recently failed.
- */
-export async function getTisowarePool(forceFresh = false) {
-  // Auto-invalidate cache if config changed
+// ─── Connection management ───────────────────────────────────────────────────
+
+async function getTisowareConnection(forceFresh = false) {
   if (connectionCache.configHash && connectionCache.configHash !== currentConfigHash()) {
     resetConnectionCache();
-    await closeTisowarePool();
+    await closeOdbcPool();
   }
 
-  // If forced fresh, clear cache and pool
   if (forceFresh) {
     resetConnectionCache();
-    await closeTisowarePool();
+    await closeOdbcPool();
   }
 
-  // Fast path: cache says we're recently connected
-  if (connectionCache.state === 'connected' && pool) {
-    return pool;
+  if (connectionCache.state === 'connected') {
+    return true;
   }
 
-  // Fast path: cache says we recently failed (< TTL ago)
-  if (
-    connectionCache.state === 'failed' &&
-    Date.now() - connectionCache.timestamp < CONNECTION_CACHE_TTL
-  ) {
-    const err = new Error(connectionCache.error || 'Tisoware nicht verbunden (Fehler zwischengespeichert)');
+  if (connectionCache.state === 'failed' && Date.now() - connectionCache.timestamp < CONNECTION_CACHE_TTL) {
+    const err = new Error(connectionCache.error || 'Tisoware nicht verbunden');
     err.code = connectionCache.code || 'ECACHED';
     err.tisoware = true;
-    err.cached = true;
     throw err;
   }
 
-  // Need to connect — attempt pool creation
-  // Prevent concurrent attempts
-  if (poolPromise) {
-    return poolPromise;
-  }
-
-  poolPromise = (async () => {
-    try {
-      const config = buildConfig();
-      pool = await sql.connect(config);
-
-      // Cache success
+  try {
+    const result = await testOdbcConnection();
+    if (result.success) {
       connectionCache.state = 'connected';
       connectionCache.timestamp = Date.now();
       connectionCache.error = null;
       connectionCache.code = null;
-
-      return pool;
-    } catch (err) {
-      // Cache failure
-      connectionCache.state = 'failed';
-      connectionCache.timestamp = Date.now();
-      connectionCache.error = err.message;
-      connectionCache.code = err.code || null;
-
-      // Reset pool promise so next call can retry (after TTL)
-      poolPromise = null;
-      pool = null;
-
-      throw err;
+      return true;
     }
-  })();
-
-  return poolPromise;
-}
-
-// ─── Low-level query functions ───────────────────────────────────────────────
-
-/**
- * Test connection — returns { success, serverVersion?, error?, code? } never throws.
- * Always does a fresh connection attempt (for probing).
- */
-export async function testTisowareConnection() {
-  try {
-    const p = await getTisowarePool(true); // force fresh
-    const result = await p.request().query('SELECT 1 AS connected');
-    return { success: true, serverVersion: result.recordset?.[0] };
+    throw new Error(result.error || 'Connection failed');
   } catch (err) {
-    return {
-      success: false,
-      error: err.message,
-      code: err.code || null,
-      sqlNumber: err.number || null,
-    };
+    connectionCache.state = 'failed';
+    connectionCache.timestamp = Date.now();
+    connectionCache.error = err.message;
+    connectionCache.code = err.code || null;
+    throw err;
   }
 }
 
-/**
- * Run a read-only query against Tisoware.
- * Only SELECT / WITH queries are permitted.
- * Uses the connection cache — fails fast if not connected.
- */
+// ─── Query functions ─────────────────────────────────────────────────────────
+
+export async function testTisowareConnection() {
+  const result = await testOdbcConnection();
+  return result.success
+    ? { success: true, serverVersion: result.serverVersion }
+    : result;
+}
+
 export async function queryTisoware(query, maxRows = 1000) {
   const normalized = query.trim().toUpperCase();
   if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
     throw Object.assign(new Error('Only SELECT / WITH queries are allowed'), { status: 400 });
   }
+  await getTisowareConnection();
+  return queryOdbc(query, maxRows);
+}
 
-  const p = await getTisowarePool(); // uses cache — may throw instantly
-  const result = await p.request().query(query);
-
-  const rows = (result.recordset || []).slice(0, maxRows);
-  const columns = result.columns
-    ? Object.entries(result.columns).map(([name, col]) => ({
-        name,
-        type: col.type?.name || 'unknown',
-        nullable: col.nullable,
-      }))
-    : [];
-
-  return { rows, columns, rowCount: rows.length };
+export async function closeTisowarePool() {
+  await closeOdbcPool();
+  resetConnectionCache();
 }
 
 /**
@@ -266,17 +166,6 @@ export async function getTisowareTableSample(schema, table) {
   const safeSchema = schema.replace(/[^a-zA-Z0-9_]/g, '');
   const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
   return queryTisoware(`SELECT TOP 50 * FROM [${safeSchema}].[${safeTable}]`);
-}
-
-/**
- * Close the Tisoware connection pool.
- */
-export async function closeTisowarePool() {
-  if (pool) {
-    try { await pool.close(); } catch { /* ignore */ }
-    pool = null;
-    poolPromise = null;
-  }
 }
 
 // ============ MOCK DATA ============
