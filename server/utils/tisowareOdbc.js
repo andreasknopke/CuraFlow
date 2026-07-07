@@ -51,6 +51,32 @@ function configHash() {
 }
 
 /**
+ * Extract ODBC native error details from the error object.
+ * The `odbc` package provides odbcErrors array with real SQLSTATE + native error code.
+ */
+function extractOdbcError(err) {
+  const native = err?.odbcErrors?.[0];
+  if (native) {
+    return {
+      state: native.state || null,
+      nativeCode: native.code || null,
+      nativeMessage: native.message || null,
+    };
+  }
+  // Fallback: try to parse something useful from the generic message
+  const msg = err?.message || '';
+  const stateMatch = msg.match(/\[([A-Z0-9]{5})\]/);
+  if (stateMatch) {
+    return {
+      state: stateMatch[1],
+      nativeCode: null,
+      nativeMessage: msg.substring(0, 300),
+    };
+  }
+  return { state: null, nativeCode: null, nativeMessage: msg.substring(0, 300) };
+}
+
+/**
  * Get a pooled ODBC connection. Reconnects automatically if config changed.
  */
 async function getConnection() {
@@ -62,7 +88,18 @@ async function getConnection() {
 
   if (!connectionPool) {
     const connStr = buildConnectionString();
-    connectionPool = await odbcConnect.connect(connStr);
+    try {
+      connectionPool = await odbcConnect.connect(connStr);
+    } catch (err) {
+      const odbcErr = extractOdbcError(err);
+      // Log the full native error for debugging
+      console.error('[TISOWARE:ODBC] Connection failed', JSON.stringify(odbcErr));
+      const enhanced = new Error(odbcErr.nativeMessage || err.message || 'ODBC connection failed');
+      enhanced.code = odbcErr.state || err.code || '';
+      enhanced.odbcState = odbcErr.state;
+      enhanced.odbcNativeCode = odbcErr.nativeCode;
+      throw enhanced;
+    }
     lastConfigHash = hash;
   }
 
@@ -90,7 +127,13 @@ export async function testOdbcConnection() {
     const rows = await conn.query('SELECT 1 AS connected, DB_NAME() AS db, @@VERSION AS version');
     return { success: true, serverVersion: rows?.[0] || null };
   } catch (err) {
-    return { success: false, error: err.message, code: err.code || null };
+    return {
+      success: false,
+      error: err.message,
+      code: err.code,
+      odbcState: err.odbcState,
+      odbcNativeCode: err.odbcNativeCode,
+    };
   }
 }
 

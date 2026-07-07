@@ -194,6 +194,12 @@ export default function MasterTisoware() {
                     Fehlercode: <code className="bg-red-100 px-1 rounded">{status.code}</code>
                   </p>
                 )}
+                {status?.odbcState && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    ODBC State: <code className="bg-slate-100 px-1 rounded">{status.odbcState}</code>
+                    {status.odbcNativeCode ? ` | Native: ${status.odbcNativeCode}` : ''}
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -230,6 +236,12 @@ export default function MasterTisoware() {
                 {status.code && (
                   <p className="text-xs text-red-500 mt-1">
                     Fehlercode: <code className="bg-red-100 px-1 rounded">{status.code}</code>
+                  </p>
+                )}
+                {status.odbcState && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    ODBC State: <code className="bg-slate-100 px-1 rounded">{status.odbcState}</code>
+                    {status.odbcNativeCode ? ` | Native: ${status.odbcNativeCode}` : ''}
                   </p>
                 )}
                 {status.passwordDiag && (

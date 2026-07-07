@@ -36,69 +36,96 @@ function analyzeTisowareError(err) {
   const code = err?.code || '';
   const message = err?.message || '';
   const number = err?.number; // SQL Server native error number
+  const odbcState = err?.odbcState;
+  const odbcNativeCode = err?.odbcNativeCode;
 
-  // ETIMEOUT / ESOCKET / ECONNREFUSED → Server nicht erreichbar
-  if (code === 'ETIMEOUT' || code === 'ESOCKET' || code === 'ECONNREFUSED' || code === 'ECONNRESET') {
-    return {
-      diagnosis: 'Server nicht erreichbar',
-      detail: `Der Tisoware SQL-Server antwortet nicht (${code}).`,
-      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) Der Server ist aus diesem Netzwerk erreichbar',
-      code,
-      tisoware: true,
-    };
-  }
-
-  // ELOGIN → Credentials falsch
-  if (code === 'ELOGIN' || message.includes('Login failed') || message.includes('login failed')) {
+  // ODBC SQLSTATE: 28000 → Login failed
+  if (code === '28000' || odbcState === '28000' || message.includes('Login failed') || message.includes('login failed')) {
     return {
       diagnosis: 'Anmeldung fehlgeschlagen',
-      detail: 'Die Tisoware-Credentials (TISO_USER / TISO_PASS) wurden vom SQL Server zurückgewiesen.',
-      hint: 'Prüfe: (1) Benutzername und Passwort in den ENV-Variablen sind korrekt (2) Der Benutzer hat Zugriff auf die tisoware-Datenbank',
-      code,
+      detail: `Die Tisoware-Credentials wurden vom SQL Server zurückgewiesen.${odbcNativeCode ? ` (Native Error ${odbcNativeCode})` : ''}`,
+      hint: 'Prüfe: (1) Benutzername und Passwort in den ENV-Variablen sind korrekt (2) Der SQL Server erlaubt SQL Server Authentication (Mixed Mode) (3) Der Benutzer hat Zugriff auf die tisoware-Datenbank',
+      code: 'ELOGIN',
+      odbcState,
+      odbcNativeCode,
       tisoware: true,
     };
   }
 
-  // EINSTLOOKUP → Instanzname nicht gefunden
-  if (code === 'EINSTLOOKUP' || code === 'EINSTANCE') {
+  // ODBC SQLSTATE: 08001 / 08004 → Server nicht erreichbar (kein Route/Verbindung)
+  if (code === '08001' || code === '08004' || code === '08007' || odbcState === '08001') {
     return {
-      diagnosis: 'SQL Server-Instanz nicht gefunden',
-      detail: `Die angegebene Instanz in TISO_SERVER wurde nicht gefunden (${code}).`,
-      hint: 'Prüfe: (1) Format: HOST\INSTANCE oder HOST,PORT (2) Der SQL Server Browser-Dienst läuft (für Named Instances)',
-      code,
+      diagnosis: 'Server nicht erreichbar',
+      detail: `Der Tisoware SQL-Server antwortet nicht (${code || odbcState}).`,
+      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) SQL Browser (UDP 1434) ist erreichbar für Named Instances',
+      code: 'ECONNREFUSED',
+      odbcState,
+      odbcNativeCode,
       tisoware: true,
     };
   }
 
-  // SQL Server error 4060 → Datenbank nicht gefunden
-  if (number === 4060 || message.includes('Cannot open database') || message.includes('datenbank')) {
+  // ETIMEOUT
+  if (code === 'ETIMEOUT' || code === 'ESOCKET' || code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'HYT00') {
     return {
-      diagnosis: 'Datenbank nicht gefunden',
-      detail: 'Die Datenbank "tisoware" existiert auf dem SQL Server nicht oder ist nicht erreichbar.',
-      hint: 'Prüfe: (1) Der Datenbankname lautet tatsächlich "tisoware" (2) Der Benutzer hat Zugriff darauf',
+      diagnosis: 'Server antwortet nicht',
+      detail: `Der Tisoware SQL-Server antwortet nicht (${code}).`,
+      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu',
       code,
+      odbcState,
+      odbcNativeCode,
       tisoware: true,
     };
   }
 
-  // ENOTFOUND → Hostname unbekannt
+  // ENOTFOUND / 08001 → Hostname unbekannt
   if (code === 'ENOTFOUND' || code === 'ENOENT') {
     return {
       diagnosis: 'Server-Hostname nicht auflösbar',
       detail: `Der Hostname in TISO_SERVER konnte nicht aufgelöst werden (${code}).`,
       hint: 'Prüfe: (1) Der Hostname ist korrekt geschrieben (2) DNS funktioniert (3) Bei IP: Ist die IP korrekt?',
       code,
+      odbcState,
+      odbcNativeCode,
       tisoware: true,
     };
   }
 
-  // Generic mssql error
-  if (code && (code.startsWith('E') || message.includes('mssql') || message.includes('tedious') || message.includes('SQL'))) {
+  // 08004 / 4060 → Datenbank nicht gefunden
+  if (number === 4060 || message.includes('Cannot open database') || message.includes('datenbank')) {
     return {
-      diagnosis: 'SQL Server-Fehler',
-      detail: `${message.substring(0, 300)}`,
-      hint: 'Siehe Server-Log für Details.',
+      diagnosis: 'Datenbank nicht gefunden',
+      detail: 'Die Datenbank "tisoware" existiert auf dem SQL Server nicht oder ist nicht erreichbar.',
+      hint: 'Prüfe: (1) Der Datenbankname lautet tatsächlich "tisoware" (2) Der Benutzer hat Zugriff darauf',
       code,
+      odbcState,
+      odbcNativeCode,
+      tisoware: true,
+    };
+  }
+
+  // EINSTLOOKUP
+  if (code === 'EINSTLOOKUP' || code === 'EINSTANCE' || message.includes('instance')) {
+    return {
+      diagnosis: 'SQL Server-Instanz nicht gefunden',
+      detail: `Die angegebene Instanz in TISO_SERVER wurde nicht gefunden (${code || 'instance'}).`,
+      hint: 'Prüfe: (1) Format: HOST\\INSTANCE (2) Der SQL Server Browser-Dienst läuft',
+      code: code || 'EINSTLOOKUP',
+      odbcState,
+      odbcNativeCode,
+      tisoware: true,
+    };
+  }
+
+  // Generic ODBC/SQL error
+  if (code || odbcState || message.includes('odbc') || message.includes('SQL')) {
+    return {
+      diagnosis: 'SQL/ODBC-Fehler',
+      detail: `${(odbcState ? `[${odbcState}] ` : '')}${message.substring(0, 300)}`,
+      hint: 'Siehe Server-Log für Details.',
+      code: code || odbcState || 'EODBC',
+      odbcState,
+      odbcNativeCode,
       tisoware: true,
     };
   }
@@ -108,7 +135,9 @@ function analyzeTisowareError(err) {
     diagnosis: 'Unbekannter Fehler',
     detail: message?.substring(0, 300) || 'Keine Fehlerdetails verfügbar',
     hint: 'Siehe Server-Log für den vollständigen Stack Trace.',
-    code,
+    code: code || 'EUNKNOWN',
+    odbcState,
+    odbcNativeCode,
     tisoware: true,
   };
 }
@@ -137,6 +166,8 @@ function tisowareErrorHandler(err, req, res, next) {
     detail: analysis.detail,
     hint: analysis.hint,
     code: analysis.code || null,
+    odbcState: analysis.odbcState || null,
+    odbcNativeCode: analysis.odbcNativeCode || null,
     tisoware: true,
     connected: false,
     diagnosis: analysis.diagnosis,

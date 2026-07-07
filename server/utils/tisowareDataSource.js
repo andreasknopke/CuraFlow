@@ -323,6 +323,8 @@ export async function getConnectionStatus() {
       diagnosis: diagnoseError(result.error, result.code),
       detail: result.error?.substring(0, 300) || null,
       code: result.code || null,
+      odbcState: result.odbcState || null,
+      odbcNativeCode: result.odbcNativeCode || null,
       hint: getHintForError(result.code),
       passwordDiag: passDiag,
     };
@@ -334,6 +336,8 @@ export async function getConnectionStatus() {
       diagnosis: diagnoseError(err.message, err.code),
       detail: err.message?.substring(0, 300) || 'Unbekannter Fehler',
       code: err.code || null,
+      odbcState: err.odbcState || null,
+      odbcNativeCode: err.odbcNativeCode || null,
       hint: getHintForError(err.code),
       passwordDiag: passDiag,
     };
