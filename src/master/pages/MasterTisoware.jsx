@@ -275,7 +275,7 @@ export default function MasterTisoware() {
             <div className="flex items-start gap-3">
               <div className="flex-shrink-0 mt-0.5">
                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
-                  <Terminal className={`w-4 h-4 ${phpCheck.data?.phpVersion ? 'text-green-600' : 'text-slate-400'}`} />
+                  <Terminal className={`w-4 h-4 ${phpCheck.data?.php_version ? 'text-green-600' : 'text-slate-400'}`} />
                 </div>
               </div>
               <div className="flex-1 min-w-0">
@@ -299,16 +299,16 @@ export default function MasterTisoware() {
                       Tisoware-Abfragen werden nicht funktionieren — MS ODBC Driver 18 oder php-cli fehlt im Container.
                     </p>
                   </div>
-                ) : phpCheck.data?.phpVersion ? (
+                ) : phpCheck.data?.php_version ? (
                   <div className="space-y-1">
                     <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-                      PHP {phpCheck.data.phpVersion} verfügbar
+                      PHP {phpCheck.data.php_version} verfügbar
                     </Badge>
-                    {phpCheck.data.odbcDrivers?.length > 0 ? (
+                    {phpCheck.data.odbc_drivers?.length > 0 ? (
                       <div className="mt-2">
                         <p className="text-xs text-slate-500 font-medium mb-0.5">Installierte ODBC-Treiber:</p>
                         <ul className="text-xs text-slate-600 font-mono space-y-0.5">
-                          {phpCheck.data.odbcDrivers.map((driver, i) => (
+                          {phpCheck.data.odbc_drivers.map((driver, i) => (
                             <li key={i} className="flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
                               {driver}
