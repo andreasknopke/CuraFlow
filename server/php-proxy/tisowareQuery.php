@@ -88,44 +88,72 @@ if (!extension_loaded('odbc')) {
     error('PHP ODBC extension not loaded', 'EPHP_NO_ODBC', 'Install php-odbc package');
 }
 
-// ─── Connect to Tisoware ────────────────────────────────────────────────────
+// ─── Connect to Tisoware mit Fallback ──────────────────────────────────────
 
-// Build connection string with generous timeouts.
-// ODBC Driver 18: Connect Timeout = TCP connection, Login Timeout = auth handshake.
-// Login timeout=30 because auth can be slow (AD/Reverse-DNS) from cloud.
-$connStr = sprintf(
-    'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10;Login Timeout=30',
-    $server,
-    $user,
-    $pass
-);
+// ODBC Driver 18: Connect Timeout = TCP, Login Timeout = auth handshake.
+// Login timeout=30, weil AD/Reverse-DNS aus der Cloud langsam sein kann.
+//
+// Fallback-Strategie: Wenn $server ein Named-Instance-Format (host\instance)
+// hat und der erste Verbindungsversuch timeoutet, versuchen wir es mit
+// host,1433 (direktes TCP, ohne SQL Browser).
+// Grund: SQL Browser (UDP 1434) ist aus Cloud-Umgebungen oft nicht erreichbar.
 
-// Log masked connection info to stderr (password hidden)
-file_put_contents('php://stderr', sprintf(
-    "[PHP] Connecting… server=%s user=%s pass=%d chars connStr=[%s]\n",
-    preg_replace('/\s+/', ' ', trim($server)),
-    trim($user),
-    strlen($pass),
-    preg_replace('/Pwd=[^;]+/', 'Pwd=***', $connStr)
-));
+function buildConnStr($srv) {
+    global $user, $pass;
+    return sprintf(
+        'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10;Login Timeout=30',
+        $srv, $user, $pass
+    );
+}
 
-// Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver).
-// Kein @-Operator: wir wollen die ODBC-Warnung sehen.
-$odbcCapture = '';
-set_error_handler(function ($severity, $msg) use (&$odbcCapture) {
-    if (stripos($msg, 'odbc') !== false || stripos($msg, 'SQL') !== false || stripos($msg, 'timeout') !== false) {
-        $odbcCapture = $msg;
+function tryConnect($connStr, $label) {
+    file_put_contents('php://stderr', sprintf(
+        "[PHP] Trying [%s]… connStr=[%s]\n",
+        $label,
+        preg_replace('/Pwd=[^;]+/', 'Pwd=***', $connStr)
+    ));
+
+    $capture = '';
+    set_error_handler(function ($severity, $msg) use (&$capture) {
+        if (stripos($msg, 'odbc') !== false || stripos($msg, 'sql') !== false || stripos($msg, 'timeout') !== false) {
+            $capture = $msg;
+        }
+    });
+    $conn = @odbc_connect($connStr, $GLOBALS['user'], $GLOBALS['pass']);
+    restore_error_handler();
+
+    return [$conn, $capture];
+}
+
+// ── Attempt 1: mit originalem Server (host\instance oder host,port) ──
+[$conn, $capture1] = tryConnect(buildConnStr($server), $server);
+
+// ── Attempt 2 (Fallback): Wenn Server host\instance enthält und Versuch 1
+//    timeoutete, versuche host,1433 (Default-Instanz, direkter TCP-Port) ──
+$isNamedInstance = str_contains($server, '\\');
+$conn2 = null;
+$capture2 = '';
+
+if (!$conn && $isNamedInstance) {
+    $timeoutDetected = stripos($capture1, 'timeout') !== false || stripos(odbc_errormsg(), 'timeout') !== false;
+    if ($timeoutDetected) {
+        $fallbackServer = preg_replace('/\\\\.*$/', '', $server) . ',1433';
+        file_put_contents('php://stderr', sprintf(
+            "[PHP] Named-Instance timeout – fallback to %s\n", $fallbackServer
+        ));
+        [$conn2, $capture2] = tryConnect(buildConnStr($fallbackServer), $fallbackServer);
+        if ($conn2) {
+            $conn = $conn2;
+        }
     }
-});
-$conn = odbc_connect($connStr, $user, $pass);
-restore_error_handler();
+}
 
 if (!$conn) {
     $phpErr = odbc_errormsg();
-    $detail = $phpErr ?: $odbcCapture ?: 'Could not connect (no error detail)';
+    $detail = $phpErr ?: $capture1 ?: $capture2 ?: 'Could not connect (no error detail)';
 
     file_put_contents('php://stderr', sprintf(
-        "[PHP] Connection FAILED: %s\n", $detail
+        "[PHP] All connection attempts FAILED: %s\n", $detail
     ));
 
     error('ODBC connection failed', 'EODBC_CONNECT', $detail);
