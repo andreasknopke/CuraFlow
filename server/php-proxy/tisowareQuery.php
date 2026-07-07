@@ -108,9 +108,10 @@ file_put_contents('php://stderr', sprintf(
     strlen($pass)
 ));
 
-// Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver)
+// Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver).
+// Kein @-Operator — wir wollen die ODBC-Warnung im ob-Buffer!
 ob_start();
-$conn = @odbc_connect($connStr, $user, $pass);
+$conn = odbc_connect($connStr, $user, $pass);
 $warnings = ob_get_clean();
 
 if (!$conn) {
