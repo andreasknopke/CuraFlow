@@ -90,6 +90,13 @@ export default function MasterTisoware() {
     }),
   });
 
+  // ── PHP / ODBC availability ──
+  const phpCheck = useQuery({
+    queryKey: ['tisoware-php-check'],
+    queryFn: () => api.request('/api/master/tisoware/php-check', { skipDbToken: true }),
+    retry: false,
+  });
+
   const handleRunQuery = useCallback(() => {
     if (sqlQuery.trim()) {
       queryMutation.mutate(sqlQuery.trim());
@@ -253,6 +260,74 @@ export default function MasterTisoware() {
                     {status.passwordDiag.effectiveContainsHash && (
                       <p className="text-amber-600">⚠ Enthält # — prüfe ob es in Coolify ankommt</p>
                     )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* PHP / ODBC availability card */}
+      {!statusLoading && status && (
+        <Card className="border-slate-200 bg-white">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                  <Terminal className={`w-4 h-4 ${phpCheck.data?.phpVersion ? 'text-green-600' : 'text-slate-400'}`} />
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-semibold text-slate-800 mb-1">
+                  PHP / ODBC Proxy
+                </h3>
+                {phpCheck.isLoading ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Prüfe PHP-Verfügbarkeit…
+                  </div>
+                ) : phpCheck.error ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-red-600 font-medium">
+                      ⚠ PHP-Proxy nicht verfügbar
+                    </p>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {phpCheck.error?.message || 'Unbekannter Fehler'}
+                    </p>
+                    <p className="text-xs text-amber-700">
+                      Tisoware-Abfragen werden nicht funktionieren — MS ODBC Driver 18 oder php-cli fehlt im Container.
+                    </p>
+                  </div>
+                ) : phpCheck.data?.phpVersion ? (
+                  <div className="space-y-1">
+                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                      PHP {phpCheck.data.phpVersion} verfügbar
+                    </Badge>
+                    {phpCheck.data.odbcDrivers?.length > 0 ? (
+                      <div className="mt-2">
+                        <p className="text-xs text-slate-500 font-medium mb-0.5">Installierte ODBC-Treiber:</p>
+                        <ul className="text-xs text-slate-600 font-mono space-y-0.5">
+                          {phpCheck.data.odbcDrivers.map((driver, i) => (
+                            <li key={i} className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                              {driver}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-amber-700 mt-1">⚠ Keine ODBC-Treiber installiert</p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs text-amber-700 font-medium">
+                      ⚠ PHP nicht verfügbar
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Weder php-cli noch ODBC Driver 18 sind im Container installiert.
+                    </p>
                   </div>
                 )}
               </div>

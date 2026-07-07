@@ -27,7 +27,9 @@ import { checkPhpAvailable } from '../utils/tisowarePhpProxy.js';
 
 const router = express.Router();
 
-// ─── Public diagnostics (no auth required) ────────────────────────────────────
+// All tisoware routes require master-level auth
+router.use(authMiddleware);
+router.use(adminMiddleware);
 
 /**
  * GET /api/master/tisoware/php-check
@@ -41,10 +43,6 @@ router.get('/php-check', async (req, res, next) => {
     return tisowareErrorHandler(err, req, res, next);
   }
 });
-
-// All other tisoware routes require master-level auth
-router.use(authMiddleware);
-router.use(adminMiddleware);
 
 // ─── Error analysis helper ────────────────────────────────────────────────────
 
