@@ -90,30 +90,30 @@ if (!extension_loaded('odbc')) {
 
 // ─── Connect to Tisoware ────────────────────────────────────────────────────
 
-// Build connection string with Connect Timeout so we don't hang forever.
+// Build connection string with generous timeouts.
+// ODBC Driver 18: Connect Timeout = TCP connection, Login Timeout = auth handshake.
+// Login timeout=30 because auth can be slow (AD/Reverse-DNS) from cloud.
 $connStr = sprintf(
-    'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10',
+    'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10;Login Timeout=30',
     $server,
     $user,
     $pass
 );
 
 // Log masked connection info to stderr (password hidden)
-$safeServer = preg_replace('/\s+/', ' ', trim($server));
-$safeUser   = trim($user);
 file_put_contents('php://stderr', sprintf(
-    "[PHP] Connecting… server=%s user=%s pass=%d chars\n",
-    $safeServer,
-    $safeUser,
-    strlen($pass)
+    "[PHP] Connecting… server=%s user=%s pass=%d chars connStr=[%s]\n",
+    preg_replace('/\s+/', ' ', trim($server)),
+    trim($user),
+    strlen($pass),
+    preg_replace('/Pwd=[^;]+/', 'Pwd=***', $connStr)
 ));
 
 // Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver).
 // Kein @-Operator: wir wollen die ODBC-Warnung sehen.
-// set_error_handler fängt sie, weil display_errors=0 ist.
 $odbcCapture = '';
 set_error_handler(function ($severity, $msg) use (&$odbcCapture) {
-    if (stripos($msg, 'odbc') !== false || stripos($msg, 'SQL') !== false) {
+    if (stripos($msg, 'odbc') !== false || stripos($msg, 'SQL') !== false || stripos($msg, 'timeout') !== false) {
         $odbcCapture = $msg;
     }
 });
@@ -122,9 +122,16 @@ restore_error_handler();
 
 if (!$conn) {
     $phpErr = odbc_errormsg();
-    $detail = $phpErr ?: $odbcCapture ?: 'Could not connect to Tisoware SQL Server (no error detail available)';
+    $detail = $phpErr ?: $odbcCapture ?: 'Could not connect (no error detail)';
+
+    file_put_contents('php://stderr', sprintf(
+        "[PHP] Connection FAILED: %s\n", $detail
+    ));
+
     error('ODBC connection failed', 'EODBC_CONNECT', $detail);
 }
+
+file_put_contents('php://stderr', "[PHP] Connection OK\n");
 
 // ─── Execute query ──────────────────────────────────────────────────────────
 
