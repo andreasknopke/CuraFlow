@@ -232,6 +232,17 @@ export default function MasterTisoware() {
                     Fehlercode: <code className="bg-red-100 px-1 rounded">{status.code}</code>
                   </p>
                 )}
+                {status.passwordDiag && (
+                  <div className="mt-2 text-xs text-slate-600 font-mono space-y-0.5">
+                    <p>Passwort: {status.passwordDiag.rawLength} Zeichen</p>
+                    {status.passwordDiag.surroundedByQuotes && (
+                      <p className="text-amber-600">⚠ Von Anführungszeichen umschlossen — effektiv {status.passwordDiag.effectiveLength} Zeichen</p>
+                    )}
+                    {status.passwordDiag.effectiveContainsHash && (
+                      <p className="text-amber-600">⚠ Enthält # — prüfe ob es in Coolify ankommt</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
