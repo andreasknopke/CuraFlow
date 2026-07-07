@@ -12,33 +12,70 @@
 
 import odbcConnect from 'odbc';
 
-// ─── Connection string builder ───────────────────────────────────────────────
+// ─── Server parsing ──────────────────────────────────────────────────────────
 
-function buildConnectionString() {
-  const server = process.env.TISO_SERVER || '';
+/**
+ * Parse TISO_SERVER into { host, instance, port }.
+ * Supports: "host\instance", "host,port", "host" (plain hostname/IP).
+ */
+function parseServer(raw) {
+  let host = raw;
+  let instanceName = null;
+  let port = 1433;
+
+  if (raw.includes('\\')) {
+    const parts = raw.split('\\');
+    host = parts[0];
+    instanceName = parts.slice(1).join('\\');
+    port = 0; // named instance → dynamic port via SQL Browser
+  } else if (raw.includes(',')) {
+    const [h, p] = raw.split(',', 2);
+    host = h.trim();
+    port = parseInt(p.trim(), 10) || 1433;
+  }
+  return { host, instanceName, port };
+}
+
+/**
+ * Build one or more ODBC connection strings to try.
+ * Primary: with named instance (if any).
+ * Fallback: without instance on port 1433 (in case SQL Browser is not reachable).
+ */
+function buildConnectionStrings() {
+  const raw = process.env.TISO_SERVER || '';
   const user = process.env.TISO_USER || '';
-  const password = process.env.TISO_PASS || '';
+  let password = process.env.TISO_PASS || '';
 
   // Clean password: strip surrounding quotes (from Coolify/.env quoting)
-  let cleanPassword = password;
   if (
-    (cleanPassword.startsWith('"') && cleanPassword.endsWith('"')) ||
-    (cleanPassword.startsWith("'") && cleanPassword.endsWith("'"))
+    (password.startsWith('"') && password.endsWith('"')) ||
+    (password.startsWith("'") && password.endsWith("'"))
   ) {
-    cleanPassword = cleanPassword.slice(1, -1);
+    password = password.slice(1, -1);
   }
 
-  // Build ODBC connection string matching the PHP format exactly
-  const connStr =
-    `Driver={ODBC Driver 18 for SQL Server};` +
-    `Server=${server};` +
-    `Database=tisoware;` +
-    `Uid=${user};` +
-    `Pwd=${cleanPassword};` +
-    `Encrypt=no;` +
-    `TrustServerCertificate=yes`;
+  const { host, instanceName, port } = parseServer(raw);
+  const auth = `Uid=${user};Pwd=${password}`;
+  const common = `Encrypt=no;TrustServerCertificate=yes;Login Timeout=15;Connection Timeout=15`;
 
-  return connStr;
+  const strings = [];
+
+  // Primary: with named instance (uses SQL Browser)
+  if (instanceName) {
+    strings.push({
+      label: `host\\instance (${host}\\${instanceName})`,
+      connStr: `Driver={ODBC Driver 18 for SQL Server};Server=${host}\\${instanceName};Database=tisoware;${auth};${common}`,
+    });
+  }
+
+  // Fallback: direct TCP/IP — uses parsed port, or 1433 for named instances
+  const fallbackPort = port > 0 ? port : 1433;
+  strings.push({
+    label: `host:${fallbackPort} (${host})`,
+    connStr: `Driver={ODBC Driver 18 for SQL Server};Server=${host},${fallbackPort};Database=tisoware;${auth};${common}`,
+  });
+
+  return strings;
 }
 
 // ─── Connection management ───────────────────────────────────────────────────
@@ -52,7 +89,6 @@ function configHash() {
 
 /**
  * Extract ODBC native error details from the error object.
- * The `odbc` package provides odbcErrors array with real SQLSTATE + native error code.
  */
 function extractOdbcError(err) {
   const native = err?.odbcErrors?.[0];
@@ -63,7 +99,6 @@ function extractOdbcError(err) {
       nativeMessage: native.message || null,
     };
   }
-  // Fallback: try to parse something useful from the generic message
   const msg = err?.message || '';
   const stateMatch = msg.match(/\[([A-Z0-9]{5})\]/);
   if (stateMatch) {
@@ -78,6 +113,7 @@ function extractOdbcError(err) {
 
 /**
  * Get a pooled ODBC connection. Reconnects automatically if config changed.
+ * Tries multiple connection string variants (named instance → direct port).
  */
 async function getConnection() {
   const hash = configHash();
@@ -87,20 +123,33 @@ async function getConnection() {
   }
 
   if (!connectionPool) {
-    const connStr = buildConnectionString();
-    try {
-      connectionPool = await odbcConnect.connect(connStr);
-    } catch (err) {
-      const odbcErr = extractOdbcError(err);
-      // Log the full native error for debugging
-      console.error('[TISOWARE:ODBC] Connection failed', JSON.stringify(odbcErr));
-      const enhanced = new Error(odbcErr.nativeMessage || err.message || 'ODBC connection failed');
-      enhanced.code = odbcErr.state || err.code || '';
-      enhanced.odbcState = odbcErr.state;
-      enhanced.odbcNativeCode = odbcErr.nativeCode;
-      throw enhanced;
+    const variants = buildConnectionStrings();
+    let lastError = null;
+
+    for (const { label, connStr } of variants) {
+      try {
+        connectionPool = await odbcConnect.connect(connStr);
+        console.log('[TISOWARE:ODBC] Connected via:', label);
+        lastConfigHash = hash;
+        return connectionPool;
+      } catch (err) {
+        const odbcErr = extractOdbcError(err);
+        console.error(`[TISOWARE:ODBC] ${label} failed:`, JSON.stringify(odbcErr));
+        lastError = err;
+        // If it's not a timeout, don't bother with fallback
+        if (odbcErr.state !== 'HYT00' && odbcErr.state !== '08001') {
+          break;
+        }
+      }
     }
-    lastConfigHash = hash;
+
+    // All variants failed
+    const odbcErr = extractOdbcError(lastError);
+    const enhanced = new Error(odbcErr.nativeMessage || lastError?.message || 'ODBC connection failed');
+    enhanced.code = odbcErr.state || lastError?.code || '';
+    enhanced.odbcState = odbcErr.state;
+    enhanced.odbcNativeCode = odbcErr.nativeCode;
+    throw enhanced;
   }
 
   return connectionPool;
