@@ -141,10 +141,9 @@ function runPhp(sql, timeout) {
  * Returns { php_available, php_version, odbc_loaded, drivers? }
  *
  * Runs two steps:
- *   1. `php --version`  →  is php-cli installed?
- *   2. `php -r '...'`   →  ODBC extension + drivers
+ *   1. `php --version`           →  is php-cli installed?
+ *   2. `php -r 'extension_loaded'` + `odbcinst -q -d`  →  odbc extension + drivers
  * If step 1 fails, php is truly missing (ENOENT).
- * If step 1 passes but step 2 fails, we report the PHP + ODBC error.
  */
 export async function checkPhpAvailable() {
   // Step 1: is PHP executable reachable?
@@ -154,22 +153,41 @@ export async function checkPhpAvailable() {
     return { php_available: false, error: `PHP not found: ${err.message}` };
   }
 
-  // Step 2: query ODBC drivers
+  // Step 2a: check PHP ODBC extension is loaded
+  let odbcLoaded = false;
   try {
-    const stdout = await execPromise(
-      `php -r 'echo json_encode(["version" => PHP_VERSION, "odbc" => extension_loaded("odbc") ? array_values(odbc_drivers()) : false]);'`,
-      5000
-    );
-    const data = JSON.parse(stdout);
-    return {
-      php_available: true,
-      php_version: data.version,
-      odbc_loaded: data.odbc !== false,
-      odbc_drivers: data.odbc,
-    };
-  } catch (err) {
-    return { php_available: false, error: `PHP/ODBC query failed: ${err.message}` };
+    const out = await execPromise(`php -r 'echo extension_loaded("odbc") ? "yes" : "no";'`, 5000);
+    odbcLoaded = out === 'yes';
+  } catch {
+    odbcLoaded = false;
   }
+
+  // Step 2b: list ODBC drivers via odbcinst (shell tool)
+  let drivers = [];
+  try {
+    const out = await execPromise('odbcinst -q -d', 5000);
+    drivers = out
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+  } catch {
+    // odbcinst not available — no ODBC drivers
+  }
+
+  // Step 2c: PHP version string
+  let phpVersion = 'unknown';
+  try {
+    phpVersion = await execPromise('php -r \'echo PHP_VERSION;\'', 5000);
+  } catch {
+    // ignore
+  }
+
+  return {
+    php_available: true,
+    php_version: phpVersion,
+    odbc_loaded: odbcLoaded,
+    odbc_drivers: drivers,
+  };
 }
 
 // Small helper: promisified exec that returns stdout (not full result)
