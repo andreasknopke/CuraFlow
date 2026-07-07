@@ -133,9 +133,10 @@ function analyzeTisowareError(err) {
 
   // Generic ODBC/SQL error
   if (code || odbcState || message.includes('odbc') || message.includes('SQL')) {
+    const detailText = err?.detail || message || '';
     return {
       diagnosis: 'SQL/ODBC-Fehler',
-      detail: `${(odbcState ? `[${odbcState}] ` : '')}${message.substring(0, 300)}`,
+      detail: `${(odbcState ? `[${odbcState}] ` : '')}${detailText.substring(0, 300)}`,
       hint: 'Siehe Server-Log für Details.',
       code: code || odbcState || 'EODBC',
       odbcState,

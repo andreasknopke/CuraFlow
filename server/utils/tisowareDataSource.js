@@ -53,7 +53,7 @@ export async function testTisowareConnection() {
   const result = await testPhpConnection(60000);
   return result.success
     ? { success: true, serverVersion: result.serverVersion }
-    : { success: false, error: result.error, code: result.code };
+    : { success: false, error: result.error, code: result.code, detail: result.detail };
 }
 
 export async function queryTisoware(query, maxRows = 1000) {
@@ -275,7 +275,7 @@ export async function getConnectionStatus() {
       mock: false,
       message: diagnoseError(result.error, result.code),
       diagnosis: diagnoseError(result.error, result.code),
-      detail: result.error?.substring(0, 300) || null,
+      detail: result.detail || result.error?.substring(0, 300) || null,
       code: result.code || null,
       odbcState: result.odbcState || null,
       odbcNativeCode: result.odbcNativeCode || null,

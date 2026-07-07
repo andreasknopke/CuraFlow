@@ -60,7 +60,7 @@ export async function testPhpConnection(timeout = 15000) {
     if (result.success && result.rows?.length > 0) {
       return { success: true, serverVersion: result.rows[0] };
     }
-    return { success: false, error: result.error || 'PHP returned no rows' };
+    return { success: false, error: result.error || 'PHP returned no rows', code: result.code, detail: result.detail };
   } catch (err) {
     return { success: false, error: err.message, code: err.code };
   }

@@ -90,9 +90,7 @@ if (!extension_loaded('odbc')) {
 
 // ─── Connect to Tisoware ────────────────────────────────────────────────────
 
-// Build connection string.
-// Connect Timeout=10 → ODBC bricht nach 10s ab statt ewig zu hängen
-// (wichtig: von Coolify aus ist der SQL Server evtl. nicht direkt erreichbar)
+// Build connection string with Connect Timeout so we don't hang forever.
 $connStr = sprintf(
     'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10',
     $server,
@@ -100,14 +98,30 @@ $connStr = sprintf(
     $pass
 );
 
-$conn = odbc_connect($connStr, $user, $pass);
+// Log masked connection info to stderr (password hidden)
+$safeServer = preg_replace('/\s+/', ' ', trim($server));
+$safeUser   = trim($user);
+file_put_contents('php://stderr', sprintf(
+    "[PHP] Connecting… server=%s user=%s pass=%d chars\n",
+    $safeServer,
+    $safeUser,
+    strlen($pass)
+));
+
+// Capture warnings from odbc_connect (odbc_errormsg() often empty with MS Driver)
+ob_start();
+$conn = @odbc_connect($connStr, $user, $pass);
+$warnings = ob_get_clean();
+
 if (!$conn) {
+    // Try multiple error sources
     $phpErr = odbc_errormsg();
-    error(
-        'ODBC connection failed',
-        'EODBC_CONNECT',
-        $phpErr ?: 'Could not connect to Tisoware SQL Server'
-    );
+    $lastErr = error_get_last();
+    $lastErrStr = $lastErr ? sprintf('%s in %s:%d', $lastErr['message'], $lastErr['file'], $lastErr['line']) : '';
+    $warnStr = trim($warnings ?? '');
+
+    $detail = $phpErr ?: $warnStr ?: $lastErrStr ?: 'Could not connect to Tisoware SQL Server (no error detail available)';
+    error('ODBC connection failed', 'EODBC_CONNECT', $detail);
 }
 
 // ─── Execute query ──────────────────────────────────────────────────────────
