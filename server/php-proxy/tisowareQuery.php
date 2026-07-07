@@ -14,6 +14,25 @@
  *   TISO_PASS   — SQL Server password
  */
 
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+// Shutdown handler: catch fatal errors and write to stderr as JSON
+register_shutdown_function(function () {
+    $err = error_get_last();
+    if ($err && in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR])) {
+        $msg = sprintf('[PHP FATAL] %s in %s:%d', $err['message'], $err['file'], $err['line']);
+        file_put_contents('php://stderr', $msg . "\n");
+        echo json_encode([
+            'success' => false,
+            'error' => $err['message'],
+            'code' => 'EPHP_FATAL',
+            'detail' => sprintf('%s:%d', $err['file'], $err['line']),
+        ]) . "\n";
+    }
+});
+
 // ─── Config from environment ─────────────────────────────────────────────────
 
 $server = getenv('TISO_SERVER') ?: '';
@@ -34,6 +53,7 @@ function respond($data, $exitCode = 0) {
 }
 
 function error($msg, $code = 'EPHP_PROXY', $detail = null) {
+    file_put_contents('php://stderr', "[PHP ERROR] $msg | $code | " . ($detail ?? '') . "\n");
     respond([
         'success' => false,
         'error' => $msg,
@@ -62,6 +82,12 @@ if ($query === false || trim($query) === '') {
 }
 $query = trim($query);
 
+// ─── Check ODBC extension ───────────────────────────────────────────────────
+
+if (!extension_loaded('odbc')) {
+    error('PHP ODBC extension not loaded', 'EPHP_NO_ODBC', 'Install php-odbc package');
+}
+
 // ─── Connect to Tisoware (exactly like ppugv_station.php) ───────────────────
 
 $connStr = sprintf(
@@ -71,7 +97,7 @@ $connStr = sprintf(
     $pass
 );
 
-$conn = @odbc_connect($connStr, $user, $pass);
+$conn = odbc_connect($connStr, $user, $pass);
 if (!$conn) {
     $phpErr = odbc_errormsg();
     error(
@@ -83,7 +109,7 @@ if (!$conn) {
 
 // ─── Execute query ──────────────────────────────────────────────────────────
 
-$result = @odbc_exec($conn, $query);
+$result = odbc_exec($conn, $query);
 if (!$result) {
     $phpErr = odbc_errormsg();
     odbc_close($conn);

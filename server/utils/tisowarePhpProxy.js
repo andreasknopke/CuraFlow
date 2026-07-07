@@ -13,7 +13,7 @@
  *   const result = await queryViaPhp('SELECT TOP 5 * FROM dbo.PERSTAMM');
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -95,18 +95,23 @@ function runPhp(sql, timeout) {
       });
     });
 
-    php.on('close', (exitCode) => {
+    php.on('close', (exitCode, signal) => {
+      const signalStr = signal ? ` (signal: ${signal})` : '';
+
       if (exitCode !== 0 || !stdout) {
-        // Try to parse JSON even on non-zero exit (our PHP script returns JSON on errors too)
+        // Try to parse JSON even on non-zero exit
         try {
           const parsed = JSON.parse(stdout);
           resolve(parsed);
         } catch {
+          const errMsg = stderr
+            ? `PHP stderr: ${stderr.substring(0, 500)}`
+            : `PHP exited with code ${exitCode}${signalStr} (no output)`;
           resolve({
             success: false,
-            error: stderr ? `PHP error: ${stderr.substring(0, 500)}` : `PHP exited with code ${exitCode} (no output)`,
-            code: 'EPHP_EXIT',
-            detail: stderr ? stderr.substring(0, 1000) : null,
+            error: errMsg,
+            code: signal ? 'EPHP_SIGNAL' : 'EPHP_EXIT',
+            detail: stderr ? stderr.substring(0, 1000) : `code=${exitCode} signal=${signal}`,
           });
         }
         return;
@@ -128,5 +133,32 @@ function runPhp(sql, timeout) {
     // Send query to PHP via stdin
     php.stdin.write(sql);
     php.stdin.end();
+  });
+}
+
+/**
+ * Quick check if PHP + ODBC are available.
+ * Returns { php_available, php_version, odbc_loaded, drivers? }
+ */
+export async function checkPhpAvailable() {
+  const cmd = `php -r 'echo json_encode(["version" => PHP_VERSION, "odbc" => extension_loaded("odbc") ? array_values(odbc_drivers()) : false]);'`;
+  return new Promise((resolve) => {
+    exec(cmd, { env: process.env, timeout: 5000 }, (err, stdout, stderr) => {
+      if (err) {
+        resolve({ php_available: false, error: err.message });
+        return;
+      }
+      try {
+        const data = JSON.parse(stdout);
+        resolve({
+          php_available: true,
+          php_version: data.version,
+          odbc_loaded: data.odbc !== false,
+          odbc_drivers: data.odbc,
+        });
+      } catch {
+        resolve({ php_available: false, error: 'Invalid JSON output', output: stdout.substring(0, 200) });
+      }
+    });
   });
 }

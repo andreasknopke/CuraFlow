@@ -23,6 +23,7 @@ import {
   isMockMode,
 } from '../utils/tisowareDataSource.js';
 import { authMiddleware, adminMiddleware } from './auth.js';
+import { checkPhpAvailable } from '../utils/tisowarePhpProxy.js';
 
 const router = express.Router();
 
@@ -209,6 +210,19 @@ router.get('/test', async (req, res, next) => {
 router.get('/mock', async (req, res, next) => {
   try {
     return res.json({ mock: isMockMode() });
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+/**
+ * GET /api/master/tisoware/php-check
+ * Prüft ob PHP + ODBC im Container verfügbar sind.
+ */
+router.get('/php-check', async (req, res, next) => {
+  try {
+    const result = await checkPhpAvailable();
+    return res.json(result);
   } catch (err) {
     return tisowareErrorHandler(err, req, res, next);
   }
