@@ -351,8 +351,15 @@ function diagnoseError(message, code) {
   const msg = (message || '').toLowerCase();
   const codeStr = (code || '').toUpperCase();
 
-  if (codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
-    return 'Server antwortet nicht — Verbindungsaufbau abgebrochen (Timeout 3s).';
+  // ODBC SQLSTATE codes
+  if (codeStr === '28000') {
+    return 'Anmeldung fehlgeschlagen — Benutzername oder Passwort falsch.';
+  }
+  if (codeStr === '08001' || codeStr === '08004' || codeStr === '08007') {
+    return 'Server nicht erreichbar — Verbindung zum SQL Server fehlgeschlagen.';
+  }
+  if (codeStr === 'HYT00' || codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
+    return 'Server antwortet nicht — Verbindungsaufbau abgebrochen (Timeout).';
   }
   if (codeStr === 'ECONNREFUSED') {
     return 'Verbindung abgelehnt — SQL Server läuft nicht oder Port ist blockiert.';
@@ -382,13 +389,13 @@ function diagnoseError(message, code) {
 function getHintForError(code) {
   const codeStr = (code || '').toUpperCase();
 
-  if (codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
-    return 'Prüfe: (1) TISO_SERVER ist korrekt (Host\\Instanz oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) 3s Timeout — ist der Server aus diesem Netz erreichbar?';
+  if (codeStr === 'HYT00' || codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
+    return 'Prüfe: (1) TISO_SERVER ist korrekt (Host\\Instanz oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu.';
   }
-  if (codeStr === 'ECONNREFUSED') {
-    return 'Prüfe: (1) SQL Server Dienst läuft (2) Port 1433 (oder konfigurierter Port) ist offen.';
+  if (codeStr === '08001' || codeStr === '08004' || codeStr === '08007' || codeStr === 'ECONNREFUSED') {
+    return 'Prüfe: (1) SQL Server Dienst läuft (2) Port 1433 (oder konfigurierter Port) ist offen (3) SQL Browser (UDP 1434) für Named Instances erreichbar.';
   }
-  if (codeStr === 'ELOGIN') {
+  if (codeStr === '28000' || codeStr === 'ELOGIN') {
     return 'Prüfe: (1) TISO_USER und TISO_PASS sind korrekt (2) Der Benutzer hat Zugriff auf die tisoware-Datenbank.';
   }
   if (codeStr === 'EINSTLOOKUP' || codeStr === 'EINSTANCE') {
