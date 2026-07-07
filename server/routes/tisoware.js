@@ -27,7 +27,22 @@ import { checkPhpAvailable } from '../utils/tisowarePhpProxy.js';
 
 const router = express.Router();
 
-// All tisoware routes require master-level auth
+// ─── Public diagnostics (no auth required) ────────────────────────────────────
+
+/**
+ * GET /api/master/tisoware/php-check
+ * Prüft ob PHP + ODBC im Container verfügbar sind.
+ */
+router.get('/php-check', async (req, res, next) => {
+  try {
+    const result = await checkPhpAvailable();
+    return res.json(result);
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+// All other tisoware routes require master-level auth
 router.use(authMiddleware);
 router.use(adminMiddleware);
 
@@ -210,19 +225,6 @@ router.get('/test', async (req, res, next) => {
 router.get('/mock', async (req, res, next) => {
   try {
     return res.json({ mock: isMockMode() });
-  } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
-  }
-});
-
-/**
- * GET /api/master/tisoware/php-check
- * Prüft ob PHP + ODBC im Container verfügbar sind.
- */
-router.get('/php-check', async (req, res, next) => {
-  try {
-    const result = await checkPhpAvailable();
-    return res.json(result);
   } catch (err) {
     return tisowareErrorHandler(err, req, res, next);
   }
