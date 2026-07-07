@@ -88,17 +88,18 @@ if (!extension_loaded('odbc')) {
     error('PHP ODBC extension not loaded', 'EPHP_NO_ODBC', 'Install php-odbc package');
 }
 
-// ─── Connect to Tisoware mit Fallback ──────────────────────────────────────
+// ─── Connect to Tisoware mit Driver-Fallback ───────────────────────────────
 
-// ODBC Driver 18: Connect Timeout = TCP, Login Timeout = auth handshake.
-// Login timeout=30, weil AD/Reverse-DNS aus der Cloud langsam sein kann.
+// Manche Tisoware-Instanzen laufen auf alten SQL Server-Versionen (2000/2005),
+// die keine modernen TDS-Protokolle verstehen. Der MS ODBC Driver 18 sendet
+// TDS 7.4+/8.x → wird mit "TDS version 0x0 unknown" abgewiesen.
 //
-// Fallback-Strategie: Wenn $server ein Named-Instance-Format (host\instance)
-// hat und der erste Verbindungsversuch timeoutet, versuchen wir es mit
-// host,1433 (direktes TCP, ohne SQL Browser).
-// Grund: SQL Browser (UDP 1434) ist aus Cloud-Umgebungen oft nicht erreichbar.
+// Strategie:
+//   1. MS ODBC Driver 18 (host,1433 – direktes TCP, ohne SQL Browser)
+//   2. FreeTDS mit TDS_Version=7.0 (SQL Server 2005+)
+//   3. FreeTDS mit TDS_Version=5.0 (SQL Server 7/2000)
 
-function buildConnStr($srv) {
+function buildMsConnStr($srv) {
     global $user, $pass;
     return sprintf(
         'Driver={ODBC Driver 18 for SQL Server};Server=%s;Database=tisoware;Uid=%s;Pwd=%s;Encrypt=no;TrustServerCertificate=yes;Connect Timeout=10;Login Timeout=30',
@@ -106,16 +107,22 @@ function buildConnStr($srv) {
     );
 }
 
+function buildFreeTdsConnStr($srv, $tdsVer) {
+    global $user, $pass;
+    return sprintf(
+        'Driver={FreeTDS};Server=%s;Port=1433;Database=tisoware;UID=%s;PWD=%s;TDS_Version=%s;ClientCharset=UTF-8;',
+        $srv, $user, $pass, $tdsVer
+    );
+}
+
 function tryConnect($connStr, $label) {
     file_put_contents('php://stderr', sprintf(
-        "[PHP] Trying [%s]… connStr=[%s]\n",
-        $label,
-        preg_replace('/Pwd=[^;]+/', 'Pwd=***', $connStr)
+        "[PHP] Trying [%s]…\n", $label
     ));
 
     $capture = '';
     set_error_handler(function ($severity, $msg) use (&$capture) {
-        if (stripos($msg, 'odbc') !== false || stripos($msg, 'sql') !== false || stripos($msg, 'timeout') !== false) {
+        if (stripos($msg, 'odbc') !== false || stripos($msg, 'sql') !== false || stripos($msg, 'timeout') !== false || stripos($msg, 'tds') !== false) {
             $capture = $msg;
         }
     });
@@ -125,38 +132,58 @@ function tryConnect($connStr, $label) {
     return [$conn, $capture];
 }
 
-// ── Attempt 1: mit originalem Server (host\instance oder host,port) ──
-[$conn, $capture1] = tryConnect(buildConnStr($server), $server);
+// Basis-Server: Named Instance → host (ohne Port)
+$baseHost = preg_replace('/\\\\.*$/', '', trim($server));
+if (!str_contains($server, '\\')) {
+    // könnte schon host,port sein → Port abtrennen
+    $parts = explode(',', $server);
+    $baseHost = trim($parts[0]);
+}
+$baseServerMs = $baseHost . ',1433'; // Für MS ODBC: host,port Format
 
-// ── Attempt 2 (Fallback): Wenn Server host\instance enthält und Versuch 1
-//    timeoutete, versuche host,1433 (Default-Instanz, direkter TCP-Port) ──
-$isNamedInstance = str_contains($server, '\\');
-$conn2 = null;
-$capture2 = '';
+$lastError = '';
+$conn = null;
 
-if (!$conn && $isNamedInstance) {
-    $timeoutDetected = stripos($capture1, 'timeout') !== false || stripos(odbc_errormsg(), 'timeout') !== false;
-    if ($timeoutDetected) {
-        $fallbackServer = preg_replace('/\\\\.*$/', '', $server) . ',1433';
-        file_put_contents('php://stderr', sprintf(
-            "[PHP] Named-Instance timeout – fallback to %s\n", $fallbackServer
-        ));
-        [$conn2, $capture2] = tryConnect(buildConnStr($fallbackServer), $fallbackServer);
-        if ($conn2) {
-            $conn = $conn2;
-        }
+// ═══ Attempt 1: MS ODBC Driver 18 ═══════════════════════════════════════════
+[$conn, $capture] = tryConnect(buildMsConnStr($baseServerMs), "MS ODBC Driver 18 ($baseServerMs)");
+if ($conn) {
+    file_put_contents('php://stderr', "[PHP] Connected via MS ODBC Driver 18\n");
+}
+
+// ═══ Attempt 2: FreeTDS TDS 7.0 (SQL Server 2005+) ═════════════════════════
+if (!$conn) {
+    $lastError = $capture ?: odbc_errormsg() ?: 'unknown error';
+    file_put_contents('php://stderr', sprintf("[PHP] MS ODBC failed: %s – trying FreeTDS\n", $lastError));
+
+    [$conn, $capture] = tryConnect(
+        buildFreeTdsConnStr($baseHost, '7.0'),
+        "FreeTDS TDS 7.0 ($baseHost:1433)"
+    );
+    if ($conn) {
+        file_put_contents('php://stderr', "[PHP] Connected via FreeTDS TDS 7.0\n");
+    }
+}
+
+// ═══ Attempt 3: FreeTDS TDS 5.0 (SQL Server 7/2000) ════════════════════════
+if (!$conn) {
+    $lastError = $capture ?: odbc_errormsg() ?: $lastError;
+    file_put_contents('php://stderr', sprintf("[PHP] FreeTDS 7.0 failed: %s – trying TDS 5.0\n", $lastError));
+
+    [$conn, $capture] = tryConnect(
+        buildFreeTdsConnStr($baseHost, '5.0'),
+        "FreeTDS TDS 5.0 ($baseHost:1433)"
+    );
+    if ($conn) {
+        file_put_contents('php://stderr', "[PHP] Connected via FreeTDS TDS 5.0\n");
     }
 }
 
 if (!$conn) {
-    $phpErr = odbc_errormsg();
-    $detail = $phpErr ?: $capture1 ?: $capture2 ?: 'Could not connect (no error detail)';
-
+    $lastError = $capture ?: odbc_errormsg() ?: $lastError;
     file_put_contents('php://stderr', sprintf(
-        "[PHP] All connection attempts FAILED: %s\n", $detail
+        "[PHP] All connection attempts FAILED: %s\n", $lastError
     ));
-
-    error('ODBC connection failed', 'EODBC_CONNECT', $detail);
+    error('ODBC connection failed', 'EODBC_CONNECT', $lastError);
 }
 
 file_put_contents('php://stderr', "[PHP] Connection OK\n");

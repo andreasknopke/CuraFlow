@@ -315,6 +315,9 @@ function diagnoseError(message, code) {
   if (codeStr === 'HYT00' || codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
     return 'Server antwortet nicht — Verbindungsaufbau abgebrochen (Timeout).';
   }
+  if (codeStr === 'ETDS' || msg.includes('tds') || msg.includes('tabular data stream') || msg.includes('0x0')) {
+    return 'TDS-Protokoll-Fehler — der SQL Server ist zu alt für MS ODBC Driver 18. FreeTDS-Fallback sollte greifen.';
+  }
   if (codeStr === 'ECONNREFUSED') {
     return 'Verbindung abgelehnt — SQL Server läuft nicht oder Port ist blockiert.';
   }

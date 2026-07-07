@@ -79,6 +79,19 @@ function analyzeTisowareError(err) {
     };
   }
 
+  // TDS-Protokoll-Fehler — alter SQL Server, der MS ODBC Driver 18 nicht versteht
+  if (message.includes('TDS') || message.includes('tabular data stream') || message.includes('0x0') || code === 'ETDS') {
+    return {
+      diagnosis: 'TDS-Protokoll-Fehler',
+      detail: 'Der MS ODBC Driver 18 wird von diesem SQL Server nicht unterstützt (zu alt). Der FreeTDS-Fallback sollte greifen.',
+      hint: 'FreeTDS muss im Docker-Image installiert sein (tdsodbc-Paket). Prüfe das Server-Log auf "[PHP] Connected via FreeTDS…"',
+      code: 'ETDS',
+      odbcState,
+      odbcNativeCode,
+      tisoware: true,
+    };
+  }
+
   // ETIMEOUT
   if (code === 'ETIMEOUT' || code === 'ESOCKET' || code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'HYT00') {
     return {
