@@ -67,18 +67,12 @@ function buildConfig() {
   return {
     server: host,
     port,
-    authentication: {
-      type: 'default',
-      options: {
-        userName: process.env.TISO_USER || '',
-        password,
-      },
-    },
+    user: process.env.TISO_USER || '',
+    password,
     options: {
       database: 'tisoware',
       encrypt: false,
       trustServerCertificate: true,
-      tdsVersion: '7_3',
       ...(instanceName ? { instanceName } : {}),
     },
     pool: {
@@ -89,17 +83,6 @@ function buildConfig() {
     connectionTimeout: 5000,
     requestTimeout: 15000,
   };
-}
-
-/**
- * Tried-and-true fallback config without tdsVersion override.
- * Used as retry if the initial connection attempt fails with ELOGIN.
- */
-function buildFallbackConfig() {
-  const cfg = buildConfig();
-  // Remove tdsVersion to let tedious negotiate automatically
-  delete cfg.options.tdsVersion;
-  return cfg;
 }
 
 /**
@@ -158,18 +141,7 @@ export async function getTisowarePool(forceFresh = false) {
   poolPromise = (async () => {
     try {
       const config = buildConfig();
-      try {
-        pool = await sql.connect(config);
-      } catch (firstErr) {
-        // If ELOGIN with TDS 7.3, retry with auto-negotiated TDS version
-        if (firstErr.code === 'ELOGIN' && config.options.tdsVersion === '7_3') {
-          console.warn('[TISOWARE] ELOGIN with TDS 7.3 — retrying with default TDS version');
-          const fallbackConfig = buildFallbackConfig();
-          pool = await sql.connect(fallbackConfig);
-        } else {
-          throw firstErr;
-        }
-      }
+      pool = await sql.connect(config);
 
       // Cache success
       connectionCache.state = 'connected';
