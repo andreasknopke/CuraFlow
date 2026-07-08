@@ -309,6 +309,22 @@ class APIClient {
           );
         }
 
+        // Global 403 handler: only alert on mutating operations (POST/PUT/PATCH/DELETE),
+        // not on GET reads which are often background-polling or stale-UI noise.
+        if (apiError.status === 403) {
+          const method = (config.method || 'GET').toUpperCase();
+          const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+          if (isMutation) {
+            console.warn('[API] 403 on mutation:', method, endpoint);
+            window.alert(
+              'Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. '
+              + 'Bitte wenden Sie sich an Ihren Super-Admin.',
+            );
+          } else {
+            console.debug('[API] 403 on read (suppressed):', endpoint);
+          }
+        }
+
         throw apiError;
       }
     }
