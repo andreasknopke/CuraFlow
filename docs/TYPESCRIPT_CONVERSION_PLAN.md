@@ -80,7 +80,7 @@ All thin Radix `forwardRef` wrappers with the same template. A single typing mis
 
 ---
 
-### Phase 2: Medium Risk — Test-Backed (4 PRs, ~30 files, ~8,500 lines)
+### Phase 2: Medium Risk — Test-Backed ✅ COMPLETE
 
 Components with moderate complexity and good test backing.
 
@@ -215,7 +215,7 @@ The core of the app. ScheduleBoard.jsx (7,000 lines) is the single largest and m
 **Verification:** `npm run test:all` passes all 19 tests. Tests run in the `component` Vitest project (happy-dom environment).
 
 
-#### ⚠️ Pre-PR 3.0B: ScheduleBoard rendering component test (~200 lines)
+#### ⚠️ Pre-PR 3.0B: ScheduleBoard rendering component tests ✅ COMPLETE
 
 Test file: `src/components/schedule/__component_tests__/ScheduleBoardRender.test.jsx`
 
@@ -234,6 +234,14 @@ Test file: `src/components/schedule/__component_tests__/ScheduleBoardRender.test
 
 **Verification:** `npm run test:all` passes all 7 tests.
 
+> **Implementation note:** DropdownMenu was mocked inline (`@/components/ui/dropdown-menu`)
+> rather than mocking the Radix Portal at the primitives level. The Radix trigger
+> relies on pointer events that happy-dom does not support, making `userEvent.click`
+> on the trigger ineffective. Mocking the entire dropdown-menu module to render
+> inline (same approach as `AccountMenu.test.jsx`) keeps dropdown items always
+> visible in the DOM. Auto-fill is exercised by directly clicking the
+> "Alle Kategorien" button in the inline mock.
+
 
 #### PR 3.1 — Schedule sub-components (7 files, ~2,000 lines)
 
@@ -241,7 +249,7 @@ Test file: `src/components/schedule/__component_tests__/ScheduleBoardRender.test
 
 StaffingUtils has 20 unit tests. HolidayUtils has 22 tests. These are the building blocks that ScheduleBoard imports.
 
-**Risk: Low.** Sub-components are thin. Core logic already has unit tests. DnD test suite from Pre-PR 3.0A will catch any regression in drag behavior.
+**Risk: Low.** Sub-components are thin. Core logic already has unit tests. DnD regressions require manual verification (automated DnD testing infeasible; see Pre-PR 3.0A).
 
 
 #### PR 3.2 — Schedule dialogs + Voice (8 files, ~2,000 lines)
@@ -256,8 +264,8 @@ RotationDemandDialog has 6 component tests. AutoFillEngine has 24 unit tests.
 #### PR 3.3 — ScheduleBoard.jsx (1 file, 7,000 lines) 🔴
 
 **Prerequisites complete:**
-- ✅ 19 DnD component tests covering create/move/delete/undo/Mo-Fr/auto-fill/error handling
-- ✅ 7 ScheduleBoard rendering tests covering seeded data, views, toolbar
+- ~~❌ 19 DnD component tests~~ — **DROPPED** (infeasible; see Pre-PR 3.0A spikes)
+- ✅ 7 ScheduleBoard rendering tests covering seeded data, views, toolbar (Pre-PR 3.0B)
 - ✅ 47 existing unit tests (autoFillEngine 24, staffingUtils 20, holidayUtils 22, etc.)
 - ✅ All sub-components (3.1) and dialogs (3.2) already typed
 - ✅ 5 E2E schedule safety tests covering rendering, auto-fill, toolbar, navigation
@@ -267,11 +275,11 @@ RotationDemandDialog has 6 component tests. AutoFillEngine has 24 unit tests.
 2. Add `import type` from `@/types` for all 15+ domain models
 3. Type 14 `useQuery`/`useMutation` hooks with explicit return types
 4. Add type annotations to `handleDragEnd` (1,700 lines), `handleAutoFill`, `handleClearWeek`, etc.
-5. Run the 19 DnD component tests — must all pass
-6. Run the 7 rendering component tests — must all pass
-7. Run full E2E suite — must all pass
+5. Run the 7 rendering component tests — must all pass
+6. Run full E2E suite — must all pass
+7. Manual DnD verification (create/move/delete/undo shift via drag) since automated DnD testing is infeasible
 
-**Risk: Medium (reduced from High by comprehensive test coverage).** Every drag interaction path has a dedicated test. Every rendering failure mode has a test. The conversion becomes mechanical.
+**Risk: High.** DnD interactions are the highest-risk conversion area with no automated test coverage. Type annotations only, zero logic edits inside `handleDragEnd`/`handleAutoFill`/`handleClearWeek`. Manual DnD verification required per PR.
 
 ---
 
@@ -422,7 +430,7 @@ Test files:
 |-------|-----|-------|-------|------|----------------|
 | 1. Quick wins | 3 | ~60 | ~2,100 | Low | None |
 | 2. Test-backed | 4 | ~30 | ~8,500 | Medium | Phase 1 UI types |
-| 3. ScheduleBoard | 7 | ~20 | ~18,000 | **High** (no DnD test coverage achievable — see spikes) | Pre-PR 3.0B (rendering) + manual DnD verification |
+| 3. ScheduleBoard | 7 | ~20 | ~18,000 | **High** (no DnD test coverage achievable — see spikes) | Pre-PR 3.0B ✅ (rendering) + manual DnD verification |
 | 4. Settings + Admin | 5 | ~20 | ~7,500 | Medium | Pre-PR 4.0 smoke tests |
 | 5. Master app | 3 | ~15 | ~5,300 | Medium | Pre-PR 5.0 smoke tests |
 | 6. Root components | 4 | ~18 | ~5,700 | Medium | Pre-PR 6.0 infrastructure tests |
@@ -430,13 +438,13 @@ Test files:
 
 ### Pre-Conversion Test Additions Required
 
-| Pre-PR | What | Lines | Tests | When |
-|--------|------|-------|-------|------|
-| ~~3.0A~~ | ~~DnD test suite~~ — **DROPPED** (infeasible in both happy-dom and Chromium; see spikes) | — | — | — |
-| 3.0B | ScheduleBoard rendering component tests (seeded data, views, toolbar) | ~200 | 7 | Before Phase 3 (ScheduleBoard) |
-| 4.0 | Settings + Admin smoke tests (dialogs, forms, CRUD) | ~400 | 11 | Before Phase 4 (Settings+Admin) |
-| 5.0 | Master app smoke tests (login, dashboard, employee list/create) | ~200 | 6 | Before Phase 5 (Master) |
-| 6.0 | Root infrastructure tests (dbTokenStorage, useHolidays, ErrorBoundary) | ~300 | 9 | Before Phase 6 (Root) |
+| Pre-PR | What | Lines | Tests | When | Status |
+|--------|------|-------|-------|------|--------|
+| ~~3.0A~~ | ~~DnD test suite~~ — **DROPPED** (infeasible in both happy-dom and Chromium; see spikes) | — | — | — | — |
+| 3.0B | ScheduleBoard rendering component tests (seeded data, views, toolbar) | ~200 | 7 | Before Phase 3 (ScheduleBoard) | ✅ Done |
+| 4.0 | Settings + Admin smoke tests (dialogs, forms, CRUD) | ~400 | 11 | Before Phase 4 (Settings+Admin) | |
+| 5.0 | Master app smoke tests (login, dashboard, employee list/create) | ~200 | 6 | Before Phase 5 (Master) | |
+| 6.0 | Root infrastructure tests (dbTokenStorage, useHolidays, ErrorBoundary) | ~300 | 9 | Before Phase 6 (Root) | |
 | **Total** | | **~1,100** | **33** | |
 
 ### Spikes (executed — results below)
@@ -477,7 +485,8 @@ achievable for ScheduleBoard. Both confirm it is not.
 | Component tests | 8 files | ~15 files (+7) |
 | Unit tests | 17 files | ~20 files (+3) |
 | E2E tests | 12 specs (46 tests) | 12 specs (46 tests) |
-| DnD-specific | 0 tests | 19 tests |
+| DnD-specific | 0 tests | 19 tests (dropped — infeasible) |
+| Rendering tests | 0 tests | 7 tests ✅ |
 | Settings smoke | 0 tests | 11 tests |
 | Master app tests | 2 tests | 8 tests |
 | Infrastructure tests | 0 tests | 9 tests |

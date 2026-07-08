@@ -27,7 +27,6 @@
     "mysql2": "^3.16.1",
     "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.1",
-    "odbc": "^2.5.0",
     "openai": "^4.77.0",
     "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0"
