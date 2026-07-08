@@ -60,8 +60,16 @@ export default function VacationPage() {
       return isAlphabeticalDoctorSortingEnabled(user) ? sortDoctorsAlphabetically(doctors) : doctors;
   }, [doctors, user]);
 
+  // Read-Only-User sehen nur ihren eigenen zugeordneten Mitarbeiter
+  const visibleDoctors = React.useMemo(() => {
+    if (isReadOnly && user?.doctor_id) {
+      return doctorsForSelection.filter(d => d.id === user.doctor_id);
+    }
+    return doctorsForSelection;
+  }, [doctorsForSelection, isReadOnly, user?.doctor_id]);
+
   const doctorSelectOptions = React.useMemo(() => (
-    doctorsForSelection.map((doctor) => ({
+    visibleDoctors.map((doctor) => ({
       value: doctor.id,
       label: doctor.name,
       triggerLabel: doctor.name,
@@ -69,7 +77,7 @@ export default function VacationPage() {
       searchText: [doctor.role, doctor.initials].filter(Boolean).join(' '),
       sortLabel: doctor.name,
     }))
-  ), [doctorsForSelection]);
+  ), [visibleDoctors]);
 
   const { data: masterEmployees = [] } = useQuery({
     queryKey: ['master-central-employees-for-vacation'],
@@ -86,15 +94,16 @@ export default function VacationPage() {
   });
 
   // Select doctor: prefer user's assigned doctor, otherwise first in list
+  // Für Read-Only-User wird automatisch der zugeordnete Arzt gesetzt
   React.useEffect(() => {
-    if (doctorsForSelection.length > 0 && !selectedDoctorId) {
+    if (doctorsForSelection.length > 0 && selectedDoctorId === null) {
       if (user?.doctor_id && doctorsForSelection.some(d => d.id === user.doctor_id)) {
         setSelectedDoctorId(user.doctor_id);
-      } else {
+      } else if (!isReadOnly) {
         setSelectedDoctorId(doctorsForSelection[0].id);
       }
     }
-  }, [doctorsForSelection, selectedDoctorId, user]);
+  }, [doctorsForSelection, selectedDoctorId, user, isReadOnly]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
 
@@ -1144,7 +1153,7 @@ export default function VacationPage() {
                  </Button>
                </div>
                
-               {viewMode === 'single' && (
+               {viewMode === 'single' && !isReadOnly && (
                <>
                    <div className="w-px h-8 bg-slate-200 mx-2" />
 
@@ -1170,10 +1179,17 @@ export default function VacationPage() {
                    key={type.id}
                    data-testid={`vacation-type-${String(type.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
                    variant={activeType === type.id ? "default" : "outline"}
-                  onClick={() => !isReadOnly && setActiveType(type.id)}
+                  onClick={() => {
+                    if (isReadOnly) {
+                      const RO_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+                      if (RO_POSITIONS.includes(type.id)) setActiveType(type.id);
+                    } else {
+                      setActiveType(type.id);
+                    }
+                  }}
                   className={`gap-2 ${activeType === type.id ? 'border-transparent shadow-sm' : 'hover:bg-slate-50'} ${isReadOnly ? 'cursor-default opacity-100 hover:bg-transparent' : ''}`}
                   style={activeType === type.id ? { backgroundColor: type.bgColor, color: type.textColor, borderColor: 'transparent' } : {}}
-                  disabled={isReadOnly && activeType !== type.id}
+                  disabled={isReadOnly && !['Urlaub', 'Frei', 'Dienstreise'].includes(type.id)}
               >
                   {type.id === 'DELETE' ? <Eraser className="w-4 h-4" /> : <div className="w-3 h-3 rounded-full" style={{ backgroundColor: type.bgColor }} />}
                   {type.label}
@@ -1227,7 +1243,7 @@ export default function VacationPage() {
       ) : (
         <VacationOverview 
             year={selectedYear} 
-            doctors={doctors} 
+            doctors={visibleDoctors} 
             shifts={overviewShifts} 
           contractInfoByDoctorId={contractInfoByDoctorId}
           entitlementByDoctorId={entitlementByDoctorId}

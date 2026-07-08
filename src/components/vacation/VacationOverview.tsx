@@ -223,12 +223,11 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
     const handleMouseDown = React.useCallback((date: Date, doctorId: string) => {
-        if (isReadOnly) return;
         setDragStart(date);
         setDragCurrent(date);
         setDragDoctorId(doctorId);
         setIsDragging(true);
-    }, [isReadOnly]);
+    }, []);
 
     const handleMouseEnter = React.useCallback((date: Date, _doctorId: string) => {
         // Only update state if it's relevant to avoid renders?
