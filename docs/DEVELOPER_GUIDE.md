@@ -91,6 +91,5 @@ CuraFlow/
 │   ├── utils/              # Server-Hilfsfunktionen
 │   ├── migrations/         # SQL-Migrationsdateien
 │   └── scripts/            # Deployment-/Migrations-Skripte
-├── docs/                   # Diese Dokumentation
-└── functions/              # Cloud Functions (Legacy, nicht aktiv genutzt)
+└── docs/                   # Diese Dokumentation
 ```
