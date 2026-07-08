@@ -21,6 +21,7 @@ export const PERMISSION_KEYS = [
   'can_approve_wishes',
   'can_send_schedule_emails',
   'can_assign_pool_shifts',
+  'can_edit_schedule',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -40,6 +41,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   can_approve_wishes: 'Dienstwünsche genehmigen',
   can_send_schedule_emails: 'Dienstplan-E-Mails versenden',
   can_assign_pool_shifts: 'Pool-Dienste besetzen',
+  can_edit_schedule: 'Dienstplan bearbeiten (tenant-eigene Schichten)',
 };
 
 // ─── Helper ──────────────────────────────────────────────────────────────────

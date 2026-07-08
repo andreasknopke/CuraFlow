@@ -30,6 +30,7 @@ export const PERMISSION_KEYS = [
   'can_approve_wishes',
   'can_send_schedule_emails',
   'can_assign_pool_shifts',
+  'can_edit_schedule',
 ];
 
 /** Object with every permission key set to `true`. */

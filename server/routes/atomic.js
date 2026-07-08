@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { authMiddleware } from './auth.js';
+import { requirePermission, hasPermission } from '../utils/permissions.js';
 import { writeAuditLog } from './dbProxy.js';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { db } from '../index.js';
@@ -222,6 +223,11 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: 'entity und id sind erforderlich' });
       }
 
+      // ShiftEntry write guard
+      if (entity === 'ShiftEntry' && !hasPermission(req.user, 'can_edit_schedule')) {
+        return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+      }
+
       const current = await getShiftAwareRecord(entity, id);
       if (!current) {
         return res.status(404).json({ 
@@ -260,6 +266,10 @@ router.post('/', async (req, res, next) => {
     // ===== OPERATION: checkAndCreate =====
     // Check for duplicates before creating
     if (operation === 'checkAndCreate') {
+      // ShiftEntry write guard
+      if (entity === 'ShiftEntry' && !hasPermission(req.user, 'can_edit_schedule')) {
+        return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+      }
       if (!entity || !data) {
         return res.status(400).json({ error: 'entity und data sind erforderlich' });
       }

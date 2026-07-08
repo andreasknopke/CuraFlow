@@ -27,7 +27,8 @@ import { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 const STATIC_SERVICE_TYPES = [];
 
 export default function ServiceStaffingPage() {
-    const { isReadOnly, user } = useAuth();
+    const { isReadOnly, user, can } = useAuth();
+    const canEditSchedule = can('can_edit_schedule');
     const { getSectionName } = useSectionConfig();
     const { isPublicHoliday } = useHolidays();
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -486,6 +487,12 @@ export default function ServiceStaffingPage() {
     });
 
     const handleAssignment = async (date, position, doctorId) => {
+        // Permission guard: admin without can_edit_schedule cannot edit
+        if (!canEditSchedule && user?.role === 'admin') {
+            toast.error('Ihnen fehlt die Berechtigung "Dienstplan bearbeiten"');
+            return;
+        }
+
         const dateStr = format(date, 'yyyy-MM-dd');
         const existingShift = allShifts.find(s => 
             s.date === dateStr && 

@@ -1,6 +1,7 @@
 import express from 'express';
 import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
+import { hasPermission } from '../utils/permissions.js';
 import crypto from 'crypto';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { COLUMNS_CACHE, clearColumnsCache, ensureColumns } from '../utils/schema.js';
@@ -658,6 +659,17 @@ router.post('/', async (req, res, next) => {
         req.user = decoded; // Set user from token
       } catch (err) {
         return res.status(401).json({ error: 'Token ungültig' });
+      }
+    }
+    
+    // Guard: ShiftEntry write operations require can_edit_schedule
+    const SHIFT_WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
+    if (tableName === 'ShiftEntry' && SHIFT_WRITE_ACTIONS.includes(effectiveAction)) {
+      if (!req.user || req.user.role !== 'admin' || !hasPermission(req.user, 'can_edit_schedule')) {
+        return res.status(403).json({
+          error: 'Ihnen fehlt die Berechtigung für diese Aktion',
+          missingPermission: 'can_edit_schedule',
+        });
       }
     }
     
