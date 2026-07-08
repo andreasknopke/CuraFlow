@@ -807,7 +807,7 @@ export default function ScheduleBoard() {
     };
   }, [undoStack]);
 
-    const { isReadOnly, user, updateMe } = useAuth();
+    const { isReadOnly, user, updateMe, can } = useAuth();
 
   // Load saved settings from user profile or localStorage fallback
   const [showSidebar, setShowSidebar] = useState(() => {
@@ -3548,6 +3548,18 @@ export default function ScheduleBoard() {
     setDraggingDoctorId(null);
     setDraggingShiftId(null);
     const { source, destination, draggableId } = result;
+
+    // Permission guard: admin without can_edit_schedule cannot modify shifts
+    if (isReadOnly === false && user?.role === 'admin' && !can('can_edit_schedule')) {
+      // Only block operations that actually modify shift data (not sidebar reordering, not rotation operations)
+      const isShiftModification = source.droppableId !== 'sidebar' || (destination && destination.droppableId !== 'sidebar');
+      if (isShiftModification) {
+        toast.error('Ihnen fehlt die Berechtigung "Dienstplan bearbeiten"');
+        return;
+      }
+    }
+
+    const normalizedDraggableId = normalizeDraggableId(draggableId);
     const normalizedDraggableId = normalizeDraggableId(draggableId);
     const sourceDroppableId = stripPanelPrefix(source.droppableId);
     const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;

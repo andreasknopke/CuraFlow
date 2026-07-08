@@ -223,9 +223,20 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: 'entity und id sind erforderlich' });
       }
 
-      // ShiftEntry write guard
-      if (entity === 'ShiftEntry' && !hasPermission(req.user, 'can_edit_schedule')) {
-        return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+      // ShiftEntry write guard — load permissions from DB
+      if (entity === 'ShiftEntry') {
+        let canEdit = false;
+        try {
+          const [permRows] = await db.execute(
+            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+            [req.user?.sub || ''],
+          );
+          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+          canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+        } catch { /* deny */ }
+        if (!canEdit) {
+          return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+        }
       }
 
       const current = await getShiftAwareRecord(entity, id);
@@ -266,9 +277,20 @@ router.post('/', async (req, res, next) => {
     // ===== OPERATION: checkAndCreate =====
     // Check for duplicates before creating
     if (operation === 'checkAndCreate') {
-      // ShiftEntry write guard
-      if (entity === 'ShiftEntry' && !hasPermission(req.user, 'can_edit_schedule')) {
-        return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+      // ShiftEntry write guard — load permissions from DB
+      if (entity === 'ShiftEntry') {
+        let canEdit = false;
+        try {
+          const [permRows] = await db.execute(
+            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+            [req.user?.sub || ''],
+          );
+          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+          canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+        } catch { /* deny */ }
+        if (!canEdit) {
+          return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+        }
       }
       if (!entity || !data) {
         return res.status(400).json({ error: 'entity und data sind erforderlich' });

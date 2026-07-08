@@ -665,7 +665,17 @@ router.post('/', async (req, res, next) => {
     // Guard: ShiftEntry write operations require can_edit_schedule
     const SHIFT_WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
     if (tableName === 'ShiftEntry' && SHIFT_WRITE_ACTIONS.includes(effectiveAction)) {
-      if (!req.user || req.user.role !== 'admin' || !hasPermission(req.user, 'can_edit_schedule')) {
+      // Load permissions from DB (JWT does not contain them)
+      let hasEditPerm = false;
+      try {
+        const [permRows] = await db.execute(
+          'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+          [req.user?.sub || ''],
+        );
+        const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+        hasEditPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+      } catch { /* fall through to deny */ }
+      if (!hasEditPerm) {
         return res.status(403).json({
           error: 'Ihnen fehlt die Berechtigung für diese Aktion',
           missingPermission: 'can_edit_schedule',
