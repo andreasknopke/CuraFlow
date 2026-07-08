@@ -42,6 +42,19 @@ export default function MasterAuthProvider({ children }) {
           setIsLoading(false);
           return;
         }
+
+        // Feingranulare Prüfung: Admin benötigt Berechtigung für Stammdaten
+        // Super-Admins (is_super_admin === true) haben immer Zugriff
+        if (!userData.is_super_admin) {
+          const perms = userData.permissions;
+          const canAccessMaster = !perms || typeof perms !== 'object' || perms.can_manage_master_data !== false;
+          if (!canAccessMaster) {
+            console.warn('[MasterAuth] Admin hat keine Berechtigung für Stammdaten (email:', userData.email + ')');
+            setIsAuthenticated(false);
+            setIsLoading(false);
+            return;
+          }
+        }
         
         setUser(userData);
         setIsAuthenticated(true);

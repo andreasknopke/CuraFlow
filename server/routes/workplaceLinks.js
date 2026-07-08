@@ -19,7 +19,9 @@ import express from 'express';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
+import { requirePermission } from '../utils/permissions.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import {
@@ -243,7 +245,7 @@ router.get('/visible-links', async (req, res) => {
 //  ADMIN CRUD (master admin only)
 // ============================================================
 
-router.get('/', adminMiddleware, async (req, res) => {
+router.get('/', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     const groups = await listWorkplaceLinkGroups(db);
     res.json({ groups });
@@ -252,7 +254,7 @@ router.get('/', adminMiddleware, async (req, res) => {
   }
 });
 
-router.post('/', adminMiddleware, async (req, res) => {
+router.post('/', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     const { name, description } = req.body || {};
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -276,7 +278,7 @@ router.post('/', adminMiddleware, async (req, res) => {
   }
 });
 
-router.patch('/:groupId', adminMiddleware, async (req, res) => {
+router.patch('/:groupId', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     const { name, description, is_active } = req.body || {};
     const fields = [];
@@ -293,7 +295,7 @@ router.patch('/:groupId', adminMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:groupId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     await db.execute('DELETE FROM workplace_link_group WHERE id = ?', [req.params.groupId]);
     res.status(204).end();
@@ -302,7 +304,7 @@ router.delete('/:groupId', adminMiddleware, async (req, res) => {
   }
 });
 
-router.post('/:groupId/members', adminMiddleware, async (req, res) => {
+router.post('/:groupId/members', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     const { tenant_id, workplace_name } = req.body || {};
     if (!tenant_id || !workplace_name || !String(workplace_name).trim()) {
@@ -323,7 +325,7 @@ router.post('/:groupId/members', adminMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:groupId/members/:memberId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId/members/:memberId', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     await db.execute(
       'DELETE FROM workplace_link_member WHERE id = ? AND link_group_id = ?',
@@ -337,7 +339,7 @@ router.delete('/:groupId/members/:memberId', adminMiddleware, async (req, res) =
 
 // GET /tenant-workplaces/:tenantId — convenience lookup for the admin UI
 // dropdown (lists the tenant's own Workplace names).
-router.get('/tenant-workplaces/:tenantId', adminMiddleware, async (req, res) => {
+router.get('/tenant-workplaces/:tenantId', requirePermission('can_manage_workplace_links'), async (req, res) => {
   try {
     const token = await loadTenantTokenById(req.params.tenantId);
     if (!token) return res.status(404).json({ error: 'Mandant nicht gefunden' });

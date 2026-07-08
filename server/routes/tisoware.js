@@ -22,14 +22,15 @@ import {
   runQuery,
   isMockMode,
 } from '../utils/tisowareDataSource.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { checkPhpAvailable } from '../utils/tisowarePhpProxy.js';
 
 const router = express.Router();
 
 // All tisoware routes require master-level auth
 router.use(authMiddleware);
-router.use(adminMiddleware);
+router.use(requirePermission('can_manage_system'));
 
 /**
  * GET /api/master/tisoware/php-check

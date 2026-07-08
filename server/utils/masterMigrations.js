@@ -1258,5 +1258,26 @@ export async function runMasterMigrations(dbPool) {
     `);
   }, { duplicateCodes: ['ER_TABLE_EXISTS_ERROR'], duplicateReason: 'Tabelle bereits vorhanden' });
 
+  // ===== Permission-Spalte für Admin-Feinscoping =====
+  await run('add_app_user_permissions', async () => {
+    const changed = await addColumnIfMissing('app_users', 'permissions', 'JSON DEFAULT NULL');
+    // Backfill: alle bestehenden Admins (ohne gesetzte permissions) kriegen alle Rechte
+    await dbPool.execute(
+      `UPDATE app_users SET permissions = ? WHERE role = 'admin' AND (permissions IS NULL OR permissions = '')`,
+      [JSON.stringify({
+        can_manage_users: true,
+        can_approve_absence: true,
+        can_manage_master_data: true,
+        can_link_employees: true,
+        can_manage_groups: true,
+        can_manage_workplace_links: true,
+        can_manage_shift_vacation: true,
+        can_manage_system: true,
+        can_manage_cowork: true,
+      })]
+    );
+    return changed || SKIPPED;
+  }, { duplicateCodes: ['ER_DUP_FIELDNAME'], duplicateReason: 'Spalte bereits vorhanden', skippedReason: 'Spalte bereits vorhanden' });
+
   return results;
 }

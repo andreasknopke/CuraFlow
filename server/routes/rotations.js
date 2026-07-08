@@ -19,7 +19,9 @@
 import express from 'express';
 import crypto from 'crypto';
 import { db } from '../index.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
+import { requirePermission } from '../utils/permissions.js';
 import {
   loadUserRotationContext,
   listUserRotationGroups,
@@ -80,7 +82,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST / — create a rotation group (master admin only)
-router.post('/', adminMiddleware, async (req, res) => {
+router.post('/', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { name, description } = req.body || {};
     if (!name || typeof name !== 'string' || !name.trim()) {
@@ -147,7 +149,7 @@ router.get('/:groupId/members', async (req, res) => {
 });
 
 // POST /:groupId/members (master admin only)
-router.post('/:groupId/members', adminMiddleware, async (req, res) => {
+router.post('/:groupId/members', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { tenant_id, role } = req.body || {};
     if (!tenant_id) return res.status(400).json({ error: 'tenant_id ist erforderlich' });
@@ -173,7 +175,7 @@ router.post('/:groupId/members', adminMiddleware, async (req, res) => {
 });
 
 // DELETE /:groupId/members/:tenantId (master admin only)
-router.delete('/:groupId/members/:tenantId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId/members/:tenantId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     await db.execute(
       'DELETE FROM rotation_group_member WHERE group_id = ? AND tenant_id = ?',
@@ -1088,7 +1090,7 @@ router.get('/:groupId', async (req, res) => {
 });
 
 // PATCH /:groupId (master admin only)
-router.patch('/:groupId', adminMiddleware, async (req, res) => {
+router.patch('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { name, description, is_active } = req.body || {};
     const fields = [];
@@ -1119,7 +1121,7 @@ router.patch('/:groupId', adminMiddleware, async (req, res) => {
 });
 
 // DELETE /:groupId (master admin only)
-router.delete('/:groupId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     await db.execute('DELETE FROM rotation_group WHERE id = ?', [req.params.groupId]);
     res.status(204).end();

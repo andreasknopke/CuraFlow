@@ -13,7 +13,8 @@
  *   - Tenant resolution via `x-db-token` Header, exactly like vacation.js.
  */
 import express from 'express';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { db } from '../index.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import {
@@ -149,7 +150,7 @@ router.post('/', async (req, res, next) => {
 
 // ─── PATCH /:id — Antrag genehmigen/ablehnen (Admin only) ────────────────────
 
-router.patch('/:id', adminMiddleware, async (req, res, next) => {
+router.patch('/:id', requirePermission('can_approve_absence'), async (req, res, next) => {
   try {
     const { status, admin_comment } = req.body || {};
     const requestId = req.params.id;

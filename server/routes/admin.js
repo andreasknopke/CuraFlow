@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db, removeTenantPool } from '../index.js';
 import { runMasterMigrations } from '../utils/masterMigrations.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
 import { checkAndSendWishReminders } from '../utils/wishReminder.js';
 import { runTenantMigrations } from '../utils/tenantMigrations.js';
@@ -370,7 +371,7 @@ router.post('/tools', async (req, res, next) => {
 
 // Apply middleware to all remaining routes
 router.use(authMiddleware);
-router.use(adminMiddleware);
+router.use(requirePermission('can_manage_system'));
 
 // ===== GET USERS (with optional tenant filter) =====
 // Optional query param: tenantId -> filters users whose allowed_tenants JSON array contains this id.

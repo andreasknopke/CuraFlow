@@ -13,7 +13,8 @@ import crypto from 'crypto';
 import ExcelJS from 'exceljs';
 import { createPool } from 'mysql2/promise';
 import { db, getTenantDb } from '../index.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { deleteEmployeeDependentRecords } from '../utils/masterEmployees.js';
 import {
@@ -33,7 +34,7 @@ import { analyzeStammdatImport, executeStammdatImport, linkStammdatToEmployee, i
 
 const router = express.Router();
 router.use(authMiddleware);
-router.use(adminMiddleware);
+router.use(requirePermission('can_manage_master_data'));
 
 const NON_WORKING_SHIFT_POSITIONS = new Set([
   'frei',

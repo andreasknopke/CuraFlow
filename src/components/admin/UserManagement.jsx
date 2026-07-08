@@ -7,12 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Loader2, Shield, ShieldAlert, UserCog, UserPlus, Trash2, Database, Check, Mail, MailCheck, MailX, Send, Globe2, PenSquare } from 'lucide-react';
+import { Loader2, Shield, ShieldAlert, ShieldCheck, UserCog, UserPlus, Trash2, Database, Check, Mail, MailCheck, MailX, Send, Globe2, PenSquare } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
+import UserPermissionsDialog from '@/components/admin/UserPermissionsDialog';
 
 function parseAllowedTenants(rawAllowedTenants) {
     if (rawAllowedTenants === null || rawAllowedTenants === undefined || rawAllowedTenants === '') {
@@ -67,6 +68,8 @@ export default function UserManagement() {
     const [showEditDialog, setShowEditDialog] = useState(false);
     const [editUser, setEditUser] = useState({ id: null, email: '', full_name: '', password: '' });
     const [editError, setEditError] = useState('');
+    const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
+    const [permissionsTargetUser, setPermissionsTargetUser] = useState(null);
 
     const { data: users = [], isLoading } = useQuery({
         queryKey: ['users'],
@@ -385,6 +388,22 @@ export default function UserManagement() {
                                         >
                                             <PenSquare className="w-3 h-3" />
                                         </Button>
+                                        {user.role === 'admin' && (
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="gap-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50"
+                                                data-testid={`admin-user-permissions-${user.id}`}
+                                                onClick={() => {
+                                                    setPermissionsTargetUser(user);
+                                                    setShowPermissionsDialog(true);
+                                                }}
+                                                title="Admin-Rechte bearbeiten"
+                                            >
+                                                <ShieldCheck className="w-3 h-3" />
+                                                Rechte
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -688,6 +707,14 @@ export default function UserManagement() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
+
+            {/* Admin-Rechte-Dialog */}
+            <UserPermissionsDialog
+                open={showPermissionsDialog}
+                onOpenChange={setShowPermissionsDialog}
+                user={permissionsTargetUser}
+                currentUser={user}
+            />
         </div>
     );
 }

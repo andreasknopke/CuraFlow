@@ -2,7 +2,8 @@ import express from 'express';
 import crypto from 'crypto';
 import ical from 'ical-generator';
 import { db } from '../index.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { resolveEmployeeTargetWeeklyHours } from '../utils/masterEmployeeWorkSettings.js';
@@ -13,14 +14,6 @@ import {
 
 const router = express.Router();
 router.use(authMiddleware);
-
-function requireAdminRole(req, res) {
-  if (req.user?.role !== 'admin') {
-    res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
-    return false;
-  }
-  return true;
-}
 
 // ===== GET STAFF LIST =====
 router.get('/', async (req, res, next) => {
@@ -96,12 +89,8 @@ router.get('/central-employees', async (req, res, next) => {
   }
 });
 
-router.post('/central-link', async (req, res, next) => {
+router.post('/central-link', requirePermission('can_link_employees'), async (req, res, next) => {
   try {
-    if (!requireAdminRole(req, res)) {
-      return;
-    }
-
     const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
     if (!tenantId) {
       return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
@@ -173,12 +162,8 @@ router.post('/central-link', async (req, res, next) => {
   }
 });
 
-router.post('/central-unlink', async (req, res, next) => {
+router.post('/central-unlink', requirePermission('can_link_employees'), async (req, res, next) => {
   try {
-    if (!requireAdminRole(req, res)) {
-      return;
-    }
-
     const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
     if (!tenantId) {
       return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });

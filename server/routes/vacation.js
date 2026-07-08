@@ -23,6 +23,7 @@
  */
 import express from 'express';
 import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
 import { db } from '../index.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import {
@@ -181,7 +182,7 @@ router.get('/shift-entitlement', async (req, res, next) => {
  * Resets `carried_over` to false and `carried_over_from_year` to null,
  * because a manual edit overwrites a previous carry-over.
  */
-router.put('/shift-entitlement', async (req, res, next) => {
+router.put('/shift-entitlement', requirePermission('can_manage_shift_vacation'), async (req, res, next) => {
   try {
     const { year, doctorId, shift_vacation_days, note } = req.body ?? {};
     if (!Number.isFinite(year) || year < 1970 || year > 2999) {
@@ -244,7 +245,7 @@ router.put('/shift-entitlement', async (req, res, next) => {
  * year that is itself already carried_over (to avoid chaining), and
  * refuses a non-positive remainder (no days to carry).
  */
-router.post('/shift-entitlement/carry-over', async (req, res, next) => {
+router.post('/shift-entitlement/carry-over', requirePermission('can_manage_shift_vacation'), async (req, res, next) => {
   try {
     const { fromYear, toYear, doctorId } = req.body ?? {};
     if (!Number.isFinite(fromYear) || !Number.isFinite(toYear)) {

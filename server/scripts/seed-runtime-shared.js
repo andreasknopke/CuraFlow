@@ -41,6 +41,7 @@ export async function ensureMasterBaseTables(masterPool) {
       wish_show_absences TINYINT(1) DEFAULT 1,
       wish_hidden_doctors JSON DEFAULT NULL,
       wish_default_position VARCHAR(255) DEFAULT NULL,
+      permissions JSON DEFAULT NULL,
       email_verified TINYINT(1) DEFAULT 0,
       email_verified_date DATETIME DEFAULT NULL,
       last_login DATETIME DEFAULT NULL,

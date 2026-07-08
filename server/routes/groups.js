@@ -13,7 +13,9 @@ import express from 'express';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
-import { authMiddleware, adminMiddleware } from './auth.js';
+import { authMiddleware } from './auth.js';
+import { requirePermission } from '../utils/permissions.js';
+import { requirePermission } from '../utils/permissions.js';
 import { parseDbToken } from '../utils/crypto.js';
 import {
   loadUserGroupContext,
@@ -1039,7 +1041,7 @@ router.get('/:groupId', async (req, res) => {
   }
 });
 
-router.post('/', adminMiddleware, async (req, res) => {
+router.post('/', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { name, description } = req.body || {};
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -1059,7 +1061,7 @@ router.post('/', adminMiddleware, async (req, res) => {
   }
 });
 
-router.patch('/:groupId', adminMiddleware, async (req, res) => {
+router.patch('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { name, description, is_active } = req.body || {};
     const fields = [];
@@ -1089,7 +1091,7 @@ router.patch('/:groupId', adminMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:groupId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     await db.execute('DELETE FROM tenant_group WHERE id = ?', [req.params.groupId]);
     res.status(204).end();
@@ -1119,7 +1121,7 @@ router.get('/:groupId/members', async (req, res) => {
   }
 });
 
-router.post('/:groupId/members', adminMiddleware, async (req, res) => {
+router.post('/:groupId/members', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     const { tenant_id, role } = req.body || {};
     if (!tenant_id) return res.status(400).json({ error: 'tenant_id ist erforderlich' });
@@ -1134,7 +1136,7 @@ router.post('/:groupId/members', adminMiddleware, async (req, res) => {
   }
 });
 
-router.delete('/:groupId/members/:tenantId', adminMiddleware, async (req, res) => {
+router.delete('/:groupId/members/:tenantId', requirePermission('can_manage_groups'), async (req, res) => {
   try {
     await db.execute(
       'DELETE FROM tenant_group_member WHERE group_id = ? AND tenant_id = ?',

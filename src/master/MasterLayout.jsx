@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { path: '/stammdat-import', label: 'Stammdaten-Import', icon: Database },
   { path: '/kostenstellen', label: 'Kostenstellen', icon: Building2 },
   { path: '/tisoware', label: 'Tisoware DB', icon: Database },
+  { path: '/admin-rechte', label: 'Admin-Rechte', icon: Shield },
 ];
 
 export default function MasterLayout({ children }) {

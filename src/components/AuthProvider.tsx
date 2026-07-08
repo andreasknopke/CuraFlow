@@ -29,6 +29,8 @@ export interface User {
   role: string;
   must_change_password?: boolean;
   schedule_sort_doctors_alphabetically?: boolean;
+  permissions?: Record<string, boolean> | null;
+  is_super_admin?: boolean;
   [key: string]: unknown;
 }
 

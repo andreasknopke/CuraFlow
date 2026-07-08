@@ -6,6 +6,7 @@ import { db } from '../index.js';
 import { broadcastUserEvent, buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
 import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
 import { loadUserGroupContext, listUserGroups } from '../utils/tenantGroups.js';
+import { requirePermission, isSuperAdmin, loadPermissions } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -216,7 +217,7 @@ function sanitizeUser(user) {
   const { password_hash, ...safe } = user;
   
   // Parse JSON fields
-  const jsonFields = ['allowed_tenants', 'allowed_groups', 'group_admin_groups', 'collapsed_sections', 'schedule_hidden_rows', 'wish_hidden_doctors'];
+  const jsonFields = ['allowed_tenants', 'allowed_groups', 'group_admin_groups', 'collapsed_sections', 'schedule_hidden_rows', 'wish_hidden_doctors', 'permissions'];
   for (const field of jsonFields) {
     if (safe[field] && typeof safe[field] === 'string') {
       try {
@@ -232,6 +233,9 @@ function sanitizeUser(user) {
       safe[field] = !!safe[field];
     }
   }
+  
+  // Super-admin flag (read-only, calculated from env)
+  safe.is_super_admin = isSuperAdmin(safe.email);
   
   return safe;
 }
@@ -325,12 +329,20 @@ router.post('/login', async (req, res, next) => {
 });
 
 // ============ REGISTER (Admin only) ============
-router.post('/register', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.post('/register', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
   try {
     const { email, password, full_name, role = 'user', doctor_id } = req.body;
     
     if (!email || !password) {
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
+    }
+    
+    // Permission inheritance: if the new user is an admin, copy the requesting
+    // admin's permissions (so the granter cannot give more than they have).
+    let permissions = null;
+    if (role === 'admin') {
+      const granterPerms = loadPermissions(req.user);
+      permissions = JSON.stringify(granterPerms);
     }
     
     // Check if user exists
@@ -350,9 +362,10 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
         `UPDATE app_users
             SET password_hash = ?, full_name = ?, role = ?,
                 doctor_id = ?, is_active = 1, updated_date = NOW(),
-                email_verified = 0
+                email_verified = 0,
+                permissions = COALESCE(?, permissions)
           WHERE id = ?`,
-        [password_hash, full_name || '', role, doctor_id || null, existingUser.id]
+        [password_hash, full_name || '', role, doctor_id || null, permissions, existingUser.id]
       );
       const [updated] = await db.execute('SELECT * FROM app_users WHERE id = ?', [existingUser.id]);
       return res.status(201).json({ user: sanitizeUser(updated[0]) });
@@ -363,9 +376,9 @@ router.post('/register', authMiddleware, adminMiddleware, async (req, res, next)
     const id = crypto.randomUUID();
     
     await db.execute(
-      `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active) 
-       VALUES (?, ?, ?, ?, ?, ?, 1)`,
-      [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null]
+      `INSERT INTO app_users (id, email, password_hash, full_name, role, doctor_id, is_active, permissions) 
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+      [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null, permissions]
     );
     
     const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]);
@@ -507,7 +520,7 @@ router.post('/force-change-password', authMiddleware, async (req, res, next) => 
 });
 
 // ============ LIST USERS (Admin only) ============
-router.get('/users', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.get('/users', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
   try {
     const [rows] = await db.execute('SELECT * FROM app_users WHERE is_active = 1 ORDER BY created_date DESC');
     res.json(rows.map(sanitizeUser));
@@ -517,7 +530,7 @@ router.get('/users', authMiddleware, adminMiddleware, async (req, res, next) => 
 });
 
 // ============ UPDATE USER (Admin only) ============
-router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
   try {
     const { userId } = req.params;
     const { data } = req.body;
@@ -531,7 +544,8 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
       'full_name', 'email', 'role', 'doctor_id', 'is_active', 'allowed_tenants', 'allowed_groups', 'group_admin_groups',
       'theme', 'section_config', 'collapsed_sections',
       'schedule_hidden_rows', 'schedule_show_sidebar', 'highlight_my_name',
-      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position'
+      'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position',
+      'permissions',
     ];
     
     const updates = [];
@@ -547,6 +561,13 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
       if (existingWithEmail.length > 0) {
         return res.status(409).json({ error: 'E-Mail-Adresse wird bereits von einem anderen Benutzer verwendet' });
       }
+    }
+    
+    // Permission inheritance: if the role is being changed to admin and no
+    // explicit permissions were sent, copy the granter's permissions.
+    if (data.role === 'admin' && data.permissions === undefined) {
+      const granterPerms = loadPermissions(req.user);
+      data.permissions = granterPerms;
     }
     
     for (const [key, value] of Object.entries(data)) {
@@ -587,7 +608,7 @@ router.patch('/users/:userId', authMiddleware, adminMiddleware, async (req, res,
 // ============ DELETE USER (Admin only) ============
 // Hard delete — users are not doctors; they can be fully removed
 // so the same email can be used to create a new account.
-router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.delete('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -600,7 +621,7 @@ router.delete('/users/:userId', authMiddleware, adminMiddleware, async (req, res
 });
 
 // ============ RESET USER PASSWORD (Admin only) ============
-router.post('/users/:userId/reset-password', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.post('/users/:userId/reset-password', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
   try {
     const { userId } = req.params;
 
@@ -866,7 +887,7 @@ router.get('/events/stream', streamAuthMiddleware, async (req, res) => {
   req.on('end', unregister);
 });
 
-router.get('/cowork/contacts', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.get('/cowork/contacts', authMiddleware, requirePermission('can_manage_cowork'), async (req, res, next) => {
   try {
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
@@ -967,7 +988,7 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
   }
 });
 
-router.post('/cowork/invites', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cowork'), async (req, res, next) => {
   try {
     if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
       return res.status(503).json({
