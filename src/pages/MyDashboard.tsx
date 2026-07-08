@@ -396,7 +396,7 @@ function AbsenceRequestSection({ doctors }) {
 }
 
 export default function MyDashboardPage() {
-    const { user, isAuthenticated } = useAuth();
+    const { user, isAuthenticated, can } = useAuth();
     const { toast } = useToast();
     const [selectedDoctorId, setSelectedDoctorId] = useState(null);
 
@@ -524,6 +524,8 @@ export default function MyDashboardPage() {
 
     const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
     const isAdmin = user?.role === 'admin';
+    const canApproveWishes = can('can_approve_wishes');
+    const canApproveAbsence = can('can_approve_absence');
 
     // Admin: Fetch all pending wishes (including cancellation requests)
     const { data: allPendingWishes = [], isLoading: isLoadingPending } = useQuery({
@@ -807,7 +809,7 @@ export default function MyDashboardPage() {
             </div>
 
             {/* Admin Tasks Section */}
-            {isAdmin && (
+            {canApproveWishes && (
                 <AdminTasksSection 
                     allPendingWishes={allPendingWishes}
                     isLoadingPending={isLoadingPending}
@@ -818,8 +820,8 @@ export default function MyDashboardPage() {
                 />
             )}
 
-            {/* Urlaubsanträge Section (Admin only) */}
-            {isAdmin && (
+            {/* Urlaubsanträge Section (Admin with absence approval permission) */}
+            {canApproveAbsence && (
                 <AbsenceRequestSection
                     doctors={doctors}
                 />

@@ -662,23 +662,29 @@ router.post('/', async (req, res, next) => {
       }
     }
     
-    // Guard: ShiftEntry write operations require can_edit_schedule
-    const SHIFT_WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
-    if (tableName === 'ShiftEntry' && SHIFT_WRITE_ACTIONS.includes(effectiveAction)) {
+    // Guard: write operations on protected tables require specific permissions
+    const PROTECTED_WRITE_TABLES = {
+      ShiftEntry: 'can_edit_schedule',
+      WishRequest: 'can_approve_wishes',
+      AbsenceRequest: 'can_approve_absence',
+    };
+    const WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
+    const requiredPerm = PROTECTED_WRITE_TABLES[tableName];
+    if (requiredPerm && WRITE_ACTIONS.includes(effectiveAction)) {
       // Load permissions from DB (JWT does not contain them)
-      let hasEditPerm = false;
+      let hasPerm = false;
       try {
         const [permRows] = await db.execute(
           'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
           [req.user?.sub || ''],
         );
         const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-        hasEditPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+        hasPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, requiredPerm);
       } catch { /* fall through to deny */ }
-      if (!hasEditPerm) {
+      if (!hasPerm) {
         return res.status(403).json({
           error: 'Ihnen fehlt die Berechtigung für diese Aktion',
-          missingPermission: 'can_edit_schedule',
+          missingPermission: requiredPerm,
         });
       }
     }
