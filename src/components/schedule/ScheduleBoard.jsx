@@ -3560,7 +3560,6 @@ export default function ScheduleBoard() {
     }
 
     const normalizedDraggableId = normalizeDraggableId(draggableId);
-    const normalizedDraggableId = normalizeDraggableId(draggableId);
     const sourceDroppableId = stripPanelPrefix(source.droppableId);
     const destinationDroppableId = destination ? stripPanelPrefix(destination.droppableId) : null;
 

@@ -653,7 +653,7 @@ export class ShiftValidator {
         // Determine consecutive mode: 'forbidden' | 'allowed' | 'preferred'
         // Backward compat: old boolean false → 'forbidden', true/undefined → 'allowed'
         const mode = workplace.consecutive_days_mode
-            || (workplace as Workplace & { allows_consecutive_days?: boolean }).allows_consecutive_days === false ? 'forbidden' : 'allowed';
+            || ((workplace as Workplace & { allows_consecutive_days?: boolean }).allows_consecutive_days === false ? 'forbidden' : 'allowed');
         
         // Only block if mode is 'forbidden'
         if (mode !== 'forbidden') {
