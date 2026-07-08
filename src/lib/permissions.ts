@@ -18,6 +18,9 @@ export const PERMISSION_KEYS = [
   'can_manage_shift_vacation',
   'can_manage_system',
   'can_manage_cowork',
+  'can_approve_wishes',
+  'can_send_schedule_emails',
+  'can_assign_pool_shifts',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -34,6 +37,9 @@ export const PERMISSION_LABELS: Record<PermissionKey, string> = {
   can_manage_shift_vacation: 'Schichturlaub & Übertrag verwalten',
   can_manage_system: 'System-Einstellungen & Datenbank',
   can_manage_cowork: 'CoWork-Einladungen verwalten',
+  can_approve_wishes: 'Dienstwünsche genehmigen',
+  can_send_schedule_emails: 'Dienstplan-E-Mails versenden',
+  can_assign_pool_shifts: 'Pool-Dienste besetzen',
 };
 
 // ─── Helper ──────────────────────────────────────────────────────────────────

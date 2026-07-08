@@ -25,6 +25,9 @@ export const PERMISSION_KEYS = [
   'can_manage_shift_vacation',
   'can_manage_system',
   'can_manage_cowork',
+  'can_approve_wishes',
+  'can_send_schedule_emails',
+  'can_assign_pool_shifts',
 ];
 
 /** Object with every permission key set to `true`. */

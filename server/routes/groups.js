@@ -934,7 +934,7 @@ router.post('/central-wishes', async (req, res) => {
 
 // PATCH /central-wishes/:id
 // Update an existing wish. Only whitelisted columns from the body are applied.
-router.patch('/central-wishes/:id', async (req, res) => {
+router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -997,7 +997,7 @@ router.patch('/central-wishes/:id', async (req, res) => {
 });
 
 // DELETE /central-wishes/:id
-router.delete('/central-wishes/:id', async (req, res) => {
+router.delete('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -1850,7 +1850,7 @@ async function loadShiftsWindow(workplaceId, dateStr) {
   return rows.map((r) => ({ ...r, date: String(r.date).slice(0, 10) }));
 }
 
-router.post('/:groupId/shifts', async (req, res) => {
+router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -1969,7 +1969,7 @@ router.post('/:groupId/shifts', async (req, res) => {
   }
 });
 
-router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
+router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -2102,7 +2102,7 @@ router.patch('/:groupId/shifts/:shiftId', async (req, res) => {
   }
 });
 
-router.delete('/:groupId/shifts/:shiftId', async (req, res) => {
+router.delete('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req, res) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;

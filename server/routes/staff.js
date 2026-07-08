@@ -209,7 +209,7 @@ router.post('/central-unlink', requirePermission('can_link_employees'), async (r
 });
 
 // ===== NOTIFY STAFF =====
-router.post('/notify', async (req, res, next) => {
+router.post('/notify', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
   try {
     const { staffIds, message, type } = req.body;
     
@@ -225,7 +225,7 @@ router.post('/notify', async (req, res, next) => {
 });
 
 // ===== SEND GENERIC EMAIL (replaces base44.integrations.Core.SendEmail) =====
-router.post('/send-email', async (req, res, next) => {
+router.post('/send-email', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
   try {
     const { to, subject, body: textBody, html } = req.body;
 
@@ -285,7 +285,7 @@ router.post('/send-test-email', async (req, res, next) => {
 });
 
 // ===== SEND SCHEDULE NOTIFICATIONS (replaces sendShiftEmails function) =====
-router.post('/schedule-notifications', async (req, res, next) => {
+router.post('/schedule-notifications', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
   try {
     const { year, month } = req.body;
     const dbPool = req.db || db;
