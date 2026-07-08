@@ -4,7 +4,7 @@ import { authMiddleware } from './auth.js';
 import { hasPermission } from '../utils/permissions.js';
 import crypto from 'crypto';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
-import { COLUMNS_CACHE, clearColumnsCache, ensureColumns } from '../utils/schema.js';
+import { COLUMNS_CACHE, clearColumnsCache, ensureColumns, assertValidIdentifier } from '../utils/schema.js';
 import { ensureTenantBaseTables } from '../scripts/seed-runtime-shared.js';
 import {
   deleteCentralAbsenceById,
@@ -716,7 +716,16 @@ router.post('/', async (req, res, next) => {
     if (!tableName) {
       return res.status(400).json({ error: 'Entity/table required' });
     }
-    
+
+    // Validate the table identifier BEFORE any SQL construction. The table name
+    // is interpolated into backtick-quoted identifier contexts (SHOW COLUMNS,
+    // SELECT/INSERT/UPDATE/DELETE FROM `...`); a backtick in the name breaks
+    // out and enables SQL injection. Prepared statements parameterize values,
+    // not identifiers, so this validation is mandatory for any user-supplied
+    // table name. assertValidIdentifier throws a 400 on an invalid name; the
+    // surrounding try/catch forwards it via next(error).
+    assertValidIdentifier(tableName, 'Tabellenname');
+
     if (!effectiveAction) {
       return res.status(400).json({ error: 'Action/operation required' });
     }

@@ -7,6 +7,7 @@ import { runMasterMigrations } from '../utils/masterMigrations.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
 import { clearColumnsCache, writeAuditLog } from './dbProxy.js';
+import { isValidIdentifier } from '../utils/schema.js';
 import { checkAndSendWishReminders } from '../utils/wishReminder.js';
 import { runTenantMigrations } from '../utils/tenantMigrations.js';
 import { resolveMasterDbConfig } from '../utils/mysqlConfig.js';
@@ -255,6 +256,12 @@ router.post('/tools', async (req, res, next) => {
             } else if (issue.type.startsWith('duplicate_')) {
               // Delete all duplicate IDs (keeping the first/oldest one)
               const table = issue.table || 'ShiftEntry';
+              // issue.table comes from the request body and is interpolated
+              // into a backtick-quoted identifier; validate before use.
+              if (!isValidIdentifier(table)) {
+                results.push(`✗ Ungültiger Tabellenname: ${table}`);
+                continue;
+              }
               if (issue.ids && issue.ids.length > 0) {
                 for (const id of issue.ids) {
                   const [rows] = await dbPool.execute(`SELECT * FROM \`${table}\` WHERE id = ?`, [id]);
