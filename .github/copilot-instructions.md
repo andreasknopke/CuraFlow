@@ -257,7 +257,6 @@ This application runs in hospital environments. Security failures can have regul
   - `server/scripts/`
   - `server/routes/`
   - `server/utils/`
-  - `functions/`
   - deployment files such as `Dockerfile.coolify`, `server/nixpacks.toml`, Railway/Coolify configs, compose files, or startup entrypoints
   - `package.json` scripts or lifecycle hooks related to `start`, `build`, `postinstall`, `prestart`, `test:e2e`, `seed`, or `migrate`
 - Treat PRs as **lower risk** when they are limited to frontend UI/test/workflow files such as `src/`, `e2e/`, and `.github/workflows/`, and do not alter runtime server or deployment behavior.
