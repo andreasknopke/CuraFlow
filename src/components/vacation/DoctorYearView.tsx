@@ -772,11 +772,14 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
                             )}
               {(() => {
                 const dateStr = format(date, 'yyyy-MM-dd');
-                if (pendingRequestsByDate?.[dateStr]) {
-                  return <span className="pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse" title="Antrag ausstehend" aria-hidden="true" />;
-                }
-                if (rejectedRequestsByDate?.[dateStr]) {
-                  return <span className="pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-400 rounded-full" title="Antrag abgelehnt" aria-hidden="true" />;
+                const request = pendingRequestsByDate?.[dateStr];
+                if (request) {
+                  const dotColor =
+                    request.position === 'Urlaub' ? 'bg-green-400' :
+                    request.position === 'Frei' ? 'bg-slate-400' :
+                    request.position === 'Dienstreise' ? 'bg-blue-400' :
+                    'bg-amber-400';
+                  return <span className={`pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 ${dotColor} rounded-full animate-pulse`} title={`Antrag: ${request.position} (ausstehend)`} aria-hidden="true" />;
                 }
                 return null;
               })()}

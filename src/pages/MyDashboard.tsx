@@ -733,6 +733,29 @@ export default function MyDashboardPage() {
         .filter(w => w.status !== 'pending' && w.status !== 'cancellation_requested')
         .slice(0, 5);
 
+    // ─── AbsenceRequest feedback for non-admin users ─────────────────────────
+    const { data: userAbsenceRequests = [] } = useQuery({
+        queryKey: ['absence-requests', 'user', selectedDoctorId],
+        queryFn: async () => {
+            if (!selectedDoctorId) return [];
+            try {
+                const res = await api.request(`/api/absence-requests`);
+                return res.requests || [];
+            } catch {
+                return [];
+            }
+        },
+        enabled: !!selectedDoctorId && !isAdmin,
+        staleTime: 15 * 1000,
+    });
+
+    const resolvedAbsenceRequests = useMemo(() => {
+        if (isAdmin) return [];
+        return userAbsenceRequests
+            .filter(r => r.status === 'approved' || r.status === 'rejected')
+            .slice(0, 10);
+    }, [userAbsenceRequests, isAdmin]);
+
     if (!isAuthenticated) return <div className="p-8">Bitte anmelden.</div>;
     if (isLoadingDocs) return <div className="flex justify-center p-12"><Loader2 className="animate-spin" /></div>;
 
@@ -1027,6 +1050,35 @@ export default function MyDashboardPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {resolvedAbsenceRequests.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-semibold text-slate-900 mb-3">Rückmeldung zu Urlaubsanträgen</h4>
+                                    <div className="space-y-2">
+                                        {resolvedAbsenceRequests.map(req => (
+                                            <div key={req.id} className="flex items-center justify-between p-2 bg-white rounded border border-slate-100 gap-2">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-medium">
+                                                        {safeFormatDate(req.date, 'dd.MM.yyyy')} – {req.position}
+                                                    </span>
+                                                    {req.admin_comment && (
+                                                        <span className="text-xs text-slate-500 italic">"{req.admin_comment}"</span>
+                                                    )}
+                                                </div>
+                                                {req.status === 'approved' ? (
+                                                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 border-0 whitespace-nowrap">
+                                                        <CheckCircle2 className="w-3 h-3 mr-1" /> Genehmigt
+                                                    </Badge>
+                                                ) : (
+                                                    <Badge className="bg-red-100 text-red-700 hover:bg-red-100 border-0 whitespace-nowrap">
+                                                        <XCircle className="w-3 h-3 mr-1" /> Abgelehnt
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>

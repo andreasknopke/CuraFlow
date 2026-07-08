@@ -1,12 +1,14 @@
 import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Check, X } from 'lucide-react';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { parseAnnualVacationDays } from './vacationBalance';
 import type { Doctor, ShiftEntry } from '@/types';
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 interface ContractInfo {
   contractStart?: string;
@@ -74,6 +76,7 @@ interface VacationOverviewProps {
   requestByCellKey?: Record<string, any>;
   isAdmin?: boolean;
   onApproveRequest?: (requestId: string) => void;
+  onRejectRequest?: (requestId: string) => void;
   onDeleteRequest?: (requestId: string) => void;
 }
 
@@ -141,9 +144,8 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         else cellClass += " hover:bg-slate-100";
     }
 
-    // Wenn ein Antrag vorliegt aber kein ShiftEntry, zeige einen farbigen Punkt
+    // Leichter Hintergrund bei Antrag (alle Status) – erleichtert Admin die Lokalisierung
     if (hasRequest && !hasShift) {
-        // Leichten farbigen Hintergrund für die Zelle mit Antrag
         if (requestStatus === 'pending') {
             cellClass += " bg-amber-50";
         } else if (requestStatus === 'rejected') {
@@ -163,8 +165,8 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         cellTitle = `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}`;
     } else if (isVisible) {
         cellTitle = status;
-    } else if (hasRequest) {
-        cellTitle = `Antrag: ${requestPosition} (${requestStatus === 'pending' ? 'ausstehend' : requestStatus === 'approved' ? 'genehmigt' : 'abgelehnt'})`;
+    } else if (hasRequest && requestStatus === 'pending') {
+        cellTitle = `Antrag: ${requestPosition} (ausstehend)`;
     } else if (isHoliday) {
         cellTitle = 'Feiertag';
     } else if (isSchoolHoliday) {
@@ -189,14 +191,16 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
             }}
         >
             {content}
-            {/* Punktmarkierung für Anträge (wenn kein ShiftEntry vorhanden) */}
-            {hasRequest && !hasShift && (
+            {/* Punktmarkierung NUR für ausstehende Anträge (wenn kein ShiftEntry) – Farbe nach Position */}
+            {hasRequest && !hasShift && requestStatus === 'pending' && (
                 <span
-                    className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full shadow-sm ${
-                        requestStatus === 'pending' ? 'bg-amber-400 animate-pulse' :
-                        requestStatus === 'rejected' ? 'bg-red-400' :
-                        requestStatus === 'approved' ? 'bg-green-400' : ''
+                    className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full shadow-sm animate-pulse ${
+                        requestPosition === 'Urlaub' ? 'bg-green-400' :
+                        requestPosition === 'Frei' ? 'bg-slate-400' :
+                        requestPosition === 'Dienstreise' ? 'bg-blue-400' :
+                        'bg-amber-400'
                     }`}
+                    title="Antrag ausstehend"
                     aria-hidden="true"
                 />
             )}
@@ -251,7 +255,7 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     return false;
 });
 
-export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {}, requestByCellKey = {}, isAdmin = false, onApproveRequest, onDeleteRequest }: VacationOverviewProps) {
+export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {}, requestByCellKey = {}, isAdmin = false, onApproveRequest, onRejectRequest, onDeleteRequest }: VacationOverviewProps) {
     
     const [dragStart, setDragStart] = useState<Date | null>(null);
     const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
@@ -371,22 +375,18 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
 
     // Handler wrapper for toggle (muss NACH dailyAbsencesByQual/totalStaffByQual stehen wg. TDZ)
     const handleToggle = React.useCallback((date: Date, status: string | null, docId: string, e: React.MouseEvent) => {
-        // Admin-Klick auf einen ausstehenden Antrag → Aktion anbieten
+        // Admin-Klick auf einen ausstehenden Antrag → Aktion-Dialog öffnen
         if (isAdmin && !isReadOnly && requestByCellKey) {
             const cellKey = `${docId}_${format(date, 'yyyy-MM-dd')}`;
             const request = requestByCellKey[cellKey];
             if (request && request.status === 'pending' && !status) {
-                // Pending request ohne bestehenden Shift → approve/delete anbieten
-                const action = activeType === 'DELETE' ? 'delete' : 'approve';
-                if (action === 'delete') {
-                    if (window.confirm(`Antrag (${request.position}) für den ${format(date, 'dd.MM.yyyy')} löschen?`)) {
-                        onDeleteRequest?.(request.id);
-                    }
-                } else {
-                    if (window.confirm(`Antrag (${request.position}) für den ${format(date, 'dd.MM.yyyy')} genehmigen und als Urlaub eintragen?`)) {
-                        onApproveRequest?.(request.id);
-                    }
-                }
+                setRequestActionDialog({
+                    open: true,
+                    requestId: request.id,
+                    date,
+                    doctorId: docId,
+                    requestPosition: request.position,
+                });
                 return;
             }
         }
@@ -394,7 +394,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
             onToggle && onToggle(date, status, docId, e);
         }
-    }, [isDragging, dragStart, dragCurrent, onToggle, isAdmin, isReadOnly, requestByCellKey, activeType, onApproveRequest, onDeleteRequest]);
+    }, [isDragging, dragStart, dragCurrent, onToggle, isAdmin, isReadOnly, requestByCellKey, onApproveRequest, onRejectRequest]);
 
     const vacationCounts = React.useMemo(() => {
         const counts: Record<string, number> = {};
@@ -598,6 +598,47 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                             </table>
                 </StickyHorizontalScrollbar>
             ))}
+
+            {/* Admin-Dialog für Antrag genehmigen/ablehnen */}
+            <Dialog open={requestActionDialog.open} onOpenChange={(open) => setRequestActionDialog(prev => ({ ...prev, open }))}>
+                <DialogContent className="max-w-sm">
+                    <DialogHeader>
+                        <DialogTitle>Antrag bearbeiten</DialogTitle>
+                        <DialogDescription>
+                            {requestActionDialog.requestPosition} für den {format(requestActionDialog.date, 'dd.MM.yyyy')}
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="text-sm text-slate-600">
+                        Möchten Sie den Antrag genehmigen (Urlaub eintragen) oder ablehnen?
+                    </div>
+                    <DialogFooter className="flex gap-2 sm:gap-0">
+                        <Button
+                            variant="outline"
+                            onClick={() => setRequestActionDialog(prev => ({ ...prev, open: false }))}
+                        >
+                            Abbrechen
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            onClick={() => {
+                                onRejectRequest?.(requestActionDialog.requestId);
+                                setRequestActionDialog(prev => ({ ...prev, open: false }));
+                            }}
+                        >
+                            <X className="w-4 h-4 mr-1" /> Ablehnen
+                        </Button>
+                        <Button
+                            className="bg-green-600 hover:bg-green-700"
+                            onClick={() => {
+                                onApproveRequest?.(requestActionDialog.requestId);
+                                setRequestActionDialog(prev => ({ ...prev, open: false }));
+                            }}
+                        >
+                            <Check className="w-4 h-4 mr-1" /> Genehmigen
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

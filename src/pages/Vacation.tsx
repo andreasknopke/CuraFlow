@@ -610,6 +610,24 @@ export default function VacationPage() {
     },
   });
 
+  const rejectRequestMutation = useMutation({
+    mutationFn: async (requestId) => {
+      const res = await api.request(`/api/absence-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'rejected', admin_comment: '', user_viewed: false }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return res;
+    },
+    onSuccess: () => {
+      toast.success('Antrag abgelehnt.');
+      queryClient.invalidateQueries({ queryKey: ['absence-requests'] });
+    },
+    onError: (err) => {
+      toast.error('Fehler: ' + (err.response?.data?.error || err.message));
+    },
+  });
+
   // Lade Anträge (Admin: alle des Mandanten, RO: nur eigene — filtered by server)
   const { data: allAbsenceRequests = [] } = useQuery({
     queryKey: ['absence-requests', selectedYear],
@@ -1319,6 +1337,7 @@ export default function VacationPage() {
             isAdmin={isAdmin}
             requestByCellKey={requestByCellKey}
             onApproveRequest={(requestId) => approveRequestMutation.mutate(requestId)}
+            onRejectRequest={(requestId) => rejectRequestMutation.mutate(requestId)}
             onDeleteRequest={(requestId) => deleteRequestMutation.mutate(requestId)}
             />
       )}
