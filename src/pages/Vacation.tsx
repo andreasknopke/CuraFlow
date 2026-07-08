@@ -30,6 +30,7 @@ import { getAvailabilityWarnings } from '@/utils/staffingUtils';
 
 export default function VacationPage() {
   const { isReadOnly, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const { getSectionName } = useSectionConfig();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
@@ -571,9 +572,47 @@ export default function VacationPage() {
     },
   });
 
-  // Lade offene Anträge (nur für RO-User, Admin sieht im MyDashboard)
-  const { data: myAbsenceRequests = [] } = useQuery({
-    queryKey: ['absence-requests', 'my', selectedYear],
+  // ─── Admin approve/delete mutations für Overview ─────────────────────────
+
+  const approveRequestMutation = useMutation({
+    mutationFn: async (requestId) => {
+      const res = await api.request(`/api/absence-requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'approved', admin_comment: '' }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return res;
+    },
+    onSuccess: () => {
+      toast.success('Antrag genehmigt und Urlaub eingetragen.');
+      queryClient.invalidateQueries({ queryKey: ['absence-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts', selectedYear] });
+      queryClient.invalidateQueries({ queryKey: ['central-absences'] });
+    },
+    onError: (err) => {
+      toast.error('Fehler: ' + (err.response?.data?.error || err.message));
+    },
+  });
+
+  const deleteRequestMutation = useMutation({
+    mutationFn: async (requestId) => {
+      const res = await api.request(`/api/absence-requests/${requestId}`, {
+        method: 'DELETE',
+      });
+      return res;
+    },
+    onSuccess: () => {
+      toast.success('Antrag gelöscht.');
+      queryClient.invalidateQueries({ queryKey: ['absence-requests'] });
+    },
+    onError: (err) => {
+      toast.error('Fehler: ' + (err.response?.data?.error || err.message));
+    },
+  });
+
+  // Lade Anträge (Admin: alle des Mandanten, RO: nur eigene — filtered by server)
+  const { data: allAbsenceRequests = [] } = useQuery({
+    queryKey: ['absence-requests', selectedYear],
     queryFn: async () => {
       try {
         const res = await api.request(`/api/absence-requests?year=${selectedYear}`);
@@ -582,9 +621,14 @@ export default function VacationPage() {
         return [];
       }
     },
-    enabled: isReadOnly,
     staleTime: 30 * 1000,
   });
+
+  // Für die Einzelansicht: Anträge nur für den ausgewählten Arzt
+  const myAbsenceRequests = useMemo(() => {
+    if (isReadOnly) return allAbsenceRequests; // Server filtert bereits
+    return allAbsenceRequests.filter(r => String(r.source_tenant_doctor_id) === String(selectedDoctorId));
+  }, [allAbsenceRequests, isReadOnly, selectedDoctorId]);
 
   // Analyze conflicts for a range selection
   const analyzeConflicts = (days, targetDoctorId, newPosition) => {
@@ -1102,6 +1146,16 @@ export default function VacationPage() {
     return map;
   }, [myAbsenceRequests]);
 
+  // Für die Jahresübersicht: Map über alle Anträge (alle Ärzte), key = doctorId_date
+  const requestByCellKey = useMemo(() => {
+    const map = {};
+    allAbsenceRequests.forEach(r => {
+      const key = `${r.source_tenant_doctor_id}_${r.date}`;
+      map[key] = r;
+    });
+    return map;
+  }, [allAbsenceRequests]);
+
   return (
     <div className="container mx-auto max-w-7xl" data-testid="vacation-page">
       <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
@@ -1256,9 +1310,16 @@ export default function VacationPage() {
             activeType={activeType}
             isReadOnly={isReadOnly}
             monthsPerRow={monthsPerRow}
-            availabilityThresholds={availabilityThresholds}
+            // In der Benutzeransicht (RO) keine Mindestbesetzungsregeln anzeigen,
+            // da dort nur auf den eigenen Nutzer gefiltert wird und die Regelprüfung
+            // gegen die Gesamtbelegschaft keinen Sinn ergibt.
+            availabilityThresholds={isReadOnly ? [] : availabilityThresholds}
             qualificationMap={qualificationMap}
             doctorQualByDoctor={doctorQualByDoctor}
+            isAdmin={isAdmin}
+            requestByCellKey={requestByCellKey}
+            onApproveRequest={(requestId) => approveRequestMutation.mutate(requestId)}
+            onDeleteRequest={(requestId) => deleteRequestMutation.mutate(requestId)}
             />
       )}
       

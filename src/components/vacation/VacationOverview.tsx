@@ -40,6 +40,8 @@ interface VacationOverviewCellProps {
   onMouseDown: (date: Date, doctorId: string) => void;
   onMouseEnter: (date: Date, doctorId: string) => void;
   onToggle: (date: Date, status: string | null, doctorId: string, e: React.MouseEvent) => void;
+  requestStatus?: string | null;
+  requestPosition?: string | null;
 }
 
 interface QualificationMapEntry {
@@ -69,6 +71,10 @@ interface VacationOverviewProps {
   availabilityThresholds?: AvailabilityThreshold[];
   qualificationMap?: Record<string, QualificationMapEntry>;
   doctorQualByDoctor?: Record<string, DoctorQualEntry[]>;
+  requestByCellKey?: Record<string, any>;
+  isAdmin?: boolean;
+  onApproveRequest?: (requestId: string) => void;
+  onDeleteRequest?: (requestId: string) => void;
 }
 
 // Memoized Cell Component
@@ -85,7 +91,9 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     dragInfo,
     onMouseDown,
     onMouseEnter,
-    onToggle
+    onToggle,
+    requestStatus,
+    requestPosition,
 }: VacationOverviewCellProps) {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
     const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
@@ -98,6 +106,9 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         start: dragStart < dragCurrent ? dragStart : dragCurrent,
         end: dragCurrent > dragStart ? dragCurrent : dragStart
     });
+
+    const hasShift = Boolean(status);
+    const hasRequest = Boolean(requestStatus);
 
     let content = "";
     let style: React.CSSProperties = {};
@@ -130,15 +141,43 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         else cellClass += " hover:bg-slate-100";
     }
 
+    // Wenn ein Antrag vorliegt aber kein ShiftEntry, zeige einen farbigen Punkt
+    if (hasRequest && !hasShift) {
+        // Leichten farbigen Hintergrund für die Zelle mit Antrag
+        if (requestStatus === 'pending') {
+            cellClass += " bg-amber-50";
+        } else if (requestStatus === 'rejected') {
+            cellClass += " bg-red-50";
+        } else if (requestStatus === 'approved') {
+            cellClass += " bg-green-50";
+        }
+    }
+
     if (isDragged) {
         cellClass += " ring-2 ring-indigo-400 ring-offset-1 z-20 opacity-80 relative";
+    }
+
+    // Tooltip-Titel
+    let cellTitle = '';
+    if (isDisabled) {
+        cellTitle = `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}`;
+    } else if (isVisible) {
+        cellTitle = status;
+    } else if (hasRequest) {
+        cellTitle = `Antrag: ${requestPosition} (${requestStatus === 'pending' ? 'ausstehend' : requestStatus === 'approved' ? 'genehmigt' : 'abgelehnt'})`;
+    } else if (isHoliday) {
+        cellTitle = 'Feiertag';
+    } else if (isSchoolHoliday) {
+        cellTitle = 'Ferien';
+    } else {
+        cellTitle = format(date, 'dd.MM.');
     }
 
     return (
         <td 
             className={`border-b border-r p-0 text-center text-[10px] h-6 ${cellClass}`}
             style={style}
-            title={isDisabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (isVisible ? status : (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : format(date, 'dd.MM.')))}
+            title={cellTitle}
             onMouseDown={(e) => {
                 if (!isDisabled && e.button === 0) onMouseDown(date, doctor.id);
             }}
@@ -150,6 +189,17 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
             }}
         >
             {content}
+            {/* Punktmarkierung für Anträge (wenn kein ShiftEntry vorhanden) */}
+            {hasRequest && !hasShift && (
+                <span
+                    className={`absolute top-0.5 right-0.5 w-2 h-2 rounded-full shadow-sm ${
+                        requestStatus === 'pending' ? 'bg-amber-400 animate-pulse' :
+                        requestStatus === 'rejected' ? 'bg-red-400' :
+                        requestStatus === 'approved' ? 'bg-green-400' : ''
+                    }`}
+                    aria-hidden="true"
+                />
+            )}
             {isContractEnd && (
                 <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
             )}
@@ -166,7 +216,9 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         prevProps.isHoliday !== nextProps.isHoliday ||
         prevProps.isSchoolHoliday !== nextProps.isSchoolHoliday ||
         prevProps.visibleTypes !== nextProps.visibleTypes || // Array reference check
-        prevProps.customColors !== nextProps.customColors // Object reference check
+        prevProps.customColors !== nextProps.customColors || // Object reference check
+        prevProps.requestStatus !== nextProps.requestStatus ||
+        prevProps.requestPosition !== nextProps.requestPosition
     ) {
         return false; // Re-render
     }
@@ -199,12 +251,13 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     return false;
 });
 
-export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {} }: VacationOverviewProps) {
+export default function VacationOverview({ year, doctors, shifts, contractInfoByDoctorId = {}, entitlementByDoctorId = {}, isSchoolHoliday, isPublicHoliday, visibleTypes = [], customColors = {}, onToggle, onRangeSelect, activeType, isReadOnly, monthsPerRow = 3, availabilityThresholds = [], qualificationMap = {}, doctorQualByDoctor = {}, requestByCellKey = {}, isAdmin = false, onApproveRequest, onDeleteRequest }: VacationOverviewProps) {
     
     const [dragStart, setDragStart] = useState<Date | null>(null);
     const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
     const [dragDoctorId, setDragDoctorId] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [requestActionDialog, setRequestActionDialog] = useState<{ open: boolean; requestId: string; date: Date; doctorId: string; requestPosition: string }>({ open: false, requestId: '', date: new Date(), doctorId: '', requestPosition: '' });
 
     useEffect(() => {
         const handleMouseUp = () => {
@@ -318,10 +371,30 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
 
     // Handler wrapper for toggle (muss NACH dailyAbsencesByQual/totalStaffByQual stehen wg. TDZ)
     const handleToggle = React.useCallback((date: Date, status: string | null, docId: string, e: React.MouseEvent) => {
+        // Admin-Klick auf einen ausstehenden Antrag → Aktion anbieten
+        if (isAdmin && !isReadOnly && requestByCellKey) {
+            const cellKey = `${docId}_${format(date, 'yyyy-MM-dd')}`;
+            const request = requestByCellKey[cellKey];
+            if (request && request.status === 'pending' && !status) {
+                // Pending request ohne bestehenden Shift → approve/delete anbieten
+                const action = activeType === 'DELETE' ? 'delete' : 'approve';
+                if (action === 'delete') {
+                    if (window.confirm(`Antrag (${request.position}) für den ${format(date, 'dd.MM.yyyy')} löschen?`)) {
+                        onDeleteRequest?.(request.id);
+                    }
+                } else {
+                    if (window.confirm(`Antrag (${request.position}) für den ${format(date, 'dd.MM.yyyy')} genehmigen und als Urlaub eintragen?`)) {
+                        onApproveRequest?.(request.id);
+                    }
+                }
+                return;
+            }
+        }
+
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
             onToggle && onToggle(date, status, docId, e);
         }
-    }, [isDragging, dragStart, dragCurrent, onToggle]);
+    }, [isDragging, dragStart, dragCurrent, onToggle, isAdmin, isReadOnly, requestByCellKey, activeType, onApproveRequest, onDeleteRequest]);
 
     const vacationCounts = React.useMemo(() => {
         const counts: Record<string, number> = {};
@@ -493,6 +566,9 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                     const isHol = isPublicHoliday(d);
                                                     const isSchool = isSchoolHoliday(d);
                                                     const status = getStatus(d, doc.id);
+                                                    const dStr = format(d, 'yyyy-MM-dd');
+                                                    const cellKey = `${doc.id}_${dStr}`;
+                                                    const cellRequest = requestByCellKey[cellKey] || null;
 
                                                     return (
                                                         <VacationOverviewCell
@@ -510,6 +586,8 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                             onMouseDown={handleMouseDown}
                                                             onMouseEnter={handleMouseEnter}
                                                             onToggle={handleToggle}
+                                                            requestStatus={cellRequest?.status || null}
+                                                            requestPosition={cellRequest?.position || null}
                                                         />
                                                     );
                                                 });
