@@ -206,6 +206,7 @@ describe('ScheduleBoard rendering (Pre-PR 3.0B)', () => {
   beforeEach(() => {
     seedAdminToken();
     autoFillMocks.generateSuggestions.mockReturnValue([]);
+    server.resetHandlers();
   });
 
   afterEach(() => {
@@ -293,9 +294,6 @@ describe('ScheduleBoard rendering (Pre-PR 3.0B)', () => {
 
     expect(await screen.findByTestId('schedule-toolbar')).toBeInTheDocument();
 
-    // The auto-fill trigger confirms auth completed (isReadOnly=false) and
-    // the toolbar section rendered. Dropdown items are hidden behind Radix
-    // click-to-open which happy-dom cannot trigger.
     const trigger = screen.getByTestId('schedule-auto-fill-trigger');
     expect(trigger).toBeInTheDocument();
     expect(trigger.tagName).toBe('BUTTON');
