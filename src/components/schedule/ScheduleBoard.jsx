@@ -2111,9 +2111,9 @@ export default function ScheduleBoard() {
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
             return;
         }
-        // 403 Permission denied: show clear message
+        // 403 handled globally in client.ts — just log here
         if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
-            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung f\u00fcr diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            console.warn('[ScheduleBoard] Create mutation denied by permission');
             return;
         }
         toast.error(`Fehler beim Erstellen: ${error.message}`);
@@ -2182,9 +2182,9 @@ export default function ScheduleBoard() {
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
             return;
         }
-        // 403 Permission denied
+        // 403 handled globally in client.ts
         if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
-            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung f\u00fcr diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            console.warn('[ScheduleBoard] BulkCreate mutation denied by permission');
             return;
         }
         toast.error(`Fehler beim Erstellen (Bulk): ${error.message}`);
@@ -2292,9 +2292,9 @@ export default function ScheduleBoard() {
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
         }
-        // 403 Permission denied
+        // 403 handled globally in client.ts
         if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
-            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            console.warn('[ScheduleBoard] Update mutation denied by permission');
             return;
         }
         toast.error(`Fehler beim Aktualisieren: ${error.message}`);
@@ -2399,8 +2399,9 @@ export default function ScheduleBoard() {
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
         }
+        // 403 handled globally in client.ts
         if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
-            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            console.warn('[ScheduleBoard] Delete mutation denied by permission');
             return;
         }
         toast.error(`Fehler beim Löschen: ${error.message}`);

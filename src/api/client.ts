@@ -309,38 +309,28 @@ class APIClient {
           );
         }
 
-        // Global 403 handler: carefully distinguish real mutations from reads
-        // that happen to use POST (all /api/db calls are POST, even list/filter).
+        // Global 403 handler: alert only on /api/db and /api/atomic mutations
+        // (ShiftEntry, WishRequest, AbsenceRequest write operations).
+        // All other endpoints (groups, rotations, auth, admin, master) are either
+        // background-reads or have their own specific error handling already.
         if (apiError.status === 403) {
-          let isRealMutation = false;
-          try {
-            // Parse the request body to check the action type for /api/db calls
-            let bodyAction: string | null = null;
-            if (config.body && typeof config.body === 'string') {
-              try {
+          if (endpoint.startsWith('/api/db') || endpoint.startsWith('/api/atomic')) {
+            let isWriteOp = true;
+            try {
+              if (config.body && typeof config.body === 'string') {
                 const parsed = JSON.parse(config.body);
-                bodyAction = parsed.action || parsed.operation || null;
-              } catch { /* ignore parse errors */ }
+                const action = parsed.action || parsed.operation || '';
+                if (['list', 'filter', 'get'].includes(action)) {
+                  isWriteOp = false;
+                }
+              }
+            } catch { /* use default */ }
+            if (isWriteOp) {
+              window.alert(
+                'Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. '
+                + 'Bitte wenden Sie sich an Ihren Super-Admin.',
+              );
             }
-            const dbReadActions = ['list', 'filter', 'get'];
-            const dbWriteActions = ['create', 'update', 'delete', 'bulkCreate'];
-            if (endpoint.startsWith('/api/db') && bodyAction) {
-              isRealMutation = dbWriteActions.includes(bodyAction);
-            } else if (endpoint.startsWith('/api/atomic')) {
-              isRealMutation = true;
-            } else {
-              const method = (config.method || 'GET').toUpperCase();
-              isRealMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-            }
-          } catch {
-            // Fallback: only alert on non-GET methods
-            isRealMutation = (config.method || 'GET').toUpperCase() !== 'GET';
-          }
-          if (isRealMutation) {
-            window.alert(
-              'Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. '
-              + 'Bitte wenden Sie sich an Ihren Super-Admin.',
-            );
           }
         }
 
