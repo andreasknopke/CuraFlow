@@ -102,5 +102,41 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
       };
     });
 
+  // 4) Include pending AbsenceRequest rows for this employee (same tenant).
+  //    These are requests submitted by Read-Only-Users that have NOT yet been
+  //    approved — they are NOT counted as real absences in the vacation balance
+  //    but SHOULD be visually displayed as pending overlays in the UI.
+  try {
+    const [pendingRows] = await masterDb.execute(
+      `SELECT id, date, position, reason AS note
+         FROM AbsenceRequest
+        WHERE employee_id = ?
+          AND YEAR(date) = ?
+          AND source_tenant_id = ?
+          AND status = 'pending'
+        ORDER BY date ASC`,
+      [employeeId, year, tenantId]
+    );
+
+    for (const row of pendingRows) {
+      const dateStr = row.date instanceof Date
+        ? row.date.toISOString().slice(0, 10)
+        : String(row.date).slice(0, 10);
+      absences.push({
+        id: `req_${row.id}`,
+        date: dateStr,
+        position: row.position,
+        note: row.note ? `Antrag: ${row.note}` : 'Antrag ausstehend',
+        source: 'request_pending',
+      });
+    }
+  } catch (err) {
+    // Graceful: if the AbsenceRequest table doesn't exist yet (no migration
+    // has run), we just skip pending overlay — no error thrown to tenant.
+    if (err.code !== 'ER_NO_SUCH_TABLE') {
+      console.warn('[vacationCentralAbsences] Failed to fetch pending requests:', err.message);
+    }
+  }
+
   return { employee_id: employeeId, absences, vacation_days_annual: vacationDaysAnnual };
 }

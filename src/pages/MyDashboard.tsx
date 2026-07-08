@@ -70,8 +70,19 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
     const [showAll, setShowAll] = useState(false);
     const MAX_VISIBLE = 6;
     
-    const visibleWishes = showAll ? allPendingWishes : allPendingWishes.slice(0, MAX_VISIBLE);
-    const hasMore = allPendingWishes.length > MAX_VISIBLE;
+    // Nur Wünsche ab heute und Zukunft anzeigen
+    const futureWishes = React.useMemo(() => {
+        const todayStart = startOfDay(new Date());
+        return allPendingWishes.filter(w => {
+            const endDate = getWishEndDate(w) || w.date;
+            if (!endDate) return false;
+            const d = safeParseISO(endDate);
+            return d && d.getTime() >= todayStart.getTime();
+        });
+    }, [allPendingWishes]);
+    
+    const visibleWishes = showAll ? futureWishes : futureWishes.slice(0, MAX_VISIBLE);
+    const hasMore = futureWishes.length > MAX_VISIBLE;
 
     return (
         <Card className="border-indigo-100 shadow-md">
@@ -79,9 +90,9 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                 <CardTitle className="flex items-center gap-2 text-indigo-900">
                     <ClipboardList className="w-5 h-5 text-indigo-600" />
                     Meine Aufgaben
-                    {allPendingWishes.length > 0 && (
+                    {futureWishes.length > 0 && (
                         <Badge variant="secondary" className="ml-2 bg-indigo-100 text-indigo-700">
-                            {allPendingWishes.length}
+                            {futureWishes.length}
                         </Badge>
                     )}
                 </CardTitle>
@@ -90,7 +101,7 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
             <CardContent className="p-4">
                 {isLoadingPending ? (
                     <div className="flex justify-center p-4"><Loader2 className="animate-spin text-indigo-400" /></div>
-                ) : allPendingWishes.length === 0 ? (
+                ) : futureWishes.length === 0 ? (
                     <div className="flex items-center justify-center p-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
                         <CheckCircle2 className="w-5 h-5 mr-2 text-green-500" />
                         Alles erledigt! Keine offenen Aufgaben.
@@ -213,7 +224,165 @@ function AdminTasksSection({ allPendingWishes, isLoadingPending, doctors, handle
                                     ) : (
                                         <>
                                             <ChevronDown className="w-4 h-4 mr-1" />
-                                            {allPendingWishes.length - MAX_VISIBLE} weitere anzeigen
+                                            {futureWishes.length - MAX_VISIBLE} weitere anzeigen
+                                        </>
+                                    )}
+                                </Button>
+                            </div>
+                        )}
+                    </>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+// ─── AbsenceRequest (Urlaubsanträge) Section ────────────────────────────────
+
+function AbsenceRequestSection({ doctors }) {
+    const [showAll, setShowAll] = useState(false);
+    const MAX_VISIBLE = 6;
+    const queryClient = useQueryClient();
+    const { toast } = useToast();
+
+    const { data: pendingRequests = [], isLoading } = useQuery({
+        queryKey: ['absence-requests', 'pending'],
+        queryFn: async () => {
+            const res = await api.request('/api/absence-requests?status=pending');
+            return res.requests || [];
+        },
+        staleTime: 15 * 1000,
+        refetchInterval: 30 * 1000,
+    });
+
+    // Nur Anträge ab heute und Zukunft anzeigen
+    const futureRequests = React.useMemo(() => {
+        const todayStart = startOfDay(new Date());
+        return pendingRequests.filter(req => {
+            const d = safeParseISO(req.date);
+            return d && d.getTime() >= todayStart.getTime();
+        });
+    }, [pendingRequests]);
+
+    const updateRequestMutation = useMutation({
+        mutationFn: async ({ id, status, admin_comment }) => {
+            const res = await api.request(`/api/absence-requests/${id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status, admin_comment: admin_comment || '' }),
+                headers: { 'Content-Type': 'application/json' },
+            });
+            return res;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['absence-requests'] });
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
+            queryClient.invalidateQueries({ queryKey: ['central-absences'] });
+            toast({
+                title: "Antrag bearbeitet",
+                description: "Der Urlaubsantrag wurde erfolgreich bearbeitet.",
+            });
+        },
+        onError: (err) => {
+            toast({
+                title: "Fehler",
+                description: "Fehler beim Bearbeiten: " + (err.response?.data?.error || err.message),
+                variant: "destructive"
+            });
+        }
+    });
+
+    const visibleRequests = showAll ? futureRequests : futureRequests.slice(0, MAX_VISIBLE);
+    const hasMore = futureRequests.length > MAX_VISIBLE;
+
+    const getDoctorName = (request) => {
+        const doc = doctors.find(d => String(d.id) === String(request.source_tenant_doctor_id));
+        return doc?.name || 'Unbekannt';
+    };
+
+    return (
+        <Card className="border-amber-100 shadow-md">
+            <CardHeader className="pb-3 bg-amber-50/50 rounded-t-lg">
+                <CardTitle className="flex items-center gap-2 text-amber-900">
+                    <CalendarDays className="w-5 h-5 text-amber-600" />
+                    Urlaubsanträge
+                    {futureRequests.length > 0 && (
+                        <Badge variant="secondary" className="ml-2 bg-amber-100 text-amber-700">
+                            {futureRequests.length}
+                        </Badge>
+                    )}
+                </CardTitle>
+                <CardDescription>Offene Urlaub-/Frei-/Dienstreise-Anträge von Mitarbeitern</CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+                {isLoading ? (
+                    <div className="flex justify-center p-4"><Loader2 className="animate-spin text-amber-400" /></div>
+                ) : futureRequests.length === 0 ? (
+                    <div className="flex items-center justify-center p-8 text-slate-500 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                        <CheckCircle2 className="w-5 h-5 mr-2 text-green-500" />
+                        Keine offenen Urlaubsanträge.
+                    </div>
+                ) : (
+                    <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+                            {visibleRequests.map(req => (
+                                <div key={req.id} className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow flex flex-col justify-between gap-2 min-w-0">
+                                    <div>
+                                        <div className="flex justify-between items-start mb-1">
+                                            <span className="font-semibold text-slate-800 truncate pr-2">
+                                                {getDoctorName(req)}
+                                            </span>
+                                            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                                {req.position}
+                                            </Badge>
+                                        </div>
+                                        <div className="text-sm text-slate-600 mb-2">
+                                            <span className="font-medium">
+                                                {safeFormatDate(req.date, 'dd.MM.yyyy (EEEEEE)', { locale: de })}
+                                            </span>
+                                        </div>
+                                        {req.reason && (
+                                            <p className="text-xs text-slate-500 bg-slate-50 p-2 rounded italic mb-2">
+                                                "{req.reason}"
+                                            </p>
+                                        )}
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mt-auto pt-2 border-t border-slate-100">
+                                        <Button 
+                                            size="sm" 
+                                            className="flex-1 min-w-[70px] bg-green-600 hover:bg-green-700 text-white h-8 text-xs px-2"
+                                            onClick={() => updateRequestMutation.mutate({ id: req.id, status: 'approved' })}
+                                            disabled={updateRequestMutation.isPending}
+                                        >
+                                            <Check className="w-3 h-3 mr-0.5" /> OK
+                                        </Button>
+                                        <Button 
+                                            size="sm" 
+                                            variant="destructive" 
+                                            className="flex-1 min-w-[70px] h-8 text-xs px-2"
+                                            onClick={() => updateRequestMutation.mutate({ id: req.id, status: 'rejected', admin_comment: '' })}
+                                            disabled={updateRequestMutation.isPending}
+                                        >
+                                            <X className="w-3 h-3 mr-0.5" /> Nein
+                                        </Button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {hasMore && (
+                            <div className="mt-4 flex justify-center">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setShowAll(!showAll)}
+                                    className="text-amber-600 border-amber-200 hover:bg-amber-50"
+                                >
+                                    {showAll ? (
+                                        <>Weniger anzeigen</>
+                                    ) : (
+                                        <>
+                                            <ChevronDown className="w-4 h-4 mr-1" />
+                                            {futureRequests.length - MAX_VISIBLE} weitere anzeigen
                                         </>
                                     )}
                                 </Button>
@@ -623,6 +792,13 @@ export default function MyDashboardPage() {
                     handleQuickDecision={handleQuickDecision}
                     silentDeleteWishMutation={silentDeleteWishMutation}
                     isUpdating={updateWishMutation.isPending || deleteWishMutation.isPending || silentDeleteWishMutation.isPending}
+                />
+            )}
+
+            {/* Urlaubsanträge Section (Admin only) */}
+            {isAdmin && (
+                <AbsenceRequestSection
+                    doctors={doctors}
                 />
             )}
 

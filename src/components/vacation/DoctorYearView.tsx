@@ -49,6 +49,10 @@ interface DoctorYearViewProps {
   isSchoolHoliday?: (date: Date) => boolean;
   isPublicHoliday?: (date: Date) => boolean;
   dayTestIdPrefix?: string;
+  pendingRequestsByDate?: Record<string, any>;
+  rejectedRequestsByDate?: Record<string, any>;
+  approvedRequestsByDate?: Record<string, any>;
+  isReadOnly?: boolean;
 }
 
 interface MonthCalendarProps {
@@ -69,6 +73,8 @@ interface MonthCalendarProps {
   isSchoolHoliday: (date: Date) => boolean;
   isPublicHoliday: (date: Date) => boolean;
   dayTestIdPrefix?: string;
+  pendingRequestsByDate?: Record<string, any>;
+  rejectedRequestsByDate?: Record<string, any>;
 }
 
 interface VacationBalanceBoxProps {
@@ -101,6 +107,10 @@ export default function DoctorYearView({
   isSchoolHoliday,
   isPublicHoliday,
   dayTestIdPrefix = 'year-day',
+  pendingRequestsByDate = {},
+  rejectedRequestsByDate = {},
+  approvedRequestsByDate = {},
+  isReadOnly = false,
 }: DoctorYearViewProps) {
   const [dragStart, setDragStart] = useState<Date | null>(null);
   const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
@@ -634,6 +644,8 @@ export default function DoctorYearView({
             isSchoolHoliday={isSchoolHoliday}
             isPublicHoliday={isPublicHoliday}
             dayTestIdPrefix={dayTestIdPrefix}
+            pendingRequestsByDate={pendingRequestsByDate}
+            rejectedRequestsByDate={rejectedRequestsByDate}
           />
         ))}
       </div>
@@ -641,7 +653,7 @@ export default function DoctorYearView({
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix }: MonthCalendarProps) {
+function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix, pendingRequestsByDate = {}, rejectedRequestsByDate = {} }: MonthCalendarProps) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -758,6 +770,16 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
                             {isContractEnd && (
                                 <span className="pointer-events-none absolute inset-y-0 right-0 w-[2px] bg-rose-500" aria-hidden="true" />
                             )}
+              {(() => {
+                const dateStr = format(date, 'yyyy-MM-dd');
+                if (pendingRequestsByDate?.[dateStr]) {
+                  return <span className="pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-400 rounded-full animate-pulse" title="Antrag ausstehend" aria-hidden="true" />;
+                }
+                if (rejectedRequestsByDate?.[dateStr]) {
+                  return <span className="pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-400 rounded-full" title="Antrag abgelehnt" aria-hidden="true" />;
+                }
+                return null;
+              })()}
             </button>
           );
           })}

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, db } from "@/api/client";
 import { useAuth } from '@/components/AuthProvider';
-import { format, getYear, startOfYear, endOfYear, eachDayOfInterval } from 'date-fns';
+import { format, getYear, startOfYear, endOfYear, eachDayOfInterval, isAfter, startOfDay } from 'date-fns';
 import { ChevronLeft, ChevronRight, Eraser, RotateCcw, Wand2 } from 'lucide-react';
 import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
 import { Button } from '@/components/ui/button';
@@ -405,7 +405,10 @@ export default function VacationPage() {
   // Only show absence positions in Vacation module (Schichturlaub added so
   // the planner can book shift-/Sonderurlaub days that count against the
   // separate year-specific entitlement, not against the regular vacation).
-  const absencePositions = ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
+  const RO_REQUEST_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+  const absencePositions = isReadOnly
+    ? RO_REQUEST_POSITIONS
+    : ["Urlaub", "Schichturlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
 
   /**
    * Live balances for a doctor in the selected year, used by the auto-
@@ -532,6 +535,48 @@ export default function VacationPage() {
     },
   });
 
+  // ─── Absence Request (Read-Only → Admin-Approval) ─────────────────────────
+
+  const createAbsenceRequestMutation = useMutation({
+    mutationFn: async ({ date, position, reason }) => {
+      const selectedDoc = doctors.find(d => d.id === selectedDoctorId);
+      if (!selectedDoc) throw new Error('Kein Mitarbeiter ausgewählt');
+      const res = await api.request('/api/absence-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          doctorId: selectedDoctorId,
+          date,
+          position,
+          reason: reason || '',
+        }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return res;
+    },
+    onSuccess: () => {
+      toast.success('Urlaubsantrag wurde gestellt und wartet auf Genehmigung.');
+      queryClient.invalidateQueries({ queryKey: ['absence-requests'] });
+    },
+    onError: (err) => {
+      toast.error('Fehler beim Erstellen des Antrags: ' + (err.response?.data?.error || err.message));
+    },
+  });
+
+  // Lade offene Anträge (nur für RO-User, Admin sieht im MyDashboard)
+  const { data: myAbsenceRequests = [] } = useQuery({
+    queryKey: ['absence-requests', 'my', selectedYear],
+    queryFn: async () => {
+      try {
+        const res = await api.request(`/api/absence-requests?year=${selectedYear}`);
+        return res.requests || [];
+      } catch {
+        return [];
+      }
+    },
+    enabled: isReadOnly,
+    staleTime: 30 * 1000,
+  });
+
   // Analyze conflicts for a range selection
   const analyzeConflicts = (days, targetDoctorId, newPosition) => {
       const relevantShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
@@ -636,7 +681,44 @@ export default function VacationPage() {
 
   const handleRangeSelection = (start, end, doctorId = null) => {
       const targetDoctorId = doctorId || selectedDoctorId;
-      if (!targetDoctorId || isReadOnly) return;
+      if (!targetDoctorId) return;
+
+      // ─── Read-Only-Branch: Bereichsantrag ───────────────────────────────
+      if (isReadOnly) {
+        if (activeType === 'DELETE') {
+          toast.info('Sie können keine Einträge löschen. Bitte wenden Sie sich an einen Admin.');
+          return;
+        }
+        const RO_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+        if (!RO_POSITIONS.includes(activeType)) {
+          toast.error(`Sie können nur Anträge für ${RO_POSITIONS.join(', ')} stellen.`);
+          return;
+        }
+        const days = eachDayOfInterval({ start, end });
+        const futureDays = days.filter(d => isAfter(startOfDay(d), startOfDay(new Date())));
+        if (futureDays.length === 0) {
+          toast.error('Keine zukünftigen Daten im ausgewählten Bereich.');
+          return;
+        }
+        // Prüfen auf Konflikte (bereits existierende Einträge/Anträge)
+        const relevantShifts = allShifts.filter(s => s.doctor_id === targetDoctorId);
+        const conflictingDates = futureDays.filter(d => {
+          const dStr = format(d, 'yyyy-MM-dd');
+          return relevantShifts.some(s => s.date === dStr)
+            || myAbsenceRequests.some(r => r.date === dStr && r.status === 'pending');
+        });
+        if (conflictingDates.length > 0) {
+          const conflictStr = conflictingDates.map(d => format(d, 'dd.MM.')).join(', ');
+          toast.error(`Konflikte an: ${conflictStr}. Bitte einzeln beantragen.`);
+          return;
+        }
+        if (!confirm(`${futureDays.length} Tag(e) als ${activeType} beantragen?`)) return;
+        futureDays.forEach(d => {
+          const dStr = format(d, 'yyyy-MM-dd');
+          createAbsenceRequestMutation.mutate({ date: dStr, position: activeType, reason: '' });
+        });
+        return;
+      }
 
       const clampedRange = clampRangeForDoctor(start, end, targetDoctorId);
       if (!clampedRange) return;
@@ -747,9 +829,47 @@ export default function VacationPage() {
 
   const handleToggleShift = (date, currentStatus, doctorId = null, event) => {
     const targetDoctorId = doctorId || selectedDoctorId;
-    if (!targetDoctorId || isReadOnly) return;
-    if (!isDateEditableForDoctor(date, targetDoctorId)) return;
+    if (!targetDoctorId) return;
     const dateStr = format(date, 'yyyy-MM-dd');
+
+    // ─── Read-Only-Branch: Antrag statt Direkteintrag ─────────────────────
+    if (isReadOnly) {
+      // RO-User darf nicht löschen
+      if (activeType === 'DELETE') {
+        toast.info('Sie können keine Einträge löschen. Bitte wenden Sie sich an einen Admin.');
+        return;
+      }
+      // Nur Zukunftstermine
+      if (!isAfter(startOfDay(date), startOfDay(new Date()))) {
+        toast.error('Sie können nur Anträge für zukünftige Daten stellen.');
+        return;
+      }
+      // Nur erlaubte Positionen
+      const RO_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+      if (!RO_POSITIONS.includes(activeType)) {
+        toast.error(`Sie können nur Anträge für ${RO_POSITIONS.join(', ')} stellen.`);
+        return;
+      }
+      // Prüfen ob bereits ein Eintrag existiert
+      const relevantShifts = doctorId ? allShifts.filter(s => s.doctor_id === targetDoctorId) : yearShifts;
+      const existing = relevantShifts.find(s => s.date === dateStr);
+      if (existing) {
+        toast.info('Für diesen Tag existiert bereits ein Eintrag. Bitte wenden Sie sich an einen Admin.');
+        return;
+      }
+      // Prüfen ob bereits ein Antrag für dieses Datum existiert
+      const existingRequest = myAbsenceRequests.find(r => r.date === dateStr && r.status === 'pending');
+      if (existingRequest) {
+        toast.info('Für diesen Tag wurde bereits ein Antrag gestellt.');
+        return;
+      }
+      // Bestätigungsdialog
+      if (!confirm(`${activeType} für den ${dateStr} beantragen?`)) return;
+      createAbsenceRequestMutation.mutate({ date: dateStr, position: activeType, reason: '' });
+      return;
+    }
+
+    if (!isDateEditableForDoctor(date, targetDoctorId)) return;
 
     const relevantShifts = doctorId ? allShifts.filter(s => s.doctor_id === targetDoctorId) : yearShifts;
 
@@ -930,21 +1050,48 @@ export default function VacationPage() {
   };
 
   const absenceTypes = React.useMemo(() => {
-      const types = [
-          'Urlaub', 'Frei', 'Krank', 'Dienstreise', 'Nicht verfügbar'
-      ].map(id => {
+      const RO_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+      const allTypes = isReadOnly ? RO_POSITIONS : ['Urlaub', 'Frei', 'Krank', 'Dienstreise', 'Nicht verfügbar'];
+      const types = allTypes.map(id => {
           const color = customColors[id] || { backgroundColor: '#64748b', color: '#ffffff' };
           return { id, label: id, bgColor: color.backgroundColor, textColor: color.color };
       });
-      types.push({ 
-          id: 'DELETE', 
-          label: 'Löschen', 
-          bgColor: '#f1f5f9',
-          textColor: '#0f172a',
-          isDelete: true,
-      });
+      if (!isReadOnly) {
+        types.push({ 
+            id: 'DELETE', 
+            label: 'Löschen', 
+            bgColor: '#f1f5f9',
+            textColor: '#0f172a',
+            isDelete: true,
+        });
+      }
       return types;
-  }, [customColors]);
+  }, [customColors, isReadOnly]);
+
+  // Build maps for pending/rejected requests per date (for badge overlays)
+  const pendingRequestsByDate = useMemo(() => {
+    const map = {};
+    myAbsenceRequests
+      .filter(r => r.status === 'pending')
+      .forEach(r => { map[r.date] = r; });
+    return map;
+  }, [myAbsenceRequests]);
+
+  const rejectedRequestsByDate = useMemo(() => {
+    const map = {};
+    myAbsenceRequests
+      .filter(r => r.status === 'rejected')
+      .forEach(r => { map[r.date] = r; });
+    return map;
+  }, [myAbsenceRequests]);
+
+  const approvedRequestsByDate = useMemo(() => {
+    const map = {};
+    myAbsenceRequests
+      .filter(r => r.status === 'approved')
+      .forEach(r => { map[r.date] = r; });
+    return map;
+  }, [myAbsenceRequests]);
 
   return (
     <div className="container mx-auto max-w-7xl" data-testid="vacation-page">
@@ -1066,6 +1213,10 @@ export default function VacationPage() {
                  isSchoolHoliday={isSchoolHoliday}
                  isPublicHoliday={isPublicHoliday}
                  dayTestIdPrefix="vacation-day"
+                 pendingRequestsByDate={pendingRequestsByDate}
+                 rejectedRequestsByDate={rejectedRequestsByDate}
+                 approvedRequestsByDate={approvedRequestsByDate}
+                 isReadOnly={isReadOnly}
              />
           ) : (
             <div className="text-center py-12 text-slate-500">
