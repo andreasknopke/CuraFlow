@@ -168,29 +168,40 @@ export function requirePermission(permissionKey) {
       return res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
     }
 
-    // Load current permissions from DB (JWT does not contain permissions)
-    // This ensures permission changes take effect immediately.
+    // Super-Admin: immer Zugriff, kein DB-Lookup nötig
+    if (isSuperAdmin(req.user.email)) {
+      console.debug('[permissions] Super-Admin bypass:', req.user.email, 'key:', permissionKey);
+      return next();
+    }
+
+    // Load current permissions from master DB
+    let permissionsRaw = null;
     try {
       const { db } = await import('../index.js');
       const [rows] = await db.execute(
         'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
         [req.user.sub],
       );
-      const dbUser = rows[0] || {};
-      req.user.permissions = dbUser.permissions || null;
+      permissionsRaw = rows[0]?.permissions ?? null;
+      console.debug('[permissions] DB lookup for', req.user.email, 'key:', permissionKey, 'raw:', permissionsRaw ? '(has data)' : '(null/empty)');
     } catch (err) {
-      console.error('[permissions] DB lookup failed:', err.message);
-      // Lockout-safe on DB error: fall back to no restrictions
-      req.user.permissions = null;
+      console.error('[permissions] DB lookup error:', err);
+      // Bei DB-Fehler: Zugriff verweigern (sicherer als alles erlauben)
+      return res.status(500).json({ error: 'Fehler bei der Berechtigungsprüfung' });
     }
 
-    if (!hasPermission(req.user, permissionKey)) {
+    // Build effective user object with DB-loaded permissions
+    const effectiveUser = { ...req.user, permissions: permissionsRaw };
+
+    if (!hasPermission(effectiveUser, permissionKey)) {
+      console.debug('[permissions] DENIED:', req.user.email, 'key:', permissionKey);
       return res.status(403).json({
         error: 'Ihnen fehlt die Berechtigung für diese Aktion',
         missingPermission: permissionKey,
       });
     }
 
+    console.debug('[permissions] GRANTED:', req.user.email, 'key:', permissionKey);
     next();
   };
 }
