@@ -611,30 +611,35 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                     <div className="text-sm text-slate-600">
                         Möchten Sie den Antrag genehmigen (Urlaub eintragen) oder ablehnen?
                     </div>
-                    <DialogFooter className="flex gap-2 sm:gap-0">
+                    <DialogFooter className="flex flex-wrap gap-1.5 sm:gap-1.5">
                         <Button
                             variant="outline"
+                            size="sm"
+                            className="text-xs px-2"
                             onClick={() => setRequestActionDialog(prev => ({ ...prev, open: false }))}
                         >
                             Abbrechen
                         </Button>
                         <Button
                             variant="destructive"
+                            size="sm"
+                            className="text-xs px-2"
                             onClick={() => {
                                 onRejectRequest?.(requestActionDialog.requestId);
                                 setRequestActionDialog(prev => ({ ...prev, open: false }));
                             }}
                         >
-                            <X className="w-4 h-4 mr-1" /> Ablehnen
+                            <X className="w-3 h-3 mr-0.5" /> Ablehnen
                         </Button>
                         <Button
-                            className="bg-green-600 hover:bg-green-700"
+                            size="sm"
+                            className="text-xs px-2 bg-green-600 hover:bg-green-700"
                             onClick={() => {
                                 onApproveRequest?.(requestActionDialog.requestId);
                                 setRequestActionDialog(prev => ({ ...prev, open: false }));
                             }}
                         >
-                            <Check className="w-4 h-4 mr-1" /> Genehmigen
+                            <Check className="w-3 h-3 mr-0.5" /> Genehmigen
                         </Button>
                     </DialogFooter>
                 </DialogContent>
