@@ -294,8 +294,9 @@ describe('ScheduleBoard rendering (Pre-PR 3.0B)', () => {
 
     expect(await screen.findByTestId('schedule-toolbar')).toBeInTheDocument();
 
-    const trigger = screen.getByTestId('schedule-auto-fill-trigger');
-    expect(trigger).toBeInTheDocument();
+    // waitFor: auth resolves async; isReadOnly = !user (admin) gates this button.
+    // Toolbar renders before auth completes, so getByTestId is racy in CI.
+    const trigger = await screen.findByTestId('schedule-auto-fill-trigger');
     expect(trigger.tagName).toBe('BUTTON');
     expect(trigger).not.toBeDisabled();
   });

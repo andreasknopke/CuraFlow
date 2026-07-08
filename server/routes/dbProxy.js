@@ -621,6 +621,58 @@ function extractPositionNamesFromShiftData(requestBody) {
   return [];
 }
 
+// WishRequest/AbsenceRequest statuses that represent an approval decision.
+// Only writes that promote a record to one of these — or mutate an already
+// decided record — require the approval permission. Creating, editing, or
+// deleting your own *pending* request is a normal user action and must stay
+// open, otherwise no non-admin can submit wishes or absence requests at all.
+const APPROVAL_DECISION_STATUSES = ['approved', 'rejected'];
+
+async function loadStatusForId(dbPool, table, id) {
+  if (!id) return null;
+  try {
+    const [rows] = await dbPool.execute(
+      `SELECT status FROM \`${table}\` WHERE id = ? LIMIT 1`,
+      [id],
+    );
+    return rows[0]?.status ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Decide whether a WishRequest/AbsenceRequest write is an approval-affecting
+// change that must be gated by can_approve_wishes / can_approve_absence.
+function approvalWriteRequiresPermission({ action, data, existingStatus }) {
+  const newDataStatus = typeof data?.status === 'string' ? data.status.toLowerCase() : null;
+  if (action === 'create') {
+    // Creating an already-decided record (e.g. directly approved) needs the perm;
+    // a plain pending submission does not.
+    return APPROVAL_DECISION_STATUSES.includes(newDataStatus);
+  }
+  if (action === 'update') {
+    // Promoting to a decision, or editing a record that is already decided.
+    if (APPROVAL_DECISION_STATUSES.includes(newDataStatus)) return true;
+    return APPROVAL_DECISION_STATUSES.includes(
+      typeof existingStatus === 'string' ? existingStatus.toLowerCase() : null,
+    );
+  }
+  if (action === 'delete') {
+    // Users may cancel their own pending requests; only decided records are protected.
+    return APPROVAL_DECISION_STATUSES.includes(
+      typeof existingStatus === 'string' ? existingStatus.toLowerCase() : null,
+    );
+  }
+  if (action === 'bulkCreate') {
+    return (Array.isArray(data) ? data : []).some((d) =>
+      APPROVAL_DECISION_STATUSES.includes(
+        typeof d?.status === 'string' ? d.status.toLowerCase() : null,
+      ),
+    );
+  }
+  return true;
+}
+
 // ============ UNIFIED DB PROXY ENDPOINT ============
 router.post('/', async (req, res, next) => {
   try {
@@ -718,6 +770,18 @@ router.post('/', async (req, res, next) => {
           ? (await Promise.all(positions.map((p) => isServicePosition(dbPool, p)))).some(Boolean)
           : false;
         shouldCheckPermission = isDienste;
+      } else if (tableName === 'WishRequest' || tableName === 'AbsenceRequest') {
+        // Only the approval-affecting part of these tables is permission-gated.
+        // Submitting / editing / cancelling your own pending request stays open.
+        let existingStatus = null;
+        if ((effectiveAction === 'update' || effectiveAction === 'delete') && id) {
+          existingStatus = await loadStatusForId(dbPool, tableName, id);
+        }
+        shouldCheckPermission = approvalWriteRequiresPermission({
+          action: effectiveAction,
+          data,
+          existingStatus,
+        });
       }
       if (shouldCheckPermission) {
         let hasPerm = false;
