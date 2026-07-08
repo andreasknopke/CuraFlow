@@ -13,6 +13,7 @@ import {
   writeShiftEntryToCentralAbsence,
 } from '../utils/centralAbsences.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
+import { assertValidIdentifier } from '../utils/schema.js';
 
 const router = express.Router();
 
@@ -236,6 +237,9 @@ router.post('/', async (req, res, next) => {
       if (!entity || !id) {
         return res.status(400).json({ error: 'entity und id sind erforderlich' });
       }
+      // entity is interpolated into backtick-quoted identifiers; validate it.
+      // Throws a 400 on an invalid name (forwarded via next(error)).
+      assertValidIdentifier(entity, 'entity');
 
       const current = await getShiftAwareRecord(entity, id);
       if (!current) {
@@ -319,6 +323,9 @@ router.post('/', async (req, res, next) => {
       if (!entity || !data) {
         return res.status(400).json({ error: 'entity und data sind erforderlich' });
       }
+      // entity is interpolated into backtick-quoted identifiers; validate it.
+      // Throws a 400 on an invalid name (forwarded via next(error)).
+      assertValidIdentifier(entity, 'entity');
 
       // Check for existing record with same unique keys
       if (check && check.uniqueKeys) {
