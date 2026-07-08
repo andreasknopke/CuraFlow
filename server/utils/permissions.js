@@ -143,9 +143,10 @@ export function hasPermission(user, key) {
  *   handler);
  * ```
  *
- * The middleware assumes that `authMiddleware` (or similar) has already
- * populated `req.user`.  It returns 403 if the user lacks the required
- * permission, otherwise calls `next()`.
+ * The middleware expects `authMiddleware` to have populated `req.user`
+ * (JWT payload with at least `sub` = user ID). It loads the current
+ * permissions from the master database on every request, so that
+ * permission changes take effect immediately without re-login.
  *
  * @param {string} permissionKey - One of `PERMISSION_KEYS`.
  * @returns {Function} Express middleware.
@@ -158,13 +159,29 @@ export function requirePermission(permissionKey) {
     );
   }
 
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Nicht autorisiert' });
     }
 
     if (req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+    }
+
+    // Load current permissions from DB (JWT does not contain permissions)
+    // This ensures permission changes take effect immediately.
+    try {
+      const { db } = await import('../index.js');
+      const [rows] = await db.execute(
+        'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+        [req.user.sub],
+      );
+      const dbUser = rows[0] || {};
+      req.user.permissions = dbUser.permissions || null;
+    } catch (err) {
+      console.error('[permissions] DB lookup failed:', err.message);
+      // Lockout-safe on DB error: fall back to no restrictions
+      req.user.permissions = null;
     }
 
     if (!hasPermission(req.user, permissionKey)) {
