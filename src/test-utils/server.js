@@ -56,15 +56,36 @@ function createEntityStore(initialEntities = {}) {
             return expected.includes(actual);
           }
 
-          if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
-            if (Array.isArray(expected.$in)) {
-              return expected.$in.includes(actual);
-            }
+              if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
+                if (Array.isArray(expected.$in)) {
+                  return expected.$in.includes(actual);
+                }
 
-            if (expected.$ne !== undefined) {
-              return actual !== expected.$ne;
-            }
-          }
+                if (expected.$ne !== undefined) {
+                  return actual !== expected.$ne;
+                }
+
+                if (expected.$gte !== undefined) {
+                  if (String(actual) < String(expected.$gte)) return false;
+                }
+
+                if (expected.$lte !== undefined) {
+                  if (String(actual) > String(expected.$lte)) return false;
+                }
+
+                if (expected.$gt !== undefined) {
+                  if (String(actual) <= String(expected.$gt)) return false;
+                }
+
+                if (expected.$lt !== undefined) {
+                  if (String(actual) >= String(expected.$lt)) return false;
+                }
+
+                // Operator-based query matched all checks (none returned false)
+                const hasOperator = ['$in', '$ne', '$gte', '$lte', '$gt', '$lt']
+                  .some(op => expected[op] !== undefined);
+                if (hasOperator) return true;
+              }
 
           return actual === expected;
         })
