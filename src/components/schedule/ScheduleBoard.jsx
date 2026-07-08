@@ -3567,15 +3567,19 @@ export default function ScheduleBoard() {
     setDraggingShiftId(null);
     const { source, destination, draggableId } = result;
 
-    // Permission guard: admin without can_edit_schedule cannot modify shifts
+    // Permission guard: admin without can_edit_schedule cannot modify Dienste positions
     if (!isReadOnly && user?.role === 'admin') {
-      // Lockout-safe: if permissions is null/undefined, allow (backward compat)
       const perms = user.permissions;
       const canEditSchedule = !perms || typeof perms !== 'object' || perms.can_edit_schedule !== false;
       if (!canEditSchedule) {
-        const isShiftModification = source.droppableId !== 'sidebar' || (destination && destination.droppableId !== 'sidebar');
-        if (isShiftModification) {
-          console.warn('[Permissions] Admin ohne can_edit_schedule, Drag blockiert:', user.email);
+        // Only block if the target/modified position is a "Dienste" workplace
+        const destPos = destination ? stripPanelPrefix(destination.droppableId).split('__')[1] : null;
+        const srcPos = source.droppableId !== 'sidebar' && source.droppableId !== 'available__' && !source.droppableId.startsWith('available__')
+          ? stripPanelPrefix(source.droppableId).split('__')[1] : null;
+        const checkPos = destPos || srcPos;
+        const isDienste = checkPos && workplaces.some(w => w.name === checkPos && w.category === 'Dienste');
+        if (isDienste) {
+          console.warn('[Permissions] Admin ohne can_edit_schedule, Dienste-Drag blockiert:', user.email, 'position:', checkPos);
           alert('Ihre Berechtigung "Dienstplan bearbeiten" ist deaktiviert. Bitte wenden Sie sich an einen Super-Admin.');
           return;
         }

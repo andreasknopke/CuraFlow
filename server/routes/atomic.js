@@ -54,6 +54,20 @@ const shiftIsoDate = (dateString, days) => {
   return date.toISOString().slice(0, 10);
 };
 
+// Helper: check if a position belongs to a "Dienste"-category workplace
+async function isServicePosition(dbPool, positionName) {
+  if (!positionName) return false;
+  try {
+    const [rows] = await dbPool.execute(
+      'SELECT category FROM Workplace WHERE name = ? LIMIT 1',
+      [positionName],
+    );
+    return rows.length > 0 && rows[0].category === 'Dienste';
+  } catch {
+    return false;
+  }
+}
+
 // ===== ATOMIC OPERATIONS ENDPOINT =====
 router.post('/', async (req, res, next) => {
   try {
@@ -223,28 +237,33 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: 'entity und id sind erforderlich' });
       }
 
-      // ShiftEntry write guard — load permissions from DB
-      if (entity === 'ShiftEntry') {
-        let canEdit = false;
-        try {
-          const [permRows] = await db.execute(
-            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-            [req.user?.sub || ''],
-          );
-          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-          canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
-        } catch { /* deny */ }
-        if (!canEdit) {
-          return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
-        }
-      }
-
       const current = await getShiftAwareRecord(entity, id);
       if (!current) {
         return res.status(404).json({ 
           error: 'NOT_FOUND', 
           message: 'Eintrag nicht gefunden.' 
         });
+      }
+
+      // ShiftEntry write guard — only for Dienste positions
+      if (entity === 'ShiftEntry') {
+        const pool = req.db || db;
+        const position = data?.position || current.position;
+        const isDienste = position ? await isServicePosition(pool, position) : false;
+        if (isDienste) {
+          let canEdit = false;
+          try {
+            const [permRows] = await db.execute(
+              'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+              [req.user?.sub || ''],
+            );
+            const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+            canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+          } catch { /* deny */ }
+          if (!canEdit) {
+            return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung f\u00fcr diese Aktion', missingPermission: 'can_edit_schedule' });
+          }
+        }
       }
 
       // Check for concurrent modification
@@ -277,19 +296,24 @@ router.post('/', async (req, res, next) => {
     // ===== OPERATION: checkAndCreate =====
     // Check for duplicates before creating
     if (operation === 'checkAndCreate') {
-      // ShiftEntry write guard — load permissions from DB
+      // ShiftEntry write guard — only for Dienste positions
       if (entity === 'ShiftEntry') {
-        let canEdit = false;
-        try {
-          const [permRows] = await db.execute(
-            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-            [req.user?.sub || ''],
-          );
-          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-          canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
-        } catch { /* deny */ }
-        if (!canEdit) {
-          return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung für diese Aktion', missingPermission: 'can_edit_schedule' });
+        const pool = req.db || db;
+        const position = data?.position;
+        const isDienste = position ? await isServicePosition(pool, position) : false;
+        if (isDienste) {
+          let canEdit = false;
+          try {
+            const [permRows] = await db.execute(
+              'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+              [req.user?.sub || ''],
+            );
+            const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+            canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+          } catch { /* deny */ }
+          if (!canEdit) {
+            return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung f\u00fcr diese Aktion', missingPermission: 'can_edit_schedule' });
+          }
         }
       }
       if (!entity || !data) {

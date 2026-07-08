@@ -591,6 +591,36 @@ export const writeAuditLog = async (dbPool, { level = 'audit', source, message, 
   }
 };
 
+// Helper: check if a position name belongs to a "Dienste"-category workplace
+async function isServicePosition(dbPool, positionName) {
+  if (!positionName) return false;
+  try {
+    const [rows] = await dbPool.execute(
+      'SELECT category FROM Workplace WHERE name = ? LIMIT 1',
+      [positionName],
+    );
+    return rows.length > 0 && rows[0].category === 'Dienste';
+  } catch {
+    return false;
+  }
+}
+
+// Helper: extract position names from ShiftEntry request data
+function extractPositionNamesFromShiftData(requestBody) {
+  const { action, operation, entity, table, data, id } = requestBody;
+  const tableName = entity || table;
+  if (tableName !== 'ShiftEntry') return [];
+  const effAction = action || operation;
+  if (effAction === 'create' || effAction === 'update') {
+    return data?.position ? [data.position] : [];
+  }
+  if (effAction === 'bulkCreate') {
+    return (Array.isArray(data) ? data : []).map((d) => d.position).filter(Boolean);
+  }
+  // For delete: need to look up the record
+  return [];
+}
+
 // ============ UNIFIED DB PROXY ENDPOINT ============
 router.post('/', async (req, res, next) => {
   try {
@@ -671,21 +701,40 @@ router.post('/', async (req, res, next) => {
     const WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
     const requiredPerm = PROTECTED_WRITE_TABLES[tableName];
     if (requiredPerm && WRITE_ACTIONS.includes(effectiveAction)) {
-      // Load permissions from DB (JWT does not contain them)
-      let hasPerm = false;
-      try {
-        const [permRows] = await db.execute(
-          'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-          [req.user?.sub || ''],
-        );
-        const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-        hasPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, requiredPerm);
-      } catch { /* fall through to deny */ }
-      if (!hasPerm) {
-        return res.status(403).json({
-          error: 'Ihnen fehlt die Berechtigung für diese Aktion',
-          missingPermission: requiredPerm,
-        });
+      // For ShiftEntry: only block if the position is a "Dienste"-category workplace
+      let shouldCheckPermission = true;
+      if (tableName === 'ShiftEntry') {
+        const positions = extractPositionNamesFromShiftData(req.body);
+        if (effectiveAction === 'delete' && id) {
+          try {
+            const [shiftRows] = await dbPool.execute(
+              'SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1',
+              [id],
+            );
+            if (shiftRows.length > 0) positions.push(shiftRows[0].position);
+          } catch { /* continue */ }
+        }
+        const isDienste = positions.length > 0
+          ? (await Promise.all(positions.map((p) => isServicePosition(dbPool, p)))).some(Boolean)
+          : false;
+        shouldCheckPermission = isDienste;
+      }
+      if (shouldCheckPermission) {
+        let hasPerm = false;
+        try {
+          const [permRows] = await db.execute(
+            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
+            [req.user?.sub || ''],
+          );
+          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
+          hasPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, requiredPerm);
+        } catch { /* fall through to deny */ }
+        if (!hasPerm) {
+          return res.status(403).json({
+            error: 'Ihnen fehlt die Berechtigung für diese Aktion',
+            missingPermission: requiredPerm,
+          });
+        }
       }
     }
     
