@@ -189,11 +189,17 @@ describe('createAbsenceRequest', () => {
     ).rejects.toMatchObject({ statusCode: 422 });
   });
 
-  it('returns 409 when duplicate date + employee exists', async () => {
+  it('returns 409 when duplicate date + employee with pending status', async () => {
     const { db } = createMockDb([
       [
         'INSERT INTO AbsenceRequest',
         async () => { throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }); },
+      ],
+      [
+        'SELECT id, status FROM AbsenceRequest WHERE employee_id',
+        async () => {
+          return [[{ id: 'existing-req', employee_id: EMPLOYEE_ID, status: 'pending' }]];
+        },
       ],
     ]);
 
@@ -208,6 +214,61 @@ describe('createAbsenceRequest', () => {
         createdBy: USER_ID,
       })
     ).rejects.toMatchObject({ statusCode: 409 });
+  });
+
+  it('overwrites a rejected/approved request for the same date', async () => {
+    let updateCalled = false;
+    const { db } = createMockDb([
+      [
+        'INSERT INTO AbsenceRequest',
+        async () => { throw Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' }); },
+      ],
+      [
+        'SELECT id, status FROM AbsenceRequest WHERE employee_id',
+        async () => {
+          return [[{ id: 'existing-req', employee_id: EMPLOYEE_ID, status: 'rejected' }]];
+        },
+      ],
+      [
+        'UPDATE AbsenceRequest',
+        async () => { updateCalled = true; return [[], []]; },
+      ],
+      [
+        'SELECT * FROM AbsenceRequest WHERE id = ?',
+        async () => {
+          return [[{
+            id: 'existing-req',
+            employee_id: EMPLOYEE_ID,
+            source_tenant_id: TENANT_ID,
+            source_tenant_doctor_id: DOCTOR_ID,
+            date: FUTURE_DATE,
+            position: 'Dienstreise',
+            status: 'pending',
+            reason: 'Neuer Antrag',
+            admin_comment: null,
+            user_viewed: 0,
+            approved_by: null,
+            approved_date: null,
+            created_by: USER_ID,
+          }]];
+        },
+      ],
+    ]);
+
+    const result = await createAbsenceRequest({
+      masterDb: db,
+      tenantId: TENANT_ID,
+      tenantDoctorId: DOCTOR_ID,
+      employeeId: EMPLOYEE_ID,
+      date: FUTURE_DATE,
+      position: 'Dienstreise',
+      reason: 'Neuer Antrag',
+      createdBy: USER_ID,
+    });
+
+    expect(result.status).toBe('pending');
+    expect(result.position).toBe('Dienstreise');
+    expect(updateCalled).toBe(true);
   });
 });
 

@@ -191,11 +191,38 @@ export async function createAbsenceRequest({
     );
   } catch (err) {
     if (err.code === 'ER_DUP_ENTRY') {
-      const conflict = new Error(
-        'Fuer diesen Mitarbeiter existiert an diesem Datum bereits ein Antrag oder Eintrag.'
+      // Prüfen, ob ein bestehender nicht-pending Eintrag überschrieben werden kann.
+      // Wenn der existierende Antrag rejected oder approved ist, darf ein neuer
+      // Antrag (andere Position) diesen ersetzen — der alte Antrag gilt als erledigt.
+      const [existing] = await masterDb.execute(
+        'SELECT id, status FROM AbsenceRequest WHERE employee_id = ? AND date = ? LIMIT 1',
+        [employeeId, date]
       );
-      conflict.statusCode = 409;
-      throw conflict;
+      if (existing.length > 0 && existing[0].status === 'pending') {
+        const conflict = new Error(
+          'Fuer diesen Mitarbeiter existiert an diesem Datum bereits ein ausstehender Antrag.'
+        );
+        conflict.statusCode = 409;
+        throw conflict;
+      }
+
+      // existing ist nicht pending (rejected oder approved) → überschreiben
+      const existingId = existing[0].id;
+      await masterDb.execute(
+        `UPDATE AbsenceRequest
+            SET position = ?, reason = ?, status = 'pending',
+                created_by = ?, user_viewed = 0,
+                admin_comment = NULL, approved_by = NULL, approved_date = NULL,
+                updated_date = NOW()
+          WHERE id = ?`,
+        [position, reason || null, createdBy || null, existingId]
+      );
+
+      const [rows] = await masterDb.execute(
+        'SELECT * FROM AbsenceRequest WHERE id = ? LIMIT 1',
+        [existingId]
+      );
+      return rows[0];
     }
     throw err;
   }
