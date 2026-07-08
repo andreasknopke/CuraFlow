@@ -59,10 +59,11 @@ const buildDailyWishPayload = (wish) => {
 };
 
 export default function WishListPage() {
-    const { isAuthenticated, user } = useAuth();
+    const { isAuthenticated, user, can } = useAuth();
   // WishList is editable by all authenticated users, so we override isReadOnly for this page
   const canEdit = isAuthenticated;
   const isAdmin = user?.role === 'admin';
+  const canApproveWishes = can('can_approve_wishes');
   
   const [viewDate, setViewDate] = useState(new Date());
   const selectedYear = viewDate.getFullYear();
@@ -1075,8 +1076,8 @@ export default function WishListPage() {
           </div>
       </div>
 
-      {/* Wish Reminder Status (Admin only) */}
-      {isAdmin && (() => {
+      {/* Wish Reminder Status (Admin with approval permission only) */}
+      {canApproveWishes && (() => {
         // Show reminder status for the current month being viewed
         const targetMonth = `${selectedYear}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
         return <WishReminderStatus targetMonth={targetMonth} />;
@@ -1189,6 +1190,7 @@ export default function WishListPage() {
           activePositionLabel={isCrossTenantTab(activeTab) ? crossTenantTabLabel(activeTab) : null}
           isReadOnly={!canEdit}
           isAdmin={isAdmin}
+          canApprove={canApproveWishes}
           onSave={handleDialogSave}
           onDelete={handleDialogDelete}
       />

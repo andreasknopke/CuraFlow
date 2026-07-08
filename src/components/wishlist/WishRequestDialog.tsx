@@ -22,6 +22,7 @@ export default function WishRequestDialog({
     contractInfo,
     isReadOnly, 
     isAdmin, 
+    canApprove = false,
     onSave, 
     onDelete,
     activePosition,
@@ -336,7 +337,7 @@ export default function WishRequestDialog({
                         />
                     </div>
 
-                    {(isAdmin || (wish && (wish.status !== 'pending' || wish.admin_comment))) && (
+                    {(canApprove || (!isAdmin && wish && (wish.status !== 'pending' || wish.admin_comment))) && (
                         <div className="border-t pt-4 space-y-4 bg-slate-50 p-4 rounded-lg min-w-0">
                             <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                 <AlertCircle className="w-4 h-4" />
@@ -348,7 +349,7 @@ export default function WishRequestDialog({
                                 <Select 
                                     value={formData.status} 
                                     onValueChange={(val) => setFormData({...formData, status: val})}
-                                    disabled={!isAdmin}
+                                    disabled={!canApprove}
                                 >
                                     <SelectTrigger data-testid="wish-admin-status-trigger" className={
                                         formData.status === 'approved' ? 'text-green-600 font-medium' :

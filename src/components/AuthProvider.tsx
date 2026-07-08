@@ -15,6 +15,8 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { clearActiveDbToken } from '@/components/dbTokenStorage';
+import { hasPermission } from '@/lib/permissions';
+import type { PermissionKey } from '@/lib/permissions';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -59,6 +61,7 @@ interface AuthContextValue {
   activeGroupId: number | null;
   setActiveGroupId: (id: number | null) => void;
   completeTenantSelection: () => void;
+  can: (key: PermissionKey) => boolean;
   login: (email: string, password: string) => Promise<unknown>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -81,6 +84,7 @@ const AuthContext = createContext<AuthContextValue>({
   activeGroupId: null,
   setActiveGroupId: () => {},
   completeTenantSelection: () => {},
+  can: () => false,
   refreshUser: async () => {},
   updateMe: async () => null,
   logout: async () => {},
@@ -360,6 +364,11 @@ const JWTAuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const isReadOnly = !user || user.role !== 'admin';
 
+  const can = useCallback(
+    (key: PermissionKey): boolean => hasPermission(user, key),
+    [user],
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -378,6 +387,7 @@ const JWTAuthProviderInner: React.FC<{ children: React.ReactNode }> = ({ childre
         activeGroupId,
         setActiveGroupId,
         completeTenantSelection,
+        can,
         login,
         logout,
         refreshUser,
