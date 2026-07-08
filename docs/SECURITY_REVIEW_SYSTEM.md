@@ -186,7 +186,7 @@ Keep the railway subdomain allowance only for known preview environments; gate i
 ## Finding S6 — TLS certificate verification disabled on admin-configured DB and SMTP connections
 
 **Severity:** LOW
-**Location:** `server/utils/email.js` (`rejectUnauthorized: false`, lines 115–116), `server/routes/admin.js` (`config.ssl = { rejectUnauthorized: false }`, lines 104, 1128, 1187).
+**Location:** `server/utils/email.js` (`rejectUnauthorized: false`, lines 115–116), `server/routes/admin.js` (`config.ssl = { rejectUnauthorized: false }`, lines 103, 1121, 1180).
 
 ### Root cause
 SMTP (Brevo fallback / direct SMTP) and admin-configured external MySQL connections disable TLS verification, explicitly to tolerate self-signed certificates on shared hosting. This makes those connections blind to man-in-the-middle / certificate-spoofing attacks on the path between the CuraFlow server and the external DB or mail host.
