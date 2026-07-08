@@ -309,19 +309,38 @@ class APIClient {
           );
         }
 
-        // Global 403 handler: only alert on mutating operations (POST/PUT/PATCH/DELETE),
-        // not on GET reads which are often background-polling or stale-UI noise.
+        // Global 403 handler: carefully distinguish real mutations from reads
+        // that happen to use POST (all /api/db calls are POST, even list/filter).
         if (apiError.status === 403) {
-          const method = (config.method || 'GET').toUpperCase();
-          const isMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-          if (isMutation) {
-            console.warn('[API] 403 on mutation:', method, endpoint);
+          let isRealMutation = false;
+          try {
+            // Parse the request body to check the action type for /api/db calls
+            let bodyAction: string | null = null;
+            if (config.body && typeof config.body === 'string') {
+              try {
+                const parsed = JSON.parse(config.body);
+                bodyAction = parsed.action || parsed.operation || null;
+              } catch { /* ignore parse errors */ }
+            }
+            const dbReadActions = ['list', 'filter', 'get'];
+            const dbWriteActions = ['create', 'update', 'delete', 'bulkCreate'];
+            if (endpoint.startsWith('/api/db') && bodyAction) {
+              isRealMutation = dbWriteActions.includes(bodyAction);
+            } else if (endpoint.startsWith('/api/atomic')) {
+              isRealMutation = true;
+            } else {
+              const method = (config.method || 'GET').toUpperCase();
+              isRealMutation = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+            }
+          } catch {
+            // Fallback: only alert on non-GET methods
+            isRealMutation = (config.method || 'GET').toUpperCase() !== 'GET';
+          }
+          if (isRealMutation) {
             window.alert(
               'Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. '
               + 'Bitte wenden Sie sich an Ihren Super-Admin.',
             );
-          } else {
-            console.debug('[API] 403 on read (suppressed):', endpoint);
           }
         }
 
