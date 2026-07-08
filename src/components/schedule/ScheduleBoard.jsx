@@ -2111,6 +2111,11 @@ export default function ScheduleBoard() {
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
             return;
         }
+        // 403 Permission denied: show clear message
+        if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
+            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung f\u00fcr diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            return;
+        }
         toast.error(`Fehler beim Erstellen: ${error.message}`);
     }
   });
@@ -2175,6 +2180,11 @@ export default function ScheduleBoard() {
         if (error.message?.includes('Position bereits besetzt') || error.message?.includes('409')) {
             console.warn('[Sentinel] Bulk duplicate blocked by server, refreshing data');
             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            return;
+        }
+        // 403 Permission denied
+        if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
+            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung f\u00fcr diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
             return;
         }
         toast.error(`Fehler beim Erstellen (Bulk): ${error.message}`);
@@ -2279,9 +2289,13 @@ export default function ScheduleBoard() {
     },
     onError: (error, _variables, context) => {
         console.error('DEBUG: Update Mutation Failed', error);
-        // Rollback to the previous value on error
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
+        }
+        // 403 Permission denied
+        if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
+            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            return;
         }
         toast.error(`Fehler beim Aktualisieren: ${error.message}`);
     }
@@ -2384,6 +2398,10 @@ export default function ScheduleBoard() {
         console.error('DEBUG: Delete Mutation Failed', { id, error });
         if (context?.previousShifts) {
             queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], context.previousShifts);
+        }
+        if (error.message?.includes('403') || error.message?.includes('fehlt die Berechtigung') || error.message?.includes('missingPermission')) {
+            window.alert('Zugriff verweigert: Ihnen fehlt die Berechtigung für diese Aktion. Bitte wenden Sie sich an Ihren Super-Admin.');
+            return;
         }
         toast.error(`Fehler beim Löschen: ${error.message}`);
     }
@@ -3550,12 +3568,17 @@ export default function ScheduleBoard() {
     const { source, destination, draggableId } = result;
 
     // Permission guard: admin without can_edit_schedule cannot modify shifts
-    if (isReadOnly === false && user?.role === 'admin' && !can('can_edit_schedule')) {
-      // Only block operations that actually modify shift data (not sidebar reordering, not rotation operations)
-      const isShiftModification = source.droppableId !== 'sidebar' || (destination && destination.droppableId !== 'sidebar');
-      if (isShiftModification) {
-        toast.error('Ihnen fehlt die Berechtigung "Dienstplan bearbeiten"');
-        return;
+    if (!isReadOnly && user?.role === 'admin') {
+      // Lockout-safe: if permissions is null/undefined, allow (backward compat)
+      const perms = user.permissions;
+      const canEditSchedule = !perms || typeof perms !== 'object' || perms.can_edit_schedule !== false;
+      if (!canEditSchedule) {
+        const isShiftModification = source.droppableId !== 'sidebar' || (destination && destination.droppableId !== 'sidebar');
+        if (isShiftModification) {
+          console.warn('[Permissions] Admin ohne can_edit_schedule, Drag blockiert:', user.email);
+          alert('Ihre Berechtigung "Dienstplan bearbeiten" ist deaktiviert. Bitte wenden Sie sich an einen Super-Admin.');
+          return;
+        }
       }
     }
 
