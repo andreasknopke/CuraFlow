@@ -15,6 +15,8 @@
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
+import { db } from '../index.js';
+
 export const PERMISSION_KEYS = [
   'can_manage_users',
   'can_approve_absence',
@@ -177,7 +179,6 @@ export function requirePermission(permissionKey) {
     // Load current permissions from master DB
     let permissionsRaw = null;
     try {
-      const { db } = await import('../index.js');
       const [rows] = await db.execute(
         'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
         [req.user.sub],
