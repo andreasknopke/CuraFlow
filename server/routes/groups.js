@@ -15,7 +15,6 @@ import { createPool } from 'mysql2/promise';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
-import { requirePermission } from '../utils/permissions.js';
 import { parseDbToken } from '../utils/crypto.js';
 import {
   loadUserGroupContext,

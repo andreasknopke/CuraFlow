@@ -21,7 +21,6 @@ import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
-import { requirePermission } from '../utils/permissions.js';
 import {
   loadUserRotationContext,
   listUserRotationGroups,
