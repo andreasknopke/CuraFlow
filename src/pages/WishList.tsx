@@ -1044,34 +1044,34 @@ export default function WishListPage() {
         </div>
       </div>
       
-      <div className="flex gap-4 mb-6 items-center text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100">
+<div className="flex flex-wrap gap-4 mb-6 items-center text-sm text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-100">
           <span className="font-medium text-slate-700 mr-2">Legende:</span>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-100 border border-green-500 rounded"></div>
+              <div className="w-3 h-3 bg-green-100 border border-green-500 rounded shrink-0"></div>
               <span>Dienstwunsch</span>
           </div>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-100 border border-red-500 rounded"></div>
+              <div className="w-3 h-3 bg-red-100 border border-red-500 rounded shrink-0"></div>
               <span>Kein Dienst</span>
           </div>
-          <div className="w-px h-4 bg-slate-300 mx-2"></div>
+          <div className="w-px h-4 bg-slate-300 mx-2 hidden sm:block"></div>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-dotted border-slate-400 rounded"></div>
+              <div className="w-3 h-3 border-2 border-dotted border-slate-400 rounded shrink-0"></div>
               <span>Ausstehend</span>
           </div>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-solid border-slate-900 rounded"></div>
+              <div className="w-3 h-3 border-2 border-solid border-slate-900 rounded shrink-0"></div>
               <span>Genehmigt</span>
           </div>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-slate-100 relative overflow-hidden rounded">
+              <div className="w-3 h-3 bg-slate-100 relative overflow-hidden rounded shrink-0">
                  <div className="absolute inset-0 bg-slate-400/20 rotate-45 transform origin-center scale-150"></div>
               </div>
               <span>Abgelehnt</span>
           </div>
-          <div className="w-px h-4 bg-slate-300 mx-2"></div>
+          <div className="w-px h-4 bg-slate-300 mx-2 hidden sm:block"></div>
           <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-emerald-100 rounded border border-emerald-200"></div>
+              <div className="w-3 h-3 bg-emerald-100 rounded border border-emerald-200 shrink-0"></div>
               <span>Abwesenheit</span>
           </div>
       </div>
