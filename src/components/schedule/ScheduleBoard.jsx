@@ -501,8 +501,11 @@ const getTimeslotDerivedTimeRange = (timeslot, doctor, workplace, workTimeModelM
     const slotDurationMinutes = end - start;
     const workTimeFactor = (workplace?.work_time_percentage ?? 100) / 100;
     const scaledWorkMinutes = Math.round(slotDurationMinutes * workTimeFactor);
-    const doctorDailyMinutes = getDoctorTargetDailyMinutes(doctor, workTimeModelMap, centralEmployeesById);
+    const isFullDaysOff = doctor?.part_time_model === 'full_days_off';
+    const doctorDailyMinutes = isFullDaysOff ? null : getDoctorTargetDailyMinutes(doctor, workTimeModelMap, centralEmployeesById);
 
+    // Bei full_days_off wird die Reduktion ueber ganze freie Tage abgebildet,
+    // nicht ueber verkuerzte Schichten. Daher immer den vollen Slot anzeigen.
     if (doctorDailyMinutes === null || scaledWorkMinutes <= doctorDailyMinutes) {
         return {
             start,
