@@ -216,7 +216,7 @@ export default function WishRequestDialog({
             <DialogContent
                 ref={dialogContentRef}
                 onOpenAutoFocus={(event) => event.preventDefault()}
-                className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-2rem)]"
+                className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-2rem)] max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:top-1/2 max-sm:-translate-y-1/2"
                 data-testid="wish-request-dialog"
             >
                 <DialogHeader className="px-4 sm:px-6 pt-6 pb-0 shrink-0">
