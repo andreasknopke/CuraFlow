@@ -103,12 +103,25 @@ router.post('/export', async (req, res, next) => {
       // ScheduleBlock table may not exist yet
     }
 
-    // Build block lookup map: "date|position" → reason
+    // Separate blocks (locked cells) from infos (informational notes)
+    // type='block' = cell is locked, type='info' = cell has a note
+    const blockEntries = blockRows.filter(b => b.type !== 'info');
+    const infoEntries = blockRows.filter(b => b.type === 'info');
+
+    // Build block lookup map: "date|position" → reason (only locked cells)
     const blockMap = new Map();
-    for (const block of blockRows) {
+    for (const block of blockEntries) {
       const dateStr = block.date instanceof Date ? format(block.date, 'yyyy-MM-dd') : String(block.date).substring(0, 10);
       const key = `${dateStr}|${block.position}`;
       blockMap.set(key, block.reason || 'Gesperrt');
+    }
+
+    // Build info lookup map: "date|position" → reason (informational notes)
+    const infoMap = new Map();
+    for (const info of infoEntries) {
+      const dateStr = info.date instanceof Date ? format(info.date, 'yyyy-MM-dd') : String(info.date).substring(0, 10);
+      const key = `${dateStr}|${info.position}`;
+      infoMap.set(key, info.reason || '');
     }
 
     // Helper: Get color for a name and category
@@ -262,16 +275,21 @@ router.post('/export', async (req, res, next) => {
           };
           if (colNumber > 1) {
             cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-            // Check if cell is blocked
             const dayIndex = colNumber - 2;
             if (dayIndex >= 0 && dayIndex < days.length) {
               const dateStr = format(days[dayIndex], 'yyyy-MM-dd');
               const blockKey = `${dateStr}|${rowName}`;
+              // Blocked cell — overwrite content with lock indicator
               const blockReason = blockMap.get(blockKey);
               if (blockReason) {
                 cell.value = `🔒 ${blockReason}`;
                 cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
                 cell.font = { color: { argb: 'FF991B1B' }, italic: true };
+              }
+              // Info note — add as Excel comment without overwriting content
+              const infoReason = infoMap.get(blockKey);
+              if (infoReason) {
+                cell.note = infoReason;
               }
             }
           }
