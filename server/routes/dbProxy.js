@@ -15,6 +15,53 @@ import {
 } from '../utils/centralAbsences.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 
+// Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
+const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
+
+/**
+ * Stellt nach der Erstellung eines Workplace sicher, dass ein Default-Timeslot
+ * (07:00–15:30) existiert, sofern die Kategorie nicht ausgeschlossen ist.
+ * Idempotent: Überspringt, wenn bereits ein Timeslot existiert.
+ */
+async function ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, workplaceData) {
+  if (!workplaceData?.category || EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES.has(workplaceData.category)) {
+    return;
+  }
+
+  // Prüfen, ob bereits ein Timeslot existiert
+  const [existingSlots] = await dbPool.execute(
+    `SELECT COUNT(*) AS cnt FROM WorkplaceTimeslot WHERE workplace_id = ?`,
+    [workplaceData.id]
+  );
+
+  if (existingSlots[0]?.cnt > 0) {
+    return; // Bereits vorhanden → nichts tun
+  }
+
+  // Default-Timeslot anlegen
+  const slotId = crypto.randomUUID();
+  await dbPool.execute(
+    `INSERT INTO WorkplaceTimeslot (id, workplace_id, label, start_time, end_time, \`order\`, overlap_tolerance_minutes, created_date, created_by)
+     VALUES (?, ?, 'Standard', '07:00:00', '15:30:00', 0, 30, NOW(), ?)`,
+    [slotId, workplaceData.id, workplaceData.created_by || 'system']
+  );
+
+  // timeslots_enabled = TRUE setzen (falls Spalte existiert)
+  try {
+    const [wpColumns] = await dbPool.execute(
+      `SHOW COLUMNS FROM Workplace LIKE 'timeslots_enabled'`
+    );
+    if (wpColumns.length > 0) {
+      await dbPool.execute(
+        `UPDATE Workplace SET timeslots_enabled = TRUE WHERE id = ? AND (timeslots_enabled IS NULL OR timeslots_enabled = FALSE)`,
+        [workplaceData.id]
+      );
+    }
+  } catch {
+    // Spalte existiert nicht → ignorieren
+  }
+}
+
 const router = express.Router();
 
 // Tables that can be read without authentication
@@ -1090,6 +1137,7 @@ router.post('/', async (req, res, next) => {
             actor,
           });
         }
+        await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
         return res.json(data);
       } catch (err) {
         console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
@@ -1116,6 +1164,7 @@ router.post('/', async (req, res, next) => {
                   actor,
                 });
               }
+              await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
               return res.json(data);
             } catch (retryErr) {
               if (retryErr.code !== 'ER_DUP_ENTRY') throw retryErr;

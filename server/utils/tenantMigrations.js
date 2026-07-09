@@ -85,6 +85,18 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     }
   };
 
+  const run = async (name, fn) => {
+    try {
+      await fn();
+    } catch (err) {
+      if (isFatalTenantMigrationError(err)) {
+        throw err;
+      } else {
+        results.push({ migration: name, status: 'error', error: err.message });
+      }
+    }
+  };
+
   // ── 1. WorkplaceTimeslot table ──
   await createTbl('create_workplace_timeslot_table', `
     CREATE TABLE IF NOT EXISTS WorkplaceTimeslot (
@@ -307,6 +319,51 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
 
   await addCol('add_staffing_status_start_day', `ALTER TABLE StaffingPlanEntry ADD COLUMN status_start_day INT DEFAULT NULL`);
   await addCol('add_staffing_status_end_day', `ALTER TABLE StaffingPlanEntry ADD COLUMN status_end_day INT DEFAULT NULL`);
+
+  // ── PHASE N+1: Ensure default WorkplaceTimeslots for Rotation/Custom workplaces ──
+  await run('ensure_default_workplace_timeslots', async () => {
+    const { ensureDefaultWorkplaceTimeslots } = await import('./ensureDefaultWorkplaceTimeslots.js');
+
+    // Custom-Kategorien aus SystemSetting lesen
+    let customCategoryNames = [];
+    try {
+      const [rows] = await dbPool.execute(
+        `SELECT value FROM SystemSetting WHERE \`key\` = 'workplace_categories' LIMIT 1`
+      );
+      if (rows.length > 0) {
+        const rawValue = rows[0].value;
+        if (rawValue) {
+          const parsed = JSON.parse(rawValue);
+          if (Array.isArray(parsed)) {
+            customCategoryNames = parsed
+              .map((cat) => {
+                if (typeof cat === 'string') return cat.trim();
+                if (cat && typeof cat.name === 'string') return cat.name.trim();
+                return null;
+              })
+              .filter(Boolean);
+          }
+        }
+      }
+    } catch {
+      // SystemSetting-Tabelle existiert ggf. nicht → leer lassen
+    }
+
+    const stats = await ensureDefaultWorkplaceTimeslots(dbPool, customCategoryNames);
+    if (stats.created > 0 || stats.enabledFlagSet > 0) {
+      results.push({
+        migration: 'ensure_default_workplace_timeslots',
+        status: 'success',
+        message: `${stats.created} Timeslots erstellt, ${stats.enabledFlagSet} Workplaces aktiviert (${stats.skipped} übersprungen)`,
+      });
+    } else {
+      results.push({
+        migration: 'ensure_default_workplace_timeslots',
+        status: 'skipped',
+        reason: `${stats.processed} geprüft, alle bereits mit Timeslot`,
+      });
+    }
+  });
 
   // Clear column cache so new columns are recognized immediately when running inside the server.
   try {

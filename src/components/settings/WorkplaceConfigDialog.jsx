@@ -698,33 +698,66 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
                                                                                 </div>
                                                                             )}
 
-                                                                            <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
-                                                                                <div className="space-y-0.5">
-                                                                                    <Label className="text-base flex items-center gap-2">
-                                                                                        <Clock className="w-4 h-4" />
-                                                                                        Zeitfenster aktivieren
-                                                                                    </Label>
-                                                                                    <div className="text-xs text-slate-500">
-                                                                                        Ermöglicht die Besetzung mit wechselnden Teams über den Tag (z.B. Früh-/Spätdienst)
+                                                                            {activeTab === 'Dienste' || activeTab === 'Demonstrationen & Konsile' ? (
+                                                                                // Dienste/Demos: Switch-gesteuert (optionaler Timeslot)
+                                                                                <>
+                                                                                <div className="flex items-center justify-between p-3 border rounded bg-indigo-50">
+                                                                                    <div className="space-y-0.5">
+                                                                                        <Label className="text-base flex items-center gap-2">
+                                                                                            <Clock className="w-4 h-4" />
+                                                                                            Zeitfenster aktivieren
+                                                                                        </Label>
+                                                                                        <div className="text-xs text-slate-500">
+                                                                                            Ermöglicht die Besetzung mit wechselnden Teams über den Tag (z.B. Früh-/Spätdienst)
+                                                                                        </div>
                                                                                     </div>
+                                                                                    <Switch
+                                                                                        checked={editForm.timeslots_enabled || false}
+                                                                                        onCheckedChange={(checked) => setEditForm({...editForm, timeslots_enabled: checked})}
+                                                                                    />
                                                                                 </div>
-                                                                                <Switch
-                                                                                    checked={editForm.timeslots_enabled || false}
-                                                                                    onCheckedChange={(checked) => setEditForm({...editForm, timeslots_enabled: checked})}
-                                                                                />
-                                                                            </div>
-                                                                            
-                                                                            {editForm.timeslots_enabled && editForm.id && (
-                                                                                <TimeslotEditor 
-                                                                                    workplaceId={editForm.id}
-                                                                                    defaultTolerance={editForm.default_overlap_tolerance_minutes || 15}
-                                                                                />
-                                                                            )}
-                                                                            
-                                                                            {editForm.timeslots_enabled && !editForm.id && (
-                                                                                <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                                                                                    Speichern Sie zuerst, um Zeitfenster hinzuzufügen.
+                                                                                
+                                                                                {editForm.timeslots_enabled && editForm.id && (
+                                                                                    <TimeslotEditor 
+                                                                                        workplaceId={editForm.id}
+                                                                                        defaultTolerance={editForm.default_overlap_tolerance_minutes || 15}
+                                                                                    />
+                                                                                )}
+                                                                                
+                                                                                {editForm.timeslots_enabled && !editForm.id && (
+                                                                                    <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                                                                                        Speichern Sie zuerst, um Zeitfenster hinzuzufügen.
+                                                                                    </div>
+                                                                                )}
+                                                                                </>
+                                                                            ) : (
+                                                                                // Rotationen/Custom: Timeslot ist immer aktiv
+                                                                                <>
+                                                                                <div className="p-3 border rounded bg-slate-50">
+                                                                                    <div className="flex items-center gap-2 mb-2">
+                                                                                        <Clock className="w-4 h-4 text-slate-500" />
+                                                                                        <span className="text-sm font-medium">Standard-Zeitraum</span>
+                                                                                            <Badge variant="outline" className="text-xs font-mono bg-indigo-50">
+                                                                                            07:00–15:30
+                                                                                        </Badge>
+                                                                                        <span className="text-[10px] text-slate-400">(30min Pause)</span>
+                                                                                    </div>
+                                                                                    <p className="text-xs text-slate-500">
+                                                                                        Dieser Arbeitsplatz hat immer einen Zeitraum. Sie können ihn unten anpassen oder erweitern.
+                                                                                    </p>
                                                                                 </div>
+
+                                                                                {editForm.id ? (
+                                                                                    <TimeslotEditor 
+                                                                                        workplaceId={editForm.id}
+                                                                                        defaultTolerance={editForm.default_overlap_tolerance_minutes || 15}
+                                                                                    />
+                                                                                ) : (
+                                                                                    <div className="text-xs text-slate-500 bg-slate-50 p-2 rounded">
+                                                                                        Standardzeit nach Speichern automatisch verfügbar.
+                                                                                    </div>
+                                                                                )}
+                                                                                </>
                                                                             )}
                                                                         </div>
 

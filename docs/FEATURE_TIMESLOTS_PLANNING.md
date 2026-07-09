@@ -662,4 +662,18 @@ const workloadAnalysis = (doctor, shifts, timeslots, period) => {
 
 ---
 
+## 16. Realisiert: Default-Workplace-Timeslot
+
+Das Feature **Default-Workplace-Timeslot** für Rotationen und Custom-Kategorien wurde implementiert. Siehe [DEFAULT_WORKPLACE_TIMESLOT.md](./features/DEFAULT_WORKPLACE_TIMESLOT.md) für die vollständige Dokumentation.
+
+Kernpunkte:
+- **Kein Schema-Change** — nutzt bestehende `WorkplaceTimeslot`- und `Workplace`-Tabellen.
+- **Backfill-Migration** legt für alle Rotation/Custom-Workplaces ohne Timeslot einen Default (07:00–15:30) an.
+- **Post-Create-Hook** erzeugt den Default-Timeslot automatisch bei Neuanlage.
+- **Löschschutz** verhindert das Löschen des letzten Timeslots.
+- **`timeslots_enabled`-Switch** ist für Rotation/Custom in der UI ausgeblendet (immer aktiv).
+- Dienste und Demonstrationen & Konsile bleiben unverändert.
+
+---
+
 *Dokument erstellt für spätere Implementierung. Änderungen vorbehalten.*

@@ -242,10 +242,13 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
 
     // Delete a timeslot
     const handleDelete = (id) => {
+        if (timeslots.length <= 1) return; // Sicherheitshalber – Button sollte disabled sein
         if (confirm("Zeitfenster wirklich löschen?")) {
             deleteMutation.mutate(id);
         }
     };
+
+    const isDeleteDisabled = timeslots.length <= 1;
 
     // Save edited timeslot
     const handleSaveEdit = () => {
@@ -510,14 +513,33 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                             >
                                                                 <Clock className="w-3 h-3" />
                                                             </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                className="h-7 w-7 text-red-500 hover:bg-red-50"
-                                                                onClick={() => handleDelete(slot.id)}
-                                                            >
-                                                                <Trash2 className="w-3 h-3" />
-                                                            </Button>
+                                                            <TooltipProvider>
+                                                                <Tooltip>
+                                                                    <TooltipTrigger asChild>
+                                                                        <span>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="icon"
+                                                                                className={cn(
+                                                                                    "h-7 w-7",
+                                                                                    isDeleteDisabled
+                                                                                        ? "text-slate-300 cursor-not-allowed"
+                                                                                        : "text-red-500 hover:bg-red-50"
+                                                                                )}
+                                                                                disabled={isDeleteDisabled}
+                                                                                onClick={() => handleDelete(slot.id)}
+                                                                            >
+                                                                                <Trash2 className="w-3 h-3" />
+                                                                            </Button>
+                                                                        </span>
+                                                                    </TooltipTrigger>
+                                                                    {isDeleteDisabled && (
+                                                                        <TooltipContent>
+                                                                            <p>Mindestens ein Zeitfenster ist erforderlich.</p>
+                                                                        </TooltipContent>
+                                                                    )}
+                                                                </Tooltip>
+                                                            </TooltipProvider>
                                                         </div>
                                                     </div>
                                                 )}
