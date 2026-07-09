@@ -483,7 +483,20 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
                 <Label htmlFor="fte">Stellenanteil (1.0 = Vollzeit)</Label>
-                <Input
+                {doctor ? (
+                  <Input
+                    id="fte"
+                    data-testid="staff-form-fte-readonly"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    value={formData.fte !== undefined ? formData.fte : 1.0}
+                    disabled
+                    className="bg-slate-100"
+                  />
+                ) : (
+                  <Input
                     id="fte"
                     data-testid="staff-form-fte"
                     type="number"
@@ -492,7 +505,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     max="1"
                     value={formData.fte !== undefined ? formData.fte : 1.0}
                     onChange={(e) => setFormData({ ...formData, fte: e.target.value as any })}
-                />
+                  />
+                )}
             </div>
             <div className="grid gap-2">
                 <Label htmlFor="target_weekly_hours">Wochen-h (Soll)</Label>
@@ -527,8 +541,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
             </div>
           </div>
 
-          {parseFloat(formData.fte as any) < 1.0 && (
-            <div className="grid gap-2 border rounded-lg p-3 bg-slate-50">
+          <div className="grid gap-2 border rounded-lg p-3 bg-slate-50">
               <Label className="text-base">Arbeitszeitmodell (Teilzeit)</Label>
               <p className="text-xs text-slate-500 -mt-1">
                 Wie sollen die reduzierten Stunden verteilt werden?
@@ -566,7 +579,6 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 </label>
               </div>
             </div>
-          )}
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
                 <Label htmlFor="contract_end_date">Befristet bis (Optional)</Label>
