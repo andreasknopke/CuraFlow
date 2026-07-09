@@ -637,17 +637,36 @@ const getShiftTimeRangeLabel = (shift, doctor, workplace, workplaceTimeslots, wo
         return formatTimeslotTimeRange(shift.start_time, shift.end_time);
     }
 
-    if (!shift?.timeslot_id) return null;
+    if (shift?.timeslot_id) {
+        const timeslot = workplaceTimeslots.find((entry) => entry.id === shift.timeslot_id);
+        const timeRange = getTimeslotDerivedTimeRange(timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById);
+        if (!timeRange) return formatTimeslotTimeRange(timeslot?.start_time, timeslot?.end_time);
 
-    const timeslot = workplaceTimeslots.find((entry) => entry.id === shift.timeslot_id);
-    const timeRange = getTimeslotDerivedTimeRange(timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById);
-    if (!timeRange) return formatTimeslotTimeRange(timeslot?.start_time, timeslot?.end_time);
+        const startLabel = formatMinutesAsTime(timeRange.start);
+        const endLabel = formatMinutesAsTime(timeRange.displayEnd ?? timeRange.end);
+        if (!startLabel || !endLabel) return null;
 
-    const startLabel = formatMinutesAsTime(timeRange.start);
-    const endLabel = formatMinutesAsTime(timeRange.displayEnd ?? timeRange.end);
-    if (!startLabel || !endLabel) return null;
+        return `${startLabel}-${endLabel}`;
+    }
 
-    return `${startLabel}-${endLabel}`;
+    // Fallback fuer bestehende Shifts ohne timeslot_id bei Workplaces mit
+    // timeslots_enabled=true (z.B. nach Backfill-Migration): Zeige den
+    // ersten/Default-Timeslot des Arbeitsplatzes an.
+    if (workplace?.timeslots_enabled && workplace?.id) {
+        const defaultTimeslot = workplaceTimeslots.find((entry) => entry.workplace_id === workplace.id);
+        if (defaultTimeslot) {
+            const timeRange = getTimeslotDerivedTimeRange(defaultTimeslot, doctor, workplace, workTimeModelMap, centralEmployeesById);
+            if (!timeRange) return formatTimeslotTimeRange(defaultTimeslot?.start_time, defaultTimeslot?.end_time);
+
+            const startLabel = formatMinutesAsTime(timeRange.start);
+            const endLabel = formatMinutesAsTime(timeRange.displayEnd ?? timeRange.end);
+            if (!startLabel || !endLabel) return null;
+
+            return `${startLabel}-${endLabel}`;
+        }
+    }
+
+    return null;
 };
 
 const getLateRotationIndicator = (shift, workplace, workplaceTimeslots) => {
@@ -5841,7 +5860,7 @@ export default function ScheduleBoard() {
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={null}
                     timeLabelOverride={shiftTimeLabel}
-                    onTimeLabelClick={shiftTimeLabel && !shift.isPreview && !isReadOnly ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
+                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (shiftTimeLabel || workplace?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
                 />

@@ -35,6 +35,7 @@ import absenceRequestsRouter from './routes/absenceRequests.js';
 import tisowareRouter from './routes/tisoware.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
+import { ensureDefaultWorkplaceTimeslots } from './utils/ensureDefaultWorkplaceTimeslots.js';
 
 // Load environment variables
 dotenv.config();
@@ -391,6 +392,18 @@ export const tenantDbMiddleware = async (req, res, next) => {
       await ensureTenantBaseTables(req.db);
     } catch (e) {
       console.warn('[Auto-Migration] ensureTenantBaseTables warning:', e.message);
+    }
+
+    // Idempotenter Backfill: Default-Timeslots fuer Rotation/Custom-Arbeitsplaetze.
+    // Der Helfer prueft selbst, ob bereits Timeslots existieren (skip) und laesst
+    // Dienste/Demos unveraendert.
+    try {
+      const stats = await ensureDefaultWorkplaceTimeslots(req.db);
+      if (stats.created > 0 || stats.enabledFlagSet > 0) {
+        console.log(`[Default-Timeslot] ${stats.created} angelegt, ${stats.enabledFlagSet} aktiviert (${stats.skipped} skipped)`);
+      }
+    } catch (e) {
+      console.warn('[Default-Timeslot] Backfill warning:', e.message);
     }
   }
 
