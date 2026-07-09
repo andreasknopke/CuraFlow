@@ -1220,6 +1220,15 @@ export default function ScheduleBoard() {
     };
 
     const handleTimeslotCustomEndChange = (timeslotId, option, value) => {
+        // Nur bei vollständiger Zeitangabe (HH:MM) normalisieren.
+        // Sonst wird während des Tippens ein unvollständiger Wert (z. B. "14:")
+        // von normalizeCustomTimeslotEndMinutes nicht geparst und fällt auf den
+        // Default (Startzeit + 5 min) zurück – das überschreibt sofort das Feld.
+        const parts = String(value ?? '').split(':');
+        if (parts.length < 2) return;
+        const h = Number(parts[0]), m = Number(parts[1]);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+
         const normalizedEndMinutes = normalizeCustomTimeslotEndMinutes(option, value);
 
         setTimeslotSelectionDialog((current) => ({
@@ -1232,6 +1241,12 @@ export default function ScheduleBoard() {
     };
 
     const handleTimeslotCustomStartChange = (timeslotId, option, value) => {
+        // Gleicher Guard wie bei Endzeit – nur vollständige HH:MM-Werte akzeptieren
+        const parts = String(value ?? '').split(':');
+        if (parts.length < 2) return;
+        const h = Number(parts[0]), m = Number(parts[1]);
+        if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+
         const normalizedStartMinutes = normalizeCustomTimeslotStartMinutes(option, value);
 
         setTimeslotSelectionDialog((current) => ({
