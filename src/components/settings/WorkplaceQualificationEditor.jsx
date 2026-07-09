@@ -57,7 +57,6 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
 
     const isLoading = qualsLoading || wqLoading;
     const activeQuals = qualifications.filter(q => q.is_active !== false);
-    const assignedQualIds = workplaceQuals.map(wq => wq.qualification_id);
 
     const handleToggle = (qualId) => {
         const existingAssignment = workplaceQuals.find(wq => wq.qualification_id === qualId);

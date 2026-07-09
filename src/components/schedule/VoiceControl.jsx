@@ -31,7 +31,6 @@ export default function VoiceControl({ doctors, workplaces, currentDate, onVoice
     // Agent Hook
     const { 
         status: agentStatus, 
-        isSpeaking: agentIsSpeaking, 
         startConversation: startAgent, 
         stopConversation: stopAgent 
     } = useElevenLabsConversation({

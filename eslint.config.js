@@ -8,6 +8,7 @@ export default [
   {
     ignores: [
       'server/**',
+      'PHP/**',
       'src/components/**/*.md.jsx',
       '.copilot-logs/**',
       'pr22-finalize.log',

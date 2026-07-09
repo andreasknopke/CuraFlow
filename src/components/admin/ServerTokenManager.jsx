@@ -27,7 +27,7 @@ export default function ServerTokenManager() {
     const [showAddDialog, setShowAddDialog] = useState(false);
     const [editingToken, setEditingToken] = useState(null);
     const [testingId, setTestingId] = useState(null);
-    const [localTokenEnabled, setLocalTokenEnabled] = useState(isDbTokenEnabled());
+    const [_localTokenEnabled, setLocalTokenEnabled] = useState(isDbTokenEnabled());
     
     // Form state for new/edit token
     const [formData, setFormData] = useState({

@@ -50,7 +50,7 @@ describe('MasterEmployeeList', () => {
   });
 
   const setupDefaultMocks = () => {
-    mocks.apiRequest.mockImplementation(async (url, options) => {
+    mocks.apiRequest.mockImplementation(async (url, _options) => {
       if (url === '/api/admin/db-tokens') {
         return [{ id: 'tenant-1', name: 'Notaufnahme' }];
       }

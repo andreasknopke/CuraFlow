@@ -407,7 +407,7 @@ export class CostFunction {
     //  Backward compat: allows_consecutive_days===false → 'forbidden'
     // ================================================================
 
-    _consecutiveCost(doctorId, workplace, dateStr, context) {
+    _consecutiveCost(doctorId, workplace, dateStr, _context) {
         if (workplace.category !== 'Dienste') return 0;
 
         // Determine consecutive mode

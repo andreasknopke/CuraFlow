@@ -17,7 +17,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger, ContextMenuCheckboxItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { api, db } from "@/api/client";
 import { format, startOfWeek, addDays, startOfMonth, endOfMonth, addMonths } from 'date-fns';
-import { de } from 'date-fns/locale';
 import VoiceTrainingDialog from './schedule/VoiceTrainingDialog';
 import { useElevenLabsConversation } from '@/components/useElevenLabsConversation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -37,7 +36,7 @@ export default function GlobalVoiceControl() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [transcript, setTranscript] = useState("");
     const [error, setError] = useState(null);
-    const [currentDate, setCurrentDate] = useState(new Date());
+    const [currentDate] = useState(new Date());
     
     // Modes: 'browser' (Google), 'transcribe' (ElevenLabs STT), 'agent' (ElevenLabs ConvAI)
     const [mode, setMode] = useState('agent'); 
@@ -212,7 +211,6 @@ export default function GlobalVoiceControl() {
         };
 
         try {
-            let actionHandled = false;
             let updatesCount = 0;
             let skippedCount = 0;
 
@@ -221,13 +219,11 @@ export default function GlobalVoiceControl() {
                 // Simple navigation for now
                 navigate(createPageUrl('Schedule'));
                 toast.success("Navigiere zum Wochenplan...");
-                actionHandled = true;
             }
 
             if (command.action === 'assign') {
                 if (!command.assignments || command.assignments.length === 0) {
                     toast.warning("Keine Zuweisungen gefunden.");
-                    actionHandled = true;
                 } else {
                     const toCreate = [];
                     const toUpdate = [];
@@ -278,15 +274,12 @@ export default function GlobalVoiceControl() {
                     updatesCount = toCreate.length + toUpdate.length;
                     if (updatesCount > 0) toast.success(`${updatesCount} Zuweisung(en) durchgeführt`);
                     else if (skippedCount > 0) toast.error(`${skippedCount} Fehler/Konflikte.`);
-                    
-                    actionHandled = true;
                 }
             }
 
             if (command.action === 'move') {
                 if (!command.move) {
                     toast.warning("Keine Verschiebungsinformationen.");
-                    actionHandled = true;
                 } else {
                     const { doctor_id, source_position, target_position, source_date, target_date } = command.move;
                     const doc = resolveDoctor(doctor_id);
@@ -321,14 +314,12 @@ export default function GlobalVoiceControl() {
                             toast.success("Verschiebung durchgeführt");
                         }
                     }
-                    actionHandled = true;
                 }
             }
 
             if (command.action === 'delete') {
                 if (!command.delete) {
                     toast.warning("Keine Löschinformationen.");
-                    actionHandled = true;
                 } else {
                     const { doctor_id, scope, date } = command.delete;
                     const doc = resolveDoctor(doctor_id);
@@ -356,7 +347,6 @@ export default function GlobalVoiceControl() {
                             updatesCount = idsToDelete.length;
                         }
                     }
-                    actionHandled = true;
                 }
             }
 
@@ -412,7 +402,6 @@ export default function GlobalVoiceControl() {
     // Agent Hook
     const { 
         status: agentStatus, 
-        isSpeaking: agentIsSpeaking, 
         startConversation: startAgent, 
         stopConversation: stopAgent 
     } = useElevenLabsConversation({
@@ -509,7 +498,6 @@ export default function GlobalVoiceControl() {
                 const reader = new FileReader();
                 reader.readAsDataURL(audioBlob);
                 reader.onloadend = async () => {
-                    const base64Audio = reader.result;
                     setIsProcessing(true);
                     setTranscript("Transkribiere Audio...");
                     try {
@@ -521,7 +509,7 @@ export default function GlobalVoiceControl() {
                             setError("Kein Text erkannt.");
                             setIsProcessing(false);
                         }
-                    } catch (e) {
+                    } catch (_e) {
                         setError("Transkriptionsfehler");
                         setIsProcessing(false);
                     } finally {
@@ -607,19 +595,6 @@ export default function GlobalVoiceControl() {
         setIsProcessing(true);
         
         try {
-            const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-            const weekContext = Array.from({ length: 7 }).map((_, i) => {
-                const d = addDays(start, i);
-                return `${format(d, 'EEEE', { locale: de })}: ${format(d, 'yyyy-MM-dd')}`;
-            }).join('\n');
-
-            const context = {
-                doctors: doctors.map(d => ({ name: d.name, id: d.id })),
-                workplaces: workplaces.map(w => ({ name: w.name })),
-                currentDate: format(currentDate, 'yyyy-MM-dd'),
-                weekContext: weekContext
-            };
-
             const result = await api.processVoiceCommand(text);
             if (result.corrected_text) setTranscript(result.corrected_text);
             onVoiceCommand(result);

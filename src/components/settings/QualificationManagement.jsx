@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { 
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
     DialogFooter, DialogDescription
@@ -337,7 +336,6 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
 }
 
 export default function QualificationManagement() {
-    const queryClient = useQueryClient();
     const {
         qualifications,
         qualificationsByCategory,
@@ -377,7 +375,7 @@ export default function QualificationManagement() {
         setEditingQual(null);
     };
 
-    const handleDragEnd = (result) => {
+    const _handleDragEnd = (result) => {
         if (!result.destination) return;
         const items = Array.from(qualifications);
         const [reorderedItem] = items.splice(result.source.index, 1);

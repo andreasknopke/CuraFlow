@@ -59,7 +59,7 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
         }
     }, [isWebSpeechSupported, useElevenLabs]);
 
-    const { data: aliases = [], isLoading } = useQuery({
+    const { data: aliases = [] } = useQuery({
         queryKey: ['voiceAliases'],
         queryFn: () => db.VoiceAlias.filter({ created_by: user?.email }),
         enabled: isOpen && !!user

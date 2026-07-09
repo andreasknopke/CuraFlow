@@ -215,7 +215,7 @@ export default function MasterPayScaleTariffs() {
   const openApplyDialog = async (tariff) => {
     setApplyTariffId(tariff.id);
     try {
-      const res = await api.request(`/api/master/payscale-tariffs/${tariff.id}/apply-defaults`, {
+      await api.request(`/api/master/payscale-tariffs/${tariff.id}/apply-defaults`, {
         method: 'POST',
         body: JSON.stringify({ preview: true }),
       });

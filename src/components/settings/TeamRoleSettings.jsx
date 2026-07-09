@@ -284,7 +284,7 @@ export default function TeamRoleSettings() {
     const [editDialogOpen, setEditDialogOpen] = useState(false);
     const [editingRole, setEditingRole] = useState(null);
 
-    const { data: teamRoles = [], isLoading } = useQuery({
+    const { data: teamRoles = [] } = useQuery({
         queryKey: ['teamRoles'],
         queryFn: async () => {
             // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)

@@ -27,7 +27,6 @@ export default function SystemLogs() {
     const queryClient = useQueryClient();
     const { token } = useAuth();
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedLog, setSelectedLog] = useState(null);
     const [filterLevel, setFilterLevel] = useState("ALL"); // ALL, error, info, wish_request, override, audit
     const [dateFrom, setDateFrom] = useState(null);
     const [dateTo, setDateTo] = useState(null);
@@ -280,7 +279,7 @@ export default function SystemLogs() {
                                                                 {(() => {
                                                                     try {
                                                                         return JSON.stringify(JSON.parse(log.details), null, 2);
-                                                                    } catch (e) {
+                                                                    } catch (_e) {
                                                                         return log.details;
                                                                     }
                                                                 })()}

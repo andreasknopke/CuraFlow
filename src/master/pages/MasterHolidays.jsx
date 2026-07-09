@@ -198,8 +198,6 @@ export default function MasterHolidays() {
     );
   };
 
-  const isLoading = isLoadingSettings || isLoadingCustom || isLoadingPreview;
-
   return (
     <div className="space-y-6">
       {/* Header */}

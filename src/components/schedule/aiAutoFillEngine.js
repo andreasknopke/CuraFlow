@@ -118,7 +118,7 @@ export async function generateAISuggestions(params) {
     getDoctorQualIds, getWpRequiredQualIds, getWpOptionalQualIds,
     getWpExcludedQualIds, getWpDiscouragedQualIds,
     categoriesToFill, systemSettings, wishes,
-    allQualifications, allDoctorQualifications, allWorkplaceQualifications,
+    allQualifications, allWorkplaceQualifications,
     scheduleRules,
   } = params;
 

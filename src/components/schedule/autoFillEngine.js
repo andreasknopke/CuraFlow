@@ -142,7 +142,7 @@ export function generateSuggestions({
     };
 
     /** Does the doctor have ANY optional qualification for this workplace? */
-    const hasAnyOptionalQual = (doctorId, wpId) => {
+    const _hasAnyOptionalQual = (doctorId, wpId) => {
         const opt = getWpOptionalQualIds?.(wpId);
         if (!opt?.length) return true;
         const doc = getDoctorQualIds(doctorId);
@@ -195,7 +195,7 @@ export function generateSuggestions({
     const slotKey = (posName, timeslotId) => timeslotId ? `${posName}::${timeslotId}` : posName;
 
     /** Count existing shifts for a position+timeslot combo on a date */
-    const countShiftsForSlot = (dateStr, posName, timeslotId, existingArr, suggestionsArr) => {
+    const _countShiftsForSlot = (dateStr, posName, timeslotId, existingArr, suggestionsArr) => {
         let count = 0;
         for (const s of existingArr) {
             if (s.date !== dateStr || s.position !== posName) continue;
@@ -364,7 +364,7 @@ export function generateSuggestions({
      * Considers total services in 4-week window relative to FTE.
      * Separate scoring for FG and BG to balance both independently.
      */
-    const getFairnessScore = (docId, serviceName) => {
+    const _getFairnessScore = (docId, serviceName) => {
         const h = getServiceHist(docId);
         const fte = getDoctorFte(docId) || 1;
         const svcType = getServiceType(serviceName);
@@ -388,7 +388,7 @@ export function generateSuggestions({
 
     // ---- Displacement tracking ----
     const displacementCount = {};
-    const getDisplaced = (id) => displacementCount[id] || 0;
+    const _getDisplaced = (id) => displacementCount[id] || 0;
     const addDisplacement = (id) => { displacementCount[id] = (displacementCount[id] || 0) + 1; };
 
     // ---- Auto-Frei tracking across days ----
@@ -534,7 +534,7 @@ export function generateSuggestions({
     // ========================================================
 
     /** Get service wish for a doctor on a date (approved OR pending) */
-    const getServiceWish = (doctorId, dateStr) => {
+    const _getServiceWish = (doctorId, dateStr) => {
         return wishes.find(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -554,7 +554,7 @@ export function generateSuggestions({
     };
 
     /** Does this doctor have a pending (unapproved) "kein Dienst" wish? (soft NOT) */
-    const hasPendingNoService = (doctorId, dateStr) => {
+    const _hasPendingNoService = (doctorId, dateStr) => {
         return wishes.some(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -706,7 +706,7 @@ export function generateSuggestions({
         };
 
         /** Does this position already have ≥1 qualified person today? */
-        const hasQualCoverage = (wp) => {
+        const _hasQualCoverage = (wp) => {
             for (const s of existingShifts) {
                 if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) return true;
             }
@@ -793,7 +793,7 @@ export function generateSuggestions({
             }
         }
 
-        const getRotationImpact = (docId) => rotationImpactScore[docId] || 0;
+        const _getRotationImpact = (docId) => rotationImpactScore[docId] || 0;
 
         // ============================================================
         //  PHASE A: DIENSTE (Services) — highest priority

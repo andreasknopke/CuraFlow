@@ -225,15 +225,6 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
         saveAsTemplateMutation.mutate(templateName.trim());
     };
 
-    // Delete a custom template
-    const deleteTemplateMutation = useMutation({
-        mutationFn: (id) => db.TimeslotTemplate.delete(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries(['timeslotTemplates']);
-            toast.success("Template gelöscht");
-        }
-    });
-
     // Add new custom timeslot
     const handleAddNew = () => {
         const newOrder = timeslots.length;

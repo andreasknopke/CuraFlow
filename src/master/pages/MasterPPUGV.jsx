@@ -40,7 +40,6 @@ import {
   Building2,
   Table2,
   Scale,
-  Download,
   FileSpreadsheet,
   FileText,
   CheckCircle2,
@@ -85,7 +84,7 @@ export default function MasterPPUGV() {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [showFutureMonths, setShowFutureMonths] = useState(false);
   const [chartMode, setChartMode] = useState('staffing');
-  const [refreshStarted, setRefreshStarted] = useState(false);
+  const [_refreshStarted, setRefreshStarted] = useState(false);
   const [activeTab, setActiveTab] = useState('stations');
   const [selectedFab, setSelectedFab] = useState('all');
   const [trendMetric, setTrendMetric] = useState('belegung');
@@ -111,7 +110,7 @@ export default function MasterPPUGV() {
   const stations = stationsData?.stations ?? [];
 
   // PPUGV-Daten laden – auto-poll wenn building
-  const { data, isLoading, isError, error, refetch: refetchData } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['ppugv-data', selectedStation, selectedYear, showFutureMonths],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -144,7 +143,6 @@ export default function MasterPPUGV() {
   const rows = data?.data ?? [];
   const meta = data?.meta;
   const isBuilding = data?.building === true;
-  const isFirstLoad = !isLoading && rows.length === 0 && !isBuilding;
 
   // Cache-Refresh – der Server antwortet sofort mit 202 Accepted
   const refreshMutation = useMutation({

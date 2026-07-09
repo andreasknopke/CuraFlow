@@ -22,8 +22,6 @@ export default function MobileScheduleView({
         const today = new Date();
         return isSameWeek(today, currentDate, { weekStartsOn: 1 }) ? today : currentDate;
     });
-    const [viewTab, setViewTab] = useState('day'); // 'day' | 'week'
-
     useEffect(() => {
         setSelectedDay(prev => {
             if (isSameWeek(prev, currentDate, { weekStartsOn: 1 })) {

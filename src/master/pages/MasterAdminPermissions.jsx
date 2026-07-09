@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Loader2, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,6 @@ import { hasPermission } from '@/lib/permissions';
 
 export default function MasterAdminPermissions() {
   const { user: currentUser } = useMasterAuth();
-  const queryClient = useQueryClient();
   const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
 

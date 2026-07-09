@@ -90,9 +90,9 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                 const audioBuffer = await audioContextRef.current.decodeAudioData(bufferCopy);
                 audioQueueRef.current.push(audioBuffer);
                 console.log("DEBUG: Audio Decoded (Native)", audioBuffer.duration, "seconds");
-            } catch (decodeErr) {
+            } catch (_decodeErr) {
                 // If fail, assume Raw PCM 16bit 16kHz (Default for ElevenLabs ConvAI)
-                // console.log("Decode failed, trying raw PCM...", decodeErr);
+                // console.log("Decode failed, trying raw PCM...", _decodeErr);
                 
                 const int16Data = new Int16Array(bytes.buffer);
                 const float32Data = new Float32Array(int16Data.length);
@@ -183,7 +183,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                     } else if (msg.type === 'interruption') {
                         // Stop all currently scheduled audio
                         scheduledSourcesRef.current.forEach(source => {
-                            try { source.stop(); } catch (e) {}
+                            try { source.stop(); } catch (_e) {}
                         });
                         scheduledSourcesRef.current = [];
 
@@ -348,7 +348,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
     const stopResources = () => {
         // Stop all currently scheduled audio
         scheduledSourcesRef.current.forEach(source => {
-            try { source.stop(); } catch (e) {}
+            try { source.stop(); } catch (_e) {}
         });
         scheduledSourcesRef.current = [];
 

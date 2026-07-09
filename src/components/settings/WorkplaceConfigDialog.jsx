@@ -40,7 +40,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }) {
     const [newCategoryAllowsMultiple, setNewCategoryAllowsMultiple] = useState(true);
     const { getSectionName } = useSectionConfig();
 
-    const { data: workplaces = [], isLoading } = useQuery({
+    const { data: workplaces = [] } = useQuery({
         queryKey: ['workplaces'],
         queryFn: () => db.Workplace.list(null, 1000),
     });

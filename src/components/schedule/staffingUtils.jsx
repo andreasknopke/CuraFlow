@@ -51,7 +51,7 @@ function getMonthEntry(doctor, year, month, planEntries) {
     return planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
 }
 
-function getEntryValue(entry, doctor) {
+function getEntryValue(entry, _doctor) {
     const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
     if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
         return String(entryValue).trim();
@@ -101,7 +101,6 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
 
     const normalizedValue = String(value).trim();
     const defaultFte = getDefaultFte(doctor);
-    const daysInMonth = getDaysInMonth(year, month);
     const statusRatio = isDateInStatusRange(date, entry) ? 1 : 0;
 
     if (STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES.has(normalizedValue)) {

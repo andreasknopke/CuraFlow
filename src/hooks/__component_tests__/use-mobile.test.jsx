@@ -12,7 +12,7 @@ describe('useIsMobile', () => {
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: false,
       media: query,
-      addEventListener: vi.fn((_, handler) => {
+      addEventListener: vi.fn((_, _handler) => {
         // Store handler for later invocation
       }),
       removeEventListener: vi.fn(),

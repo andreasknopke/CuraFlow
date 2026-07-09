@@ -305,7 +305,7 @@ const measureTextWidth = (() => {
     };
 })();
 
-const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSectionFullWidth, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }) => {
+const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }) => {
     // Mehrfachbesetzung: IMMER compact — jeder Chip braucht eigenen Platz.
     if (forceInitialsOnly || isSplitModeActive || !isSingleShift) {
         return 'compact';
@@ -807,7 +807,7 @@ export default function ScheduleBoard() {
     };
   }, [undoStack]);
 
-    const { isReadOnly, user, updateMe, can } = useAuth();
+    const { isReadOnly, user, updateMe, can: _can } = useAuth();
 
   // Load saved settings from user profile or localStorage fallback
   const [showSidebar, setShowSidebar] = useState(() => {
@@ -1220,32 +1220,25 @@ export default function ScheduleBoard() {
     };
 
     const handleTimeslotCustomEndChange = (timeslotId, option, value) => {
-        // Nur bei vollständiger Zeitangabe (HH:MM) normalisieren.
-        // Sonst wird während des Tippens ein unvollständiger Wert (z. B. "14:")
-        // von normalizeCustomTimeslotEndMinutes nicht geparst und fällt auf den
-        // Default (Startzeit + 5 min) zurück – das überschreibt sofort das Feld.
-        const parts = String(value ?? '').split(':');
-        if (parts.length < 2) return;
-        const h = Number(parts[0]), m = Number(parts[1]);
-        if (!Number.isFinite(h) || !Number.isFinite(m)) return;
-
-        const normalizedEndMinutes = normalizeCustomTimeslotEndMinutes(option, value);
+        // Nur den reinen Minutenwert parsen, OHNE die start+5min-Floor-Logik.
+        // Die Floor-Logik in normalizeCustomTimeslotEndMinutes würde sonst
+        // während des Tippens einen Zwischenwert (z. B. Browser liefert "01:00"
+        // bei Eingabe von "1") auf start+5min hochclampen und das Feld zurücksetzen.
+        const parsedMinutes = parseTimeToMinutes(value);
+        if (!Number.isFinite(parsedMinutes)) return;
 
         setTimeslotSelectionDialog((current) => ({
             ...current,
             customEndMinutesByOptionId: {
                 ...current.customEndMinutesByOptionId,
-                [timeslotId]: normalizedEndMinutes,
+                [timeslotId]: parsedMinutes,
             },
         }));
     };
 
     const handleTimeslotCustomStartChange = (timeslotId, option, value) => {
-        // Gleicher Guard wie bei Endzeit – nur vollständige HH:MM-Werte akzeptieren
-        const parts = String(value ?? '').split(':');
-        if (parts.length < 2) return;
-        const h = Number(parts[0]), m = Number(parts[1]);
-        if (!Number.isFinite(h) || !Number.isFinite(m)) return;
+        const parsedMinutes = parseTimeToMinutes(value);
+        if (!Number.isFinite(parsedMinutes)) return;
 
         const normalizedStartMinutes = normalizeCustomTimeslotStartMinutes(option, value);
 
@@ -1262,8 +1255,11 @@ export default function ScheduleBoard() {
         const callback = pendingTimeslotSelectionRef.current;
         if (!callback || !option?.id) return;
 
-        const customEndMinutes = timeslotSelectionDialog.customEndMinutesByOptionId?.[option.id]
-            ?? getDefaultCustomTimeslotEndMinutes(option);
+        // Rohwert aus dem Dialog (während des Tippens ohne Floor gespeichert)
+        const rawEndMinutes = timeslotSelectionDialog.customEndMinutesByOptionId?.[option.id];
+        const customEndMinutes = Number.isFinite(rawEndMinutes)
+            ? normalizeCustomTimeslotEndMinutes(option, formatMinutesAsTime(rawEndMinutes))
+            : getDefaultCustomTimeslotEndMinutes(option);
         const customStartMinutes = timeslotSelectionDialog.customStartMinutesByOptionId?.[option.id]
             ?? option.effectiveStartMinutes ?? option.slotStartMinutes;
         if (!Number.isFinite(customStartMinutes) || !Number.isFinite(customEndMinutes)) return;
