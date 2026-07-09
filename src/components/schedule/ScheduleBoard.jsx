@@ -5793,6 +5793,9 @@ export default function ScheduleBoard() {
         const compactLabel = getDoctorChipLabel(doctor);
         
         const shiftTimeLabel = getShiftTimeRangeLabel(shift, doctor, workplace, workplaceTimeslots, workTimeModelMap, centralEmployeesById);
+        // Im Benutzermodus (ReadOnly) nur die Zeiten des eigenen Mitarbeiters anzeigen
+        const isOwnShift = user?.doctor_id && doctor.id === user?.doctor_id;
+        const effectiveTimeLabel = isReadOnly && !isOwnShift ? null : shiftTimeLabel;
         const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${dateStr}`) || null;
         
         // Qualifikations-Indikator
@@ -5862,8 +5865,9 @@ export default function ScheduleBoard() {
                     fairnessInfo={shift.isPreview && !isMonthView ? getFairnessInfo(shift) : null}
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={null}
-                    timeLabelOverride={shiftTimeLabel}
-                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (shiftTimeLabel || workplace?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
+                    timeLabelOverride={effectiveTimeLabel}
+                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || workplace?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
+                    hideTimeLabel={isReadOnly && !isOwnShift}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
                 />

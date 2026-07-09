@@ -43,14 +43,15 @@ function LateStartIndicator({ tooltip, compact = false }) {
   );
 }
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', ...props }) {
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
   const chipLabel = compactLabel || getDoctorShortLabel(doctor);
   const displayText = isFullWidth ? doctor.name : chipLabel;
   const displayFontSize = fontSize;
-  const timeLabel = timeLabelOverride || getTimeLabel(shift);
+  const timeLabel = (timeLabelOverride || getTimeLabel(shift));
+  const effectiveTimeLabel = hideTimeLabel ? null : timeLabel;
   const timeslotBadgeClasses = timeslotLabelTone === 'warning'
     ? 'bg-amber-300 text-amber-950'
     : 'bg-indigo-600 text-white';
@@ -230,7 +231,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                       >
                           {displayText}
                       </span>
-                      {timeLabel && (
+                      {effectiveTimeLabel && (
                         onTimeLabelClick ? (
                           <button
                             type="button"
@@ -239,14 +240,14 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                             onMouseDown={handleTimeLabelMouseDown}
                             onClick={handleTimeLabelClick}
                           >
-                            {timeLabel}
+                            {effectiveTimeLabel}
                           </button>
                         ) : (
                           <span
                             className="mt-auto block min-w-0 w-full px-1 text-center whitespace-nowrap text-slate-500 font-normal"
                             style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, lineHeight: '1.2' }}
                           >
-                            {timeLabel}
+                            {effectiveTimeLabel}
                           </span>
                         )
                       )}
@@ -284,7 +285,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                   >
                       {displayText}
                   </span>
-                  {timeLabel && (
+                  {effectiveTimeLabel && (
                     onTimeLabelClick ? (
                       <button
                         type="button"
@@ -293,14 +294,14 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                         onMouseDown={handleTimeLabelMouseDown}
                         onClick={handleTimeLabelClick}
                       >
-                        {timeLabel}
+                        {effectiveTimeLabel}
                       </button>
                     ) : (
                       <span 
                         className="leading-none text-center whitespace-nowrap opacity-60"
                         style={{ fontSize: `${Math.max(displayFontSize * 0.55, 7)}px`, marginTop: '1px' }}
                       >
-                        {timeLabel}
+                        {effectiveTimeLabel}
                       </span>
                     )
                   )}
