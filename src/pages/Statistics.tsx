@@ -294,13 +294,15 @@ export default function StatisticsPage() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList>
-                    <TabsTrigger value="overview" className="flex items-center gap-2" data-testid="statistics-tab-overview"><BarChart3 className="w-4 h-4" /> Übersicht & Charts</TabsTrigger>
-                    <TabsTrigger value="workingtime" className="flex items-center gap-2" data-testid="statistics-tab-workingtime"><Clock className="w-4 h-4" /> Arbeitszeit</TabsTrigger>
-                    <TabsTrigger value="compliance" className="flex items-center gap-2" data-testid="statistics-tab-compliance">Regel-Compliance</TabsTrigger>
-                    <TabsTrigger value="wishes" className="flex items-center gap-2" data-testid="statistics-tab-wishes">Wunscherfüllung</TabsTrigger>
-                    <TabsTrigger value="details" className="flex items-center gap-2" data-testid="statistics-tab-details"><TableIcon className="w-4 h-4" /> Detaillierte Tabelle</TabsTrigger>
-                </TabsList>
+                <div className="overflow-x-auto pb-1">
+                    <TabsList>
+                        <TabsTrigger value="overview" className="flex items-center gap-2" data-testid="statistics-tab-overview"><BarChart3 className="w-4 h-4 shrink-0" /> Übersicht & Charts</TabsTrigger>
+                        <TabsTrigger value="workingtime" className="flex items-center gap-2" data-testid="statistics-tab-workingtime"><Clock className="w-4 h-4 shrink-0" /> Arbeitszeit</TabsTrigger>
+                        <TabsTrigger value="compliance" className="flex items-center gap-2" data-testid="statistics-tab-compliance">Regel-Compliance</TabsTrigger>
+                        <TabsTrigger value="wishes" className="flex items-center gap-2" data-testid="statistics-tab-wishes">Wunscherfüllung</TabsTrigger>
+                        <TabsTrigger value="details" className="flex items-center gap-2" data-testid="statistics-tab-details"><TableIcon className="w-4 h-4 shrink-0" /> Detaillierte Tabelle</TabsTrigger>
+                    </TabsList>
+                </div>
                 
                 <TabsContent value="workingtime">
                     <WorkingTimeReport />

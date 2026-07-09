@@ -35,14 +35,15 @@ export default function AdminPage() {
             </div>
 
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                <TabsList className="grid w-full grid-cols-6 lg:w-[1200px]">
+                <div className="overflow-x-auto pb-1">
+                    <TabsList className="grid w-full grid-cols-6 min-w-[600px] lg:w-[1200px]">
                     <TabsTrigger value="users" data-testid="admin-tab-users">Benutzer & Rollen</TabsTrigger>
                     <TabsTrigger value="groups" data-testid="admin-tab-groups">Verbünde</TabsTrigger>
                     <TabsTrigger value="workplace-links" data-testid="admin-tab-workplace-links">Arbeitsplatz-Links</TabsTrigger>
                     <TabsTrigger value="settings" data-testid="admin-tab-settings">Einstellungen</TabsTrigger>
                     <TabsTrigger value="database" data-testid="admin-tab-database">Datenbank</TabsTrigger>
                     <TabsTrigger value="logs" data-testid="admin-tab-logs">Logs</TabsTrigger>
-                </TabsList>
+                </TabsList></div>
 
                 <TabsContent value="users">
                     {activeTab === 'users' && <UserManagement />}
