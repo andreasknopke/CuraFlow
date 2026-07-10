@@ -58,6 +58,8 @@ export class ServiceLimitsRule extends ValidationRule {
         if (isWknd) countWknd++;
 
         const fte = v._getDoctorFte(doctorId, date);
+        if (fte <= 0) return null; // Externally managed or no FTE data — skip limits
+
         const adjFG = Math.round(v.limits.foreground * fte);
         const adjBG = Math.round(v.limits.background * fte);
 
