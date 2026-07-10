@@ -391,7 +391,7 @@ export default function StatisticsPage() {
                 </TabsContent>
 
                 <TabsContent value="compliance">
-                    <ComplianceReport doctors={doctors} shifts={shifts} />
+                    <ComplianceReport doctors={doctors} shifts={shifts} workplaces={workplaces} month={month} />
                 </TabsContent>
 
                 <TabsContent value="wishes">
