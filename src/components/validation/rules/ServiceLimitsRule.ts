@@ -62,8 +62,9 @@ export class ServiceLimitsRule extends ValidationRule {
         const adjBG = Math.round(v.limits.background * fte);
 
         const warnings: string[] = [];
-        if (isFG && countFG > adjFG) warnings.push(`${countFG}. Bereitschaftsdienst (Limit: ${adjFG})`);
-        if (isBG && countBG > adjBG) warnings.push(`${countBG}. Rufbereitschaftsdienst (Limit: ${adjBG})`);
+        const fteNote = fte < 1.0 ? `, VK: ${fte}` : '';
+        if (isFG && countFG > adjFG) warnings.push(`${countFG}. Bereitschaftsdienst (Limit: ${adjFG}${fteNote})`);
+        if (isBG && countBG > adjBG) warnings.push(`${countBG}. Rufbereitschaftsdienst (Limit: ${adjBG}${fteNote})`);
         if (isWknd && countWknd > v.limits.weekend) warnings.push(`${countWknd}. Wochenenddienst (Limit: ${v.limits.weekend})`);
 
         if (warnings.length > 0) {
