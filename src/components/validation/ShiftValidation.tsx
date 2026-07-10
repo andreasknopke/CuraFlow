@@ -4,6 +4,8 @@ import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
 import { getAutoFreiDate } from '@/utils/autoFrei';
 import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { computeVacationBalance } from '@/components/vacation/vacationBalance';
+import { RULES } from './rules';
+import type { RuleContext, RuleViolation } from './rules';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -201,14 +203,15 @@ export class ShiftValidator {
     }
 
     /**
-     * Hauptvalidierungsmethode
+     * Hauptvalidierungsmethode — iteriert über alle registrierten Regeln.
+     * Neue Regeln im RULES-Array werden automatisch berücksichtigt.
      * @returns {{ canProceed: boolean, blockers: string[], warnings: string[] }}
      */
     validate(doctorId: string, dateStr: string, position: string, options: { excludeShiftId?: string | null; silent?: boolean; skipLimits?: boolean; timeslotId?: string | null } = {}): ValidationResult {
         const { 
-            excludeShiftId = null,  // Bei Updates: eigene Shift-ID ausschließen
-            skipLimits = false,     // Limits überspringen (für Massenoperationen)
-            timeslotId = null,      // Ziel-Timeslot-ID (neu für Timeslot-Feature)
+            excludeShiftId = null,
+            skipLimits = false,
+            timeslotId = null,
         } = options;
 
         const result: ValidationResult = {
@@ -217,7 +220,6 @@ export class ShiftValidator {
             warnings: []
         };
 
-        const date = new Date(dateStr);
         const doctor = this.doctors.find(d => d.id === doctorId);
         if (!doctor) {
             result.blockers.push('Person nicht gefunden');
@@ -225,87 +227,32 @@ export class ShiftValidator {
             return result;
         }
 
-        // 1. Abwesenheits-Konflikte prüfen
-        const absenceResult = this._checkAbsenceConflicts(doctorId, dateStr, position, excludeShiftId);
-        if (absenceResult.blocker) {
-            result.blockers.push(absenceResult.blocker);
-            result.canProceed = false;
-        }
-        if (absenceResult.warning) {
-            result.warnings.push(absenceResult.warning);
-        }
+        // Build the rule context once
+        const ctx: RuleContext = {
+            doctorId,
+            dateStr,
+            position,
+            excludeShiftId,
+            timeslotId,
+            skipLimits,
+            validator: this,
+        };
 
-        // 2. Dienst/Rotation-Konflikte prüfen
-        const conflictResult = this._checkServiceRotationConflicts(doctorId, dateStr, position, excludeShiftId);
-        if (conflictResult.blocker) {
-            result.blockers.push(conflictResult.blocker);
-            result.canProceed = false;
-        }
+        // Iterate over all registered rules in order
+        for (const rule of RULES) {
+            if (!rule.applies(ctx)) continue;
 
-        // 3. Aufeinanderfolgende Tage prüfen
-        const consecutiveResult = this._checkConsecutiveDays(doctorId, dateStr, position, excludeShiftId);
-        if (consecutiveResult.blocker) {
-            result.blockers.push(consecutiveResult.blocker);
-            result.canProceed = false;
-        }
+            const violations = rule.check(ctx);
+            if (!violations || violations.length === 0) continue;
 
-        // 4. Dienstlimits prüfen (nur Warnung, kein Blocker)
-        if (!skipLimits) {
-            const limitResult = this._checkServiceLimits(doctorId, dateStr, position, excludeShiftId);
-            if (limitResult.warning) {
-                result.warnings.push(limitResult.warning);
+            for (const violation of violations) {
+                if (violation.severity === 'blocker') {
+                    result.blockers.push(violation.message);
+                    result.canProceed = false;
+                } else {
+                    result.warnings.push(violation.message);
+                }
             }
-        }
-
-        // 5. Mindestbesetzung prüfen (nur für Abwesenheiten)
-        const absencePositions = ["Frei", "Krank", "Urlaub", "Schichturlaub", "Dienstreise", "Nicht verfügbar"];
-        if (absencePositions.includes(position)) {
-            const staffingResult = this._checkStaffingMinimums(doctorId, dateStr, excludeShiftId);
-            if (staffingResult.warning) {
-                result.warnings.push(staffingResult.warning);
-            }
-        }
-
-        // 5b. Urlaubskontingent-Überschreitung prüfen (nur für "Urlaub")
-        if (position === 'Urlaub') {
-            const overshootResult = this._checkVacationOvershoot(doctorId, dateStr, excludeShiftId);
-            if (overshootResult.warning) {
-                result.warnings.push(overshootResult.warning);
-            }
-        }
-
-        // 6. Qualifikationsanforderungen prüfen
-        const qualResult = this._checkQualificationRequirements(doctorId, position, dateStr, excludeShiftId);
-        if (qualResult.blocker) {
-            result.blockers.push(qualResult.blocker);
-            result.canProceed = false;
-        }
-        if (qualResult.warning) {
-            result.warnings.push(qualResult.warning);
-        }
-
-        // 7. Timeslot-Überlappung prüfen (nur wenn Timeslots aktiviert)
-        if (timeslotId || this._workplaceHasTimeslots(position)) {
-            const overlapResult = this._checkTimeslotOverlaps(
-                doctorId, dateStr, position, timeslotId, excludeShiftId
-            );
-            if (overlapResult.blocker) {
-                result.blockers.push(overlapResult.blocker);
-                result.canProceed = false;
-            }
-            if (overlapResult.warning) {
-                result.warnings.push(overlapResult.warning);
-            }
-        }
-
-        // 8. Mitarbeiterbeziehungen mit Dienstkonflikt prüfen (nur für echte Dienste)
-        const relationshipResult = this._checkRelationshipConflicts(doctorId, dateStr, position, excludeShiftId);
-        if (relationshipResult.blocker) {
-            result.blockers.push(relationshipResult.blocker);
-            result.canProceed = false;
-        }
-        if (relationshipResult.warning) {
-            result.warnings.push(relationshipResult.warning);
         }
 
         return result;

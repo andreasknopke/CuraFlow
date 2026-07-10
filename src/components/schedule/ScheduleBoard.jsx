@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Link2, Plus, Filter, Check, ChevronsUpDown } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Link2, Plus, Filter, Check, ChevronsUpDown, ShieldCheck } from 'lucide-react';
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -50,6 +50,8 @@ import { useOverrideValidation } from '@/components/validation/useOverrideValida
 import { useAllDoctorQualifications, useAllWorkplaceQualifications, useQualifications } from '@/hooks/useQualifications';
 import { buildRowQualSets, matchesRowQualFilter, getDoctorRowQualHint, getDoctorRowQualRingClass, rowKey as buildRowFilterKey } from '@/components/schedule/rowQualFilter';
 import OverrideConfirmDialog from '@/components/validation/OverrideConfirmDialog';
+import ConflictPanelSheet from './ConflictPanelSheet';
+import { useConflictScan } from '@/components/validation/useConflictScan';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
 import { getAvailabilityBlockingDoctorIdsByDate, getDoctorEffectiveFte, isDoctorAvailable } from './staffingUtils';
@@ -1928,7 +1930,7 @@ export default function ScheduleBoard() {
     return scheduleInfoMap.get(`${dateStr}|${position}`);
   };
 
-        const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition, checkCrossTenantConflicts } = useShiftValidation(allShifts, {
+        const { validate, shouldCreateAutoFrei, findAutoFreiToCleanup, isAutoOffPosition, checkCrossTenantConflicts, validator } = useShiftValidation(allShifts, {
             workplaces,
             timeslots: workplaceTimeslots,
             sharedShifts: visiblePoolShifts,
@@ -2673,6 +2675,7 @@ export default function ScheduleBoard() {
   };
 
   const [isExporting, setIsExporting] = useState(false);
+  const [isConflictSheetOpen, setIsConflictSheetOpen] = useState(false);
 
   const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
@@ -2952,6 +2955,47 @@ export default function ScheduleBoard() {
     
     return dbShifts;
   }, [allShifts, currentDate, previewShifts]);
+
+  // ─── Conflict Scanner ────────────────────────────────────────────────
+  const weekDayStrings = useMemo(() => weekDays.map(d => format(d, 'yyyy-MM-dd')), [weekDays]);
+  const doctorNamesMap = useMemo(() => {
+      const map = new Map();
+      for (const d of doctors) {
+          map.set(d.id, d.name || `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.id);
+      }
+      return map;
+  }, [doctors]);
+  const { conflicts, scan: scanConflicts, isScanning, clear: clearConflicts } = useConflictScan({
+      validator,
+      dateRange: weekDayStrings,
+      doctorNames: doctorNamesMap,
+  });
+
+  // Build shift label map for resolve buttons
+  const shiftLabelMap = useMemo(() => {
+      const map = new Map();
+      for (const s of currentWeekShifts) {
+          if (!s.id) continue;
+          const doc = doctorNamesMap.get(s.doctor_id || '') || '?';
+          map.set(s.id, `${doc}: ${s.position}`);
+      }
+      return map;
+  }, [currentWeekShifts, doctorNamesMap]);
+
+  const handleOpenConflictSheet = useCallback(() => {
+      scanConflicts();
+      setIsConflictSheetOpen(true);
+  }, [scanConflicts]);
+
+  const handleResolveShift = useCallback((shiftId) => {
+      if (!shiftId) return;
+      deleteShiftMutation.mutate(shiftId, {
+          onSuccess: () => {
+              // Re-scan after deletion
+              setTimeout(() => scanConflicts(), 300);
+          },
+      });
+  }, [deleteShiftMutation, scanConflicts]);
 
         const currentWeekShiftLookup = useMemo(() => createScheduleShiftLookup(currentWeekShifts), [currentWeekShifts]);
 
@@ -6533,6 +6577,23 @@ export default function ScheduleBoard() {
                      </DropdownMenuContent>
                  </DropdownMenu>
              )}
+              <Button
+                 variant="outline"
+                 size="sm"
+                 onClick={handleOpenConflictSheet}
+                 disabled={isScanning}
+                 title="Regelkonformität prüfen"
+                 className="h-9"
+                 data-testid="schedule-conflict-check"
+              >
+                {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                <span className="hidden sm:inline ml-1">Regelprüfung</span>
+                {conflicts.length > 0 && (
+                    <Badge variant={conflicts.some(c => c.severity === 'blocker') ? 'destructive' : 'secondary'} className="ml-1 h-5 px-1.5 text-xs">
+                        {conflicts.length}
+                    </Badge>
+                )}
+             </Button>
               <Button 
                  variant="outline"
                  size="sm"
@@ -7463,6 +7524,19 @@ export default function ScheduleBoard() {
           context={overrideDialog.context}
           onConfirm={confirmOverride}
           onCancel={cancelOverride}
+      />
+
+      {/* Conflict Panel Sheet */}
+      <ConflictPanelSheet
+          open={isConflictSheetOpen}
+          onOpenChange={(open) => {
+              setIsConflictSheetOpen(open);
+              if (!open) clearConflicts();
+          }}
+          conflicts={conflicts}
+          isScanning={isScanning}
+          onResolveShift={handleResolveShift}
+          shiftLabels={shiftLabelMap}
       />
 
       <Dialog open={timeslotSelectionDialog.open} onOpenChange={handleTimeslotDialogOpenChange}>
