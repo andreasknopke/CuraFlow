@@ -46,12 +46,7 @@ export class TimeslotOverlapRule extends ValidationRule {
             (newWorkplace?.timeslots_enabled ? null : createFullDayTimeslot());
 
         if (!newEffectiveSlot) {
-            return [{
-                ruleId: this.id,
-                severity: 'warning',
-                message: 'Bitte wählen Sie ein Zeitfenster aus.',
-                shiftIds: [],
-            }];
+            return null;
         }
 
         const tolerance = newTimeslot?.overlap_tolerance_minutes ||

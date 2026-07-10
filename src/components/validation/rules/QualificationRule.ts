@@ -66,10 +66,11 @@ export class QualificationRule extends ValidationRule {
             );
 
             if (otherAssignments.length > 0) {
-                const allRequiredQualIds = [...mandatoryQuals.map(wq => wq.qualification_id), ...preferredQuals.map(wq => wq.qualification_id)];
+                // Only mandatory quals are required for the "qualified colleague" check
+                const mandatoryQualIds = mandatoryQuals.map(wq => wq.qualification_id);
                 const hasQualifiedColleague = otherAssignments.some(s => {
                     const colleagueQuals = v.getDoctorQualIds(s.doctor_id || '');
-                    return allRequiredQualIds.every(qid => colleagueQuals.includes(qid));
+                    return mandatoryQualIds.every(qid => colleagueQuals.includes(qid));
                 });
 
                 if (hasQualifiedColleague) {
