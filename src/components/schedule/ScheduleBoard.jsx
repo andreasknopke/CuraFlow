@@ -2698,9 +2698,34 @@ export default function ScheduleBoard() {
   const checkConflictsWithOverride = async (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       const doctor = doctors.find(d => d.id === doctorId);
+
+      // Prüfen, ob ein Rotationskonflikt vorliegt
+      const isRotationConflict = result.blockers.some(
+          (b) => typeof b === 'string' && b.includes('Rotation')
+      );
       
       // Bei Blockern: Override-Dialog anzeigen
       if (result.blockers.length > 0) {
+          // Bei Rotationskonflikt: onProceed so wrappen, dass die Rotation vorher entfernt wird
+          const wrappedOnConfirm = isRotationConflict && onProceed
+              ? () => {
+                    const rotationPositions = new Set(
+                        workplaces
+                            .filter((w) => w.category === 'Rotationen')
+                            .map((w) => w.name)
+                    );
+                    const rotationShift = allShifts.find(
+                        (s) =>
+                            s.date === dateStr &&
+                            s.doctor_id === doctorId &&
+                            rotationPositions.has(s.position)
+                    );
+                    if (rotationShift) {
+                        deleteShiftMutation.mutate(rotationShift.id);
+                    }
+                    onProceed();
+                }
+              : onProceed;
           requestOverride({
               blockers: result.blockers,
               warnings: result.warnings,
@@ -2708,7 +2733,7 @@ export default function ScheduleBoard() {
               doctorName: doctor?.name,
               date: dateStr,
               position: newPosition,
-              onConfirm: onProceed
+              onConfirm: wrappedOnConfirm
           });
           return true; // Blockiert - warte auf Override-Bestätigung
       }
