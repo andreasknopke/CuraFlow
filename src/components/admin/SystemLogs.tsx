@@ -23,16 +23,34 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog";
 
+import type { Matcher } from "react-day-picker";
+
+type LogLevel = 'ALL' | 'error' | 'warning' | 'success' | 'info' | 'wish_request' | 'override' | 'audit';
+
+interface SystemLogEntry {
+  id?: string | number;
+  level: string;
+  message: string;
+  source: string;
+  created_date: string;
+  details?: string;
+  [key: string]: unknown;
+}
+
+interface InvokeResponse {
+  data: Record<string, unknown>;
+}
+
 export default function SystemLogs() {
     const queryClient = useQueryClient();
     const { token } = useAuth();
-    const [searchTerm, setSearchTerm] = useState("");
-    const [filterLevel, setFilterLevel] = useState("ALL"); // ALL, error, info, wish_request, override, audit
-    const [dateFrom, setDateFrom] = useState(null);
-    const [dateTo, setDateTo] = useState(null);
+    const [searchTerm, setSearchTerm] = useState<string>('');
+    const [filterLevel, setFilterLevel] = useState<LogLevel>('ALL');
+    const [dateFrom, setDateFrom] = useState<Date | null>(null);
+    const [dateTo, setDateTo] = useState<Date | null>(null);
 
     // Helper to call backend with JWT token
-    const invokeWithAuth = async (action, data = {}) => {
+    const invokeWithAuth = async (action: string, data: Record<string, unknown> = {}): Promise<InvokeResponse> => {
         const response = await fetch(`${window.location.origin}/api/functions/adminTools`, {
             method: 'POST',
             headers: {
@@ -48,24 +66,23 @@ export default function SystemLogs() {
         return { data: result };
     };
 
-    const { data: logs = [], isLoading, refetch } = useQuery({
+    const { data: logs = [], isLoading, refetch } = useQuery<SystemLogEntry[]>({
         queryKey: ['systemLogs'],
         queryFn: () => db.SystemLog.list({ sort: '-created_date', limit: 500 }),
         staleTime: 2 * 60 * 1000, // 2 Minuten
-        cacheTime: 5 * 60 * 1000, // 5 Minuten
         refetchOnWindowFocus: false,
     });
 
     const deleteOldLogsMutation = useMutation({
-        mutationFn: (days) => invokeWithAuth('delete_old_logs', { days }),
-        onSuccess: (res) => {
-            toast.success(res.data.message);
-            queryClient.invalidateQueries(['systemLogs']);
+        mutationFn: (days: number) => invokeWithAuth('delete_old_logs', { days }),
+        onSuccess: (res: InvokeResponse) => {
+            toast.success(res.data.message as string);
+            queryClient.invalidateQueries({ queryKey: ['systemLogs'] });
         },
-        onError: (err) => toast.error("Fehler: " + err.message)
+        onError: (err: unknown) => toast.error("Fehler: " + (err instanceof Error ? err.message : String(err)))
     });
 
-    const getLevelIcon = (level) => {
+    const getLevelIcon = (level: string) => {
         switch (level) {
             case 'error': return <XCircle className="w-4 h-4 text-red-500" />;
             case 'warning': return <AlertTriangle className="w-4 h-4 text-amber-500" />;
@@ -77,7 +94,7 @@ export default function SystemLogs() {
         }
     };
 
-    const getLevelBadge = (level) => {
+    const getLevelBadge = (level: string): string => {
         switch (level) {
             case 'error': return 'bg-red-100 text-red-700 border-red-200';
             case 'warning': return 'bg-amber-100 text-amber-700 border-amber-200';
@@ -89,16 +106,16 @@ export default function SystemLogs() {
         }
     };
 
-    const filteredLogs = logs.filter(log => {
+    const filteredLogs = logs.filter((log: SystemLogEntry) => {
         const matchesSearch = log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               log.source.toLowerCase().includes(searchTerm.toLowerCase());
-        
+
         if (!matchesSearch) return false;
 
         // Date filter
         const logDate = new Date(log.created_date);
-        if (dateFrom && logDate < new Date(dateFrom.setHours(0, 0, 0, 0))) return false;
-        if (dateTo && logDate > new Date(dateTo.setHours(23, 59, 59, 999))) return false;
+        if (dateFrom && logDate < new Date(new Date(dateFrom).setHours(0, 0, 0, 0))) return false;
+        if (dateTo && logDate > new Date(new Date(dateTo).setHours(23, 59, 59, 999))) return false;
 
         if (filterLevel === 'ALL') return true;
         if (filterLevel === 'wish_request') return log.level === 'wish_request';
@@ -106,7 +123,7 @@ export default function SystemLogs() {
         if (filterLevel === 'info') return log.level === 'info';
         if (filterLevel === 'override') return log.level === 'override';
         if (filterLevel === 'audit') return log.level === 'audit';
-        
+
         return true;
     });
 
@@ -130,12 +147,12 @@ export default function SystemLogs() {
                         <Input
                             placeholder="Suche in Logs..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
                             className="pl-8"
                         />
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                         <Select value={filterLevel} onValueChange={setFilterLevel}>
+                         <Select value={filterLevel} onValueChange={(val: string) => setFilterLevel(val as LogLevel)}>
                             <SelectTrigger className="w-[180px]">
                                 <Filter className="w-4 h-4 mr-2 text-slate-500" />
                                 <SelectValue placeholder="Filter" />
@@ -158,10 +175,11 @@ export default function SystemLogs() {
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
+                                {/* @ts-expect-error react-day-picker overload union doesn't narrow correctly with mode="single" */}
                                 <CalendarComponent
                                     mode="single"
-                                    selected={dateFrom}
-                                    onSelect={setDateFrom}
+                                    selected={dateFrom as Matcher | undefined}
+                                    onSelect={setDateFrom as (date: Date | undefined) => void}
                                     initialFocus
                                 />
                             </PopoverContent>
@@ -175,18 +193,19 @@ export default function SystemLogs() {
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-auto p-0">
+                                {/* @ts-expect-error react-day-picker overload union doesn't narrow correctly with mode="single" */}
                                 <CalendarComponent
                                     mode="single"
-                                    selected={dateTo}
-                                    onSelect={setDateTo}
+                                    selected={dateTo as Matcher | undefined}
+                                    onSelect={setDateTo as (date: Date | undefined) => void}
                                     initialFocus
                                 />
                             </PopoverContent>
                         </Popover>
 
                         {(dateFrom || dateTo) && (
-                            <Button 
-                                variant="ghost" 
+                            <Button
+                                variant="ghost"
                                 size="sm"
                                 onClick={() => { setDateFrom(null); setDateTo(null); }}
                             >
@@ -196,7 +215,7 @@ export default function SystemLogs() {
 
                         <div className="flex-1" />
 
-                        <Select onValueChange={(value) => {
+                        <Select onValueChange={(value: string) => {
                             if (confirm(`Alle Logs älter als ${value} Tage wirklich löschen?`)) {
                                 deleteOldLogsMutation.mutate(parseInt(value));
                             }
@@ -242,7 +261,7 @@ export default function SystemLogs() {
                                     </TableCell>
                                 </TableRow>
                             ) : (
-                                filteredLogs.map((log) => (
+                                filteredLogs.map((log: SystemLogEntry) => (
                                     <TableRow key={log.id}>
                                         <TableCell className="font-mono text-xs">
                                             {format(new Date(log.created_date), 'dd.MM.yyyy HH:mm:ss')}
@@ -278,7 +297,7 @@ export default function SystemLogs() {
                                                             <pre className="whitespace-pre-wrap break-words">
                                                                 {(() => {
                                                                     try {
-                                                                        return JSON.stringify(JSON.parse(log.details), null, 2);
+                                                                        return JSON.stringify(JSON.parse(log.details!), null, 2);
                                                                     } catch (_e) {
                                                                         return log.details;
                                                                     }

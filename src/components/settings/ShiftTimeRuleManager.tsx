@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { db, api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,70 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Trash2, Save, Clock, Pencil, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
+import type { ShiftTimeRule, Workplace, WorkTimeModel } from '@/types';
+
+// ── Local interfaces ────────────────────────────────────────────────────────
+
+interface ShiftTimeRuleManagerProps {
+  isReadOnly?: boolean;
+}
+
+interface ModelFormData {
+  short_code: string;
+  label: string;
+  workplace_id: string;
+}
+
+interface TimeFormData {
+  work_time_model_id: string;
+  start_time: string;
+  end_time: string;
+  break_minutes: number | string;
+}
+
+interface PendingModel {
+  short_code: string;
+  label: string;
+  workplace_id: string;
+}
+
+interface GroupedModel {
+  code: string;
+  short_code: string;
+  label: string;
+  workplace_id: string;
+  entries: ShiftTimeRule[];
+}
+
+interface ModelCardProps {
+  group: GroupedModel;
+  isExpanded: boolean;
+  onToggle: () => void;
+  workplaceMap: Map<string, Workplace>;
+  modelMap: Map<string, WorkTimeModel>;
+  workTimeModels: WorkTimeModel[];
+  isReadOnly: boolean;
+  editingModel: string | null;
+  modelForm: ModelFormData;
+  setModelForm: Dispatch<SetStateAction<ModelFormData>>;
+  onEditModel: () => void;
+  onSaveModel: () => Promise<void>;
+  onCancelEditModel: () => void;
+  onDeleteModel: () => Promise<void>;
+  addingTimeFor: string | null;
+  editingTimeId: string | null;
+  timeForm: TimeFormData;
+  setTimeForm: Dispatch<SetStateAction<TimeFormData>>;
+  onStartAddTime: (code: string) => void;
+  onStartEditTime: (rule: ShiftTimeRule) => void;
+  onSaveTime: (shortCode: string) => Promise<void>;
+  onDeleteTime: (ruleId: string) => Promise<void>;
+  onResetTimeForm: () => void;
+  availableModels: WorkTimeModel[];
+  formatTime: (t: string | null | undefined) => string;
+  calcHours: (rule: ShiftTimeRule | null | undefined) => string | null;
+  isPending: boolean;
+}
 
 /**
  * ShiftTimeRuleManager – Dienstmodell-Verwaltung
@@ -17,72 +81,72 @@ import { toast } from 'sonner';
  *   - Arbeitsplatz (workplace_id)
  *   - Je Arbeitszeitmodell eigene Start-/Endzeiten + Pause
  */
-export default function ShiftTimeRuleManager({ isReadOnly = false }) {
+export default function ShiftTimeRuleManager({ isReadOnly = false }: ShiftTimeRuleManagerProps) {
   const queryClient = useQueryClient();
-  const [addingModel, setAddingModel] = useState(false);
-  const [editingModel, setEditingModel] = useState(null);
-  const [modelForm, setModelForm] = useState({ short_code: '', label: '', workplace_id: '' });
-  const [expandedModels, setExpandedModels] = useState(new Set());
-  const [addingTimeFor, setAddingTimeFor] = useState(null);
-  const [editingTimeId, setEditingTimeId] = useState(null);
-  const [timeForm, setTimeForm] = useState({ work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 });
+  const [addingModel, setAddingModel] = useState<boolean>(false);
+  const [editingModel, setEditingModel] = useState<string | null>(null);
+  const [modelForm, setModelForm] = useState<ModelFormData>({ short_code: '', label: '', workplace_id: '' });
+  const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
+  const [addingTimeFor, setAddingTimeFor] = useState<string | null>(null);
+  const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
+  const [timeForm, setTimeForm] = useState<TimeFormData>({ work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 });
   // Pending-Modell: gerade neu angelegt, noch ohne DB-Zeilen
-  const [pendingModel, setPendingModel] = useState(null);
+  const [pendingModel, setPendingModel] = useState<PendingModel | null>(null);
 
-  const { data: workplaces = [] } = useQuery({
+  const { data: workplaces = [] } = useQuery<Workplace[]>({
     queryKey: ['workplaces'],
-    queryFn: () => db.Workplace.list(null, 1000),
+    queryFn: () => db.Workplace.list(),
     staleTime: 5 * 60 * 1000,
   });
 
-  const { data: workTimeModels = [] } = useQuery({
+  const { data: workTimeModels = [] } = useQuery<WorkTimeModel[]>({
     queryKey: ['workTimeModels'],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/staff/work-time-models');
+        const res = (await api.request('/api/staff/work-time-models')) as { models?: WorkTimeModel[] };
         return res.models || [];
       } catch { return []; }
     },
     staleTime: 30 * 60 * 1000,
   });
 
-  const { data: rules = [] } = useQuery({
+  const { data: rules = [] } = useQuery<ShiftTimeRule[]>({
     queryKey: ['shiftTimeRules'],
-    queryFn: () => db.ShiftTimeRule.list(null, 5000),
+    queryFn: () => db.ShiftTimeRule.list(),
     staleTime: 2 * 60 * 1000,
   });
 
-  const workplaceMap = useMemo(() => new Map(workplaces.map(w => [w.id, w])), [workplaces]);
-  const modelMap = useMemo(() => new Map(workTimeModels.map(m => [m.id, m])), [workTimeModels]);
+  const workplaceMap = useMemo(() => new Map(workplaces.map((w: Workplace) => [w.id, w])), [workplaces]);
+  const modelMap = useMemo(() => new Map(workTimeModels.map((m: WorkTimeModel) => [m.id, m])), [workTimeModels]);
 
   // Gruppierung nach short_code
   const groupedModels = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, GroupedModel>();
     for (const r of rules) {
       const code = r.short_code || r.label || r.id;
       if (!map.has(code)) {
-        map.set(code, { short_code: r.short_code || '', label: r.label || '', workplace_id: r.workplace_id, entries: [] });
+        map.set(code, { code, short_code: r.short_code || '', label: r.label || '', workplace_id: r.workplace_id, entries: [] as ShiftTimeRule[] });
       }
-      map.get(code).entries.push(r);
+      map.get(code)!.entries.push(r);
     }
     for (const group of map.values()) {
-      group.entries.sort((a, b) => {
+      group.entries.sort((a: ShiftTimeRule, b: ShiftTimeRule) => {
         const ma = modelMap.get(a.work_time_model_id);
         const mb = modelMap.get(b.work_time_model_id);
         return Number(mb?.hours_per_week || 0) - Number(ma?.hours_per_week || 0);
       });
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([code, data]) => ({ code, ...data }));
+    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, data]) => ({ ...data }));
   }, [rules, modelMap]);
 
-  const existingCodes = useMemo(() => groupedModels.map(g => g.short_code.trim().toLowerCase()), [groupedModels]);
+  const existingCodes = useMemo(() => groupedModels.map((g: GroupedModel) => g.short_code.trim().toLowerCase()), [groupedModels]);
 
   // ── Dienstmodell Header ──
   const resetModelForm = () => { setAddingModel(false); setEditingModel(null); setModelForm({ short_code: '', label: '', workplace_id: '' }); };
 
   const startAddModel = () => { setEditingModel(null); setAddingModel(true); setModelForm({ short_code: '', label: '', workplace_id: '' }); };
 
-  const startEditModel = (group) => {
+  const startEditModel = (group: GroupedModel) => {
     setAddingModel(false);
     setEditingModel(group.code);
     setModelForm({ short_code: group.short_code, label: group.label, workplace_id: group.workplace_id });
@@ -109,47 +173,47 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     }
 
     if (editingModel) {
-      const group = groupedModels.find(g => g.code === editingModel);
+      const group = groupedModels.find((g: GroupedModel) => g.code === editingModel);
       if (group) {
         try {
-          await Promise.all(group.entries.map(entry =>
+          await Promise.all(group.entries.map((entry: ShiftTimeRule) =>
             db.ShiftTimeRule.update(entry.id, { short_code: code, label: modelForm.label.trim(), workplace_id: modelForm.workplace_id })
           ));
-          queryClient.invalidateQueries(['shiftTimeRules']);
+          queryClient.invalidateQueries({ queryKey: ['shiftTimeRules'] });
           toast.success('Dienstmodell aktualisiert');
-        } catch (e) { toast.error(`Fehler: ${e.message}`); }
+        } catch (e: unknown) { toast.error(`Fehler: ${(e as Error).message}`); }
       }
       resetModelForm();
     }
   };
 
-  const deleteModel = async (group) => {
+  const deleteModel = async (group: GroupedModel) => {
     if (!confirm(`Dienstmodell "${group.short_code}" mit allen Zeiteinträgen löschen?`)) return;
     try {
-      await Promise.all(group.entries.map(e => db.ShiftTimeRule.delete(e.id)));
-      queryClient.invalidateQueries(['shiftTimeRules']);
+      await Promise.all(group.entries.map((e: ShiftTimeRule) => db.ShiftTimeRule.delete(e.id)));
+      queryClient.invalidateQueries({ queryKey: ['shiftTimeRules'] });
       toast.success('Dienstmodell gelöscht');
-    } catch (e) { toast.error(`Fehler: ${e.message}`); }
+    } catch (e: unknown) { toast.error(`Fehler: ${(e as Error).message}`); }
   };
 
   // ── Zeiteinträge ──
   const resetTimeForm = () => { setAddingTimeFor(null); setEditingTimeId(null); setTimeForm({ work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 }); };
 
-  const startAddTime = (code) => { setEditingTimeId(null); setAddingTimeFor(code); setTimeForm({ work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 }); };
+  const startAddTime = (code: string) => { setEditingTimeId(null); setAddingTimeFor(code); setTimeForm({ work_time_model_id: '', start_time: '07:00', end_time: '15:12', break_minutes: 0 }); };
 
-  const startEditTime = (rule) => {
+  const startEditTime = (rule: ShiftTimeRule) => {
     setAddingTimeFor(null);
     setEditingTimeId(rule.id);
     setTimeForm({ work_time_model_id: rule.work_time_model_id, start_time: rule.start_time?.substring(0, 5) || '07:00', end_time: rule.end_time?.substring(0, 5) || '15:12', break_minutes: rule.break_minutes || 0 });
   };
 
-  const saveTime = async (shortCode) => {
+  const saveTime = async (shortCode: string) => {
     if (!timeForm.work_time_model_id) { toast.error('Bitte ein Arbeitszeitmodell auswählen.'); return; }
     if (!timeForm.start_time || !timeForm.end_time) { toast.error('Bitte Start- und Endzeit eingeben.'); return; }
 
-    const group = groupedModels.find(g => g.code === shortCode);
+    const group = groupedModels.find((g: GroupedModel) => g.code === shortCode);
     const pm = pendingModel?.short_code === shortCode ? pendingModel : null;
-    const existingEntry = group?.entries.find(e => e.work_time_model_id === timeForm.work_time_model_id);
+    const existingEntry = group?.entries.find((e: ShiftTimeRule) => e.work_time_model_id === timeForm.work_time_model_id);
     if (existingEntry && existingEntry.id !== editingTimeId) {
       toast.error(`Dieses AZ-Modell ist für "${shortCode}" bereits definiert.`);
       return;
@@ -169,7 +233,7 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
       work_time_model_id: timeForm.work_time_model_id,
       start_time: timeForm.start_time + ':00',
       end_time: timeForm.end_time + ':00',
-      break_minutes: parseInt(timeForm.break_minutes) || 0,
+      break_minutes: parseInt(String(timeForm.break_minutes)) || 0,
       spans_midnight: spansMidnight,
     };
 
@@ -185,25 +249,25 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
         toast.success('Zeiteintrag hinzugefügt');
         if (pm) setPendingModel(null);
       }
-      queryClient.invalidateQueries(['shiftTimeRules']);
+      queryClient.invalidateQueries({ queryKey: ['shiftTimeRules'] });
       resetTimeForm();
-    } catch (e) { toast.error(`Fehler: ${e.message}`); }
+    } catch (e: unknown) { toast.error(`Fehler: ${(e as Error).message}`); }
   };
 
-  const deleteTime = async (ruleId) => {
+  const deleteTime = async (ruleId: string) => {
     try {
       await db.ShiftTimeRule.delete(ruleId);
-      queryClient.invalidateQueries(['shiftTimeRules']);
+      queryClient.invalidateQueries({ queryKey: ['shiftTimeRules'] });
       toast.success('Zeiteintrag gelöscht');
-    } catch (e) { toast.error(`Fehler: ${e.message}`); }
+    } catch (e: unknown) { toast.error(`Fehler: ${(e as Error).message}`); }
   };
 
-  const toggleExpand = (code) => {
+  const toggleExpand = (code: string) => {
     setExpandedModels(prev => { const n = new Set(prev); if (n.has(code)) n.delete(code); else n.add(code); return n; });
   };
 
-  const formatTime = (t) => t?.substring(0, 5) || '–';
-  const calcHours = (rule) => {
+  const formatTime = (t: string | null | undefined): string => t?.substring(0, 5) || '–';
+  const calcHours = (rule: ShiftTimeRule | null | undefined): string | null => {
     if (!rule?.start_time || !rule?.end_time) return null;
     const [sh, sm] = rule.start_time.split(':').map(Number);
     const [eh, em] = rule.end_time.split(':').map(Number);
@@ -213,14 +277,14 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
     return (mins / 60).toFixed(1);
   };
 
-  const availableModelsFor = (shortCode) => {
-    const group = groupedModels.find(g => g.code === shortCode);
-    const usedIds = new Set(group?.entries.map(e => e.work_time_model_id) || []);
-    if (editingTimeId) { const r = rules.find(r => r.id === editingTimeId); if (r) usedIds.delete(r.work_time_model_id); }
-    return workTimeModels.filter(m => !usedIds.has(m.id));
+  const availableModelsFor = (shortCode: string): WorkTimeModel[] => {
+    const group = groupedModels.find((g: GroupedModel) => g.code === shortCode);
+    const usedIds = new Set(group?.entries.map((e: ShiftTimeRule) => e.work_time_model_id) || []);
+    if (editingTimeId) { const r = rules.find((r: ShiftTimeRule) => r.id === editingTimeId); if (r) usedIds.delete(r.work_time_model_id); }
+    return workTimeModels.filter((m: WorkTimeModel) => !usedIds.has(m.id));
   };
 
-  const cardProps = (group, isPending) => ({
+  const cardProps = (group: GroupedModel, isPending: boolean): ModelCardProps => ({
     group, isPending,
     isExpanded: expandedModels.has(group.code) || isPending,
     onToggle: () => toggleExpand(group.code),
@@ -270,7 +334,7 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
                 <Select value={modelForm.workplace_id} onValueChange={v => setModelForm({ ...modelForm, workplace_id: v })}>
                   <SelectTrigger className="h-9"><SelectValue placeholder="Wählen…" /></SelectTrigger>
                   <SelectContent>
-                    {workplaces.map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                    {workplaces.map((w: Workplace) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
@@ -287,11 +351,11 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }) {
         <Card><CardContent className="p-8 text-center text-slate-400">Noch keine Dienstmodelle definiert.</CardContent></Card>
       )}
 
-      {pendingModel && !groupedModels.find(g => g.code === pendingModel.short_code) && (
+      {pendingModel && !groupedModels.find((g: GroupedModel) => g.code === pendingModel.short_code) && (
         <ModelCard key="__pending" {...cardProps({ code: pendingModel.short_code, ...pendingModel, entries: [] }, true)} />
       )}
 
-      {groupedModels.map(group => <ModelCard key={group.code} {...cardProps(group, false)} />)}
+      {groupedModels.map((group: GroupedModel) => <ModelCard key={group.code} {...cardProps(group, false)} />)}
     </div>
   );
 }
@@ -303,7 +367,7 @@ function ModelCard({
   addingTimeFor, editingTimeId, timeForm, setTimeForm,
   onStartAddTime, onStartEditTime, onSaveTime, onDeleteTime, onResetTimeForm,
   availableModels, formatTime, calcHours, isPending,
-}) {
+}: ModelCardProps) {
   const wp = workplaceMap.get(group.workplace_id);
   const isEditingHeader = editingModel === group.code;
 
@@ -325,7 +389,7 @@ function ModelCard({
               <Select value={modelForm.workplace_id} onValueChange={v => setModelForm({ ...modelForm, workplace_id: v })}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Wählen…" /></SelectTrigger>
                 <SelectContent>
-                  {[...workplaceMap.values()].map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                  {[...workplaceMap.values()].map((w: Workplace) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -372,7 +436,7 @@ function ModelCard({
               </tr>
             </thead>
             <tbody>
-              {group.entries.map(entry => {
+              {group.entries.map((entry: ShiftTimeRule) => {
                 const m = modelMap.get(entry.work_time_model_id);
                 if (editingTimeId === entry.id) {
                   return (
@@ -381,7 +445,7 @@ function ModelCard({
                         <Select value={timeForm.work_time_model_id} onValueChange={v => setTimeForm({ ...timeForm, work_time_model_id: v })}>
                           <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {workTimeModels.filter(wm => wm.id === entry.work_time_model_id || availableModels.some(a => a.id === wm.id)).map(wm => (
+                            {workTimeModels.filter((wm: WorkTimeModel) => wm.id === entry.work_time_model_id || availableModels.some((a: WorkTimeModel) => a.id === wm.id)).map((wm: WorkTimeModel) => (
                               <SelectItem key={wm.id} value={wm.id}>{wm.name} ({wm.hours_per_week}h)</SelectItem>
                             ))}
                           </SelectContent>
@@ -425,7 +489,7 @@ function ModelCard({
                     <Select value={timeForm.work_time_model_id} onValueChange={v => setTimeForm({ ...timeForm, work_time_model_id: v })}>
                       <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="AZ-Modell wählen…" /></SelectTrigger>
                       <SelectContent>
-                        {availableModels.map(wm => <SelectItem key={wm.id} value={wm.id}>{wm.name} ({wm.hours_per_week}h)</SelectItem>)}
+                        {availableModels.map((wm: WorkTimeModel) => <SelectItem key={wm.id} value={wm.id}>{wm.name} ({wm.hours_per_week}h)</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </td>

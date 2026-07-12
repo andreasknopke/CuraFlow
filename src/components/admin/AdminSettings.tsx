@@ -6,29 +6,35 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Settings, ShieldCheck, Mail } from 'lucide-react';
 import SectionConfigDialog from '@/components/settings/SectionConfigDialog';
+import type { SystemSetting, Workplace } from '@/types';
+
+interface ApprovalRules {
+  service_requires_approval: boolean;
+  no_service_requires_approval: boolean;
+  position_overrides: Record<string, boolean>;
+  auto_create_shift_on_approval: boolean;
+}
 
 export default function AdminSettings() {
     const queryClient = useQueryClient();
 
-    const { data: settings = [] } = useQuery({
+    const { data: settings = [] } = useQuery<SystemSetting[]>({
         queryKey: ['systemSettings'],
         queryFn: () => db.SystemSetting.list(),
         staleTime: 10 * 60 * 1000, // 10 Minuten
-        cacheTime: 15 * 60 * 1000, // 15 Minuten
         refetchOnWindowFocus: false,
     });
 
-    const { data: workplaces = [] } = useQuery({
+    const { data: workplaces = [] } = useQuery<Workplace[]>({
         queryKey: ['workplaces'],
         queryFn: () => db.Workplace.list(),
         staleTime: 10 * 60 * 1000,
-        cacheTime: 15 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
 
     const updateSettingMutation = useMutation({
-        mutationFn: async ({ key, value }) => {
-            const existing = settings.find(s => s.key === key);
+        mutationFn: async ({ key, value }: { key: string; value: string }) => {
+            const existing = settings.find((s: SystemSetting) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             } else {
@@ -38,29 +44,29 @@ export default function AdminSettings() {
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
-    const wishDeadlineMonths = settings.find(s => s.key === 'wish_deadline_months')?.value || '';
-    const wishReminderEnabled = settings.find(s => s.key === 'wish_reminder_email_enabled')?.value === 'true';
-    
+    const wishDeadlineMonths: string = settings.find((s: SystemSetting) => s.key === 'wish_deadline_months')?.value || '';
+    const wishReminderEnabled: boolean = settings.find((s: SystemSetting) => s.key === 'wish_reminder_email_enabled')?.value === 'true';
+
     // Approval Settings
-    const approvalSettingRaw = settings.find(s => s.key === 'wish_approval_rules')?.value;
-    const approvalRules = approvalSettingRaw ? JSON.parse(approvalSettingRaw) : {
+    const approvalSettingRaw: string | undefined = settings.find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value ?? undefined;
+    const approvalRules: ApprovalRules = approvalSettingRaw ? JSON.parse(approvalSettingRaw) : {
         service_requires_approval: true,
         no_service_requires_approval: false,
         position_overrides: {}, // { "Dienst Hintergrund": false } means this position doesn't require approval
         auto_create_shift_on_approval: false // If true, automatically create shift entry when wish is approved
     };
 
-    const updateApprovalRules = (newRules) => {
-        updateSettingMutation.mutate({ 
-            key: 'wish_approval_rules', 
-            value: JSON.stringify(newRules) 
+    const updateApprovalRules = (newRules: ApprovalRules) => {
+        updateSettingMutation.mutate({
+            key: 'wish_approval_rules',
+            value: JSON.stringify(newRules)
         });
     };
 
     // Get service positions (Dienste category)
-    const servicePositions = workplaces
-        .filter(w => w.category === 'Dienste')
-        .sort((a, b) => (a.order || 0) - (b.order || 0));
+    const servicePositions: Workplace[] = workplaces
+        .filter((w: Workplace) => w.category === 'Dienste')
+        .sort((a: Workplace, b: Workplace) => (a.order || 0) - (b.order || 0));
 
     return (
         <div className="space-y-6" data-testid="admin-settings-panel">
@@ -82,14 +88,14 @@ export default function AdminSettings() {
                             <p className="text-xs text-slate-500">Vorlaufzeit in Monaten (z.B. 2 = Eingabe nur für Termine, die mind. 2 Monate in der Zukunft liegen).</p>
                         </div>
                         <div className="flex items-center gap-2">
-                            <Input 
-                                type="number" 
+                            <Input
+                                type="number"
                                 min="0"
                                 max="24"
                                 data-testid="admin-settings-wish-deadline-months"
                                 placeholder="Keine Frist"
                                 value={wishDeadlineMonths}
-                                onChange={(e) => updateSettingMutation.mutate({ key: 'wish_deadline_months', value: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSettingMutation.mutate({ key: 'wish_deadline_months', value: e.target.value })}
                                 className="h-9 w-32 bg-white"
                             />
                             <span className="text-sm text-slate-600">Monate im Voraus</span>
@@ -101,9 +107,9 @@ export default function AdminSettings() {
                                     id="wish-reminder-email"
                                     data-testid="admin-settings-wish-reminder-email"
                                     checked={wishReminderEnabled}
-                                    onCheckedChange={(checked) => updateSettingMutation.mutate({ 
-                                        key: 'wish_reminder_email_enabled', 
-                                        value: checked ? 'true' : 'false' 
+                                    onCheckedChange={(checked: boolean | string) => updateSettingMutation.mutate({
+                                        key: 'wish_reminder_email_enabled',
+                                        value: checked ? 'true' : 'false'
                                     })}
                                     className="mt-0.5"
                                 />
@@ -113,7 +119,7 @@ export default function AdminSettings() {
                                         Erinnerungsmail 2 Wochen vor Sperrtermin
                                     </Label>
                                     <p className="text-xs text-slate-500">
-                                        Alle Mitarbeiter werden automatisch per E-Mail erinnert, ihre Dienstwünsche einzutragen, 
+                                        Alle Mitarbeiter werden automatisch per E-Mail erinnert, ihre Dienstwünsche einzutragen,
                                         14 Tage bevor der Eintragungszeitraum abläuft.
                                     </p>
                                 </div>
@@ -140,16 +146,16 @@ export default function AdminSettings() {
                     {/* General Rules */}
                     <div className="border p-4 rounded-lg bg-slate-50 space-y-4">
                         <Label className="text-sm font-semibold text-slate-700">Allgemeine Regeln</Label>
-                        
+
                         <div className="flex items-center justify-between py-2 border-b border-slate-200">
                             <div>
                                 <p className="font-medium text-slate-900">Dienstwunsch</p>
                                 <p className="text-xs text-slate-500">Wunsch für einen bestimmten Dienst</p>
                             </div>
-                            <Switch 
+                            <Switch
                                 data-testid="admin-settings-service-requires-approval"
                                 checked={approvalRules.service_requires_approval}
-                                onCheckedChange={(checked) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => updateApprovalRules({
                                     ...approvalRules,
                                     service_requires_approval: checked
                                 })}
@@ -161,10 +167,10 @@ export default function AdminSettings() {
                                 <p className="font-medium text-slate-900">Kein Dienst</p>
                                 <p className="text-xs text-slate-500">Wunsch, an einem Tag keinen Dienst zu haben</p>
                             </div>
-                            <Switch 
+                            <Switch
                                 data-testid="admin-settings-no-service-requires-approval"
                                 checked={approvalRules.no_service_requires_approval}
-                                onCheckedChange={(checked) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => updateApprovalRules({
                                     ...approvalRules,
                                     no_service_requires_approval: checked
                                 })}
@@ -176,10 +182,10 @@ export default function AdminSettings() {
                                 <p className="font-medium text-slate-900">Bei Genehmigung im Dienstplan eintragen</p>
                                 <p className="text-xs text-slate-500">Genehmigte Dienstwünsche automatisch als Schicht anlegen</p>
                             </div>
-                            <Switch 
+                            <Switch
                                 data-testid="admin-settings-auto-create-shift-on-approval"
                                 checked={approvalRules.auto_create_shift_on_approval}
-                                onCheckedChange={(checked) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => updateApprovalRules({
                                     ...approvalRules,
                                     auto_create_shift_on_approval: checked
                                 })}
@@ -196,19 +202,19 @@ export default function AdminSettings() {
                                     Überschreibt die allgemeine Regel für "Dienstwunsch". Deaktiviert = keine Genehmigung nötig für diese Position.
                                 </p>
                             </div>
-                            
+
                             <div className="space-y-2 max-h-64 overflow-y-auto">
-                                {servicePositions.map(pos => {
-                                    const positionOverride = approvalRules.position_overrides?.[pos.name];
+                                {servicePositions.map((pos: Workplace) => {
+                                    const positionOverride: boolean | undefined = approvalRules.position_overrides?.[pos.name];
                                     // If no override, inherit from general rule
-                                    const effectiveValue = positionOverride !== undefined 
-                                        ? positionOverride 
+                                    const effectiveValue: boolean = positionOverride !== undefined
+                                        ? positionOverride
                                         : approvalRules.service_requires_approval;
-                                    const isOverridden = positionOverride !== undefined;
+                                    const isOverridden: boolean = positionOverride !== undefined;
 
                                     return (
-                                        <div 
-                                            key={pos.id} 
+                                        <div
+                                            key={pos.id}
                                             className={`flex items-center justify-between py-2 px-3 rounded-md ${
                                                 isOverridden ? 'bg-amber-50 border border-amber-200' : 'bg-white border border-slate-200'
                                             }`}
@@ -222,9 +228,9 @@ export default function AdminSettings() {
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <Switch 
+                                                <Switch
                                                     checked={effectiveValue}
-                                                    onCheckedChange={(checked) => {
+                                                    onCheckedChange={(checked: boolean) => {
                                                         const newOverrides = { ...approvalRules.position_overrides };
                                                         // If setting to same as general rule, remove override
                                                         if (checked === approvalRules.service_requires_approval) {

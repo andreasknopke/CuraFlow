@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db } from "@/api/client";
+import type { ApiError } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,11 +12,69 @@ import { Loader2, Shield, ShieldAlert, ShieldCheck, UserCog, UserPlus, Trash2, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
+import type { AppUser } from '@/types/auth';
+import type { Doctor } from '@/types/models';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
 import UserPermissionsDialog from '@/components/admin/UserPermissionsDialog';
 
-function parseAllowedTenants(rawAllowedTenants) {
+// ── Local interfaces for API response shapes ──────────────────────────────────
+
+/** User shape returned by api.listUsers() — broader than AppUser to include admin fields */
+interface AdminUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  doctor_id?: string | null;
+  is_active: boolean;
+  email_verified: boolean;
+  allowed_tenants?: string[] | string | null;
+  allowed_groups?: string[] | string | null;
+  group_admin_groups?: string[] | string | null;
+  permissions?: Record<string, boolean> | null;
+  is_super_admin?: boolean;
+}
+
+/** Tenant / DB-token shape returned by /api/admin/db-tokens */
+interface DbToken {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  host?: string | null;
+  db_name?: string | null;
+}
+
+/** Group shape returned by api.listGroups() */
+interface TenantGroup {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+}
+
+interface GroupListResponse {
+  groups?: TenantGroup[];
+}
+
+interface NewUserData {
+  email: string;
+  full_name: string;
+  password: string;
+  role: string;
+  sendPasswordEmail: boolean;
+}
+
+interface EditUserData {
+  id: string | null;
+  email: string;
+  full_name: string;
+  password: string;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────────────────
+
+function parseAllowedTenants(rawAllowedTenants: string[] | string | null | undefined): string[] {
     if (rawAllowedTenants === null || rawAllowedTenants === undefined || rawAllowedTenants === '') {
         return [];
     }
@@ -34,7 +93,7 @@ function parseAllowedTenants(rawAllowedTenants) {
     return Array.isArray(parsed) ? parsed.map(String) : [];
 }
 
-function parseGroupIds(rawValue) {
+function parseGroupIds(rawValue: string[] | string | null | undefined): string[] {
     if (rawValue === null || rawValue === undefined || rawValue === '') {
         return [];
     }
@@ -53,37 +112,37 @@ function parseGroupIds(rawValue) {
     return Array.isArray(parsed) ? parsed.map(String) : [];
 }
 
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export default function UserManagement() {
     const queryClient = useQueryClient();
     const { user } = useAuth();
-    const [showCreateDialog, setShowCreateDialog] = useState(false);
-    const [showTenantDialog, setShowTenantDialog] = useState(false);
-    const [showGroupDialog, setShowGroupDialog] = useState(false);
-    const [tenantFilter, setTenantFilter] = useState('');
-    const [selectedUser, setSelectedUser] = useState(null);
-    const [newUser, setNewUser] = useState({ email: '', full_name: '', password: '', role: 'user' });
-    const [createError, setCreateError] = useState('');
-    const [sendPasswordEmail, setSendPasswordEmail] = useState(true);
-    const [passwordEmailSending, setPasswordEmailSending] = useState({});
-    const [showEditDialog, setShowEditDialog] = useState(false);
-    const [editUser, setEditUser] = useState({ id: null, email: '', full_name: '', password: '' });
-    const [editError, setEditError] = useState('');
-    const [showPermissionsDialog, setShowPermissionsDialog] = useState(false);
-    const [permissionsTargetUser, setPermissionsTargetUser] = useState(null);
+    const [showCreateDialog, setShowCreateDialog] = useState<boolean>(false);
+    const [showTenantDialog, setShowTenantDialog] = useState<boolean>(false);
+    const [showGroupDialog, setShowGroupDialog] = useState<boolean>(false);
+    const [tenantFilter, setTenantFilter] = useState<string>('');
+    const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+    const [newUser, setNewUser] = useState<NewUserData>({ email: '', full_name: '', password: '', role: 'user', sendPasswordEmail: true });
+    const [createError, setCreateError] = useState<string>('');
+    const [sendPasswordEmail, setSendPasswordEmail] = useState<boolean>(true);
+    const [passwordEmailSending, setPasswordEmailSending] = useState<Record<string, boolean>>({});
+    const [showEditDialog, setShowEditDialog] = useState<boolean>(false);
+    const [editUser, setEditUser] = useState<EditUserData>({ id: null, email: '', full_name: '', password: '' });
+    const [editError, setEditError] = useState<string>('');
+    const [showPermissionsDialog, setShowPermissionsDialog] = useState<boolean>(false);
+    const [permissionsTargetUser, setPermissionsTargetUser] = useState<AdminUser | null>(null);
 
-    const { data: users = [], isLoading } = useQuery({
+    const { data: users = [], isLoading } = useQuery<AdminUser[]>({
         queryKey: ['users'],
-        queryFn: () => api.listUsers(),
+        queryFn: () => api.listUsers() as Promise<AdminUser[]>,
         staleTime: 5 * 60 * 1000, // 5 Minuten
-        cacheTime: 10 * 60 * 1000, // 10 Minuten
         refetchOnWindowFocus: false,
     });
 
-    const { data: doctors = [] } = useQuery({
+    const { data: doctors = [] } = useQuery<Doctor[]>({
         queryKey: ['doctors'],
         queryFn: () => db.Doctor.list(),
         staleTime: 5 * 60 * 1000,
-        cacheTime: 10 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
 
@@ -100,11 +159,11 @@ export default function UserManagement() {
                 sortLabel: '',
                 keywords: ['leer', 'nicht zugeordnet'],
             },
-            ...doctorsForSelection.map((doctor) => ({
+            ...doctorsForSelection.map((doctor: Doctor) => ({
                 value: doctor.id,
                 label: doctor.name,
                 triggerLabel: doctor.name,
-                description: doctor.initials ? `${doctor.initials}${doctor.role ? ` · ${doctor.role}` : ''}` : doctor.role,
+                description: doctor.initials ? `${doctor.initials}${doctor.role ? ` · ${doctor.role}` : ''}` : (doctor.role ?? undefined),
                 searchText: [doctor.initials, doctor.role].filter(Boolean).join(' '),
                 sortLabel: doctor.name,
             })),
@@ -116,17 +175,17 @@ export default function UserManagement() {
             return users;
         }
 
-        return users.filter((entry) => parseAllowedTenants(entry.allowed_tenants).includes(String(tenantFilter)));
+        return users.filter((entry: AdminUser) => parseAllowedTenants(entry.allowed_tenants).includes(String(tenantFilter)));
     }, [tenantFilter, users]);
 
     // Fetch available tenants (db tokens)
-    const { data: tenants = [] } = useQuery({
+    const { data: tenants = [] } = useQuery<DbToken[]>({
         queryKey: ['serverDbTokens'],
         queryFn: async () => {
             try {
                 const response = await api.request('/api/admin/db-tokens');
-                return response;
-            } catch (e) {
+                return response as DbToken[];
+            } catch (e: unknown) {
                 console.error('Failed to load tenants:', e);
                 return [];
             }
@@ -135,9 +194,9 @@ export default function UserManagement() {
         refetchOnWindowFocus: false,
     });
 
-    const { data: groupResponse } = useQuery({
+    const { data: groupResponse } = useQuery<GroupListResponse>({
         queryKey: ['adminTenantGroupsForUsers'],
-        queryFn: () => api.listGroups(),
+        queryFn: () => api.listGroups() as Promise<GroupListResponse>,
         staleTime: 5 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
@@ -145,42 +204,42 @@ export default function UserManagement() {
     const groups = Array.isArray(groupResponse?.groups) ? groupResponse.groups : [];
 
     const updateUserMutation = useMutation({
-        mutationFn: async ({ id, data }) => {
+        mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
             console.log('[UserManagement] Updating user:', { id, data });
-            const result = await api.updateUser(id, data);
+            const result = await api.updateUser(id, data as unknown as Record<string, unknown>);
             console.log('[UserManagement] Update result:', result);
             return result;
         },
-        onSuccess: (data) => {
+        onSuccess: (data: unknown) => {
             console.log('[UserManagement] Update success:', data);
             queryClient.invalidateQueries({ queryKey: ['users'] });
         },
-        onError: (err) => {
+        onError: (err: Error) => {
             console.error('[UserManagement] Update error:', err);
             alert("Fehler beim Aktualisieren: " + err.message);
         }
     });
 
     const createUserMutation = useMutation({
-        mutationFn: async (userData) => api.register(userData),
+        mutationFn: async (userData: Record<string, unknown>) => api.register(userData),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['users'] });
             setShowCreateDialog(false);
-            setNewUser({ email: '', full_name: '', password: '', role: 'user' });
+            setNewUser({ email: '', full_name: '', password: '', role: 'user', sendPasswordEmail: true });
             setSendPasswordEmail(true);
             setCreateError('');
         },
-        onError: (err) => {
+        onError: (err: Error) => {
             setCreateError(err.message);
         }
     });
 
     const deleteUserMutation = useMutation({
-        mutationFn: async (userId) => api.deleteUser(userId),
+        mutationFn: async (userId: string) => api.deleteUser(userId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['users'] });
         },
-        onError: (err) => {
+        onError: (err: Error) => {
             alert("Fehler beim Löschen: " + err.message);
         }
     });
@@ -190,17 +249,17 @@ export default function UserManagement() {
             setCreateError('E-Mail und Passwort sind erforderlich');
             return;
         }
-        createUserMutation.mutate({ ...newUser, sendPasswordEmail });
+        createUserMutation.mutate({ ...newUser, sendPasswordEmail } as unknown as Record<string, unknown>);
     };
 
-    const handleSendPasswordEmail = async (userId) => {
+    const handleSendPasswordEmail = async (userId: string) => {
         setPasswordEmailSending(prev => ({ ...prev, [userId]: true }));
         try {
             await api.sendPasswordEmail(userId);
             alert('Passwort-Email wurde erfolgreich gesendet!');
             queryClient.invalidateQueries({ queryKey: ['users'] });
-        } catch (err) {
-            alert('Fehler beim Senden der Passwort-Email: ' + err.message);
+        } catch (err: unknown) {
+            alert('Fehler beim Senden der Passwort-Email: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setPasswordEmailSending(prev => ({ ...prev, [userId]: false }));
         }
@@ -230,14 +289,14 @@ export default function UserManagement() {
                     <Label htmlFor="tenantFilter" className="text-sm">Mandant filtern:</Label>
                     <Select
                         value={tenantFilter || "__all__"}
-                        onValueChange={(val) => setTenantFilter(val === "__all__" ? "" : val)}
+                        onValueChange={(val: string) => setTenantFilter(val === "__all__" ? "" : val)}
                     >
                         <SelectTrigger id="tenantFilter" className="w-64" data-testid="admin-user-tenant-filter">
                             <SelectValue placeholder="Alle Mandanten" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="__all__">Alle Mandanten</SelectItem>
-                            {tenants.map((tenant) => (
+                            {tenants.map((tenant: DbToken) => (
                                 <SelectItem key={tenant.id} value={String(tenant.id)}>
                                     {tenant.name || tenant.id}
                                 </SelectItem>
@@ -266,7 +325,7 @@ export default function UserManagement() {
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {filteredUsers.map((user) => {
+                        {filteredUsers.map((user: AdminUser) => {
                             const userTenants = user.allowed_tenants ? 
                                 (typeof user.allowed_tenants === 'string' ? JSON.parse(user.allowed_tenants) : user.allowed_tenants) 
                                 : null;
@@ -294,7 +353,7 @@ export default function UserManagement() {
                                 <TableCell>
                                     <EmployeeSelect
                                         value={user.doctor_id || 'none'}
-                                        onValueChange={(val) => updateUserMutation.mutate({
+                                        onValueChange={(val: string) => updateUserMutation.mutate({
                                             id: user.id,
                                             data: { doctor_id: val === 'none' ? null : val }
                                         })}
@@ -426,7 +485,7 @@ export default function UserManagement() {
                                         </Button>
                                         <Select 
                                             defaultValue={user.role} 
-                                            onValueChange={(val) => updateUserMutation.mutate({ id: user.id, data: { role: val } })}
+                                            onValueChange={(val: string) => updateUserMutation.mutate({ id: user.id, data: { role: val } })}
                                         >
                                             <SelectTrigger className="w-32" data-testid={`admin-user-role-${user.id}`}>
                                                 <SelectValue />
@@ -477,7 +536,7 @@ export default function UserManagement() {
                                 type="email"
                                 data-testid="admin-user-create-email"
                                 value={newUser.email}
-                                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, email: e.target.value })}
                                 placeholder="name@beispiel.de"
                             />
                         </div>
@@ -487,7 +546,7 @@ export default function UserManagement() {
                                 id="full_name"
                                 data-testid="admin-user-create-name"
                                 value={newUser.full_name}
-                                onChange={(e) => setNewUser({ ...newUser, full_name: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, full_name: e.target.value })}
                                 placeholder="Max Mustermann"
                             />
                         </div>
@@ -498,13 +557,13 @@ export default function UserManagement() {
                                 type="password"
                                 data-testid="admin-user-create-password"
                                 value={newUser.password}
-                                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, password: e.target.value })}
                                 placeholder="Mindestens 6 Zeichen"
                             />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="role">Rolle</Label>
-                            <Select value={newUser.role} onValueChange={(val) => setNewUser({ ...newUser, role: val })}>
+                            <Select value={newUser.role} onValueChange={(val: string) => setNewUser({ ...newUser, role: val })}>
                                 <SelectTrigger data-testid="admin-user-create-role">
                                     <SelectValue />
                                 </SelectTrigger>
@@ -519,7 +578,7 @@ export default function UserManagement() {
                                 id="sendPasswordEmail"
                                 data-testid="admin-user-create-send-password-email"
                                 checked={sendPasswordEmail}
-                                onCheckedChange={(checked) => setSendPasswordEmail(!!checked)}
+                                onCheckedChange={(checked: boolean | string) => setSendPasswordEmail(!!checked)}
                             />
                             <label 
                                 htmlFor="sendPasswordEmail" 
@@ -557,7 +616,7 @@ export default function UserManagement() {
             </Dialog>
 
             {/* Tenant Assignment Dialog */}
-            <Dialog open={showTenantDialog} onOpenChange={(open) => {
+            <Dialog open={showTenantDialog} onOpenChange={(open: boolean) => {
                 setShowTenantDialog(open);
                 if (!open) setSelectedUser(null);
             }}>
@@ -573,7 +632,7 @@ export default function UserManagement() {
                             user={selectedUser}
                             tenants={tenants}
                             adminHasFullAccess={tenants.length === 0 || !user?.allowed_tenants || (Array.isArray(user.allowed_tenants) && user.allowed_tenants.length === 0)}
-                            onSave={(allowedTenants) => {
+                            onSave={(allowedTenants: string[] | null) => {
                                 updateUserMutation.mutate({
                                     id: selectedUser.id,
                                     data: { allowed_tenants: allowedTenants }
@@ -588,7 +647,7 @@ export default function UserManagement() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={showGroupDialog} onOpenChange={(open) => {
+            <Dialog open={showGroupDialog} onOpenChange={(open: boolean) => {
                 setShowGroupDialog(open);
                 if (!open) setSelectedUser(null);
             }}>
@@ -603,7 +662,7 @@ export default function UserManagement() {
                         <GroupAccessSelector
                             user={selectedUser}
                             groups={groups}
-                            onSave={({ allowedGroups, adminGroups }) => {
+                            onSave={({ allowedGroups, adminGroups }: { allowedGroups: string[]; adminGroups: string[] }) => {
                                 updateUserMutation.mutate({
                                     id: selectedUser.id,
                                     data: {
@@ -622,7 +681,7 @@ export default function UserManagement() {
             </Dialog>
 
             {/* Edit User Dialog */}
-            <Dialog open={showEditDialog} onOpenChange={(open) => {
+            <Dialog open={showEditDialog} onOpenChange={(open: boolean) => {
                 setShowEditDialog(open);
                 if (!open) setEditUser({ id: null, email: '', full_name: '', password: '' });
             }}>
@@ -642,7 +701,7 @@ export default function UserManagement() {
                                 id="edit-email"
                                 type="email"
                                 value={editUser.email}
-                                onChange={(e) => setEditUser({ ...editUser, email: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, email: e.target.value })}
                                 placeholder="name@beispiel.de"
                             />
                         </div>
@@ -651,7 +710,7 @@ export default function UserManagement() {
                             <Input
                                 id="edit-name"
                                 value={editUser.full_name}
-                                onChange={(e) => setEditUser({ ...editUser, full_name: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, full_name: e.target.value })}
                                 placeholder="Max Mustermann"
                             />
                         </div>
@@ -661,7 +720,7 @@ export default function UserManagement() {
                                 id="edit-password"
                                 type="password"
                                 value={editUser.password}
-                                onChange={(e) => setEditUser({ ...editUser, password: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, password: e.target.value })}
                                 placeholder="Mindestens 6 Zeichen"
                             />
                         </div>
@@ -672,7 +731,7 @@ export default function UserManagement() {
                         </Button>
                         <Button
                             onClick={() => {
-                                const data = {};
+                                const data: Record<string, string> = {};
                                 if (editUser.email) data.email = editUser.email;
                                 if (editUser.full_name) data.full_name = editUser.full_name;
                                 if (editUser.password) data.password = editUser.password;
@@ -681,14 +740,14 @@ export default function UserManagement() {
                                     return;
                                 }
                                 updateUserMutation.mutate({
-                                    id: editUser.id,
+                                    id: editUser.id!,
                                     data,
                                 }, {
                                     onSuccess: () => {
                                         setShowEditDialog(false);
                                         setEditUser({ id: null, email: '', full_name: '', password: '' });
                                     },
-                                    onError: (err) => {
+                                    onError: (err: Error) => {
                                         setEditError(err.message);
                                     }
                                 });
@@ -719,21 +778,31 @@ export default function UserManagement() {
     );
 }
 
-// Separate component for tenant selection
-function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, isLoading }) {
+// ── Tenant selector sub-component ──────────────────────────────────────────────
+
+interface TenantSelectorProps {
+  user: AdminUser;
+  tenants: DbToken[];
+  adminHasFullAccess: boolean;
+  onSave: (allowedTenants: string[] | null) => void;
+  onClose: () => void;
+  isLoading: boolean;
+}
+
+function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, isLoading }: TenantSelectorProps) {
     const currentTenants = parseAllowedTenants(user.allowed_tenants);
     
-    const [selectedTenants, setSelectedTenants] = useState(currentTenants || []);
+    const [selectedTenants, setSelectedTenants] = useState<string[]>(currentTenants || []);
     // Only allow "All Access" if admin has full access themselves
-    const [allAccess, setAllAccess] = useState(
+    const [allAccess, setAllAccess] = useState<boolean>(
         adminHasFullAccess && (!currentTenants || currentTenants.length === 0)
     );
 
-    const toggleTenant = (tenantId) => {
+    const toggleTenant = (tenantId: string) => {
         console.log('[TenantSelector] toggleTenant:', tenantId);
-        setSelectedTenants(prev => {
+        setSelectedTenants((prev: string[]) => {
             const newValue = prev.includes(tenantId) 
-                ? prev.filter(id => id !== tenantId)
+                ? prev.filter((id: string) => id !== tenantId)
                 : [...prev, tenantId];
             console.log('[TenantSelector] New selectedTenants:', newValue);
             return newValue;
@@ -761,8 +830,8 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                                 id="all-access"
                                 data-testid="admin-user-tenant-all-access"
                                 checked={allAccess}
-                                onCheckedChange={(checked) => {
-                                    setAllAccess(checked);
+                                onCheckedChange={(checked: boolean | string) => {
+                                    setAllAccess(!!checked);
                             if (checked) setSelectedTenants([]);
                         }}
                     />
@@ -782,7 +851,7 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                     {tenants.length === 0 ? (
                         <p className="text-sm text-slate-500 italic">Keine Mandanten konfiguriert</p>
                     ) : (
-                        tenants.map(tenant => {
+                        tenants.map((tenant: DbToken) => {
                             const isSelected = selectedTenants.includes(tenant.id);
                             return (
                             <div 
@@ -803,7 +872,7 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                                         console.log('[TenantSelector] Checkbox changed for tenant:', tenant.id);
                                         toggleTenant(tenant.id);
                                     }}
-                                    onClick={(e) => e.stopPropagation()}
+                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
                                 />
                                 <div className="flex-1">
                                     <div className="font-medium text-sm">{tenant.name}</div>
@@ -840,32 +909,42 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
     );
 }
 
-function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }) {
-    const [selectedGroups, setSelectedGroups] = useState(parseGroupIds(user.allowed_groups));
-    const [adminGroups, setAdminGroups] = useState(parseGroupIds(user.group_admin_groups));
+// ── Group access selector sub-component ───────────────────────────────────────
 
-    const toggleReadGroup = (groupId) => {
-        setSelectedGroups((current) => {
+interface GroupAccessSelectorProps {
+  user: AdminUser;
+  groups: TenantGroup[];
+  onSave: (payload: { allowedGroups: string[]; adminGroups: string[] }) => void;
+  onClose: () => void;
+  isLoading: boolean;
+}
+
+function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }: GroupAccessSelectorProps) {
+    const [selectedGroups, setSelectedGroups] = useState<string[]>(parseGroupIds(user.allowed_groups));
+    const [adminGroups, setAdminGroups] = useState<string[]>(parseGroupIds(user.group_admin_groups));
+
+    const toggleReadGroup = (groupId: string) => {
+        setSelectedGroups((current: string[]) => {
             if (current.includes(groupId)) {
-                setAdminGroups((adminCurrent) => adminCurrent.filter((entry) => entry !== groupId));
-                return current.filter((entry) => entry !== groupId);
+                setAdminGroups((adminCurrent: string[]) => adminCurrent.filter((entry: string) => entry !== groupId));
+                return current.filter((entry: string) => entry !== groupId);
             }
             return [...current, groupId];
         });
     };
 
-    const toggleWriteGroup = (groupId) => {
-        setSelectedGroups((current) => (current.includes(groupId) ? current : [...current, groupId]));
-        setAdminGroups((current) => (
+    const toggleWriteGroup = (groupId: string) => {
+        setSelectedGroups((current: string[]) => (current.includes(groupId) ? current : [...current, groupId]));
+        setAdminGroups((current: string[]) => (
             current.includes(groupId)
-                ? current.filter((entry) => entry !== groupId)
+                ? current.filter((entry: string) => entry !== groupId)
                 : [...current, groupId]
         ));
     };
 
     const handleSave = () => {
         const normalizedAllowedGroups = selectedGroups;
-        const normalizedAdminGroups = adminGroups.filter((groupId) => normalizedAllowedGroups.includes(groupId));
+        const normalizedAdminGroups = adminGroups.filter((groupId: string) => normalizedAllowedGroups.includes(groupId));
         onSave({
             allowedGroups: normalizedAllowedGroups,
             adminGroups: normalizedAdminGroups,
@@ -886,7 +965,7 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }) {
             ) : (
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                     <Label>Verbundrechte:</Label>
-                    {groups.map((group) => {
+                    {groups.map((group: TenantGroup) => {
                         const groupId = String(group.id);
                         const canRead = selectedGroups.includes(groupId);
                         const canWrite = adminGroups.includes(groupId);

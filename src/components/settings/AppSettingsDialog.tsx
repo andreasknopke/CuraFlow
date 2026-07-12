@@ -12,19 +12,27 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Settings, AlertTriangle, Ban, Info, Plus, Trash2 } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
+import type { SystemSetting } from '@/types';
+import type { Qualification } from '@/hooks/useQualifications';
+
+interface ThresholdEntry {
+    qualificationId: string;
+    qualificationName: string;
+    min: number;
+}
 
 export default function AppSettingsDialog() {
     const [isOpen, setIsOpen] = useState(false);
     const queryClient = useQueryClient();
 
     // --- Settings ---
-    const { data: settings = [] } = useQuery({
+    const { data: settings = [] } = useQuery<SystemSetting[]>({
         queryKey: ['systemSettings'],
         queryFn: () => db.SystemSetting.list(),
     });
 
     const updateSettingMutation = useMutation({
-        mutationFn: async ({ key, value }) => {
+        mutationFn: async ({ key, value }: { key: string; value: string }) => {
             const existing = settings.find(s => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
@@ -32,33 +40,33 @@ export default function AppSettingsDialog() {
                 return db.SystemSetting.create({ key, value });
             }
         },
-        onSuccess: () => queryClient.invalidateQueries(['systemSettings'])
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
     // --- Absence Rules ---
-    const defaultRules = {
+    const defaultRules: Record<string, boolean> = {
         "Urlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
     };
-    const rulesSetting = settings.find(s => s.key === 'absence_blocking_rules');
-    const absenceRules = rulesSetting ? JSON.parse(rulesSetting.value) : defaultRules;
+    const rulesSetting = settings.find((s: SystemSetting) => s.key === 'absence_blocking_rules');
+    const absenceRules: Record<string, boolean> = rulesSetting ? JSON.parse(rulesSetting.value ?? 'null') : defaultRules;
 
-    const toggleAbsenceRule = (type) => {
+    const toggleAbsenceRule = (type: string) => {
         const newRules = { ...absenceRules, [type]: !absenceRules[type] };
         updateSettingMutation.mutate({ key: 'absence_blocking_rules', value: JSON.stringify(newRules) });
     };
 
-    const showSchoolHolidays = settings.find(s => s.key === 'show_school_holidays')?.value !== 'false';
+    const showSchoolHolidays: boolean = settings.find(s => s.key === 'show_school_holidays')?.value !== 'false';
     
-    const defaultVisibleTypes = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
+    const defaultVisibleTypes: string[] = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
     const rawVisibleTypes = settings.find(s => s.key === 'overview_visible_types')?.value;
-    const visibleTypes = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : defaultVisibleTypes;
+    const visibleTypes: string[] = rawVisibleTypes ? JSON.parse(rawVisibleTypes) : defaultVisibleTypes;
 
-    const monthsPerRow = settings.find(s => s.key === 'vacation_months_per_row')?.value || '3';
+    const monthsPerRow: string = settings.find(s => s.key === 'vacation_months_per_row')?.value || '3';
 
     // ─── Verfügbarkeits-Grenzwerte (qualifikationsbasiert) ───
     const { qualifications } = useQualifications();
     const rawThresholds = settings.find(s => s.key === 'availability_thresholds')?.value;
-    const [thresholds, setThresholds] = useState([]);
+    const [thresholds, setThresholds] = useState<ThresholdEntry[]>([]);
 
     useEffect(() => {
         if (rawThresholds) {
@@ -68,14 +76,14 @@ export default function AppSettingsDialog() {
             const oldSpec = parseInt(settings.find(s => s.key === 'min_present_specialists')?.value || '');
             const oldAsst = parseInt(settings.find(s => s.key === 'min_present_assistants')?.value || '');
             if (!isNaN(oldSpec) || !isNaN(oldAsst)) {
-                const migrated = [];
+                const migrated: ThresholdEntry[] = [];
                 if (!isNaN(oldSpec)) {
                     // Versuche "Facharzt"-Qualifikation zu finden
-                    const faQual = qualifications.find(q => q.name === 'Facharzt');
+                    const faQual = qualifications.find((q: Qualification) => q.name === 'Facharzt');
                     if (faQual) migrated.push({ qualificationId: String(faQual.id), qualificationName: faQual.name, min: oldSpec });
                 }
                 if (!isNaN(oldAsst)) {
-                    const aaQual = qualifications.find(q => q.name === 'Assistenzarzt');
+                    const aaQual = qualifications.find((q: Qualification) => q.name === 'Assistenzarzt');
                     if (aaQual) migrated.push({ qualificationId: String(aaQual.id), qualificationName: aaQual.name, min: oldAsst });
                 }
                 if (migrated.length > 0) {
@@ -99,26 +107,32 @@ export default function AppSettingsDialog() {
         updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
     };
 
-    const updateThreshold = (index, field, value) => {
+    const updateThreshold = (index: number, field: string, value: number | string) => {
         const updated = thresholds.map((t, i) => {
             if (i !== index) return t;
             if (field === 'qualificationId') {
                 const q = qualifications.find(q => String(q.id) === value);
-                return { ...t, qualificationId: value, qualificationName: q ? q.name : t.qualificationName };
+                return { ...t, qualificationId: String(value), qualificationName: q ? q.name : t.qualificationName };
             }
-            return { ...t, [field]: value };
+            if (field === 'qualificationName') {
+                return { ...t, qualificationName: String(value) };
+            }
+            if (field === 'min') {
+                return { ...t, min: value as number };
+            }
+            return t;
         });
         setThresholds(updated);
         updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
     };
 
-    const removeThreshold = (index) => {
+    const removeThreshold = (index: number) => {
         const updated = thresholds.filter((_, i) => i !== index);
         setThresholds(updated);
         updateSettingMutation.mutate({ key: 'availability_thresholds', value: JSON.stringify(updated) });
     };
 
-    const toggleVisibleType = (type) => {
+    const toggleVisibleType = (type: string) => {
         const newTypes = visibleTypes.includes(type) 
             ? visibleTypes.filter(t => t !== type)
             : [...visibleTypes, type];

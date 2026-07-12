@@ -5,26 +5,46 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Shield, AlertTriangle } from 'lucide-react';
 import { useQualifications } from '@/hooks/useQualifications';
+import type { Qualification } from '@/hooks/useQualifications';
+
+interface WorkplaceQualificationEntry {
+  id?: string | number;
+  workplace_id?: string;
+  qualification_id?: string;
+  is_mandatory?: boolean;
+  is_excluded?: boolean;
+  [key: string]: unknown;
+}
+
+interface WorkplaceQualificationEditorProps {
+  workplaceId: string | null;
+}
+
+interface WorkplaceQualificationBadgesProps {
+  workplaceId: string;
+  qualificationMap?: Record<string, Qualification>;
+  allWorkplaceQualifications?: Record<string, WorkplaceQualificationEntry[]>;
+}
 
 /**
  * Editor zum Zuweisen von Qualifikationsanforderungen an einen Arbeitsplatz/Dienst.
  * Wird in der WorkplaceConfigDialog eingebettet.
  */
-export default function WorkplaceQualificationEditor({ workplaceId }) {
+export default function WorkplaceQualificationEditor({ workplaceId }: WorkplaceQualificationEditorProps) {
     const queryClient = useQueryClient();
     const { qualifications, isLoading: qualsLoading } = useQualifications();
 
-    const { data: workplaceQuals = [], isLoading: wqLoading } = useQuery({
+    const { data: workplaceQuals = [], isLoading: wqLoading } = useQuery<WorkplaceQualificationEntry[]>({
         queryKey: ['workplaceQualifications', workplaceId],
         queryFn: () => db.WorkplaceQualification.filter({ workplace_id: workplaceId }),
         enabled: !!workplaceId,
     });
 
     const assignMutation = useMutation({
-        mutationFn: (data) => db.WorkplaceQualification.create({
+        mutationFn: (data: { qualification_id: string; is_mandatory: boolean; is_excluded: boolean }) => db.WorkplaceQualification.create({
             workplace_id: workplaceId,
             ...data,
-        }),
+        } as Record<string, unknown>),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['workplaceQualifications', workplaceId] });
             queryClient.invalidateQueries({ queryKey: ['allWorkplaceQualifications'] });
@@ -32,7 +52,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
     });
 
     const removeMutation = useMutation({
-        mutationFn: (id) => db.WorkplaceQualification.delete(id),
+        mutationFn: (id: string | number) => db.WorkplaceQualification.delete(String(id)),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['workplaceQualifications', workplaceId] });
             queryClient.invalidateQueries({ queryKey: ['allWorkplaceQualifications'] });
@@ -40,7 +60,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }) => db.WorkplaceQualification.update(id, data),
+        mutationFn: ({ id, data }: { id: string | number; data: Record<string, unknown> }) => db.WorkplaceQualification.update(String(id), data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['workplaceQualifications', workplaceId] });
             queryClient.invalidateQueries({ queryKey: ['allWorkplaceQualifications'] });
@@ -56,42 +76,43 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
     }
 
     const isLoading = qualsLoading || wqLoading;
-    const activeQuals = qualifications.filter(q => q.is_active !== false);
+    const activeQuals = qualifications.filter((q: Qualification) => q.is_active !== false);
 
-    const handleToggle = (qualId) => {
-        const existingAssignment = workplaceQuals.find(wq => wq.qualification_id === qualId);
+    const handleToggle = (qualId: string | number | undefined) => {
+        if (!qualId) return;
+        const existingAssignment = workplaceQuals.find((wq: WorkplaceQualificationEntry) => wq.qualification_id === String(qualId));
         if (existingAssignment) {
-            removeMutation.mutate(existingAssignment.id);
+            removeMutation.mutate(existingAssignment.id!);
         } else {
-            assignMutation.mutate({ qualification_id: qualId, is_mandatory: true, is_excluded: false });
+            assignMutation.mutate({ qualification_id: String(qualId), is_mandatory: true, is_excluded: false });
         }
     };
 
     /** Cycle through modes: Pflicht → Sollte → Sollte nicht → Nicht → Pflicht */
-    const cycleMode = (wqEntry) => {
+    const cycleMode = (wqEntry: WorkplaceQualificationEntry) => {
         if (!wqEntry.is_mandatory && wqEntry.is_excluded) {
             // Nicht → Pflicht
-            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: true, is_excluded: false } });
+            updateMutation.mutate({ id: wqEntry.id!, data: { is_mandatory: true, is_excluded: false } });
         } else if (wqEntry.is_mandatory && wqEntry.is_excluded) {
             // Sollte nicht → Nicht
-            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: true } });
+            updateMutation.mutate({ id: wqEntry.id!, data: { is_mandatory: false, is_excluded: true } });
         } else if (wqEntry.is_mandatory && !wqEntry.is_excluded) {
             // Pflicht → Sollte
-            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: false, is_excluded: false } });
+            updateMutation.mutate({ id: wqEntry.id!, data: { is_mandatory: false, is_excluded: false } });
         } else {
             // Sollte → Sollte nicht
-            updateMutation.mutate({ id: wqEntry.id, data: { is_mandatory: true, is_excluded: true } });
+            updateMutation.mutate({ id: wqEntry.id!, data: { is_mandatory: true, is_excluded: true } });
         }
     };
 
-    const getModeLabel = (wqEntry) => {
+    const getModeLabel = (wqEntry: WorkplaceQualificationEntry): string => {
         if (wqEntry.is_mandatory && wqEntry.is_excluded) return 'Sollte nicht';
         if (!wqEntry.is_mandatory && wqEntry.is_excluded) return 'Nicht';
         if (wqEntry.is_mandatory) return 'Pflicht';
         return 'Sollte';
     };
 
-    const getModeStyle = (wqEntry) => {
+    const getModeStyle = (wqEntry: WorkplaceQualificationEntry): string => {
         if (wqEntry.is_mandatory && wqEntry.is_excluded) return 'bg-orange-100 text-orange-700 hover:bg-orange-200';
         if (!wqEntry.is_mandatory && wqEntry.is_excluded) return 'bg-slate-800 text-white hover:bg-slate-700';
         if (wqEntry.is_mandatory) return 'bg-red-100 text-red-700 hover:bg-red-200';
@@ -121,22 +142,22 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                 Pflicht = Mitarbeiter muss Qualifikation besitzen. Sollte = Bevorzugt qualifiziert, aber Unqualifizierte erlaubt. Sollte nicht = Qualifizierte nur wenn kein anderer verfügbar. Nicht = Mitarbeiter mit dieser Qualifikation darf hier nicht eingeteilt werden.
             </div>
             <div className="space-y-1">
-                {activeQuals.map(qual => {
-                    const wqEntry = workplaceQuals.find(wq => wq.qualification_id === qual.id);
+                {activeQuals.map((qual: Qualification) => {
+                    const wqEntry = workplaceQuals.find((wq: WorkplaceQualificationEntry) => wq.qualification_id === String(qual.id));
                     const isAssigned = !!wqEntry;
                     return (
-                        <div 
-                            key={qual.id} 
+                        <div
+                            key={qual.id}
                             className="flex items-center gap-2 py-1 px-2 rounded hover:bg-slate-100 cursor-pointer"
                         >
-                            <Checkbox 
+                            <Checkbox
                                 checked={isAssigned}
                                 onCheckedChange={() => handleToggle(qual.id)}
                             />
-                            <Badge 
-                                style={{ 
-                                    backgroundColor: qual.color_bg || '#e0e7ff', 
-                                    color: qual.color_text || '#3730a3' 
+                            <Badge
+                                style={{
+                                    backgroundColor: qual.color_bg || '#e0e7ff',
+                                    color: qual.color_text || '#3730a3'
                                 }}
                                 className="border-0 text-xs"
                             >
@@ -148,11 +169,11 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        cycleMode(wqEntry);
+                                        cycleMode(wqEntry!);
                                     }}
-                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${getModeStyle(wqEntry)}`}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${getModeStyle(wqEntry!)}`}
                                 >
-                                    {getModeLabel(wqEntry)}
+                                    {getModeLabel(wqEntry!)}
                                 </button>
                             )}
                         </div>
@@ -166,14 +187,14 @@ export default function WorkplaceQualificationEditor({ workplaceId }) {
 /**
  * Readonly Badge-Anzeige der benötigten Qualifikationen eines Arbeitsplatzes.
  */
-export function WorkplaceQualificationBadges({ workplaceId, qualificationMap, allWorkplaceQualifications }) {
+export function WorkplaceQualificationBadges({ workplaceId, qualificationMap, allWorkplaceQualifications }: WorkplaceQualificationBadgesProps) {
     const wqEntries = allWorkplaceQualifications?.[workplaceId] || [];
     if (wqEntries.length === 0) return null;
 
     return (
         <div className="flex flex-wrap gap-1">
-            {wqEntries.map(wq => {
-                const qual = qualificationMap?.[wq.qualification_id];
+            {wqEntries.map((wq: WorkplaceQualificationEntry) => {
+                const qual = qualificationMap?.[wq.qualification_id ?? ''];
                 if (!qual) return null;
                 const isExcluded = !wq.is_mandatory && wq.is_excluded;
                 const isDiscouraged = wq.is_mandatory && wq.is_excluded;
@@ -182,7 +203,7 @@ export function WorkplaceQualificationBadges({ workplaceId, qualificationMap, al
                 return (
                     <Badge
                         key={wq.id}
-                        style={isExcluded 
+                        style={isExcluded
                             ? { backgroundColor: '#1e293b', color: '#fff' }
                             : isDiscouraged
                             ? { backgroundColor: '#fff7ed', color: '#c2410c' }

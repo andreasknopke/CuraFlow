@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { 
+import {
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
     DialogFooter, DialogDescription
 } from '@/components/ui/dialog';
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
-import { 
+import {
     Award, Plus, Trash2, Pencil, Shield, ChevronDown, ChevronUp, FileCheck
 } from 'lucide-react';
 import {
@@ -24,9 +24,34 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useQualifications } from '@/hooks/useQualifications';
+import type { Qualification } from '@/hooks/useQualifications';
+import type { DropResult } from '@hello-pangea/dnd';
+
+interface QualificationFormData {
+  name: string;
+  short_label: string;
+  description: string;
+  color_bg: string;
+  color_text: string;
+  category: string;
+  is_active: boolean;
+  requires_certificate: boolean;
+  certificate_requirement_mode: 'single_document' | 'base_refresh';
+  certificate_validity_months: string;
+  certificate_refresh_validity_months: string;
+  certificate_base_label: string;
+  certificate_refresh_label: string;
+}
+
+interface QualificationEditDialogProps {
+  qualification: Qualification | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: QualificationFormData) => void;
+}
 
 // Vordefinierte Farb-Optionen
-const COLOR_PRESETS = [
+const COLOR_PRESETS: Array<{ label: string; bg: string; text: string }> = [
     { label: "Grün", bg: "#dcfce7", text: "#166534" },
     { label: "Blau", bg: "#dbeafe", text: "#1e40af" },
     { label: "Orange", bg: "#fed7aa", text: "#9a3412" },
@@ -40,7 +65,7 @@ const COLOR_PRESETS = [
 ];
 
 // Kategorie-Optionen
-const CATEGORY_OPTIONS = [
+const CATEGORY_OPTIONS: string[] = [
     "Medizinisch",
     "Dienst",
     "Zertifizierung",
@@ -48,8 +73,8 @@ const CATEGORY_OPTIONS = [
     "Sonstiges",
 ];
 
-function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) {
-    const [formData, setFormData] = useState({
+function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: QualificationEditDialogProps) {
+    const [formData, setFormData] = useState<QualificationFormData>({
         name: '',
         short_label: '',
         description: '',
@@ -76,9 +101,9 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                 category: qualification.category || 'Allgemein',
                 is_active: qualification.is_active !== false,
                 requires_certificate: qualification.requires_certificate === true,
-                certificate_requirement_mode: qualification.certificate_requirement_mode || 'single_document',
-                certificate_validity_months: qualification.certificate_validity_months ?? '',
-                certificate_refresh_validity_months: qualification.certificate_refresh_validity_months ?? '',
+                certificate_requirement_mode: (qualification.certificate_requirement_mode as 'single_document' | 'base_refresh') || 'single_document',
+                certificate_validity_months: qualification.certificate_validity_months != null ? String(qualification.certificate_validity_months) : '',
+                certificate_refresh_validity_months: qualification.certificate_refresh_validity_months != null ? String(qualification.certificate_refresh_validity_months) : '',
                 certificate_base_label: qualification.certificate_base_label || 'Grundnachweis',
                 certificate_refresh_label: qualification.certificate_refresh_label || 'Verlängerung / Auffrischung',
             });
@@ -101,7 +126,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
         }
     }, [qualification, open]);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.name.trim()) {
             // Auto-generate short_label if empty
@@ -109,8 +134,6 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
             if (!data.short_label) {
                 data.short_label = data.name.substring(0, 3).toUpperCase();
             }
-            data.certificate_validity_months = data.certificate_validity_months === '' ? null : Number(data.certificate_validity_months);
-            data.certificate_refresh_validity_months = data.certificate_refresh_validity_months === '' ? null : Number(data.certificate_refresh_validity_months);
             onSave(data);
         }
     };
@@ -251,8 +274,8 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }) 
                                 <Label className="text-sm font-medium">Nachweis-Modell</Label>
                                 <div className="flex flex-wrap gap-2">
                                     {[
-                                        { value: 'single_document', label: 'Einzelnachweis' },
-                                        { value: 'base_refresh', label: 'Grundnachweis + Verlängerung' },
+                                        { value: 'single_document' as const, label: 'Einzelnachweis' },
+                                        { value: 'base_refresh' as const, label: 'Grundnachweis + Verlängerung' },
                                     ].map((option) => (
                                         <button
                                             key={option.value}
@@ -348,10 +371,10 @@ export default function QualificationManagement() {
 
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
-    const [editingQual, setEditingQual] = useState(null);
-    const [expandedCategories, setExpandedCategories] = useState({});
+    const [editingQual, setEditingQual] = useState<Qualification | null>(null);
+    const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
-    const toggleCategory = (cat) => {
+    const toggleCategory = (cat: string) => {
         setExpandedCategories(prev => ({ ...prev, [cat]: !prev[cat] }));
     };
 
@@ -360,22 +383,22 @@ export default function QualificationManagement() {
         setEditDialogOpen(true);
     };
 
-    const handleEdit = (qual) => {
+    const handleEdit = (qual: Qualification) => {
         setEditingQual(qual);
         setEditDialogOpen(true);
     };
 
-    const handleSave = (formData) => {
+    const handleSave = (formData: QualificationFormData) => {
         if (editingQual) {
-            updateQualification({ id: editingQual.id, data: formData });
+            updateQualification({ id: String(editingQual.id), data: formData as unknown as Partial<Qualification> });
         } else {
-            createQualification(formData);
+            createQualification(formData as unknown as Qualification);
         }
         setEditDialogOpen(false);
         setEditingQual(null);
     };
 
-    const _handleDragEnd = (result) => {
+    const _handleDragEnd = (result: DropResult) => {
         if (!result.destination) return;
         const items = Array.from(qualifications);
         const [reorderedItem] = items.splice(result.source.index, 1);
@@ -383,7 +406,7 @@ export default function QualificationManagement() {
 
         items.forEach((qual, index) => {
             if (qual.order !== index) {
-                updateQualification({ id: qual.id, data: { order: index } });
+                updateQualification({ id: String(qual.id), data: { order: index } });
             }
         });
     };
@@ -497,8 +520,8 @@ export default function QualificationManagement() {
                                                                         </AlertDialogHeader>
                                                                         <AlertDialogFooter>
                                                                             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                                                                            <AlertDialogAction 
-                                                                                onClick={() => deleteQualification(qual.id)}
+                                                                            <AlertDialogAction
+                                                                                onClick={() => deleteQualification(String(qual.id!))}
                                                                                 className="bg-red-600 hover:bg-red-700"
                                                                             >
                                                                                 Löschen
