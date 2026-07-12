@@ -1,7 +1,17 @@
 import { useState, useEffect } from 'react';
 import { format, isSameDay } from 'date-fns';
+import type { ScheduleNote } from '@/types';
 
-export default function FreeTextCell({ date, rowName, notes, onCreate, onUpdate, onDelete }) {
+interface FreeTextCellProps {
+  date: Date;
+  rowName: string;
+  notes: ScheduleNote[];
+  onCreate: { mutate: (data: { date: string; position: string; content: string }) => void };
+  onUpdate: { mutate: (data: { id: string; data: { content: string } }) => void };
+  onDelete: { mutate: (id: string) => void };
+}
+
+export default function FreeTextCell({ date, rowName, notes, onCreate, onUpdate, onDelete }: FreeTextCellProps) {
     const dateStr = format(date, 'yyyy-MM-dd');
     const isToday = isSameDay(date, new Date());
     const note = notes.find(n => n.date === dateStr && n.position === rowName);

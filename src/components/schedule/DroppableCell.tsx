@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode, CSSProperties, MouseEventHandler } from 'react';
+import type { RenderCloneProps } from '@hello-pangea/dnd';
 import { Droppable } from '@hello-pangea/dnd';
 import {
   Tooltip,
@@ -7,14 +9,36 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
+interface DroppableCellProps {
+  id: string;
+  isToday: boolean;
+  isWeekend: boolean;
+  isDisabled: boolean;
+  isReadOnly: boolean;
+  disabledText?: string | undefined;
+  children: ReactNode | ((args: { cellWidth: number | null }) => ReactNode);
+  isAlternate: boolean;
+  baseClassName?: string | undefined;
+  baseStyle?: CSSProperties | undefined;
+  isTrainingHighlight: boolean;
+  renderClone?: (props: RenderCloneProps, snapshot: unknown) => ReactNode;
+  isBlocked: boolean;
+  blockReason?: string | undefined;
+  onContextMenu?: MouseEventHandler<HTMLDivElement> | undefined;
+  isCompact?: boolean;
+  testId?: string | undefined;
+  infoReason?: string | undefined;
+  isOccupied?: boolean | undefined;
+}
+
 export default function DroppableCell({ 
     id, isToday, isWeekend, isDisabled, isReadOnly, disabledText, children, 
     isAlternate, baseClassName, baseStyle, isTrainingHighlight, renderClone,
   isBlocked, blockReason, onContextMenu, isCompact = false, testId,
   infoReason, isOccupied
-}) {
-  const cellRef = useRef(null);
-  const [cellWidth, setCellWidth] = useState(null);
+}: DroppableCellProps) {
+  const cellRef = useRef<HTMLDivElement | null>(null);
+  const [cellWidth, setCellWidth] = useState<number | null>(null);
 
   useEffect(() => {
     const node = cellRef.current;

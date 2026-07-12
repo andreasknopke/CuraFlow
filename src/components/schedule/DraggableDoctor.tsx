@@ -1,8 +1,39 @@
 import { Draggable } from '@hello-pangea/dnd';
 import { User, Clock } from 'lucide-react';
 import { resolveDoctorTargetWeeklyHours } from '@/components/schedule/doctorWorkTime';
+import type { Doctor, WorkTimeModel } from '@/types';
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null }) {
+// ── Local types ────────────────────────────────────────────────────────────
+
+interface CentralEmployee {
+  target_hours_per_week?: number | null;
+  model_hours_per_week?: number | null;
+}
+
+interface DoctorStyle {
+  backgroundColor?: string;
+  color?: string;
+}
+
+interface DraggableDoctorProps {
+  doctor: Doctor;
+  index: number;
+  style?: DoctorStyle | undefined;
+  isDragDisabled?: boolean;
+  isBeingDragged?: boolean;
+  compactLabel?: string | null;
+  isCompactMode?: boolean;
+  workTimeModel?: WorkTimeModel | null;
+  centralEmployee?: CentralEmployee | null;
+  plannedHours?: number | undefined;
+  showTimeAccount?: boolean;
+  hintRingClass?: string | null;
+  hintKind?: 'preferred' | 'discouraged' | null;
+}
+
+// ── Component ───────────────────────────────────────────────────────────────
+
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null }: DraggableDoctorProps) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
   const targetWeekly = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
   const planned = plannedHours || 0;

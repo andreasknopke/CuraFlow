@@ -1,14 +1,30 @@
+import type { Doctor, StaffingPlanEntry, Workplace } from '@/types';
+
+// ── Local types for cross-tenant shifts ────────────────────────────────────
+
+interface SharedShift {
+  employee_id?: number | string | null;
+  date?: string | null;
+  workplace_category?: string | null;
+  affects_availability?: boolean | null;
+  allows_rotation_concurrently?: boolean | null;
+}
+
+// ── Module-level constants ─────────────────────────────────────────────────
+
 const STAFFING_PLAN_UNAVAILABLE_CODES = new Set(['KO', 'EZ', 'MS', 'BV']);
 const STAFFING_PLAN_ZERO_FTE_AVAILABLE_CODES = new Set(['OU']);
 const STAFFING_PLAN_OCCUPIED_UNAVAILABLE_CODES = new Set(['BV']);
 
-function parseFteValue(value) {
+// ── Private helpers ────────────────────────────────────────────────────────
+
+function parseFteValue(value: string | number | null | undefined): number | null {
     const normalized = String(value).trim().replace(',', '.');
     const parsed = parseFloat(normalized);
     return Number.isNaN(parsed) ? null : parsed;
 }
 
-function getLastNumericFteBeforeMonth(doctor, year, month, planEntries) {
+function getLastNumericFteBeforeMonth(doctor: Doctor, year: number, month: number, planEntries: StaffingPlanEntry[]): number {
     for (let m = month - 1; m >= 1; m--) {
         const entry = planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === m);
         const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
@@ -39,7 +55,7 @@ function getLastNumericFteBeforeMonth(doctor, year, month, planEntries) {
     return parsed !== null && parsed > 0.0001 ? parsed : 0;
 }
 
-function getDefaultFte(doctor) {
+function getDefaultFte(doctor: Doctor): number {
     if (doctor.fte !== undefined && doctor.fte !== null && String(doctor.fte).trim() !== '') {
         const parsed = parseFteValue(doctor.fte);
         if (parsed !== null) return parsed;
@@ -47,11 +63,11 @@ function getDefaultFte(doctor) {
     return 1.0;
 }
 
-function getMonthEntry(doctor, year, month, planEntries) {
+function getMonthEntry(doctor: Doctor, year: number, month: number, planEntries: StaffingPlanEntry[]): StaffingPlanEntry | undefined {
     return planEntries.find(e => e.doctor_id === doctor.id && e.year === year && e.month === month);
 }
 
-function getEntryValue(entry, _doctor) {
+function getEntryValue(entry: StaffingPlanEntry | undefined, _doctor: Doctor): string | null {
     const entryValue = typeof entry?.value === 'string' ? entry.value.trim() : entry?.value;
     if (entryValue !== undefined && entryValue !== null && entryValue !== '') {
         return String(entryValue).trim();
@@ -59,25 +75,25 @@ function getEntryValue(entry, _doctor) {
     return null;
 }
 
-function getEntryStatusStartDay(entry) {
+function getEntryStatusStartDay(entry: StaffingPlanEntry | undefined): number | null {
     const day = entry?.status_start_day;
     if (day === undefined || day === null || day === '') return null;
-    const parsed = parseInt(day, 10);
+    const parsed = parseInt(String(day), 10);
     return Number.isNaN(parsed) ? null : parsed;
 }
 
-function getEntryStatusEndDay(entry) {
+function getEntryStatusEndDay(entry: StaffingPlanEntry | undefined): number | null {
     const day = entry?.status_end_day;
     if (day === undefined || day === null || day === '') return null;
-    const parsed = parseInt(day, 10);
+    const parsed = parseInt(String(day), 10);
     return Number.isNaN(parsed) ? null : parsed;
 }
 
-function getDaysInMonth(year, month) {
+function getDaysInMonth(year: number, month: number): number {
     return new Date(year, month, 0).getDate();
 }
 
-function isDateInStatusRange(date, entry) {
+function isDateInStatusRange(date: Date, entry: StaffingPlanEntry | undefined): boolean {
     if (!entry) return false;
     const startDay = getEntryStatusStartDay(entry);
     const endDay = getEntryStatusEndDay(entry);
@@ -89,7 +105,9 @@ function isDateInStatusRange(date, entry) {
     return true;
 }
 
-export function getDoctorEffectiveFte(doctor, date, planEntries) {
+// ── Exported functions ─────────────────────────────────────────────────────
+
+export function getDoctorEffectiveFte(doctor: Doctor, date: Date, planEntries: StaffingPlanEntry[]): number {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const entry = getMonthEntry(doctor, year, month, planEntries);
@@ -131,7 +149,7 @@ export function getDoctorEffectiveFte(doctor, date, planEntries) {
     return parsedFte;
 }
 
-export function getMonthlyEffectiveFte(doctor, year, month, planEntries) {
+export function getMonthlyEffectiveFte(doctor: Doctor, year: number, month: number, planEntries: StaffingPlanEntry[]): number {
     const entry = getMonthEntry(doctor, year, month, planEntries);
     const value = getEntryValue(entry, doctor);
 
@@ -175,7 +193,7 @@ export function getMonthlyEffectiveFte(doctor, year, month, planEntries) {
     return (statusFte * statusDays + defaultFte * nonStatusDays) / daysInMonth;
 }
 
-export function getStatusCodeRatioForMonth(doctor, year, month, planEntries) {
+export function getStatusCodeRatioForMonth(doctor: Doctor, year: number, month: number, planEntries: StaffingPlanEntry[]): number {
     const entry = getMonthEntry(doctor, year, month, planEntries);
     const value = getEntryValue(entry, doctor);
 
@@ -202,7 +220,7 @@ export function getStatusCodeRatioForMonth(doctor, year, month, planEntries) {
     return statusDays / daysInMonth;
 }
 
-function getStaffingPlanValue(doctor, date, planEntries) {
+function getStaffingPlanValue(doctor: Doctor, date: Date, planEntries: StaffingPlanEntry[]): string {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const entry = getMonthEntry(doctor, year, month, planEntries);
@@ -218,7 +236,7 @@ function getStaffingPlanValue(doctor, date, planEntries) {
     return '1.0';
 }
 
-export function isDoctorAvailable(doctor, date, planEntries) {
+export function isDoctorAvailable(doctor: Doctor, date: Date, planEntries: StaffingPlanEntry[]): boolean {
     // Check contract end
     if (doctor.contract_end_date) {
         const endDate = new Date(doctor.contract_end_date);
@@ -252,17 +270,30 @@ export function isDoctorAvailable(doctor, date, planEntries) {
     return getDoctorEffectiveFte(doctor, date, planEntries) > 0.0001;
 }
 
-function blocksAvailability({ category, affectsAvailability, allowsRotationConcurrently }) {
+function blocksAvailability({ category, affectsAvailability, allowsRotationConcurrently }: {
+    category?: string | null;
+    affectsAvailability?: boolean | null;
+    allowsRotationConcurrently?: boolean | null;
+}): boolean {
     if (affectsAvailability === false) return false;
     if (allowsRotationConcurrently === true) return false;
     if (allowsRotationConcurrently === false) return true;
-    if (['Dienste', 'Demonstrationen & Konsile'].includes(category)) return false;
+    if (['Dienste', 'Demonstrationen & Konsile'].includes(category || '')) return false;
     return true;
 }
 
-export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], sharedShifts = [], workplaces = [], doctors = [] }) {
+interface AvailabilityBlockingParams {
+    localShifts?: Array<{ doctor_id?: string | null; date?: string | null; position?: string | null }>;
+    sharedShifts?: SharedShift[];
+    workplaces?: Workplace[];
+    doctors?: Doctor[];
+}
+
+export function getAvailabilityBlockingDoctorIdsByDate(
+    { localShifts = [], sharedShifts = [], workplaces = [], doctors = [] }: AvailabilityBlockingParams,
+): Map<string, Set<string>> {
     const workplaceByName = new Map(workplaces.map((workplace) => [workplace.name, workplace]));
-    const doctorIdsByCentralEmployeeId = new Map();
+    const doctorIdsByCentralEmployeeId = new Map<string, string[]>();
 
     doctors.forEach((doctor) => {
         if (!doctor?.central_employee_id) return;
@@ -272,9 +303,9 @@ export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], share
         doctorIdsByCentralEmployeeId.set(key, existingDoctorIds);
     });
 
-    const blockingDoctorIdsByDate = new Map();
+    const blockingDoctorIdsByDate = new Map<string, Set<string>>();
 
-    const addDoctorId = (dateStr, doctorId) => {
+    const addDoctorId = (dateStr: string, doctorId: string) => {
         if (!dateStr || doctorId === undefined || doctorId === null) return;
         const existingDoctorIds = blockingDoctorIdsByDate.get(dateStr) || new Set();
         existingDoctorIds.add(doctorId);
@@ -282,7 +313,7 @@ export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], share
     };
 
     localShifts.forEach((shift) => {
-        const workplace = workplaceByName.get(shift?.position);
+        const workplace = workplaceByName.get(shift?.position || '');
         if (!blocksAvailability({
             category: workplace?.category,
             affectsAvailability: workplace?.affects_availability,
@@ -291,7 +322,7 @@ export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], share
             return;
         }
 
-        addDoctorId(String(shift?.date).slice(0, 10), shift?.doctor_id);
+        addDoctorId(String(shift?.date).slice(0, 10), shift?.doctor_id || '');
     });
 
     sharedShifts.forEach((shift) => {
@@ -312,14 +343,20 @@ export function getAvailabilityBlockingDoctorIdsByDate({ localShifts = [], share
 
 /**
  * Calculates the weekly target working hours for a doctor, adjusted for public holidays.
- * @param {number} fte - Full-time equivalent (e.g., 1.0, 0.75)
- * @param {Date} weekStart - Monday of the week
- * @param {string[]} holidays - Array of public holiday dates in 'YYYY-MM-DD' format that fall within the week
- * @param {number} [fullTimeWeeklyHours=40] - Full-time weekly hours for 1.0 FTE
- * @param {number} [workDaysPerWeek=5] - Number of working days per week (Mon-Fri)
- * @returns {number} Adjusted target weekly hours
+ * @param fte - Full-time equivalent (e.g., 1.0, 0.75)
+ * @param weekStart - Monday of the week
+ * @param holidays - Array of public holiday dates in 'YYYY-MM-DD' format that fall within the week
+ * @param fullTimeWeeklyHours - Full-time weekly hours for 1.0 FTE (default: 40)
+ * @param workDaysPerWeek - Number of working days per week (default: 5)
+ * @returns Adjusted target weekly hours
  */
-export function calculateWeeklyTargetHours(fte, weekStart, holidays = [], fullTimeWeeklyHours = 40, workDaysPerWeek = 5) {
+export function calculateWeeklyTargetHours(
+    fte: number,
+    weekStart: Date,
+    holidays: string[] = [],
+    fullTimeWeeklyHours: number = 40,
+    workDaysPerWeek: number = 5,
+): number {
   const baseWeeklyHours = fullTimeWeeklyHours * fte;
   const dailyHours = (fullTimeWeeklyHours / workDaysPerWeek) * fte;
   // Count holidays that fall on working days (Mon-Fri)

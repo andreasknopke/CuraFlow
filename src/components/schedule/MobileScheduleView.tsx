@@ -2,12 +2,41 @@ import { useEffect, useState, useMemo } from 'react';
 import { format, addDays, startOfWeek, isSameDay, isSameWeek, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Calendar, User, Clock, MapPin } from 'lucide-react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { ScrollArea } from '../ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import type { Doctor, ShiftEntry, Workplace } from '@/types';
+
+// ── Local types ────────────────────────────────────────────────────────────
+
+interface HolidayResult {
+  name: string;
+}
+
+interface MobileScheduleViewProps {
+  currentDate: Date;
+  setCurrentDate: React.Dispatch<React.SetStateAction<Date>>;
+  shifts: ShiftEntry[];
+  doctors: Doctor[];
+  workplaces: Workplace[];
+  isPublicHoliday: (date: Date) => HolidayResult | null;
+  isSchoolHoliday: (date: Date) => HolidayResult | null;
+}
+
+interface GroupedShifts {
+  absences: ShiftEntry[];
+  services: ShiftEntry[];
+  rotations: ShiftEntry[];
+  demos: ShiftEntry[];
+  other: ShiftEntry[];
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────
 
 const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+
+// ── Component ──────────────────────────────────────────────────────────────
 
 export default function MobileScheduleView({ 
     currentDate, 
@@ -17,8 +46,8 @@ export default function MobileScheduleView({
     workplaces,
     isPublicHoliday,
     isSchoolHoliday 
-}) {
-    const [selectedDay, setSelectedDay] = useState(() => {
+}: MobileScheduleViewProps) {
+    const [selectedDay, setSelectedDay] = useState<Date>(() => {
         const today = new Date();
         return isSameWeek(today, currentDate, { weekStartsOn: 1 }) ? today : currentDate;
     });
@@ -45,7 +74,7 @@ export default function MobileScheduleView({
     }, [shifts, selectedDateStr]);
 
     // Group shifts by category (dynamically from workplaces)
-    const groupedShifts = useMemo(() => {
+    const groupedShifts = useMemo((): GroupedShifts => {
         const absences = dayShifts.filter(s => ABSENCE_POSITIONS.includes(s.position));
         const services = dayShifts.filter(s => {
             const wp = workplaces.find(w => w.name === s.position);
@@ -67,9 +96,9 @@ export default function MobileScheduleView({
         return { absences, services, rotations, demos, other };
     }, [dayShifts, workplaces]);
 
-    const getDoctor = (id) => doctors.find(d => d.id === id);
+    const getDoctor = (id: string | undefined | null): Doctor | undefined => doctors.find(d => d.id === id);
 
-    const renderShiftCard = (shift, colorClass = "bg-slate-100") => {
+    const renderShiftCard = (shift: ShiftEntry, colorClass: string = "bg-slate-100") => {
         const doctor = getDoctor(shift.doctor_id);
         if (!doctor) return null;
 
