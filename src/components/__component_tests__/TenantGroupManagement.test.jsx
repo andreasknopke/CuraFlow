@@ -113,7 +113,7 @@ describe('TenantGroupManagement', () => {
     await user.click(screen.getByTestId('admin-group-workplace-save-button'));
 
     await waitFor(() => {
-      expect(mocks.createSharedWorkplace).toHaveBeenCalledWith(1, {
+      expect(mocks.createSharedWorkplace).toHaveBeenCalledWith('1', {
         name: 'Interner Hintergrunddienst',
         category: 'Dienste',
         start_time: null,
@@ -152,7 +152,7 @@ describe('TenantGroupManagement', () => {
     await user.click(screen.getByRole('button', { name: /entfernen/i }));
 
     await waitFor(() => {
-      expect(mocks.removeGroupMember).toHaveBeenCalledWith(1, 'tenant-a');
+      expect(mocks.removeGroupMember).toHaveBeenCalledWith('1', 'tenant-a');
       expect(screen.queryByTestId('admin-group-member-tenant-a')).not.toBeInTheDocument();
     });
   });
@@ -164,7 +164,7 @@ describe('TenantGroupManagement', () => {
       .mockResolvedValueOnce({
         workplaces: [
           {
-            id: 'wp-1',
+            id: 1,
             name: 'Interner Hintergrunddienst',
             service_type: 2,
             auto_off: true,
@@ -184,13 +184,13 @@ describe('TenantGroupManagement', () => {
 
     renderWithProviders(<TenantGroupManagement />, { withAuthProvider: false, withToaster: false });
 
-    const workplaceRow = await screen.findByTestId('admin-group-workplace-wp-1');
+    const workplaceRow = await screen.findByTestId('admin-group-workplace-1');
 
     await user.click(within(workplaceRow).getByRole('button', { name: /^löschen$/i }));
 
     await waitFor(() => {
-      expect(mocks.deleteSharedWorkplace).toHaveBeenCalledWith(1, 'wp-1');
-      expect(screen.queryByTestId('admin-group-workplace-wp-1')).not.toBeInTheDocument();
+      expect(mocks.deleteSharedWorkplace).toHaveBeenCalledWith('1', '1');
+      expect(screen.queryByTestId('admin-group-workplace-1')).not.toBeInTheDocument();
     });
   });
 });

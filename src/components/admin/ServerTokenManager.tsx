@@ -20,17 +20,71 @@ import {
     isDbTokenEnabled
 } from '@/components/dbTokenStorage';
 
+// ─── Local Interfaces ─────────────────────────────────────────────────────────
+
+interface TokenFormData {
+    name: string;
+    description: string;
+    host: string;
+    user: string;
+    password: string;
+    database: string;
+    port: string;
+    ssl: boolean;
+    updateCredentials?: boolean;
+}
+
+interface TestResult {
+    success: boolean;
+    tokenId: string;
+    message: string;
+}
+
+interface DbTokenInfo {
+    id: string;
+    name: string;
+    description?: string;
+    host: string;
+    db_name: string;
+    is_active: boolean;
+    [key: string]: unknown;
+}
+
+interface CheckDbStatus {
+    exists?: boolean;
+    empty?: boolean;
+    tableCount?: number;
+    database?: string;
+    error?: string;
+}
+
+interface MigrationStatus {
+    migrations: MigrationItem[];
+    allApplied: boolean;
+}
+
+interface MigrationItem {
+    description: string;
+    applied: boolean;
+    [key: string]: unknown;
+}
+
+interface ActivateResponse {
+    token: string;
+    name: string;
+}
+
 // Server-based Token Manager
 // Stores tokens in the backend database, accessible from any workstation
 export default function ServerTokenManager() {
     const queryClient = useQueryClient();
-    const [showAddDialog, setShowAddDialog] = useState(false);
-    const [editingToken, setEditingToken] = useState(null);
-    const [testingId, setTestingId] = useState(null);
-    const [_localTokenEnabled, setLocalTokenEnabled] = useState(isDbTokenEnabled());
+    const [showAddDialog, setShowAddDialog] = useState<boolean>(false);
+    const [editingToken, setEditingToken] = useState<DbTokenInfo | null>(null);
+    const [testingId, setTestingId] = useState<string | null>(null);
+    const [_localTokenEnabled, setLocalTokenEnabled] = useState<boolean>(isDbTokenEnabled());
     
     // Form state for new/edit token
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<TokenFormData>({
         name: '',
         description: '',
         host: '',
@@ -42,18 +96,18 @@ export default function ServerTokenManager() {
     });
     
     // Fetch all tokens from server
-    const { data: tokens = [], isLoading, refetch } = useQuery({
+    const { data: tokens = [], isLoading, refetch } = useQuery<DbTokenInfo[]>({
         queryKey: ['serverDbTokens'],
-        queryFn: async () => {
+        queryFn: async (): Promise<DbTokenInfo[]> => {
             const response = await api.request('/api/admin/db-tokens', { skipDbToken: true });
-            return response;
+            return response as DbTokenInfo[];
         },
         staleTime: 30000
     });
     
     // Create token mutation
     const createMutation = useMutation({
-        mutationFn: async (data) => {
+        mutationFn: async (data: TokenFormData) => {
             return await api.request('/api/admin/db-tokens', {
                 method: 'POST',
                 skipDbToken: true,
@@ -72,19 +126,19 @@ export default function ServerTokenManager() {
             });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['serverDbTokens']);
+            queryClient.invalidateQueries({ queryKey: ['serverDbTokens'] });
             setShowAddDialog(false);
             resetForm();
             toast.success('Token erstellt');
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
     // Update token mutation
     const updateMutation = useMutation({
-        mutationFn: async ({ id, data }) => {
+        mutationFn: async ({ id, data }: { id: string; data: TokenFormData }) => {
             return await api.request(`/api/admin/db-tokens/${id}`, {
                 method: 'PUT',
                 skipDbToken: true,
@@ -103,56 +157,57 @@ export default function ServerTokenManager() {
             });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['serverDbTokens']);
+            queryClient.invalidateQueries({ queryKey: ['serverDbTokens'] });
             setEditingToken(null);
             resetForm();
             toast.success('Token aktualisiert');
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
     // Delete token mutation
     const deleteMutation = useMutation({
-        mutationFn: async (id) => {
+        mutationFn: async (id: string) => {
             return await api.request(`/api/admin/db-tokens/${id}`, {
                 method: 'DELETE',
                 skipDbToken: true
             });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['serverDbTokens']);
+            queryClient.invalidateQueries({ queryKey: ['serverDbTokens'] });
             toast.success('Token gelöscht');
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
     // Activate token mutation
     const activateMutation = useMutation({
-        mutationFn: async (id) => {
+        mutationFn: async (id: string) => {
             return await api.request(`/api/admin/db-tokens/${id}/activate`, {
                 method: 'POST',
                 skipDbToken: true
             });
         },
-        onSuccess: async (data) => {
-            queryClient.invalidateQueries(['serverDbTokens']);
+        onSuccess: async (data: unknown) => {
+            queryClient.invalidateQueries({ queryKey: ['serverDbTokens'] });
             
+            const activateData = data as ActivateResponse;
             // Save token locally and enable it
-            await saveDbToken(data.token);
+            await saveDbToken(activateData.token);
             await enableDbToken();
             setLocalTokenEnabled(true);
             
-            toast.success(`Token "${data.name}" aktiviert`);
+            toast.success(`Token "${activateData.name}" aktiviert`);
             
             // Reload to apply changes
             setTimeout(() => window.location.reload(), 1000);
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
@@ -165,7 +220,7 @@ export default function ServerTokenManager() {
             });
         },
         onSuccess: async () => {
-            queryClient.invalidateQueries(['serverDbTokens']);
+            queryClient.invalidateQueries({ queryKey: ['serverDbTokens'] });
             
             // Disable token locally
             await disableDbToken();
@@ -176,25 +231,25 @@ export default function ServerTokenManager() {
             // Reload to apply changes
             setTimeout(() => window.location.reload(), 1000);
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
     // Test connection result state for UI feedback
-    const [testResult, setTestResult] = useState(null);
+    const [testResult, setTestResult] = useState<TestResult | null>(null);
     
     // Database check/creation state
-    const [checkDbStatus, setCheckDbStatus] = useState(null); // null | { exists, empty, tableCount } | { error }
-    const [checkingDb, setCheckingDb] = useState(false);
-    const [creatingDb, setCreatingDb] = useState(false);
+    const [checkDbStatus, setCheckDbStatus] = useState<CheckDbStatus | null>(null);
+    const [checkingDb, setCheckingDb] = useState<boolean>(false);
+    const [creatingDb, setCreatingDb] = useState<boolean>(false);
     
     // Test connection
-    const testConnection = async (tokenId) => {
+    const testConnection = async (tokenId: string) => {
         setTestingId(tokenId);
         setTestResult(null);
         try {
-            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true });
+            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true }) as { token?: string } | null;
             
             if (!tokenData || !tokenData.token) {
                 setTestResult({ success: false, tokenId, message: 'Token-Daten nicht gefunden' });
@@ -206,7 +261,7 @@ export default function ServerTokenManager() {
                 method: 'POST',
                 skipDbToken: true,
                 body: JSON.stringify({ token: tokenData.token })
-            });
+            }) as { success?: boolean; host?: string; database?: string; error?: string };
             
             if (result && result.success) {
                 const msg = `Verbindung OK: ${result.host}/${result.database}`;
@@ -217,8 +272,8 @@ export default function ServerTokenManager() {
                 setTestResult({ success: false, tokenId, message: msg });
                 toast.error(msg);
             }
-        } catch (err) {
-            const msg = 'Test fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler');
+        } catch (err: unknown) {
+            const msg = 'Test fehlgeschlagen: ' + (err instanceof Error ? err.message : String(err));
             setTestResult({ success: false, tokenId, message: msg });
             toast.error(msg);
         } finally {
@@ -242,15 +297,15 @@ export default function ServerTokenManager() {
                         port: formData.port
                     }
                 })
-            });
+            }) as { success?: boolean; host?: string; database?: string; error?: string };
             
             if (result.success) {
                 toast.success(`Verbindung erfolgreich zu ${result.host}/${result.database}`);
             } else {
                 toast.error(result.error || 'Verbindung fehlgeschlagen');
             }
-        } catch (err) {
-            toast.error('Test fehlgeschlagen: ' + err.message);
+        } catch (err: unknown) {
+            toast.error('Test fehlgeschlagen: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setTestingId(null);
         }
@@ -291,7 +346,7 @@ export default function ServerTokenManager() {
                     },
                     database: formData.database,
                 }),
-            });
+            }) as CheckDbStatus;
             setCheckDbStatus(result);
             if (result.exists && result.empty) {
                 toast.success(`Datenbank "${formData.database}" existiert und ist leer.`);
@@ -300,9 +355,9 @@ export default function ServerTokenManager() {
             } else {
                 toast.info(`Datenbank "${formData.database}" existiert nicht.`);
             }
-        } catch (err) {
-            setCheckDbStatus({ error: err.message });
-            toast.error('Prüfung fehlgeschlagen: ' + err.message);
+        } catch (err: unknown) {
+            setCheckDbStatus({ error: err instanceof Error ? err.message : String(err) });
+            toast.error('Prüfung fehlgeschlagen: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setCheckingDb(false);
         }
@@ -328,18 +383,18 @@ export default function ServerTokenManager() {
                     },
                     database: formData.database,
                 }),
-            });
+            }) as { message?: string };
             toast.success(result.message || `Datenbank "${formData.database}" angelegt.`);
             // Re-check to confirm
             setCheckDbStatus({ exists: true, empty: true, tableCount: 0, database: formData.database });
-        } catch (err) {
-            toast.error('Fehler: ' + err.message);
+        } catch (err: unknown) {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         } finally {
             setCreatingDb(false);
         }
     };
     
-    const openEditDialog = (token) => {
+    const openEditDialog = (token: DbTokenInfo) => {
         setEditingToken(token);
         setFormData({
             name: token.name,
@@ -375,29 +430,29 @@ export default function ServerTokenManager() {
         }
     };
     
-    const handleDelete = (token) => {
+    const handleDelete = (token: DbTokenInfo) => {
         if (window.confirm(`Token "${token.name}" wirklich löschen?`)) {
             deleteMutation.mutate(token.id);
         }
     };
     
-    const copyTokenToClipboard = async (tokenId) => {
+    const copyTokenToClipboard = async (tokenId: string) => {
         try {
-            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true });
+            const tokenData = await api.request(`/api/admin/db-tokens/${tokenId}`, { skipDbToken: true }) as { token: string };
             await navigator.clipboard.writeText(tokenData.token);
             toast.success('Token in Zwischenablage kopiert');
-        } catch (err) {
-            toast.error('Fehler beim Kopieren: ' + err.message);
+        } catch (err: unknown) {
+            toast.error('Fehler beim Kopieren: ' + (err instanceof Error ? err.message : String(err)));
         }
     };
     
     // Migration status query
-    const { data: migrationStatus, refetch: refetchMigrations } = useQuery({
+    const { data: migrationStatus, refetch: refetchMigrations } = useQuery<MigrationStatus>({
         queryKey: ['migrationStatus'],
-        queryFn: async () => {
+        queryFn: async (): Promise<MigrationStatus> => {
             try {
-                return await api.request('/api/admin/migration-status', { skipDbToken: true });
-            } catch (e) {
+                return await api.request('/api/admin/migration-status', { skipDbToken: true }) as MigrationStatus;
+            } catch (e: unknown) {
                 console.error('Failed to load migration status:', e);
                 return { migrations: [], allApplied: true };
             }
@@ -410,23 +465,24 @@ export default function ServerTokenManager() {
         mutationFn: async () => {
             return await api.request('/api/admin/run-migrations', { method: 'POST', skipDbToken: true });
         },
-        onSuccess: (data) => {
+        onSuccess: (data: unknown) => {
             refetchMigrations();
-            const successCount = data.results.filter(r => r.status === 'success').length;
-            const skippedCount = data.results.filter(r => r.status === 'skipped').length;
+            const results = (data as { results: Array<{ status: string }> }).results;
+            const successCount = results.filter((r: { status: string }) => r.status === 'success').length;
+            const skippedCount = results.filter((r: { status: string }) => r.status === 'skipped').length;
             if (successCount > 0) {
                 toast.success(`${successCount} Migration(en) erfolgreich ausgeführt`);
             } else if (skippedCount > 0) {
                 toast.info('Alle Migrationen bereits angewendet');
             }
         },
-        onError: (err) => {
-            toast.error('Fehler: ' + err.message);
+        onError: (err: unknown) => {
+            toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
         }
     });
     
-    const activeToken = tokens.find(t => t.is_active);
-    const pendingMigrations = migrationStatus?.migrations?.filter(m => !m.applied) || [];
+    const activeToken = tokens.find((t: DbTokenInfo) => t.is_active);
+    const pendingMigrations = migrationStatus?.migrations?.filter((m: MigrationItem) => !m.applied) || [];
     
     return (
         <Card>
@@ -496,7 +552,7 @@ export default function ServerTokenManager() {
                                         {pendingMigrations.length} ausstehende Migration(en)
                                     </span>
                                     <p className="text-xs text-amber-600">
-                                        {pendingMigrations.map(m => m.description).join(', ')}
+                                        {pendingMigrations.map((m: MigrationItem) => m.description).join(', ')}
                                     </p>
                                 </div>
                             </div>
@@ -539,7 +595,7 @@ export default function ServerTokenManager() {
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {tokens.map(token => (
+                        {tokens.map((token: DbTokenInfo) => (
                             <div 
                                 key={token.id}
                                 className={`p-3 rounded-lg border ${
@@ -658,7 +714,7 @@ export default function ServerTokenManager() {
             </CardContent>
             
             {/* Add/Edit Dialog */}
-            <Dialog open={showAddDialog || !!editingToken} onOpenChange={(open) => {
+            <Dialog open={showAddDialog || !!editingToken} onOpenChange={(open: boolean) => {
                 if (!open) {
                     setShowAddDialog(false);
                     setEditingToken(null);
@@ -684,7 +740,7 @@ export default function ServerTokenManager() {
                             <Input
                                 id="name"
                                 value={formData.name}
-                                onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                                 placeholder="z.B. Klinik Süd Rostock"
                                 className="h-8 text-xs"
                             />
@@ -695,7 +751,7 @@ export default function ServerTokenManager() {
                             <Textarea
                                 id="description"
                                 value={formData.description}
-                                onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                                 placeholder="Optionale Beschreibung..."
                                 rows={1}
                                 className="text-xs"
@@ -705,8 +761,8 @@ export default function ServerTokenManager() {
                         {editingToken && (
                             <div className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg text-xs">
                                 <Switch
-                                    checked={formData.updateCredentials}
-                                    onCheckedChange={checked => setFormData(prev => ({ ...prev, updateCredentials: checked }))}
+                                    checked={formData.updateCredentials ?? false}
+                                    onCheckedChange={(checked: boolean) => setFormData(prev => ({ ...prev, updateCredentials: checked }))}
                                     className="scale-75"
                                 />
                                 <Label className="text-xs">Zugangsdaten aktualisieren</Label>
@@ -721,7 +777,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="host"
                                             value={formData.host}
-                                            onChange={e => setFormData(prev => ({ ...prev, host: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, host: e.target.value }))}
                                             placeholder="mysql.railway.app"
                                             className="h-8 text-xs"
                                         />
@@ -731,7 +787,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="port"
                                             value={formData.port}
-                                            onChange={e => setFormData(prev => ({ ...prev, port: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, port: e.target.value }))}
                                             placeholder="3306"
                                             className="h-8 text-xs"
                                         />
@@ -744,7 +800,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="user"
                                             value={formData.user}
-                                            onChange={e => setFormData(prev => ({ ...prev, user: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, user: e.target.value }))}
                                             placeholder="root"
                                             className="h-8 text-xs"
                                         />
@@ -755,7 +811,7 @@ export default function ServerTokenManager() {
                                             id="password"
                                             type="password"
                                             value={formData.password}
-                                            onChange={e => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, password: e.target.value }))}
                                             placeholder="••••••••"
                                             className="h-8 text-xs"
                                         />
@@ -768,7 +824,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="database"
                                             value={formData.database}
-                                            onChange={e => {
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                                                 setFormData(prev => ({ ...prev, database: e.target.value }));
                                                 setCheckDbStatus(null); // reset check on change
                                             }}
@@ -837,7 +893,7 @@ export default function ServerTokenManager() {
                                     <Switch
                                         id="ssl"
                                         checked={formData.ssl}
-                                        onCheckedChange={checked => setFormData(prev => ({ ...prev, ssl: checked }))}
+                                        onCheckedChange={(checked: boolean) => setFormData(prev => ({ ...prev, ssl: checked }))}
                                         className="scale-75"
                                     />
                                     <Label htmlFor="ssl" className="text-xs">SSL-Verbindung verwenden</Label>

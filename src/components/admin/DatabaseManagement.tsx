@@ -15,12 +15,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Checkbox } from "@/components/ui/checkbox";
 import ServerTokenManager from './ServerTokenManager';
 
+interface DbIssue {
+  id?: string;
+  ids?: string[];
+  type: string;
+  description: string;
+  [key: string]: unknown;
+}
+
+interface InvokeResponse {
+  data: Record<string, unknown>;
+}
+
 export default function DatabaseManagement() {
     const { token } = useAuth();
     const queryClient = useQueryClient();
-    const [issues, setIssues] = useState(null);
-    const [selectedIssues, setSelectedIssues] = useState([]);
-    
+    const [issues, setIssues] = useState<DbIssue[] | null>(null);
+    const [selectedIssues, setSelectedIssues] = useState<string[]>([]);
+
     // Wipe Database State
     const [showWipeDialog, setShowWipeDialog] = useState(false);
     const [wipeConfirmText, setWipeConfirmText] = useState('');
@@ -31,8 +43,8 @@ export default function DatabaseManagement() {
     // --- CHECK ---
     const checkMutation = useMutation({
         mutationFn: () => invokeWithAuth('check'),
-        onSuccess: (res) => {
-            setIssues(res.data.issues);
+        onSuccess: (res: InvokeResponse) => {
+            setIssues(res.data.issues as DbIssue[] || []);
             setSelectedIssues([]);
         }
     });
@@ -40,25 +52,26 @@ export default function DatabaseManagement() {
     // --- REPAIR ---
     const repairMutation = useMutation({
         mutationFn: async () => {
-             const issuesToFix = issues.filter(i => selectedIssues.includes(i.id || i.ids?.[0]));
-             const processedIssues = issuesToFix.map(issue => issue);
+             const issuesToFix = (issues || []).filter((i: DbIssue) => selectedIssues.includes(i.id || i.ids?.[0] || ''));
+             const processedIssues = issuesToFix.map((issue: DbIssue) => issue);
              return invokeWithAuth('repair', { data: { issuesToFix: processedIssues } });
         },
-        onSuccess: (res) => {
-            alert(res.data.message + "\n" + res.data.results.join('\n'));
+        onSuccess: (res: InvokeResponse) => {
+            alert((res.data.message as string) + "\n" + ((res.data.results as string[]) || []).join('\n'));
             checkMutation.mutate();
         }
     });
 
-    const toggleIssue = (id) => {
-        setSelectedIssues(prev => 
+    const toggleIssue = (id: string) => {
+        setSelectedIssues(prev =>
             prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
         );
     };
 
     const toggleAll = () => {
+        if (!issues) return;
         if (selectedIssues.length === issues.length) setSelectedIssues([]);
-        else setSelectedIssues(issues.map(i => i.id || i.ids?.[0]));
+        else setSelectedIssues(issues.map((i: DbIssue) => i.id || i.ids?.[0] || ''));
     };
 
     // --- Wipe Database ---
@@ -67,49 +80,54 @@ export default function DatabaseManagement() {
         setIsWiping(true);
         try {
             const res = await invokeWithAuth('wipe_database');
-            toast.success(res.data.message || 'Datenbank geleert!');
+            toast.success((res.data.message as string) || 'Datenbank geleert!');
             setShowWipeDialog(false);
             setWipeConfirmText('');
             queryClient.invalidateQueries();
-        } catch (e) {
-            toast.error('Fehler: ' + (e.message));
+        } catch (e: unknown) {
+            toast.error('Fehler: ' + (e instanceof Error ? e.message : String(e)));
         } finally {
             setIsWiping(false);
         }
     };
 
     // Helper to call backend with JWT token and DB token
-    const invokeWithAuth = async (action, data = {}, method = 'POST', customPath = null) => {
+    const invokeWithAuth = async (
+        action: string,
+        data: Record<string, unknown> = {},
+        method: string = 'POST',
+        customPath: string | null = null
+    ): Promise<InvokeResponse> => {
         try {
             const apiBaseUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:3000' : '');
             const url = customPath ? `${apiBaseUrl}${customPath}` : `${apiBaseUrl}/api/admin/tools`;
             const dbToken = getActiveDbToken();
-            
-            const headers = {
+
+            const headers: Record<string, string> = {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             };
             if (dbToken) {
                 headers['X-DB-Token'] = dbToken;
             }
-            
+
             const response = await fetch(url, {
                 method,
                 headers,
                 body: JSON.stringify(customPath ? data : { action, ...data })
             });
-            
+
             if (!response.ok) {
                 const errorText = await response.text();
-                let result;
+                let result: Record<string, unknown>;
                 try {
                     result = JSON.parse(errorText);
                 } catch {
                     throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
                 }
-                throw new Error(result.error || `HTTP ${response.status}`);
+                throw new Error((result.error as string) || `HTTP ${response.status}`);
             }
-            
+
             const result = await response.json();
             return { data: result };
         } catch (error) {
@@ -135,8 +153,8 @@ export default function DatabaseManagement() {
             URL.revokeObjectURL(url);
 
             toast.success('MySQL-Export heruntergeladen!');
-        } catch (e) {
-            toast.error('Fehler: ' + (e.message));
+        } catch (e: unknown) {
+            toast.error('Fehler: ' + (e instanceof Error ? e.message : String(e)));
         }
     };
 
@@ -162,7 +180,7 @@ export default function DatabaseManagement() {
                         <CardDescription>Export & Wartung</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <Button 
+                        <Button
                             onClick={handleMySQLExport}
                             variant="outline"
                             className="w-full border-blue-600 text-blue-600 hover:bg-blue-50"
@@ -170,8 +188,8 @@ export default function DatabaseManagement() {
                             <Download className="w-4 h-4 mr-2" />
                             MySQL als JSON exportieren
                         </Button>
-                        
-                        <Button 
+
+                        <Button
                             onClick={() => setShowWipeDialog(true)}
                             variant="outline"
                             className="w-full border-red-600 text-red-600 hover:bg-red-50"
@@ -190,15 +208,15 @@ export default function DatabaseManagement() {
                         <CardDescription>Datenbank auf Fehler und Regelverstöße prüfen</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                         <Button 
-                            onClick={() => checkMutation.mutate()} 
+                         <Button
+                            onClick={() => checkMutation.mutate()}
                             disabled={checkMutation.isPending}
                             className="w-full"
                         >
                             {checkMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <AlertTriangle className="w-4 h-4 mr-2" />}
                             Prüfung starten
                         </Button>
-                        
+
                         {issues && issues.length === 0 && (
                             <Alert className="bg-green-50 border-green-200 text-green-800">
                                 <CheckCircle className="w-4 h-4" />
@@ -219,7 +237,7 @@ export default function DatabaseManagement() {
                             Datenbank leeren
                         </DialogTitle>
                         <DialogDescription>
-                            Diese Aktion löscht <strong>alle Daten</strong> außer Benutzer (app_users). 
+                            Diese Aktion löscht <strong>alle Daten</strong> außer Benutzer (app_users).
                             Dies kann nicht rückgängig gemacht werden!
                         </DialogDescription>
                     </DialogHeader>
@@ -232,9 +250,9 @@ export default function DatabaseManagement() {
                         </Alert>
                         <div className="space-y-2">
                             <Label>Geben Sie <strong>LÖSCHEN</strong> ein, um zu bestätigen:</Label>
-                            <Input 
+                            <Input
                                 value={wipeConfirmText}
-                                onChange={(e) => setWipeConfirmText(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWipeConfirmText(e.target.value)}
                                 placeholder="LÖSCHEN"
                                 className="font-mono"
                             />
@@ -244,7 +262,7 @@ export default function DatabaseManagement() {
                         <Button variant="outline" onClick={() => setShowWipeDialog(false)}>
                             Abbrechen
                         </Button>
-                        <Button 
+                        <Button
                             variant="destructive"
                             onClick={handleWipeDatabase}
                             disabled={wipeConfirmText !== 'LÖSCHEN' || isWiping}
@@ -263,9 +281,9 @@ export default function DatabaseManagement() {
                         <CardTitle className="text-red-800 flex justify-between items-center">
                             <span>{issues.length} Probleme gefunden</span>
                             {selectedIssues.length > 0 && (
-                                <Button 
-                                    variant="destructive" 
-                                    size="sm" 
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
                                     onClick={() => repairMutation.mutate()}
                                     disabled={repairMutation.isPending}
                                 >
@@ -280,8 +298,8 @@ export default function DatabaseManagement() {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead className="w-12">
-                                        <Checkbox 
-                                            checked={selectedIssues.length === issues.length}
+                                        <Checkbox
+                                            checked={issues ? selectedIssues.length === issues.length : false}
                                             onCheckedChange={toggleAll}
                                         />
                                     </TableHead>
@@ -290,12 +308,12 @@ export default function DatabaseManagement() {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {issues.map((issue, idx) => {
-                                    const id = issue.id || issue.ids?.[0];
+                                {issues.map((issue: DbIssue, idx: number) => {
+                                    const id: string = issue.id || issue.ids?.[0] || '';
                                     return (
                                         <TableRow key={idx}>
                                             <TableCell>
-                                                <Checkbox 
+                                                <Checkbox
                                                     checked={selectedIssues.includes(id)}
                                                     onCheckedChange={() => toggleIssue(id)}
                                                 />

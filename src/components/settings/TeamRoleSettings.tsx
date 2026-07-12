@@ -14,6 +14,7 @@ import {
     Users, Plus, Trash2, GripVertical, Pencil, Settings2
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import type { DropResult } from '@hello-pangea/dnd';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,8 +27,20 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+interface TeamRoleData {
+  id?: string;
+  name: string;
+  priority: number;
+  is_specialist: boolean;
+  can_do_foreground_duty: boolean | undefined;
+  can_do_background_duty: boolean | undefined;
+  excluded_from_statistics: boolean | undefined;
+  description: string;
+  [key: string]: unknown;
+}
+
 // Standard-Rollen die initial angelegt werden
-export const DEFAULT_TEAM_ROLES = [
+export const DEFAULT_TEAM_ROLES: TeamRoleData[] = [
     { name: "Chefarzt", priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: "Oberste Führungsebene" },
     { name: "Oberarzt", priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: "Kann Hintergrunddienste übernehmen" },
     { name: "Facharzt", priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: "Kann alle Dienste übernehmen" },
@@ -57,9 +70,24 @@ export const DEFAULT_TEAM_ROLES = [
     { name: "Pflegerische Hilfskraft", priority: 26, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: "Unterstützung in der Pflege" },
 ];
 
+interface TeamRolesResult {
+  teamRoles: TeamRoleData[];
+  roleNames: string[];
+  rolePriority: Record<string, number>;
+  specialistRoles: string[];
+  foregroundDutyRoles: string[];
+  backgroundDutyRoles: string[];
+  statisticsExcludedRoles: string[];
+  canDoForegroundDuty: (roleName: string) => boolean;
+  canDoBackgroundDuty: (roleName: string) => boolean;
+  isExcludedFromStatistics: (roleName: string) => boolean;
+  isLoading: boolean;
+  refetch: () => unknown;
+}
+
 // Hook zum Laden der Team-Rollen mit Fallback auf Defaults
-export function useTeamRoles() {
-    const { data: teamRoles = [], isLoading, refetch } = useQuery({
+export function useTeamRoles(): TeamRolesResult {
+    const { data: teamRoles = [], isLoading, refetch } = useQuery<TeamRoleData[]>({
         queryKey: ['teamRoles'],
         queryFn: async () => {
             // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
@@ -72,10 +100,10 @@ export function useTeamRoles() {
     const roleNames = teamRoles.map(r => r.name);
     
     // Priority-Map für Sortierung
-    const rolePriority = teamRoles.reduce((acc, role, idx) => {
+    const rolePriority: Record<string, number> = teamRoles.reduce((acc, role, idx) => {
         acc[role.name] = role.priority ?? idx;
         return acc;
-    }, {});
+    }, {} as Record<string, number>);
 
     // Specialist-Rollen für Validierung
     const specialistRoles = teamRoles.filter(r => r.is_specialist).map(r => r.name);
@@ -93,12 +121,12 @@ export function useTeamRoles() {
     ).map(r => r.name);
 
     // Helper-Funktion um Berechtigungen zu prüfen (mit Fallback für alte DBs)
-    const canDoForegroundDuty = (roleName) => {
+    const canDoForegroundDuty = (roleName: string): boolean => {
         const role = teamRoles.find(r => r.name === roleName);
         return role ? role.can_do_foreground_duty !== false : true;
     };
 
-    const canDoBackgroundDuty = (roleName) => {
+    const canDoBackgroundDuty = (roleName: string): boolean => {
         const role = teamRoles.find(r => r.name === roleName);
         if (!role) return false;
         // Fallback auf is_specialist wenn can_do_background_duty nicht gesetzt ist
@@ -106,7 +134,7 @@ export function useTeamRoles() {
         return role.can_do_background_duty === true;
     };
 
-    const isExcludedFromStatistics = (roleName) => {
+    const isExcludedFromStatistics = (roleName: string): boolean => {
         const role = teamRoles.find(r => r.name === roleName);
         if (!role) return false;
         // Fallback auf Nicht-Radiologe wenn excluded_from_statistics nicht gesetzt ist
@@ -131,10 +159,10 @@ export function useTeamRoles() {
 }
 
 // Initialisiert Standard-Rollen in der Datenbank — ergänzt fehlende, löscht keine bestehenden
-export async function initializeDefaultRoles() {
+export async function initializeDefaultRoles(): Promise<TeamRoleData[]> {
     try {
         const existing = await db.TeamRole.list();
-        const existingNames = new Set((existing || []).map(r => r.name));
+        const existingNames = new Set((existing || []).map((r: TeamRoleData) => r.name));
         const missingRoles = DEFAULT_TEAM_ROLES.filter(r => !existingNames.has(r.name));
 
         if (missingRoles.length === 0) {
@@ -153,7 +181,23 @@ export async function initializeDefaultRoles() {
     }
 }
 
-function RoleEditDialog({ role, open, onOpenChange, onSave }) {
+interface RoleEditFormData {
+  name: string;
+  is_specialist: boolean;
+  can_do_foreground_duty: boolean;
+  can_do_background_duty: boolean;
+  excluded_from_statistics: boolean;
+  description: string;
+}
+
+interface RoleEditDialogProps {
+  role: TeamRoleData | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (data: RoleEditFormData) => void;
+}
+
+function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProps) {
     const [formData, setFormData] = useState({
         name: role?.name || '',
         is_specialist: role?.is_specialist || false,
@@ -185,7 +229,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }) {
         }
     }, [role, open]);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.name.trim()) {
             onSave(formData);
@@ -296,9 +340,9 @@ export default function TeamRoleSettings() {
     const queryClient = useQueryClient();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editDialogOpen, setEditDialogOpen] = useState(false);
-    const [editingRole, setEditingRole] = useState(null);
+    const [editingRole, setEditingRole] = useState<TeamRoleData | null>(null);
 
-    const { data: teamRoles = [] } = useQuery({
+    const { data: teamRoles = [] } = useQuery<TeamRoleData[]>({
         queryKey: ['teamRoles'],
         queryFn: async () => {
             // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
@@ -308,32 +352,32 @@ export default function TeamRoleSettings() {
     });
 
     const createMutation = useMutation({
-        mutationFn: (data) => db.TeamRole.create({ 
+        mutationFn: (data: TeamRoleData) => db.TeamRole.create({ 
             ...data, 
             priority: teamRoles.length 
         }),
         onSuccess: () => {
-            queryClient.invalidateQueries(['teamRoles']);
+            queryClient.invalidateQueries({ queryKey: ['teamRoles'] });
             setEditDialogOpen(false);
             setEditingRole(null);
         },
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }) => db.TeamRole.update(id, data),
+        mutationFn: ({ id, data }: { id: string; data: Partial<TeamRoleData> }) => db.TeamRole.update(id, data),
         onSuccess: () => {
-            queryClient.invalidateQueries(['teamRoles']);
+            queryClient.invalidateQueries({ queryKey: ['teamRoles'] });
             setEditDialogOpen(false);
             setEditingRole(null);
         },
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (id) => db.TeamRole.delete(id),
-        onSuccess: () => queryClient.invalidateQueries(['teamRoles']),
+        mutationFn: (id: string) => db.TeamRole.delete(id),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['teamRoles'] }),
     });
 
-    const handleDragEnd = (result) => {
+    const handleDragEnd = (result: DropResult) => {
         if (!result.destination) return;
         
         const items = Array.from(teamRoles);
@@ -343,7 +387,7 @@ export default function TeamRoleSettings() {
         // Update priorities
         items.forEach((role, index) => {
             if (role.priority !== index) {
-                updateMutation.mutate({ id: role.id, data: { priority: index } });
+                updateMutation.mutate({ id: role.id!, data: { priority: index } });
             }
         });
     };
@@ -353,16 +397,16 @@ export default function TeamRoleSettings() {
         setEditDialogOpen(true);
     };
 
-    const handleEdit = (role) => {
+    const handleEdit = (role: TeamRoleData) => {
         setEditingRole(role);
         setEditDialogOpen(true);
     };
 
-    const handleSave = (formData) => {
+    const handleSave = (formData: RoleEditFormData) => {
         if (editingRole) {
-            updateMutation.mutate({ id: editingRole.id, data: formData });
+            updateMutation.mutate({ id: editingRole.id!, data: formData as unknown as Partial<TeamRoleData> });
         } else {
-            createMutation.mutate(formData);
+            createMutation.mutate(formData as unknown as TeamRoleData);
         }
     };
 
@@ -472,8 +516,8 @@ export default function TeamRoleSettings() {
                                                                             </AlertDialogHeader>
                                                                             <AlertDialogFooter>
                                                                                 <AlertDialogCancel>Abbrechen</AlertDialogCancel>
-                                                                                <AlertDialogAction 
-                                                                                    onClick={() => deleteMutation.mutate(role.id)}
+                                                                                <AlertDialogAction
+                                                                                    onClick={() => deleteMutation.mutate(role.id!)}
                                                                                     className="bg-red-600 hover:bg-red-700"
                                                                                 >
                                                                                     Löschen

@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from "@/api/client";
-import { 
-    Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger 
+import {
+    Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,35 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Palette, RefreshCcw } from 'lucide-react';
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from './TeamRoleSettings';
+import type { ColorSetting, Workplace } from '@/types';
+
+interface ColorValue {
+  bg: string;
+  text: string;
+}
+
+interface ColorSettings {
+  sections: Record<string, ColorValue>;
+  roles: Record<string, ColorValue>;
+  absences: Record<string, ColorValue>;
+  positions: Record<string, ColorValue>;
+}
+
+interface ColorRowProps {
+  name: string;
+  category: string;
+  colors: ColorValue;
+  onChange: (name: string, category: string, type: 'bg' | 'text', value: string) => void;
+  onReset: (name: string, category: string) => void;
+}
+
+interface DebouncedColorInputProps {
+  value: string;
+  onChange: (value: string) => void;
+}
 
 // Default color palette for rotations (used when no custom color is set)
-const ROTATION_COLOR_PALETTE = [
+const ROTATION_COLOR_PALETTE: ColorValue[] = [
     { bg: "#3b82f6", text: "#ffffff" }, // blue-500
     { bg: "#6366f1", text: "#ffffff" }, // indigo-500
     { bg: "#22c55e", text: "#ffffff" }, // green-500
@@ -81,43 +107,50 @@ export const DEFAULT_COLORS = {
         "DL/konv. Rö": { bg: "#a7f3d0", text: "#064e3b" },
         "Röntgen": { bg: "#a7f3d0", text: "#064e3b" },
     }
-};
+} as ColorSettings satisfies ColorSettings;
 
 /**
  * Get the default rotation color for a given index (used when no custom color is set).
  * Cycles through the palette.
  */
-export function getDefaultRotationColor(index) {
+export function getDefaultRotationColor(index: number): ColorValue {
     return ROTATION_COLOR_PALETTE[index % ROTATION_COLOR_PALETTE.length];
+}
+
+interface ColorSettingFormData {
+    name: string;
+    category: string;
+    bg_color: string;
+    text_color: string;
 }
 
 export default function ColorSettingsDialog() {
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState("roles");
 
-    const { data: colorSettings = [] } = useQuery({
+    const { data: colorSettings = [] } = useQuery<ColorSetting[]>({
         queryKey: ['colorSettings'],
         queryFn: () => db.ColorSetting.list(),
     });
 
-    const { data: workplaces = [] } = useQuery({
+    const { data: workplaces = [] } = useQuery<Workplace[]>({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list(null, 1000),
+        queryFn: () => db.Workplace.list(),
     });
 
     const createOrUpdateMutation = useMutation({
-        mutationFn: async (data) => {
-            const existing = colorSettings.find(s => s.name === data.name && s.category === data.category);
+        mutationFn: async (data: ColorSettingFormData) => {
+            const existing = colorSettings.find((s: ColorSetting) => s.name === data.name && s.category === data.category);
             if (existing) {
-                return db.ColorSetting.update(existing.id, data);
+                return db.ColorSetting.update(existing.id, data as unknown as Record<string, unknown>);
             } else {
-                return db.ColorSetting.create(data);
+                return db.ColorSetting.create(data as unknown as Record<string, unknown>);
             }
         },
-        onSuccess: () => queryClient.invalidateQueries(['colorSettings'])
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['colorSettings'] })
     });
 
-    const handleColorChange = (name, category, type, value) => {
+    const handleColorChange = (name: string, category: string, type: 'bg' | 'text', value: string) => {
         const current = getColor(name, category);
         const newData = {
             name,
@@ -128,9 +161,9 @@ export default function ColorSettingsDialog() {
         createOrUpdateMutation.mutate(newData);
     };
 
-    const getColor = (name, category, index) => {
-        const setting = colorSettings.find(s => s.name === name && s.category === category);
-        if (setting) return { bg: setting.bg_color, text: setting.text_color };
+    const getColor = (name: string, category: string, index?: number): ColorValue => {
+        const setting = colorSettings.find((s: ColorSetting) => s.name === name && s.category === category);
+        if (setting) return { bg: setting.bg_color ?? '#ffffff', text: setting.text_color ?? '#000000' };
         
         // Fallback to defaults
         if (category === 'section') return DEFAULT_COLORS.sections[name] || { bg: "#e2e8f0", text: "#1e293b" };
@@ -141,11 +174,11 @@ export default function ColorSettingsDialog() {
         return { bg: "#ffffff", text: "#000000" };
     };
 
-    const resetToDefault = (name, category) => {
-        const existing = colorSettings.find(s => s.name === name && s.category === category);
+    const resetToDefault = (name: string, category: string) => {
+        const existing = colorSettings.find((s: ColorSetting) => s.name === name && s.category === category);
         if (existing) {
             db.ColorSetting.delete(existing.id).then(() => {
-                queryClient.invalidateQueries(['colorSettings']);
+                queryClient.invalidateQueries({ queryKey: ['colorSettings'] });
             });
         }
     };
@@ -154,8 +187,8 @@ export default function ColorSettingsDialog() {
     // Dynamisch Rollen aus DB laden statt hardcoded
     const { roleNames: dynamicRoles } = useTeamRoles();
     const rolesList = dynamicRoles.length > 0 ? dynamicRoles : DEFAULT_TEAM_ROLES.map(r => r.name);
-    const positionsList = workplaces.map(w => w.name).sort();
-    const rotationsList = workplaces.filter(w => w.category === 'Rotationen').sort((a, b) => (a.order || 0) - (b.order || 0));
+    const positionsList = workplaces.map((w: Workplace) => w.name).sort();
+    const rotationsList = workplaces.filter((w: Workplace) => w.category === 'Rotationen').sort((a: Workplace, b: Workplace) => (a.order || 0) - (b.order || 0));
     const absencesList = Object.keys(DEFAULT_COLORS.absences);
 
     return (
@@ -206,7 +239,7 @@ export default function ColorSettingsDialog() {
                     </TabsContent>
 
                     <TabsContent value="positions" className="space-y-4 mt-4">
-                        {positionsList.map(name => (
+                        {positionsList.map((name: string) => (
                             <ColorRow 
                                 key={name} 
                                 name={name} 
@@ -221,7 +254,7 @@ export default function ColorSettingsDialog() {
                     <TabsContent value="rotations" className="space-y-4 mt-4">
                         {rotationsList.length === 0 ? (
                             <p className="text-sm text-slate-500 italic">Keine Rotationen konfiguriert. Bitte fügen Sie unter "Arbeitsplätze" Einträge in der Kategorie "Rotationen" hinzu.</p>
-                        ) : rotationsList.map((wp, index) => (
+                        ) : rotationsList.map((wp: Workplace, index: number) => (
                             <ColorRow 
                                 key={wp.name} 
                                 name={wp.name} 
@@ -251,7 +284,7 @@ export default function ColorSettingsDialog() {
     );
 }
 
-function ColorRow({ name, category, colors, onChange, onReset }) {
+function ColorRow({ name, category, colors, onChange, onReset }: ColorRowProps) {
     return (
         <div className="flex items-center justify-between p-3 border rounded-lg bg-slate-50/50">
             <div className="flex items-center gap-3">
@@ -295,7 +328,7 @@ function ColorRow({ name, category, colors, onChange, onReset }) {
     );
 }
 
-function DebouncedColorInput({ value, onChange }) {
+function DebouncedColorInput({ value, onChange }: DebouncedColorInputProps) {
     const [localValue, setLocalValue] = useState(value);
 
     useEffect(() => {

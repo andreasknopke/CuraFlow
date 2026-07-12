@@ -5,13 +5,33 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Settings2, GripVertical, RotateCcw } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import type { DropResult } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getWorkplaceCategoryNames } from '@/utils/workplaceCategoryUtils';
+import type { SystemSetting, Workplace } from '@/types';
 import { ALWAYS_VISIBLE_ROWS_KEY, parseAlwaysVisibleRows } from '@/components/schedule/sectionVisibility';
 
-const DEFAULT_SECTIONS = [
+interface SectionConfigItem {
+  id: string;
+  defaultName: string;
+  order: number;
+  customName?: string;
+  [key: string]: unknown;
+}
+
+interface AlwaysVisibleRow {
+  rowName: string;
+  targetSectionTitle: string;
+  order?: number;
+}
+
+interface ParsedSectionConfig {
+  sections: SectionConfigItem[];
+}
+
+const DEFAULT_SECTIONS: SectionConfigItem[] = [
     { id: 'absences', defaultName: 'Abwesenheiten', order: 0 },
     { id: 'services', defaultName: 'Dienste', order: 1 },
     { id: 'rotations', defaultName: 'Rotationen', order: 2 },
@@ -21,16 +41,16 @@ const DEFAULT_SECTIONS = [
 ];
 
 const SECTION_CONFIG_KEY = 'section_config';
-const STATIC_ROW_OPTIONS = [
-    { rowName: 'Frei', sectionTitle: 'Abwesenheiten' },
-    { rowName: 'Krank', sectionTitle: 'Abwesenheiten' },
-    { rowName: 'Urlaub', sectionTitle: 'Abwesenheiten' },
-    { rowName: 'Dienstreise', sectionTitle: 'Abwesenheiten' },
-    { rowName: 'Nicht verfügbar', sectionTitle: 'Abwesenheiten' },
-    { rowName: 'Sonstiges', sectionTitle: 'Sonstiges' },
+const STATIC_ROW_OPTIONS: AlwaysVisibleRow[] = [
+    { rowName: 'Frei', targetSectionTitle: 'Abwesenheiten' },
+    { rowName: 'Krank', targetSectionTitle: 'Abwesenheiten' },
+    { rowName: 'Urlaub', targetSectionTitle: 'Abwesenheiten' },
+    { rowName: 'Dienstreise', targetSectionTitle: 'Abwesenheiten' },
+    { rowName: 'Nicht verfügbar', targetSectionTitle: 'Abwesenheiten' },
+    { rowName: 'Sonstiges', targetSectionTitle: 'Sonstiges' },
 ];
 
-const parseSectionConfig = (rawValue) => {
+const parseSectionConfig = (rawValue: string | null | undefined): ParsedSectionConfig | null => {
     if (!rawValue) return null;
     try {
         const parsed = JSON.parse(rawValue);
@@ -43,25 +63,25 @@ const parseSectionConfig = (rawValue) => {
     return null;
 };
 
-export function useSectionConfig() {
-    const { data: systemSettings = [] } = useQuery({
+export function useSectionConfig(): { config: ParsedSectionConfig | null; getSectionName: (defaultName: string) => string; getSectionOrder: () => string[] } {
+    const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
         queryKey: ['systemSettings'],
         queryFn: () => db.SystemSetting.list(),
         staleTime: 5 * 60 * 1000,
     });
 
     const config = useMemo(() => {
-        const savedSetting = systemSettings.find(s => s.key === SECTION_CONFIG_KEY);
+        const savedSetting = systemSettings.find((s: SystemSetting) => s.key === SECTION_CONFIG_KEY);
         return parseSectionConfig(savedSetting?.value);
     }, [systemSettings]);
 
-    const getSectionName = (defaultName) => {
+    const getSectionName = (defaultName: string): string => {
         if (!config) return defaultName;
         const section = config.sections?.find(s => s.defaultName === defaultName);
         return section?.customName || defaultName;
     };
 
-    const getSectionOrder = () => {
+    const getSectionOrder = (): string[] => {
         if (!config || !config.sections) return DEFAULT_SECTIONS.map(s => s.defaultName);
         return [...config.sections]
             .sort((a, b) => a.order - b.order)
@@ -74,42 +94,42 @@ export function useSectionConfig() {
 export default function SectionConfigDialog() {
     const queryClient = useQueryClient();
     const [open, setOpen] = useState(false);
-    const [sections, setSections] = useState([]);
-    const [alwaysVisibleRows, setAlwaysVisibleRows] = useState([]);
+    const [sections, setSections] = useState<SectionConfigItem[]>([]);
+    const [alwaysVisibleRows, setAlwaysVisibleRows] = useState<AlwaysVisibleRow[]>([]);
     const [isSaving, setIsSaving] = useState(false);
 
     // Lade Custom-Kategorien und Workplaces, um leere Sections zu filtern
-    const { data: systemSettings = [] } = useQuery({
+    const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
         queryKey: ['systemSettings'],
         queryFn: () => db.SystemSetting.list(),
         staleTime: 5 * 60 * 1000,
     });
 
-    const { data: workplaces = [] } = useQuery({
+    const { data: workplaces = [] } = useQuery<Workplace[]>({
         queryKey: ['workplaces'],
         queryFn: () => db.Workplace.list(),
         staleTime: 5 * 60 * 1000,
     });
 
     const updateSettingMutation = useMutation({
-        mutationFn: async ({ key, value }) => {
-            const existing = systemSettings.find(s => s.key === key);
+        mutationFn: async ({ key, value }: { key: string; value: string }) => {
+            const existing = systemSettings.find((s: SystemSetting) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             }
             return db.SystemSetting.create({ key, value });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['systemSettings']);
+            queryClient.invalidateQueries({ queryKey: ['systemSettings'] });
         }
     });
 
     // Alle verfügbaren Sections berechnen (Default + Custom), leere dynamische ausblenden
-    const allAvailableSections = useMemo(() => {
+    const allAvailableSections: SectionConfigItem[] = useMemo(() => {
         const customCategoryNames = getWorkplaceCategoryNames(systemSettings);
 
         // Prüfe welche dynamischen Kategorien tatsächlich Workplaces haben
-        const categoriesWithWorkplaces = new Set(workplaces.map(w => w.category));
+        const categoriesWithWorkplaces = new Set(workplaces.map((w: Workplace) => w.category));
 
         // Dynamische Kategorien (die nur angezeigt werden wenn Workplaces vorhanden)
         const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategoryNames];
@@ -120,7 +140,7 @@ export default function SectionConfigDialog() {
         );
 
         // Dynamische Sections nur anzeigen, wenn sie Workplaces haben
-        const dynamicSections = [];
+        const dynamicSections: SectionConfigItem[] = [];
         for (const catName of dynamicCategoryNames) {
             if (categoriesWithWorkplaces.has(catName)) {
                 // Prüfe ob es schon in DEFAULT_SECTIONS ist
@@ -142,21 +162,21 @@ export default function SectionConfigDialog() {
     }, [systemSettings, workplaces]);
 
     const savedConfig = useMemo(() => {
-        const savedSetting = systemSettings.find(s => s.key === SECTION_CONFIG_KEY);
+        const savedSetting = systemSettings.find((s: SystemSetting) => s.key === SECTION_CONFIG_KEY);
         return parseSectionConfig(savedSetting?.value);
     }, [systemSettings]);
 
     const savedAlwaysVisibleRows = useMemo(() => {
-        const savedSetting = systemSettings.find(s => s.key === ALWAYS_VISIBLE_ROWS_KEY);
+        const savedSetting = systemSettings.find((s: SystemSetting) => s.key === ALWAYS_VISIBLE_ROWS_KEY);
         return parseAlwaysVisibleRows(savedSetting?.value);
     }, [systemSettings]);
 
-    const availableRowOptions = useMemo(() => {
-        const rows = [
+    const availableRowOptions: AlwaysVisibleRow[] = useMemo(() => {
+        const rows: AlwaysVisibleRow[] = [
             ...STATIC_ROW_OPTIONS,
-            ...workplaces.map((workplace) => ({
+            ...workplaces.map((workplace: Workplace) => ({
                 rowName: workplace.name,
-                sectionTitle: workplace.category,
+                targetSectionTitle: workplace.category,
                 order: workplace.order || 0,
             })),
         ];
@@ -165,14 +185,14 @@ export default function SectionConfigDialog() {
         const seen = new Set();
 
         return rows
-            .filter((row) => row.rowName && sectionNames.has(row.sectionTitle))
+            .filter((row) => row.rowName && sectionNames.has(row.targetSectionTitle))
             .sort((a, b) => {
-                const sectionDiff = (a.sectionTitle || '').localeCompare(b.sectionTitle || '', 'de');
+                const sectionDiff = (a.targetSectionTitle || '').localeCompare(b.targetSectionTitle || '', 'de');
                 if (sectionDiff !== 0) return sectionDiff;
                 return (a.order || 0) - (b.order || 0) || a.rowName.localeCompare(b.rowName, 'de');
             })
             .filter((row) => {
-                const key = `${row.sectionTitle}__${row.rowName}`;
+                const key = `${row.targetSectionTitle}__${row.rowName}`;
                 if (seen.has(key)) return false;
                 seen.add(key);
                 return true;
@@ -187,7 +207,7 @@ export default function SectionConfigDialog() {
             if (savedConfig?.sections) {
                 // Merge: Behalte gespeicherte Einträge, füge neue hinzu, entferne nicht mehr relevante
                 const savedSections = savedConfig.sections;
-                const merged = [];
+                const merged: SectionConfigItem[] = [];
                 
                 // Zuerst: Gespeicherte Sections in ihrer Reihenfolge, die noch existieren
                 for (const saved of savedSections) {
@@ -216,7 +236,7 @@ export default function SectionConfigDialog() {
         }
     }, [open, savedConfig, savedAlwaysVisibleRows, allAvailableSections]);
 
-    const handleDragEnd = (result) => {
+    const handleDragEnd = (result: DropResult) => {
         if (!result.destination) return;
         
         const items = Array.from(sections);
@@ -232,7 +252,7 @@ export default function SectionConfigDialog() {
         setSections(reordered_with_order);
     };
 
-    const handleNameChange = (id, value) => {
+    const handleNameChange: (id: string, value: string) => void = (id, value) => {
         setSections(prev => prev.map(s => 
             s.id === id ? { ...s, customName: value } : s
         ));
@@ -247,11 +267,11 @@ export default function SectionConfigDialog() {
         setAlwaysVisibleRows([]);
     };
 
-    const isAlwaysVisible = (rowName, targetSectionTitle) => {
+    const isAlwaysVisible: (rowName: string, targetSectionTitle: string) => boolean = (rowName, targetSectionTitle) => {
         return alwaysVisibleRows.some((entry) => entry.rowName === rowName && entry.targetSectionTitle === targetSectionTitle);
     };
 
-    const toggleAlwaysVisible = (rowName, targetSectionTitle, checked) => {
+    const toggleAlwaysVisible: (rowName: string, targetSectionTitle: string, checked: boolean) => void = (rowName, targetSectionTitle, checked) => {
         setAlwaysVisibleRows((prev) => {
             const withoutEntry = prev.filter((entry) => !(entry.rowName === rowName && entry.targetSectionTitle === targetSectionTitle));
             if (!checked) return withoutEntry;
@@ -270,7 +290,7 @@ export default function SectionConfigDialog() {
             toast.success('Konfiguration gespeichert');
             setOpen(false);
         } catch (e) {
-            toast.error('Fehler beim Speichern: ' + e.message);
+            toast.error('Fehler beim Speichern: ' + (e instanceof Error ? e.message : String(e)));
         } finally {
             setIsSaving(false);
         }
@@ -351,14 +371,14 @@ export default function SectionConfigDialog() {
                         <div>
                             <h3 className="text-sm font-semibold text-slate-900">Zeilen immer anzeigen</h3>
                             <p className="text-xs text-slate-500 mt-1">
-                                Wählen Sie Zeilen aus anderen Bereichen, die zusätzlich im jeweiligen Reiter sichtbar bleiben sollen. Beispiel: „Spätdienst“ zusätzlich im Reiter „Rotationen“ anzeigen.
+                                Wählen Sie Zeilen aus anderen Bereichen, die zusätzlich im jeweiligen Reiter sichtbar bleiben sollen. Beispiel: „Spätdienst" zusätzlich im Reiter „Rotationen" anzeigen.
                             </p>
                         </div>
 
                         {sections
                             .filter((targetSection) => targetSection.defaultName !== 'Anwesenheiten')
                             .map((targetSection) => {
-                                const targetRows = availableRowOptions.filter((row) => row.sectionTitle !== targetSection.defaultName);
+                                const targetRows = availableRowOptions.filter((row) => row.targetSectionTitle !== targetSection.defaultName);
                                 const selectedCount = alwaysVisibleRows.filter((entry) => entry.targetSectionTitle === targetSection.defaultName).length;
 
                                 if (targetRows.length === 0) return null;
@@ -366,16 +386,16 @@ export default function SectionConfigDialog() {
                                 return (
                                     <details key={`always-visible-${targetSection.id}`} className="rounded-lg border bg-slate-50/60" open={selectedCount > 0}>
                                         <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-800">
-                                            In „{targetSection.customName || targetSection.defaultName}“ zusätzlich anzeigen
+                                            In „{targetSection.customName || targetSection.defaultName}" zusätzlich anzeigen
                                             {selectedCount > 0 && <span className="ml-2 text-xs text-indigo-700">({selectedCount})</span>}
                                         </summary>
                                         <div className="grid gap-2 px-3 pb-3 sm:grid-cols-2">
                                             {targetRows.map((row) => {
                                                 const checked = isAlwaysVisible(row.rowName, targetSection.defaultName);
-                                                const inputId = `always-${targetSection.id}-${row.sectionTitle}-${row.rowName}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+                                                const inputId = `always-${targetSection.id}-${row.targetSectionTitle}-${row.rowName}`.replace(/[^a-zA-Z0-9_-]/g, '-');
 
                                                 return (
-                                                    <label key={`${targetSection.id}-${row.sectionTitle}-${row.rowName}`} htmlFor={inputId} className="flex items-start gap-2 rounded border bg-white p-2 text-sm hover:bg-indigo-50/40">
+                                                    <label key={`${targetSection.id}-${row.targetSectionTitle}-${row.rowName}`} htmlFor={inputId} className="flex items-start gap-2 rounded border bg-white p-2 text-sm hover:bg-indigo-50/40">
                                                         <input
                                                             id={inputId}
                                                             type="checkbox"
@@ -385,7 +405,7 @@ export default function SectionConfigDialog() {
                                                         />
                                                         <span className="min-w-0">
                                                             <span className="block font-medium text-slate-800">{row.rowName}</span>
-                                                            <span className="block text-xs text-slate-500">aus {row.sectionTitle}</span>
+                                                            <span className="block text-xs text-slate-500">aus {row.targetSectionTitle}</span>
                                                         </span>
                                                     </label>
                                                 );

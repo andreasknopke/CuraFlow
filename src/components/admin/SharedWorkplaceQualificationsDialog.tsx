@@ -2,11 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import type { Workplace } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Loader2, Plus, X } from 'lucide-react';
+
+interface SharedWorkplaceQualificationsDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    groupId: number | null;
+    workplace: Workplace | null;
+}
+
+interface WorkplaceQualificationEntry {
+    qualification_name: string;
+    is_excluded: boolean;
+    [key: string]: unknown;
+}
+
+interface QualificationsResponse {
+    qualifications: WorkplaceQualificationEntry[];
+}
+
+interface GroupQualificationsResponse {
+    qualifications: string[];
+}
 
 /**
  * Required qualifications editor for a shared (cross-tenant) workplace.
@@ -19,23 +41,23 @@ export default function SharedWorkplaceQualificationsDialog({
     onOpenChange,
     groupId,
     workplace,
-}) {
+}: SharedWorkplaceQualificationsDialogProps) {
     const queryClient = useQueryClient();
-    const [required, setRequired] = useState([]);
+    const [required, setRequired] = useState<string[]>([]);
     const [draft, setDraft] = useState('');
 
     const enabled = !!open && !!groupId && !!workplace?.id;
 
-    const currentQuery = useQuery({
+    const currentQuery = useQuery<QualificationsResponse>({
         queryKey: ['admin', 'shared-workplace-qualifications', groupId, workplace?.id],
-        queryFn: () => api.getWorkplaceQualifications(groupId, workplace.id),
+        queryFn: () => api.getWorkplaceQualifications(String(groupId!), workplace!.id!) as Promise<QualificationsResponse>,
         enabled,
         staleTime: 30_000,
     });
 
-    const availableQuery = useQuery({
+    const availableQuery = useQuery<GroupQualificationsResponse>({
         queryKey: ['admin', 'group-qualifications', groupId],
-        queryFn: () => api.getGroupQualifications(groupId),
+        queryFn: () => api.getGroupQualifications(String(groupId!)) as Promise<GroupQualificationsResponse>,
         enabled,
         staleTime: 60_000,
     });
@@ -44,24 +66,24 @@ export default function SharedWorkplaceQualificationsDialog({
         if (currentQuery.data?.qualifications) {
             setRequired(
                 currentQuery.data.qualifications
-                    .filter((q) => !q.is_excluded)
-                    .map((q) => q.qualification_name)
+                    .filter((q: WorkplaceQualificationEntry) => !q.is_excluded)
+                    .map((q: WorkplaceQualificationEntry) => q.qualification_name)
             );
         }
     }, [currentQuery.data]);
 
     const availableSuggestions = useMemo(() => {
-        const all = availableQuery.data?.qualifications || [];
+        const all: string[] = availableQuery.data?.qualifications || [];
         const sel = new Set(required);
-        return all.filter((name) => !sel.has(name));
+        return all.filter((name: string) => !sel.has(name));
     }, [availableQuery.data, required]);
 
     const saveMutation = useMutation({
         mutationFn: () =>
             api.replaceWorkplaceQualifications(
-                groupId,
-                workplace.id,
-                required.map((name) => ({ qualification_name: name, is_excluded: false }))
+                String(groupId!),
+                String(workplace!.id!),
+                required.map((name: string) => ({ qualification_name: name, is_excluded: false }))
             ),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['admin', 'shared-workplace-qualifications', groupId, workplace?.id] });
@@ -71,18 +93,18 @@ export default function SharedWorkplaceQualificationsDialog({
             toast.success('Qualifikationen gespeichert');
             onOpenChange(false);
         },
-        onError: (error) => toast.error(error.message || 'Speichern fehlgeschlagen'),
+        onError: (error: Error) => toast.error(error.message || 'Speichern fehlgeschlagen'),
     });
 
-    const addQualification = (name) => {
+    const addQualification = (name: string) => {
         const trimmed = String(name || '').trim();
         if (!trimmed) return;
-        setRequired((current) => (current.includes(trimmed) ? current : [...current, trimmed]));
+        setRequired((current: string[]) => (current.includes(trimmed) ? current : [...current, trimmed]));
         setDraft('');
     };
 
-    const removeQualification = (name) => {
-        setRequired((current) => current.filter((entry) => entry !== name));
+    const removeQualification = (name: string) => {
+        setRequired((current: string[]) => current.filter((entry: string) => entry !== name));
     };
 
     return (
@@ -114,7 +136,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                     </div>
                                 ) : (
                                     <div className="flex flex-wrap gap-1.5">
-                                        {required.map((name) => (
+                                        {required.map((name: string) => (
                                             <Badge key={name} variant="secondary" className="gap-1 pr-1">
                                                 {name}
                                                 <button
@@ -136,9 +158,9 @@ export default function SharedWorkplaceQualificationsDialog({
                                 <div className="flex gap-2">
                                     <Input
                                         value={draft}
-                                        onChange={(e) => setDraft(e.target.value)}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
                                         placeholder="Qualifikationsname"
-                                        onKeyDown={(e) => {
+                                        onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
                                                 addQualification(draft);
@@ -157,7 +179,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                             Verfügbar in den Mandanten dieses Verbunds
                                         </div>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {availableSuggestions.map((name) => (
+                                            {availableSuggestions.map((name: string) => (
                                                 <button
                                                     key={name}
                                                     type="button"
