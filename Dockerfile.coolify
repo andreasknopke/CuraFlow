@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/root/.npm \
 # Copy frontend sources and build both Vite entry points (index.html + master.html).
 COPY src ./src
 COPY public ./public
-COPY index.html master.html vite.config.js jsconfig.json postcss.config.js tailwind.config.js components.json ./
+COPY index.html master.html vite.config.ts jsconfig.json postcss.config.js tailwind.config.js components.json ./
 RUN npm run build
 
 FROM node:22-slim AS runtime

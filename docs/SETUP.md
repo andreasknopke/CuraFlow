@@ -252,7 +252,7 @@ Mit dem aktuellen CoWork-MVP gilt zusaetzlich:
 
 - **Sprache:** JavaScript (ES Modules), JSX für React-Komponenten, kein TypeScript im Frontend
 - **Einrückung:** 2 Spaces
-- **Imports:** Pfad-Alias `@/` zeigt auf `src/` (konfiguriert in `vite.config.js` und `jsconfig.json`)
+- **Imports:** Pfad-Alias `@/` zeigt auf `src/` (konfiguriert in `vite.config.ts` und `tsconfig.json`)
 - **UI-Komponenten:** shadcn/ui aus `src/components/ui/` – nie direkt Radix-UI importieren
 - **API-Calls:** Immer über `db.*` oder `api.*` aus `@/api/client` – nie direkte `fetch()`-Calls in Komponenten
 - **Datenbankabfragen:** Ausschließlich über `req.db.execute()` im Backend (nie direkter Import von `db`)
