@@ -1,113 +1,103 @@
-## Pre-PR 4.0: Settings + Admin Smoke Tests (11 tests, ~400 lines)
+## Plan: Convert Remaining `.js`/`.jsx` Files to TypeScript
 
-### Goal
-Create 2 smoke test files to protect rendering and basic interactions before TypeScript conversion of Settings + Admin components (Phase 4).
-
-### Strategy
-- **Pattern**: Follow `TenantGroupManagement.test.jsx` — `vi.hoisted` mocks, mock `@/api/client`, use `renderWithProviders`
-- **Dialog handling**: Mock `@/components/ui/dialog` and `alert-dialog` to always render children (no portals), matching the ScheduleBoardRender dropdown-menu mock pattern
-- **Rendering**: `renderWithProviders({ withAuthProvider: false, withToaster: false })`
-- **Auth**: Mock `@/components/AuthProvider` (useAuth hook) in admin tests
+### Scope
+**44 source files + 3 test-utils files** (~14,400 lines) plus cleanup of dead code and docs.
 
 ---
 
-### File 1: `src/components/settings/__component_tests__/SettingsDialogs.test.jsx` (~200L, 6 tests)
+### Batch A — Dead code & docs cleanup (no type work needed)
 
-**File-level mocks:**
-| Module | Reason |
-|--------|--------|
-| `@/api/client` | Mock `db.*` entities (Workplace, SystemSetting, TeamRole, ColorSetting) with `vi.fn()` |
-| `@/hooks/useQualifications` | QualificationManagement uses this hook — mock to return test data |
-| `@/components/settings/TeamRoleSettings` | Passthrough with overridable `useTeamRoles` (needed by ColorSettingsDialog, but must not break test 3's real component) |
-| `sonner` | Mock toast |
-| `@/components/ui/dialog` | Inline rendering: `Dialog → <>{children}</>` |
-| `@/components/ui/alert-dialog` | Inline rendering |
-| `@/components/admin/TimeslotEditor` | Stub (sub-component of WorkplaceConfigDialog) |
-| `@/components/settings/WorkplaceQualificationEditor` | Stub |
+| Action | File |
+|--------|------|
+| Delete | `src/api/entities.js` — dead code, exports `undefined` |
+| Delete | `src/api/integrations.js` — dead code, exports `undefined` |
+| Delete | `src/components/settings/AbsenceRulesDialog.jsx` — 0-byte empty stub |
+| Rename | `src/components/docs/AuthMigrationPlan.md.jsx` → `.md` (pure markdown) |
+| Rename | `src/components/docs/ElevenLabsIntegration.md.jsx` → `.md` (pure markdown) |
+| Rename | `src/components/manual.md.jsx` → `.md` (pure markdown) |
 
-**Tests:**
+### Batch B — Pure utility `.js` → `.ts` (17 files, ~4,020L)
 
-1. **WorkplaceConfigDialog — renders with workplaces, tabs, and form fields visible**
-   - `Workplace.list` → 1 workplace in "Rotationen"; `SystemSetting.list` → `[]`
-   - Render `<WorkplaceConfigDialog defaultTab="Rotationen" />`
-   - Assert: title "Konfiguration: Arbeitsplätze & Dienste", tab "Rotationen", workplace "CT", "Neu anlegen" button
+All are pure logic modules with no JSX. No explicit `.js` extensions in any imports (source or test), so `git mv` is safe.
 
-2. **WorkplaceConfigDialog — edit name field, save triggers update**
-   - Same seed data
-   - Click edit button (pencil icon) on workplace row → edit form appears
-   - Assert: "Bezeichnung" input visible
-   - Type new name, click save → assert `Workplace.update` called
+| File | Lines | Notes |
+|------|------|-------|
+| `src/components/schedule/poolShiftQueries.js` | 10 | Tiny |
+| `src/components/settings/serviceTypes.js` | 6 | Tiny — const array |
+| `src/components/wishlist/wishPreferences.js` | 10 | Tiny |
+| `src/components/wishlist/wishQualificationFilter.js` | 23 | Tiny |
+| `src/components/staff/centralLinkSync.js` | 39 | Async, imports `@/api/client` |
+| `src/components/statistics/wishFulfillmentUtils.js` | 73 | Imports `@/utils/wishRange` |
+| `src/components/schedule/scheduleShiftLookup.js` | 79 | |
+| `src/components/schedule/sectionVisibility.js` | 97 | Uses `JSON.parse` |
+| `src/components/schedule/timeslotSelectionUtils.js` | 104 | |
+| `src/components/schedule/rowQualFilter.js` | 150 | Returns Tailwind strings |
+| `src/components/training/trainingContractUtils.js` | 121 | Uses `date-fns` |
+| `src/components/vacation/vacationBalance.js` | 307 | Complex but documented |
+| `src/components/statistics/exportUtils.js` | 166 | Uses `jspdf` |
+| `src/components/schedule/doctorWorkTime.js` | 135 | Clean destructuring |
+| `src/components/schedule/costFunction.js` | 629 | Exports class + `WEIGHTS` |
+| `src/components/schedule/aiAutoFillEngine.js` | 254 | Imports siblings |
+| `src/components/schedule/autoFillEngine.js` | 1,964 | **Largest file** — imports from `costFunction`, `doctorWorkTime` |
 
-3. **TeamRoleSettings — renders role list with badges**
-   - `TeamRole.list` → seeded roles (Chefarzt, Oberarzt, Facharzt)
-   - Render `<TeamRoleSettings />`
-   - Assert: "Team-Funktionen verwalten", role names with badges (Facharzt, VG, HG), "Neue Funktion hinzufügen" button
+These import from each other (`aiAutoFillEngine → autoFillEngine → costFunction/doctorWorkTime`) so convert in dependency order: leaves first (`costFunction`, `doctorWorkTime`, etc.), then `autoFillEngine`, then `aiAutoFillEngine`.
 
-4. **QualificationManagement — renders categories and qualification badges**
-   - `useQualifications` → returns 2 quals in "Medizinisch" category
-   - Render `<QualificationManagement />`
-   - Assert: "Qualifikationen verwalten", category "Medizinisch" with count badge, qualification names, "Neue Qualifikation hinzufügen"
+### Batch C — Non-JSX `.jsx` → `.ts` (3 files, 37L)
 
-5. **ColorSettingsDialog — renders with color rows and tab labels**
-   - `ColorSetting.list` → `[]`; `Workplace.list` → `[]`; `useTeamRoles` override → 3 role names
-   - Render `<ColorSettingsDialog />`
-   - Assert: "Farbeinstellungen", tab labels (Funktionen, Arbeitsplätze, Rotationen, Abwesenheiten, Bereiche), ColorRow with "Test" preview text
+| File | Lines | Notes |
+|------|------|-------|
+| `src/components/db/index.jsx` | 4 | Barrel re-export |
+| `src/components/utils/dbTracker.jsx` | 11 | No-op export |
+| `src/components/hooks/useIsMobile.jsx` | 22 | Hook, no JSX |
 
-6. **SectionConfigDialog — renders section list with buttons**
-   - `SystemSetting.list` → `[]`; `Workplace.list` → `[]`
-   - Render `<SectionConfigDialog />`
-   - Assert: "Panel-Konfiguration", section names (Abwesenheiten, Dienste, etc.), "Speichern" and "Zurücksetzen" buttons
+### Batch D — React components `.jsx` → `.tsx` (22 files, ~7,652L)
 
----
+All contain JSX. One explicit `.jsx` import to fix: `master-main.jsx` line 2 imports `@/master/MasterApp.jsx`.
 
-### File 2: `src/components/admin/__component_tests__/AdminSmoke.test.jsx` (~200L, 5 tests)
+| File | Lines |
+|------|------|
+| `src/master-main.jsx` | 7 |
+| `src/master/MasterApp.jsx` | 105 |
+| `src/master/MasterAuthProvider.jsx` | 127 |
+| `src/master/MasterLayout.jsx` | 114 |
+| `src/components/dashboard/CertificateExpiryWidget.jsx` | 128 |
+| `src/master/pages/MasterDashboard.jsx` | 87 |
+| `src/master/pages/MasterLogin.jsx` | 92 |
+| `src/master/pages/MasterAdminPermissions.jsx` | 116 |
+| `src/master/pages/MasterStaff.jsx` | 142 |
+| `src/master/pages/MasterAbsences.jsx` | 183 |
+| `src/master/pages/MasterTimeTracking.jsx` | 196 |
+| `src/master/pages/MasterCostCenters.jsx` | 253 |
+| `src/master/pages/MasterEmployeeCreate.jsx` | 299 |
+| `src/master/pages/MasterWorkTimeModels.jsx` | 246 |
+| `src/master/pages/MasterHolidays.jsx` | 525 |
+| `src/master/pages/MasterTisoware.jsx` | 661 |
+| `src/master/pages/MasterPayScaleTariffs.jsx` | 581 |
+| `src/master/pages/MasterEmployeeDetail.jsx` | 693 |
+| `src/master/pages/MasterEmployeeList.jsx` | 778 |
+| `src/master/pages/MasterStammdatImport.jsx` | 886 |
+| `src/master/pages/MasterCentralEmployeeDetail.jsx` | 1,263 |
+| `src/master/pages/MasterPPUGV.jsx` | 1,276 |
 
-**File-level mocks:**
-| Module | Reason |
-|--------|--------|
-| `@/api/client` | Mock `api.*` methods (listUsers, request, updateUser, register, deleteUser) + `db.*` entities |
-| `@/components/AuthProvider` | Mock `useAuth` → admin user with token; `AuthProvider` → passthrough |
-| `@/components/dbTokenStorage` | Mock all functions (getActiveDbToken, saveDbToken, enableDbToken, etc.) |
-| `sonner` | Mock toast |
-| `@/components/ui/dialog` | Inline rendering |
-| `@/components/admin/ServerTokenManager` | Stub (rendered as child of DatabaseManagement) |
-| `@/components/staff/EmployeeSelect` | Stub (used by UserManagement) |
-| `@/components/admin/UserPermissionsDialog` | Stub (used by UserManagement) |
+### Batch E — Test utilities (3 files)
 
-**Tests:**
-
-7. **UserManagement — renders with user list visible**
-   - `api.listUsers` → 2 users; `api.request` → `[]`
-   - Render `<UserManagement />`
-   - Assert: `data-testid="admin-user-management"`, "Benutzerverwaltung", user email visible, "Neuer Benutzer" button
-
-8. **UserManagement — create user dialog opens with form fields**
-   - Same setup
-   - Click "Neuer Benutzer" button
-   - Assert: `data-testid="admin-user-create-dialog"` visible, email/name/password/role inputs present
-
-9. **ServerTokenManager — renders with empty state**
-   - `api.request` for `/api/admin/db-tokens` → `[]`; migration-status → `{ migrations: [], allApplied: true }`
-   - Render `<ServerTokenManager />`
-   - Assert: "Mandanten-Datenbanken", empty state "Keine Mandanten-Verbindungen konfiguriert", "Datenbank-Schema ist aktuell"
-
-10. **DatabaseManagement — renders with tool cards and buttons**
-    - `useAuth` → `{ token: 'test-jwt', user: adminUser }`; ServerTokenManager stubbed
-    - Render `<DatabaseManagement />`
-    - Assert: "MySQL-Modus aktiv", "Datenbank-Tools" card, "Datenbank leeren" button, "Integritätsprüfung" card, "Prüfung starten" button
-
-11. **AdminSettings — renders with settings fields present**
-    - `db.SystemSetting.list` → wish_deadline_months + wish_approval_rules settings; `db.Workplace.list` → `[]`
-    - Render `<AdminSettings />`
-    - Assert: `data-testid="admin-settings-panel"`, "System-Einstellungen", deadline input, "Genehmigungspflicht für Wünsche" section, approval switches
+| File | Lines | Target |
+|------|------|--------|
+| `src/test-utils/renderWithProviders.jsx` | 51 | `.tsx` (has JSX) |
+| `src/test-utils/server.js` | 240 | `.ts` |
+| `src/test-utils/setup-tests.js` | 74 | `.ts` |
 
 ---
+
+### Conversion pattern (same as PRs 6.1–6.4)
+1. `git mv file.js file.ts` (or `.jsx` → `.tsx` / `.ts`)
+2. Add type annotations: parameters, returns, interfaces, union types for state
+3. No logic changes
+4. Fix any import issues (only 1 known: `master-main.jsx` → `.tsx` explicit `.jsx` extension)
 
 ### Verification
-```bash
-npx vitest run --project component src/components/settings/__component_tests__/SettingsDialogs.test.jsx
-npx vitest run --project component src/components/admin/__component_tests__/AdminSmoke.test.jsx
-npm run test:all
-```
+- `npm run build` after each batch
+- `npm run test:all` after each batch
+- `npm run typecheck` at the end (Batches B–E enable `checkJs` coverage)
 
-All 11 tests must pass. Existing tests must not be affected.
+### Total: 47 file conversions/deletions/renames across 5 batches
