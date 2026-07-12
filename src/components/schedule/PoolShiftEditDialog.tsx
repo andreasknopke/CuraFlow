@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -27,15 +28,37 @@ import { isWishOnDate } from '@/utils/wishRange';
 
 /**
  * Edit (or create) a single pool shift entry.
- *
- * Props:
- *   open: boolean
- *   onOpenChange(open)
- *   workplace: { id, name, group_id, canWrite }
- *   date: 'YYYY-MM-DD'
- *   shift: existing shift entry (with id, employee_id, billing_tenant_id) or null
- *   activeTenantId: string  — db_tokens.id of the current x-db-token
  */
+
+interface PoolWorkplace {
+  id: string;
+  name: string;
+  group_id: number | string;
+  canWrite?: boolean;
+}
+
+interface PoolShift {
+  id?: string;
+  employee_id?: string;
+  billing_tenant_id?: string;
+}
+
+interface Violation {
+  rule: string;
+  message: string;
+  rotationPosition?: string;
+}
+
+interface PoolShiftEditDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workplace: PoolWorkplace | undefined | null;
+  date: string | undefined | null;
+  shift: PoolShift | undefined | null;
+  activeTenantId: string | undefined;
+  busyEmployeeIds?: Set<string> | undefined;
+}
+
 export default function PoolShiftEditDialog({
     open,
     onOpenChange,
@@ -44,7 +67,7 @@ export default function PoolShiftEditDialog({
     shift,
     activeTenantId,
     busyEmployeeIds,
-}) {
+}: PoolShiftEditDialogProps) {
     const queryClient = useQueryClient();
     const isEdit = !!shift;
     const groupId = workplace?.group_id;
@@ -52,7 +75,7 @@ export default function PoolShiftEditDialog({
     const [employeeId, setEmployeeId] = useState('');
     const [billingTenantId, setBillingTenantId] = useState('');
     const [forceOverride, setForceOverride] = useState(false);
-    const [violations, setViolations] = useState([]);
+    const [violations, setViolations] = useState<Violation[]>([]);
 
     // Reset form when dialog opens or target changes
     useEffect(() => {

@@ -8,29 +8,50 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { useAuth } from '@/components/AuthProvider';
 
-export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onOpenChange: externalOnOpenChange }) {
+interface VoiceTrainingDoctor {
+  id: string;
+  name: string;
+}
+
+interface VoiceAlias {
+  id: string;
+  doctor_id: string;
+  detected_text: string;
+}
+
+interface VoiceTrainingDialogProps {
+  doctors: VoiceTrainingDoctor[];
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export default function VoiceTrainingDialog({
+    doctors,
+    isOpen: externalOpen,
+    onOpenChange: externalOnOpenChange,
+}: VoiceTrainingDialogProps) {
     const { user } = useAuth();
     const [internalOpen, setInternalOpen] = useState(false);
     const isOpen = externalOpen !== undefined ? externalOpen : internalOpen;
     const onOpenChange = externalOnOpenChange || setInternalOpen;
-    const [selectedDoctor, setSelectedDoctor] = useState(null);
+    const [selectedDoctor, setSelectedDoctor] = useState<VoiceTrainingDoctor | null>(null);
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [detectedText, setDetectedText] = useState("");
     const [useElevenLabs, setUseElevenLabs] = useState(false);
     
-    const mediaRecorderRef = useRef(null);
-    const audioChunksRef = useRef([]);
-    const recognitionRef = useRef(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const recognitionRef = useRef<SpeechRecognition | null>(null);
     const queryClient = useQueryClient();
 
     const isWebSpeechSupported = typeof window !== 'undefined' && 
-        (window.SpeechRecognition || window.webkitSpeechRecognition);
+        ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
+            const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new (SpeechRecognitionCtor as typeof window.SpeechRecognition)();
             recognition.continuous = false;
             recognition.interimResults = false;
             recognition.lang = 'de-DE';
@@ -66,7 +87,7 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
     });
 
     const createAliasMutation = useMutation({
-        mutationFn: (data) => db.VoiceAlias.create(data),
+        mutationFn: (data: { doctor_id: string; detected_text: string }) => db.VoiceAlias.create(data),
         onSuccess: () => {
             queryClient.invalidateQueries(['voiceAliases']);
             setDetectedText("");
@@ -75,7 +96,7 @@ export default function VoiceTrainingDialog({ doctors, isOpen: externalOpen, onO
     });
 
     const deleteAliasMutation = useMutation({
-        mutationFn: (id) => db.VoiceAlias.delete(id),
+        mutationFn: (id: string) => db.VoiceAlias.delete(id),
         onSuccess: () => queryClient.invalidateQueries(['voiceAliases'])
     });
 

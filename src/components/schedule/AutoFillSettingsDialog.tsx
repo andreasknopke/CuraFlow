@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -6,7 +7,11 @@ import { Settings2 } from 'lucide-react';
 import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
-export default function AutoFillSettingsDialog({ trigger }) {
+interface AutoFillSettingsDialogProps {
+  trigger: ReactNode;
+}
+
+export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDialogProps) {
     const queryClient = useQueryClient();
 
     const { data: settings = [] } = useQuery({
@@ -29,8 +34,8 @@ export default function AutoFillSettingsDialog({ trigger }) {
         onSuccess: () => queryClient.invalidateQueries(['systemSettings'])
     });
 
-    const getSetting = (key, def = '') => settings.find(s => s.key === key)?.value ?? def;
-    const getSettingBool = (key) => getSetting(key) === 'true';
+    const getSetting = (key: string, def: string = ''): string => settings.find(s => s.key === key)?.value ?? def;
+    const getSettingBool = (key: string): boolean => getSetting(key) === 'true';
 
     const limitFG = getSetting('limit_fore_services', '4');
     const limitBG = getSetting('limit_back_services', '12');
