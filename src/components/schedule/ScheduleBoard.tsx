@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import type { DropResult, DragStart, BeforeCapture } from '@hello-pangea/dnd';
+import type { DropResult, DragStart, BeforeCapture, DraggableProvided, DraggableStateSnapshot, DraggableRubric } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Link2, Plus, Filter, Check, ChevronsUpDown, ShieldCheck } from 'lucide-react';
@@ -6055,7 +6055,7 @@ export default function ScheduleBoard() {
     }, [currentWeekShiftLookup, doctorById, springerDoctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
-  const renderShiftClone = useMemo(() => (provided: any, snapshot: any, rubric: any): ReactNode => {
+  const renderShiftClone = useMemo(() => (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric): ReactNode => {
         const draggableId = normalizeDraggableId(rubric.draggableId);
         if (!draggableId.startsWith('shift-')) return null;
     
@@ -6107,7 +6107,7 @@ export default function ScheduleBoard() {
     );
                                 }, [currentWeekShiftLookup, doctorById, springerDoctorById, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
 
-    const renderAvailableDoctorClone = useMemo(() => (provided: any, snapshot: any, rubric: any): ReactNode => {
+    const renderAvailableDoctorClone = useMemo(() => (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric): ReactNode => {
         const droppableId = stripPanelPrefix(rubric.source.droppableId || '');
         const dateStr = droppableId.startsWith('available__') ? droppableId.replace('available__', '') : null;
         const doc = dateStr ? allDisplayDocsByDate.get(dateStr)?.[rubric.source.index] : null;

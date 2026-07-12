@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode, CSSProperties, MouseEventHandler } from 'react';
-import type { RenderCloneProps } from '@hello-pangea/dnd';
+import type { DraggableProvided, DraggableStateSnapshot, DraggableRubric } from '@hello-pangea/dnd';
 import { Droppable } from '@hello-pangea/dnd';
 import {
   Tooltip,
@@ -21,7 +21,7 @@ interface DroppableCellProps {
   baseClassName?: string | undefined;
   baseStyle?: CSSProperties | undefined;
   isTrainingHighlight: boolean;
-  renderClone?: (props: RenderCloneProps, snapshot: unknown) => ReactNode;
+  renderClone?: (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric) => ReactNode;
   isBlocked: boolean;
   blockReason?: string | undefined;
   onContextMenu?: MouseEventHandler<HTMLDivElement> | undefined;
