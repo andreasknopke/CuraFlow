@@ -26,15 +26,35 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
  *  - create: no existing demand → "Bedarf anmelden"
  *  - cancel: existing open demand → "Bedarf zurückziehen"
  *  - fulfilled: existing fulfilled demand → read-only info
- *
- * Props:
- *   open: boolean
- *   onOpenChange(open)
- *   workplace: { id, name, group_id, canWrite } | null
- *   dateStr: 'YYYY-MM-DD' | null
- *   timeslot: { id, label } | null
- *   existingDemand: { id, status, note, ... } | null
  */
+
+interface RotationWorkplace {
+  id: string;
+  name: string;
+  group_id: number | string;
+  canWrite?: boolean;
+}
+
+interface RotationTimeslot {
+  id: string;
+  label: string;
+}
+
+interface RotationDemand {
+  id: string;
+  status: string;
+  note?: string | null;
+}
+
+interface RotationDemandDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workplace: RotationWorkplace | null;
+  dateStr: string | null;
+  timeslot: RotationTimeslot | null;
+  existingDemand: RotationDemand | null;
+}
+
 export default function RotationDemandDialog({
     open,
     onOpenChange,
@@ -42,7 +62,7 @@ export default function RotationDemandDialog({
     dateStr,
     timeslot,
     existingDemand,
-}) {
+}: RotationDemandDialogProps) {
     const queryClient = useQueryClient();
 
     const [note, setNote] = useState('');

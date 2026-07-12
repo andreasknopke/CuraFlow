@@ -1,6 +1,7 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import type { DropResult, DragStart, BeforeCapture, DraggableProvided, DraggableStateSnapshot, DraggableRubric } from '@hello-pangea/dnd';
 import { format, addDays, subDays, startOfWeek, isSameDay, startOfMonth, endOfMonth, addMonths, eachDayOfInterval, isValid } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, ChevronDown, Wand2, Loader2, Trash2, Eye, EyeOff, Layout, Calendar, LayoutList, StickyNote, AlertTriangle, Download, Undo, ExternalLink, X, Lock, Unlock, Settings2, Globe2, Link2, Plus, Filter, Check, ChevronsUpDown, ShieldCheck } from 'lucide-react';
@@ -30,6 +31,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { db, api } from "@/api/client";
+import type { Doctor, ShiftEntry, Workplace, WorkplaceTimeslot, SystemSetting, StaffingPlanEntry, WorkTimeModel, TrainingRotation, ColorSetting, ScheduleNote, ScheduleBlock, WishRequest } from '@/types';
 import { cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -91,7 +93,7 @@ const STATIC_SECTIONS = {
     }
 };
 
-const SECTION_CONFIG = {
+const SECTION_CONFIG: Record<string, SectionStyle> = {
     "Rotationen": {
         headerColor: "bg-emerald-100 text-emerald-900",
         rowColor: "bg-emerald-50/30",
@@ -112,11 +114,108 @@ const SPLIT_PANEL_PREFIX = 'split::';
 const SPLIT_DRAG_PREFIX = 'split-';
 const STICKY_AVAILABLE_SECTION_CLASS = 'sticky z-20 bg-white shadow-sm';
 
-const withPanelPrefix = (id, prefix = '') => `${prefix}${id}`;
-const stripPanelPrefix = (id = '') => (id.startsWith(SPLIT_PANEL_PREFIX) ? id.slice(SPLIT_PANEL_PREFIX.length) : id);
-const normalizeDraggableId = (id = '') => (id.startsWith(SPLIT_DRAG_PREFIX) ? id.slice(SPLIT_DRAG_PREFIX.length) : id);
-const encodeScheduleTargetId = (value = '') => encodeURIComponent(String(value));
-const movePinnedSectionToEnd = (sections = []) => {
+// ── Local type definitions ──────────────────────────────────────────
+
+type ScheduleViewMode = 'week' | 'day' | 'month';
+
+interface SectionStyle {
+  headerColor: string;
+  rowColor: string;
+}
+
+interface SectionConfigEntry extends SectionStyle {
+  rows?: string[];
+}
+
+interface SectionTab {
+  id: string;
+  sectionTitle: string;
+}
+
+interface UndoAction {
+  type: string;
+  id?: string;
+  ids?: string[];
+  data?: unknown;
+}
+
+interface RowQualFilter {
+  key: string;
+  sourceName: string;
+  workplaceId: string;
+  requiredIds: string[];
+  optionalIds: string[];
+  discouragedIds: string[];
+  excludeIds: string[];
+}
+
+interface RotationAssignmentDialogState {
+  open: boolean;
+  workplace: Workplace | null;
+  date: string | null;
+  assignment: { id: string; employee_id?: string; employee_name?: string; note?: string } | null;
+  timeslotId: string | null;
+  defaultEmployeeId: string | null;
+}
+
+interface RotationDemandDialogState {
+  open: boolean;
+  workplace: { id: string; name: string; group_id: number | string } | null;
+  date: string | null;
+  timeslot: { id: string; label: string } | null;
+  existingDemand: { id: string; status: string; note?: string } | null;
+}
+
+interface PoolEditDialogState {
+  open: boolean;
+  workplace: { id: string; name: string; group_id: number | string } | null;
+  date: string | null;
+  shift: ShiftEntry | null;
+}
+
+interface TimeslotOption {
+  id: string;
+  label: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  isCustom?: boolean;
+}
+
+interface TimeslotSelectionDialogState {
+  open: boolean;
+  workplaceName: string;
+  description: string;
+  options: TimeslotOption[];
+  allowCustomEditing: boolean;
+  customEndMinutesByOptionId: Record<string, number>;
+  customStartMinutesByOptionId: Record<string, number>;
+  activeTimeslotId: string | null;
+}
+
+interface BlockContextMenuState {
+  x: number;
+  y: number;
+  dateStr: string;
+  position: string;
+  timeslotId?: string | null;
+  existingBlock?: ScheduleBlock | null;
+  existingInfo?: ScheduleBlock | null;
+}
+
+interface AugmentedDoctor extends Doctor {
+  effectiveFte?: number;
+  isAvailable?: boolean;
+  availabilityReason?: string;
+}
+
+// ── Module-level constants ──────────────────────────────────────────
+
+const withPanelPrefix = (id: string, prefix: string = ''): string => `${prefix}${id}`;
+const stripPanelPrefix = (id: string = ''): string => (id.startsWith(SPLIT_PANEL_PREFIX) ? id.slice(SPLIT_PANEL_PREFIX.length) : id);
+const normalizeDraggableId = (id: string = ''): string => (id.startsWith(SPLIT_DRAG_PREFIX) ? id.slice(SPLIT_DRAG_PREFIX.length) : id);
+const encodeScheduleTargetId = (value: string = ''): string => encodeURIComponent(String(value));
+const movePinnedSectionToEnd = (sections: Array<{ title: string }> = []): Array<{ title: string }> => {
     const pinnedSections = sections.filter((section) => section.title === PINNED_SECTION_TITLE);
     if (pinnedSections.length === 0) return sections;
 
@@ -125,19 +224,19 @@ const movePinnedSectionToEnd = (sections = []) => {
         ...pinnedSections,
     ];
 };
-const parseAvailableDoctorId = (draggableId = '') => {
+const parseAvailableDoctorId = (draggableId: string = ''): string | null => {
     const normalized = normalizeDraggableId(draggableId);
     if (!normalized.startsWith('available-doc-')) return null;
     return normalized.substring(14, normalized.length - 11);
 };
 
-const parseSectionTabs = (rawValue) => {
+const parseSectionTabs = (rawValue: string | null | undefined): SectionTab[] => {
     if (!rawValue) return [];
 
     try {
         const parsed = JSON.parse(rawValue);
         if (Array.isArray(parsed)) {
-            return parsed.filter((tab) => tab?.id && tab?.sectionTitle);
+            return parsed.filter((tab: SectionTab) => tab?.id && tab?.sectionTitle);
         }
     } catch {
         return [];
@@ -146,7 +245,7 @@ const parseSectionTabs = (rawValue) => {
     return [];
 };
 
-const parseDateFromQuery = (rawDate) => {
+const parseDateFromQuery = (rawDate: string | null): Date | null => {
     if (!rawDate) return null;
 
     const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -156,11 +255,11 @@ const parseDateFromQuery = (rawDate) => {
     return isValid(parsed) ? parsed : null;
 };
 
-const getInitialScheduleState = () => {
+const getInitialScheduleState = (): { currentDate: Date; viewMode: ScheduleViewMode; activeSectionTabId: string } => {
     const params = new URLSearchParams(window.location.search);
     const initialDate = parseDateFromQuery(params.get('date'));
     const rawView = params.get('view');
-    const initialViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
+    const initialViewMode: ScheduleViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
 
     return {
         currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
@@ -169,9 +268,9 @@ const getInitialScheduleState = () => {
     };
 };
 
-const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
+const getDoctorShortLabel = (doctor: Doctor | undefined): string => doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
-const normalizeChipSource = (doctor) => {
+const normalizeChipSource = (doctor: Doctor): string => {
     const rawSource = `${doctor?.initials || ''}${doctor?.name || ''}${doctor?.id || ''}`;
     const normalized = rawSource
         .normalize('NFD')
@@ -182,7 +281,7 @@ const normalizeChipSource = (doctor) => {
     return normalized || 'DOC';
 };
 
-const formatChipLabel = (value = '') => {
+const formatChipLabel = (value: string = ''): string => {
     const normalized = String(value)
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -194,12 +293,12 @@ const formatChipLabel = (value = '') => {
     return normalized.padEnd(3, normalized[normalized.length - 1] || 'X');
 };
 
-const getUniqueChipCandidates = (doctor) => {
+const getUniqueChipCandidates = (doctor: Doctor): string[] => {
     const source = normalizeChipSource(doctor);
-    const candidates = [];
-    const seen = new Set();
+    const candidates: string[] = [];
+    const seen = new Set<string>();
 
-    const pushCandidate = (value) => {
+    const pushCandidate = (value: string) => {
         const candidate = formatChipLabel(value);
         if (!seen.has(candidate)) {
             seen.add(candidate);
@@ -240,10 +339,10 @@ const getUniqueChipCandidates = (doctor) => {
     return candidates;
 };
 
-const buildDoctorChipLabelMap = (doctors = []) => {
-    const labelMap = new Map();
-    const usedLabels = new Set();
-    const groupedDoctors = new Map();
+const buildDoctorChipLabelMap = (doctors: Doctor[] = []): Map<string, string> => {
+    const labelMap = new Map<string, string>();
+    const usedLabels = new Set<string>();
+    const groupedDoctors = new Map<string, Doctor[]>();
 
     doctors.forEach((doctor) => {
         const baseLabel = formatChipLabel(normalizeChipSource(doctor).slice(0, 3));
@@ -289,9 +388,9 @@ const buildDoctorChipLabelMap = (doctors = []) => {
 };
 
 const measureTextWidth = (() => {
-    let canvas = null;
+    let canvas: HTMLCanvasElement | null = null;
 
-    return (text, fontSize) => {
+    return (text: string, fontSize: number): number => {
         if (!text) return 0;
         if (typeof document === 'undefined') return text.length * fontSize * 0.62;
 
@@ -307,7 +406,15 @@ const measureTextWidth = (() => {
     };
 })();
 
-const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }) => {
+const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSingleShift, forceInitialsOnly, cellWidth, gridFontSize, boxSize }: {
+    doctor: Doctor | undefined;
+    isSplitModeActive: boolean;
+    isSingleShift: boolean;
+    forceInitialsOnly: boolean;
+    cellWidth: number | null;
+    gridFontSize: number;
+    boxSize: number;
+}): 'full' | 'compact' => {
     // Mehrfachbesetzung: IMMER compact — jeder Chip braucht eigenen Platz.
     if (forceInitialsOnly || isSplitModeActive || !isSingleShift) {
         return 'compact';
@@ -321,7 +428,7 @@ const getShiftDisplayMode = ({ doctor, isSplitModeActive, isSingleShift, forceIn
     return cellWidth >= requiredWidth ? 'full' : 'compact';
 };
 
-const formatTimeslotTimeRange = (startTime, endTime) => {
+const formatTimeslotTimeRange = (startTime: string | undefined | null, endTime: string | undefined | null): string => {
     if (!startTime || !endTime) return '';
     return `${startTime.substring(0, 5)}-${endTime.substring(0, 5)}`;
 };
@@ -330,12 +437,12 @@ const DEFAULT_BREAK_MINUTES = 30;
 const ROUTINE_SERVICE_START_MINUTES = 7 * 60;
 const LATE_ROTATION_THRESHOLD_MINUTES = ROUTINE_SERVICE_START_MINUTES + (4 * 60);
 
-const formatTimeslotStartTime = (startTime) => {
+const formatTimeslotStartTime = (startTime: string | undefined | null): string | null => {
     if (!startTime) return null;
     return startTime.substring(0, 5);
 };
 
-const formatMinutesAsTime = (minutes) => {
+const formatMinutesAsTime = (minutes: number | null | undefined): string | null => {
     if (minutes === null || minutes === undefined || Number.isNaN(Number(minutes))) {
         return null;
     }
@@ -346,7 +453,7 @@ const formatMinutesAsTime = (minutes) => {
     return `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}`;
 };
 
-const formatDurationMinutes = (minutes) => {
+const formatDurationMinutes = (minutes: number): string => {
     const roundedMinutes = Math.max(0, Math.round(Number(minutes) || 0));
     const hours = Math.floor(roundedMinutes / 60);
     const restMinutes = roundedMinutes % 60;
@@ -360,7 +467,7 @@ const formatDurationMinutes = (minutes) => {
     return `${restMinutes}min`;
 };
 
-const parseTimeToMinutes = (timeStr) => {
+const parseTimeToMinutes = (timeStr: string | null | undefined): number | null => {
     if (!timeStr) return null;
     const parts = String(timeStr).split(':');
     if (parts.length < 2) return null;
@@ -370,7 +477,7 @@ const parseTimeToMinutes = (timeStr) => {
     return hours * 60 + minutes;
 };
 
-const mergePlannedIntervals = (intervals) => {
+const mergePlannedIntervals = (intervals: Array<{ start: number; end: number }>): number => {
     if (!intervals.length) return 0;
 
     const sorted = [...intervals].sort((left, right) => left.start - right.start);
@@ -391,7 +498,7 @@ const mergePlannedIntervals = (intervals) => {
     return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
 };
 
-const buildShiftInterval = (shift, doctor, workplace, timeslot, workTimeModelMap, centralEmployeesById) => {
+const buildShiftInterval = (shift: ShiftEntry, doctor: Doctor, workplace: Workplace, timeslot: WorkplaceTimeslot | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): { start: number; end: number } | null => {
     if (shift.start_time && shift.end_time) {
         const start = parseTimeToMinutes(shift.start_time);
         let end = parseTimeToMinutes(shift.end_time);
@@ -427,7 +534,7 @@ const buildShiftInterval = (shift, doctor, workplace, timeslot, workTimeModelMap
     };
 };
 
-const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
+const getExpandedTimeslotRowLabel = (rowObj: any, rowDisplayName: string): string => {
     if (!rowObj?.isTimeslotRow || rowObj?.isUnassignedRow) {
         return rowDisplayName;
     }
@@ -437,7 +544,7 @@ const getExpandedTimeslotRowLabel = (rowObj, rowDisplayName) => {
     return timeRange ? `${label} ${timeRange}` : label;
 };
 
-const getRowLabelPresentation = (label, isCompactMode = false) => {
+const getRowLabelPresentation = (label: string, isCompactMode: boolean = false): { className: string; style: CSSProperties } => {
     const normalizedLabel = String(label || '').trim();
     const words = normalizedLabel.split(/\s+/).filter(Boolean);
     const longestWordLength = words.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
@@ -471,7 +578,7 @@ const getRowLabelPresentation = (label, isCompactMode = false) => {
     };
 };
 
-const getDoctorTargetDailyHours = (doctor, workTimeModelMap, centralEmployeesById) => {
+const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
     if (!doctor) return null;
 
     const model = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
@@ -479,7 +586,7 @@ const getDoctorTargetDailyHours = (doctor, workTimeModelMap, centralEmployeesByI
     return resolveDoctorTargetDailyHours(doctor, model, centralEmployee);
 };
 
-const getDoctorTargetDailyMinutes = (doctor, workTimeModelMap, centralEmployeesById) => {
+const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
     const dailyHours = getDoctorTargetDailyHours(doctor, workTimeModelMap, centralEmployeesById);
     if (dailyHours === null || dailyHours === undefined) return null;
 
@@ -489,7 +596,7 @@ const getDoctorTargetDailyMinutes = (doctor, workTimeModelMap, centralEmployeesB
     return Math.round(parsedDailyHours * 60);
 };
 
-const getTimeslotDerivedTimeRange = (timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById) => {
+const getTimeslotDerivedTimeRange = (timeslot: WorkplaceTimeslot | undefined | null, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): { start: number; end: number; displayEnd: number; workMinutes: number; appliedBreakMinutes: number } | null => {
     if (!timeslot?.start_time || !timeslot?.end_time) return null;
 
     const start = parseTimeToMinutes(timeslot.start_time);
@@ -527,7 +634,7 @@ const getTimeslotDerivedTimeRange = (timeslot, doctor, workplace, workTimeModelM
     };
 };
 
-const buildTimeslotSelectionOption = (timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById) => {
+const buildTimeslotSelectionOption = (timeslot: WorkplaceTimeslot, doctor: Doctor, workplace: Workplace, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>) => {
     const rawStartMinutes = parseTimeToMinutes(timeslot?.start_time);
     let rawEndMinutes = parseTimeToMinutes(timeslot?.end_time);
     if (rawStartMinutes === null || rawEndMinutes === null) {
@@ -580,7 +687,7 @@ const buildTimeslotSelectionOption = (timeslot, doctor, workplace, workTimeModel
     };
 };
 
-const normalizeTimeslotSelection = (selection) => {
+const normalizeTimeslotSelection = (selection: any): { timeslotId: string | null; startTime: string | null; endTime: string | null; breakMinutes: number | null; isCustom: boolean } => {
     if (selection && typeof selection === 'object' && !Array.isArray(selection)) {
         return {
             timeslotId: selection.timeslotId ?? null,
@@ -600,7 +707,7 @@ const normalizeTimeslotSelection = (selection) => {
     };
 };
 
-const applyTimeslotSelectionToCreateData = (data, selection) => {
+const applyTimeslotSelectionToCreateData = (data: Record<string, any>, selection: any): Record<string, any> => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
     const nextData = { ...data };
 
@@ -617,7 +724,7 @@ const applyTimeslotSelectionToCreateData = (data, selection) => {
     return nextData;
 };
 
-const applyTimeslotSelectionToUpdateData = (data, selection) => {
+const applyTimeslotSelectionToUpdateData = (data: Record<string, any>, selection: any): Record<string, any> => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
     const nextData = {
         ...data,
@@ -637,7 +744,7 @@ const applyTimeslotSelectionToUpdateData = (data, selection) => {
     return nextData;
 };
 
-const getShiftTimeRangeLabel = (shift, doctor, workplace, workplaceTimeslots, workTimeModelMap, centralEmployeesById) => {
+const getShiftTimeRangeLabel = (shift: ShiftEntry, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workplaceTimeslots: WorkplaceTimeslot[], workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): string | null => {
     if (shift?.start_time && shift?.end_time) {
         return formatTimeslotTimeRange(shift.start_time, shift.end_time);
     }
@@ -674,7 +781,7 @@ const getShiftTimeRangeLabel = (shift, doctor, workplace, workplaceTimeslots, wo
     return null;
 };
 
-const getLateRotationIndicator = (shift, workplace, workplaceTimeslots) => {
+const getLateRotationIndicator = (shift: ShiftEntry, workplace: Workplace | undefined | null, workplaceTimeslots: WorkplaceTimeslot[]): { show: boolean; tooltip: string | null } => {
     if (!shift?.timeslot_id || workplace?.allows_rotation_concurrently !== true) {
         return { show: false, tooltip: null };
     }
@@ -755,16 +862,16 @@ export default function ScheduleBoard() {
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
     const [currentDate, setCurrentDate] = useState(initialState.currentDate);
-    const [viewMode, setViewMode] = useState(initialState.viewMode); // 'week' | 'day' | 'month'
+    const [viewMode, setViewMode] = useState<ScheduleViewMode>(initialState.viewMode);
     const isMonthView = viewMode === 'month';
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
-  const [undoStack, setUndoStack] = useState([]);
+  const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
 
   // Cell-lock to prevent race conditions during rapid drag-drops
   // Keys are "date|position" or "date|position|timeslot_id", values are timestamps
-  const cellLocksRef = useRef(new Set());
-  const lockCell = (date, position, timeslotId) => {
+  const cellLocksRef = useRef<Set<string>>(new Set());
+  const lockCell = (date: string, position: string, timeslotId?: string): boolean => {
     const key = timeslotId ? `${date}|${position}|${timeslotId}` : `${date}|${position}`;
     if (cellLocksRef.current.has(key)) return false; // Already locked
     cellLocksRef.current.add(key);
@@ -772,7 +879,7 @@ export default function ScheduleBoard() {
     setTimeout(() => cellLocksRef.current.delete(key), 3000);
     return true;
   };
-  const unlockCell = (date, position, timeslotId) => {
+  const unlockCell = (date: string, position: string, timeslotId?: string): void => {
     const key = timeslotId ? `${date}|${position}|${timeslotId}` : `${date}|${position}`;
     cellLocksRef.current.delete(key);
   };
@@ -808,14 +915,14 @@ export default function ScheduleBoard() {
   };
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Control') setIsCtrlPressed(true);
       if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
           e.preventDefault();
           handleUndo();
       }
     };
-    const handleKeyUp = (e) => {
+    const handleKeyUp = (e: KeyboardEvent): void => {
       if (e.key === 'Control') setIsCtrlPressed(false);
     };
     const handleBlur = () => setIsCtrlPressed(false);
@@ -898,11 +1005,11 @@ export default function ScheduleBoard() {
         } catch { return false; }
     });
 
-    const [selectedQualificationIds, setSelectedQualificationIds] = useState([]);
+    const [selectedQualificationIds, setSelectedQualificationIds] = useState<string[]>([]);
     const [scheduleFilterOpen, setScheduleFilterOpen] = useState(false);
     // Single active row-scoped qualification filter. Replacing it on a different
     // row; clicking the same row's filter icon again clears it.
-    const [rowQualFilter, setRowQualFilter] = useState(null);
+    const [rowQualFilter, setRowQualFilter] = useState<RowQualFilter | null>(null);
     // { key, sourceName, workplaceId, includeIds, excludeIds } | null
 
   // Sync with user profile when it loads/updates
@@ -1038,10 +1145,10 @@ export default function ScheduleBoard() {
   }, [gridFontSize]);
     const effectiveGridFontSize = isMonthView ? Math.min(gridFontSize, 11) : gridFontSize;
     const shiftBoxSize = isMonthView ? Math.max(effectiveGridFontSize * 2.8, 30) : effectiveGridFontSize * 3.5;
-  const [previewShifts, setPreviewShifts] = useState(null);
-    const [, setPreviewCategories] = useState(null); // welche Kategorien im Vorschlag
-  const [draggingDoctorId, setDraggingDoctorId] = useState(null);
-  const [draggingShiftId, setDraggingShiftId] = useState(null);
+  const [previewShifts, setPreviewShifts] = useState<ShiftEntry[] | null>(null);
+    const [, setPreviewCategories] = useState<string[] | null>(null); // welche Kategorien im Vorschau
+  const [draggingDoctorId, setDraggingDoctorId] = useState<string | null>(null);
+  const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [isDraggingFromGrid, setIsDraggingFromGrid] = useState(false);
     const [activeSectionTabId, setActiveSectionTabId] = useState(initialState.activeSectionTabId);
     const [isSplitViewEnabled, setIsSplitViewEnabled] = useState(false);
@@ -1169,8 +1276,8 @@ export default function ScheduleBoard() {
     }, [rotationDemands]);
 
     // Local state for the rotation dialogs launched from the board cells.
-    const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState({ open: false, workplace: null, date: null, assignment: null, timeslotId: null, defaultEmployeeId: null });
-    const [rotationDemandDialog, setRotationDemandDialog] = useState({
+    const [rotationAssignmentDialog, setRotationAssignmentDialog] = useState<RotationAssignmentDialogState>({ open: false, workplace: null, date: null, assignment: null, timeslotId: null, defaultEmployeeId: null });
+    const [rotationDemandDialog, setRotationDemandDialog] = useState<RotationDemandDialogState>({
         open: false,
         workplace: null,
         date: null,
@@ -1180,12 +1287,12 @@ export default function ScheduleBoard() {
 
     // Set of Springer chip IDs the user has dragged away from the Verfügbar row.
     // These are hidden until the page is refreshed (they remain in rotation_assignments).
-    const [hiddenSpringerChipIds, setHiddenSpringerChipIds] = useState(new Set());
+    const [hiddenSpringerChipIds, setHiddenSpringerChipIds] = useState<Set<string>>(new Set());
 
     // Set of `${doctorId}|${dateStr}` for ward employees that have been
     // offered as Joker to the pool. Hides the doctor chip from the
     // Verfügbar row until the page is refreshed.
-    const [hiddenJokerDoctorIds, setHiddenJokerDoctorIds] = useState(new Set());
+    const [hiddenJokerDoctorIds, setHiddenJokerDoctorIds] = useState<Set<string>>(new Set());
 
     // Map shifts by `${shared_workplace_id}|${date}` for fast cell lookup.
     const crossTenantShiftsByCell = useMemo(() => {
@@ -1200,9 +1307,9 @@ export default function ScheduleBoard() {
     }, [visiblePoolShifts]);
 
     // Local state for the cross-tenant edit dialog launched from the board cells.
-    const [poolEditDialog, setPoolEditDialog] = useState({ open: false, workplace: null, date: null, shift: null });
-    const pendingTimeslotSelectionRef = useRef(null);
-    const [timeslotSelectionDialog, setTimeslotSelectionDialog] = useState({
+    const [poolEditDialog, setPoolEditDialog] = useState<PoolEditDialogState>({ open: false, workplace: null, date: null, shift: null });
+    const pendingTimeslotSelectionRef = useRef<((selection: any) => void) | null>(null);
+    const [timeslotSelectionDialog, setTimeslotSelectionDialog] = useState<TimeslotSelectionDialogState>({
         open: false,
         workplaceName: '',
         description: '',
@@ -1213,7 +1320,7 @@ export default function ScheduleBoard() {
         activeTimeslotId: null,
     });
 
-    const openPoolEditDialog = (workplace, dateStr, shift = null) => {
+    const openPoolEditDialog = (workplace: any, dateStr: string, shift: ShiftEntry | null = null): void => {
         setPoolEditDialog({ open: true, workplace, date: dateStr, shift });
     };
 
@@ -1231,19 +1338,19 @@ export default function ScheduleBoard() {
         });
     };
 
-    const handleTimeslotDialogOpenChange = (open) => {
+    const handleTimeslotDialogOpenChange = (open: boolean): void => {
         if (!open) {
             closeTimeslotSelectionDialog();
         }
     };
 
-    const handleTimeslotDialogSelect = (timeslotId) => {
+    const handleTimeslotDialogSelect = (timeslotId: string): void => {
         const callback = pendingTimeslotSelectionRef.current;
         closeTimeslotSelectionDialog();
         callback?.(timeslotId);
     };
 
-    const handleTimeslotCustomEndChange = (timeslotId, option, value) => {
+    const handleTimeslotCustomEndChange = (timeslotId: string, option: any, value: string): void => {
         // Nur den reinen Minutenwert parsen, OHNE die start+5min-Floor-Logik.
         // Die Floor-Logik in normalizeCustomTimeslotEndMinutes würde sonst
         // während des Tippens einen Zwischenwert (z. B. Browser liefert "01:00"
@@ -1260,7 +1367,7 @@ export default function ScheduleBoard() {
         }));
     };
 
-    const handleTimeslotCustomStartChange = (timeslotId, option, value) => {
+    const handleTimeslotCustomStartChange = (timeslotId: string, option: any, value: string): void => {
         const parsedMinutes = parseTimeToMinutes(value);
         if (!Number.isFinite(parsedMinutes)) return;
 
@@ -1275,7 +1382,7 @@ export default function ScheduleBoard() {
         }));
     };
 
-    const handleTimeslotCustomApply = (option) => {
+    const handleTimeslotCustomApply = (option: any): void => {
         const callback = pendingTimeslotSelectionRef.current;
         if (!callback || !option?.id) return;
 
@@ -1772,14 +1879,14 @@ export default function ScheduleBoard() {
         return [activeSection, pinnedSection];
     }, [activeSectionTabId, availableSectionTabs, renderedSections]);
 
-    const persistSectionTabs = async (tabs) => {
+    const persistSectionTabs = async (tabs: SectionTab[]): Promise<void> => {
         await updateSystemSettingMutation.mutateAsync({
             key: SECTION_TABS_KEY,
             value: JSON.stringify(tabs)
         });
     };
 
-    const handleMoveSectionToTab = async (sectionTitle) => {
+    const handleMoveSectionToTab = async (sectionTitle: string): Promise<void> => {
         if (sectionTitle === PINNED_SECTION_TITLE) {
             toast.info(`"${getSectionName(PINNED_SECTION_TITLE)}" bleibt immer im Hauptplan enthalten`);
             return;
@@ -1804,7 +1911,7 @@ export default function ScheduleBoard() {
         }
     };
 
-    const handleCloseSectionTab = async (tabId) => {
+    const handleCloseSectionTab = async (tabId: string): Promise<void> => {
         const nextTabs = sectionTabs.filter(t => t.id !== tabId);
         try {
             await persistSectionTabs(nextTabs);
@@ -1816,7 +1923,7 @@ export default function ScheduleBoard() {
         }
     };
 
-    const handleOpenSectionTabInNewWindow = (tabId) => {
+    const handleOpenSectionTabInNewWindow = (tabId: string): void => {
         const nextUrl = new URL(window.location.href);
         nextUrl.searchParams.set('sectionTab', tabId);
         nextUrl.searchParams.set('view', viewMode);
@@ -1835,7 +1942,7 @@ export default function ScheduleBoard() {
         setActiveSectionTabId('main');
     };
 
-    const handleOpenSectionTabInSplitView = (tabId) => {
+    const handleOpenSectionTabInSplitView = (tabId: string): void => {
         if (!canUseSplitView) return;
         setSplitSectionTabId(tabId);
         setIsSplitViewEnabled(true);
@@ -1865,7 +1972,7 @@ export default function ScheduleBoard() {
 
     const doctorChipLabelMap = useMemo(() => buildDoctorChipLabelMap(doctors), [doctors]);
 
-    const getDoctorChipLabel = useMemo(() => (doctor) => {
+    const getDoctorChipLabel = useMemo(() => (doctor: Doctor | undefined): string => {
             if (!doctor) return '';
             if (!isMonthView) return getDoctorShortLabel(doctor);
             return doctorChipLabelMap.get(doctor.id) || formatChipLabel(normalizeChipSource(doctor).slice(0, 3));
@@ -1916,14 +2023,14 @@ export default function ScheduleBoard() {
     return map;
   }, [scheduleBlocks]);
 
-  const getScheduleBlock = (dateStr, position, timeslotId) => {
+  const getScheduleBlock = (dateStr: string, position: string, timeslotId?: string): ScheduleBlock | undefined => {
     if (timeslotId) {
       return scheduleBlocksMap.get(`${dateStr}|${position}|${timeslotId}`) || scheduleBlocksMap.get(`${dateStr}|${position}`);
     }
     return scheduleBlocksMap.get(`${dateStr}|${position}`);
   };
 
-  const getScheduleInfo = (dateStr, position, timeslotId) => {
+  const getScheduleInfo = (dateStr: string, position: string, timeslotId?: string): ScheduleBlock | undefined => {
     if (timeslotId) {
       return scheduleInfoMap.get(`${dateStr}|${position}|${timeslotId}`) || scheduleInfoMap.get(`${dateStr}|${position}`);
     }
@@ -1956,7 +2063,7 @@ export default function ScheduleBoard() {
     );
     const isQualificationDataLoading = qualificationsLoading || allDoctorQualsLoading;
 
-    const toggleScheduleQualification = (qid) => {
+    const toggleScheduleQualification = (qid: string): void => {
         setSelectedQualificationIds((current) => (
             current.includes(qid)
                 ? current.filter((id) => id !== qid)
@@ -1964,7 +2071,7 @@ export default function ScheduleBoard() {
         ));
     };
 
-    const matchesScheduleQualificationFilter = useCallback((doctor) => {
+    const matchesScheduleQualificationFilter = useCallback((doctor: Doctor): boolean => {
         if (selectedQualificationIds.length === 0) return true;
         const ids = getDoctorQualIds(doctor.id);
         return selectedQualificationIds.some((qid) => ids.includes(qid));
@@ -1973,7 +2080,7 @@ export default function ScheduleBoard() {
     // Row-scoped qualification filter: Pflicht (AND), Sollte (OR), Sollte-nicht
     // (soft exclude with empty-candidate fallback), Nicht (hard AND-NOT).
     // AND-combined with the global schedule filter.
-    const matchesRowQualificationFilter = useCallback((doctor) => {
+    const matchesRowQualificationFilter = useCallback((doctor: Doctor): boolean => {
         if (!rowQualFilter) return true;
         const ids = getDoctorQualIds(doctor.id);
         const doctorList = doctors.map((d) => ({
@@ -1992,7 +2099,7 @@ export default function ScheduleBoard() {
         );
     }, [rowQualFilter, getDoctorQualIds, doctors]);
 
-    const matchesAllQualificationFilters = useCallback((doctor) => {
+    const matchesAllQualificationFilters = useCallback((doctor: Doctor): boolean => {
         return matchesScheduleQualificationFilter(doctor) && matchesRowQualificationFilter(doctor);
     }, [matchesScheduleQualificationFilter, matchesRowQualificationFilter]);
 
@@ -2040,7 +2147,7 @@ export default function ScheduleBoard() {
       setOverrideDialogOpen
   } = useOverrideValidation({ user, doctors });
 
-  const getRoleColor = useMemo(() => (role) => {
+  const getRoleColor = useMemo(() => (role: any): { backgroundColor: string; color: string } => {
       const setting = colorSettings.find(s => s.name === role && s.category === 'role');
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       if (DEFAULT_COLORS.roles[role]) return { backgroundColor: DEFAULT_COLORS.roles[role].bg, color: DEFAULT_COLORS.roles[role].text };
@@ -2048,7 +2155,7 @@ export default function ScheduleBoard() {
   }, [colorSettings]);
 
   // Helper to mix tailwind default and custom style
-  const getSectionStyle = useMemo(() => (sectionTitle) => {
+  const getSectionStyle = useMemo(() => (sectionTitle: string): SectionStyle => {
       const setting = colorSettings.find(s => s.name === sectionTitle && s.category === 'section');
       if (setting) {
           return { 
@@ -2059,7 +2166,7 @@ export default function ScheduleBoard() {
       return null;
   }, [colorSettings]);
 
-  const getRowStyle = useMemo(() => (rowName, sectionStyle) => {
+  const getRowStyle = useMemo(() => (rowName: string, sectionStyle: SectionStyle): CSSProperties => {
       // Check for specific position color
       const setting = colorSettings.find(s => s.name === rowName && s.category === 'position');
       if (setting) {
@@ -2554,11 +2661,11 @@ export default function ScheduleBoard() {
   });
 
   // Context menu state for cell blocking / info
-  const [blockContextMenu, setBlockContextMenu] = useState(null);
+  const [blockContextMenu, setBlockContextMenu] = useState<BlockContextMenuState | null>(null);
   const [blockReasonInput, setBlockReasonInput] = useState('');
   const [infoReasonInput, setInfoReasonInput] = useState('');
 
-  const handleCellContextMenu = (e, dateStr, position, timeslotId = null) => {
+  const handleCellContextMenu = (e: MouseEvent, dateStr: string, position: string, timeslotId: string | null = null): void => {
     if (isReadOnly) return;
     e.preventDefault();
     const block = getScheduleBlock(dateStr, position, timeslotId);
@@ -2632,7 +2739,7 @@ export default function ScheduleBoard() {
       }
   };
 
-  const handleClearDay = (date) => {
+  const handleClearDay = (date: Date): void => {
       const protectedPositions = ["Frei", "Krank", "Urlaub", "Dienstreise"];
       const dateStr = format(date, 'yyyy-MM-dd');
       const shiftsToDelete = currentWeekShifts.filter(s => 
@@ -2647,7 +2754,7 @@ export default function ScheduleBoard() {
       }
   };
 
-  const handleClearRow = (rowName, timeslotId = null) => {
+  const handleClearRow = (rowName: string, timeslotId: string | null = null): void => {
       // Bei Timeslot-Zeilen: nur Shifts mit dieser Timeslot-ID löschen
       const shiftsToDelete = currentWeekShifts.filter(s => {
           if (s.position !== rowName) return false;
@@ -2680,7 +2787,7 @@ export default function ScheduleBoard() {
   const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
   // Synchrone Konfliktprüfung (nur für Voice-Commands)
-  const checkConflictsVoice = (doctorId, dateStr, newPosition, excludeShiftId = null) => {
+  const checkConflictsVoice = (doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null = null): boolean => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       
       if (result.blockers.length > 0) {
@@ -2698,7 +2805,7 @@ export default function ScheduleBoard() {
   // Konfliktprüfung mit Override-Dialog
   // Gibt true zurück wenn blockiert (Aktion abbrechen)
   // Wenn Override möglich: zeigt Dialog und führt onProceed bei Bestätigung aus
-  const checkConflictsWithOverride = async (doctorId, dateStr, newPosition, excludeShiftId = null, onProceed = null) => {
+  const checkConflictsWithOverride = async (doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null = null, onProceed: (() => void) | null = null): Promise<boolean> => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
       const doctor = doctors.find(d => d.id === doctorId);
 
@@ -2770,7 +2877,7 @@ export default function ScheduleBoard() {
   };
 
   // Legacy-Wrapper für Stellen die noch nicht umgestellt sind
-  const checkConflicts = async (doctorId, dateStr, newPosition, isVoice = false, excludeShiftId = null) => {
+  const checkConflicts = async (doctorId: string, dateStr: string, newPosition: string, isVoice: boolean = false, excludeShiftId: string | null = null): Promise<boolean> => {
       if (isVoice) {
           return checkConflictsVoice(doctorId, dateStr, newPosition, excludeShiftId);
       }
@@ -2779,13 +2886,13 @@ export default function ScheduleBoard() {
   };
 
   // Wrapper für Abwesenheits-spezifische Staffing-Prüfung
-  const checkStaffing = (dateStr, doctorId) => {
+  const checkStaffing = (dateStr: string, doctorId: string): string | null => {
       const result = validate(doctorId, dateStr, 'Frei', {});
       return result.warnings.length > 0 ? result.warnings.join('\n') : null;
   };
 
   // Wrapper für Limit-Prüfung (jetzt nur Warnung)
-  const checkLimits = (doctorId, dateStr, position) => {
+  const checkLimits = (doctorId: string, dateStr: string, position: string): string | null => {
       const result = validate(doctorId, dateStr, position, {});
       const limitWarnings = result.warnings.filter(w => w.includes('Dienstlimit'));
       return limitWarnings.length > 0 ? limitWarnings.join('\n') : null;
@@ -2793,7 +2900,7 @@ export default function ScheduleBoard() {
 
   // Prüfung beim Drag in Abwesenheit: Warnung falls bestehende Einträge gelöscht werden
   // Kombiniert Dienst-Lösch-Warnung + Staffing-Check in einem Dialog
-  const checkAbsenceDropConflicts = (doctorId, dateStr, position, onProceed, excludeShiftId = null) => {
+  const checkAbsenceDropConflicts = (doctorId: string, dateStr: string, position: string, onProceed: () => void, excludeShiftId: string | null = null): boolean => {
       const doctor = doctors.find(d => d.id === doctorId);
       const shiftsToDelete = currentWeekShifts.filter(s =>
           s.doctor_id === doctorId &&
@@ -2831,7 +2938,7 @@ export default function ScheduleBoard() {
       return true; // Blockiert - warte auf Override
   };
 
-  const handleExportExcel = async () => {
+  const handleExportExcel = async (): Promise<void> => {
       setIsExporting(true);
       try {
           // Determine date range based on viewMode
@@ -2914,7 +3021,7 @@ export default function ScheduleBoard() {
         return sidebarDoctorsAll.filter(matchesAllQualificationFilters);
     }, [sidebarDoctorsAll, matchesAllQualificationFilters, selectedQualificationIds, rowQualFilter]);
 
-    const getDoctorWithEffectiveFte = (doctor, referenceDate) => {
+    const getDoctorWithEffectiveFte = (doctor: Doctor, referenceDate: Date): Doctor => {
         if (!doctor || !referenceDate) {
             return doctor;
         }
@@ -2982,12 +3089,12 @@ export default function ScheduleBoard() {
       return map;
   }, [currentWeekShifts, doctorNamesMap]);
 
-  const handleOpenConflictSheet = useCallback(() => {
+  const handleOpenConflictSheet = useCallback((): void => {
       scanConflicts();
       setIsConflictSheetOpen(true);
   }, [scanConflicts]);
 
-  const handleResolveShift = useCallback((shiftId) => {
+  const handleResolveShift = useCallback((shiftId: string): void => {
       if (!shiftId) return;
       deleteShiftMutation.mutate(shiftId, {
           onSuccess: () => {
@@ -3020,7 +3127,7 @@ export default function ScheduleBoard() {
 
         const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
 
-    const getPositionTimeslotOptions = (positionName, doctorId = null) => {
+    const getPositionTimeslotOptions = (positionName: string, doctorId: string | null = null): any[] => {
         const workplace = workplaceByName.get(positionName);
         if (!workplace?.timeslots_enabled) return [];
 
@@ -3032,7 +3139,9 @@ export default function ScheduleBoard() {
         }));
     };
 
-    const resolveTimeslotSelection = ({ positionName, dateStr = null, requestedTimeslotId = null, onResolved, doctorId = null, initialSelection = null, forceDialog = false, allowCustomEditing = false }) => {
+    const resolveTimeslotSelection = ({ positionName, dateStr = null, requestedTimeslotId = null, onResolved, doctorId = null, initialSelection = null, forceDialog = false, allowCustomEditing = false }: {
+        positionName: string; dateStr?: string | null; requestedTimeslotId?: string | null; onResolved: (selection: any) => void; doctorId?: string | null; initialSelection?: any; forceDialog?: boolean; allowCustomEditing?: boolean;
+    }): boolean => {
         const normalizedTimeslotId = requestedTimeslotId === '__unassigned__' ? null : requestedTimeslotId;
         if (normalizedTimeslotId && !forceDialog) {
             onResolved(normalizedTimeslotId);
@@ -3067,7 +3176,7 @@ export default function ScheduleBoard() {
         return false;
     };
 
-    const handleShiftTimeslotEdit = (shift, doctor, workplace) => {
+    const handleShiftTimeslotEdit = (shift: ShiftEntry, doctor: Doctor, workplace: Workplace): void => {
         if (!shift || shift.isPreview || !doctor || !workplace?.timeslots_enabled || isReadOnly) return;
 
         const options = getPositionTimeslotOptions(shift.position, doctor.id);
@@ -3501,7 +3610,7 @@ export default function ScheduleBoard() {
       }
   };
 
-  const deleteShiftWithCleanup = (shift) => {
+  const deleteShiftWithCleanup = (shift: ShiftEntry): void => {
       // Skip if temp ID (optimistic update not yet persisted)
       if (shift.id?.startsWith('temp-')) {
           console.log(`[DEBUG-LOG] Skipping delete for temp shift ${shift.id}`);
@@ -3540,7 +3649,7 @@ export default function ScheduleBoard() {
      * Adds an Auto-Frei preview entry for the direct next day if the position has auto_off.
      * Returns the updated preview array (or unchanged array if no auto-frei needed).
      */
-  const addPreviewAutoFrei = (doctorId, dateStr, positionName, currentPreviews) => {
+  const addPreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
       const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
       if (!autoFreiDateStr) return currentPreviews;
 
@@ -3570,7 +3679,7 @@ export default function ScheduleBoard() {
    * Also checks DB-based auto-frei entries (they remain in DB but user is warned).
    * Returns the updated preview array.
    */
-  const removePreviewAutoFrei = (doctorId, dateStr, positionName, currentPreviews) => {
+  const removePreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
       const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
       if (!autoFreiDateStr) return currentPreviews;
 
@@ -3599,7 +3708,7 @@ export default function ScheduleBoard() {
   };
 
   // Called BEFORE dimension capture - must be synchronous to affect measurements
-  const handleBeforeCapture = (before) => {
+  const handleBeforeCapture = (before: BeforeCapture): void => {
     const { draggableId } = before;
         const normalizedDraggableId = normalizeDraggableId(draggableId);
         if (!normalizedDraggableId) return;
@@ -3624,7 +3733,7 @@ export default function ScheduleBoard() {
     });
   };
 
-  const handleDragStart = (start) => {
+  const handleDragStart = (start: DragStart): void => {
     console.log('Drag Start:', start);
     const { draggableId } = start;
     const normalizedDraggableId = normalizeDraggableId(draggableId);
@@ -3657,7 +3766,7 @@ export default function ScheduleBoard() {
 
     const handleDragUpdate = () => {};
 
-  const handleDragEnd = async (result) => {
+  const handleDragEnd = async (result: DropResult): Promise<void> => {
     setIsDraggingFromGrid(false);
     console.log('DEBUG: Drag Operation Ended', { 
         draggableId: result.draggableId,
@@ -4102,7 +4211,7 @@ export default function ScheduleBoard() {
     };
 
     // Helper to handle automatic "Frei" after "Dienst Vordergrund" or other auto-off shifts
-    const handlePostShiftOff = (doctorId, dateStr, positionName) => {
+    const handlePostShiftOff = (doctorId: string, dateStr: string, positionName: string): void => {
         // Zentrale Logik: Prüft ob Auto-Frei erstellt werden soll (inkl. Feiertag-Check, ohne Wochenend-Block)
         const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
         
@@ -4869,7 +4978,7 @@ export default function ScheduleBoard() {
     }
   };
   
-  const applyPreview = async () => {
+  const applyPreview = async (): Promise<void> => {
       if (!previewShifts) return;
       // Remove isPreview flag before saving
     const shiftsToCreate = previewShifts.map(({ isPreview: _isPreview, id: _id, ...rest }) => rest);
@@ -4885,7 +4994,7 @@ export default function ScheduleBoard() {
       setPreviewCategories(null);
   };
 
-  const handleAutoFill = (categories = null) => {
+  const handleAutoFill = (categories: string[] | null = null): void => {
     setIsGenerating(true);
     try {
             const autoFillDebugEnabled = (
@@ -5061,7 +5170,7 @@ export default function ScheduleBoard() {
    * Get fairness info for a specific preview service shift.
    * Returns { fg, bg, total, weekend, wishText } or null.
    */
-  const getFairnessInfo = useMemo(() => (shift) => {
+  const getFairnessInfo = useMemo(() => (shift: ShiftEntry): any => {
     if (!shift.isPreview || !previewFairnessData[shift.doctor_id]) return null;
 
     const serviceWps = workplaces.filter(w => w.category === 'Dienste');
@@ -5092,7 +5201,7 @@ export default function ScheduleBoard() {
     return info;
   }, [previewFairnessData, workplaces, wishes]);
 
-    const getDoctorDayWishes = useMemo(() => (doctorId, dateStr) => {
+    const getDoctorDayWishes = useMemo(() => (doctorId: string, dateStr: string): WishRequest[] => {
         return wishes.filter(w =>
             w.doctor_id === doctorId &&
             isWishOnDate(w, dateStr) &&
@@ -5100,7 +5209,7 @@ export default function ScheduleBoard() {
         );
     }, [wishes]);
 
-    const buildWishTooltip = useMemo(() => (doctor, doctorWishes = []) => {
+    const buildWishTooltip = useMemo(() => (doctor: Doctor, doctorWishes: WishRequest[] = []): string => {
         const lines = [doctor.name];
 
         for (const wish of doctorWishes) {
@@ -5117,7 +5226,7 @@ export default function ScheduleBoard() {
         return lines.join('\n');
     }, []);
 
-    const getAvailableDoctorWishPresentation = useMemo(() => (doctor, dateStr) => {
+    const getAvailableDoctorWishPresentation = useMemo(() => (doctor: Doctor, dateStr: string): any => {
         const doctorWishes = getDoctorDayWishes(doctor.id, dateStr);
         const wish = doctorWishes[0];
         let style = getRoleColor(doctor.role);
@@ -5141,7 +5250,7 @@ export default function ScheduleBoard() {
         };
     }, [buildWishTooltip, getDoctorDayWishes, getRoleColor]);
 
-    const getShiftWishMarker = useMemo(() => (shift) => {
+    const getShiftWishMarker = useMemo(() => (shift: ShiftEntry): any => {
         if (!shift) return null;
 
         const workplace = workplaces.find(w => w.name === shift.position);
@@ -5817,7 +5926,7 @@ export default function ScheduleBoard() {
         );
     };
 
-    const renderCellShifts = useMemo(() => (date, rowName, isSectionFullWidth, timeslotId = null, allTimeslotIds = null, singleTimeslotId = null, dragIdPrefix = '', cellWidth = null) => {
+    const renderCellShifts = useMemo(() => (date: Date, rowName: string, isSectionFullWidth: boolean, timeslotId: string | null = null, allTimeslotIds: string[] | null = null, singleTimeslotId: string | null = null, dragIdPrefix: string = '', cellWidth: number | null = null): ReactNode => {
     // Wait for color settings to load
     if (isLoadingColors) return null;
     if (!isValid(date)) return null;
@@ -5946,7 +6055,7 @@ export default function ScheduleBoard() {
     }, [currentWeekShiftLookup, doctorById, springerDoctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
-  const renderShiftClone = useMemo(() => (provided, snapshot, rubric) => {
+  const renderShiftClone = useMemo(() => (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric): ReactNode => {
         const draggableId = normalizeDraggableId(rubric.draggableId);
         if (!draggableId.startsWith('shift-')) return null;
     
@@ -5998,7 +6107,7 @@ export default function ScheduleBoard() {
     );
                                 }, [currentWeekShiftLookup, doctorById, springerDoctorById, getRoleColor, shiftBoxSize, effectiveGridFontSize, getDoctorChipLabel, lateRotationIndicatorByDoctorDay]);
 
-    const renderAvailableDoctorClone = useMemo(() => (provided, snapshot, rubric) => {
+    const renderAvailableDoctorClone = useMemo(() => (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric): ReactNode => {
         const droppableId = stripPanelPrefix(rubric.source.droppableId || '');
         const dateStr = droppableId.startsWith('available__') ? droppableId.replace('available__', '') : null;
         const doc = dateStr ? allDisplayDocsByDate.get(dateStr)?.[rubric.source.index] : null;

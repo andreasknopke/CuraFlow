@@ -49,6 +49,7 @@ export interface Workplace extends Auditable {
   default_overlap_tolerance_minutes: number;
   work_time_percentage: number;
   affects_availability: boolean;
+  allows_rotation_concurrently?: boolean;
   min_staff: number;
   optimal_staff: number;
   service_type?: number | null;
@@ -194,6 +195,8 @@ export interface StaffingPlanEntry extends Auditable {
   year: number;
   month: number;
   value: string;
+  status_start_day?: number | null;
+  status_end_day?: number | null;
   reason?: string | null;
   note?: string | null;
 }

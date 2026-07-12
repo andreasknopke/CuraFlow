@@ -25,7 +25,7 @@ export default function AIRulesDialog() {
   });
 
   const createRuleMutation = useMutation({
-    mutationFn: (data) => base44.entities.ScheduleRule.create(data),
+    mutationFn: (data: { content: string; is_active: boolean }) => base44.entities.ScheduleRule.create(data),
     onSuccess: () => {
         queryClient.invalidateQueries(['scheduleRules']);
         setNewRule("");
@@ -33,12 +33,12 @@ export default function AIRulesDialog() {
   });
 
   const updateRuleMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.ScheduleRule.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: { is_active: boolean } }) => base44.entities.ScheduleRule.update(id, data),
     onSuccess: () => queryClient.invalidateQueries(['scheduleRules']),
   });
 
   const deleteRuleMutation = useMutation({
-    mutationFn: (id) => base44.entities.ScheduleRule.delete(id),
+    mutationFn: (id: string) => base44.entities.ScheduleRule.delete(id),
     onSuccess: () => queryClient.invalidateQueries(['scheduleRules']),
   });
 

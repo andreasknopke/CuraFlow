@@ -1,8 +1,50 @@
 import { addDays, subDays, parseISO, isWithinInterval } from 'date-fns';
 
-// German Holidays Calculation
+// ── Local types ────────────────────────────────────────────────────────────
+
+interface PublicHolidayEntry {
+  date: string;
+  name: string;
+}
+
+interface SchoolRange {
+  start: string;
+  end: string;
+  name?: string;
+}
+
+interface SchoolRemoval {
+  start: string;
+  end: string;
+}
+
+interface HolidayApiData {
+  school?: SchoolRange[];
+  public?: PublicHolidayEntry[];
+  schoolRemovals?: SchoolRemoval[];
+}
+
+interface CustomHolidayInput {
+  type: 'public' | 'school';
+  action: 'add' | 'remove';
+  start_date: string;
+  end_date?: string;
+  name: string;
+}
+
+interface PublicHolidayResult {
+  name: string;
+  date: string | Date;
+}
+
+interface SchoolHolidayResult {
+  name: string;
+}
+
+// ── German Holidays Calculation ──────────────────────────────────────────────
 // Easter Date (Gaussian algorithm)
-function getEaster(year) {
+
+function getEaster(year: number): Date {
     const a = year % 19;
     const b = Math.floor(year / 100);
     const c = year % 100;
@@ -20,7 +62,7 @@ function getEaster(year) {
     return new Date(year, month - 1, day);
 }
 
-const STATES = {
+const STATES: Record<string, string> = {
     'BW': 'Baden-Württemberg',
     'BY': 'Bayern',
     'BE': 'Berlin',
@@ -39,8 +81,26 @@ const STATES = {
     'TH': 'Thüringen'
 };
 
+interface ProcessedSchoolRange {
+  start: number;
+  end: number;
+  name: string;
+}
+
+interface ProcessedSchoolRemoval {
+  start: number;
+  end: number;
+}
+
 export class HolidayCalculator {
-    constructor(stateCode = 'MV', customHolidays = [], apiData = { school: [], public: [] }) {
+    stateCode: string;
+    customHolidays: CustomHolidayInput[];
+    apiData: HolidayApiData;
+    publicHolidaysMap: Map<string, PublicHolidayResult>;
+    schoolHolidayRanges: ProcessedSchoolRange[];
+    schoolRemovals: ProcessedSchoolRemoval[];
+
+    constructor(stateCode: string = 'MV', customHolidays: CustomHolidayInput[] = [], apiData: HolidayApiData = { school: [], public: [] }) {
         this.stateCode = stateCode;
         this.customHolidays = customHolidays;
         this.apiData = apiData;
@@ -48,14 +108,15 @@ export class HolidayCalculator {
         // Pre-calculate lookups for performance
         this.publicHolidaysMap = new Map();
         this.schoolHolidayRanges = [];
+        this.schoolRemovals = [];
         
         this.init();
     }
 
-    init() {
+    init(): void {
         // 1. Process Public Holidays
         // Determine years present in API data
-        const apiYears = new Set();
+        const apiYears = new Set<number>();
         if (this.apiData.public) {
             this.apiData.public.forEach(h => {
                 // Skip entries without valid date
@@ -77,7 +138,7 @@ export class HolidayCalculator {
         yearsToCalc.forEach(year => {
             if (!apiYears.has(year)) {
                 const easter = getEaster(year);
-                let holidays = [
+                const holidays: Array<{ date: Date; name: string }> = [
                     { date: new Date(year, 0, 1), name: 'Neujahr' },
                     { date: new Date(year, 4, 1), name: 'Tag der Arbeit' },
                     { date: new Date(year, 9, 3), name: 'Tag der Deutschen Einheit' },
@@ -142,7 +203,7 @@ export class HolidayCalculator {
         }
 
         // 2. Process School Holidays
-        let schoolRanges = [...(this.apiData.school || [])]
+        const schoolRanges: ProcessedSchoolRange[] = [...(this.apiData.school || [])]
             .filter(r => r && r.start && r.end) // Skip entries without valid dates
             .map(r => ({
                 start: parseISO(r.start).getTime(),
@@ -161,7 +222,7 @@ export class HolidayCalculator {
         });
 
         // Custom School Removals
-        const schoolRemovals = this.customHolidays.filter(h => h.type === 'school' && h.action === 'remove').map(r => ({
+        const schoolRemovals: ProcessedSchoolRemoval[] = this.customHolidays.filter(h => h.type === 'school' && h.action === 'remove').map(r => ({
             start: parseISO(r.start_date + 'T00:00:00').getTime(),
             end: parseISO((r.end_date || r.start_date) + 'T23:59:59.999').getTime()
         }));
@@ -187,7 +248,7 @@ export class HolidayCalculator {
         this.schoolRemovals = schoolRemovals;
     }
 
-    isPublicHoliday(date) {
+    isPublicHoliday(date: Date): PublicHolidayResult | null {
         // Optimization: simple string lookup
         // We assume date is passed as Date object.
         // Using simple string formatting manually is faster than date-fns format
@@ -199,7 +260,7 @@ export class HolidayCalculator {
         return this.publicHolidaysMap.get(dStr) || null;
     }
 
-    isSchoolHoliday(date) {
+    isSchoolHoliday(date: Date): SchoolHolidayResult | null {
         const time = date.getTime();
         
         // Check removals first (fastest if few removals)
@@ -220,6 +281,6 @@ export class HolidayCalculator {
 // Legacy Exports for backward compatibility (defaulting to MV)
 const defaultCalc = new HolidayCalculator('MV', []);
 export const getEasterDate = getEaster; // alias
-export const isHolidayMV = (date) => defaultCalc.isPublicHoliday(date);
-export const isSchoolHolidayMV = (date) => defaultCalc.isSchoolHoliday(date);
+export const isHolidayMV = (date: Date) => defaultCalc.isPublicHoliday(date);
+export const isSchoolHolidayMV = (date: Date) => defaultCalc.isSchoolHoliday(date);
 export { STATES };

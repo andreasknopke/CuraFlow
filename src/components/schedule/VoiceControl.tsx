@@ -12,21 +12,47 @@ import { useElevenLabsConversation } from '@/components/useElevenLabsConversatio
 // CONFIG: Set your Agent ID here or via Environment Variable if possible
 const ELEVENLABS_AGENT_ID = "agent_1901kb1v556ke8trk5g98xjaxrp4"; // <-- INSERT AGENT ID HERE
 
-export default function VoiceControl({ doctors, workplaces, currentDate, onVoiceCommand }) {
+interface VoiceDoctor {
+  id: string;
+  name: string;
+}
+
+interface VoiceWorkplace {
+  name: string;
+}
+
+interface VoiceResult {
+  corrected_text?: string;
+  [key: string]: unknown;
+}
+
+interface VoiceControlProps {
+  doctors: VoiceDoctor[];
+  workplaces: VoiceWorkplace[];
+  currentDate: Date;
+  onVoiceCommand: (result: VoiceResult) => void;
+}
+
+export default function VoiceControl({
+    doctors,
+    workplaces,
+    currentDate,
+    onVoiceCommand,
+}: VoiceControlProps) {
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [transcript, setTranscript] = useState("");
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     
     // Modes: 'browser' (Google), 'transcribe' (ElevenLabs STT), 'agent' (ElevenLabs ConvAI)
-    const [mode, setMode] = useState('agent'); 
+    const [mode, setMode] = useState<string>('agent'); 
     
     const [showTraining, setShowTraining] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     
-    const recognitionRef = useRef(null);
-    const mediaRecorderRef = useRef(null);
-    const audioChunksRef = useRef([]);
+    const recognitionRef = useRef<SpeechRecognition | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
     
     // Agent Hook
     const { 
@@ -56,16 +82,16 @@ export default function VoiceControl({ doctors, workplaces, currentDate, onVoice
 
     // Use ref to access latest handleSendText function in the recognition callback
     // This prevents stale closures where doctors/workplaces lists are empty
-    const handleSendTextRef = useRef(null);
+    const handleSendTextRef = useRef<((text: string) => Promise<void>) | null>(null);
     
     // Check browser support for Web Speech API
     const isWebSpeechSupported = typeof window !== 'undefined' && 
-        (window.SpeechRecognition || window.webkitSpeechRecognition);
+        ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
 
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
+            const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new (SpeechRecognitionCtor as typeof window.SpeechRecognition)();
             
             recognition.continuous = false; // Stop after one sentence for immediate processing
             recognition.interimResults = true;
@@ -240,7 +266,7 @@ export default function VoiceControl({ doctors, workplaces, currentDate, onVoice
         handleSendTextRef.current = handleSendText;
     });
 
-    const handleSendText = async (text) => {
+    const handleSendText = async (text: string) => {
         if (!text || !text.trim()) return;
         
         setIsProcessing(true);

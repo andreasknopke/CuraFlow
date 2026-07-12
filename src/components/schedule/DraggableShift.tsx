@@ -1,11 +1,71 @@
-import React from 'react';
+import { useMemo, useCallback } from 'react';
+import type { ReactNode, CSSProperties, MouseEvent } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import type { Doctor, ShiftEntry } from '@/types';
 
-const getDoctorShortLabel = (doctor) => doctor?.initials || doctor?.name?.substring(0, 3) || '';
+// ── Local types ────────────────────────────────────────────────────────────
+
+interface ShiftWithPreview extends ShiftEntry {
+  isPreview?: boolean;
+}
+
+interface FairnessInfo {
+  fg: number;
+  bg: number;
+  total: number;
+  weekend: number;
+  wishText?: string | null;
+}
+
+interface WishMarker {
+  color: 'green' | 'red';
+  title: string;
+}
+
+interface DraggableShiftStyleProps {
+  style?: CSSProperties;
+  [key: string]: unknown;
+}
+
+interface DraggableShiftProps extends DraggableShiftStyleProps {
+  shift: ShiftWithPreview;
+  doctor: Doctor;
+  index: number;
+  onRemove?: unknown;
+  displayMode?: 'compact' | 'full';
+  compactLabel?: string | null;
+  isDragDisabled?: boolean;
+  fontSize?: number;
+  boxSize?: number;
+  currentUserDoctorId?: string;
+  highlightMyName?: boolean;
+  isBeingDragged?: boolean;
+  qualificationStatus?: 'excluded' | 'unqualified' | null;
+  fairnessInfo?: FairnessInfo | null;
+  wishMarker?: WishMarker | null;
+  draggableIdPrefix?: string;
+  timeslotLabel?: string | null;
+  timeslotLabelTone?: 'default' | 'warning';
+  timeLabelOverride?: string | null;
+  onTimeLabelClick?: ((event: MouseEvent) => void) | null;
+  showLateStartIndicator?: boolean;
+  lateStartTooltip?: string;
+  hideTimeLabel?: boolean;
+}
+
+interface LateStartIndicatorProps {
+  tooltip: string;
+  compact?: boolean;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const getDoctorShortLabel = (doctor: Doctor | undefined | null): string =>
+  doctor?.initials || doctor?.name?.substring(0, 3) || '';
 
 // Format TIME value (HH:MM:SS or HH:MM) to compact display (H:MM or HH:MM)
-const formatShiftTime = (timeStr) => {
+const formatShiftTime = (timeStr: string | undefined | null): string | null => {
   if (!timeStr) return null;
   const parts = String(timeStr).split(':');
   if (parts.length < 2) return null;
@@ -14,14 +74,16 @@ const formatShiftTime = (timeStr) => {
   return m === 0 ? `${h}` : `${h}:${String(m).padStart(2, '0')}`;
 };
 
-const getTimeLabel = (shift) => {
+const getTimeLabel = (shift: ShiftWithPreview): string | null => {
   const start = formatShiftTime(shift.start_time);
   const end = formatShiftTime(shift.end_time);
   if (!start || !end) return null;
   return `${start}–${end}`;
 };
 
-function LateStartIndicator({ tooltip, compact = false }) {
+// ── Sub-component ──────────────────────────────────────────────────────────
+
+function LateStartIndicator({ tooltip, compact = false }: LateStartIndicatorProps): ReactNode {
   return (
     <TooltipProvider delayDuration={0}>
       <Tooltip>
@@ -43,9 +105,11 @@ function LateStartIndicator({ tooltip, compact = false }) {
   );
 }
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }) {
+// ── Main component ─────────────────────────────────────────────────────────
+
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
   const isPreview = shift.isPreview;
-  const isCurrentUser = currentUserDoctorId && doctor.id === currentUserDoctorId;
+  const isCurrentUser = currentUserDoctorId != null && doctor.id === currentUserDoctorId;
   const isFullWidth = displayMode === 'full';
   const chipLabel = compactLabel || getDoctorShortLabel(doctor);
   const displayText = isFullWidth ? doctor.name : chipLabel;
@@ -57,7 +121,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
     : 'bg-indigo-600 text-white';
 
   // Build fairness tooltip text for preview service shifts
-  const fairnessTooltip = React.useMemo(() => {
+  const fairnessTooltip = useMemo(() => {
     if (!fairnessInfo) return null;
     const lines = [`Dienste (4 Wo. + Vorschläge): ${fairnessInfo.total}`];
     if (fairnessInfo.fg > 0 || fairnessInfo.bg > 0) {
@@ -94,15 +158,15 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
   ) : null;
 
   const wishMarkerColor = wishMarker?.color === 'green' ? '#22c55e' : '#ef4444';
-  const handleTimeLabelMouseDown = React.useCallback((event) => {
+  const handleTimeLabelMouseDown = useCallback((event: MouseEvent) => {
     event.stopPropagation();
   }, []);
-  const handleTimeLabelClick = React.useCallback((event) => {
+  const handleTimeLabelClick = useCallback((event: MouseEvent) => {
     event.stopPropagation();
     onTimeLabelClick?.(event);
   }, [onTimeLabelClick]);
 
-  const dynamicStyle = {
+  const dynamicStyle: CSSProperties = {
       fontSize: `${fontSize}px`,
       ...(isFullWidth 
           ? { width: '100%', height: '100%', minHeight: `${boxSize * 0.8}px` } 
@@ -134,8 +198,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
             <div 
               className="flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400"
               style={{
-                backgroundColor: props.style?.backgroundColor || '#f1f5f9',
-                color: props.style?.color || '#0f172a',
+                backgroundColor: (props.style as CSSProperties)?.backgroundColor || '#f1f5f9',
+                color: (props.style as CSSProperties)?.color || '#0f172a',
                 width: `${boxSize}px`,
                 height: `${boxSize}px`,
                 fontSize: `${fontSize}px`,
@@ -172,12 +236,12 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
         } : {
              ...provided.draggableProps.style,
              ...dynamicStyle, // Apply normal layout dimensions
-             backgroundColor: props.style?.backgroundColor || '#f1f5f9',
+             backgroundColor: (props.style as CSSProperties)?.backgroundColor || '#f1f5f9',
              backgroundImage: wishMarker ? `linear-gradient(135deg, ${wishMarkerColor} 0, ${wishMarkerColor} 50%, transparent 50%, transparent 100%)` : undefined,
-             backgroundRepeat: 'no-repeat',
+             backgroundRepeat: 'no-repeat' as const,
              backgroundSize: wishMarker ? '14px 14px' : undefined,
              backgroundPosition: wishMarker ? 'top left' : undefined,
-             color: props.style?.color || '#0f172a',
+             color: (props.style as CSSProperties)?.color || '#0f172a',
              zIndex: 'auto'
         };
 
@@ -201,8 +265,8 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                   relative flex items-center justify-center rounded-md font-bold border shadow-2xl ring-4 ring-indigo-400 z-[9999]
                 `}
                 style={{
-                    backgroundColor: props.style?.backgroundColor || '#f1f5f9',
-                    color: props.style?.color || '#0f172a',
+                    backgroundColor: (props.style as CSSProperties)?.backgroundColor || '#f1f5f9',
+                    color: (props.style as CSSProperties)?.color || '#0f172a',
                     width: `${boxSize}px`,
                     height: `${boxSize}px`,
                     fontSize: `${fontSize}px`,

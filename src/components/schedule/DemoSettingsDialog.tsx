@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from "@/api/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Settings, Loader2 } from 'lucide-react';
 
-const DAYS = [
+const DAYS: ReadonlyArray<{ id: number; label: string }> = [
   { id: 1, label: "Mo" },
   { id: 2, label: "Di" },
   { id: 3, label: "Mi" },
@@ -17,12 +17,26 @@ const DAYS = [
   { id: 0, label: "So" },
 ];
 
-const DEMO_ROWS = [
+const DEMO_ROWS: readonly string[] = [
     "Chir-Demo", "Int-Demo", "Kardio-Demo", "Neonatologie", 
     "Mamma-Konsil", "Onko-Konsil", "Gefäß-Konsil", "Gyn-Konsil", "Trauma-Demo"
 ];
 
-const DemoRow = ({ rowName, setting, onTimeChange, onDayToggle }) => {
+interface DemoSetting {
+  id?: string;
+  name: string;
+  active_days: number[];
+  time: string;
+}
+
+interface DemoRowProps {
+  rowName: string;
+  setting: DemoSetting;
+  onTimeChange: (name: string, time: string) => void;
+  onDayToggle: (name: string, dayId: number) => void;
+}
+
+const DemoRow = ({ rowName, setting, onTimeChange, onDayToggle }: DemoRowProps) => {
     const [time, setTime] = useState(setting.time || '');
     const activeDays = setting.active_days || [];
 
@@ -76,7 +90,7 @@ const DemoRow = ({ rowName, setting, onTimeChange, onDayToggle }) => {
 
 export default function DemoSettingsDialog() {
   const queryClient = useQueryClient();
-  const [isOpen, setIsOpen] = React.useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
   const { data: settings = [], isLoading } = useQuery({
     queryKey: ['demoSettings'],
@@ -84,7 +98,7 @@ export default function DemoSettingsDialog() {
   });
   
   const createOrUpdate = useMutation({
-      mutationFn: async ({ name, active_days, time }) => {
+      mutationFn: async ({ name, active_days, time }: { name: string; active_days: number[]; time: string }) => {
           const existing = settings.find(s => s.name === name);
           if (existing) {
               return base44.entities.DemoSetting.update(existing.id, { active_days, time });
@@ -95,9 +109,9 @@ export default function DemoSettingsDialog() {
       onSuccess: () => queryClient.invalidateQueries(['demoSettings'])
   });
 
-  const getSetting = (name) => settings.find(s => s.name === name) || { active_days: [1, 2, 3, 4, 5], time: "" };
+  const getSetting = (name: string): DemoSetting => settings.find(s => s.name === name) || { active_days: [1, 2, 3, 4, 5], time: "" };
 
-  const handleDayToggle = (name, dayId) => {
+  const handleDayToggle = (name: string, dayId: number) => {
       const current = getSetting(name);
       const currentDays = current.active_days || [];
       const newDays = currentDays.includes(dayId)
@@ -107,7 +121,7 @@ export default function DemoSettingsDialog() {
       createOrUpdate.mutate({ name, active_days: newDays, time: current.time });
   };
 
-  const handleTimeChange = (name, time) => {
+  const handleTimeChange = (name: string, time: string) => {
       const current = getSetting(name);
       createOrUpdate.mutate({ name, active_days: current.active_days || [], time });
   };

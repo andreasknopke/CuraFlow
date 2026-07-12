@@ -28,16 +28,32 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 /**
  * Dialog for the pool planner to assign (or edit/delete) a Springer to a
  * rotation cell. SEPARATE from cross-tenant Dienste — uses rotation_assignment.
- *
- * Props:
- *   open: boolean
- *   onOpenChange(open)
- *   workplace: { id, name, group_id, canWrite } | null
- *   date: 'YYYY-MM-DD' | null
- *   assignment: existing assignment (with id, employee_id, employee_name) | null
- *   timeslotId: string | null
- *   defaultEmployeeId: string | null — pre-selected employee from drag-drop
  */
+
+interface RotationWorkplace {
+  id: string;
+  name: string;
+  group_id: number | string;
+  canWrite?: boolean;
+}
+
+interface RotationAssignment {
+  id: string;
+  employee_id: string;
+  employee_name?: string;
+  note?: string;
+}
+
+interface RotationAssignmentDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  workplace: RotationWorkplace | null;
+  date: string | null;
+  assignment: RotationAssignment | null;
+  timeslotId: string | null;
+  defaultEmployeeId: string | null;
+}
+
 export default function RotationAssignmentDialog({
     open,
     onOpenChange,
@@ -46,7 +62,7 @@ export default function RotationAssignmentDialog({
     assignment,
     timeslotId,
     defaultEmployeeId,
-}) {
+}: RotationAssignmentDialogProps) {
     const queryClient = useQueryClient();
     const isEdit = !!assignment;
     const groupId = workplace?.group_id;
