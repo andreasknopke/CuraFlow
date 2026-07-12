@@ -8,7 +8,14 @@ import { Bug, Lightbulb, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { reportBug, requestFeature } from '@/lib/ticketService';
 import { useAuth } from '@/components/AuthProvider';
 
-function resolveUserName(user) {
+interface TicketDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  initialType?: 'bug' | 'feature';
+  initialError?: Error | null;
+}
+
+function resolveUserName(user: Record<string, unknown> | null): string | undefined {
   const explicitUserName = user?.username || user?.preferred_username || user?.name || '';
   if (explicitUserName && explicitUserName.trim()) {
     return explicitUserName.trim();
@@ -26,14 +33,14 @@ function resolveUserName(user) {
  * Öffnet direkt einen Dialog im CuraFlow-Design.
  * System-, Nutzer- und Mandanten-Informationen werden automatisch übermittelt.
  */
-export default function TicketDialog({ open, onOpenChange, initialType = 'bug', initialError = null }) {
+export default function TicketDialog({ open, onOpenChange, initialType = 'bug', initialError = null }: TicketDialogProps) {
   const { user } = useAuth();
-  const [type, setType] = useState(initialType || 'bug');
+  const [type, setType] = useState<'bug' | 'feature'>(initialType || 'bug');
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [status, setStatus] = useState('form'); // form | success | error
+  const [status, setStatus] = useState<'form' | 'success' | 'error'>('form');
   const [resultMessage, setResultMessage] = useState('');
 
   // Bei Fehler (Crash) Vorbefüllung
@@ -69,7 +76,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     onOpenChange(false);
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
 
@@ -101,7 +108,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     } catch (error) {
       setStatus('error');
       setResultMessage(
-        `Fehler bei der Übermittlung: ${error.message}\n\n` +
+        `Fehler bei der Übermittlung: ${(error as Error).message}\n\n` +
         'Bitte versuchen Sie es später erneut oder wenden Sie sich direkt an den Support.'
       );
     } finally {

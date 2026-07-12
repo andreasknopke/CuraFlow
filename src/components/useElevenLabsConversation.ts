@@ -1,21 +1,38 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export function useElevenLabsConversation({ agentId, onMessage, onError, onConnect, onDisconnect, clientTools }) {
-    const [status, setStatus] = useState('disconnected'); // disconnected, connecting, connected
+type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+
+interface UseElevenLabsConversationOptions {
+    agentId: string;
+    onMessage?: (msg: unknown) => void;
+    onError?: (err: Error | Event) => void;
+    onConnect?: () => void;
+    onDisconnect?: () => void;
+    clientTools?: Record<string, (params: unknown) => unknown>;
+}
+
+interface AudioWorkletNodes {
+    source: MediaStreamAudioSourceNode;
+    processor: ScriptProcessorNode;
+    gain: GainNode;
+}
+
+export function useElevenLabsConversation({ agentId, onMessage, onError, onConnect, onDisconnect, clientTools }: UseElevenLabsConversationOptions) {
+    const [status, setStatus] = useState<ConnectionStatus>('disconnected');
     const [isSpeaking, setIsSpeaking] = useState(false);
-    const socketRef = useRef(null);
+    const socketRef = useRef<WebSocket | null>(null);
     const clientToolsRef = useRef(clientTools);
 
     useEffect(() => {
         clientToolsRef.current = clientTools;
     }, [clientTools]);
-    const audioContextRef = useRef(null);
-    const mediaStreamRef = useRef(null);
-    const audioWorkletNodeRef = useRef(null);
-    const audioQueueRef = useRef([]);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const mediaStreamRef = useRef<MediaStream | null>(null);
+    const audioWorkletNodeRef = useRef<AudioWorkletNodes | null>(null);
+    const audioQueueRef = useRef<AudioBuffer[]>([]);
     const isPlayingRef = useRef(false);
     const nextStartTimeRef = useRef(0);
-    const scheduledSourcesRef = useRef([]);
+    const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]);
 
     // Initialize Audio Context
     useEffect(() => {
@@ -41,19 +58,19 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
         setIsSpeaking(true);
 
         const chunk = audioQueueRef.current.shift();
-        const audioBuffer = chunk; 
+        if (!chunk) return;
 
         const source = audioContextRef.current.createBufferSource();
-        source.buffer = audioBuffer;
+        source.buffer = chunk;
         source.connect(audioContextRef.current.destination);
 
         const currentTime = audioContextRef.current.currentTime;
         // Schedule just after previous
         const startTime = Math.max(currentTime, nextStartTimeRef.current);
-        
+
         source.start(startTime);
         scheduledSourcesRef.current.push(source);
-        nextStartTimeRef.current = startTime + audioBuffer.duration;
+        nextStartTimeRef.current = startTime + chunk.duration;
 
         source.onended = () => {
              scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
@@ -66,13 +83,13 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                  }
              }
         };
-        
+
         // Chain playback
         playNextInQueue();
 
     }, []);
 
-    const decodeAndQueueAudio = useCallback(async (base64Data) => {
+    const decodeAndQueueAudio = useCallback(async (base64Data: string) => {
         if (!audioContextRef.current) return;
 
         try {
@@ -82,7 +99,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
             for (let i = 0; i < len; i++) {
                 bytes[i] = binaryString.charCodeAt(i);
             }
-            
+
             // Try decoding as container format (MP3/WAV) first
             try {
                 // We need to copy buffer because decodeAudioData detaches it
@@ -92,14 +109,13 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                 console.log("DEBUG: Audio Decoded (Native)", audioBuffer.duration, "seconds");
             } catch (_decodeErr) {
                 // If fail, assume Raw PCM 16bit 16kHz (Default for ElevenLabs ConvAI)
-                // console.log("Decode failed, trying raw PCM...", _decodeErr);
-                
+
                 const int16Data = new Int16Array(bytes.buffer);
                 const float32Data = new Float32Array(int16Data.length);
                 for (let i = 0; i < int16Data.length; i++) {
                     float32Data[i] = int16Data[i] / 32768.0;
                 }
-                
+
                 const audioBuffer = audioContextRef.current.createBuffer(1, float32Data.length, 16000); // 16kHz default
                 audioBuffer.copyToChannel(float32Data, 0);
                 audioQueueRef.current.push(audioBuffer);
@@ -114,7 +130,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
         }
     }, [playNextInQueue]);
 
-    const startConversation = useCallback(async (options = {}) => {
+    const startConversation = useCallback(async (options: { dynamicVariables?: Record<string, unknown> } = {}) => {
         const { dynamicVariables } = options;
         console.log("DEBUG: Starting conversation...", { agentId, status, dynamicVariables });
         if (!agentId) {
@@ -123,7 +139,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
             onError && onError(err);
             return;
         }
-        
+
         if (status === 'connected' || status === 'connecting') {
             console.log("DEBUG: Already connected/connecting");
             return;
@@ -149,7 +165,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
             ws.onopen = () => {
                 console.log("DEBUG: ElevenLabs WS Connected");
-                
+
                 if (dynamicVariables) {
                     const initMsg = {
                         type: "conversation_initiation_client_data",
@@ -161,20 +177,20 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
                 setStatus('connected');
                 onConnect && onConnect();
-                
+
                 // Start Audio Processing
                 processMicrophone(stream, ws);
             };
 
-            ws.onmessage = (event) => {
+            ws.onmessage = (event: MessageEvent) => {
                 try {
-                    const msg = JSON.parse(event.data);
+                    const msg = JSON.parse(event.data as string);
                     console.log("DEBUG: Received WS Message", msg.type);
-                    
+
                     if (msg.type === 'audio') {
                         // Handle different key names for audio data
                         const audioData = msg.audio_event?.audio_base_64 || msg.audio_event?.audio_base64_chunk;
-                        
+
                         if (audioData) {
                             decodeAndQueueAudio(audioData);
                         } else {
@@ -203,18 +219,18 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                                 .then(result => {
                                     // Ensure result is a string
                                     const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
-                                    
+
                                     const responsePayload = {
                                         type: "client_tool_result",
                                         tool_call_id: call.tool_call_id,
                                         result: resultStr,
                                         is_error: false
                                     };
-                                    
+
                                     console.log("Sending tool result:", responsePayload);
                                     ws.send(JSON.stringify(responsePayload));
                                 })
-                                .catch(err => {
+                                .catch((err: Error) => {
                                     console.error("Client tool error", err);
                                     ws.send(JSON.stringify({
                                         type: "client_tool_result",
@@ -225,20 +241,20 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                                 });
                         }
                     }
-                    
+
                     onMessage && onMessage(msg);
                 } catch (e) {
                     console.error("WS Message Parse Error", e);
                 }
             };
 
-            ws.onerror = (e) => {
+            ws.onerror = (e: Event) => {
                 console.error("DEBUG: ElevenLabs WS Error", e);
                 onError && onError(e);
                 setStatus('disconnected');
             };
 
-            ws.onclose = (e) => {
+            ws.onclose = (e: CloseEvent) => {
                 console.log("DEBUG: ElevenLabs WS Closed", e.code, e.reason);
                 setStatus('disconnected');
                 onDisconnect && onDisconnect();
@@ -247,22 +263,22 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
         } catch (err) {
             console.error("Start Conversation Error", err);
-            onError && onError(err);
+            onError && onError(err instanceof Error ? err : new Error(String(err)));
             setStatus('disconnected');
             stopResources();
         }
     }, [agentId, decodeAndQueueAudio, onConnect, onDisconnect, onError, onMessage, status]);
 
     // Helper to downsample audio to 16kHz
-    const downsampleTo16k = (buffer, sampleRate) => {
+    const downsampleTo16k = (buffer: Float32Array, sampleRate: number): Float32Array => {
         if (sampleRate === 16000) return buffer;
-        
+
         const ratio = sampleRate / 16000;
         const newLength = Math.ceil(buffer.length / ratio);
         const result = new Float32Array(newLength);
         let offsetResult = 0;
         let offsetBuffer = 0;
-        
+
         while (offsetResult < newLength) {
             const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
             // Use average value to prevent aliasing
@@ -278,28 +294,28 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
         return result;
     };
 
-    const processMicrophone = (stream, ws) => {
+    const processMicrophone = (stream: MediaStream, ws: WebSocket) => {
         if (!audioContextRef.current) return;
-        
+
         const source = audioContextRef.current.createMediaStreamSource(stream);
         const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-        
-        processor.onaudioprocess = (e) => {
+
+        processor.onaudioprocess = (e: AudioProcessingEvent) => {
             if (ws.readyState !== WebSocket.OPEN) return;
 
             const inputData = e.inputBuffer.getChannelData(0);
-            const sampleRate = audioContextRef.current.sampleRate;
-            
+            const sampleRate = audioContextRef.current!.sampleRate;
+
             // Downsample to 16kHz if needed
             const downsampledData = downsampleTo16k(inputData, sampleRate);
-            
+
             // Convert Float32 to Int16 (PCM)
             const pcmData = new Int16Array(downsampledData.length);
             for (let i = 0; i < downsampledData.length; i++) {
                 let s = Math.max(-1, Math.min(1, downsampledData[i]));
                 pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
-            
+
             // Convert to Base64
             let binary = '';
             const bytes = new Uint8Array(pcmData.buffer);
@@ -308,20 +324,21 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
                 binary += String.fromCharCode(bytes[i]);
             }
             const base64 = window.btoa(binary);
-            
+
             // Log first few chunks then occasionally
-            if (!window.chunksSent) window.chunksSent = 0;
-            window.chunksSent++;
-            if (window.chunksSent < 5 || window.chunksSent % 50 === 0) {
-                 console.log(`DEBUG: Sending audio chunk #${window.chunksSent} (Size: ${base64.length})`);
-                 
+            const win = window as any;
+            if (!win.chunksSent) win.chunksSent = 0;
+            win.chunksSent++;
+            if (win.chunksSent < 5 || win.chunksSent % 50 === 0) {
+                 console.log(`DEBUG: Sending audio chunk #${win.chunksSent} (Size: ${base64.length})`);
+
                  // Check for silence (RMS)
                  let sum = 0;
                  for(let i=0; i<inputData.length; i++) {
                      sum += inputData[i] * inputData[i];
                  }
                  const rms = Math.sqrt(sum / inputData.length);
-                 
+
                  console.log(`DEBUG: Input RMS: ${rms.toFixed(6)}`);
                  if (rms < 0.005) {
                      console.warn("DEBUG: Microphone input is very quiet.");
@@ -335,7 +352,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
         source.connect(processor);
         processor.connect(audioContextRef.current.destination);
-        
+
         const gain = audioContextRef.current.createGain();
         gain.gain.value = 0;
         processor.disconnect();
@@ -363,7 +380,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
             gain.disconnect();
             audioWorkletNodeRef.current = null;
         }
-        
+
         audioQueueRef.current = [];
         nextStartTimeRef.current = 0;
         setIsSpeaking(false);

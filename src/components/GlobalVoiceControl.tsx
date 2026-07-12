@@ -35,23 +35,23 @@ export default function GlobalVoiceControl() {
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [transcript, setTranscript] = useState("");
-    const [error, setError] = useState(null);
+    const [error, setError] = useState<string | null>(null);
     const [currentDate] = useState(new Date());
     
     // Modes: 'browser' (Google), 'transcribe' (ElevenLabs STT), 'agent' (ElevenLabs ConvAI)
-    const [mode, setMode] = useState('agent'); 
+    const [mode, setMode] = useState<'browser' | 'transcribe' | 'agent'>('agent');
     const { isReadOnly, user } = useAuth();
     
-    const firstCallRef = useRef(true);
+    const firstCallRef = useRef<boolean>(true);
     const [activeAgentId, setActiveAgentId] = useState(ELEVENLABS_AGENT_ID);
 
     const [showTraining, setShowTraining] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     
-    const recognitionRef = useRef(null);
-    const mediaRecorderRef = useRef(null);
+    const recognitionRef = useRef<any>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef([]);
-    const handleSendTextRef = useRef(null);
+    const handleSendTextRef = useRef<((text: string) => void) | null>(null);
 
     const queryClient = useQueryClient();
     const navigate = useNavigate();
@@ -170,7 +170,7 @@ export default function GlobalVoiceControl() {
     };
 
     // --- COMMAND HANDLER ---
-    const onVoiceCommand = async (command) => {
+    const onVoiceCommand = async (command: any) => {
         console.log("Global Voice Command:", command);
 
         if (command.action === 'unknown') {
@@ -427,7 +427,7 @@ export default function GlobalVoiceControl() {
 
     // Check browser support for Web Speech API
     const isWebSpeechSupported = typeof window !== 'undefined' && 
-        (window.SpeechRecognition || window.webkitSpeechRecognition);
+        ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
     useEffect(() => {
         if (isReadOnly) {
@@ -441,7 +441,7 @@ export default function GlobalVoiceControl() {
 
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
             const recognition = new SpeechRecognition();
             
             recognition.continuous = false;

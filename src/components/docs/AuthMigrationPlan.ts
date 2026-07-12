@@ -134,7 +134,11 @@
  * 
  */
 
-export const AUTH_MIGRATION_STATUS = {
+export const AUTH_MIGRATION_STATUS: {
+    phase: number;
+    completed: string[];
+    pending: string[];
+} = {
     phase: 3,
     completed: [
         'JWT_SECRET einrichten',

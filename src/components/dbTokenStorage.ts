@@ -1,6 +1,14 @@
 // IndexedDB + localStorage Hybrid Storage for DB Token
 // Ensures token persistence across PWA and browser contexts
 
+export interface SavedToken {
+    id: string;
+    name: string;
+    token: string;
+    createdAt: number;
+    updatedAt: number;
+}
+
 const DB_NAME = 'RadioPlanDB';
 const STORE_NAME = 'settings';
 const TOKEN_KEY = 'db_credentials';
@@ -8,15 +16,15 @@ const TOKEN_ENABLED_KEY = 'db_token_enabled';
 const SAVED_TOKENS_KEY = 'saved_db_tokens';
 
 // Open IndexedDB
-const openDB = () => {
+const openDB = (): Promise<IDBDatabase> => {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, 1);
-        
+
         request.onerror = () => reject(request.error);
         request.onsuccess = () => resolve(request.result);
-        
+
         request.onupgradeneeded = (event) => {
-            const db = event.target.result;
+            const db = (event.target as IDBOpenDBRequest).result;
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME, { keyPath: 'key' });
             }
@@ -25,14 +33,14 @@ const openDB = () => {
 };
 
 // Save token to IndexedDB
-export const saveTokenToIndexedDB = async (token) => {
+export const saveTokenToIndexedDB = async (token: string): Promise<void> => {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_KEY, value: token, updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -42,13 +50,13 @@ export const saveTokenToIndexedDB = async (token) => {
 };
 
 // Get token from IndexedDB
-export const getTokenFromIndexedDB = async () => {
+export const getTokenFromIndexedDB = async (): Promise<string | null> => {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
         const request = store.get(TOKEN_KEY);
-        
+
         return new Promise((resolve, reject) => {
             request.onsuccess = () => {
                 db.close();
@@ -66,7 +74,7 @@ export const getTokenFromIndexedDB = async () => {
 };
 
 // Sync token from IndexedDB to localStorage (for PWA startup)
-export const syncDbTokenFromIndexedDB = async () => {
+export const syncDbTokenFromIndexedDB = async (): Promise<string | null> => {
     try {
         // Check if we just received a fresh token from URL - don't overwrite it
         const freshFromUrl = sessionStorage.getItem('db_token_from_url');
@@ -80,23 +88,23 @@ export const syncDbTokenFromIndexedDB = async () => {
             }
             return localToken;
         }
-        
+
         const localToken = localStorage.getItem(TOKEN_KEY);
         const idbToken = await getTokenFromIndexedDB();
-        
+
         if (idbToken && !localToken) {
             // Token exists in IDB but not in localStorage -> copy it
             localStorage.setItem(TOKEN_KEY, idbToken);
             console.log('DB token synced from IndexedDB to localStorage');
             return idbToken;
         }
-        
+
         if (localToken && !idbToken) {
             // Token exists in localStorage but not in IDB -> save to IDB
             await saveTokenToIndexedDB(localToken);
             console.log('DB token synced from localStorage to IndexedDB');
         }
-        
+
         return localToken || idbToken;
     } catch (e) {
         console.warn('Token sync failed:', e);
@@ -105,32 +113,32 @@ export const syncDbTokenFromIndexedDB = async () => {
 };
 
 // Save token to both storages
-export const saveDbToken = async (token) => {
+export const saveDbToken = async (token: string): Promise<void> => {
     localStorage.setItem(TOKEN_KEY, token);
     await saveTokenToIndexedDB(token);
 };
 
 // Extract token from URL and save
-export const extractAndSaveDbTokenFromUrl = async () => {
+export const extractAndSaveDbTokenFromUrl = async (): Promise<string | null> => {
     const params = new URLSearchParams(window.location.search);
     let dbToken = params.get('db_token');
-    
+
     if (dbToken) {
         // URLSearchParams converts + to space, so we need to handle this
         // The original token may contain + and / characters that need to be preserved
         // First, restore + signs that were converted to spaces
         dbToken = dbToken.replace(/ /g, '+');
-        
+
         await saveDbToken(dbToken);
         // Enable the token so it becomes active immediately
         await enableDbToken();
         // Clear the active_token_id since this is a new token from URL
         localStorage.removeItem('active_token_id');
-        
+
         // Clean URL and reload page to ensure all queries use the new token
         const newUrl = window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, newUrl);
-        
+
         // Force reload to ensure all data is fetched with new token
         window.location.reload();
         return dbToken;
@@ -139,23 +147,23 @@ export const extractAndSaveDbTokenFromUrl = async () => {
 };
 
 // Synchronous extraction for early initialization (before React renders)
-export const extractDbTokenFromUrlSync = () => {
+export const extractDbTokenFromUrlSync = (): boolean => {
     const params = new URLSearchParams(window.location.search);
     let dbToken = params.get('db_token');
-    
+
     if (dbToken) {
         // URLSearchParams converts + to space, restore them
         dbToken = dbToken.replace(/ /g, '+');
-        
+
         // Save synchronously to localStorage
         localStorage.setItem(TOKEN_KEY, dbToken);
         localStorage.setItem(TOKEN_ENABLED_KEY, 'true');
         localStorage.removeItem('active_token_id');
-        
+
         // Clean URL
         const newUrl = window.location.pathname + window.location.hash;
         window.history.replaceState({}, document.title, newUrl);
-        
+
         // Force reload to ensure all data is fetched with new token
         window.location.reload();
         return true;
@@ -164,21 +172,21 @@ export const extractDbTokenFromUrlSync = () => {
 };
 
 // Check if token is enabled
-export const isDbTokenEnabled = () => {
+export const isDbTokenEnabled = (): boolean => {
     const enabled = localStorage.getItem(TOKEN_ENABLED_KEY);
     return enabled === 'true';
 };
 
 // Enable token
-export const enableDbToken = async () => {
+export const enableDbToken = async (): Promise<void> => {
     localStorage.setItem(TOKEN_ENABLED_KEY, 'true');
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'true', updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -188,15 +196,15 @@ export const enableDbToken = async () => {
 };
 
 // Disable token (return to standard DB)
-export const disableDbToken = async () => {
+export const disableDbToken = async (): Promise<void> => {
     localStorage.setItem(TOKEN_ENABLED_KEY, 'false');
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -206,7 +214,7 @@ export const disableDbToken = async () => {
 };
 
 // Clear the active tenant token while keeping token usage disabled.
-export const clearActiveDbToken = async () => {
+export const clearActiveDbToken = async (): Promise<void> => {
     localStorage.setItem(TOKEN_ENABLED_KEY, 'false');
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem('active_token_id');
@@ -217,8 +225,8 @@ export const clearActiveDbToken = async () => {
         const store = tx.objectStore(STORE_NAME);
         store.delete(TOKEN_KEY);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -228,13 +236,13 @@ export const clearActiveDbToken = async () => {
 };
 
 // Get active token (only if enabled)
-export const getActiveDbToken = () => {
+export const getActiveDbToken = (): string | null => {
     if (!isDbTokenEnabled()) return null;
     return localStorage.getItem(TOKEN_KEY);
 };
 
 // Delete token completely (single active token)
-export const deleteDbToken = async () => {
+export const deleteDbToken = async (): Promise<void> => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_ENABLED_KEY);
     localStorage.removeItem('active_token_id');
@@ -244,8 +252,8 @@ export const deleteDbToken = async () => {
         const store = tx.objectStore(STORE_NAME);
         store.delete(TOKEN_KEY);
         store.delete(TOKEN_ENABLED_KEY);
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -255,20 +263,20 @@ export const deleteDbToken = async () => {
 };
 
 // Initialize: Sync from IDB, then check URL
-export const initDbToken = async () => {
+export const initDbToken = async (): Promise<string | null> => {
     await syncDbTokenFromIndexedDB();
     await extractAndSaveDbTokenFromUrl();
     return localStorage.getItem(TOKEN_KEY);
 };
 
 // Delete ALL token data (for complete reset)
-export const deleteAllTokenData = async () => {
+export const deleteAllTokenData = async (): Promise<void> => {
     // Clear all token-related localStorage items
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_ENABLED_KEY);
     localStorage.removeItem(SAVED_TOKENS_KEY);
     localStorage.removeItem('active_token_id');
-    
+
     // Clear IndexedDB
     try {
         const db = await openDB();
@@ -277,8 +285,8 @@ export const deleteAllTokenData = async () => {
         store.delete(TOKEN_KEY);
         store.delete(TOKEN_ENABLED_KEY);
         store.delete(SAVED_TOKENS_KEY);
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -293,7 +301,7 @@ export const deleteAllTokenData = async () => {
 // ==========================================
 
 // Get all saved tokens
-export const getSavedTokens = () => {
+export const getSavedTokens = (): SavedToken[] => {
     try {
         const saved = localStorage.getItem(SAVED_TOKENS_KEY);
         return saved ? JSON.parse(saved) : [];
@@ -304,57 +312,57 @@ export const getSavedTokens = () => {
 };
 
 // Save a token with a name
-export const saveNamedToken = async (name, token) => {
+export const saveNamedToken = async (name: string, token: string): Promise<SavedToken> => {
     const tokens = getSavedTokens();
     const existingIndex = tokens.findIndex(t => t.name === name);
-    
-    const tokenEntry = {
+
+    const tokenEntry: SavedToken = {
         id: existingIndex >= 0 ? tokens[existingIndex].id : crypto.randomUUID(),
         name,
         token,
         createdAt: existingIndex >= 0 ? tokens[existingIndex].createdAt : Date.now(),
         updatedAt: Date.now()
     };
-    
+
     if (existingIndex >= 0) {
         tokens[existingIndex] = tokenEntry;
     } else {
         tokens.push(tokenEntry);
     }
-    
+
     localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
-    
+
     // Also save to IndexedDB for persistence
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
     } catch (e) {
         console.warn('Failed to save tokens to IndexedDB:', e);
     }
-    
+
     return tokenEntry;
 };
 
 // Delete a saved token by id
-export const deleteNamedToken = async (id) => {
+export const deleteNamedToken = async (id: string): Promise<void> => {
     const tokens = getSavedTokens().filter(t => t.id !== id);
     localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
-    
+
     // Also update IndexedDB
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
-        await new Promise((resolve, reject) => {
-            tx.oncomplete = resolve;
+        await new Promise<void>((resolve, reject) => {
+            tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
         });
         db.close();
@@ -364,22 +372,22 @@ export const deleteNamedToken = async (id) => {
 };
 
 // Rename a saved token
-export const renameToken = async (id, newName) => {
+export const renameToken = async (id: string, newName: string): Promise<void> => {
     const tokens = getSavedTokens();
     const token = tokens.find(t => t.id === id);
     if (token) {
         token.name = newName;
         token.updatedAt = Date.now();
         localStorage.setItem(SAVED_TOKENS_KEY, JSON.stringify(tokens));
-        
+
         // Also update IndexedDB
         try {
             const db = await openDB();
             const tx = db.transaction(STORE_NAME, 'readwrite');
             const store = tx.objectStore(STORE_NAME);
             store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
-            await new Promise((resolve, reject) => {
-                tx.oncomplete = resolve;
+            await new Promise<void>((resolve, reject) => {
+                tx.oncomplete = () => resolve();
                 tx.onerror = () => reject(tx.error);
             });
             db.close();
@@ -390,38 +398,38 @@ export const renameToken = async (id, newName) => {
 };
 
 // Switch to a saved token (activate it)
-export const switchToToken = async (id) => {
+export const switchToToken = async (id: string): Promise<SavedToken> => {
     const tokens = getSavedTokens();
     const tokenEntry = tokens.find(t => t.id === id);
-    
+
     if (!tokenEntry) {
         throw new Error('Token not found');
     }
-    
+
     // Save as active token
     await saveDbToken(tokenEntry.token);
     await enableDbToken();
-    
+
     // Store active token id
     localStorage.setItem('active_token_id', id);
-    
+
     return tokenEntry;
 };
 
 // Get currently active token id
-export const getActiveTokenId = () => {
+export const getActiveTokenId = (): string | null => {
     return localStorage.getItem('active_token_id');
 };
 
 // Sync saved tokens from IndexedDB
-export const syncSavedTokensFromIndexedDB = async () => {
+export const syncSavedTokensFromIndexedDB = async (): Promise<SavedToken[]> => {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
         const request = store.get(SAVED_TOKENS_KEY);
-        
-        const result = await new Promise((resolve, reject) => {
+
+        const result: SavedToken[] | null = await new Promise((resolve, reject) => {
             request.onsuccess = () => {
                 db.close();
                 resolve(request.result?.value || null);
@@ -431,7 +439,7 @@ export const syncSavedTokensFromIndexedDB = async () => {
                 reject(request.error);
             };
         });
-        
+
         if (result && Array.isArray(result)) {
             const localTokens = getSavedTokens();
             if (result.length > localTokens.length) {
@@ -439,7 +447,7 @@ export const syncSavedTokensFromIndexedDB = async () => {
                 return result;
             }
         }
-        
+
         return getSavedTokens();
     } catch (e) {
         console.warn('Failed to sync saved tokens from IndexedDB:', e);

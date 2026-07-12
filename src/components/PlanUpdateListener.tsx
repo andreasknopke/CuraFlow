@@ -3,9 +3,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import { useAuth } from '@/components/AuthProvider';
-import { getActiveDbToken } from '@/components/dbTokenStorage.jsx';
+import { getActiveDbToken } from '@/components/dbTokenStorage';
 
-const ENTITY_QUERY_KEYS = {
+const ENTITY_QUERY_KEYS: Record<string, string[][]> = {
   ShiftEntry: [['shifts'], ['shifts-history']],
   ScheduleNote: [['scheduleNotes']],
   StaffingPlanEntry: [['staffingPlanEntries']],
@@ -23,11 +23,11 @@ const ENTITY_QUERY_KEYS = {
   SystemSetting: [['systemSettings']],
 };
 
-function getQueryKeysForEntity(entity) {
+function getQueryKeysForEntity(entity: string): string[][] {
   return ENTITY_QUERY_KEYS[entity] || [['shifts'], ['scheduleNotes'], ['staffingPlanEntries']];
 }
 
-function buildRealtimeUrl() {
+function buildRealtimeUrl(): string | null {
   const token = api.getToken();
   if (!token) return null;
 
@@ -41,7 +41,7 @@ function buildRealtimeUrl() {
   return `${baseUrl}/api/auth/events/stream?${params.toString()}`;
 }
 
-function describeRealtimeConnection(streamUrl) {
+function describeRealtimeConnection(streamUrl: string | null): { streamPath: string | null; usesAccessToken: boolean; usesDbToken: boolean } {
   if (!streamUrl) {
     return {
       streamPath: null,
@@ -73,7 +73,7 @@ const COWORK_QUERY_KEYS = [['coworkInvites'], ['coworkContacts']];
 // registers demand. The pool planner sees the new demand in near-realtime.
 const ROTATION_QUERY_KEYS = [['rotations', 'visible-rotations'], ['rotations', 'demands']];
 
-export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp } = {}) {
+export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedProp, user: userProp }: { isAuthenticated?: boolean; user?: Record<string, unknown> | null } = {}) {
   const queryClient = useQueryClient();
   const authState = useAuth();
   const isAuthenticated = isAuthenticatedProp ?? authState.isAuthenticated;
@@ -157,7 +157,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       flushTimerRef.current = window.setTimeout(flushPendingUpdates, 300);
     };
 
-    const handlePlanUpdate = (event) => {
+    const handlePlanUpdate = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
         const queryKeys = getQueryKeysForEntity(payload.entity);
@@ -175,7 +175,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       }
     };
 
-    const handleCoworkUpdate = (event) => {
+    const handleCoworkUpdate = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
 
@@ -188,7 +188,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       }
     };
 
-    const handleRotationDemand = (event) => {
+    const handleRotationDemand = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
 

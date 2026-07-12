@@ -1,7 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44, db } from "@/api/client";
 
-export function useStaffingCheck(doctors, shifts) {
+interface Doctor {
+    id: string;
+}
+
+interface ShiftEntry {
+    doctor_id: string;
+    date: string;
+    position: string;
+}
+
+interface AvailabilityThreshold {
+    qualificationId: string;
+    qualificationName?: string;
+    min: number;
+}
+
+interface DoctorQualification {
+    doctor_id: string | number;
+    qualification_id: string | number;
+}
+
+export function useStaffingCheck(doctors: Doctor[], shifts: ShiftEntry[]) {
     const { data: settings = [] } = useQuery({
         queryKey: ['systemSettings'],
         queryFn: () => base44.entities.SystemSetting.list(),
@@ -16,24 +37,24 @@ export function useStaffingCheck(doctors, shifts) {
     });
 
     // Parse thresholds
-    const rawThresholds = settings.find(s => s.key === 'availability_thresholds')?.value;
-    const availabilityThresholds = rawThresholds ? (() => { try { return JSON.parse(rawThresholds); } catch { return []; } })() : [];
+    const rawThresholds = settings.find((s: { key: string; value: string }) => s.key === 'availability_thresholds')?.value;
+    const availabilityThresholds: AvailabilityThreshold[] = rawThresholds ? (() => { try { return JSON.parse(rawThresholds); } catch { return []; } })() : [];
 
     // Hilfsfunktion: Qualifikations-IDs eines Arztes
-    const getDoctorQualIds = (doctorId) => {
+    const getDoctorQualIds = (doctorId: string): string[] => {
         return allDoctorQualifications
-            .filter(dq => String(dq.doctor_id) === doctorId)
-            .map(dq => String(dq.qualification_id));
+            .filter((dq: DoctorQualification) => String(dq.doctor_id) === doctorId)
+            .map((dq: DoctorQualification) => String(dq.qualification_id));
     };
 
-    const checkStaffing = (dateStr, newAbsentDoctorId = null) => {
+    const checkStaffing = (dateStr: string, newAbsentDoctorId: string | null = null): string | null => {
         if (!doctors || !shifts) return null;
         if (!availabilityThresholds || availabilityThresholds.length === 0) return null;
 
         const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
         // Aktuelle Abwesenheiten
-        const absentDocIds = new Set();
+        const absentDocIds = new Set<string>();
         shifts.forEach(s => {
             if (s.date === dateStr && ABSENCE_POSITIONS.includes(s.position)) {
                 absentDocIds.add(s.doctor_id);
@@ -43,7 +64,7 @@ export function useStaffingCheck(doctors, shifts) {
             absentDocIds.add(newAbsentDoctorId);
         }
 
-        const warnings = [];
+        const warnings: string[] = [];
 
         availabilityThresholds.forEach(threshold => {
             const qId = threshold.qualificationId;

@@ -6,18 +6,21 @@ import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 
-let jitsiExternalApiLoader = null;
-let jitsiExternalApiScriptUrl = null;
+// Jitsi External API — loaded dynamically via script tag
+declare const JitsiMeetExternalAPI: any;
+
+let jitsiExternalApiLoader: Promise<any> | null = null;
+let jitsiExternalApiScriptUrl: string | null = null;
 
 /**
  * Leitet den ersten Mandanten-Slug aus dem allowed_tenants-Feld ab.
  * Gibt einen sicheren ASCII-Slug zurück, der als Jitsi-Raumname genutzt wird.
  */
-function parseTenantSlug(allowed_tenants) {
+function parseTenantSlug(allowed_tenants: unknown): string {
   if (!allowed_tenants) return 'default';
   try {
     // Könnte ein JSON-Array-String sein: '["Krankenhaus_A","Krankenhaus_B"]'
-    const parsed = JSON.parse(allowed_tenants);
+    const parsed = JSON.parse(allowed_tenants as string);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed[0].toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
     }
@@ -27,7 +30,7 @@ function parseTenantSlug(allowed_tenants) {
   return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
-function buildJitsiDomain(baseUrl) {
+function buildJitsiDomain(baseUrl: string): string | null {
   try {
     return new URL(baseUrl).host;
   } catch {
@@ -35,7 +38,7 @@ function buildJitsiDomain(baseUrl) {
   }
 }
 
-function loadJitsiExternalApi(baseUrl) {
+function loadJitsiExternalApi(baseUrl: string): Promise<any> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Jitsi kann nur im Browser geladen werden'));
   }
@@ -78,7 +81,7 @@ function loadJitsiExternalApi(baseUrl) {
   return jitsiExternalApiLoader;
 }
 
-function formatLastSeen(lastSeenAt) {
+function formatLastSeen(lastSeenAt: string | null): string {
   if (!lastSeenAt) return 'offline';
 
   const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(lastSeenAt).getTime()) / 1000));
@@ -91,7 +94,7 @@ function formatLastSeen(lastSeenAt) {
   }).format(new Date(lastSeenAt));
 }
 
-function formatExpiry(expiresDate) {
+function formatExpiry(expiresDate: string | null): string {
   if (!expiresDate) return 'offen';
 
   return new Intl.DateTimeFormat('de-DE', {
@@ -100,11 +103,11 @@ function formatExpiry(expiresDate) {
   }).format(new Date(expiresDate));
 }
 
-function getInviteToastId(inviteId) {
+function getInviteToastId(inviteId: string): string {
   return `cowork-invite-${inviteId}`;
 }
 
-function decodeJwtPayload(token) {
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
   try {
     const parts = (token || '').split('.');
     if (parts.length < 2) return null;
@@ -135,19 +138,19 @@ export default function CoWorkWidget() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
-  const [position, setPosition] = useState({ x: null, y: null }); // null = CSS-Default
-  const [activeSession, setActiveSession] = useState(null);
+  const [position, setPosition] = useState<{ x: number | null; y: number | null }>({ x: null, y: null }); // null = CSS-Default
+  const [activeSession, setActiveSession] = useState<Record<string, any> | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
-  const [busyId, setBusyId] = useState(null);
-  const [hiddenInviteIds, setHiddenInviteIds] = useState([]);
-  const dragging = useRef(false);
-  const dragOffset = useRef({ x: 0, y: 0 });
-  const panelRef = useRef(null);
-  const jitsiContainerRef = useRef(null);
-  const jitsiApiRef = useRef(null);
-  const hideTimerRef = useRef(null);
-  const announcedInviteIdsRef = useRef(new Set());
-  const lastInviteErrorRef = useRef(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [hiddenInviteIds, setHiddenInviteIds] = useState<string[]>([]);
+  const dragging = useRef<boolean>(false);
+  const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const jitsiContainerRef = useRef<HTMLDivElement | null>(null);
+  const jitsiApiRef = useRef<any>(null);
+  const hideTimerRef = useRef<number | null>(null);
+  const announcedInviteIdsRef = useRef<Set<string>>(new Set());
+  const lastInviteErrorRef = useRef<string | null>(null);
 
   const tenantSlug = parseTenantSlug(user?.allowed_tenants);
   const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
@@ -365,16 +368,16 @@ export default function CoWorkWidget() {
   }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
   // Drag-Logik für das Panel
-  const onMouseDown = (e) => {
+  const onMouseDown = (e: React.MouseEvent) => {
     if (e.target.closest('button') || e.target.closest('iframe')) return;
     dragging.current = true;
-    const rect = panelRef.current.getBoundingClientRect();
+    const rect = panelRef.current!.getBoundingClientRect();
     dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     e.preventDefault();
   };
 
   useEffect(() => {
-    const onMove = (e) => {
+    const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
       setPosition({
         x: e.clientX - dragOffset.current.x,
@@ -470,25 +473,25 @@ export default function CoWorkWidget() {
           secondsLeft: tokenPayload?.exp ? tokenPayload.exp - Math.floor(Date.now() / 1000) : null,
         });
 
-        externalApi.addListener('log', (event) => {
+        externalApi.addListener('log', (event: MessageEvent) => {
           console.debug('[CoWork/Jitsi log]', event);
         });
 
         externalApi.addEventListeners({
-          videoConferenceJoined: (event) => {
+          videoConferenceJoined: (event: MessageEvent) => {
             console.info('[CoWork/Jitsi] joined', event);
             setIsLoadingSession(false);
           },
-          videoConferenceLeft: (event) => {
+          videoConferenceLeft: (event: MessageEvent) => {
             console.warn('[CoWork/Jitsi] left', event);
           },
           readyToClose: () => {
             console.warn('[CoWork/Jitsi] readyToClose');
           },
-          errorOccurred: (event) => {
+          errorOccurred: (event: MessageEvent) => {
             console.error('[CoWork/Jitsi] errorOccurred', event);
           },
-          screenSharingStatusChanged: (event) => {
+          screenSharingStatusChanged: (event: MessageEvent) => {
             console.warn('[CoWork/Jitsi] screenSharingStatusChanged', event);
             const sharingActive = Boolean(event?.on);
             setIsScreenSharing(sharingActive);
@@ -528,7 +531,7 @@ export default function CoWorkWidget() {
   }, [activeRoomName, activeSession?.token, jitsiBaseUrl, jitsiDomain, user?.email, user?.full_name]);
 
   useEffect(() => {
-    const onMouseMove = (e) => {
+    const onMouseMove = (e: MouseEvent) => {
       const nearRightEdge = window.innerWidth - e.clientX <= 140;
       const nearBottomEdge = window.innerHeight - e.clientY <= 140;
       if (!nearRightEdge || !nearBottomEdge) return;
@@ -595,8 +598,7 @@ export default function CoWorkWidget() {
   const isAcceptedIncomingInvite = currentIncomingInvite?.status === 'accepted';
   const hasActiveMeeting = Boolean(activeSession?.token && activeRoomName);
 
-  /** @type {React.CSSProperties} */
-  const panelStyle = isExpanded
+  const panelStyle: React.CSSProperties = isExpanded
     ? { position: 'fixed', top: 20, right: 20, bottom: 20, left: 20 }
     : position.x !== null
       ? { position: 'fixed', left: position.x, top: position.y, bottom: 'auto', right: 'auto' }
