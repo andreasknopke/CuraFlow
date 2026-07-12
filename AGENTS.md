@@ -11,13 +11,21 @@ CuraFlow is a production web application for hospital shift scheduling and staff
 ## Project Structure
 
 ```
-src/              → React frontend (JSX, Vite, TanStack Query, Radix UI, Tailwind CSS)
-server/           → Express backend (REST API, JWT auth, mysql2)
+src/              → React frontend (TypeScript .ts/.tsx, Vite, TanStack Query, Radix UI, Tailwind CSS)
+server/           → Express backend (JavaScript .js, REST API, JWT auth, mysql2)
 server/routes/    → Route handlers (auth, schedule, staff, admin, etc.)
 server/utils/     → Shared utilities (crypto, email, realtime, migrations)
 server/migrations/→ SQL migration files
+src/types/        → Shared TypeScript type definitions (models, auth, api, master)
+src/components/ui/→ shadcn/ui component library
 docs/             → Architecture and feature documentation
 ```
+
+### Language Boundaries
+
+- **`src/` is TypeScript only.** All new frontend code (components, hooks, utilities, pages, contexts, tests, types) MUST be written in TypeScript (`.ts` / `.tsx`). Never create `.js` or `.jsx` files under `src/`.
+- **`server/` is JavaScript.** The Express backend remains JavaScript. New server code (routes, utilities, migrations, scripts) uses `.js`. Type definitions for server-derived data shapes live in `src/types/`.
+- **Root config files** (`vite.config.ts`, `tailwind.config.js`, `eslint.config.js`, `postcss.config.js`) follow their respective tooling conventions.
 
 ---
 
@@ -91,11 +99,24 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Avoid premature abstraction — do not introduce patterns (factories, wrappers, middleware) until there is a proven need.
 - Every file should have a **single clear purpose**. If a file grows beyond ~300 lines, consider splitting it.
 
-### JavaScript / Node.js
+### TypeScript / Frontend
 
-- Use **ES Modules** (`import`/`export`) everywhere — this project uses `"type": "module"`.
+- All code under `src/` MUST be TypeScript (`.ts` / `.tsx`). Never create `.js` or `.jsx` files in `src/`.
+- Enable **strict mode** (enforced in `tsconfig.json`). No `@ts-ignore`, `@ts-expect-error`, or `as any` without a documented reason.
+- Use **interfaces** for object shapes, **type aliases** for unions/primitives/functions.
+- Prefer **`unknown` over `any`** — `any` disables type checking, `unknown` forces explicit narrowing.
+- Domain types live in `src/types/` and are shared via `import type { ... } from '@/types'`.
+- When API responses are typed as `unknown` (e.g., `api.request()` returns `Promise<unknown>`), use `as` casts or type guards at the boundary — never propagate `unknown` deep into components.
+- Use **`React.FC` is optional** — prefer explicit return types or inferred return types. Always type props via an interface or inline object type.
+- Event handlers must use React's synthetic event types: `React.FormEvent`, `React.ChangeEvent<HTMLInputElement>`, `React.MouseEvent<HTMLButtonElement>`, etc.
+- Use `useQuery<T>`, `useMutation<TVariables, TError, TData>` generics on TanStack Query hooks for inferred data types.
+
+### JavaScript / Backend
+
+- The `server/` directory remains JavaScript. Use **ES Modules** (`import`/`export`) — this project uses `"type": "module"`.
 - Prefer `const` over `let`; never use `var`.
 - Use **async/await** for asynchronous operations — never raw `.then()` chains.
+- Use **JSDoc type annotations** for public API functions in server code where practical.
 - Handle errors explicitly: always `try/catch` around async operations at API boundaries. Never swallow errors silently.
 - Use **early returns** to reduce nesting.
 - Validate function inputs at the boundary — use Zod schemas for request validation in API routes.
@@ -304,5 +325,6 @@ If any step fails, fix the issue before considering the task complete.
 
 - ❌ Do not store application state in global variables or module-level singletons (except connection pools).
 - ❌ Do not disable ESLint rules without a comment explaining the specific reason.
-- ❌ Do not use `any`-style loose patterns — even in JavaScript, use JSDoc type annotations for public APIs.
+- ❌ Do not use `any`-style loose patterns — use `unknown` with explicit narrowing in TypeScript, or JSDoc type annotations in JavaScript.
+- ❌ Do not create `.js` or `.jsx` files under `src/` — all new frontend code is TypeScript.
 - ❌ Do not generate German-language code (identifiers, comments). All code is in English. German is acceptable only in user-facing UI strings and documentation targeted at end users.

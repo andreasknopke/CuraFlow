@@ -7,23 +7,16 @@ import path from 'path'
 const coverageConfig = {
   provider: 'v8',
   include: [
-    // Existing coverage targets
     'src/utils/**',
-    'src/components/AuthProvider.jsx',
-    'src/components/schedule/costFunction.js',
-    'src/components/schedule/staffingUtils.jsx',
-    'src/components/staff/DoctorForm.jsx',
-
-    // Auto-fill engine (core scheduling algorithm)
-    'src/components/schedule/autoFillEngine.js',
-
-    // Custom hooks
-    'src/hooks/useCertificates.js',
-    'src/hooks/useQualifications.js',
-    'src/hooks/use-mobile.jsx',
-
-    // Holiday utilities
-    'src/components/schedule/holidayUtils.jsx',
+    'src/components/AuthProvider.tsx',
+    'src/components/schedule/costFunction.ts',
+    'src/components/schedule/staffingUtils.tsx',
+    'src/components/staff/DoctorForm.tsx',
+    'src/components/schedule/autoFillEngine.ts',
+    'src/hooks/useCertificates.ts',
+    'src/hooks/useQualifications.ts',
+    'src/hooks/use-mobile.tsx',
+    'src/components/schedule/holidayUtils.tsx',
   ],
   exclude: ['src/**/__tests__/**', 'src/**/__component_tests__/**', '**/*.test.*'],
   reporter: ['text', 'lcov', 'json-summary', 'html'],
@@ -39,7 +32,7 @@ const unitProject = defineProject({
   test: {
     name: 'unit',
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.{js,jsx}', 'server/**/__tests__/**/*.test.js'],
+    include: ['src/**/__tests__/**/*.test.{js,jsx,ts,tsx}', 'server/**/__tests__/**/*.test.{js,ts}'],
     exclude: ['src/**/__component_tests__/**'],
   },
 })
@@ -54,8 +47,8 @@ const componentProject = defineProject({
   test: {
     name: 'component',
     environment: 'happy-dom',
-    setupFiles: ['./src/test-utils/setup-tests.js'],
-    include: ['src/**/__component_tests__/**/*.test.{js,jsx}'],
+    setupFiles: ['./src/test-utils/setup-tests.ts'],
+    include: ['src/**/__component_tests__/**/*.test.{js,jsx,ts,tsx}'],
     css: true,
     clearMocks: true,
     restoreMocks: true,
