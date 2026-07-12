@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { DropResult, DraggableProvided, DroppableProvided } from '@hello-pangea/dnd';
 import { DragDropContext, Draggable, Droppable } from '@hello-pangea/dnd';
 import { AlertCircle, Clock, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,7 +11,31 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 
-function spansMidnight(startTime, endTime) {
+interface SharedTimeslotEditorProps {
+    groupId: number | null;
+    workplaceId: string | null;
+    defaultTolerance?: number;
+}
+
+interface Timeslot {
+    id: string;
+    label: string;
+    start_time: string;
+    end_time: string;
+    order: number;
+    overlap_tolerance_minutes: number;
+    spans_midnight?: boolean;
+    [key: string]: unknown;
+}
+
+interface EditForm {
+    label: string;
+    start_time: string;
+    end_time: string;
+    overlap_tolerance_minutes: number;
+}
+
+function spansMidnight(startTime: string, endTime: string): boolean {
     const [startH, startM] = String(startTime || '00:00').split(':').map(Number);
     const [endH, endM] = String(endTime || '00:00').split(':').map(Number);
     const startMinutes = startH * 60 + startM;
@@ -18,16 +43,16 @@ function spansMidnight(startTime, endTime) {
     return endMinutes <= startMinutes;
 }
 
-function formatTimeRange(startTime, endTime) {
+function formatTimeRange(startTime: string, endTime: string): string {
     const start = startTime?.substring(0, 5) || '00:00';
     const end = endTime?.substring(0, 5) || '00:00';
     return `${start}-${end}${spansMidnight(start, end) ? ' (+1)' : ''}`;
 }
 
-export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTolerance = 15 }) {
+export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTolerance = 15 }: SharedTimeslotEditorProps) {
     const queryClient = useQueryClient();
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<EditForm>({
         label: '',
         start_time: '07:00',
         end_time: '15:00',
@@ -36,12 +61,12 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
 
     const queryKey = ['sharedWorkplaceTimeslots', groupId, workplaceId];
 
-    const { data: timeslots = [], isLoading } = useQuery({
+    const { data: timeslots = [], isLoading } = useQuery<Timeslot[]>({
         queryKey,
         queryFn: async () => {
-            const response = await api.listSharedWorkplaceTimeslots(groupId, workplaceId);
-            const rows = Array.isArray(response?.timeslots) ? response.timeslots : [];
-            return rows.sort((left, right) => (left.order || 0) - (right.order || 0));
+            const response = await api.listSharedWorkplaceTimeslots(String(groupId!), workplaceId!);
+            const rows = Array.isArray((response as { timeslots?: Timeslot[] })?.timeslots) ? (response as { timeslots: Timeslot[] }).timeslots : [];
+            return rows.sort((left: Timeslot, right: Timeslot) => (left.order || 0) - (right.order || 0));
         },
         enabled: !!groupId && !!workplaceId,
     });
@@ -49,24 +74,24 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
     const invalidate = () => queryClient.invalidateQueries({ queryKey });
 
     const createMutation = useMutation({
-        mutationFn: (payload) => api.createSharedWorkplaceTimeslot(groupId, workplaceId, payload),
+        mutationFn: (payload: Record<string, unknown>) => api.createSharedWorkplaceTimeslot(String(groupId!), workplaceId!, payload),
         onSuccess: () => invalidate(),
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, payload }) => api.updateSharedWorkplaceTimeslot(groupId, workplaceId, id, payload),
+        mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.updateSharedWorkplaceTimeslot(String(groupId!), workplaceId!, id, payload),
         onSuccess: () => invalidate(),
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht aktualisiert werden'),
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (id) => api.deleteSharedWorkplaceTimeslot(groupId, workplaceId, id),
+        mutationFn: (id: string) => api.deleteSharedWorkplaceTimeslot(String(groupId!), workplaceId!, id),
         onSuccess: () => {
             invalidate();
             toast.success('Zeitfenster gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
     });
 
     const handleAddNew = () => {
@@ -80,14 +105,14 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
         });
     };
 
-    const handleDelete = (id) => {
+    const handleDelete = (id: string) => {
         if (!window.confirm('Zeitfenster wirklich löschen?')) {
             return;
         }
         deleteMutation.mutate(id);
     };
 
-    const startEdit = (slot) => {
+    const startEdit = (slot: Timeslot) => {
         setEditingId(slot.id);
         setEditForm({
             label: slot.label,
@@ -111,14 +136,14 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
         setEditingId(null);
     };
 
-    const handleDragEnd = (result) => {
+    const handleDragEnd = (result: DropResult) => {
         if (!result.destination || result.destination.index === result.source.index) {
             return;
         }
         const items = Array.from(timeslots);
         const [moved] = items.splice(result.source.index, 1);
         items.splice(result.destination.index, 0, moved);
-        items.forEach((slot, index) => {
+        items.forEach((slot: Timeslot, index: number) => {
             if ((slot.order || 0) !== index) {
                 updateMutation.mutate({ id: slot.id, payload: { order: index } });
             }
@@ -148,11 +173,11 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
             ) : (
                 <DragDropContext onDragEnd={handleDragEnd}>
                     <Droppable droppableId="shared-timeslots">
-                        {(provided) => (
+                        {(provided: DroppableProvided) => (
                             <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-2">
-                                {timeslots.map((slot, index) => (
+                                {timeslots.map((slot: Timeslot, index: number) => (
                                     <Draggable key={slot.id} draggableId={slot.id} index={index}>
-                                        {(dragProvided) => (
+                                        {(dragProvided: DraggableProvided) => (
                                             <div
                                                 ref={dragProvided.innerRef}
                                                 {...dragProvided.draggableProps}
@@ -168,7 +193,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Label className="text-xs">Bezeichnung</Label>
                                                                 <Input
                                                                     value={editForm.label}
-                                                                    onChange={(event) => setEditForm((current) => ({ ...current, label: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, label: event.target.value }))}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -177,7 +202,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.start_time}
-                                                                    onChange={(event) => setEditForm((current) => ({ ...current, start_time: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, start_time: event.target.value }))}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -186,7 +211,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.end_time}
-                                                                    onChange={(event) => setEditForm((current) => ({ ...current, end_time: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, end_time: event.target.value }))}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -205,7 +230,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 min={0}
                                                                 max={60}
                                                                 value={editForm.overlap_tolerance_minutes}
-                                                                onChange={(event) => setEditForm((current) => ({ ...current, overlap_tolerance_minutes: Number.parseInt(event.target.value, 10) || 0 }))}
+                                                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, overlap_tolerance_minutes: Number.parseInt(event.target.value, 10) || 0 }))}
                                                                 className="h-8 w-24"
                                                             />
                                                         </div>

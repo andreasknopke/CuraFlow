@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
+import type { Workplace } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -19,13 +20,131 @@ import SharedWorkplaceQualificationsDialog from '@/components/admin/SharedWorkpl
 import { SERVICE_TYPES } from '@/components/settings/serviceTypes';
 import { ArrowsUpFromLine, Building2, Clock, Globe2, Loader2, Pencil, Plus, ShieldCheck, Trash2, Users } from 'lucide-react';
 
-const DEFAULT_GROUP_FORM = {
+// ——— local interfaces ———
+
+interface GroupForm {
+    name: string;
+    description: string;
+    is_active: boolean;
+}
+
+interface WorkplaceForm {
+    name: string;
+    active_days: number[];
+    service_type: string;
+    auto_off: boolean;
+    allows_rotation_concurrently: boolean;
+    allows_absence_overlap: boolean;
+    consecutive_days_mode: string;
+    allows_multiple: boolean;
+    min_staff: string;
+    optimal_staff: string;
+    default_overlap_tolerance_minutes: string;
+    work_time_percentage: string;
+    affects_availability: boolean;
+    timeslots_enabled: boolean;
+    is_active: boolean;
+}
+
+interface RotationWorkplaceForm {
+    name: string;
+    ward_tenant_id: string;
+    timeslots_enabled: boolean;
+    is_active: boolean;
+}
+
+type UnifiedGroupType = 'dienst' | 'rotation';
+
+interface NormalizedGroup {
+    id: number;
+    name: string;
+    description?: string;
+    is_active: boolean;
+    _type?: UnifiedGroupType;
+    [key: string]: unknown;
+}
+
+interface NormalizedWorkplace extends NormalizedGroup {
+    allows_multiple: boolean | null;
+    auto_off: boolean;
+    allows_rotation_concurrently: boolean;
+    affects_availability: boolean;
+    allows_absence_overlap: boolean;
+    timeslots_enabled: boolean;
+    is_active: boolean;
+    active_days: number[];
+    service_type?: number | string;
+    min_staff?: number;
+    optimal_staff?: number;
+    default_overlap_tolerance_minutes?: number;
+    work_time_percentage?: number;
+    consecutive_days_mode?: string;
+    ward_tenant_id?: number | string;
+}
+
+interface TenantRecord {
+    id: number;
+    name?: string;
+    host?: string;
+    db_name?: string;
+    [key: string]: unknown;
+}
+
+interface MemberRecord {
+    tenant_id: number;
+    name?: string;
+    host?: string;
+    db_name?: string;
+    role?: string;
+    [key: string]: unknown;
+}
+
+interface GroupsResponse {
+    groups: NormalizedGroup[];
+}
+
+interface MembersResponse {
+    members: MemberRecord[];
+}
+
+interface WorkplacesResponse {
+    workplaces: NormalizedWorkplace[];
+}
+
+interface Timeslot {
+    id: number;
+    label: string;
+    start_time?: string;
+    end_time?: string;
+    [key: string]: unknown;
+}
+
+interface TimeslotsResponse {
+    timeslots: Timeslot[];
+}
+
+interface RotationTimeslotEditorProps {
+    groupId: number | null;
+    workplace: NormalizedWorkplace;
+    onClose: () => void;
+}
+
+interface TimeslotForm {
+    label: string;
+    start_time: string;
+    end_time: string;
+    order: number;
+}
+
+// ——— defaults ———
+
+const DEFAULT_GROUP_FORM: GroupForm = {
     name: '',
     description: '',
     is_active: true,
 };
 
-const DEFAULT_WORKPLACE_FORM = {
+const DEFAULT_WORKPLACE_FORM: WorkplaceForm = {
     name: '',
     active_days: [1, 2, 3, 4, 5],
     service_type: '1',
@@ -43,24 +162,28 @@ const DEFAULT_WORKPLACE_FORM = {
     is_active: true,
 };
 
-const DEFAULT_ROTATION_WORKPLACE_FORM = {
+const DEFAULT_ROTATION_WORKPLACE_FORM: RotationWorkplaceForm = {
     name: '',
     ward_tenant_id: '',
     timeslots_enabled: false,
     is_active: true,
 };
 
-function normalizeGroup(group) {
+function normalizeGroup(group: Record<string, unknown>): NormalizedGroup {
     return {
         ...group,
         id: Number(group.id),
+        name: String(group.name ?? ''),
+        description: String(group.description ?? ''),
         is_active: Boolean(group.is_active),
-    };
+    } as NormalizedGroup;
 }
 
-function normalizeWorkplace(workplace) {
+function normalizeWorkplace(workplace: Record<string, unknown>): NormalizedWorkplace {
     return {
         ...workplace,
+        id: Number(workplace.id),
+        name: String(workplace.name ?? ''),
         allows_multiple: workplace.allows_multiple == null ? null : Boolean(workplace.allows_multiple),
         auto_off: Boolean(workplace.auto_off),
         allows_rotation_concurrently: Boolean(workplace.allows_rotation_concurrently),
@@ -69,53 +192,53 @@ function normalizeWorkplace(workplace) {
         timeslots_enabled: Boolean(workplace.timeslots_enabled),
         is_active: Boolean(workplace.is_active),
         active_days: Array.isArray(workplace.active_days) ? workplace.active_days : [1, 2, 3, 4, 5],
-    };
+    } as NormalizedWorkplace;
 }
 
-function serviceTypeLabel(value) {
+function serviceTypeLabel(value: number | string | undefined): string {
     return SERVICE_TYPES.find((entry) => entry.value === Number(value))?.label || 'Kein Typ';
 }
 
-function toggleDay(days, dayIndex) {
+function toggleDay(days: number[], dayIndex: number): number[] {
     return days.includes(dayIndex)
-        ? days.filter((entry) => entry !== dayIndex)
-        : [...days, dayIndex].sort((left, right) => left - right);
+        ? days.filter((entry: number) => entry !== dayIndex)
+        : [...days, dayIndex].sort((left: number, right: number) => left - right);
 }
 
 /** Composite key to distinguish dienst vs rotation groups */
-function groupKey(type, id) {
+function groupKey(type: UnifiedGroupType, id: number): string {
     return `${type}:${id}`;
 }
 
 export default function TenantGroupManagement() {
     const queryClient = useQueryClient();
-    const [selectedKey, setSelectedKey] = useState(null);
+    const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
-    const [editingGroup, setEditingGroup] = useState(null);
-    const [groupForm, setGroupForm] = useState(DEFAULT_GROUP_FORM);
-    const [newGroupType, setNewGroupType] = useState('dienst');
+    const [editingGroup, setEditingGroup] = useState<NormalizedGroup | null>(null);
+    const [groupForm, setGroupForm] = useState<GroupForm>(DEFAULT_GROUP_FORM);
+    const [newGroupType, setNewGroupType] = useState<UnifiedGroupType>('dienst');
 
     // ——— dienst: workplace dialog state ———
     const [showWorkplaceDialog, setShowWorkplaceDialog] = useState(false);
-    const [editingWorkplace, setEditingWorkplace] = useState(null);
-    const [workplaceForm, setWorkplaceForm] = useState(DEFAULT_WORKPLACE_FORM);
-    const [qualificationsWorkplace, setQualificationsWorkplace] = useState(null);
+    const [editingWorkplace, setEditingWorkplace] = useState<NormalizedWorkplace | null>(null);
+    const [workplaceForm, setWorkplaceForm] = useState<WorkplaceForm>(DEFAULT_WORKPLACE_FORM);
+    const [qualificationsWorkplace, setQualificationsWorkplace] = useState<NormalizedWorkplace | null>(null);
     const [tenantToAdd, setTenantToAdd] = useState('');
 
     // ——— rotation: workplace dialog state ———
     const [showRotationWorkplaceDialog, setShowRotationWorkplaceDialog] = useState(false);
-    const [editingRotationWorkplace, setEditingRotationWorkplace] = useState(null);
-    const [rotationWorkplaceForm, setRotationWorkplaceForm] = useState(DEFAULT_ROTATION_WORKPLACE_FORM);
+    const [editingRotationWorkplace, setEditingRotationWorkplace] = useState<NormalizedWorkplace | null>(null);
+    const [rotationWorkplaceForm, setRotationWorkplaceForm] = useState<RotationWorkplaceForm>(DEFAULT_ROTATION_WORKPLACE_FORM);
     const [rotationTenantToAdd, setRotationTenantToAdd] = useState('');
     const [rotationTenantRole, setRotationTenantRole] = useState('ward');
-    const [timeslotWorkplace, setTimeslotWorkplace] = useState(null);
+    const [timeslotWorkplace, setTimeslotWorkplace] = useState<NormalizedWorkplace | null>(null);
 
     // ===================== DATA FETCHING =====================
 
     // ——— dienst groups ———
-    const { data: groupsResponse, isLoading: groupsLoading } = useQuery({
+    const { data: groupsResponse, isLoading: groupsLoading } = useQuery<GroupsResponse>({
         queryKey: ['admin', 'tenant-groups'],
-        queryFn: () => api.listGroups(),
+        queryFn: () => api.listGroups() as Promise<GroupsResponse>,
         staleTime: 30_000,
     });
 
@@ -125,9 +248,9 @@ export default function TenantGroupManagement() {
     );
 
     // ——— rotation groups ———
-    const { data: rotationGroupsResponse, isLoading: rotationGroupsLoading } = useQuery({
+    const { data: rotationGroupsResponse, isLoading: rotationGroupsLoading } = useQuery<GroupsResponse>({
         queryKey: ['admin', 'rotation-groups'],
-        queryFn: () => api.listRotationGroups(),
+        queryFn: () => api.listRotationGroups() as Promise<GroupsResponse>,
         staleTime: 30_000,
     });
 
@@ -138,8 +261,8 @@ export default function TenantGroupManagement() {
 
     // ——— unified group list ———
     const unifiedGroups = useMemo(() => {
-        const dienst = groups.map((g) => ({ ...g, _type: 'dienst' }));
-        const rotation = rotationGroups.map((g) => ({ ...g, _type: 'rotation' }));
+        const dienst = groups.map((g: NormalizedGroup) => ({ ...g, _type: 'dienst' as const }));
+        const rotation = rotationGroups.map((g: NormalizedGroup) => ({ ...g, _type: 'rotation' as const }));
         return [...dienst, ...rotation];
     }, [groups, rotationGroups]);
 
@@ -150,17 +273,17 @@ export default function TenantGroupManagement() {
             return;
         }
         if (!selectedKey) {
-            setSelectedKey(groupKey(unifiedGroups[0]._type, unifiedGroups[0].id));
+            setSelectedKey(groupKey(unifiedGroups[0]._type || 'dienst', unifiedGroups[0].id));
             return;
         }
-        const exists = unifiedGroups.some((g) => groupKey(g._type, g.id) === selectedKey);
+        const exists = unifiedGroups.some((g: NormalizedGroup) => groupKey(g._type || 'dienst', g.id) === selectedKey);
         if (!exists) {
-            setSelectedKey(groupKey(unifiedGroups[0]._type, unifiedGroups[0].id));
+            setSelectedKey(groupKey(unifiedGroups[0]._type || 'dienst', unifiedGroups[0].id));
         }
     }, [unifiedGroups, selectedKey]);
 
     const selectedGroup = useMemo(
-        () => unifiedGroups.find((g) => groupKey(g._type, g.id) === selectedKey) || null,
+        () => unifiedGroups.find((g: NormalizedGroup) => groupKey(g._type || 'dienst', g.id) === selectedKey) || null,
         [unifiedGroups, selectedKey]
     );
 
@@ -168,68 +291,68 @@ export default function TenantGroupManagement() {
     const selectedGroupId = selectedGroup?.id;
 
     // ——— tenants list (shared) ———
-    const { data: tenants = [] } = useQuery({
+    const { data: tenants = [] } = useQuery<TenantRecord[]>({
         queryKey: ['serverDbTokens'],
-        queryFn: () => api.request('/api/admin/db-tokens'),
+        queryFn: () => api.request('/api/admin/db-tokens') as Promise<TenantRecord[]>,
         staleTime: 30_000,
     });
 
     // ===================== DIENST QUERIES =====================
 
-    const { data: membersResponse, isLoading: membersLoading } = useQuery({
+    const { data: membersResponse, isLoading: membersLoading } = useQuery<MembersResponse>({
         queryKey: ['admin', 'tenant-group-members', selectedGroupId],
-        queryFn: () => api.listGroupMembers(selectedGroupId),
+        queryFn: () => api.listGroupMembers(String(selectedGroupId!)) as Promise<MembersResponse>,
         enabled: !!selectedGroupId && selectedType === 'dienst',
         staleTime: 10_000,
     });
 
-    const { data: workplacesResponse, isLoading: workplacesLoading } = useQuery({
+    const { data: workplacesResponse, isLoading: workplacesLoading } = useQuery<WorkplacesResponse>({
         queryKey: ['admin', 'tenant-group-workplaces', selectedGroupId],
-        queryFn: () => api.listSharedWorkplaces(selectedGroupId),
+        queryFn: () => api.listSharedWorkplaces(String(selectedGroupId!)) as Promise<WorkplacesResponse>,
         enabled: !!selectedGroupId && selectedType === 'dienst',
         staleTime: 10_000,
     });
 
-    const members = Array.isArray(membersResponse?.members) ? membersResponse.members : [];
+    const members: MemberRecord[] = Array.isArray(membersResponse?.members) ? membersResponse.members : [];
     const workplaces = useMemo(
         () => (Array.isArray(workplacesResponse?.workplaces) ? workplacesResponse.workplaces.map(normalizeWorkplace) : []),
         [workplacesResponse]
     );
 
     const availableTenants = useMemo(() => {
-        const memberIds = new Set(members.map((member) => String(member.tenant_id)));
-        return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
+        const memberIds = new Set(members.map((member: MemberRecord) => String(member.tenant_id)));
+        return tenants.filter((tenant: TenantRecord) => !memberIds.has(String(tenant.id)));
     }, [members, tenants]);
 
     // ===================== ROTATION QUERIES =====================
 
-    const { data: rotationMembersResponse, isLoading: rotationMembersLoading } = useQuery({
+    const { data: rotationMembersResponse, isLoading: rotationMembersLoading } = useQuery<MembersResponse>({
         queryKey: ['admin', 'rotation-group-members', selectedGroupId],
-        queryFn: () => api.listRotationGroupMembers(selectedGroupId),
+        queryFn: () => api.listRotationGroupMembers(String(selectedGroupId!)) as Promise<MembersResponse>,
         enabled: !!selectedGroupId && selectedType === 'rotation',
         staleTime: 10_000,
     });
 
-    const { data: rotationWorkplacesResponse, isLoading: rotationWorkplacesLoading } = useQuery({
+    const { data: rotationWorkplacesResponse, isLoading: rotationWorkplacesLoading } = useQuery<WorkplacesResponse>({
         queryKey: ['admin', 'rotation-group-workplaces', selectedGroupId],
-        queryFn: () => api.listRotationWorkplaces(selectedGroupId),
+        queryFn: () => api.listRotationWorkplaces(String(selectedGroupId!)) as Promise<WorkplacesResponse>,
         enabled: !!selectedGroupId && selectedType === 'rotation',
         staleTime: 10_000,
     });
 
-    const rotationMembers = Array.isArray(rotationMembersResponse?.members) ? rotationMembersResponse.members : [];
+    const rotationMembers: MemberRecord[] = Array.isArray(rotationMembersResponse?.members) ? rotationMembersResponse.members : [];
     const rotationWorkplaces = useMemo(
         () => (Array.isArray(rotationWorkplacesResponse?.workplaces) ? rotationWorkplacesResponse.workplaces : []),
         [rotationWorkplacesResponse]
     );
 
     const availableRotationTenants = useMemo(() => {
-        const memberIds = new Set(rotationMembers.map((member) => String(member.tenant_id)));
-        return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
+        const memberIds = new Set(rotationMembers.map((member: MemberRecord) => String(member.tenant_id)));
+        return tenants.filter((tenant: TenantRecord) => !memberIds.has(String(tenant.id)));
     }, [rotationMembers, tenants]);
 
     const wardMembers = useMemo(
-        () => rotationMembers.filter((m) => m.role === 'ward'),
+        () => rotationMembers.filter((m: MemberRecord) => m.role === 'ward'),
         [rotationMembers]
     );
 
@@ -259,22 +382,24 @@ export default function TenantGroupManagement() {
         queryClient.invalidateQueries({ queryKey: ['users'] });
     };
 
-    const removeMemberFromCache = (groupId, tenantId) => {
-        queryClient.setQueryData(['admin', 'tenant-group-members', groupId], (current) => {
-            const membersList = Array.isArray(current?.members) ? current.members : [];
+    const removeMemberFromCache = (groupId: number, tenantId: number) => {
+        queryClient.setQueryData(['admin', 'tenant-group-members', groupId], (current: unknown) => {
+            const currentData = current as MembersResponse | undefined;
+            const membersList = Array.isArray(currentData?.members) ? currentData.members : [];
             return {
-                ...current,
-                members: membersList.filter((member) => String(member.tenant_id) !== String(tenantId)),
+                ...currentData,
+                members: membersList.filter((member: MemberRecord) => String(member.tenant_id) !== String(tenantId)),
             };
         });
     };
 
-    const removeWorkplaceFromCache = (groupId, workplaceId) => {
-        queryClient.setQueryData(['admin', 'tenant-group-workplaces', groupId], (current) => {
-            const workplaceList = Array.isArray(current?.workplaces) ? current.workplaces : [];
+    const removeWorkplaceFromCache = (groupId: number, workplaceId: number) => {
+        queryClient.setQueryData(['admin', 'tenant-group-workplaces', groupId], (current: unknown) => {
+            const currentData = current as WorkplacesResponse | undefined;
+            const workplaceList = Array.isArray(currentData?.workplaces) ? currentData.workplaces : [];
             return {
-                ...current,
-                workplaces: workplaceList.filter((workplace) => String(workplace.id) !== String(workplaceId)),
+                ...currentData,
+                workplaces: workplaceList.filter((workplace: NormalizedWorkplace) => String(workplace.id) !== String(workplaceId)),
             };
         });
     };
@@ -282,10 +407,10 @@ export default function TenantGroupManagement() {
     // ===================== DIENST MUTATIONS =====================
 
     const createGroupMutation = useMutation({
-        mutationFn: (payload) => api.createGroup(payload),
-        onSuccess: (response) => {
+        mutationFn: (payload: Record<string, unknown>) => api.createGroup(payload),
+        onSuccess: (response: unknown) => {
             invalidateDienstGroups();
-            const groupId = Number(response?.group?.id);
+            const groupId = Number((response as { group?: { id?: number } })?.group?.id);
             if (Number.isInteger(groupId)) {
                 setSelectedKey(groupKey('dienst', groupId));
             }
@@ -294,11 +419,11 @@ export default function TenantGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Verbund erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Verbund konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Verbund konnte nicht erstellt werden'),
     });
 
     const updateGroupMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.updateGroup(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.updateGroup(String(groupId), payload),
         onSuccess: () => {
             invalidateDienstGroups();
             setShowGroupDialog(false);
@@ -306,41 +431,41 @@ export default function TenantGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Verbund aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Verbund konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Verbund konnte nicht aktualisiert werden'),
     });
 
     const deleteGroupMutation = useMutation({
-        mutationFn: (groupId) => api.deleteGroup(groupId),
+        mutationFn: (groupId: number) => api.deleteGroup(String(groupId)),
         onSuccess: () => {
             invalidateDienstGroups();
             setSelectedKey(null);
             toast.success('Verbund gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Verbund konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Verbund konnte nicht gelöscht werden'),
     });
 
     const addMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId }) => api.addGroupMember(groupId, tenantId),
+        mutationFn: ({ groupId, tenantId }: { groupId: number; tenantId: string }) => api.addGroupMember(String(groupId), tenantId),
         onSuccess: () => {
             invalidateDienstDetail();
             setTenantToAdd('');
             toast.success('Mandant hinzugefügt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
     });
 
     const removeMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId }) => api.removeGroupMember(groupId, tenantId),
+        mutationFn: ({ groupId, tenantId }: { groupId: number; tenantId: string }) => api.removeGroupMember(String(groupId), tenantId),
         onSuccess: (_, variables) => {
-            removeMemberFromCache(variables.groupId, variables.tenantId);
+            removeMemberFromCache(variables.groupId, Number(variables.tenantId));
             invalidateDienstDetail();
             toast.success('Mandant entfernt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
     });
 
     const createWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.createSharedWorkplace(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.createSharedWorkplace(String(groupId), payload),
         onSuccess: () => {
             invalidateDienstDetail();
             setShowWorkplaceDialog(false);
@@ -348,11 +473,11 @@ export default function TenantGroupManagement() {
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
             toast.success('Gemeinsamer Dienst erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Dienst konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Dienst konnte nicht erstellt werden'),
     });
 
     const updateWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId, payload }) => api.updateSharedWorkplace(groupId, workplaceId, payload),
+        mutationFn: ({ groupId, workplaceId, payload }: { groupId: number; workplaceId: number; payload: Record<string, unknown> }) => api.updateSharedWorkplace(String(groupId), String(workplaceId), payload),
         onSuccess: () => {
             invalidateDienstDetail();
             setShowWorkplaceDialog(false);
@@ -360,11 +485,11 @@ export default function TenantGroupManagement() {
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
             toast.success('Gemeinsamer Dienst aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Dienst konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Dienst konnte nicht aktualisiert werden'),
     });
 
     const deleteWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId }) => api.deleteSharedWorkplace(groupId, workplaceId),
+        mutationFn: ({ groupId, workplaceId }: { groupId: number; workplaceId: number }) => api.deleteSharedWorkplace(String(groupId), String(workplaceId)),
         onSuccess: (_, variables) => {
             removeWorkplaceFromCache(variables.groupId, variables.workplaceId);
             if (editingWorkplace && String(editingWorkplace.id) === String(variables.workplaceId)) {
@@ -375,16 +500,16 @@ export default function TenantGroupManagement() {
             invalidateDienstDetail();
             toast.success('Gemeinsamer Dienst gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Dienst konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Dienst konnte nicht gelöscht werden'),
     });
 
     // ===================== ROTATION MUTATIONS =====================
 
     const createRotationGroupMutation = useMutation({
-        mutationFn: (payload) => api.createRotationGroup(payload),
-        onSuccess: (response) => {
+        mutationFn: (payload: Record<string, unknown>) => api.createRotationGroup(payload),
+        onSuccess: (response: unknown) => {
             invalidateRotationGroups();
-            const groupId = Number(response?.group?.id);
+            const groupId = Number((response as { group?: { id?: number } })?.group?.id);
             if (Number.isInteger(groupId)) {
                 setSelectedKey(groupKey('rotation', groupId));
             }
@@ -393,11 +518,11 @@ export default function TenantGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Rotationsverbund erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht erstellt werden'),
     });
 
     const updateRotationGroupMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.updateRotationGroup(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.updateRotationGroup(String(groupId), payload),
         onSuccess: () => {
             invalidateRotationGroups();
             setShowGroupDialog(false);
@@ -405,41 +530,41 @@ export default function TenantGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Rotationsverbund aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht aktualisiert werden'),
     });
 
     const deleteRotationGroupMutation = useMutation({
-        mutationFn: (groupId) => api.deleteRotationGroup(groupId),
+        mutationFn: (groupId: number) => api.deleteRotationGroup(String(groupId)),
         onSuccess: () => {
             invalidateRotationGroups();
             setSelectedKey(null);
             toast.success('Rotationsverbund gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht gelöscht werden'),
     });
 
     const addRotationMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId, role }) => api.addRotationGroupMember(groupId, tenantId, role),
+        mutationFn: ({ groupId, tenantId, role }: { groupId: number; tenantId: string; role: string }) => api.addRotationGroupMember(String(groupId), tenantId, role),
         onSuccess: () => {
             invalidateRotationDetail();
             setRotationTenantToAdd('');
             setRotationTenantRole('ward');
             toast.success('Mandant hinzugefügt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
     });
 
     const removeRotationMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId }) => api.removeRotationGroupMember(groupId, tenantId),
+        mutationFn: ({ groupId, tenantId }: { groupId: number; tenantId: number }) => api.removeRotationGroupMember(String(groupId), String(tenantId)),
         onSuccess: () => {
             invalidateRotationDetail();
             toast.success('Mandant entfernt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
     });
 
     const createRotationWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.createRotationWorkplace(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.createRotationWorkplace(String(groupId), payload),
         onSuccess: () => {
             invalidateRotationDetail();
             setShowRotationWorkplaceDialog(false);
@@ -447,11 +572,11 @@ export default function TenantGroupManagement() {
             setRotationWorkplaceForm(DEFAULT_ROTATION_WORKPLACE_FORM);
             toast.success('Rotation erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht erstellt werden'),
     });
 
     const updateRotationWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId, payload }) => api.updateRotationWorkplace(groupId, workplaceId, payload),
+        mutationFn: ({ groupId, workplaceId, payload }: { groupId: number; workplaceId: number; payload: Record<string, unknown> }) => api.updateRotationWorkplace(String(groupId), String(workplaceId), payload),
         onSuccess: () => {
             invalidateRotationDetail();
             setShowRotationWorkplaceDialog(false);
@@ -459,16 +584,16 @@ export default function TenantGroupManagement() {
             setRotationWorkplaceForm(DEFAULT_ROTATION_WORKPLACE_FORM);
             toast.success('Rotation aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht aktualisiert werden'),
     });
 
     const deleteRotationWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId }) => api.deleteRotationWorkplace(groupId, workplaceId),
+        mutationFn: ({ groupId, workplaceId }: { groupId: number; workplaceId: number }) => api.deleteRotationWorkplace(String(groupId), String(workplaceId)),
         onSuccess: () => {
             invalidateRotationDetail();
             toast.success('Rotation gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht gelöscht werden'),
     });
 
     // ===================== HANDLERS: GROUP =====================
@@ -480,7 +605,7 @@ export default function TenantGroupManagement() {
         setShowGroupDialog(true);
     };
 
-    const handleOpenEditGroup = (group) => {
+    const handleOpenEditGroup = (group: NormalizedGroup) => {
         setEditingGroup(group);
         setGroupForm({
             name: group.name || '',
@@ -495,7 +620,7 @@ export default function TenantGroupManagement() {
             toast.error('Name ist erforderlich');
             return;
         }
-        const payload = {
+        const payload: Record<string, unknown> = {
             name: groupForm.name.trim(),
             description: groupForm.description.trim() || null,
             is_active: Boolean(groupForm.is_active),
@@ -517,7 +642,7 @@ export default function TenantGroupManagement() {
         }
     };
 
-    const handleDeleteGroup = (group) => {
+    const handleDeleteGroup = (group: NormalizedGroup) => {
         const label = group._type === 'rotation' ? 'Rotationsverbund' : 'Verbund';
         if (!window.confirm(`${label} "${group.name}" wirklich löschen?`)) {
             return;
@@ -545,7 +670,7 @@ export default function TenantGroupManagement() {
         setShowWorkplaceDialog(true);
     };
 
-    const handleOpenEditWorkplace = (workplace) => {
+    const handleOpenEditWorkplace = (workplace: NormalizedWorkplace) => {
         setEditingWorkplace(workplace);
         setWorkplaceForm({
             name: workplace.name || '',
@@ -567,8 +692,8 @@ export default function TenantGroupManagement() {
         setShowWorkplaceDialog(true);
     };
 
-    const buildWorkplacePayload = () => {
-        const payload = {
+    const buildWorkplacePayload = (): Record<string, unknown> => {
+        const payload: Record<string, unknown> = {
             name: workplaceForm.name.trim(),
             category: 'Dienste',
             start_time: null,
@@ -616,7 +741,7 @@ export default function TenantGroupManagement() {
         createWorkplaceMutation.mutate({ groupId: selectedGroupId, payload });
     };
 
-    const handleDeleteWorkplace = (workplace) => {
+    const handleDeleteWorkplace = (workplace: NormalizedWorkplace) => {
         if (!selectedGroupId) return;
         if (!window.confirm(`Gemeinsamen Dienst "${workplace.name}" wirklich löschen?`)) {
             return;
@@ -640,11 +765,11 @@ export default function TenantGroupManagement() {
         setShowRotationWorkplaceDialog(true);
     };
 
-    const handleOpenEditRotationWorkplace = (workplace) => {
+    const handleOpenEditRotationWorkplace = (workplace: NormalizedWorkplace) => {
         setEditingRotationWorkplace(workplace);
         setRotationWorkplaceForm({
             name: workplace.name || '',
-            ward_tenant_id: workplace.ward_tenant_id || '',
+            ward_tenant_id: workplace.ward_tenant_id ? String(workplace.ward_tenant_id) : '',
             timeslots_enabled: Boolean(workplace.timeslots_enabled),
             is_active: Boolean(workplace.is_active),
         });
@@ -664,7 +789,7 @@ export default function TenantGroupManagement() {
             toast.error('Bitte eine Station (Mandant) wählen');
             return;
         }
-        const payload = {
+        const payload: Record<string, unknown> = {
             name: rotationWorkplaceForm.name.trim(),
             ward_tenant_id: rotationWorkplaceForm.ward_tenant_id,
             timeslots_enabled: Boolean(rotationWorkplaceForm.timeslots_enabled),
@@ -681,7 +806,7 @@ export default function TenantGroupManagement() {
         createRotationWorkplaceMutation.mutate({ groupId: selectedGroupId, payload });
     };
 
-    const handleDeleteRotationWorkplace = (workplace) => {
+    const handleDeleteRotationWorkplace = (workplace: NormalizedWorkplace) => {
         if (!selectedGroupId) return;
         if (!window.confirm(`Rotation "${workplace.name}" wirklich löschen?`)) {
             return;
@@ -691,7 +816,7 @@ export default function TenantGroupManagement() {
 
     // ===================== RENDER HELPERS =====================
 
-    const typeLabel = (type) => (type === 'rotation' ? 'Rotationsverbund' : 'Dienst-Verbund');
+    const typeLabel = (type: UnifiedGroupType | undefined) => (type === 'rotation' ? 'Rotationsverbund' : 'Dienst-Verbund');
 
     const isLoading =
         groupsLoading || rotationGroupsLoading;
@@ -733,8 +858,8 @@ export default function TenantGroupManagement() {
                                 Noch kein Verbund vorhanden.
                             </div>
                         ) : (
-                            unifiedGroups.map((group) => {
-                                const key = groupKey(group._type, group.id);
+                            unifiedGroups.map((group: NormalizedGroup) => {
+                                const key = groupKey(group._type || 'dienst', group.id);
                                 const isSelected = key === selectedKey;
                                 return (
                                     <div
@@ -742,7 +867,7 @@ export default function TenantGroupManagement() {
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => setSelectedKey(key)}
-                                        onKeyDown={(event) => {
+                                        onKeyDown={(event: React.KeyboardEvent) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
                                                 setSelectedKey(key);
@@ -778,7 +903,7 @@ export default function TenantGroupManagement() {
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={(event) => {
+                                                onClick={(event: React.MouseEvent) => {
                                                     event.stopPropagation();
                                                     handleOpenEditGroup(group);
                                                 }}
@@ -790,7 +915,7 @@ export default function TenantGroupManagement() {
                                                 variant="outline"
                                                 size="sm"
                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                onClick={(event) => {
+                                                onClick={(event: React.MouseEvent) => {
                                                     event.stopPropagation();
                                                     handleDeleteGroup(group);
                                                 }}
@@ -832,7 +957,7 @@ export default function TenantGroupManagement() {
                                                         {availableTenants.length === 0 ? (
                                                             <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
                                                         ) : (
-                                                            availableTenants.map((tenant) => (
+                                                            availableTenants.map((tenant: TenantRecord) => (
                                                                 <SelectItem key={tenant.id} value={String(tenant.id)}>
                                                                     {tenant.name || tenant.id}
                                                                 </SelectItem>
@@ -862,7 +987,7 @@ export default function TenantGroupManagement() {
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {members.map((member) => (
+                                                        {members.map((member: MemberRecord) => (
                                                             <TableRow key={member.tenant_id} data-testid={`admin-group-member-${member.tenant_id}`}>
                                                                 <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
                                                                 <TableCell className="text-slate-500">{member.host}/{member.db_name}</TableCell>
@@ -871,7 +996,7 @@ export default function TenantGroupManagement() {
                                                                         variant="ghost"
                                                                         size="sm"
                                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                        onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
+                                                                        onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: String(member.tenant_id) })}
                                                                     >
                                                                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                                     </Button>
@@ -925,7 +1050,7 @@ export default function TenantGroupManagement() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {workplaces.map((workplace) => (
+                                                {workplaces.map((workplace: NormalizedWorkplace) => (
                                                     <TableRow key={workplace.id} data-testid={`admin-group-workplace-${workplace.id}`}>
                                                         <TableCell>
                                                             <div className="font-medium">{workplace.name}</div>
@@ -936,7 +1061,7 @@ export default function TenantGroupManagement() {
                                                                 {workplace.allows_absence_overlap ? <Badge variant="secondary" className="bg-violet-100 text-[10px] font-normal text-violet-700">Abwesenheit OK</Badge> : null}
                                                                 {workplace.timeslots_enabled ? <Badge variant="secondary" className="bg-indigo-100 text-[10px] font-normal text-indigo-700">Zeitfenster</Badge> : null}
                                                                 {workplace.allows_multiple ? <Badge variant="secondary" className="bg-teal-100 text-[10px] font-normal text-teal-700">Mehrfachbesetzung</Badge> : null}
-                                                                {workplace.allows_multiple && (workplace.min_staff > 0 || workplace.optimal_staff > 1) ? (
+                                                                {workplace.allows_multiple && ((workplace.min_staff ?? 1) > 0 || (workplace.optimal_staff ?? 1) > 1) ? (
                                                                     <Badge variant="secondary" className="bg-amber-100 text-[10px] font-normal text-amber-700">
                                                                         {workplace.min_staff ?? 1}–{workplace.optimal_staff ?? 1}
                                                                     </Badge>
@@ -1020,7 +1145,7 @@ export default function TenantGroupManagement() {
                                                         {availableRotationTenants.length === 0 ? (
                                                             <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
                                                         ) : (
-                                                            availableRotationTenants.map((tenant) => (
+                                                            availableRotationTenants.map((tenant: TenantRecord) => (
                                                                 <SelectItem key={tenant.id} value={String(tenant.id)}>
                                                                     {tenant.name || tenant.id}
                                                                 </SelectItem>
@@ -1059,7 +1184,7 @@ export default function TenantGroupManagement() {
                                                         </TableRow>
                                                     </TableHeader>
                                                     <TableBody>
-                                                        {rotationMembers.map((member) => (
+                                                        {rotationMembers.map((member: MemberRecord) => (
                                                             <TableRow key={member.tenant_id} data-testid={`admin-rotation-group-member-${member.tenant_id}`}>
                                                                 <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
                                                                 <TableCell>
@@ -1072,7 +1197,7 @@ export default function TenantGroupManagement() {
                                                                         variant="ghost"
                                                                         size="sm"
                                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                        onClick={() => removeRotationMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
+                                                                        onClick={() => removeRotationMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id })}
                                                                     >
                                                                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                                     </Button>
@@ -1127,8 +1252,8 @@ export default function TenantGroupManagement() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {rotationWorkplaces.map((workplace) => {
-                                                    const wardName = rotationMembers.find((m) => String(m.tenant_id) === String(workplace.ward_tenant_id))?.name || workplace.ward_tenant_id;
+                                                {rotationWorkplaces.map((workplace: NormalizedWorkplace) => {
+                                                    const wardName = rotationMembers.find((m: MemberRecord) => String(m.tenant_id) === String(workplace.ward_tenant_id))?.name || String(workplace.ward_tenant_id);
                                                     return (
                                                         <TableRow key={workplace.id} data-testid={`admin-rotation-workplace-${workplace.id}`}>
                                                             <TableCell>
@@ -1198,7 +1323,7 @@ export default function TenantGroupManagement() {
                                 <Label>Verbund-Typ</Label>
                                 <RadioGroup
                                     value={newGroupType}
-                                    onValueChange={(value) => setNewGroupType(value)}
+                                    onValueChange={(value: string) => setNewGroupType(value as UnifiedGroupType)}
                                     className="flex gap-4"
                                 >
                                     <label className={`flex flex-1 cursor-pointer items-center gap-3 rounded-lg border p-4 transition ${newGroupType === 'dienst' ? 'border-teal-300 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}>
@@ -1232,7 +1357,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="group-name"
                                 value={groupForm.name}
-                                onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value }))}
                                 data-testid="admin-group-name-input"
                             />
                         </div>
@@ -1241,7 +1366,7 @@ export default function TenantGroupManagement() {
                             <Textarea
                                 id="group-description"
                                 value={groupForm.description}
-                                onChange={(event) => setGroupForm((current) => ({ ...current, description: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value }))}
                                 rows={3}
                             />
                         </div>
@@ -1250,7 +1375,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Aktiv</div>
                                 <div className="text-sm text-slate-500">Nur aktive Verbünde erscheinen in der Auswahl.</div>
                             </div>
-                            <Switch checked={groupForm.is_active} onCheckedChange={(checked) => setGroupForm((current) => ({ ...current, is_active: checked }))} />
+                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => setGroupForm((current: GroupForm) => ({ ...current, is_active: checked }))} />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
@@ -1278,7 +1403,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="workplace-name"
                                 value={workplaceForm.name}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value }))}
                                 data-testid="admin-group-workplace-name-input"
                             />
                         </div>
@@ -1287,7 +1412,7 @@ export default function TenantGroupManagement() {
                                 <Label className="text-base">Diensttyp</Label>
                                 <div className="text-xs text-slate-500">Bestimmt die Limit-Prüfung und Autofill-Verteilung.</div>
                             </div>
-                            <Select value={workplaceForm.service_type} onValueChange={(value) => setWorkplaceForm((current) => ({ ...current, service_type: value }))}>
+                            <Select value={workplaceForm.service_type} onValueChange={(value: string) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, service_type: value }))}>
                                 <SelectTrigger className="bg-white" data-testid="admin-group-workplace-service-type">
                                     <SelectValue placeholder="Diensttyp wählen" />
                                 </SelectTrigger>
@@ -1305,9 +1430,9 @@ export default function TenantGroupManagement() {
                         <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
                             <div>
                                 <div className="font-medium text-slate-900">Autom. Freistellen</div>
-                                <div className="text-sm text-slate-500">Mitarbeiter erhält am folgenden Werktag automatisch „Frei“.</div>
+                                <div className="text-sm text-slate-500">Mitarbeiter erhält am folgenden Werktag automatisch „Frei".</div>
                             </div>
-                            <Switch checked={workplaceForm.auto_off} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, auto_off: checked }))} data-testid="admin-group-workplace-auto-off" />
+                            <Switch checked={workplaceForm.auto_off} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, auto_off: checked }))} data-testid="admin-group-workplace-auto-off" />
                         </div>
 
                         <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
@@ -1315,7 +1440,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Rotation erlaubt</div>
                                 <div className="text-sm text-slate-500">Kann parallel zu einer Tagesrotation zugewiesen werden.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_rotation_concurrently} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_rotation_concurrently: checked }))} data-testid="admin-group-workplace-rotation" />
+                            <Switch checked={workplaceForm.allows_rotation_concurrently} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_rotation_concurrently: checked }))} data-testid="admin-group-workplace-rotation" />
                         </div>
 
                         <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
@@ -1323,7 +1448,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Gleichzeitige Abwesenheit erlauben</div>
                                 <div className="text-sm text-slate-500">Dieser Dienst darf trotz Abwesenheit am selben Tag zugewiesen werden.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_absence_overlap} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_absence_overlap: checked }))} data-testid="admin-group-workplace-absence-overlap" />
+                            <Switch checked={workplaceForm.allows_absence_overlap} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_absence_overlap: checked }))} data-testid="admin-group-workplace-absence-overlap" />
                         </div>
 
                         <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
@@ -1334,9 +1459,9 @@ export default function TenantGroupManagement() {
                             <ToggleGroup
                                 type="single"
                                 value={workplaceForm.consecutive_days_mode}
-                                onValueChange={(value) => {
+                                onValueChange={(value: string) => {
                                     if (value) {
-                                        setWorkplaceForm((current) => ({ ...current, consecutive_days_mode: value }));
+                                        setWorkplaceForm((current: WorkplaceForm) => ({ ...current, consecutive_days_mode: value }));
                                     }
                                 }}
                                 className="justify-start"
@@ -1365,7 +1490,7 @@ export default function TenantGroupManagement() {
                                     max="100"
                                     step="5"
                                     value={workplaceForm.work_time_percentage}
-                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, work_time_percentage: event.target.value }))}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, work_time_percentage: event.target.value }))}
                                     className="w-20"
                                 />
                                 <span className="text-sm text-slate-500">%</span>
@@ -1378,11 +1503,11 @@ export default function TenantGroupManagement() {
                                 <div className="text-xs text-slate-500">An welchen Wochentagen kann dieser Dienst besetzt werden?</div>
                             </div>
                             <div className="flex gap-1">
-                                {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day, index) => (
+                                {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day: string, index: number) => (
                                     <button
                                         key={day}
                                         type="button"
-                                        onClick={() => setWorkplaceForm((current) => ({ ...current, active_days: toggleDay(current.active_days || [], index) }))}
+                                        onClick={() => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, active_days: toggleDay(current.active_days || [], index) }))}
                                         data-testid={`admin-group-workplace-day-${index}`}
                                         className={`h-8 w-8 rounded-full text-xs font-medium transition-colors ${(workplaceForm.active_days || []).includes(index) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                     >
@@ -1397,7 +1522,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Mehrfachbesetzung</div>
                                 <div className="text-sm text-slate-500">Mehrere Mitarbeiter können gleichzeitig pro Tag eingeteilt werden, z. B. für Ausbildung.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_multiple} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, allows_multiple: checked }))} data-testid="admin-group-workplace-allows-multiple" />
+                            <Switch checked={workplaceForm.allows_multiple} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_multiple: checked }))} data-testid="admin-group-workplace-allows-multiple" />
                         </div>
 
                         {workplaceForm.allows_multiple ? (
@@ -1411,7 +1536,7 @@ export default function TenantGroupManagement() {
                                         min="0"
                                         max="20"
                                         value={workplaceForm.min_staff}
-                                        onChange={(event) => setWorkplaceForm((current) => ({ ...current, min_staff: event.target.value }))}
+                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, min_staff: event.target.value }))}
                                         className="h-8 w-20"
                                     />
                                 </div>
@@ -1424,7 +1549,7 @@ export default function TenantGroupManagement() {
                                         min="0"
                                         max="20"
                                         value={workplaceForm.optimal_staff}
-                                        onChange={(event) => setWorkplaceForm((current) => ({ ...current, optimal_staff: event.target.value }))}
+                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, optimal_staff: event.target.value }))}
                                         className="h-8 w-20"
                                     />
                                 </div>
@@ -1440,7 +1565,7 @@ export default function TenantGroupManagement() {
                                     min="0"
                                     max="60"
                                     value={workplaceForm.default_overlap_tolerance_minutes}
-                                    onChange={(event) => setWorkplaceForm((current) => ({ ...current, default_overlap_tolerance_minutes: event.target.value }))}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, default_overlap_tolerance_minutes: event.target.value }))}
                                     className="w-24"
                                 />
                             </div>
@@ -1451,15 +1576,15 @@ export default function TenantGroupManagement() {
                                 <div className="flex items-center gap-2 font-medium text-slate-900"><Clock className="h-4 w-4" /> Zeitfenster aktivieren</div>
                                 <div className="text-sm text-slate-500">Ermöglicht die Besetzung mit wechselnden Teams über den Tag, z. B. Früh-/Spätdienst.</div>
                             </div>
-                            <Switch checked={workplaceForm.timeslots_enabled} onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, timeslots_enabled: checked }))} data-testid="admin-group-workplace-timeslots-enabled" />
+                            <Switch checked={workplaceForm.timeslots_enabled} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked }))} data-testid="admin-group-workplace-timeslots-enabled" />
                         </div>
 
                         {workplaceForm.timeslots_enabled ? (
                             editingWorkplace ? (
                                 <div className="rounded-lg border p-3">
                                     <SharedTimeslotEditor
-                                        groupId={selectedGroupId}
-                                        workplaceId={editingWorkplace.id}
+                                        groupId={selectedGroupId!}
+                                        workplaceId={String(editingWorkplace.id)}
                                         defaultTolerance={Number.parseInt(workplaceForm.default_overlap_tolerance_minutes, 10) || 15}
                                     />
                                 </div>
@@ -1475,7 +1600,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.affects_availability}
-                                onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, affects_availability: checked }))}
+                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, affects_availability: checked }))}
                                 data-testid="admin-group-workplace-affects-availability"
                             />
                         </div>
@@ -1486,7 +1611,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.is_active}
-                                onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked }))}
                                 data-testid="admin-group-workplace-is-active"
                             />
                         </div>
@@ -1516,7 +1641,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="rotation-workplace-name"
                                 value={rotationWorkplaceForm.name}
-                                onChange={(event) => setRotationWorkplaceForm((current) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, name: event.target.value }))}
                                 data-testid="admin-rotation-workplace-name-input"
                             />
                         </div>
@@ -1525,7 +1650,7 @@ export default function TenantGroupManagement() {
                             <div className="text-xs text-slate-500">Welcher Station gehört diese Rotation? Nur Stations-Mandanten (role=ward) sind wählbar.</div>
                             <Select
                                 value={rotationWorkplaceForm.ward_tenant_id}
-                                onValueChange={(value) => setRotationWorkplaceForm((current) => ({ ...current, ward_tenant_id: value }))}
+                                onValueChange={(value: string) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, ward_tenant_id: value }))}
                             >
                                 <SelectTrigger id="rotation-workplace-ward" data-testid="admin-rotation-workplace-ward-select">
                                     <SelectValue placeholder="Station wählen" />
@@ -1534,7 +1659,7 @@ export default function TenantGroupManagement() {
                                     {wardMembers.length === 0 ? (
                                         <SelectItem value="__none__" disabled>Keine Stations-Mandanten — zuerst hinzufügen</SelectItem>
                                     ) : (
-                                        wardMembers.map((member) => (
+                                        wardMembers.map((member: MemberRecord) => (
                                             <SelectItem key={member.tenant_id} value={String(member.tenant_id)}>
                                                 {member.name || member.tenant_id}
                                             </SelectItem>
@@ -1550,7 +1675,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={rotationWorkplaceForm.timeslots_enabled}
-                                onCheckedChange={(checked) => setRotationWorkplaceForm((current) => ({ ...current, timeslots_enabled: checked }))}
+                                onCheckedChange={(checked: boolean) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, timeslots_enabled: checked }))}
                                 data-testid="admin-rotation-workplace-timeslots-enabled"
                             />
                         </div>
@@ -1566,7 +1691,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={rotationWorkplaceForm.is_active}
-                                onCheckedChange={(checked) => setRotationWorkplaceForm((current) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, is_active: checked }))}
                             />
                         </div>
                     </div>
@@ -1583,7 +1708,7 @@ export default function TenantGroupManagement() {
             {/* ——— ROTATION TIMESLOT EDITOR ——— */}
             {timeslotWorkplace && (
                 <RotationTimeslotEditor
-                    groupId={selectedGroupId}
+                    groupId={selectedGroupId!}
                     workplace={timeslotWorkplace}
                     onClose={() => setTimeslotWorkplace(null)}
                 />
@@ -1592,9 +1717,9 @@ export default function TenantGroupManagement() {
             {/* ——— DIENST QUALIFICATIONS ——— */}
             <SharedWorkplaceQualificationsDialog
                 open={!!qualificationsWorkplace}
-                onOpenChange={(next) => { if (!next) setQualificationsWorkplace(null); }}
-                groupId={selectedGroupId}
-                workplace={qualificationsWorkplace}
+                onOpenChange={(next: boolean) => { if (!next) setQualificationsWorkplace(null); }}
+                groupId={selectedGroupId!}
+                workplace={qualificationsWorkplace as Workplace | null}
             />
         </div>
     );
@@ -1603,18 +1728,18 @@ export default function TenantGroupManagement() {
 // ============================================================
 //  RotationTimeslotEditor — inline sub-component
 // ============================================================
-function RotationTimeslotEditor({ groupId, workplace, onClose }) {
+function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslotEditorProps) {
     const queryClient = useQueryClient();
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ label: '', start_time: '07:00', end_time: '15:00', order: 0 });
+    const [form, setForm] = useState<TimeslotForm>({ label: '', start_time: '07:00', end_time: '15:00', order: 0 });
 
-    const { data: timeslotsResponse, isLoading } = useQuery({
+    const { data: timeslotsResponse, isLoading } = useQuery<TimeslotsResponse>({
         queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id],
-        queryFn: () => api.listRotationTimeslots(groupId, workplace.id),
+        queryFn: () => api.listRotationTimeslots(String(groupId!), String(workplace.id)) as Promise<TimeslotsResponse>,
         staleTime: 10_000,
     });
 
-    const timeslots = Array.isArray(timeslotsResponse?.timeslots) ? timeslotsResponse.timeslots : [];
+    const timeslots: Timeslot[] = Array.isArray(timeslotsResponse?.timeslots) ? timeslotsResponse.timeslots : [];
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id] });
@@ -1622,27 +1747,27 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
     };
 
     const createMutation = useMutation({
-        mutationFn: (data) => api.createRotationTimeslot(groupId, workplace.id, data),
+        mutationFn: (data: TimeslotForm) => api.createRotationTimeslot(String(groupId!), String(workplace.id), data as unknown as Record<string, unknown>),
         onSuccess: () => {
             invalidate();
             setForm({ label: '', start_time: '07:00', end_time: '15:00', order: timeslots.length });
             setShowForm(false);
             toast.success('Zeitfenster erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (timeslotId) => api.deleteRotationTimeslot(groupId, workplace.id, timeslotId),
+        mutationFn: (timeslotId: number) => api.deleteRotationTimeslot(String(groupId!), String(workplace.id), String(timeslotId)),
         onSuccess: () => {
             invalidate();
             toast.success('Zeitfenster gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
     });
 
     return (
-        <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <Dialog open={true} onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
             <DialogContent className="!gap-0 p-0">
                 <DialogHeader className="px-6 pt-6 pb-0">
                     <DialogTitle>Zeitfenster für „{workplace.name}"</DialogTitle>
@@ -1665,7 +1790,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {timeslots.map((ts) => (
+                                {timeslots.map((ts: Timeslot) => (
                                     <TableRow key={ts.id}>
                                         <TableCell className="font-medium">{ts.label}</TableCell>
                                         <TableCell className="text-slate-600">{ts.start_time?.slice(0, 5)}–{ts.end_time?.slice(0, 5)}</TableCell>
@@ -1692,7 +1817,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Label className="text-sm">Bezeichnung</Label>
                                     <Input
                                         value={form.label}
-                                        onChange={(e) => setForm((c) => ({ ...c, label: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, label: e.target.value }))}
                                         placeholder="z. B. Frühdienst"
                                     />
                                 </div>
@@ -1702,7 +1827,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                         type="number"
                                         min="0"
                                         value={form.order}
-                                        onChange={(e) => setForm((c) => ({ ...c, order: Number(e.target.value) || 0 }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 }))}
                                         className="w-24"
                                     />
                                 </div>
@@ -1711,7 +1836,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Input
                                         type="time"
                                         value={form.start_time}
-                                        onChange={(e) => setForm((c) => ({ ...c, start_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value }))}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -1719,7 +1844,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Input
                                         type="time"
                                         value={form.end_time}
-                                        onChange={(e) => setForm((c) => ({ ...c, end_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value }))}
                                     />
                                 </div>
                             </div>

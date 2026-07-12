@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { DropResult, DraggableProvided, DroppableProvided } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,8 +24,53 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+// ——— local interfaces ———
+
+interface TimeslotEditorProps {
+    workplaceId: string;
+    defaultTolerance?: number;
+}
+
+interface TemplateSlot {
+    label: string;
+    start_time: string;
+    end_time: string;
+    overlap_tolerance_minutes?: number;
+}
+
+interface Template {
+    name: string;
+    slots: TemplateSlot[];
+}
+
+interface Timeslot {
+    id: string;
+    label: string;
+    start_time: string;
+    end_time: string;
+    order?: number;
+    overlap_tolerance_minutes: number;
+    spans_midnight?: boolean;
+    workplace_id?: string;
+    [key: string]: unknown;
+}
+
+interface CustomTemplate {
+    id: string;
+    name: string;
+    slots_json?: string;
+    [key: string]: unknown;
+}
+
+interface EditForm {
+    label: string;
+    start_time: string;
+    end_time: string;
+    overlap_tolerance_minutes: number;
+}
+
 // Vordefinierte Standard-Templates
-const DEFAULT_TEMPLATES = {
+const DEFAULT_TEMPLATES: Record<string, Template> = {
     EARLY_LATE: {
         name: "Früh / Spät",
         slots: [
@@ -60,7 +106,7 @@ const DEFAULT_TEMPLATES = {
 /**
  * Prüft ob ein Zeitfenster über Mitternacht geht
  */
-function spansMidnight(startTime, endTime) {
+function spansMidnight(startTime: string, endTime: string): boolean {
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     const startMinutes = startH * 60 + startM;
@@ -71,17 +117,17 @@ function spansMidnight(startTime, endTime) {
 /**
  * Formatiert Zeitbereich für Anzeige
  */
-function formatTimeRange(startTime, endTime) {
+function formatTimeRange(startTime: string, endTime: string): string {
     const start = startTime?.substring(0, 5) || '00:00';
     const end = endTime?.substring(0, 5) || '00:00';
     const midnight = spansMidnight(start, end);
     return `${start}-${end}${midnight ? ' (+1)' : ''}`;
 }
 
-export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
+export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: TimeslotEditorProps) {
     const queryClient = useQueryClient();
-    const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState<EditForm>({
         label: '',
         start_time: '07:00',
         end_time: '15:00',
@@ -91,48 +137,48 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
     const [templateName, setTemplateName] = useState('');
 
     // Fetch existing timeslots for this workplace
-    const { data: timeslots = [], isLoading } = useQuery({
+    const { data: timeslots = [], isLoading } = useQuery<Timeslot[]>({
         queryKey: ['workplaceTimeslots', workplaceId],
         queryFn: async () => {
             const result = await db.WorkplaceTimeslot.filter({ workplace_id: workplaceId });
-            return result.sort((a, b) => (a.order || 0) - (b.order || 0));
+            return (result as Timeslot[]).sort((a: Timeslot, b: Timeslot) => (a.order || 0) - (b.order || 0));
         },
         enabled: !!workplaceId
     });
 
     // Fetch custom templates from database
-    const { data: customTemplates = [] } = useQuery({
+    const { data: customTemplates = [] } = useQuery<CustomTemplate[]>({
         queryKey: ['timeslotTemplates'],
-        queryFn: () => db.TimeslotTemplate.list()
+        queryFn: () => db.TimeslotTemplate.list() as Promise<CustomTemplate[]>
     });
 
     const createMutation = useMutation({
-        mutationFn: (data) => db.WorkplaceTimeslot.create(data),
+        mutationFn: (data: Record<string, unknown>) => db.WorkplaceTimeslot.create(data),
         onSuccess: () => {
-            queryClient.invalidateQueries(['workplaceTimeslots', workplaceId]);
+            queryClient.invalidateQueries({ queryKey: ['workplaceTimeslots', workplaceId] });
         },
-        onError: (err) => {
+        onError: (err: Error) => {
             toast.error("Fehler beim Erstellen: " + err.message);
         }
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }) => db.WorkplaceTimeslot.update(id, data),
+        mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => db.WorkplaceTimeslot.update(id, data),
         onSuccess: () => {
-            queryClient.invalidateQueries(['workplaceTimeslots', workplaceId]);
+            queryClient.invalidateQueries({ queryKey: ['workplaceTimeslots', workplaceId] });
         }
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (id) => db.WorkplaceTimeslot.delete(id),
+        mutationFn: (id: string) => db.WorkplaceTimeslot.delete(id),
         onSuccess: () => {
-            queryClient.invalidateQueries(['workplaceTimeslots', workplaceId]);
+            queryClient.invalidateQueries({ queryKey: ['workplaceTimeslots', workplaceId] });
             toast.success("Zeitfenster gelöscht");
         }
     });
 
     // Handle Drag & Drop Reordering
-    const handleDragEnd = (result) => {
+    const handleDragEnd = (result: DropResult) => {
         if (!result.destination) return;
         if (result.source.index === result.destination.index) return;
 
@@ -141,7 +187,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
         items.splice(result.destination.index, 0, reorderedItem);
 
         // Persist order changes
-        items.forEach((item, index) => {
+        items.forEach((item: Timeslot, index: number) => {
             if (item.order !== index) {
                 updateMutation.mutate({ id: item.id, data: { order: index } });
             }
@@ -149,16 +195,16 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
     };
 
     // Apply a template (default or custom)
-    const applyTemplate = async (templateKey) => {
+    const applyTemplate = async (templateKey: string) => {
         // Check if it's a default template or a custom one
-        let template;
+        let template: Template | undefined;
         if (templateKey.startsWith('custom_')) {
             const customId = templateKey.replace('custom_', '');
-            const customTemplate = customTemplates.find(t => t.id === customId);
+            const customTemplate = customTemplates.find((t: CustomTemplate) => t.id === customId);
             if (!customTemplate) return;
             template = {
                 name: customTemplate.name,
-                slots: JSON.parse(customTemplate.slots_json || '[]')
+                slots: JSON.parse(customTemplate.slots_json || '[]') as TemplateSlot[]
             };
         } else {
             template = DEFAULT_TEMPLATES[templateKey];
@@ -194,8 +240,8 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
 
     // Save current timeslots as a reusable template
     const saveAsTemplateMutation = useMutation({
-        mutationFn: async (name) => {
-            const slotsData = timeslots.map(s => ({
+        mutationFn: async (name: string) => {
+            const slotsData = timeslots.map((s: Timeslot) => ({
                 label: s.label,
                 start_time: s.start_time?.substring(0, 5),
                 end_time: s.end_time?.substring(0, 5),
@@ -207,12 +253,12 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
             });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['timeslotTemplates']);
+            queryClient.invalidateQueries({ queryKey: ['timeslotTemplates'] });
             toast.success("Template gespeichert!");
             setShowSaveTemplateDialog(false);
             setTemplateName('');
         },
-        onError: (err) => {
+        onError: (err: Error) => {
             toast.error("Fehler beim Speichern: " + err.message);
         }
     });
@@ -228,7 +274,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
     // Add new custom timeslot
     const handleAddNew = () => {
         const newOrder = timeslots.length;
-        const newSlot = {
+        const newSlot: Record<string, unknown> = {
             workplace_id: workplaceId,
             label: `Schicht ${newOrder + 1}`,
             start_time: "08:00",
@@ -241,7 +287,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
     };
 
     // Delete a timeslot
-    const handleDelete = (id) => {
+    const handleDelete = (id: string) => {
         if (timeslots.length <= 1) return; // Sicherheitshalber – Button sollte disabled sein
         if (confirm("Zeitfenster wirklich löschen?")) {
             deleteMutation.mutate(id);
@@ -263,11 +309,11 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
             }
         });
         setEditingId(null);
-        setEditForm({});
+        setEditForm({} as EditForm);
     };
 
     // Start editing a timeslot
-    const startEdit = (slot) => {
+    const startEdit = (slot: Timeslot) => {
         setEditingId(slot.id);
         setEditForm({
             label: slot.label,
@@ -297,7 +343,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                         <SelectContent>
                             {/* Standard-Templates */}
                             <div className="px-2 py-1 text-xs text-slate-500 font-medium">Standard</div>
-                            {Object.entries(DEFAULT_TEMPLATES).map(([key, template]) => (
+                            {Object.entries(DEFAULT_TEMPLATES).map(([key, template]: [string, Template]) => (
                                 <SelectItem key={key} value={key}>
                                     <div className="flex items-center gap-2">
                                         <Copy className="w-3 h-3" />
@@ -309,7 +355,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                             {customTemplates.length > 0 && (
                                 <>
                                     <div className="px-2 py-1 text-xs text-slate-500 font-medium mt-2 border-t">Eigene</div>
-                                    {customTemplates.map((template) => (
+                                    {customTemplates.map((template: CustomTemplate) => (
                                         <SelectItem key={template.id} value={`custom_${template.id}`}>
                                             <div className="flex items-center gap-2">
                                                 <Star className="w-3 h-3 text-amber-500" />
@@ -325,9 +371,9 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                         <TooltipProvider>
                             <Tooltip>
                                 <TooltipTrigger asChild>
-                                    <Button 
-                                        onClick={() => setShowSaveTemplateDialog(true)} 
-                                        size="sm" 
+                                    <Button
+                                        onClick={() => setShowSaveTemplateDialog(true)}
+                                        size="sm"
                                         variant="outline"
                                         className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
                                     >
@@ -357,20 +403,20 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                         <Input
                             placeholder="Template-Name"
                             value={templateName}
-                            onChange={(e) => setTemplateName(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemplateName(e.target.value)}
                             className="flex-1 h-8"
-                            onKeyDown={(e) => e.key === 'Enter' && handleSaveAsTemplate()}
+                            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSaveAsTemplate()}
                         />
-                        <Button 
-                            size="sm" 
+                        <Button
+                            size="sm"
                             onClick={handleSaveAsTemplate}
                             disabled={saveAsTemplateMutation.isPending}
                         >
                             Speichern
                         </Button>
-                        <Button 
-                            size="sm" 
-                            variant="ghost" 
+                        <Button
+                            size="sm"
+                            variant="ghost"
                             onClick={() => { setShowSaveTemplateDialog(false); setTemplateName(''); }}
                         >
                             Abbrechen
@@ -390,15 +436,15 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
             ) : (
                 <DragDropContext onDragEnd={handleDragEnd}>
                     <Droppable droppableId="timeslots">
-                        {(provided) => (
+                        {(provided: DroppableProvided) => (
                             <div
                                 {...provided.droppableProps}
                                 ref={provided.innerRef}
                                 className="space-y-2"
                             >
-                                {timeslots.map((slot, index) => (
+                                {timeslots.map((slot: Timeslot, index: number) => (
                                     <Draggable key={slot.id} draggableId={slot.id} index={index}>
-                                        {(provided) => (
+                                        {(provided: DraggableProvided) => (
                                             <div
                                                 ref={provided.innerRef}
                                                 {...provided.draggableProps}
@@ -415,7 +461,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 <Label className="text-xs">Bezeichnung</Label>
                                                                 <Input
                                                                     value={editForm.label}
-                                                                    onChange={e => setEditForm({...editForm, label: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, label: e.target.value})}
                                                                     maxLength={20}
                                                                     className="h-8"
                                                                 />
@@ -425,7 +471,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.start_time}
-                                                                    onChange={e => setEditForm({...editForm, start_time: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, start_time: e.target.value})}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -434,12 +480,12 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.end_time}
-                                                                    onChange={e => setEditForm({...editForm, end_time: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, end_time: e.target.value})}
                                                                     className="h-8"
                                                                 />
                                                             </div>
                                                         </div>
-                                                        
+
                                                         {spansMidnight(editForm.start_time, editForm.end_time) && (
                                                             <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded">
                                                                 <AlertCircle className="w-3 h-3" />
@@ -454,7 +500,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }) {
                                                                 min={0}
                                                                 max={60}
                                                                 value={editForm.overlap_tolerance_minutes}
-                                                                onChange={e => setEditForm({...editForm, overlap_tolerance_minutes: parseInt(e.target.value) || 0})}
+                                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, overlap_tolerance_minutes: parseInt(e.target.value) || 0})}
                                                                 className="h-8 w-24"
                                                             />
                                                             <p className="text-[10px] text-slate-500">

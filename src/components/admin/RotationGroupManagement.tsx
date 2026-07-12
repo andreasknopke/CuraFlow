@@ -14,43 +14,133 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Building2, Clock, Globe2, Loader2, Pencil, Plus, Trash2, Users } from 'lucide-react';
 
-const DEFAULT_GROUP_FORM = {
+// ——— local interfaces ———
+
+interface GroupForm {
+    name: string;
+    description: string;
+    is_active: boolean;
+}
+
+interface WorkplaceForm {
+    name: string;
+    ward_tenant_id: string;
+    timeslots_enabled: boolean;
+    is_active: boolean;
+}
+
+interface NormalizedGroup {
+    id: number;
+    name: string;
+    description?: string;
+    is_active: boolean;
+    [key: string]: unknown;
+}
+
+interface TenantRecord {
+    id: number;
+    name?: string;
+    host?: string;
+    db_name?: string;
+    [key: string]: unknown;
+}
+
+interface MemberRecord {
+    tenant_id: number;
+    name?: string;
+    role?: string;
+    host?: string;
+    db_name?: string;
+    [key: string]: unknown;
+}
+
+interface RotationWorkplace {
+    id: number;
+    name: string;
+    ward_tenant_id?: number;
+    timeslots_enabled?: boolean;
+    is_active?: boolean;
+    [key: string]: unknown;
+}
+
+interface RotationGroupsResponse {
+    groups: NormalizedGroup[];
+}
+
+interface MembersResponse {
+    members: MemberRecord[];
+}
+
+interface WorkplacesResponse {
+    workplaces: RotationWorkplace[];
+}
+
+interface Timeslot {
+    id: number;
+    label: string;
+    start_time?: string;
+    end_time?: string;
+    [key: string]: unknown;
+}
+
+interface TimeslotsResponse {
+    timeslots: Timeslot[];
+}
+
+interface RotationTimeslotEditorProps {
+    groupId: number | null;
+    workplace: RotationWorkplace;
+    onClose: () => void;
+}
+
+interface TimeslotForm {
+    label: string;
+    start_time: string;
+    end_time: string;
+    order: number;
+}
+
+// ——— defaults ———
+
+const DEFAULT_GROUP_FORM: GroupForm = {
     name: '',
     description: '',
     is_active: true,
 };
 
-const DEFAULT_WORKPLACE_FORM = {
+const DEFAULT_WORKPLACE_FORM: WorkplaceForm = {
     name: '',
     ward_tenant_id: '',
     timeslots_enabled: false,
     is_active: true,
 };
 
-function normalizeGroup(group) {
+function normalizeGroup(group: Record<string, unknown>): NormalizedGroup {
     return {
         ...group,
         id: Number(group.id),
+        name: String(group.name ?? ''),
+        description: String(group.description ?? ''),
         is_active: Boolean(group.is_active),
-    };
+    } as NormalizedGroup;
 }
 
 export default function RotationGroupManagement() {
     const queryClient = useQueryClient();
-    const [selectedGroupId, setSelectedGroupId] = useState(null);
+    const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
-    const [editingGroup, setEditingGroup] = useState(null);
-    const [groupForm, setGroupForm] = useState(DEFAULT_GROUP_FORM);
+    const [editingGroup, setEditingGroup] = useState<NormalizedGroup | null>(null);
+    const [groupForm, setGroupForm] = useState<GroupForm>(DEFAULT_GROUP_FORM);
     const [showWorkplaceDialog, setShowWorkplaceDialog] = useState(false);
-    const [editingWorkplace, setEditingWorkplace] = useState(null);
-    const [workplaceForm, setWorkplaceForm] = useState(DEFAULT_WORKPLACE_FORM);
-    const [timeslotWorkplace, setTimeslotWorkplace] = useState(null);
+    const [editingWorkplace, setEditingWorkplace] = useState<RotationWorkplace | null>(null);
+    const [workplaceForm, setWorkplaceForm] = useState<WorkplaceForm>(DEFAULT_WORKPLACE_FORM);
+    const [timeslotWorkplace, setTimeslotWorkplace] = useState<RotationWorkplace | null>(null);
     const [tenantToAdd, setTenantToAdd] = useState('');
     const [tenantRole, setTenantRole] = useState('ward');
 
-    const { data: groupsResponse, isLoading: groupsLoading } = useQuery({
+    const { data: groupsResponse, isLoading: groupsLoading } = useQuery<RotationGroupsResponse>({
         queryKey: ['admin', 'rotation-groups'],
-        queryFn: () => api.listRotationGroups(),
+        queryFn: () => api.listRotationGroups() as Promise<RotationGroupsResponse>,
         staleTime: 30_000,
     });
 
@@ -64,33 +154,33 @@ export default function RotationGroupManagement() {
             setSelectedGroupId(null);
             return;
         }
-        const exists = groups.some((group) => group.id === selectedGroupId);
+        const exists = groups.some((group: NormalizedGroup) => group.id === selectedGroupId);
         if (!exists) {
             setSelectedGroupId(groups[0].id);
         }
     }, [groups, selectedGroupId]);
 
     const selectedGroup = useMemo(
-        () => groups.find((group) => group.id === selectedGroupId) || null,
+        () => groups.find((group: NormalizedGroup) => group.id === selectedGroupId) || null,
         [groups, selectedGroupId]
     );
 
-    const { data: tenants = [] } = useQuery({
+    const { data: tenants = [] } = useQuery<TenantRecord[]>({
         queryKey: ['serverDbTokens'],
-        queryFn: () => api.request('/api/admin/db-tokens'),
+        queryFn: () => api.request('/api/admin/db-tokens') as Promise<TenantRecord[]>,
         staleTime: 30_000,
     });
 
-    const { data: membersResponse, isLoading: membersLoading } = useQuery({
+    const { data: membersResponse, isLoading: membersLoading } = useQuery<MembersResponse>({
         queryKey: ['admin', 'rotation-group-members', selectedGroupId],
-        queryFn: () => api.listRotationGroupMembers(selectedGroupId),
+        queryFn: () => api.listRotationGroupMembers(String(selectedGroupId!)) as Promise<MembersResponse>,
         enabled: !!selectedGroupId,
         staleTime: 10_000,
     });
 
-    const { data: workplacesResponse, isLoading: workplacesLoading } = useQuery({
+    const { data: workplacesResponse, isLoading: workplacesLoading } = useQuery<WorkplacesResponse>({
         queryKey: ['admin', 'rotation-group-workplaces', selectedGroupId],
-        queryFn: () => api.listRotationWorkplaces(selectedGroupId),
+        queryFn: () => api.listRotationWorkplaces(String(selectedGroupId!)) as Promise<WorkplacesResponse>,
         enabled: !!selectedGroupId,
         staleTime: 10_000,
     });
@@ -102,8 +192,8 @@ export default function RotationGroupManagement() {
     );
 
     const availableTenants = useMemo(() => {
-        const memberIds = new Set(members.map((member) => String(member.tenant_id)));
-        return tenants.filter((tenant) => !memberIds.has(String(tenant.id)));
+        const memberIds = new Set(members.map((member: MemberRecord) => String(member.tenant_id)));
+        return tenants.filter((tenant: TenantRecord) => !memberIds.has(String(tenant.id)));
     }, [members, tenants]);
 
     const invalidateGroups = () => {
@@ -119,10 +209,10 @@ export default function RotationGroupManagement() {
     };
 
     const createGroupMutation = useMutation({
-        mutationFn: (payload) => api.createRotationGroup(payload),
-        onSuccess: (response) => {
+        mutationFn: (payload: Record<string, unknown>) => api.createRotationGroup(payload),
+        onSuccess: (response: unknown) => {
             invalidateGroups();
-            const groupId = Number(response?.group?.id);
+            const groupId = Number((response as { group?: { id?: number } })?.group?.id);
             if (Number.isInteger(groupId)) {
                 setSelectedGroupId(groupId);
             }
@@ -131,11 +221,11 @@ export default function RotationGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Rotationsverbund erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht erstellt werden'),
     });
 
     const updateGroupMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.updateRotationGroup(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.updateRotationGroup(String(groupId), payload),
         onSuccess: () => {
             invalidateGroups();
             setShowGroupDialog(false);
@@ -143,41 +233,41 @@ export default function RotationGroupManagement() {
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Rotationsverbund aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht aktualisiert werden'),
     });
 
     const deleteGroupMutation = useMutation({
-        mutationFn: (groupId) => api.deleteRotationGroup(groupId),
+        mutationFn: (groupId: number) => api.deleteRotationGroup(String(groupId)),
         onSuccess: () => {
             invalidateGroups();
             setSelectedGroupId(null);
             toast.success('Rotationsverbund gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Rotationsverbund konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotationsverbund konnte nicht gelöscht werden'),
     });
 
     const addMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId, role }) => api.addRotationGroupMember(groupId, tenantId, role),
+        mutationFn: ({ groupId, tenantId, role }: { groupId: number; tenantId: string; role: string }) => api.addRotationGroupMember(String(groupId), tenantId, role),
         onSuccess: () => {
             invalidateSelectedGroup();
             setTenantToAdd('');
             setTenantRole('ward');
             toast.success('Mandant hinzugefügt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht hinzugefügt werden'),
     });
 
     const removeMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId }) => api.removeRotationGroupMember(groupId, tenantId),
+        mutationFn: ({ groupId, tenantId }: { groupId: number; tenantId: number }) => api.removeRotationGroupMember(String(groupId), String(tenantId)),
         onSuccess: () => {
             invalidateSelectedGroup();
             toast.success('Mandant entfernt');
         },
-        onError: (error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Mandant konnte nicht entfernt werden'),
     });
 
     const createWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, payload }) => api.createRotationWorkplace(groupId, payload),
+        mutationFn: ({ groupId, payload }: { groupId: number; payload: Record<string, unknown> }) => api.createRotationWorkplace(String(groupId), payload),
         onSuccess: () => {
             invalidateSelectedGroup();
             setShowWorkplaceDialog(false);
@@ -185,11 +275,11 @@ export default function RotationGroupManagement() {
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
             toast.success('Rotation erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht erstellt werden'),
     });
 
     const updateWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId, payload }) => api.updateRotationWorkplace(groupId, workplaceId, payload),
+        mutationFn: ({ groupId, workplaceId, payload }: { groupId: number; workplaceId: number; payload: Record<string, unknown> }) => api.updateRotationWorkplace(String(groupId), String(workplaceId), payload),
         onSuccess: () => {
             invalidateSelectedGroup();
             setShowWorkplaceDialog(false);
@@ -197,16 +287,16 @@ export default function RotationGroupManagement() {
             setWorkplaceForm(DEFAULT_WORKPLACE_FORM);
             toast.success('Rotation aktualisiert');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht aktualisiert werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht aktualisiert werden'),
     });
 
     const deleteWorkplaceMutation = useMutation({
-        mutationFn: ({ groupId, workplaceId }) => api.deleteRotationWorkplace(groupId, workplaceId),
+        mutationFn: ({ groupId, workplaceId }: { groupId: number; workplaceId: number }) => api.deleteRotationWorkplace(String(groupId), String(workplaceId)),
         onSuccess: () => {
             invalidateSelectedGroup();
             toast.success('Rotation gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Rotation konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Rotation konnte nicht gelöscht werden'),
     });
 
     const handleOpenCreateGroup = () => {
@@ -215,7 +305,7 @@ export default function RotationGroupManagement() {
         setShowGroupDialog(true);
     };
 
-    const handleOpenEditGroup = (group) => {
+    const handleOpenEditGroup = (group: NormalizedGroup) => {
         setEditingGroup(group);
         setGroupForm({
             name: group.name || '',
@@ -230,7 +320,7 @@ export default function RotationGroupManagement() {
             toast.error('Name ist erforderlich');
             return;
         }
-        const payload = {
+        const payload: Record<string, unknown> = {
             name: groupForm.name.trim(),
             description: groupForm.description.trim() || null,
             is_active: Boolean(groupForm.is_active),
@@ -242,7 +332,7 @@ export default function RotationGroupManagement() {
         createGroupMutation.mutate(payload);
     };
 
-    const handleDeleteGroup = (group) => {
+    const handleDeleteGroup = (group: NormalizedGroup) => {
         if (!window.confirm(`Rotationsverbund "${group.name}" wirklich löschen?`)) {
             return;
         }
@@ -263,11 +353,11 @@ export default function RotationGroupManagement() {
         setShowWorkplaceDialog(true);
     };
 
-    const handleOpenEditWorkplace = (workplace) => {
+    const handleOpenEditWorkplace = (workplace: RotationWorkplace) => {
         setEditingWorkplace(workplace);
         setWorkplaceForm({
             name: workplace.name || '',
-            ward_tenant_id: workplace.ward_tenant_id || '',
+            ward_tenant_id: workplace.ward_tenant_id ? String(workplace.ward_tenant_id) : '',
             timeslots_enabled: Boolean(workplace.timeslots_enabled),
             is_active: Boolean(workplace.is_active),
         });
@@ -287,7 +377,7 @@ export default function RotationGroupManagement() {
             toast.error('Bitte eine Station (Mandant) wählen');
             return;
         }
-        const payload = {
+        const payload: Record<string, unknown> = {
             name: workplaceForm.name.trim(),
             ward_tenant_id: workplaceForm.ward_tenant_id,
             timeslots_enabled: Boolean(workplaceForm.timeslots_enabled),
@@ -304,7 +394,7 @@ export default function RotationGroupManagement() {
         createWorkplaceMutation.mutate({ groupId: selectedGroupId, payload });
     };
 
-    const handleDeleteWorkplace = (workplace) => {
+    const handleDeleteWorkplace = (workplace: RotationWorkplace) => {
         if (!selectedGroupId) return;
         if (!window.confirm(`Rotation "${workplace.name}" wirklich löschen?`)) {
             return;
@@ -314,7 +404,7 @@ export default function RotationGroupManagement() {
 
     // Ward members for the workplace ward_tenant_id select
     const wardMembers = useMemo(
-        () => members.filter((m) => m.role === 'ward'),
+        () => members.filter((m: MemberRecord) => m.role === 'ward'),
         [members]
     );
 
@@ -362,7 +452,7 @@ export default function RotationGroupManagement() {
                                 Noch kein Rotationsverbund vorhanden.
                             </div>
                         ) : (
-                            groups.map((group) => {
+                            groups.map((group: NormalizedGroup) => {
                                 const isSelected = group.id === selectedGroupId;
                                 return (
                                     <div
@@ -370,7 +460,7 @@ export default function RotationGroupManagement() {
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => setSelectedGroupId(group.id)}
-                                        onKeyDown={(event) => {
+                                        onKeyDown={(event: React.KeyboardEvent) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
                                                 setSelectedGroupId(group.id);
@@ -395,7 +485,7 @@ export default function RotationGroupManagement() {
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                onClick={(event) => {
+                                                onClick={(event: React.MouseEvent) => {
                                                     event.stopPropagation();
                                                     handleOpenEditGroup(group);
                                                 }}
@@ -407,7 +497,7 @@ export default function RotationGroupManagement() {
                                                 variant="outline"
                                                 size="sm"
                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                onClick={(event) => {
+                                                onClick={(event: React.MouseEvent) => {
                                                     event.stopPropagation();
                                                     handleDeleteGroup(group);
                                                 }}
@@ -445,7 +535,7 @@ export default function RotationGroupManagement() {
                                                 {availableTenants.length === 0 ? (
                                                     <SelectItem value="__none__" disabled>Keine weiteren Mandanten verfügbar</SelectItem>
                                                 ) : (
-                                                    availableTenants.map((tenant) => (
+                                                    availableTenants.map((tenant: TenantRecord) => (
                                                         <SelectItem key={tenant.id} value={String(tenant.id)}>
                                                             {tenant.name || tenant.id}
                                                         </SelectItem>
@@ -484,7 +574,7 @@ export default function RotationGroupManagement() {
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {members.map((member) => (
+                                                {members.map((member: MemberRecord) => (
                                                     <TableRow key={member.tenant_id} data-testid={`admin-rotation-group-member-${member.tenant_id}`}>
                                                         <TableCell className="font-medium">{member.name || member.tenant_id}</TableCell>
                                                         <TableCell>
@@ -497,7 +587,7 @@ export default function RotationGroupManagement() {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId, tenantId: member.tenant_id })}
+                                                                onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id })}
                                                             >
                                                                 <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                             </Button>
@@ -551,8 +641,8 @@ export default function RotationGroupManagement() {
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {workplaces.map((workplace) => {
-                                            const wardName = members.find((m) => String(m.tenant_id) === String(workplace.ward_tenant_id))?.name || workplace.ward_tenant_id;
+                                        {workplaces.map((workplace: RotationWorkplace) => {
+                                            const wardName = members.find((m: MemberRecord) => String(m.tenant_id) === String(workplace.ward_tenant_id))?.name || String(workplace.ward_tenant_id);
                                             return (
                                                 <TableRow key={workplace.id} data-testid={`admin-rotation-workplace-${workplace.id}`}>
                                                     <TableCell>
@@ -609,7 +699,7 @@ export default function RotationGroupManagement() {
                             <Input
                                 id="rotation-group-name"
                                 value={groupForm.name}
-                                onChange={(event) => setGroupForm((current) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value }))}
                                 data-testid="admin-rotation-group-name-input"
                             />
                         </div>
@@ -618,7 +708,7 @@ export default function RotationGroupManagement() {
                             <Textarea
                                 id="rotation-group-description"
                                 value={groupForm.description}
-                                onChange={(event) => setGroupForm((current) => ({ ...current, description: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value }))}
                                 rows={3}
                             />
                         </div>
@@ -627,7 +717,7 @@ export default function RotationGroupManagement() {
                                 <div className="font-medium text-slate-900">Aktiv</div>
                                 <div className="text-sm text-slate-500">Nur aktive Verbünde erscheinen in der Auswahl.</div>
                             </div>
-                            <Switch checked={groupForm.is_active} onCheckedChange={(checked) => setGroupForm((current) => ({ ...current, is_active: checked }))} />
+                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => setGroupForm((current: GroupForm) => ({ ...current, is_active: checked }))} />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
@@ -655,7 +745,7 @@ export default function RotationGroupManagement() {
                             <Input
                                 id="rotation-workplace-name"
                                 value={workplaceForm.name}
-                                onChange={(event) => setWorkplaceForm((current) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value }))}
                                 data-testid="admin-rotation-workplace-name-input"
                             />
                         </div>
@@ -664,7 +754,7 @@ export default function RotationGroupManagement() {
                             <div className="text-xs text-slate-500">Welcher Station gehört diese Rotation? Nur Stations-Mandanten (role=ward) sind wählbar.</div>
                             <Select
                                 value={workplaceForm.ward_tenant_id}
-                                onValueChange={(value) => setWorkplaceForm((current) => ({ ...current, ward_tenant_id: value }))}
+                                onValueChange={(value: string) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, ward_tenant_id: value }))}
                             >
                                 <SelectTrigger id="rotation-workplace-ward" data-testid="admin-rotation-workplace-ward-select">
                                     <SelectValue placeholder="Station wählen" />
@@ -673,7 +763,7 @@ export default function RotationGroupManagement() {
                                     {wardMembers.length === 0 ? (
                                         <SelectItem value="__none__" disabled>Keine Stations-Mandanten — zuerst hinzufügen</SelectItem>
                                     ) : (
-                                        wardMembers.map((member) => (
+                                        wardMembers.map((member: MemberRecord) => (
                                             <SelectItem key={member.tenant_id} value={String(member.tenant_id)}>
                                                 {member.name || member.tenant_id}
                                             </SelectItem>
@@ -689,7 +779,7 @@ export default function RotationGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.timeslots_enabled}
-                                onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, timeslots_enabled: checked }))}
+                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked }))}
                                 data-testid="admin-rotation-workplace-timeslots-enabled"
                             />
                         </div>
@@ -705,7 +795,7 @@ export default function RotationGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.is_active}
-                                onCheckedChange={(checked) => setWorkplaceForm((current) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked }))}
                             />
                         </div>
                     </div>
@@ -734,18 +824,18 @@ export default function RotationGroupManagement() {
 // ============================================================
 //  RotationTimeslotEditor — inline sub-component
 // ============================================================
-function RotationTimeslotEditor({ groupId, workplace, onClose }) {
+function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslotEditorProps) {
     const queryClient = useQueryClient();
     const [showForm, setShowForm] = useState(false);
-    const [form, setForm] = useState({ label: '', start_time: '07:00', end_time: '15:00', order: 0 });
+    const [form, setForm] = useState<TimeslotForm>({ label: '', start_time: '07:00', end_time: '15:00', order: 0 });
 
-    const { data: timeslotsResponse, isLoading } = useQuery({
+    const { data: timeslotsResponse, isLoading } = useQuery<TimeslotsResponse>({
         queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id],
-        queryFn: () => api.listRotationTimeslots(groupId, workplace.id),
+        queryFn: () => api.listRotationTimeslots(String(groupId!), String(workplace.id)) as Promise<TimeslotsResponse>,
         staleTime: 10_000,
     });
 
-    const timeslots = Array.isArray(timeslotsResponse?.timeslots) ? timeslotsResponse.timeslots : [];
+    const timeslots: Timeslot[] = Array.isArray(timeslotsResponse?.timeslots) ? timeslotsResponse.timeslots : [];
 
     const invalidate = () => {
         queryClient.invalidateQueries({ queryKey: ['admin', 'rotation-timeslots', groupId, workplace.id] });
@@ -753,27 +843,27 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
     };
 
     const createMutation = useMutation({
-        mutationFn: (data) => api.createRotationTimeslot(groupId, workplace.id, data),
+        mutationFn: (data: TimeslotForm) => api.createRotationTimeslot(String(groupId!), String(workplace.id), data as unknown as Record<string, unknown>),
         onSuccess: () => {
             invalidate();
             setForm({ label: '', start_time: '07:00', end_time: '15:00', order: timeslots.length });
             setShowForm(false);
             toast.success('Zeitfenster erstellt');
         },
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht erstellt werden'),
     });
 
     const deleteMutation = useMutation({
-        mutationFn: (timeslotId) => api.deleteRotationTimeslot(groupId, workplace.id, timeslotId),
+        mutationFn: (timeslotId: number) => api.deleteRotationTimeslot(String(groupId!), String(workplace.id), String(timeslotId)),
         onSuccess: () => {
             invalidate();
             toast.success('Zeitfenster gelöscht');
         },
-        onError: (error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
+        onError: (error: Error) => toast.error(error.message || 'Zeitfenster konnte nicht gelöscht werden'),
     });
 
     return (
-        <Dialog open={true} onOpenChange={(open) => { if (!open) onClose(); }}>
+        <Dialog open={true} onOpenChange={(open: boolean) => { if (!open) onClose(); }}>
             <DialogContent className="!gap-0 p-0">
                 <DialogHeader className="px-6 pt-6 pb-0">
                     <DialogTitle>Zeitfenster für „{workplace.name}"</DialogTitle>
@@ -796,7 +886,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
-                                {timeslots.map((ts) => (
+                                {timeslots.map((ts: Timeslot) => (
                                     <TableRow key={ts.id}>
                                         <TableCell className="font-medium">{ts.label}</TableCell>
                                         <TableCell className="text-slate-600">{ts.start_time?.slice(0, 5)}–{ts.end_time?.slice(0, 5)}</TableCell>
@@ -823,7 +913,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Label className="text-sm">Bezeichnung</Label>
                                     <Input
                                         value={form.label}
-                                        onChange={(e) => setForm((c) => ({ ...c, label: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, label: e.target.value }))}
                                         placeholder="z. B. Frühdienst"
                                     />
                                 </div>
@@ -833,7 +923,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                         type="number"
                                         min="0"
                                         value={form.order}
-                                        onChange={(e) => setForm((c) => ({ ...c, order: Number(e.target.value) || 0 }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 }))}
                                         className="w-24"
                                     />
                                 </div>
@@ -842,7 +932,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Input
                                         type="time"
                                         value={form.start_time}
-                                        onChange={(e) => setForm((c) => ({ ...c, start_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value }))}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -850,7 +940,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }) {
                                     <Input
                                         type="time"
                                         value={form.end_time}
-                                        onChange={(e) => setForm((c) => ({ ...c, end_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value }))}
                                     />
                                 </div>
                             </div>

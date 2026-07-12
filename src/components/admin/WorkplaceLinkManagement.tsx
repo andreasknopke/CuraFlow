@@ -11,26 +11,58 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Link2, Loader2, Plus, Trash2 } from 'lucide-react';
 
-const DEFAULT_GROUP_FORM = { name: '', description: '' };
+interface GroupForm {
+    name: string;
+    description: string;
+}
+
+interface TenantRecord {
+    id: number;
+    name?: string;
+    [key: string]: unknown;
+}
+
+interface WorkplaceLinkGroup {
+    id: number;
+    name: string;
+    description?: string;
+    members: WorkplaceLinkMember[];
+}
+
+interface WorkplaceLinkMember {
+    id: number;
+    tenant_id: number;
+    workplace_name: string;
+}
+
+interface WorkplaceLinkGroupsResponse {
+    groups: WorkplaceLinkGroup[];
+}
+
+interface TenantWorkplaceNamesResponse {
+    names: string[];
+}
+
+const DEFAULT_GROUP_FORM: GroupForm = { name: '', description: '' };
 
 export default function WorkplaceLinkManagement() {
     const queryClient = useQueryClient();
 
     const [showGroupDialog, setShowGroupDialog] = useState(false);
-    const [groupForm, setGroupForm] = useState(DEFAULT_GROUP_FORM);
+    const [groupForm, setGroupForm] = useState<GroupForm>(DEFAULT_GROUP_FORM);
     const [memberTenantId, setMemberTenantId] = useState('');
     const [memberWorkplaceName, setMemberWorkplaceName] = useState('');
-    const [addingToGroupId, setAddingToGroupId] = useState(null);
+    const [addingToGroupId, setAddingToGroupId] = useState<number | null>(null);
 
-    const { data: tenants = [] } = useQuery({
+    const { data: tenants = [] } = useQuery<TenantRecord[]>({
         queryKey: ['serverDbTokens'],
-        queryFn: () => api.request('/api/admin/db-tokens'),
+        queryFn: () => api.request('/api/admin/db-tokens') as Promise<TenantRecord[]>,
         staleTime: 30_000,
     });
 
-    const { data: groupsResponse, isLoading: groupsLoading } = useQuery({
+    const { data: groupsResponse, isLoading: groupsLoading } = useQuery<WorkplaceLinkGroupsResponse>({
         queryKey: ['admin', 'workplace-link-groups'],
-        queryFn: () => api.listWorkplaceLinkGroups(),
+        queryFn: () => api.listWorkplaceLinkGroups() as Promise<WorkplaceLinkGroupsResponse>,
         staleTime: 10_000,
     });
 
@@ -39,9 +71,9 @@ export default function WorkplaceLinkManagement() {
         [groupsResponse]
     );
 
-    const { data: tenantWorkplacesResponse, isFetching: tenantWorkplacesLoading } = useQuery({
+    const { data: tenantWorkplacesResponse, isFetching: tenantWorkplacesLoading } = useQuery<TenantWorkplaceNamesResponse>({
         queryKey: ['admin', 'tenant-workplace-names', memberTenantId],
-        queryFn: () => api.getTenantWorkplaceNames(memberTenantId),
+        queryFn: () => api.getTenantWorkplaceNames(memberTenantId) as Promise<TenantWorkplaceNamesResponse>,
         enabled: !!memberTenantId,
         staleTime: 10_000,
     });
@@ -54,28 +86,28 @@ export default function WorkplaceLinkManagement() {
     };
 
     const createGroupMutation = useMutation({
-        mutationFn: (data) => api.createWorkplaceLinkGroup(data),
+        mutationFn: (data: GroupForm) => api.createWorkplaceLinkGroup(data as unknown as Record<string, unknown>),
         onSuccess: () => {
             invalidateGroups();
             setShowGroupDialog(false);
             setGroupForm(DEFAULT_GROUP_FORM);
             toast.success('Verknüpfung erstellt');
         },
-        onError: (err) => toast.error(err?.message || 'Fehler beim Erstellen'),
+        onError: (err: Error) => toast.error(err?.message || 'Fehler beim Erstellen'),
     });
 
     const deleteGroupMutation = useMutation({
-        mutationFn: (groupId) => api.deleteWorkplaceLinkGroup(groupId),
+        mutationFn: (groupId: number) => api.deleteWorkplaceLinkGroup(String(groupId)),
         onSuccess: () => {
             invalidateGroups();
             toast.success('Verknüpfung gelöscht');
         },
-        onError: (err) => toast.error(err?.message || 'Fehler beim Löschen'),
+        onError: (err: Error) => toast.error(err?.message || 'Fehler beim Löschen'),
     });
 
     const addMemberMutation = useMutation({
-        mutationFn: ({ groupId, tenantId, workplaceName }) =>
-            api.addWorkplaceLinkMember(groupId, tenantId, workplaceName),
+        mutationFn: ({ groupId, tenantId, workplaceName }: { groupId: number; tenantId: string; workplaceName: string }) =>
+            api.addWorkplaceLinkMember(String(groupId), tenantId, workplaceName),
         onSuccess: () => {
             invalidateGroups();
             setMemberTenantId('');
@@ -83,19 +115,19 @@ export default function WorkplaceLinkManagement() {
             setAddingToGroupId(null);
             toast.success('Arbeitsplatz hinzugefügt');
         },
-        onError: (err) => toast.error(err?.message || 'Fehler beim Hinzufügen'),
+        onError: (err: Error) => toast.error(err?.message || 'Fehler beim Hinzufügen'),
     });
 
     const removeMemberMutation = useMutation({
-        mutationFn: ({ groupId, memberId }) => api.removeWorkplaceLinkMember(groupId, memberId),
+        mutationFn: ({ groupId, memberId }: { groupId: number; memberId: number }) => api.removeWorkplaceLinkMember(String(groupId), String(memberId)),
         onSuccess: () => {
             invalidateGroups();
             toast.success('Arbeitsplatz entfernt');
         },
-        onError: (err) => toast.error(err?.message || 'Fehler beim Entfernen'),
+        onError: (err: Error) => toast.error(err?.message || 'Fehler beim Entfernen'),
     });
 
-    const tenantName = (tenantId) => tenants.find((t) => String(t.id) === String(tenantId))?.name || tenantId;
+    const tenantName = (tenantId: number) => tenants.find((t: TenantRecord) => String(t.id) === String(tenantId))?.name || String(tenantId);
 
     return (
         <div className="space-y-6">
@@ -124,7 +156,7 @@ export default function WorkplaceLinkManagement() {
                         <p className="text-sm text-slate-500 py-4 text-center">Noch keine Verknüpfungen angelegt.</p>
                     ) : (
                         <div className="space-y-4">
-                            {groups.map((group) => (
+                            {groups.map((group: WorkplaceLinkGroup) => (
                                 <div key={group.id} className="border border-slate-200 rounded-lg p-4">
                                     <div className="flex items-start justify-between mb-3">
                                         <div>
@@ -148,7 +180,7 @@ export default function WorkplaceLinkManagement() {
                                     </div>
 
                                     <div className="flex flex-wrap gap-2 mb-3">
-                                        {group.members.map((member) => (
+                                        {group.members.map((member: WorkplaceLinkMember) => (
                                             <Badge key={member.id} variant="secondary" className="flex items-center gap-1.5 py-1">
                                                 <span className="font-medium">{tenantName(member.tenant_id)}</span>
                                                 <span className="text-slate-400">/</span>
@@ -175,7 +207,7 @@ export default function WorkplaceLinkManagement() {
                                                 <Select value={memberTenantId} onValueChange={setMemberTenantId}>
                                                     <SelectTrigger className="h-8"><SelectValue placeholder="Mandant wählen" /></SelectTrigger>
                                                     <SelectContent>
-                                                        {tenants.map((tenant) => (
+                                                        {tenants.map((tenant: TenantRecord) => (
                                                             <SelectItem key={tenant.id} value={String(tenant.id)}>{tenant.name}</SelectItem>
                                                         ))}
                                                     </SelectContent>
@@ -189,7 +221,7 @@ export default function WorkplaceLinkManagement() {
                                                             <SelectValue placeholder={tenantWorkplacesLoading ? 'Lädt…' : 'Arbeitsplatz wählen'} />
                                                         </SelectTrigger>
                                                         <SelectContent>
-                                                            {tenantWorkplaceNames.map((name) => (
+                                                            {tenantWorkplaceNames.map((name: string) => (
                                                                 <SelectItem key={name} value={name}>{name}</SelectItem>
                                                             ))}
                                                         </SelectContent>
@@ -199,7 +231,7 @@ export default function WorkplaceLinkManagement() {
                                                         className="h-8"
                                                         placeholder="Name eingeben"
                                                         value={memberWorkplaceName}
-                                                        onChange={(e) => setMemberWorkplaceName(e.target.value)}
+                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMemberWorkplaceName(e.target.value)}
                                                         disabled={!memberTenantId}
                                                     />
                                                 )}
@@ -252,7 +284,7 @@ export default function WorkplaceLinkManagement() {
                             <Label>Name</Label>
                             <Input
                                 value={groupForm.name}
-                                onChange={(e) => setGroupForm((f) => ({ ...f, name: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGroupForm((f: GroupForm) => ({ ...f, name: e.target.value }))}
                                 placeholder="z.B. CT – ärztlich/MTR"
                             />
                         </div>
@@ -260,7 +292,7 @@ export default function WorkplaceLinkManagement() {
                             <Label>Beschreibung (optional)</Label>
                             <Input
                                 value={groupForm.description}
-                                onChange={(e) => setGroupForm((f) => ({ ...f, description: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGroupForm((f: GroupForm) => ({ ...f, description: e.target.value }))}
                             />
                         </div>
                     </div>
