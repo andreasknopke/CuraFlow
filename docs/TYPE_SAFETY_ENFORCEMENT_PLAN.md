@@ -239,7 +239,7 @@ Work through these phases in order. Each phase has a definition of done and a ve
 
 ---
 
-##### Phase 1 — Mechanical removal (no logic changes)  ← ~400 occurrences
+##### Phase 1 — Mechanical removal (no logic changes)  ← ~400 occurrences  ✅ COMPLETE
 
 **Goal:** Remove `any` that cannot change runtime behavior even if the types are wrong. These are safe because TypeScript types are erased at build time.
 
@@ -260,6 +260,13 @@ Work through these phases in order. Each phase has a definition of done and a ve
    - Known clusters: `setHiddenJokerDoctorIds`, `setHiddenSpringerChipIds`, `setTimeslotSelectionDialog`, `setRotationAssignmentDialog` (lines ~3810-4743).
 
 **Phase 1 definition of done:** `npm run typecheck` passes, `npm run lint` shows fewer `no-explicit-any` errors in ScheduleBoard.tsx, `npm run build` succeeds, all 738 tests pass. Commit as `refactor: remove redundant any annotations in ScheduleBoard (Phase 1)`.
+
+**What was done (commit `f5af918`):**
+
+- Region 1: Removed ~100+ redundant `: any` lambda annotations on all properly-typed arrays (doctors, workplaceTimeslots, systemSettings, wishes, fairnessShifts, scheduleNotes, colorSettings, qualifications, trainingRotations, staffingPlanEntries, previewShifts, selectedQualificationIds, sectionTabs). Also removed redundant annotations on state setters (setHiddenRows, setCollapsedSections, setCurrentDate, setSelectedQualificationIds) and error handlers. Added `useState<string[]>` to hiddenRows/collapsedSections declarations with `as string[]` casts on user data.
+- Region 2: Typed all 17 `useMutation` generic signatures with proper entity types (ShiftEntry, Doctor, SystemSetting, ScheduleNote, ScheduleBlock). mutationFn parameters typed with `Partial<T>` where applicable. 4th generic (TContext) left as `any` to avoid cascading errors from `getQueryData` returning `unknown`. Added `ScheduleNote` and `SystemSetting` to type imports.
+- Region 3: Removed all 10 redundant `(setHiddenSpringerChipIds as any)` and `(setHiddenJokerDoctorIds as any)` casts. State was already properly typed as `useState<Set<string>>`.
+- Result: 160 insertions, 160 deletions. Zero TypeScript errors. All 738 tests pass. Build succeeds. Lint passes (0 errors).
 
 ---
 
