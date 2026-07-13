@@ -18,15 +18,36 @@
 import { api } from '@/api/client';
 import { generateSuggestions } from './autoFillEngine';
 import { CostFunction } from './costFunction';
+import type { ShiftLike } from './costFunction';
+import type { Doctor, Workplace, ShiftEntry, TrainingRotation, WishRequest, SystemSetting, Qualification, WorkplaceQualification, ScheduleRule } from '@/types';
 
 const NUM_VARIANTS = 8; // Number of deterministic runs to try
+
+/** Qualification accessor functions used for scoring and qualification annotation. */
+interface QualData {
+    getDoctorQualIds: (id: string) => string[];
+    getWpRequiredQualIds: (id: string) => string[];
+    getWpOptionalQualIds?: (id: string) => string[];
+    getWpExcludedQualIds?: (id: string) => string[];
+    getWpDiscouragedQualIds?: (id: string) => string[];
+}
+
+/** Server response shape from the AI autofill endpoint. */
+interface AIAutoFillResponse {
+    suggestions?: ShiftLike[];
+    reasoning?: string;
+    provider?: string;
+    model?: string;
+    stats?: Record<string, unknown>;
+    debug?: unknown;
+}
 
 // ============================================================
 //  Scoring: evaluate a plan variant using the unified CostFunction
 //  (replaces the old inline scorePlan with all dimensions)
 // ============================================================
 
-function scorePlan(suggestions: any[], doctors: any[], workplaces: any[], trainingRotations: any[], weekDayStrs: string[], qualData: any, existingShifts: any[]): number {
+function scorePlan(suggestions: ShiftLike[], doctors: Doctor[], workplaces: Workplace[], trainingRotations: TrainingRotation[], weekDayStrs: string[], qualData: QualData, existingShifts: ShiftLike[]): number {
   const { getDoctorQualIds, getWpRequiredQualIds, getWpOptionalQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
   const cf = new CostFunction({
@@ -37,9 +58,9 @@ function scorePlan(suggestions: any[], doctors: any[], workplaces: any[], traini
     trainingRotations: trainingRotations || [],
     getDoctorQualIds,
     getWpRequiredQualIds,
-    getWpOptionalQualIds,
-    getWpExcludedQualIds,
-    getWpDiscouragedQualIds,
+    getWpOptionalQualIds: getWpOptionalQualIds ?? (() => []),
+    getWpExcludedQualIds: getWpExcludedQualIds ?? (() => []),
+    getWpDiscouragedQualIds: getWpDiscouragedQualIds ?? (() => []),
     wishes: [],
     serviceHistory: {},
     weeklyCount: {},
@@ -60,27 +81,28 @@ function scorePlan(suggestions: any[], doctors: any[], workplaces: any[], traini
 //  Convert plan to readable name-based format for LLM
 // ============================================================
 
-function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[], qualData: any, workplaces: any[]): Record<string, Record<string, string[]>> {
+function planToReadable(suggestions: ShiftLike[], doctors: Doctor[], weekDayStrs: string[], qualData: QualData, workplaces: Workplace[]): Record<string, Record<string, string[]>> {
   const nameMap: Record<string, string> = {};
   for (const d of doctors) nameMap[d.id] = d.name;
 
   // Build workplace lookup by name for qualification checks
-  const wpByName: Record<string, any> = {};
+  const wpByName: Record<string, Workplace> = {};
   for (const wp of (workplaces || [])) wpByName[wp.name] = wp;
   const { getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
   const byDate: Record<string, Record<string, string[]>> = {};
   for (const s of suggestions) {
+    const docId = s.doctor_id ?? '';
     if (!byDate[s.date]) byDate[s.date] = {};
-    if (!byDate[s.date][s.position as string]) byDate[s.date][s.position as string] = [];
+    if (!byDate[s.date][s.position]) byDate[s.date][s.position] = [];
 
-    let label = nameMap[s.doctor_id] || s.doctor_id;
+    let label = nameMap[docId] || docId;
 
     // Annotate unqualified/discouraged assignments so LLM can see quality issues
     if (getDoctorQualIds && getWpRequiredQualIds) {
       const wp = wpByName[s.position];
       if (wp) {
-        const docQuals = getDoctorQualIds(s.doctor_id) || [];
+        const docQuals = getDoctorQualIds(docId) || [];
         const excl = getWpExcludedQualIds?.(wp.id) || [];
         const disc = getWpDiscouragedQualIds?.(wp.id) || [];
         const req = getWpRequiredQualIds(wp.id) || [];
@@ -113,23 +135,23 @@ function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[
 
 export async function generateAISuggestions(params: {
   weekDays: Date[];
-  doctors: any[];
-  workplaces: any[];
-  existingShifts: any[];
-  allShifts: any[];
-  trainingRotations: any[];
+  doctors: Doctor[];
+  workplaces: Workplace[];
+  existingShifts: ShiftEntry[];
+  allShifts: ShiftEntry[];
+  trainingRotations: TrainingRotation[];
   isPublicHoliday: (date: Date) => boolean;
   getDoctorQualIds: (id: string) => string[];
   getWpRequiredQualIds: (id: string) => string[];
   getWpOptionalQualIds: (id: string) => string[];
   getWpExcludedQualIds: (id: string) => string[];
   getWpDiscouragedQualIds: (id: string) => string[];
-  categoriesToFill: any[];
-  systemSettings: any[];
-  wishes: any[];
-  allQualifications: any[];
-  allWorkplaceQualifications: any[];
-  scheduleRules: any[];
+  categoriesToFill: string[];
+  systemSettings: SystemSetting[];
+  wishes: WishRequest[];
+  allQualifications: Qualification[];
+  allWorkplaceQualifications: WorkplaceQualification[];
+  scheduleRules: ScheduleRule[];
 }) {
   const {
     weekDays, doctors, workplaces, existingShifts, allShifts,
@@ -187,12 +209,12 @@ export async function generateAISuggestions(params: {
   // 4. Build qualification data for server validation
   const doctorQuals: Record<string, string[]> = {};
   for (const doc of doctors) {
-    doctorQuals[doc.id as string] = (getDoctorQualIds(doc.id) || []);
+    doctorQuals[doc.id] = (getDoctorQualIds(doc.id) || []);
   }
-  const workplaceQuals: Record<string, any[]> = {};
+  const workplaceQuals: Record<string, { qualification_id: string; is_mandatory: boolean; is_excluded: boolean }[]> = {};
   for (const wp of workplaces) {
-    const wpQuals = (allWorkplaceQualifications || []).filter((wq: any) => wq.workplace_id === wp.id);
-    workplaceQuals[wp.id as string] = wpQuals.map((wq: any) => ({
+    const wpQuals = (allWorkplaceQualifications || []).filter((wq) => wq.workplace_id === wp.id);
+    workplaceQuals[wp.id] = wpQuals.map((wq) => ({
       qualification_id: wq.qualification_id,
       is_mandatory: wq.is_mandatory,
       is_excluded: wq.is_excluded,
@@ -236,16 +258,16 @@ export async function generateAISuggestions(params: {
       // NEW: send top 3 scored variants instead of single baseline
       variants: readableVariants,
       // Also send the raw best variant for fallback
-      bestVariant: topVariants[0].suggestions.map((s: any) => ({
+      bestVariant: topVariants[0].suggestions.map((s) => ({
         date: s.date, position: s.position, doctor_id: s.doctor_id,
       })),
       holidays,
       scheduleRules: (scheduleRules || []).map(r => ({
-        content: r.content, is_active: r.is_active,
+        content: r.name, is_active: r.is_active,
       })),
       debug: debugEnabled,
     }),
-  })) as Record<string, any>;
+  })) as AIAutoFillResponse;
 
   // 6. If server returned swap-optimized plan, use it; otherwise fall back to best deterministic
   const aiSuggestions = response.suggestions || [];

@@ -1,26 +1,64 @@
 import { describe, it, expect } from 'vitest';
 import { CostFunction, WEIGHTS } from '../costFunction';
+import type { AssignmentContext } from '../costFunction';
+import type { Doctor, Workplace } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Helper builders
 // ---------------------------------------------------------------------------
-function makeContext(overrides = {}) {
+function makeContext(overrides: Partial<AssignmentContext> = {}): AssignmentContext {
   return {
-    usedToday: new Set(),
+    usedToday: new Set<string>(),
     posCount: {},
     displacementCount: {},
     rotationImpactScore: {},
-    serviceAssignedToday: new Set(),
-    soleOccupantDoctors: new Set(),
+    serviceAssignedToday: new Set<string>(),
+    soleOccupantDoctors: new Set<string>(),
     phase: 'A',
+    ...overrides,
+  };
+}
+
+function makeDoctor(overrides: Partial<Doctor> = {}): Doctor {
+  return {
+    id: 'doc1',
+    name: 'Test Doctor',
+    fte: 1.0,
+    exclude_from_staffing_plan: false,
+    order: 0,
+    is_active: true,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
+    ...overrides,
+  };
+}
+
+function makeWorkplace(overrides: Partial<Workplace> = {}): Workplace {
+  return {
+    id: 'wp1',
+    name: 'CT',
+    category: 'Dienste',
+    allows_multiple: false,
+    timeslots_enabled: false,
+    default_overlap_tolerance_minutes: 0,
+    work_time_percentage: 100,
+    affects_availability: true,
+    min_staff: 1,
+    optimal_staff: 1,
+    consecutive_days_mode: 'allowed',
+    auto_off: false,
+    order: 0,
+    is_active: true,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
     ...overrides,
   };
 }
 
 function makeCf(overrides = {}) {
   return new CostFunction({
-    doctors: [{ id: 'doc1', fte: 1.0, name: 'Test Doctor' }],
-    workplaces: [{ id: 'wp1', name: 'CT', category: 'Dienste' }],
+    doctors: [makeDoctor()],
+    workplaces: [makeWorkplace()],
     existingShifts: [],
     suggestions: [],
     trainingRotations: [],
@@ -32,14 +70,14 @@ function makeCf(overrides = {}) {
     wishes: [],
     serviceHistory: {},
     weeklyCount: {},
-    foregroundPosition: null as any,
-    backgroundPosition: null as any,
+    foregroundPosition: undefined,
+    backgroundPosition: undefined,
     foregroundPositions: new Set(),
     backgroundPositions: new Set(),
     getServiceType: () => 'other',
-    limitFG: null as any,
-    limitBG: null as any,
-    limitWeekend: null as any,
+    limitFG: undefined,
+    limitBG: undefined,
+    limitWeekend: undefined,
     isPublicHoliday: () => false,
     autoFreiByDate: {},
     systemSettings: [],
@@ -63,7 +101,7 @@ describe('WEIGHTS', () => {
 // Qualification cost dimension
 // ---------------------------------------------------------------------------
 describe('CostFunction — qualification cost', () => {
-  const workplace = { id: 'wp1', name: 'CT', category: 'Dienste' };
+  const workplace = makeWorkplace();
   const date = '2024-03-11';
 
   it('returns Infinity when doctor has an excluded qualification', () => {
@@ -126,7 +164,7 @@ describe('CostFunction — qualification cost', () => {
 // Rotation match cost dimension
 // ---------------------------------------------------------------------------
 describe('CostFunction — rotation match cost', () => {
-  const workplace = { id: 'wp1', name: 'CT', category: 'Dienste' };
+  const workplace = makeWorkplace();
   const date = '2024-03-11';
 
   it('applies ROT_MATCH bonus when doctor is on rotation for this workplace', () => {
@@ -171,18 +209,21 @@ describe('CostFunction — rotation match cost', () => {
 // Wish cost dimension
 // ---------------------------------------------------------------------------
 describe('CostFunction — wish cost', () => {
-  const workplace = { id: 'wp1', name: 'CT', category: 'Dienste' };
+  const workplace = makeWorkplace();
   const date = '2024-03-11';
 
   it('returns Infinity for an approved "kein Dienst" wish', () => {
     const cf = makeCf({
       wishes: [{
+        id: 'w1',
         doctor_id: 'doc1',
         date: date,
         type: 'no_service',
+        priority: 'medium',
         status: 'approved',
-        range_start: null,
-        range_end: null,
+        user_viewed: false,
+        created_date: '2024-01-01T00:00:00',
+        updated_date: '2024-01-01T00:00:00',
       }],
     });
     expect(cf.assignmentCost('doc1', workplace, date, makeContext())).toBe(Infinity);
@@ -191,13 +232,16 @@ describe('CostFunction — wish cost', () => {
   it('applies WISH_APPROVED bonus for approved service wish', () => {
     const cf = makeCf({
       wishes: [{
+        id: 'w2',
         doctor_id: 'doc1',
         date: date,
         type: 'service',
-        status: 'approved',
         position: 'CT',
-        range_start: null,
-        range_end: null,
+        priority: 'medium',
+        status: 'approved',
+        user_viewed: false,
+        created_date: '2024-01-01T00:00:00',
+        updated_date: '2024-01-01T00:00:00',
       }],
       getServiceType: () => 'other',
     });

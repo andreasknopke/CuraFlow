@@ -1,14 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { generateSuggestions } from '../autoFillEngine';
+import type { Doctor, Workplace, ShiftEntry, WishRequest } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Helper: minimal doctor factory
 // ---------------------------------------------------------------------------
-function doctor(overrides: any = {}) {
+function doctor(overrides: Partial<Doctor> = {}): Doctor {
   return {
     id: overrides.id ?? 'doc-1',
     name: overrides.name ?? 'Dr. Test',
     fte: overrides.fte ?? 1.0,
+    exclude_from_staffing_plan: false,
+    order: 0,
+    is_active: true,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
     ...overrides,
   };
 }
@@ -16,36 +22,80 @@ function doctor(overrides: any = {}) {
 // ---------------------------------------------------------------------------
 // Helper: minimal workplace factory
 // ---------------------------------------------------------------------------
-function workplace(overrides: any = {}) {
+function workplace(overrides: Partial<Workplace> = {}): Workplace {
   return {
     id: overrides.id ?? 'wp-1',
     name: overrides.name ?? 'CT',
     category: overrides.category ?? 'Dienste',
-    service_type: overrides.service_type ?? null,
-    auto_off: overrides.auto_off ?? false,
+    color: null,
+    active_days: overrides.active_days ?? [],
+    time: null,
+    allows_multiple: false,
+    timeslots_enabled: overrides.timeslots_enabled ?? false,
+    default_overlap_tolerance_minutes: 0,
+    work_time_percentage: 100,
     affects_availability: overrides.affects_availability ?? true,
     allows_rotation_concurrently: overrides.allows_rotation_concurrently ?? false,
-    optimal_staff: overrides.optimal_staff ?? 1,
     min_staff: overrides.min_staff ?? 1,
+    optimal_staff: overrides.optimal_staff ?? 1,
+    service_type: overrides.service_type ?? null,
+    allows_absence_overlap: false,
+    consecutive_days_mode: overrides.consecutive_days_mode ?? 'allowed',
+    auto_off: overrides.auto_off ?? false,
     order: overrides.order ?? 0,
-    active_days: overrides.active_days ?? [],
-    consecutive_days_mode: overrides.consecutive_days_mode ?? null,
-    allows_consecutive_days: overrides.allows_consecutive_days ?? null,
-    timeslots_enabled: overrides.timeslots_enabled ?? false,
+    is_active: true,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: minimal shift factory
+// ---------------------------------------------------------------------------
+function makeShift(overrides: Partial<ShiftEntry> = {}): ShiftEntry {
+  return {
+    id: overrides.id ?? 'shift-1',
+    date: overrides.date ?? '2026-06-15',
+    position: overrides.position ?? 'Frei',
+    doctor_id: overrides.doctor_id ?? null,
+    is_free_text: overrides.is_free_text ?? false,
+    order: overrides.order ?? 0,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Helper: minimal wish factory
+// ---------------------------------------------------------------------------
+function makeWish(overrides: Partial<WishRequest> = {}): WishRequest {
+  return {
+    id: overrides.id ?? 'wish-1',
+    doctor_id: overrides.doctor_id ?? 'doc-1',
+    date: overrides.date ?? '2026-06-15',
+    type: overrides.type ?? 'no_service',
+    status: overrides.status ?? 'approved',
+    priority: overrides.priority ?? 'medium',
+    user_viewed: false,
+    created_date: '2024-01-01T00:00:00',
+    updated_date: '2024-01-01T00:00:00',
+    ...overrides,
   };
 }
 
 // ---------------------------------------------------------------------------
 // Helper: default qualification callbacks (all pass = no restrictions)
 // ---------------------------------------------------------------------------
-function defaultQualFns(overrides: any = {}) {
+function defaultQualFns(overrides: Record<string, unknown> = {}) {
   return {
-    isPublicHoliday: overrides.isPublicHoliday ?? (() => false),
-    getDoctorQualIds: overrides.getDoctorQualIds ?? (() => []),
-    getWpRequiredQualIds: overrides.getWpRequiredQualIds ?? (() => []),
-    getWpOptionalQualIds: overrides.getWpOptionalQualIds ?? (() => []),
-    getWpExcludedQualIds: overrides.getWpExcludedQualIds ?? (() => []),
-    getWpDiscouragedQualIds: overrides.getWpDiscouragedQualIds ?? (() => []),
+    isPublicHoliday: (overrides.isPublicHoliday as ((date: Date) => boolean) | undefined) ?? (() => false),
+    getDoctorQualIds: (overrides.getDoctorQualIds as ((id: string) => string[]) | undefined) ?? (() => []),
+    getWpRequiredQualIds: (overrides.getWpRequiredQualIds as ((id: string) => string[]) | undefined) ?? (() => []),
+    getWpOptionalQualIds: (overrides.getWpOptionalQualIds as ((id: string) => string[]) | undefined) ?? (() => []),
+    getWpExcludedQualIds: (overrides.getWpExcludedQualIds as ((id: string) => string[]) | undefined) ?? (() => []),
+    getWpDiscouragedQualIds: (overrides.getWpDiscouragedQualIds as ((id: string) => string[]) | undefined) ?? (() => []),
   };
 }
 
@@ -105,7 +155,7 @@ describe('generateSuggestions', () => {
       doctors: [doc],
       workplaces: [svc],
       existingShifts: [
-        { date: '2026-06-15', position: 'Frei', doctor_id: 'doc-1' },
+        makeShift({ date: '2026-06-15', position: 'Frei', doctor_id: 'doc-1' }),
       ],
       trainingRotations: [],
       categoriesToFill: ['Dienste'],
@@ -246,12 +296,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       wishes: [
-        {
-          doctor_id: 'doc-wish',
-          date: '2026-06-15',
-          type: 'no_service',
-          status: 'approved',
-        },
+        makeWish({ doctor_id: 'doc-wish', date: '2026-06-15', type: 'no_service', status: 'approved' }),
       ],
       ...defaultQualFns(),
     });
@@ -288,7 +333,7 @@ describe('generateSuggestions', () => {
     expect(freiEntries.length).toBeGreaterThanOrEqual(1);
     const autoFrei = freiEntries.find((f: any) => f.doctor_id === 'doc-af');
     expect(autoFrei).toBeTruthy();
-    expect(autoFrei.note).toContain('Autom. Freizeitausgleich');
+    expect(autoFrei!.note).toContain('Autom. Freizeitausgleich');
   });
 
   it('respects mandatory qualification requirements', () => {
@@ -578,10 +623,10 @@ describe('generateSuggestions', () => {
       doctors: [doc],
       workplaces: [svc],
       existingShifts: [
-        { date: '2026-06-14', position: 'BG', doctor_id: 'doc-existing' }, // yesterday
+        makeShift({ date: '2026-06-14', position: 'BG', doctor_id: 'doc-existing' }), // yesterday
       ],
       allShifts: [
-        { date: '2026-06-14', position: 'BG', doctor_id: 'doc-existing' },
+        makeShift({ date: '2026-06-14', position: 'BG', doctor_id: 'doc-existing' }),
       ],
       trainingRotations: [],
       categoriesToFill: ['Dienste'],
@@ -704,9 +749,9 @@ describe('generateSuggestions -- debug mode', () => {
 
     // The return value should have __debug attached
     expect((result).__debug).toBeDefined();
-    expect((result).__debug.requestId).toBe('test-1');
-    expect(Array.isArray((result).__debug.entries)).toBe(true);
-    expect((result).__debug.entries.length).toBeGreaterThan(0);
+    expect((result).__debug!.requestId).toBe('test-1');
+    expect(Array.isArray((result).__debug!.entries)).toBe(true);
+    expect((result).__debug!.entries.length).toBeGreaterThan(0);
     // The original debugEntries array should also have entries pushed
     expect(debugEntries.length).toBeGreaterThan(0);
   });
