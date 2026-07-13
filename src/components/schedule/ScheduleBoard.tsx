@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DragStart, BeforeCapture, DraggableProvided, DraggableStateSnapshot, DraggableRubric } from '@hello-pangea/dnd';
@@ -255,16 +256,17 @@ const parseDateFromQuery = (rawDate: string | null): Date | null => {
     return isValid(parsed) ? parsed : null;
 };
 
-const getInitialScheduleState = (): { currentDate: Date; viewMode: ScheduleViewMode; activeSectionTabId: string } => {
-    const params = new URLSearchParams(window.location.search);
-    const initialDate = parseDateFromQuery(params.get('date'));
-    const rawView = params.get('view');
+const getInitialScheduleState = (
+  searchParams: URLSearchParams
+): { currentDate: Date; viewMode: ScheduleViewMode; activeSectionTabId: string } => {
+    const initialDate = parseDateFromQuery(searchParams.get('date'));
+    const rawView = searchParams.get('view');
     const initialViewMode: ScheduleViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
 
     return {
         currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
         viewMode: initialViewMode,
-        activeSectionTabId: params.get('sectionTab') || 'main',
+        activeSectionTabId: searchParams.get('sectionTab') || 'main',
     };
 };
 
@@ -854,11 +856,11 @@ const TimeslotSummaryHint = ({ summary, details = [], count = 0 }: { summary: st
 };
 
 export default function ScheduleBoard() {
-    const initialState = useMemo(() => getInitialScheduleState(), []);
+    const [searchParams] = useSearchParams();
+    const initialState = useMemo(() => getInitialScheduleState(searchParams), [searchParams]);
     const isEmbeddedSchedule = useMemo(() => {
-            const params = new URLSearchParams(window.location.search);
-            return params.get('embeddedSchedule') === '1';
-    }, []);
+            return searchParams.get('embeddedSchedule') === '1';
+    }, [searchParams]);
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
     const [currentDate, setCurrentDate] = useState(initialState.currentDate);
