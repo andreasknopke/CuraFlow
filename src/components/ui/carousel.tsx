@@ -9,8 +9,8 @@ interface CarouselApi {
   scrollPrev: () => void
   scrollNext: () => void
   scrollToList: (index: number) => void
-  canScrollPrev: boolean
-  canScrollNext: boolean
+  canScrollPrev: () => boolean
+  canScrollNext: () => boolean
   on: (event: string, callback: (...args: unknown[]) => void) => void
   off: (event: string, callback: (...args: unknown[]) => void) => void
 }
@@ -74,7 +74,7 @@ const Carousel = React.forwardRef<
   const [carouselRef, api] = useEmblaCarousel({
     ...opts,
     axis: orientation === "horizontal" ? "x" : "y",
-  } as any, plugins as any)
+  } as Parameters<typeof useEmblaCarousel>[0], plugins as Parameters<typeof useEmblaCarousel>[1])
   const [canScrollPrev, setCanScrollPrev] = React.useState(false)
   const [canScrollNext, setCanScrollNext] = React.useState(false)
 
@@ -83,8 +83,8 @@ const Carousel = React.forwardRef<
       return
     }
 
-    setCanScrollPrev((api as any).canScrollPrev?.())
-    setCanScrollNext((api as any).canScrollNext?.())
+    setCanScrollPrev(api.canScrollPrev?.())
+    setCanScrollNext(api.canScrollNext?.())
   }, [])
 
   const scrollPrev = React.useCallback(() => {
@@ -160,7 +160,7 @@ const CarouselContent = React.forwardRef<
   const { carouselRef, orientation } = useCarousel()
 
   return (
-    (<div ref={carouselRef as any} className="overflow-hidden">
+    (<div ref={carouselRef as React.RefObject<HTMLDivElement>} className="overflow-hidden">
       <div
         ref={ref}
         className={cn(

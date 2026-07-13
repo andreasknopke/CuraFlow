@@ -81,7 +81,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // ── Global ticket dialog opener (used by ErrorBoundary) ───────────────────
 
   useEffect(() => {
-    (window as any).__openTicketDialog = (
+    const win = window as unknown as { __openTicketDialog?: (type: string, error: Error | null) => void };
+    win.__openTicketDialog = (
       type: string,
       error: Error | null,
     ) => {
@@ -90,7 +91,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       setIsTicketDialogOpen(true);
     };
     return () => {
-      delete (window as any).__openTicketDialog;
+      delete win.__openTicketDialog;
     };
   }, []);
 
@@ -447,7 +448,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       <TicketDialog
         open={isTicketDialogOpen}
         onOpenChange={setIsTicketDialogOpen}
-        initialType={ticketDialogType as any}
+        initialType={ticketDialogType as 'bug' | 'feature'}
         initialError={ticketDialogError}
       />
     </div>

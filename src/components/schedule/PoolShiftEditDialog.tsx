@@ -4,6 +4,37 @@ import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { Loader2, Trash2, AlertCircle } from 'lucide-react';
 import { api } from '@/api/client';
+
+interface EligibleStaffMember {
+    id: string;
+    name: string;
+    first_name?: string;
+    last_name?: string;
+    initials?: string;
+    tenant_ids?: string[];
+}
+
+interface EligibleStaffResponse {
+    staff: EligibleStaffMember[];
+    required?: string[];
+    absences_by_employee?: Record<string, unknown>;
+}
+
+interface CentralWish {
+    employee_id: string;
+    type: string;
+    status: string;
+    shared_workplace_id?: string | null;
+    range_start?: string | Date | null;
+    range_end?: string | Date | null;
+    start_date?: string | Date | null;
+    end_date?: string | Date | null;
+    date?: string | Date | null;
+}
+
+interface CentralWishesResponse {
+    wishes: CentralWish[];
+}
 import {
     Dialog,
     DialogContent,
@@ -87,7 +118,7 @@ export default function PoolShiftEditDialog({
 
     const staffQuery = useQuery({
         queryKey: ['pool', 'eligible-staff', groupId, workplace?.id],
-        queryFn: () => api.getWorkplaceEligibleStaff(groupId as string, workplace!.id) as any,
+        queryFn: () => api.getWorkplaceEligibleStaff(groupId as string, workplace!.id) as Promise<EligibleStaffResponse>,
         enabled: !!open && !!groupId && !!workplace?.id,
         // No staleTime — always fetch fresh data when the dialog opens,
         // so that qualification assignments/changes are reflected immediately
@@ -104,7 +135,7 @@ export default function PoolShiftEditDialog({
     const dateStr = date ? String(date).slice(0, 10) : '';
     const { data: centralWishesData } = useQuery({
         queryKey: ['pool', 'central-wishes', dateStr],
-        queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }) as any,
+        queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }) as Promise<CentralWishesResponse>,
         enabled: !!open && !!dateStr && !!workplace?.id,
     });
     const centralWishes = (centralWishesData)?.wishes || [];
@@ -139,7 +170,7 @@ export default function PoolShiftEditDialog({
         }
         const busy = new Set();
         const dateStr = String(date).slice(0, 10);
-        for (const [empId, absences] of Object.entries(absencesByEmployee as Record<string, any[]>)) {
+        for (const [empId, absences] of Object.entries(absencesByEmployee as Record<string, { date: string }[]>)) {
             for (const a of absences) {
                 if (String(a.date).slice(0, 10) === dateStr) {
                     busy.add(String(empId));
@@ -172,7 +203,7 @@ export default function PoolShiftEditDialog({
             return staff;
         }
         const currentEmp = shift?.employee_id ? String(shift.employee_id) : null;
-        const filtered = staff.filter((s: any) => {
+        const filtered = staff.filter((s) => {
             const id = String(s.id);
             if (id === currentEmp) return true;
             return !busyIds.has(id);
@@ -190,7 +221,7 @@ export default function PoolShiftEditDialog({
     // Distinct list of tenant ids the chosen employee is assigned to.
     // We let the admin pick which tenant gets billed for the shift.
     const billingOptions = useMemo(() => {
-        const emp = staff.find((s: any) => s.id === employeeId);
+        const emp = staff.find((s) => s.id === employeeId);
         const ids = emp?.tenant_ids || [];
         if (ids.length === 0 && activeTenantId) return [activeTenantId];
         return ids;
@@ -225,13 +256,14 @@ export default function PoolShiftEditDialog({
             await refreshAfterShiftChange();
             onOpenChange(false);
         },
-        onError: (err: any) => {
+        onError: (err: unknown) => {
             // The constraints validator returns { error: 'constraint_violation', details: [...] }
-            const details = err?.details;
+            const details = (err && typeof err === 'object' && 'details' in err) ? (err as Record<string, unknown>).details as Record<string, unknown> | undefined : undefined;
             if (details?.error === 'constraint_violation' && Array.isArray(details.details)) {
-                setViolations(details.details);
+                setViolations(details.details as Violation[]);
             } else {
-                setViolations([{ rule: 'error', message: err.message || 'Speichern fehlgeschlagen' }]);
+                const message = err instanceof Error ? err.message : String(err);
+                setViolations([{ rule: 'error', message: message || 'Speichern fehlgeschlagen' }]);
             }
         },
     });
@@ -288,7 +320,7 @@ export default function PoolShiftEditDialog({
                                     <SelectValue placeholder="Mitarbeiter wählen" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {visibleStaff.map((s: any) => {
+                                    {visibleStaff.map((s) => {
                                         const wish = wishByEmployeeId.get(String(s.id));
                                         const isServiceWish = wish?.type === 'service' && wish?.status !== 'rejected';
                                         const isNoServiceWish = !isServiceWish && wish?.type === 'no_service' && wish?.status !== 'rejected';

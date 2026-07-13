@@ -1,3 +1,5 @@
+import type { CentralEmployee } from '@/types';
+
 interface Doctor {
     fte?: number;
     central_employee_id?: string | null;
@@ -8,11 +10,6 @@ interface Doctor {
 interface WorkTimeModel {
     hours_per_week?: number;
     hours_per_day?: number;
-}
-
-interface CentralEmployee {
-    target_hours_per_week?: number | null;
-    model_hours_per_week?: number;
 }
 
 const DEFAULT_FULLTIME_HOURS = 38.5;

@@ -1,14 +1,7 @@
 import { Draggable } from '@hello-pangea/dnd';
 import { User, Clock } from 'lucide-react';
 import { resolveDoctorTargetWeeklyHours } from '@/components/schedule/doctorWorkTime';
-import type { Doctor, WorkTimeModel } from '@/types';
-
-// ── Local types ────────────────────────────────────────────────────────────
-
-interface CentralEmployee {
-  target_hours_per_week?: number | null;
-  model_hours_per_week?: number | null;
-}
+import type { Doctor, WorkTimeModel, CentralEmployee } from '@/types';
 
 interface DoctorStyle {
   backgroundColor?: string;
@@ -35,7 +28,7 @@ interface DraggableDoctorProps {
 
 export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null }: DraggableDoctorProps) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
-  const targetWeekly = resolveDoctorTargetWeeklyHours(doctor as any, workTimeModel, centralEmployee as any);
+  const targetWeekly = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
   const planned = plannedHours || 0;
   const pct = targetWeekly ? (planned / targetWeekly) * 100 : null;
 

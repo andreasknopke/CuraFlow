@@ -9,7 +9,9 @@ import { useExpiringCertificates, openCertificateInNewTab } from '@/hooks/useCer
 import { useQualifications } from '@/hooks/useQualifications';
 import { useToast } from '@/components/ui/use-toast';
 
-function formatDate(value: any): string {
+import type { Doctor } from '@/types';
+
+function formatDate(value: string | Date | null | undefined): string {
     if (!value) return '–';
     try {
         const d = typeof value === 'string' ? parseISO(value) : value;
@@ -28,13 +30,13 @@ function formatDate(value: any): string {
  *  - doctors: Liste aller Doctor-Records (für Namensauflösung bei Admin-Ansicht)
  *  - isAdmin: bool
  */
-export default function CertificateExpiryWidget({ doctors = [], isAdmin = false }: { doctors?: any[]; isAdmin?: boolean }) {
+export default function CertificateExpiryWidget({ doctors = [], isAdmin = false }: { doctors?: Doctor[]; isAdmin?: boolean }) {
     const { toast } = useToast();
     const { expiring, isLoading } = useExpiringCertificates({ days: 60 });
     const { qualificationMap } = useQualifications();
 
     const doctorMap = useMemo(() => {
-        const m: Record<string, any> = {};
+        const m: Record<string, Doctor> = {};
         for (const d of doctors) m[d.id] = d;
         return m;
     }, [doctors]);
@@ -46,8 +48,8 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
     const handleView = async (id: string) => {
         try {
             await openCertificateInNewTab(id);
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Datei kann nicht geöffnet werden', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Datei kann nicht geöffnet werden', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -75,7 +77,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                             const days = Number(cert.days_until_expiry);
                             const expired = Number.isFinite(days) && days < 0;
                             const doctor = doctorMap[cert.doctor_id as string];
-                            const qual = (qualificationMap as any)?.[cert.qualification_id as string];
+                            const qual = qualificationMap[cert.qualification_id as string];
                             return (
                                 <li
                                     key={cert.id}
@@ -100,7 +102,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                                             )}
                                         </div>
                                         <div className="text-xs text-slate-500 mt-0.5">
-                                            Gültig bis {formatDate(cert.expiry_date)}
+                                            Gültig bis {formatDate(cert.expiry_date as string | Date | null | undefined)}
                                             {' · '}
                                             {expired
                                                 ? <span className="text-red-600 font-medium">abgelaufen seit {Math.abs(days)} Tagen</span>

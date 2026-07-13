@@ -1,6 +1,6 @@
 import { ValidationRule, type RuleContext, type RuleViolation } from './ValidationRule';
 import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
-import type { WorkplaceTimeslot } from '@/types';
+import type { TimeslotLike } from '@/utils/timeslotUtils';
 
 /**
  * Checks if the doctor would have overlapping timeslots on the same day.
@@ -20,7 +20,7 @@ export class TimeslotOverlapRule extends ValidationRule {
         const { doctorId, dateStr, position, timeslotId, excludeShiftId, validator: v } = ctx;
 
         // Helper to format time range
-        const formatTimeRange = (slot: WorkplaceTimeslot | null | undefined): string => {
+        const formatTimeRange = (slot: TimeslotLike | null | undefined): string => {
             if (!slot) return '';
             const start = slot.start_time?.substring(0, 5) || '00:00';
             const end = slot.end_time?.substring(0, 5) || '23:59';
@@ -71,7 +71,7 @@ export class TimeslotOverlapRule extends ValidationRule {
                 return [{
                     ruleId: this.id,
                     severity: 'blocker',
-                    message: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot as any)}.`,
+                    message: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot)}.`,
                     shiftIds: [existingShift.id].filter(Boolean),
                 }];
             }

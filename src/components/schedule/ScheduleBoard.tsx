@@ -585,7 +585,7 @@ const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap:
 
     const model = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
     const centralEmployee = doctor.central_employee_id ? centralEmployeesById.get(String(doctor.central_employee_id)) : null;
-    return resolveDoctorTargetDailyHours(doctor as any, model, centralEmployee);
+    return resolveDoctorTargetDailyHours(doctor, model, centralEmployee);
 };
 
 const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
@@ -1470,7 +1470,7 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
-  const { data: wishes = [] as any } = useQuery({
+  const { data: wishes = [] } = useQuery({
     queryKey: ['wishes', fetchRange.start, fetchRange.end],
     queryFn: () => db.WishRequest.filter({
                 date: {
@@ -1991,7 +1991,7 @@ export default function ScheduleBoard() {
   // ScheduleBlock: Gesperrte Zellen + Info-Notizen im Wochenplan
   // type='block' = Zelle gesperrt (kein Drag & Drop)
   // type='info'  = nur Information, kein Lock
-  const { data: scheduleBlocks = [] as any } = useQuery({
+  const { data: scheduleBlocks = [] } = useQuery({
     queryKey: ['scheduleBlocks', fetchRange.start, fetchRange.end],
     queryFn: () => db.ScheduleBlock.filter({
         date: { $gte: fetchRange.start, $lte: fetchRange.end }
@@ -7182,8 +7182,8 @@ export default function ScheduleBoard() {
                         doctors,
                         shifts: allShifts,
                         dateStr,
-                        qualificationMap: qualificationMap as any,
-                        doctorQualByDoctor: doctorQualByDoctor as any,
+                        qualificationMap: qualificationMap,
+                        doctorQualByDoctor: doctorQualByDoctor,
                         availabilityThresholds
                     });
 

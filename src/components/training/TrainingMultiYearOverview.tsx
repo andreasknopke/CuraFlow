@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { eachDayOfInterval, endOfMonth, endOfYear, format, getDaysInMonth, startOfMonth, startOfYear } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
 import type { Doctor } from '@/types/models';
 
 const MONTHS = Array.from({ length: 12 }, (_, monthIndex) => monthIndex);
@@ -30,12 +30,6 @@ interface SegmentStyle {
 interface ColorConfig {
   backgroundColor: string;
   color: string;
-}
-
-interface ContractInfo {
-  contractStart?: string;
-  contractEnd?: string;
-  [key: string]: unknown;
 }
 
 interface DragCell {
@@ -195,7 +189,7 @@ export default function TrainingMultiYearOverview({
 
           days.forEach((day) => {
             const dateKey = `${doctor.id}_${format(day, 'yyyy-MM-dd')}`;
-            const modality = isDateWithinContract(day, contractInfo?.contractStart, contractInfo?.contractEnd)
+            const modality = isDateWithinContract(day, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined)
               ? (rotationLookup.get(dateKey) || null)
               : DISABLED_SEGMENT;
             const lastSegment = segments[segments.length - 1];
@@ -333,7 +327,7 @@ export default function TrainingMultiYearOverview({
             {monthCells.map(({ doctor, cells }: DoctorCells) => (
               <tr key={doctor.id} className="hover:bg-slate-50/60">
                 <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
-                  <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id] as any) || undefined}>{doctor.name}</div>
+                  <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id]) || undefined}>{doctor.name}</div>
                 </td>
                 {cells.map((cell) => {
                   const contractInfo = getDoctorContractInfo ? getDoctorContractInfo(doctor.id) : contractInfoByDoctorId[doctor.id];

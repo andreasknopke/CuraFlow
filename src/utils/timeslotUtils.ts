@@ -11,7 +11,7 @@ import { isNonWorkingShiftPosition } from './shiftPositionUtils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface TimeslotLike {
+export interface TimeslotLike {
   id?: string | number | null;
   label?: string | null;
   start_time?: string | null;

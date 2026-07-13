@@ -19,7 +19,7 @@ describe('doctorWorkTime', () => {
   it('scales model hours by doctor fte before falling back to default full time hours', () => {
     const doctor = { fte: 0.5, target_weekly_hours: null, central_employee_id: 'employee-1' } as any;
     const workTimeModel = { hours_per_week: 40, hours_per_day: 8 };
-    const centralEmployee = { id: 'employee-1', target_hours_per_week: null, model_hours_per_week: 40 };
+    const centralEmployee = { id: 'employee-1', target_hours_per_week: null, model_hours_per_week: 40 } as any;
 
     expect(resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee)).toBe(20);
     expect(resolveDoctorTargetDailyHours(doctor, workTimeModel, centralEmployee)).toBe(4);

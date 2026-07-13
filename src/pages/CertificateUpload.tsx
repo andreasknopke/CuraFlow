@@ -10,15 +10,27 @@ import { Badge } from '@/components/ui/badge';
 import { useDoctorQualifications, useQualifications } from '@/hooks/useQualifications';
 import { computeQualificationEvidenceSummary } from '@/lib/qualificationEvidence';
 import type { EvidenceSummary } from '@/lib/qualificationEvidence';
+import type { DoctorQualification } from '@/types';
+import type { Qualification as QualificationModel } from '@/types';
 
-function groupCertificatesByQualification(certificates: any[] = []) {
-  return certificates.reduce((acc: Record<string, any[]>, certificate: any) => {
-    if (!acc[certificate.qualification_id]) {
-      acc[certificate.qualification_id] = [];
+interface CertificateEntry {
+  id?: string;
+  doctor_id?: string;
+  qualification_id?: string;
+  [key: string]: unknown;
+}
+
+function groupCertificatesByQualification(certificates: CertificateEntry[] = []) {
+  return certificates.reduce((acc: Record<string, CertificateEntry[]>, certificate: CertificateEntry) => {
+    const key = certificate.qualification_id;
+    if (key) {
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(certificate);
     }
-    acc[certificate.qualification_id].push(certificate);
     return acc;
-  }, {});
+  }, {} as Record<string, CertificateEntry[]>);
 }
 
 export default function CertificateUploadPage() {
@@ -30,25 +42,25 @@ export default function CertificateUploadPage() {
   }, [location.search]);
 
   const { qualifications, qualificationMap, isLoading: qualificationsLoading } = useQualifications();
-  const { doctorQualifications = [], isLoading: doctorQualificationsLoading } = useDoctorQualifications((user as any)?.doctor_id);
-  const { data: allCertificates = [], isLoading: certificatesLoading } = useQuery({
-    queryKey: ['certificates-self-service', (user as any)?.doctor_id],
-    queryFn: () => api.listCertificates({ doctor_id: (user as any).doctor_id }) as any,
-    enabled: !!(user as any)?.doctor_id,
+  const { doctorQualifications = [], isLoading: doctorQualificationsLoading } = useDoctorQualifications(user?.doctor_id as string | null | undefined);
+  const { data: allCertificates = [], isLoading: certificatesLoading } = useQuery<CertificateEntry[]>({
+    queryKey: ['certificates-self-service', user?.doctor_id],
+    queryFn: () => api.listCertificates({ doctor_id: user?.doctor_id as string | undefined }) as Promise<CertificateEntry[]>,
+    enabled: !!user?.doctor_id,
   });
 
   const groupedCertificates = useMemo(() => groupCertificatesByQualification(allCertificates), [allCertificates]);
 
   const visibleQualifications = useMemo(() => {
     const mapped = doctorQualifications
-      .map((doctorQualification: any) => {
-        const qualification: any = qualificationMap[doctorQualification.qualification_id];
+      .map((doctorQualification: DoctorQualification) => {
+        const qualification: QualificationModel | undefined = qualificationMap[doctorQualification.qualification_id];
         if (!qualification || qualification.requires_certificate !== true) {
           return null;
         }
 
         const summary: EvidenceSummary = computeQualificationEvidenceSummary({
-          qualification,
+          qualification: qualification,
           certificates: groupedCertificates[qualification.id] || [],
         });
         const shouldInclude = summary.status !== 'valid' || qualification.id === selectedQualificationId;
@@ -62,8 +74,8 @@ export default function CertificateUploadPage() {
           summary,
         };
       })
-      .filter(Boolean);
-    return (mapped as any[]).sort((left: any, right: any) => {
+      .filter(Boolean) as Array<{ qualification: QualificationModel; doctorQualification: DoctorQualification; summary: EvidenceSummary }>;
+    return mapped.sort((left, right) => {
         const leftPinned = left.qualification.id === selectedQualificationId ? 0 : 1;
         const rightPinned = right.qualification.id === selectedQualificationId ? 0 : 1;
         if (leftPinned !== rightPinned) return leftPinned - rightPinned;
@@ -133,15 +145,15 @@ export default function CertificateUploadPage() {
                 <div className="text-xs text-slate-500">{summary.reason}</div>
               </div>
               <CertificateManager
-                doctorId={(user as any).doctor_id}
+                doctorId={user.doctor_id as string}
                 qualificationId={qualification.id}
                 qualificationName={qualification.name}
-                qualificationDescription={qualification.description}
-                qualificationRequirementMode={qualification.certificate_requirement_mode}
+                qualificationDescription={qualification.description ?? ''}
+                qualificationRequirementMode={String((qualification as unknown as { certificate_requirement_mode?: string }).certificate_requirement_mode ?? 'single_document')}
                 qualificationValidityMonths={qualification.certificate_validity_months}
-                qualificationRefreshValidityMonths={qualification.certificate_refresh_validity_months}
-                qualificationBaseLabel={qualification.certificate_base_label}
-                qualificationRefreshLabel={qualification.certificate_refresh_label}
+                qualificationRefreshValidityMonths={(qualification as unknown as { certificate_refresh_validity_months?: number | null }).certificate_refresh_validity_months}
+                qualificationBaseLabel={(qualification as unknown as { certificate_base_label?: string }).certificate_base_label}
+                qualificationRefreshLabel={(qualification as unknown as { certificate_refresh_label?: string }).certificate_refresh_label}
                 doctorQualificationId={doctorQualification.id}
                 doctorQualification={doctorQualification}
               />

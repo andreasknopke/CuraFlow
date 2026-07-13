@@ -1,6 +1,7 @@
 import { format, addDays, isWeekend, parseISO } from 'date-fns';
 import type { Doctor, ShiftEntry, Workplace, WishRequest, SystemSetting, StaffingPlanEntry, WorkplaceTimeslot, WorkplaceQualification } from '@/types';
 import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
+import type { TimeslotLike } from '@/utils/timeslotUtils';
 import { getAutoFreiDate } from '@/utils/autoFrei';
 import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { computeVacationBalance } from '@/components/vacation/vacationBalance';
@@ -20,7 +21,7 @@ interface CheckResult {
     warning?: string;
 }
 
-interface SharedShift {
+export interface SharedShift {
     employee_id: string;
     date: string;
     workplace_name?: string;
@@ -46,15 +47,8 @@ interface ShiftValidatorOptions {
     employeeRelationships?: Map<string, string[]>;
 }
 
-interface TimeSlot {
-    start_time?: string;
-    end_time?: string;
-    label?: string;
-    overlap_tolerance_minutes?: number;
-}
-
 // Hilfsfunktion für Fehlermeldungen
-function formatTimeRange(slot: TimeSlot | null | undefined): string {
+function formatTimeRange(slot: TimeslotLike | null | undefined): string {
     if (!slot) return '';
     const start = slot.start_time?.substring(0, 5) || '00:00';
     const end = slot.end_time?.substring(0, 5) || '23:59';
@@ -87,7 +81,7 @@ export class ShiftValidator {
     getPublicHolidayDatesForYear: (year: number) => string[] | null;
     employeeRelationships: Map<string, string[]>;
 
-    private _customCategories: Record<string, unknown>;
+    private _customCategories: ReturnType<typeof getWorkplaceCategoriesFromSettings>;
     absenceBlockingRules: Record<string, boolean>;
     limits: { foreground: number; background: number; weekend: number };
     staffingMinimums: Array<{ qualificationId: string; qualificationName?: string; min: number }>;
@@ -122,7 +116,7 @@ export class ShiftValidator {
         this.employeeRelationships = employeeRelationships || new Map();
 
         // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
-        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings) as any;
+        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
 
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
@@ -134,7 +128,7 @@ export class ShiftValidator {
      * Prüft ob eine Kategorie Mehrfachbesetzung erlaubt
      */
     _categoryAllowsMultiple(categoryName: string): boolean {
-        return categoryAllowsMultiple(categoryName, this._customCategories as any);
+        return categoryAllowsMultiple(categoryName, this._customCategories);
     }
 
     /**
@@ -142,7 +136,7 @@ export class ShiftValidator {
      * Nutzt workplace.allows_multiple wenn gesetzt, sonst Kategorie-Default.
      */
     _workplaceAllowsMultiple(workplace: Workplace): boolean {
-        return workplaceAllowsMultiple(workplace, this._customCategories as any);
+        return workplaceAllowsMultiple(workplace, this._customCategories);
     }
 
     _parseAbsenceRules(): Record<string, boolean> {
@@ -462,7 +456,7 @@ export class ShiftValidator {
                 const existingLabel = existingTimeslot?.label || existingShift.position;
                 const newLabel = newTimeslot?.label || newPosition;
                 return { 
-                    blocker: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot as any)}.`
+                    blocker: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot)}.`
                 };
             }
         }

@@ -194,7 +194,7 @@ function EmployeeRow({ employee, category, isChecked, onDecision, selectedCandid
           {category === 'EXACT_MATCH' && employee.existing_employee_id && (
             <div className="mt-3 p-2 bg-emerald-50 rounded text-sm text-emerald-700">
               <CheckCircle2 className="w-4 h-4 inline mr-1" />
-              Existiert bereits: {(employee as any).existing_first_name} {(employee as any).existing_last_name}
+              Existiert bereits: {employee.existing_first_name} {employee.existing_last_name}
             </div>
           )}
 
@@ -290,12 +290,12 @@ export default function MasterStammdatImport() {
   const [dryRunning, setDryRunning] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [analysis, setAnalysis] = useState<any>(null);
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [decisions, setDecisions] = useState<Record<number, StammdatImportDecision>>({});
   const [candidateSelections, setCandidateSelections] = useState<Record<number, string | null>>({});
   const [linkSelections, setLinkSelections] = useState<Record<string, number | null>>({});
   const [linking, setLinking] = useState<Record<string, boolean>>({});
-  const [importResult, setImportResult] = useState<any>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState('exact_match');
@@ -452,7 +452,7 @@ export default function MasterStammdatImport() {
 
   // ============ FILTERING ============
 
-  const stammdatLinkOptions = ((analysis as AnalysisResult | null)?.no_match || []).map((s: StammdatEmployee) => ({
+  const stammdatLinkOptions = ((analysis)?.no_match || []).map((s: StammdatEmployee) => ({
     value: String(s.stammdat_id),
     label: `${s.last_name}, ${s.first_name}`,
     description: `${s.personalnummer} — ${s.position || 'o.A.'}`,
@@ -502,8 +502,8 @@ export default function MasterStammdatImport() {
           <StatCard icon={Users} label="Eindeutige MA" value={analysis.exact_matches.length} color="bg-emerald-100 text-emerald-600" variant="success" />
           <StatCard icon={AlertTriangle} label="Uneindeutig" value={analysis.ambiguous.length} color="bg-amber-100 text-amber-600" variant="warning" />
           <StatCard icon={UserPlus} label="Neu anzulegen" value={analysis.no_match.length} color="bg-indigo-100 text-indigo-600" variant="info" />
-          {analysis.unmatched_in_curaflow?.length > 0 && (
-            <StatCard icon={Users} label="Nur in CuraFlow" value={analysis.unmatched_in_curaflow.length} color="bg-rose-100 text-rose-600" variant="default" />
+          {(analysis.unmatched_in_curaflow?.length ?? 0) > 0 && (
+            <StatCard icon={Users} label="Nur in CuraFlow" value={analysis.unmatched_in_curaflow?.length ?? 0} color="bg-rose-100 text-rose-600" variant="default" />
           )}
         </div>
       )}
@@ -627,21 +627,21 @@ export default function MasterStammdatImport() {
                   🆕 Neu anzulegen ({importResult.preview.creates.length})
                 </h3>
                 <div className="space-y-3 max-h-96 overflow-y-auto">
-                  {importResult.preview.creates.map((item: { data?: Record<string, any> | null; personalnummer?: string | number }, i: number) => (
+                  {importResult.preview.creates.map((item: { data?: Record<string, unknown> | null; personalnummer?: string | number }, i: number) => (
                     <div key={i} className="border border-indigo-200 rounded p-3 bg-indigo-50/30">
                       <p className="font-medium text-indigo-900">
-                        {item.data?.last_name}, {item.data?.first_name}
+                        {String(item.data?.last_name ?? '')}, {String(item.data?.first_name ?? '')}
                         <span className="text-xs text-indigo-500 ml-2">PNr {item.personalnummer}</span>
                       </p>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 mt-2 text-xs">
-                        <div><span className="text-slate-400">Position:</span> {item.data?.position || '—'}</div>
-                        <div><span className="text-slate-400">E-Mail:</span> {item.data?.email || '—'}</div>
-                        <div><span className="text-slate-400">KST:</span> {item.data?.cost_center} — {item.data?.cost_center_name}</div>
-                        <div><span className="text-slate-400">Vertrag:</span> {item.data?.contract_start || '—'} → {item.data?.contract_end || '—'}</div>
-                        <div><span className="text-slate-400">Anrede:</span> {item.data?.salutation || '—'}</div>
-                        <div><span className="text-slate-400">Titel:</span> {item.data?.title || '—'}</div>
+                        <div><span className="text-slate-400">Position:</span> {String(item.data?.position || '—')}</div>
+                        <div><span className="text-slate-400">E-Mail:</span> {String(item.data?.email || '—')}</div>
+                        <div><span className="text-slate-400">KST:</span> {String(item.data?.cost_center ?? '')} — {String(item.data?.cost_center_name ?? '')}</div>
+                        <div><span className="text-slate-400">Vertrag:</span> {String(item.data?.contract_start || '—')} → {String(item.data?.contract_end || '—')}</div>
+                        <div><span className="text-slate-400">Anrede:</span> {String(item.data?.salutation || '—')}</div>
+                        <div><span className="text-slate-400">Titel:</span> {String(item.data?.title || '—')}</div>
                         <div><span className="text-slate-400">Aktiv:</span> {item.data?.is_active ? 'Ja' : 'Nein'}</div>
-                        <div><span className="text-slate-400">KST-Splits:</span> {item.data?.cost_centers || 0}</div>
+                        <div><span className="text-slate-400">KST-Splits:</span> {String(item.data?.cost_centers ?? 0)}</div>
                       </div>
                     </div>
                   ))}
@@ -706,14 +706,14 @@ export default function MasterStammdatImport() {
           )}
 
           {/* Cost center changes */}
-          {importResult.preview.cost_center_changes?.length > 0 && (
+          {(importResult.preview.cost_center_changes?.length ?? 0) > 0 && (
             <Card>
               <CardContent className="p-4">
                 <h3 className="font-semibold text-slate-700 mb-3">
-                  📊 Kostenstellen-Änderungen ({importResult.preview.cost_center_changes.length} MA)
+                  📊 Kostenstellen-Änderungen ({importResult.preview.cost_center_changes?.length ?? 0} MA)
                 </h3>
                 <div className="space-y-2">
-                  {importResult.preview.cost_center_changes.map((cc: { name: string; personalnummer: string | number; cost_center_count: number; splits: Array<{ number: string | number; share: string | number; code: string; name: string }> }, i: number) => (
+                  {(importResult.preview.cost_center_changes ?? []).map((cc: { name: string; personalnummer: string | number; cost_center_count: number; splits: Array<{ number: string | number; share: string | number; code: string; name: string }> }, i: number) => (
                     <div key={i} className="border border-slate-200 rounded p-2 text-xs">
                       <span className="font-medium">{cc.name}</span> (PNr {cc.personalnummer}): {cc.cost_center_count} KST-Zeilen
                       <div className="mt-1 space-y-0.5">

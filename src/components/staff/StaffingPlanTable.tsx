@@ -189,7 +189,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
         queryFn: () => db.SystemSetting.list(),
     });
 
-    const rawTarget = (systemSettings as SystemSetting[]).find((s: SystemSetting) => s.key === `staffing_target_${year}`)?.value || "0";
+    const rawTarget = (systemSettings).find((s: SystemSetting) => s.key === `staffing_target_${year}`)?.value || "0";
     const targetFTE = parseFloat(String(rawTarget).replace(',', '.')) || 0;
 
     // --- Mutations ---
@@ -224,7 +224,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
     const updateTargetMutation = useMutation({
         mutationFn: async (value: string) => {
             const key = `staffing_target_${year}`;
-            const existing = (systemSettings as SystemSetting[]).find((s: SystemSetting) => s.key === key);
+            const existing = (systemSettings).find((s: SystemSetting) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value: String(value) });
             } else {

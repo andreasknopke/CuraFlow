@@ -67,14 +67,14 @@ export default function StatisticsPage() {
     // 1. Fetch Data
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors'],
-        queryFn: () => db.Doctor.list() as Promise<{ id: string; name: string; role: string; order?: number }[]>,
+        queryFn: () => db.Doctor.list(),
         enabled: isAdmin,
         select: (data) => data.sort((a, b) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list() as Promise<{ name: string; category: string; order?: number; service_type?: number }[]>,
+        queryFn: () => db.Workplace.list(),
         enabled: isAdmin,
     });
 
@@ -85,9 +85,9 @@ export default function StatisticsPage() {
             try {
                 return (await db.ShiftEntry.filter({
                     date: { "$gte": `${year}-01-01`, "$lte": `${year}-12-31` }
-                }) || []) as { date: string; position: string; doctor_id: string }[];
+                }) || []);
             } catch {
-                const all = (await db.ShiftEntry.list()) as { date: string; position: string; doctor_id: string }[];
+                const all = await db.ShiftEntry.list();
                 return all.filter(s => s.date.startsWith(year));
             }
         },
@@ -100,11 +100,11 @@ export default function StatisticsPage() {
             if (month === 'all') {
                 return (await db.WishRequest.filter({
                     target_month: { "$gte": `${year}-01`, "$lte": `${year}-12` }
-                })) as unknown[];
+                }));
             }
 
             const targetMonth = `${year}-${String(parseInt(month, 10) + 1).padStart(2, '0')}`;
-            return (await db.WishRequest.filter({ target_month: targetMonth })) as unknown[];
+            return (await db.WishRequest.filter({ target_month: targetMonth }));
         },
     });
 
@@ -154,7 +154,7 @@ export default function StatisticsPage() {
             doctorStats[doc.id] = {
                 id: doc.id,
                 name: doc.name,
-                role: doc.role,
+                role: doc.role ?? '',
                 totalDienste: 0,
                 totalRotationen: 0,
                 breakdown,
@@ -176,7 +176,8 @@ export default function StatisticsPage() {
                 else if (isRotation) monthlyStats[shiftMonth].rotationen++;
             }
 
-            const docStat = doctorStats[shift.doctor_id];
+            const docId = shift.doctor_id ?? '';
+            const docStat = doctorStats[docId];
             if (!docStat) return;
 
             if (isService) {
@@ -210,7 +211,8 @@ export default function StatisticsPage() {
     const selectedPeriodLabel = month === "all" ? "Ganzes Jahr" : MONTHS[parseInt(month)];
     const exportTitle = `Statistik ${year} - ${selectedPeriodLabel}`;
 
-    const handleExport = (exporter: (params: { stats: unknown; year: string; month: string; title: string }) => void) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Export utility functions have specific parameter types
+    const handleExport = (exporter: (params: any) => void) => {
         try {
             exporter({ stats, year, month, title: exportTitle });
         } catch (error) {
@@ -255,15 +257,15 @@ export default function StatisticsPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsCsv as any); }} data-testid="statistics-export-csv" title="CSV Export">
+                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsCsv); }} data-testid="statistics-export-csv" title="CSV Export">
                         <Download className="h-4 w-4 mr-2" />
                         CSV
                     </Button>
-                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsExcel as any); }} data-testid="statistics-export-excel" title="Excel Export">
+                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsExcel); }} data-testid="statistics-export-excel" title="Excel Export">
                         <Download className="h-4 w-4 mr-2" />
                         Excel
                     </Button>
-                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsPdf as any); }} data-testid="statistics-export-pdf" title="PDF Export">
+                    <Button variant="outline" onClick={() => { handleExport(exportStatisticsPdf); }} data-testid="statistics-export-pdf" title="PDF Export">
                         <Download className="h-4 w-4 mr-2" />
                         PDF
                     </Button>
@@ -391,11 +393,11 @@ export default function StatisticsPage() {
                 </TabsContent>
 
                 <TabsContent value="compliance">
-                    <ComplianceReport doctors={doctors as any} shifts={shifts as any} workplaces={workplaces as any} month={month} />
+                    <ComplianceReport doctors={doctors} shifts={shifts} workplaces={workplaces} month={month} />
                 </TabsContent>
 
                 <TabsContent value="wishes">
-                    <WishFulfillmentReport doctors={doctors as any} wishes={wishes as any} shifts={shifts as any} />
+                    <WishFulfillmentReport doctors={doctors} wishes={wishes} shifts={shifts} />
                 </TabsContent>
 
                 <TabsContent value="details">

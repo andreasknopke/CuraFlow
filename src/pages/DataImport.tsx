@@ -24,6 +24,8 @@ interface ImportCount {
   skipped: number;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any -- JSON import data from MySQL exports is untyped */
+
 export default function DataImportPage() {
     const [status, setStatus] = useState<ImportStatus>('idle');
     const [progress, setProgress] = useState(0);
@@ -170,7 +172,7 @@ export default function DataImportPage() {
 
             // Import TrainingRotation
             if (data.data.TrainingRotation && data.data.TrainingRotation.length > 0) {
-                const entries = data.data.TrainingRotation.filter((s: any) => 
+                const entries = data.data.TrainingRotation.filter((s: any) =>
                     s.start_date && s.end_date && oldToNewDoctorId[s.doctor_id]
                 );
                 addLog(`${entries.length} TrainingRotations gefunden`);
@@ -293,7 +295,7 @@ export default function DataImportPage() {
 
         } catch (err) {
             setStatus('error');
-            addLog(`Fehler: ${(err as any).message}`, 'error');
+            addLog(`Fehler: ${err instanceof Error ? err.message : String(err)}`, 'error');
         }
     };
 

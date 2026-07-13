@@ -11,6 +11,13 @@ export interface Tenant {
   name: string;
 }
 
+export interface TenantWithStatus extends Tenant {
+  is_active?: boolean;
+  description?: string;
+  db_name?: string;
+  host?: string;
+}
+
 // ── Central employee ──────────────────────────────────────────────────────
 
 export interface CentralEmployee {
@@ -315,6 +322,8 @@ export interface StammdatEmployee {
   is_active: boolean;
   cost_center_splits: number;
   existing_employee_id?: string | null;
+  existing_first_name?: string | null;
+  existing_last_name?: string | null;
   candidates?: Array<{ id: string; name: string }>;
 }
 

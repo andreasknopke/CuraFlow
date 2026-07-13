@@ -34,12 +34,12 @@ export default function AIRulesDialog() {
 
   const updateRuleMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: { is_active: boolean } }) => base44.entities.ScheduleRule.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] }),
   });
 
   const deleteRuleMutation = useMutation({
     mutationFn: (id: string) => base44.entities.ScheduleRule.delete(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] }),
   });
 
   const handleAdd = () => {
@@ -91,13 +91,13 @@ export default function AIRulesDialog() {
                             Keine Regeln definiert.
                         </div>
                     )}
-                    {rules.map((rule: any) => (
+                    {(rules as { id?: string; content: string; is_active: boolean }[]).map((rule) => (
                         <div key={rule.id} className="flex items-start justify-between bg-slate-50 p-3 rounded-md border border-slate-100 group">
                             <div className="flex items-start gap-3 flex-1 mr-4">
-                                <Switch 
+                                <Switch
                                     checked={rule.is_active}
                                     onCheckedChange={(checked) => { updateRuleMutation.mutate({
-                                        id: rule.id,
+                                        id: rule.id ?? '',
                                         data: { is_active: checked }
                                     }); }}
                                     className="mt-1"
@@ -106,11 +106,11 @@ export default function AIRulesDialog() {
                                     {rule.content}
                                 </span>
                             </div>
-                            <Button 
-                                variant="ghost" 
-                                size="icon" 
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => { deleteRuleMutation.mutate(rule.id); }}
+                                onClick={() => { deleteRuleMutation.mutate(rule.id!); }}
                             >
                                 <Trash2 className="w-4 h-4" />
                             </Button>

@@ -1,7 +1,7 @@
 import { api } from '@/api/client';
 
 interface ApiClient {
-    request(url: string, options: { method: string; body?: string }): Promise<any>;
+    request(url: string, options: { method: string; body?: string }): Promise<unknown>;
 }
 
 export async function syncTenantDoctorCentralLink({

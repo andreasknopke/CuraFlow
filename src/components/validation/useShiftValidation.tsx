@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { db, base44, api } from "@/api/client";
+import { db, api } from "@/api/client";
 import { useMemo, useCallback } from 'react';
-import type { ShiftEntry, Doctor, SystemSetting } from '@/types';
+import type { ShiftEntry, Doctor, SystemSetting, Workplace, StaffingPlanEntry, WorkplaceTimeslot } from '@/types';
+import type { SharedShift } from './ShiftValidation';
 import { ShiftValidator } from './ShiftValidation';
 import type { ValidationResult } from './ShiftValidation';
 import { toast } from 'sonner';
@@ -47,9 +48,9 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
         staleTime: 1000 * 60 * 5
     });
 
-    const { data: workplacesData = [] } = useQuery({
+    const { data: workplacesData = [] as Workplace[] } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => (db.Workplace.list as any)(null, 1000),
+        queryFn: () => db.Workplace.list() as unknown as Workplace[],
         staleTime: 1000 * 60 * 5
     });
 
@@ -59,16 +60,16 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
         staleTime: 1000 * 60 * 5
     });
 
-    const { data: staffingData = [] } = useQuery({
+    const { data: staffingData = [] as StaffingPlanEntry[] } = useQuery({
         queryKey: ['staffingPlanEntriesAll'],
-        queryFn: () => (base44.entities.StaffingPlanEntry.list as any)(null, 2000),
+        queryFn: () => db.StaffingPlanEntry.list() as unknown as StaffingPlanEntry[],
         staleTime: 1000 * 60 * 5
     });
 
     // Timeslots für Zeitfenster-Validierung
-    const { data: timeslotsData = [] } = useQuery({
+    const { data: timeslotsData = [] as WorkplaceTimeslot[] } = useQuery({
         queryKey: ['workplaceTimeslots'],
-        queryFn: () => (db.WorkplaceTimeslot.list as any)(null, 1000),
+        queryFn: () => db.WorkplaceTimeslot.list() as unknown as WorkplaceTimeslot[],
         staleTime: 1000 * 60 * 5
     });
 
@@ -76,7 +77,7 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
     const { data: relationshipsData = [] } = useQuery({
         queryKey: ['employee-relationships-conflicts'],
         queryFn: async () => {
-            const res: any = await api.getEmployeeRelationships();
+            const res = await api.getEmployeeRelationships() as { relationships?: { employee_id: string; related_employee_id: string; shift_conflict?: boolean }[] };
             return res.relationships || [];
         },
         staleTime: 1000 * 60 * 5,
@@ -92,14 +93,18 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
 
     // Merge internal data with custom options (custom options take precedence)
     const doctors = (customOptions.doctors as Doctor[] | undefined) || doctorsData;
-    const workplaces = customOptions.workplaces || workplacesData;
+    const workplaces = (customOptions.workplaces as Workplace[] | undefined) || workplacesData;
     const systemSettings = (customOptions.systemSettings as SystemSetting[] | undefined) || settingsData;
-    const staffingEntries = customOptions.staffingEntries || staffingData;
-    const timeslots = customOptions.timeslots || timeslotsData;
-    const sharedShifts = (customOptions.sharedShifts as any[]) || [];
+    const staffingEntries = (customOptions.staffingEntries as StaffingPlanEntry[] | undefined) || staffingData;
+    const timeslots = (customOptions.timeslots as WorkplaceTimeslot[] | undefined) || timeslotsData;
+    const sharedShifts = (customOptions.sharedShifts as SharedShift[]) || [];
+
+    // Exclude already-extracted properties to avoid overriding typed values with unknown from the spread
+    const { doctors: _, workplaces: __, systemSettings: ___, staffingEntries: ____, timeslots: _____, sharedShifts: ______, ...restCustomOptions } = customOptions;
 
     const validator = useMemo(() => {
         return new ShiftValidator({
+            ...restCustomOptions,
             doctors,
             shifts,
             workplaces,
@@ -107,11 +112,10 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
             staffingEntries,
             timeslots,
             sharedShifts,
-            qualificationMap: qualificationMap as any,
+            qualificationMap,
             getDoctorQualIds,
-            wpQualsByWorkplace: wpQualsByWorkplace as any,
+            wpQualsByWorkplace,
             employeeRelationships,
-            ...customOptions
         });
     }, [doctors, shifts, workplaces, systemSettings, staffingEntries, timeslots, sharedShifts, qualificationMap, getDoctorQualIds, wpQualsByWorkplace, employeeRelationships, allDoctorQualifications, allWorkplaceQualifications, customOptions]);
 

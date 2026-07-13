@@ -27,7 +27,7 @@ interface CentralEmployee {
   cost_center_name?: string;
 }
 
-interface DoctorFormData {
+export interface DoctorFormData {
   id?: string;
   name: string;
   initials: string;
@@ -47,7 +47,7 @@ interface DoctorFormData {
 interface DoctorFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  doctor?: (Doctor & { vacation_days?: number; part_time_model?: string }) | null;
+  doctor?: (Doctor & { vacation_days?: number; part_time_model?: string | null }) | null;
   onSubmit: (data: DoctorFormData) => void;
 }
 
@@ -89,7 +89,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     queryKey: ["central-employees-for-linking"],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/staff/central-employees') as any;
+        const res = await api.request('/api/staff/central-employees') as { employees?: CentralEmployee[] };
         return res.employees || [];
       } catch {
         return [];
@@ -101,7 +101,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     queryKey: ["central-employees-meta"],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/staff/central-employees') as any;
+        const res = await api.request('/api/staff/central-employees') as { tenantCostCenters?: { code: string; name: string }[] };
         return { tenantCostCenters: res.tenantCostCenters || [] };
       } catch {
         return { tenantCostCenters: [] };
@@ -173,7 +173,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   // Wenn formData.role eine noch nicht in roleNames vorhandene Rolle ist,
   // forcieren wir einen neuen key für den Select. Radix Select erkennt
   // den value sonst nicht, wenn die Option beim ersten Mount fehlte.
-  const selectRoleKey = formData.role && !roleNames.some((r: any) => r.toLowerCase() === (formData.role as string).toLowerCase())
+  const selectRoleKey = formData.role && !roleNames.some((r: string) => r.toLowerCase() === (formData.role as string).toLowerCase())
     ? `role-${formData.role}`
     : 'role-default';
 
@@ -219,7 +219,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
         keywords: ['lokal', 'keine zentrale verknupfung'],
       },
       ...filteredCentralEmployees.map((employee: CentralEmployee) => {
-        const fullName = [employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name;
+        const fullName = ([employee.first_name, employee.last_name].filter(Boolean).join(' ') || employee.last_name) ?? '';
         const descParts = [];
         if (employee.position) descParts.push(employee.position);
         if (employee.work_time_model_name) descParts.push(employee.work_time_model_name);
@@ -248,10 +248,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
       const result = await api.request('/api/staff/send-test-email', {
         method: 'POST',
         body: JSON.stringify({ to: email }),
-      }) as any;
+      }) as { message?: string };
       toast.success(result.message || `Testmail an ${email} gesendet`);
-    } catch (error: any) {
-      toast.error(error.message || "Testmail konnte nicht gesendet werden");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Testmail konnte nicht gesendet werden");
     } finally {
       setSendingTestMail(false);
     }
@@ -275,7 +275,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     
     // Prüfen ob Kürzel bereits existiert (außer beim aktuellen Arzt bei Bearbeitung)
     const existingDoctor = allDoctors.find(
-      (d: any) => d.initials?.toLowerCase() === trimmedInitials.toLowerCase() && d.id !== doctor?.id
+      (d: Doctor) => d.initials?.toLowerCase() === trimmedInitials.toLowerCase() && d.id !== doctor?.id
     );
     
     if (existingDoctor) {
@@ -287,10 +287,10 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     const dataToSubmit = {
         ...formData,
         initials: trimmedInitials,
-        fte: Math.round((parseFloat(formData.fte as any) || 1.0) * 100) / 100,
+        fte: Math.round((parseFloat(String(formData.fte)) || 1.0) * 100) / 100,
         target_weekly_hours: formData.central_employee_id
           ? undefined  // Zentral verknüpft → nicht lokal überschreiben
-          : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours as any) : null),
+          : (formData.target_weekly_hours ? parseFloat(String(formData.target_weekly_hours)) : null),
         central_employee_id: formData.central_employee_id || null,
         _qualificationIds: selectedQualIds,  // für Staff.jsx
     } as DoctorFormData;
@@ -504,7 +504,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     min="0"
                     max="1"
                     value={formData.fte !== undefined ? formData.fte : 1.0}
-                    onChange={(e) => { setFormData({ ...formData, fte: e.target.value as any }); }}
+                    onChange={(e) => { setFormData({ ...formData, fte: Number(e.target.value) }); }}
                   />
                 )}
             </div>

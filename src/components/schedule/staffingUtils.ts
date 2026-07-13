@@ -77,14 +77,14 @@ function getEntryValue(entry: StaffingPlanEntry | undefined, _doctor: Doctor): s
 
 function getEntryStatusStartDay(entry: StaffingPlanEntry | undefined): number | null {
     const day = entry?.status_start_day;
-    if (day === undefined || day === null || (day as any) === '') return null;
+    if (day === undefined || day === null) return null;
     const parsed = parseInt(String(day), 10);
     return Number.isNaN(parsed) ? null : parsed;
 }
 
 function getEntryStatusEndDay(entry: StaffingPlanEntry | undefined): number | null {
     const day = entry?.status_end_day;
-    if (day === undefined || day === null || (day as any) === '') return null;
+    if (day === undefined || day === null) return null;
     const parsed = parseInt(String(day), 10);
     return Number.isNaN(parsed) ? null : parsed;
 }

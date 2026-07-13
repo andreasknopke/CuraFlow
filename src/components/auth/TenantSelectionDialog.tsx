@@ -5,11 +5,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Database, Building2 } from 'lucide-react';
+import type { TenantWithStatus } from '@/types/master';
 
 interface TenantSelectionDialogProps {
     open: boolean;
     onComplete: () => void;
-    tenants?: any[];
+    tenants?: TenantWithStatus[];
     hasFullAccess?: boolean;
 }
 
@@ -20,10 +21,8 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
 
     const sortedTenants = useMemo(() => {
         const lastActiveTokenId = getActiveTokenId();
-        console.log('[TenantSort] lastActiveTokenId from localStorage:', lastActiveTokenId, typeof lastActiveTokenId);
-        console.log('[TenantSort] tenants:', tenants.map((t: any) => ({ id: t.id, type: typeof t.id, is_active: t.is_active, name: t.name })));
-        
-        return [...tenants].sort((a: any, b: any) => {
+
+        return [...tenants].sort((a, b) => {
             const aWasActive = String(a.id) === String(lastActiveTokenId);
             const bWasActive = String(b.id) === String(lastActiveTokenId);
             if (aWasActive && !bWasActive) return -1;
@@ -46,7 +45,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
         setError('');
         
         try {
-            const result = await (api as any).activateTenant(tokenId);
+            const result = await api.activateTenant(tokenId) as { token?: string };
             
             if (result && result.token) {
                 await saveDbToken(result.token);
@@ -60,9 +59,9 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
             } else {
                 throw new Error('Token-Aktivierung fehlgeschlagen');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Tenant activation failed:', err);
-            setError(err.message || 'Aktivierung fehlgeschlagen');
+            setError(err instanceof Error ? err.message : 'Aktivierung fehlgeschlagen');
             setIsActivating(false);
             setSelectedId(null);
         }
@@ -79,9 +78,9 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
             onComplete();
             
             setTimeout(() => { window.location.reload(); }, 500);
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error('Deactivation failed:', err);
-            setError(err.message || 'Deaktivierung fehlgeschlagen');
+            setError(err instanceof Error ? err.message : 'Deaktivierung fehlgeschlagen');
             setIsActivating(false);
             setSelectedId(null);
         }
@@ -147,7 +146,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                         </Card>
                     )}
 
-                    {sortedTenants.map((tenant: any) => {
+                    {sortedTenants.map((tenant: TenantWithStatus) => {
                         const lastActiveTokenId = getActiveTokenId();
                         const wasLastActive = tenant.id === lastActiveTokenId;
                         return (

@@ -179,7 +179,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
-  const authState: CommonAuthState = (masterAuth as CommonAuthState)?.isAuthenticated ? (masterAuth as CommonAuthState) : (appAuth as CommonAuthState);
+  const authState: CommonAuthState = (masterAuth as CommonAuthState)?.isAuthenticated ? (masterAuth as CommonAuthState) : (appAuth);
   const { user, isAuthenticated } = authState;
   const isAdmin = (user)?.role === 'admin';
 

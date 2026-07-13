@@ -1,27 +1,9 @@
 import { getWishEndDate, getWishStartDate } from '@/utils/wishRange';
-
-interface Doctor {
-    id: string;
-    name: string;
-    role: string;
-}
-
-interface ShiftEntry {
-    doctor_id: string;
-    position: string;
-    date: string;
-}
-
-interface WishEntry {
-    doctor_id: string;
-    type: string;
-    status: string;
-    date?: string;
-}
+import type { Doctor, ShiftEntry, WishRequest } from '@/types';
 
 interface WishFulfillmentStats {
     name: string;
-    role: string;
+    role: string | null | undefined;
     total: number;
     fulfilled: number;
     rate: number;
@@ -29,8 +11,8 @@ interface WishFulfillmentStats {
     rejected: number;
 }
 
-function groupByDoctorId(items: ShiftEntry[] | WishEntry[]): Map<string, (ShiftEntry | WishEntry)[]> {
-    const grouped = new Map<string, (ShiftEntry | WishEntry)[]>();
+function groupByDoctorId(items: ShiftEntry[] | WishRequest[]): Map<string, (ShiftEntry | WishRequest)[]> {
+    const grouped = new Map<string, (ShiftEntry | WishRequest)[]>();
 
     items.forEach((item) => {
         if (!item?.doctor_id) {
@@ -53,7 +35,7 @@ function isServiceShift(shift: ShiftEntry): boolean {
 
 export function buildWishFulfillmentStats({ doctors = [], wishes = [], shifts = [] }: {
     doctors: Doctor[];
-    wishes: WishEntry[];
+    wishes: WishRequest[];
     shifts: ShiftEntry[];
 }): WishFulfillmentStats[] {
     const wishesByDoctor = groupByDoctorId(wishes);
@@ -72,7 +54,7 @@ export function buildWishFulfillmentStats({ doctors = [], wishes = [], shifts = 
             let rejected = 0;
 
             doctorWishes.forEach((wish) => {
-                const typedWish = wish as WishEntry;
+                const typedWish = wish as WishRequest;
                 if (typedWish.status === 'approved') approved += 1;
                 if (typedWish.status === 'rejected') rejected += 1;
 

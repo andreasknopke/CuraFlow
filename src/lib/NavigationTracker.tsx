@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { base44 } from "@/api/client";
 import { pagesConfig } from '@/pages.config';
 
 export default function NavigationTracker(): null {
@@ -39,11 +38,7 @@ export default function NavigationTracker(): null {
             pageName = matchedKey || null;
         }
 
-        if (isAuthenticated && pageName) {
-            (base44 as any).appLogs.logUserInApp(pageName).catch(() => {
-                // Silently fail - logging shouldn't break the app
-            });
-        }
+        // Note: appLogs.logUserInApp was a legacy base44 function, no longer available
     }, [location, isAuthenticated, Pages, mainPageKey]);
 
     return null;

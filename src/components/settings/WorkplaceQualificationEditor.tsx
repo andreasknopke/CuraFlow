@@ -44,7 +44,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }: WorkplaceQ
         mutationFn: (data: { qualification_id: string; is_mandatory: boolean; is_excluded: boolean }) => db.WorkplaceQualification.create({
             workplace_id: workplaceId,
             ...data,
-        } as Record<string, unknown>),
+        }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['workplaceQualifications', workplaceId] });
             queryClient.invalidateQueries({ queryKey: ['allWorkplaceQualifications'] });

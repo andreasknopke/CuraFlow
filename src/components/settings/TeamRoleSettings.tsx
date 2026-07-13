@@ -172,7 +172,7 @@ export async function initializeDefaultRoles(): Promise<TeamRoleData[]> {
 
         console.log(`Adding ${missingRoles.length} missing default team roles...`);
         for (const role of missingRoles) {
-            await db.TeamRole.create(role as Record<string, unknown>);
+            await db.TeamRole.create(role);
         }
         console.log('Missing default team roles created');
         return [...(existingCasted || []), ...missingRoles];
@@ -356,7 +356,7 @@ export default function TeamRoleSettings() {
         mutationFn: (data: TeamRoleData) => db.TeamRole.create({
             ...data,
             priority: teamRoles.length
-        } as Record<string, unknown>),
+        }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['teamRoles'] });
             setEditDialogOpen(false);

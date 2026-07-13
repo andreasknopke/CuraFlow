@@ -12,23 +12,56 @@ import { CheckCircle2, XCircle, Trash2, AlertCircle, AlertTriangle } from "lucid
 import { useQuery } from "@tanstack/react-query";
 import { db } from "@/api/client";
 import { clampRangeToContract, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import type { SystemSetting } from '@/types';
+
+interface WishFormData {
+    type: string;
+    position: string;
+    priority: string;
+    reason: string;
+    status: string;
+    admin_comment: string;
+    range_enabled: boolean;
+    range_start: string;
+    range_end: string;
+    _createShift?: boolean;
+}
+
+interface WishEntry {
+    id?: string;
+    date?: string;
+    type?: string;
+    position?: string;
+    priority?: string;
+    reason?: string;
+    status?: string;
+    admin_comment?: string;
+    range_start?: string;
+    range_end?: string;
+}
+
+interface ContractInfo {
+    contractStart?: string | Date;
+    contractEnd?: string | Date;
+    contractRangeLabel?: string;
+}
 
 interface WishRequestDialogProps {
     isOpen: boolean;
     onClose: () => void;
-    wish?: any;
-    date?: any;
+    wish?: WishEntry;
+    date?: Date | string;
     doctorName?: string;
-    contractInfo?: any;
+    contractInfo?: ContractInfo;
     isReadOnly?: boolean;
     isAdmin?: boolean;
     canApprove?: boolean;
-    onSave: (data: any) => void;
+    onSave: (data: WishFormData) => void;
     onDelete: () => void;
     activePosition?: string;
     activePositionLabel?: string;
-    initialDraft?: any;
-    rangeWishes?: any[];
+    initialDraft?: Partial<WishFormData>;
+    rangeWishes?: WishEntry[];
 }
 
 export default function WishRequestDialog({ 
@@ -49,7 +82,7 @@ export default function WishRequestDialog({
     rangeWishes
 }: WishRequestDialogProps) {
     const dialogContentRef = useRef<HTMLDivElement | null>(null);
-    const [formData, setFormData] = useState<any>({
+    const [formData, setFormData] = useState<WishFormData>({
         type: 'service',
         position: '',
         priority: 'medium',
@@ -63,10 +96,10 @@ export default function WishRequestDialog({
 
     const { data: settings = [] } = useQuery({
         queryKey: ['systemSettings'],
-        queryFn: () => (db as any).SystemSetting.list(),
+        queryFn: () => db.SystemSetting.list(),
     });
 
-    const deadlineMonths = (settings as any[]).find((s: any) => s.key === 'wish_deadline_months')?.value;
+    const deadlineMonths = (settings).find((s: SystemSetting) => s.key === 'wish_deadline_months')?.value;
     const isDeadlineRestricted = !isAdmin && deadlineMonths && !isNaN(parseInt(deadlineMonths));
     let isBlockedByDeadline = false;
     let minDate: Date | null = null;
@@ -78,16 +111,16 @@ export default function WishRequestDialog({
         }
     }
 
-    const isBlockedByContract = !!date && !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
-    const contractStartInput = contractInfo?.contractStart || undefined;
-    const contractEndInput = contractInfo?.contractEnd || undefined;
+    const contractStartInput = contractInfo?.contractStart ? (contractInfo.contractStart instanceof Date ? contractInfo.contractStart.toISOString().slice(0, 10) : contractInfo.contractStart) : undefined;
+    const contractEndInput = contractInfo?.contractEnd ? (contractInfo.contractEnd instanceof Date ? contractInfo.contractEnd.toISOString().slice(0, 10) : contractInfo.contractEnd) : undefined;
+    const isBlockedByContract = !!date && !isDateWithinContract(date instanceof Date ? date : new Date(date), contractStartInput, contractEndInput);
 
     useEffect(() => {
         if (isOpen) {
             if (wish) {
                 setFormData({
                     type: wish.type || 'service',
-                    position: wish.position || activePosition,
+                    position: wish.position || activePosition || '',
                     priority: wish.priority || 'medium',
                     reason: wish.reason || '',
                     status: wish.status || 'pending',
@@ -100,7 +133,7 @@ export default function WishRequestDialog({
                 const dateStr = date ? format(date, 'yyyy-MM-dd') : '';
                 setFormData({
                     type: initialDraft?.type || 'service',
-                    position: initialDraft?.position || activePosition,
+                    position: initialDraft?.position || activePosition || '',
                     priority: initialDraft?.priority || 'medium',
                     reason: initialDraft?.reason || '',
                     status: initialDraft?.status || 'pending',
@@ -122,9 +155,9 @@ export default function WishRequestDialog({
     }, [isOpen]);
 
     const getRequiresApproval = () => {
-        const approvalSettingRaw = (settings as any[]).find((s: any) => s.key === 'wish_approval_rules')?.value;
+        const approvalSettingRaw = (settings).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
         if (!approvalSettingRaw) return true;
-        
+
         try {
             const rules = JSON.parse(approvalSettingRaw);
             
@@ -146,7 +179,7 @@ export default function WishRequestDialog({
     };
 
     const getAutoCreateShiftOnApproval = () => {
-        const approvalSettingRaw = (settings as any[]).find((s: any) => s.key === 'wish_approval_rules')?.value;
+        const approvalSettingRaw = (settings).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
         if (!approvalSettingRaw) return false;
         try {
             const rules = JSON.parse(approvalSettingRaw);
@@ -175,8 +208,8 @@ export default function WishRequestDialog({
             const clampedRange = clampRangeToContract(
                 new Date(formData.range_start),
                 new Date(formData.range_end),
-                contractInfo?.contractStart,
-                contractInfo?.contractEnd,
+                contractStartInput,
+                contractEndInput,
             );
 
             if (!clampedRange) {
@@ -186,11 +219,11 @@ export default function WishRequestDialog({
         }
 
         const requiresApproval = getRequiresApproval();
-        const dataToSave: any = { ...formData };
+        const dataToSave: WishFormData = { ...formData };
 
         if (!formData.range_enabled) {
-            dataToSave.range_start = null;
-            dataToSave.range_end = null;
+            dataToSave.range_start = '';
+            dataToSave.range_end = '';
         }
         
         if (!requiresApproval && !wish && !isAdmin) {

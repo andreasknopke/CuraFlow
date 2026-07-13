@@ -71,10 +71,10 @@ export function getAvailabilityWarnings({
         return [];
     };
 
-    const warnings: any[] = [];
+    const warnings: { qualName: string; present: number; min: number }[] = [];
 
     availabilityThresholds.forEach(threshold => {
-        const qId = threshold.qualificationId;
+        const qId = String(threshold.qualificationId);
         const qualName = threshold.qualificationName || qualificationMap[qId]?.name || qId;
         const minCount = threshold.min;
 

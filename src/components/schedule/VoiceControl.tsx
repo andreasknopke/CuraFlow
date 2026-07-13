@@ -211,9 +211,10 @@ export default function VoiceControl({
                         setError("Kein Text erkannt.");
                         setIsProcessing(false);
                     }
-                } catch (e: any) {
+                } catch (e: unknown) {
                     console.error("VoiceControl: Transcription failed", e);
-                    setError("Transkriptionsfehler: " + (e.response?.data?.error || e.message));
+	                    const errMsg = e instanceof Error ? e.message : String(e);
+	                    setError("Transkriptionsfehler: " + errMsg);
                     setIsProcessing(false);
                 } finally {
                     stream.getTracks().forEach(track => { track.stop(); });
@@ -223,9 +224,9 @@ export default function VoiceControl({
             mediaRecorder.start();
             setIsListening(true);
             setError(null);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error("VoiceControl: Error starting recording:", e);
-            setError("Mikrofonfehler: " + e.message);
+            setError("Mikrofonfehler: " + (e instanceof Error ? e.message : String(e)));
             setIsListening(false); // Ensure state reset
         }
     };
@@ -325,11 +326,12 @@ export default function VoiceControl({
             
             onVoiceCommand(result);
             
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error processing voice:", err);
             // Try to extract backend error message if available
-            const msg = err.response?.data?.error || err.message || "Verarbeitungsfehler";
-            setError(msg);
+	            const msg = err instanceof Error ? err.message : String(err);
+	            const finalMsg = msg || "Verarbeitungsfehler";
+	            setError(finalMsg);
         } finally {
             setIsProcessing(false);
         }

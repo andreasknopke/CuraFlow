@@ -167,7 +167,7 @@ export default function WorkingTimeReport() {
 
         const stats = (doctors).map((doctor: Doctor) => {
             // Filter shifts for this doctor in date range
-            const doctorShifts = (shifts as ShiftEntry[]).filter((s: ShiftEntry) => {
+            const doctorShifts = (shifts).filter((s: ShiftEntry) => {
                 if (s.doctor_id !== doctor.id) return false;
                 const shiftDate = parseISO(s.date);
                 return isWithinInterval(shiftDate, { start: dateRange.start, end: dateRange.end });
@@ -191,14 +191,14 @@ export default function WorkingTimeReport() {
                 const intervals: { start: number; end: number; rawDuration: number; adjustedDuration: number }[] = [];
 
                 (dayShifts).forEach((shift: ShiftEntry) => {
-                    const workplace = (workplaces as Workplace[]).find((w: Workplace) => w.name === shift.position);
+                    const workplace = (workplaces).find((w: Workplace) => w.name === shift.position);
                     
                     if (isNonWorkingShiftPosition(shift.position)) {
                         return;
                     }
 
                     const timeslot = shift.timeslot_id 
-                        ? (timeslots as WorkplaceTimeslot[]).find((t: WorkplaceTimeslot) => t.id === shift.timeslot_id)
+                        ? (timeslots).find((t: WorkplaceTimeslot) => t.id === shift.timeslot_id)
                         : null;
 
                     const interval = shiftToInterval(shift, timeslot ?? null, workplace ?? null);
