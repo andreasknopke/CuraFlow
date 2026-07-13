@@ -77,13 +77,13 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
     }
 
     // Determine assigned IDs: from server if doctor exists, otherwise from controlled props
-    const assignedQualIds = doctorId ? doctorQuals.map((dq: any) => dq.qualification_id) : selectedQualIds;
+    const assignedQualIds = doctorId ? doctorQuals.map((dq) => dq.qualification_id) : selectedQualIds;
     const assignedCertificateQualifications = doctorId
         ? activeQuals.filter(q => q.requires_certificate === true && assignedQualIds.includes(q.id))
         : [];
     const toggleHandler = doctorId
         ? (qualId: string) => {
-            const existingAssignment = doctorQuals.find((dq: any) => dq.qualification_id === qualId);
+            const existingAssignment = doctorQuals.find((dq) => dq.qualification_id === qualId);
             if (existingAssignment) {
                 removeMutation.mutate(existingAssignment.id);
             } else {
@@ -143,7 +143,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             Zertifikate
                         </div>
                         {assignedCertificateQualifications.map(qual => {
-                            const dqEntry = doctorQuals.find((dq: any) => dq.qualification_id === qual.id);
+                            const dqEntry = doctorQuals.find((dq) => dq.qualification_id === qual.id);
                             return (
                                 <CertificateManager
                                     key={qual.id}
@@ -245,7 +245,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
             {assignedCertificateQualifications.length > 0 && (
                 <div className="space-y-2 pt-2">
                     {assignedCertificateQualifications.map(qual => {
-                        const dqEntry = doctorQuals.find((dq: any) => dq.qualification_id === qual.id);
+                        const dqEntry = doctorQuals.find((dq) => dq.qualification_id === qual.id);
                         return (
                             <CertificateManager
                                 key={qual.id}

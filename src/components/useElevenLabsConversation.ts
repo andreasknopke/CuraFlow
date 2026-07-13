@@ -36,7 +36,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
     // Initialize Audio Context
     useEffect(() => {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        const AudioContext: typeof globalThis.AudioContext = window.AudioContext || (window as unknown as { webkitAudioContext: typeof globalThis.AudioContext }).webkitAudioContext;
         if (AudioContext) {
             audioContextRef.current = new AudioContext();
         }
@@ -326,7 +326,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
             const base64 = window.btoa(binary);
 
             // Log first few chunks then occasionally
-            const win = window as any;
+            const win = window as unknown as { chunksSent?: number };
             if (!win.chunksSent) win.chunksSent = 0;
             win.chunksSent++;
             if (win.chunksSent < 5 || win.chunksSent % 50 === 0) {

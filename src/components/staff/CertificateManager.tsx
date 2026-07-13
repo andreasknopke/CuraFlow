@@ -23,6 +23,7 @@ import {
     normalizeRequirementMode,
 } from '@/lib/qualificationEvidence';
 import type { DoctorQualification } from '@/types';
+import type { EvidenceRole, EvidenceSummary } from '@/lib/qualificationEvidence';
 
 const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
 const MAX_SIZE = 5 * 1024 * 1024;
@@ -40,6 +41,7 @@ interface AnalysisBadgeProps {
 }
 
 interface UploadCheckResult {
+    approval_token?: string;
     upload_allowed?: boolean;
     analysis?: {
         status?: string;
@@ -139,7 +141,7 @@ function getExpiryStatus(expiry_date: string | Date | null | undefined): ExpiryS
     return { kind: 'ok', days, label: `Gültig bis ${formatDate(expiry_date)}` };
 }
 
-function getCertificateDisplayExpiry(cert: CertificateItem, summary: any): string | null {
+function getCertificateDisplayExpiry(cert: CertificateItem, summary: EvidenceSummary): string | null {
     return (summary)?.certificate_valid_until_by_id?.[cert.id as string] || (cert.expiry_date as string) || null;
 }
 
@@ -151,7 +153,7 @@ function getRoleLabel(role: string, baseLabel: string, refreshLabel: string): st
     return 'Nachweis';
 }
 
-function getSummaryBadge(summary: any): SummaryBadge {
+function getSummaryBadge(summary: EvidenceSummary): SummaryBadge {
     switch (summary?.status) {
         case 'valid':
             return {
@@ -439,11 +441,11 @@ export default function CertificateManager({
             if (checkRequestRef.current !== requestId) return;
 
             setCheckResult(result as UploadCheckResult);
-            setApprovalToken((result as any).approval_token || null);
-            setGrantedDate((result as any).analysis?.detected_granted_date || '');
-            setExpiryDate((result as any).analysis?.detected_expiry_date || '');
+            setApprovalToken((result as UploadCheckResult).approval_token || null);
+            setGrantedDate((result as UploadCheckResult).analysis?.detected_granted_date || '');
+            setExpiryDate((result as UploadCheckResult).analysis?.detected_expiry_date || '');
 
-            if ((result as any).upload_allowed) {
+            if ((result as UploadCheckResult).upload_allowed) {
                 toast({
                     title: 'Zertifikat geprüft',
                     description: 'Scope passt. Erkannte Daten wurden übernommen, Upload ist freigegeben.',
@@ -452,20 +454,20 @@ export default function CertificateManager({
                 toast({
                     variant: 'destructive',
                     title: 'Upload gesperrt',
-                    description: (result as any).analysis?.reasoning || 'Die KI konnte kein passendes Zertifikat bestätigen.',
+                        description: (result as UploadCheckResult).analysis?.reasoning || 'Die KI konnte kein passendes Zertifikat bestätigen.',
                 });
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             if (checkRequestRef.current !== requestId) return;
             setApprovalToken(null);
             setCheckResult({
                 upload_allowed: false,
                 analysis: {
                     status: 'error',
-                    reasoning: err.message,
+                    reasoning: err instanceof Error ? err.message : String(err),
                 },
             });
-            toast({ variant: 'destructive', title: 'Automatische Prüfung fehlgeschlagen', description: err.message });
+            toast({ variant: 'destructive', title: 'Automatische Prüfung fehlgeschlagen', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -562,8 +564,8 @@ export default function CertificateManager({
             });
             toast({ title: 'Zertifikat hochgeladen', description: `${pendingFile.name} wurde mit bestätigtem Scope gespeichert.` });
             resetUploadForm();
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Upload fehlgeschlagen', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Upload fehlgeschlagen', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -575,8 +577,8 @@ export default function CertificateManager({
                 qualification_description: qualificationDescription,
             });
             toast({ title: 'Analyse gestartet', description: 'Ergebnis erscheint in Kürze.' });
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Analyse fehlgeschlagen', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Analyse fehlgeschlagen', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -584,16 +586,16 @@ export default function CertificateManager({
         try {
             await deleteCertificate(String(cert.id));
             toast({ title: 'Zertifikat gelöscht', description: cert.file_name as string });
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Löschen fehlgeschlagen', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Löschen fehlgeschlagen', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
     const handleView = async (cert: CertificateItem) => {
         try {
             await openCertificateInNewTab(String(cert.id));
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Datei kann nicht geöffnet werden', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Datei kann nicht geöffnet werden', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -625,8 +627,8 @@ export default function CertificateManager({
             });
             toast({ title: 'Zertifikat aktualisiert' });
             cancelEdit();
-        } catch (err: any) {
-            toast({ variant: 'destructive', title: 'Speichern fehlgeschlagen', description: err.message });
+        } catch (err: unknown) {
+            toast({ variant: 'destructive', title: 'Speichern fehlgeschlagen', description: err instanceof Error ? err.message : String(err) });
         }
     };
 
@@ -824,7 +826,7 @@ export default function CertificateManager({
         <div className="space-y-2">
             <div className="flex items-center gap-2">
                 <div className="text-xs font-semibold text-slate-600">{title}</div>
-                {requiredRoles.includes(role as any) && (
+                {requiredRoles.includes(role as EvidenceRole) && (
                     <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">
                         Pflicht
                     </Badge>

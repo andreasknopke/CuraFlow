@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Plus, Pencil, Trash2, User, GripVertical, Check, ChevronsUpDown, Loader2, X } from "lucide-react";
-import DoctorForm from "@/components/staff/DoctorForm";
+import DoctorForm, { type DoctorFormData } from "@/components/staff/DoctorForm";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
@@ -120,7 +120,7 @@ export default function StaffPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data: { _qualificationIds?: string[]; central_employee_id?: string | null; [key: string]: unknown }) => {
+    mutationFn: async (data: DoctorFormData) => {
       const { _qualificationIds, ...doctorData } = data;
       const result = await db.Doctor.create({...doctorData, order: doctors.length}) as { id: string };
       await syncTenantDoctorCentralLink({
@@ -184,7 +184,7 @@ export default function StaffPage() {
     },
   });
 
-  const handleSave = (data: { _qualificationIds?: string[]; [key: string]: unknown }) => {
+  const handleSave = (data: DoctorFormData) => {
     if (editingDoctor) {
       // Bei Bearbeitung keine Qualifikationen über das Formular senden
       // (werden weiterhin über den Editor selbst gesteuert)
@@ -396,7 +396,8 @@ export default function StaffPage() {
                 ) : (
                   <DragDropContext onDragEnd={handleDragEnd}>
                       <Droppable droppableId="doctors-list" direction="vertical">
-                          {(provided) => (
+                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-beautiful-dnd children type mismatch */}
+                          {(provided: any) => (
                                <div
                                    {...provided.droppableProps}
                                    ref={provided.innerRef}
@@ -412,7 +413,8 @@ export default function StaffPage() {
                                   )}
                                   {filteredDoctors.map((doctor, index) => (
                                       <Draggable key={doctor.id} draggableId={doctor.id} index={index} isDragDisabled={isReadOnly || selectedQualificationIds.length > 0}>
-                                          {(provided, snapshot) => (
+                                          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any -- react-beautiful-dnd children type mismatch */}
+                                          {(provided: any, snapshot: any) => (
                                                <div
                                                    ref={provided.innerRef}
                                                    {...provided.draggableProps}
@@ -445,8 +447,8 @@ export default function StaffPage() {
                                                                       </Badge>
                                                                       <DoctorQualificationBadges
                                                                           doctorId={doctor.id}
-                                                                          qualificationMap={qualificationMap as any}
-                                                                          allDoctorQualifications={doctorQualsByDoctor as any}
+                                                                          qualificationMap={qualificationMap}
+                                                                          allDoctorQualifications={doctorQualsByDoctor}
                                                                       />
                                                                   </div>
                                                               </div>
@@ -512,12 +514,12 @@ export default function StaffPage() {
           </TabsContent>
 
           <TabsContent value="qualifications" className="mt-0 min-h-0 flex-1 overflow-hidden">
-              <QualificationOverview doctors={doctors as any} isReadOnly={isReadOnly} />
+              <QualificationOverview doctors={doctors} isReadOnly={isReadOnly} />
           </TabsContent>
 
           <TabsContent value="staffing" className="mt-0 min-h-0 flex-1 overflow-hidden">
               <div className="h-full overflow-y-auto pr-1">
-                <StaffingPlanTable doctors={doctors as any} isReadOnly={isReadOnly} />
+                <StaffingPlanTable doctors={doctors} isReadOnly={isReadOnly} />
               </div>
           </TabsContent>
 
@@ -528,8 +530,8 @@ export default function StaffPage() {
           key={editingDoctor?.id || 'new-doctor'}
           open={isFormOpen}
           onOpenChange={handleFormOpenChange}
-          doctor={editingDoctor as any}
-          onSubmit={handleSave as any}
+          doctor={editingDoctor}
+          onSubmit={handleSave}
         />
       )}
     </div>

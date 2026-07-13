@@ -4,16 +4,11 @@ import { de } from 'date-fns/locale';
 import { AlertTriangle, Check, X } from 'lucide-react';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
 import { parseAnnualVacationDays } from './vacationBalance';
 import type { Doctor, ShiftEntry } from '@/types';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-
-interface ContractInfo {
-  contractStart?: string;
-  contractEnd?: string;
-}
 
 interface AvailabilityThreshold {
   qualificationId: string;
@@ -73,7 +68,7 @@ interface VacationOverviewProps {
   availabilityThresholds?: AvailabilityThreshold[];
   qualificationMap?: Record<string, QualificationMapEntry>;
   doctorQualByDoctor?: Record<string, DoctorQualEntry[]>;
-  requestByCellKey?: Record<string, any>;
+  requestByCellKey?: Record<string, { id: string; status: string; position: string }>;
   isAdmin?: boolean;
   onApproveRequest?: (requestId: string) => void;
   onRejectRequest?: (requestId: string) => void;
@@ -99,8 +94,8 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     requestPosition,
 }: VacationOverviewCellProps) {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
-    const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
-    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === (contractInfo!.contractEnd as any);
+    const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
+    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo!.contractEnd;
 
     // Only calculate isDragged if the drag is happening on this doctor's row
     const isRowInvolved = isDragging && dragDoctorId === doctor.id;
@@ -551,7 +546,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                     {doctors.map(doc => (
                                         <tr key={doc.id} className="hover:bg-slate-50">
                                             <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                                <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id] as any) || undefined}>{doc.name}</div>
+                                                <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
                                             </td>
                                             <td className="sticky left-[190px] z-10 bg-white border-b border-r p-1 text-center text-xs font-bold text-slate-600 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]" title={`${vacationCounts[doc.id]} verplante+genommene Tage von ${entitlementByDoctorId[doc.id] ?? parseAnnualVacationDays(doc.vacation_days)} Tagen Jahresanspruch`}>
                                                 {entitlementByDoctorId[doc.id] ?? parseAnnualVacationDays(doc.vacation_days)}

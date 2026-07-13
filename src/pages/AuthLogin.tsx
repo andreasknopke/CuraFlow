@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import type { TenantWithStatus } from '@/types/master';
 import TenantSelectionDialog from '@/components/auth/TenantSelectionDialog';
 
 export default function AuthLoginPage() {
@@ -121,7 +122,7 @@ export default function AuthLoginPage() {
                                 type="email"
                                 placeholder="name@beispiel.de"
                                 value={email}
-                                onChange={(e: any) => { setEmail(e.target.value); }}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEmail(e.target.value); }}
                                 required
                                 autoComplete="email"
                                 autoFocus
@@ -137,7 +138,7 @@ export default function AuthLoginPage() {
                                     type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={password}
-                                    onChange={(e: any) => { setPassword(e.target.value); }}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); }}
                                     required
                                     autoComplete="current-password"
                                     className="pr-10"
@@ -179,7 +180,7 @@ export default function AuthLoginPage() {
             <TenantSelectionDialog
                 open={needsTenantSelection}
                 onComplete={completeTenantSelection}
-                tenants={allowedTenants as any}
+                tenants={allowedTenants as unknown as TenantWithStatus[]}
                 hasFullAccess={hasFullTenantAccess}
                 isAdmin={user?.role === 'admin'}
             />

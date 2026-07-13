@@ -12,6 +12,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
+interface DoctorReminderStatus {
+  doctor_id: string;
+  name: string;
+  initials?: string;
+  reminder_status: string;
+  acknowledged_date?: string;
+}
+
 const STATUS_CONFIG = {
   has_wishes: {
     label: 'Wünsche eingetragen',
@@ -56,7 +64,9 @@ export default function WishReminderStatus({ targetMonth, compact = false }: Wis
   const { data, isLoading, error } = useQuery({
     queryKey: ['wish-reminder-status', targetMonth],
     queryFn: async () => {
-      const res = await (api as any).fetch(`/api/staff/wish-reminder-status?month=${targetMonth}`);
+      const res = await fetch(`${api.baseURL}/api/staff/wish-reminder-status?month=${targetMonth}`, {
+        headers: api.getToken() ? { Authorization: `Bearer ${api.getToken()}` } : {},
+      });
       if (!res.ok) throw new Error('Fehler beim Laden des Erinnerungsstatus');
       return res.json();
     },
@@ -151,8 +161,8 @@ export default function WishReminderStatus({ targetMonth, compact = false }: Wis
         <TooltipProvider>
           <div className="flex flex-wrap gap-1.5">
             {doctorStatuses
-              .filter((d: any) => d.reminder_status !== 'no_reminder')
-              .map((d: any) => {
+              .filter((d: DoctorReminderStatus) => d.reminder_status !== 'no_reminder')
+              .map((d: DoctorReminderStatus) => {
                 const cfg = STATUS_CONFIG[d.reminder_status as keyof typeof STATUS_CONFIG];
                 const Icon = cfg.icon;
                 return (

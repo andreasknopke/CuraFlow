@@ -20,7 +20,22 @@ import {
     AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
     AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { Doctor } from '@/types';
+import type { Doctor, DoctorQualification } from '@/types';
+
+interface CertificateEntry {
+    doctor_id: string;
+    qualification_id: string;
+}
+
+interface LoginUser {
+    id?: string;
+    doctor_id?: string;
+    email?: string;
+}
+
+interface CertificateReminderResult {
+    sent_count?: number;
+}
 
 interface PendingQualification {
     id: string;
@@ -54,26 +69,26 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
 
     // Load all certificates (admins get all in tenant; non-admins only their own)
     // to detect doctor+qualification combos missing a required certificate.
-    const { data: allCertificates = [], isLoading: certsLoading } = useQuery({
+    const { data: allCertificates = [], isLoading: certsLoading } = useQuery<CertificateEntry[]>({
         queryKey: ['certificates', { doctorId: null, qualificationId: null }],
-        queryFn: () => api.listCertificates(),
+        queryFn: () => api.listCertificates() as Promise<CertificateEntry[]>,
     });
     const certKeySet = useMemo(() => {
         const set = new Set<string>();
-        for (const c of allCertificates as any[]) {
+        for (const c of allCertificates) {
             set.add(`${c.doctor_id}:${c.qualification_id}`);
         }
         return set;
     }, [allCertificates]);
 
-    const { data: loginUsers = [], isLoading: usersLoading } = useQuery({
+    const { data: loginUsers = [], isLoading: usersLoading } = useQuery<LoginUser[]>({
         queryKey: ['authUsersForCertificateReminder'],
-        queryFn: () => api.listUsers(),
+        queryFn: () => api.listUsers() as Promise<LoginUser[]>,
         enabled: !isReadOnly,
     });
 
     // Confirmation dialog state when assigning a cert-required qualification
-    const [pendingAssign, setPendingAssign] = useState<{ doctorId: string; qual: any } | null>(null);
+    const [pendingAssign, setPendingAssign] = useState<{ doctorId: string; qual: { id: string; name: string } } | null>(null);
     const [isReminderDialogOpen, setIsReminderDialogOpen] = useState(false);
     const [selectedReminderDoctorIds, setSelectedReminderDoctorIds] = useState<string[]>([]);
     const [isSendingReminders, setIsSendingReminders] = useState(false);
@@ -124,12 +139,12 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
     const isLoading = qualsLoading || dqLoading || certsLoading;
 
     const reminderCandidates = useMemo((): ReminderCandidate[] => {
-        const usersByDoctor: Record<string, any[]> = (loginUsers as any[]).reduce((acc: Record<string, any[]>, user: any) => {
+        const usersByDoctor: Record<string, LoginUser[]> = loginUsers.reduce((acc: Record<string, LoginUser[]>, user: LoginUser) => {
             if (!user?.doctor_id || !user?.email) return acc;
             if (!acc[user.doctor_id]) acc[user.doctor_id] = [];
             acc[user.doctor_id].push(user);
             return acc;
-        }, {} as Record<string, any[]>);
+        }, {} as Record<string, LoginUser[]>);
 
         return doctors
             .map((doctor) => {
@@ -141,7 +156,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                         const hasQual = !!dqEntry;
                         const requiresCert = qual.requires_certificate === true;
                         const hasCert = certKeySet.has(`${doctor.id}:${qual.id}`);
-                        const certStatus = (dqEntry as any)?.certificate_status || null;
+                        const certStatus = (dqEntry as DoctorQualification & { certificate_status?: string | null })?.certificate_status || null;
                         const missingCert = hasQual && requiresCert && !hasCert;
                         const certWarning = hasQual && requiresCert && (
                             missingCert
@@ -169,7 +184,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                     doctor_name: doctor.name,
                     qualification_ids: pendingQualifications.map((qualification) => qualification.id),
                     pendingQualifications,
-                    recipientEmails: Array.from(new Set(linkedUsers.map((user) => user.email).filter(Boolean))),
+                    recipientEmails: Array.from(new Set(linkedUsers.map((user) => user.email).filter((e): e is string => typeof e === 'string'))),
                     hasCentralLink: !!doctor.central_employee_id,
                 };
             })
@@ -209,17 +224,17 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
 
         setIsSendingReminders(true);
         try {
-            const result = await api.sendCertificateReminderEmails(recipients);
+            const result = await api.sendCertificateReminderEmails(recipients) as CertificateReminderResult;
             toast({
                 title: 'Erinnerungen gesendet',
-                description: `${(result as any).sent_count || 0} E-Mail(s) wurden verschickt.`,
+                description: `${result.sent_count || 0} E-Mail(s) wurden verschickt.`,
             });
             setIsReminderDialogOpen(false);
-        } catch (error: any) {
+        } catch (error: unknown) {
             toast({
                 variant: 'destructive',
                 title: 'Versand fehlgeschlagen',
-                description: error.message,
+                description: error instanceof Error ? error.message : 'Unbekannter Fehler',
             });
         } finally {
             setIsSendingReminders(false);
@@ -329,8 +344,8 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                             const isPending = assignMutation.isPending || removeMutation.isPending;
                                             const requiresCert = qual.requires_certificate === true;
                                             const hasCert = certKeySet.has(`${doctor.id}:${qual.id}`);
-                                            const certStatus = (dqEntry as any)?.certificate_status || null;
-                                            const certValidUntil = (dqEntry as any)?.certificate_valid_until || dqEntry?.expiry_date || null;
+                                            const certStatus = (dqEntry as DoctorQualification & { certificate_status?: string | null })?.certificate_status || null;
+                                            const certValidUntil = (dqEntry as DoctorQualification & { certificate_valid_until?: string | null })?.certificate_valid_until || dqEntry?.expiry_date || null;
                                             const missingCert = hasQual && requiresCert && !hasCert;
                                             const certWarning = hasQual && requiresCert && (
                                                 missingCert

@@ -35,7 +35,8 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
 
   handleReportBug = (): void => {
     // TicketDialog öffnen – wir setzen ein Flag im window, das der Dialog ausliest
-    (window as any).__openTicketDialog?.('bug', this.state.error);
+    const w = window as unknown as { __openTicketDialog?: (type: string, error: Error | null) => void };
+    w.__openTicketDialog?.('bug', this.state.error);
   };
 
   handleReload = (): void => {

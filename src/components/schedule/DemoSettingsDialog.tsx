@@ -106,7 +106,7 @@ export default function DemoSettingsDialog() {
               return base44.entities.DemoSetting.create({ name, active_days, time });
           }
       },
-      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['demoSettings'] } as any)
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['demoSettings'] })
   });
 
   const getSetting = (name: string): DemoSetting => settings.find((s: DemoSetting) => s.name === name) || { name, active_days: [1, 2, 3, 4, 5], time: "" };

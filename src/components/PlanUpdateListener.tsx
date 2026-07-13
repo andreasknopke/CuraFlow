@@ -81,8 +81,8 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
   const isLoading = authState.isLoading ?? false;
   const authToken = authState.token || api.getToken();
   const activeDbToken = getActiveDbToken();
-  const pendingKeysRef = useRef(new Map());
-  const pendingPayloadsRef = useRef<any[]>([]);
+  const pendingKeysRef = useRef(new Map<string, string[]>());
+  const pendingPayloadsRef = useRef<Record<string, unknown>[]>([]);
   const flushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -136,12 +136,15 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       const payloads = pendingPayloadsRef.current;
       console.info('[PlanUpdateListener] Invalidiere Queries nach Push-Event', {
         count: payloads.length,
-        entities: payloads.map((payload: any) => payload.entity),
+        entities: payloads.map((payload) => String((payload as Record<string, unknown>).entity)),
       });
 
-      const foreignChange = payloads.find((payload: any) => payload?.actor?.email && payload.actor.email !== user?.email);
+      const foreignChange = payloads.find((payload) => {
+        const actor = payload.actor as Record<string, unknown> | undefined;
+        return actor?.email && actor.email !== user?.email;
+      });
       if (foreignChange) {
-        const actorLabel = foreignChange.actor.email;
+        const actorLabel = String((foreignChange.actor as Record<string, unknown>).email);
         toast.info(`Plan aktualisiert durch ${actorLabel}`, {
           id: 'plan-update-notification',
           duration: 4000,

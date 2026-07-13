@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from "@/api/client";
 import { isWeekend, parseISO, format } from 'date-fns';
+import type { StaffingPlanEntry } from '@/types';
 
 interface ShiftEntry {
     doctor_id: string;
@@ -34,7 +35,7 @@ export function useShiftLimitCheck(shifts: ShiftEntry[], workplaces: Workplace[]
 
     const { data: staffingEntries = [] } = useQuery({
         queryKey: ['staffingPlanEntriesAll'],
-        queryFn: () => (base44.entities.StaffingPlanEntry as any).list?.(null, 2000),
+        queryFn: () => base44.entities.StaffingPlanEntry.list({ limit: 2000 } as unknown as Record<string, unknown>) as Promise<StaffingPlanEntry[]>,
         staleTime: 1000 * 60 * 5
     });
 

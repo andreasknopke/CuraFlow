@@ -11,13 +11,14 @@ import { useToast } from '@/components/ui/use-toast';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
 import { computeVacationBalance } from './vacationBalance';
 import type { Doctor, ShiftEntry, ColorSetting } from '@/types';
 
-interface ContractInfo {
-  contractStart?: string;
-  contractEnd?: string;
+interface VacationRequestEntry {
+  position?: string;
+  status?: string;
+  [key: string]: unknown;
 }
 
 interface VacationBalance {
@@ -49,9 +50,9 @@ interface DoctorYearViewProps {
   isSchoolHoliday?: (date: Date) => boolean;
   isPublicHoliday?: (date: Date) => boolean;
   dayTestIdPrefix?: string;
-  pendingRequestsByDate?: Record<string, any>;
-  rejectedRequestsByDate?: Record<string, any>;
-  approvedRequestsByDate?: Record<string, any>;
+  pendingRequestsByDate?: Record<string, VacationRequestEntry>;
+  rejectedRequestsByDate?: Record<string, VacationRequestEntry>;
+  approvedRequestsByDate?: Record<string, VacationRequestEntry>;
   isReadOnly?: boolean;
 }
 
@@ -73,8 +74,8 @@ interface MonthCalendarProps {
   isSchoolHoliday: (date: Date) => boolean;
   isPublicHoliday: (date: Date) => boolean;
   dayTestIdPrefix?: string;
-  pendingRequestsByDate?: Record<string, any>;
-  rejectedRequestsByDate?: Record<string, any>;
+  pendingRequestsByDate?: Record<string, VacationRequestEntry>;
+  rejectedRequestsByDate?: Record<string, VacationRequestEntry>;
 }
 
 interface VacationBalanceBoxProps {
@@ -160,7 +161,7 @@ export default function DoctorYearView({
   });
 
   const getCustomColor = (position: string): React.CSSProperties | null => {
-      const setting = (colorSettings).find((s: any) => s.name === position && s.category === 'position');
+      const setting = (colorSettings as ColorSetting[]).find((s) => s.name === position && s.category === 'position');
       if (setting) return { backgroundColor: setting.bg_color ?? undefined, color: setting.text_color ?? undefined };
       if (DEFAULT_COLORS.positions[position]) return { backgroundColor: DEFAULT_COLORS.positions[position].bg, color: DEFAULT_COLORS.positions[position].text };
       return null;
@@ -233,11 +234,9 @@ export default function DoctorYearView({
           body += `Hier ist eine Übersicht deiner eingetragenen Abwesenheiten:\n\n${dateList}`;
           body += `\n\nViele Grüße,\nDein CuraFlow-System`;
 
-          await (base44 as any).integrations.Core.SendEmail({
-              to: doctorEmail.trim(),
-              subject: `[CuraFlow] Deine Abwesenheiten`,
-              body: body
-          });
+              // TODO: Implement email sending via a dedicated API endpoint
+              // (base44.integrations.Core.SendEmail was a legacy function no longer available)
+              throw new Error('E-Mail-Versand ist derzeit nicht verfügbar');
 
           alert('E-Mail erfolgreich gesendet!');
           setEmailDialogOpen(false);
@@ -469,7 +468,7 @@ export default function DoctorYearView({
     return shift ? shift.position : null;
   };
 
-    const isDateDisabled = (date: Date): boolean => !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+    const isDateDisabled = (date: Date): boolean => !isDateWithinContract(date, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
@@ -479,7 +478,7 @@ export default function DoctorYearView({
               {doctor.initials}
           </div>
           <div>
-              <h2 className="text-xl font-bold text-slate-900" title={getContractTooltipLabel(contractInfo as any) || undefined}>{doctor.name}</h2>
+              <h2 className="text-xl font-bold text-slate-900" title={getContractTooltipLabel(contractInfo ?? null) || undefined}>{doctor.name}</h2>
               <p className="text-slate-500">{doctor.role} • Jahresplanung {year}</p>
           </div>
         </div>

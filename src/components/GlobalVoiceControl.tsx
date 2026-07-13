@@ -32,6 +32,39 @@ import type { ShiftEntry, Doctor, Workplace } from '@/types';
 const ELEVENLABS_AGENT_ID = "agent_1901kb1v556ke8trk5g98xjaxrp4"; 
 const ELEVENLABS_AGENT_ID_SECONDARY = "agent_0601kb68g27kfbq90tqrq18xr80e";
 
+// --- Voice command types (returned by api.processVoiceCommand) ---
+interface VoiceCommandAssignment {
+    doctor_id: string;
+    position: string;
+    date: string;
+    order?: number;
+}
+
+interface VoiceCommandMove {
+    doctor_id: string;
+    source_position?: string;
+    target_position?: string;
+    source_date: string;
+    target_date?: string;
+}
+
+interface VoiceCommandDelete {
+    doctor_id: string;
+    scope: string;
+    date?: string;
+}
+
+interface VoiceCommand {
+    action: string;
+    reason?: string;
+    navigation?: Record<string, unknown>;
+    assignments?: VoiceCommandAssignment[];
+    move?: VoiceCommandMove;
+    delete?: VoiceCommandDelete;
+    corrected_text?: string;
+    [key: string]: unknown;
+}
+
 export default function GlobalVoiceControl() {
     const [isListening, setIsListening] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -49,6 +82,7 @@ export default function GlobalVoiceControl() {
     const [showTraining, setShowTraining] = useState(false);
     const [showHelp, setShowHelp] = useState(false);
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API has no TypeScript types
     const recognitionRef = useRef<any>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -86,8 +120,9 @@ export default function GlobalVoiceControl() {
         }, { limit: 5000 }) as Promise<ShiftEntry[]>,
     });
 
-    const { checkStaffing } = useStaffingCheck(doctors, allShifts as any);
-    const { checkLimits } = useShiftLimitCheck(allShifts as any, workplaces as any);
+    // Hooks expect narrower ShiftEntry types; cast since @/types ShiftEntry is a superset
+    const { checkStaffing } = useStaffingCheck(doctors, allShifts as unknown as Array<{ doctor_id: string; date: string; position: string }>);
+    const { checkLimits } = useShiftLimitCheck(allShifts as unknown as Array<{ doctor_id: string; date: string; position: string; order?: number }>, workplaces as unknown as Array<{ name: string; category: string; order?: number; service_type?: number }>);
 
     const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
@@ -127,7 +162,7 @@ export default function GlobalVoiceControl() {
         if (isNewService) {
             // Determine consecutive mode: 'forbidden' | 'allowed' | 'preferred'
             const consecutiveMode = newServiceWorkplace.consecutive_days_mode
-                || ((newServiceWorkplace as any).allows_consecutive_days === false ? 'forbidden' : 'allowed');
+                || ((newServiceWorkplace as unknown as Record<string, unknown>).allows_consecutive_days === false ? 'forbidden' : 'allowed');
             if (consecutiveMode === 'forbidden') {
                 const currentDt = new Date(dateStr);
                 const prevDateStr = format(addDays(currentDt, -1), 'yyyy-MM-dd');
@@ -170,7 +205,7 @@ export default function GlobalVoiceControl() {
     };
 
     // --- COMMAND HANDLER ---
-    const onVoiceCommand = async (command: any) => {
+    const onVoiceCommand = async (command: VoiceCommand) => {
         console.log("Global Voice Command:", command);
 
         if (command.action === 'unknown') {
@@ -198,7 +233,7 @@ export default function GlobalVoiceControl() {
             return null;
         };
 
-        const resolvePosition = (name: string) => {
+        const resolvePosition = (name: string | undefined) => {
             if (!name) return null;
             let wp = workplaces.find(w => w.name === name);
             if (wp) return wp.name;
@@ -426,8 +461,8 @@ export default function GlobalVoiceControl() {
     });
 
     // Check browser support for Web Speech API
-    const isWebSpeechSupported = typeof window !== 'undefined' && 
-        ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+    const isWebSpeechSupported = typeof window !== 'undefined' &&
+        (Boolean((window as unknown as { SpeechRecognition?: unknown }).SpeechRecognition) || Boolean((window as unknown as { webkitSpeechRecognition?: unknown }).webkitSpeechRecognition));
 
     useEffect(() => {
         if (isReadOnly) {
@@ -441,8 +476,9 @@ export default function GlobalVoiceControl() {
 
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
-            const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API constructor has no standard TS types
+            const SpeechRecognitionCtor = ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) as { new (): any };
+            const recognition = new SpeechRecognitionCtor();
             
             recognition.continuous = false;
             recognition.interimResults = true;
@@ -454,6 +490,7 @@ export default function GlobalVoiceControl() {
                 setTranscript("");
             };
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API SpeechRecognitionEvent
             recognition.onresult = (event: any) => {
                 let interim = '';
                 let final = '';
@@ -467,6 +504,7 @@ export default function GlobalVoiceControl() {
                 }
             };
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API error event
             recognition.onerror = (event: any) => {
                 if (event.error === 'not-allowed') setError("Mikrofonzugriff verweigert.");
                 else if (event.error !== 'no-speech') setError("Fehler: " + event.error);
@@ -597,12 +635,12 @@ export default function GlobalVoiceControl() {
         setIsProcessing(true);
         
         try {
-            const result = await api.processVoiceCommand(text) as { corrected_text?: string };
+            const result = await api.processVoiceCommand(text) as VoiceCommand;
             if (result.corrected_text) setTranscript(result.corrected_text);
             onVoiceCommand(result);
             
         } catch (err) {
-            const msg = (err as any).response?.data?.error || (err as Error).message || "Verarbeitungsfehler";
+            const msg = (err instanceof Error ? err.message : String(err)) || "Verarbeitungsfehler";
             setError(msg);
         } finally {
             setIsProcessing(false);

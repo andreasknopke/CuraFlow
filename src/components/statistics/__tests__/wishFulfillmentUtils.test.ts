@@ -1,13 +1,26 @@
 import { describe, expect, it } from 'vitest';
+import type { Doctor } from '@/types';
 
 import { buildWishFulfillmentStats } from '../wishFulfillmentUtils';
+
+const makeDoctor = (id: string, name: string, role = ''): Doctor => ({
+  id,
+  name,
+  role,
+  fte: 1,
+  exclude_from_staffing_plan: false,
+  order: 0,
+  is_active: true,
+  created_date: '',
+  updated_date: '',
+});
 
 describe('buildWishFulfillmentStats', () => {
   it('calculates fulfillment from each doctors own shifts across wish ranges', () => {
     const stats = buildWishFulfillmentStats({
       doctors: [
-        { id: 'doctor-anna', name: 'Anna Adler', role: 'doctor' },
-        { id: 'doctor-bert', name: 'Bert Braun', role: 'doctor' },
+        makeDoctor('doctor-anna', 'Anna Adler', 'doctor'),
+        makeDoctor('doctor-bert', 'Bert Braun', 'doctor'),
       ],
       wishes: [
         {

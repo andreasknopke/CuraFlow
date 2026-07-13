@@ -1,5 +1,5 @@
 import { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
-import { base44 } from "@/api/client";
+import { api } from "@/api/client";
 import { appParams } from '@/lib/app-params';
 // @ts-ignore - axios-client import from SDK
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
@@ -10,12 +10,12 @@ interface AuthError {
 }
 
 interface AuthContextType {
-  user: any;
+  user: Record<string, unknown> | null;
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
   isLoadingPublicSettings: boolean;
   authError: AuthError | null;
-  appPublicSettings: any;
+  appPublicSettings: Record<string, unknown> | null;
   logout: (shouldRedirect?: boolean) => void;
   navigateToLogin: () => void;
   checkAppState: () => Promise<void>;
@@ -28,12 +28,12 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider = ({ children }: AuthProviderProps) => {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<Record<string, unknown> | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(true);
   const [authError, setAuthError] = useState<AuthError | null>(null);
-  const [appPublicSettings, setAppPublicSettings] = useState<any>(null); // Contains only { id, public_settings }
+  const [appPublicSettings, setAppPublicSettings] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     checkAppState();
@@ -67,12 +67,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           setIsAuthenticated(false);
         }
         setIsLoadingPublicSettings(false);
-      } catch (appError: any) {
+      } catch (appError: unknown) {
         console.error('App state check failed:', appError);
 
+        const appErr = appError as { status?: number; data?: { extra_data?: { reason?: string } }; message?: string };
         // Handle app-level errors
-        if (appError.status === 403 && appError.data?.extra_data?.reason) {
-          const reason = appError.data.extra_data.reason;
+        if (appErr.status === 403 && appErr.data?.extra_data?.reason) {
+          const reason = appErr.data.extra_data.reason;
           if (reason === 'auth_required') {
             setAuthError({
               type: 'auth_required',
@@ -86,23 +87,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           } else {
             setAuthError({
               type: reason,
-              message: appError.message
+              message: appErr.message ?? ''
             });
           }
         } else {
           setAuthError({
             type: 'unknown',
-            message: appError.message || 'Failed to load app'
+            message: appErr.message || 'Failed to load app'
           });
         }
         setIsLoadingPublicSettings(false);
         setIsLoadingAuth(false);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Unexpected error:', error);
       setAuthError({
         type: 'unknown',
-        message: error.message || 'An unexpected error occurred'
+        message: error instanceof Error ? error.message : 'An unexpected error occurred'
       });
       setIsLoadingPublicSettings(false);
       setIsLoadingAuth(false);
@@ -113,17 +114,18 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
-      const currentUser = await (base44 as any).auth.me();
+      const currentUser = await api.me() as Record<string, unknown> | null;
       setUser(currentUser);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('User auth check failed:', error);
       setIsLoadingAuth(false);
       setIsAuthenticated(false);
 
+      const authErr = error as { status?: number };
       // If user auth fails, it might be an expired token
-      if (error.status === 401 || error.status === 403) {
+      if (authErr.status === 401 || authErr.status === 403) {
         setAuthError({
           type: 'auth_required',
           message: 'Authentication required'
@@ -137,17 +139,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setIsAuthenticated(false);
 
     if (shouldRedirect) {
-      // Use the SDK's logout method which handles token cleanup and redirect
-      (base44 as any).auth.logout(window.location.href);
+      api.logout().then(() => {
+        window.location.href = window.location.href;
+      });
     } else {
-      // Just remove the token without redirect
-      (base44 as any).auth.logout();
+      api.logout();
     }
   };
 
   const navigateToLogin = () => {
-    // Use the SDK's redirectToLogin method
-    (base44 as any).auth.redirectToLogin(window.location.href);
+    window.location.href = window.location.href;
   };
 
   return (

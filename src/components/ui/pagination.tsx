@@ -41,7 +41,7 @@ const PaginationLink = ({
   isActive?: boolean
   size?: string
 }) => {
-  const btnSize = size as any;
+  const btnSize = size as "default" | "sm" | "lg" | "icon";
   return (
   <a
     aria-current={isActive ? "page" : undefined}

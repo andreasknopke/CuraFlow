@@ -16,17 +16,18 @@ interface TicketDialogProps {
 }
 
 function resolveUserName(user: Record<string, unknown> | null): string | undefined {
-  const u = user as any;
-  const explicitUserName = u?.username || u?.preferred_username || u?.name || '';
+  if (!user) return undefined;
+  const explicitUserName = (user.username || user.preferred_username || user.name || '') as string;
   if (explicitUserName && explicitUserName.trim()) {
     return explicitUserName.trim();
   }
 
-  if (u?.email && u.email.includes('@')) {
-    return u.email.split('@')[0].trim();
+  const email = user.email as string | undefined;
+  if (email && email.includes('@')) {
+    return email.split('@')[0].trim();
   }
 
-  return u?.email?.trim() || undefined;
+  return email?.trim() || undefined;
 }
 
 /**

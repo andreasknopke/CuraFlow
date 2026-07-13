@@ -7,7 +7,7 @@ import { buildWishFulfillmentStats } from '@/components/statistics/wishFulfillme
 import type { Doctor, WishRequest, ShiftEntry } from '@/types';
 
 export default function WishFulfillmentReport({ doctors, wishes, shifts }: { doctors: Doctor[]; wishes: WishRequest[]; shifts: ShiftEntry[] }) {
-    const stats = useMemo(() => buildWishFulfillmentStats({ doctors: doctors as any, wishes, shifts: shifts as any }), [doctors, wishes, shifts]);
+    const stats = useMemo(() => buildWishFulfillmentStats({ doctors, wishes, shifts }), [doctors, wishes, shifts]);
 
     if (!stats || stats.length === 0) {
         return (

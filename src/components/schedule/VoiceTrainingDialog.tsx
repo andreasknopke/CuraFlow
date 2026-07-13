@@ -106,9 +106,9 @@ export default function VoiceTrainingDialog({
         }
     }, [isWebSpeechSupported, useElevenLabs]);
 
-    const { data: aliases = [] } = useQuery({
+    const { data: aliases = [] } = useQuery<VoiceAlias[]>({
         queryKey: ['voiceAliases'],
-        queryFn: () => db.VoiceAlias.filter({ created_by: user?.email }),
+        queryFn: () => db.VoiceAlias.filter({ created_by: user?.email }) as Promise<VoiceAlias[]>,
         enabled: isOpen && !!user
     });
 
@@ -156,7 +156,7 @@ export default function VoiceTrainingDialog({
                     } else {
                         toast.error("Kein Text erkannt");
                     }
-                } catch (e: any) {
+                } catch (e: unknown) {
                     console.error(e);
                     toast.error("Transkriptionsfehler");
                 } finally {
@@ -167,9 +167,9 @@ export default function VoiceTrainingDialog({
 
             mediaRecorder.start();
             setIsRecording(true);
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            toast.error("Mikrofonfehler: " + e.message);
+            toast.error("Mikrofonfehler: " + (e instanceof Error ? e.message : String(e)));
         }
     };
 
@@ -227,7 +227,7 @@ export default function VoiceTrainingDialog({
                                         }`}
                                     >
                                         {doc.name}
-                                        {aliases.some((a: any) => a.doctor_id === doc.id) && (
+                                        {aliases.some((a) => a.doctor_id === doc.id) && (
                                             <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full" />
                                         )}
                                     </button>
@@ -292,7 +292,7 @@ export default function VoiceTrainingDialog({
                                 <div>
                                     <div className="font-medium mb-2 text-sm text-slate-500">Gespeicherte Aliases</div>
                                     <div className="space-y-2">
-                                        {aliases.filter((a: any) => a.doctor_id === selectedDoctor.id).map((alias: any) => (
+                                        {aliases.filter((a) => a.doctor_id === selectedDoctor.id).map((alias) => (
                                             <div key={alias.id} className="flex items-center justify-between p-2 bg-slate-50 rounded border">
                                                 <span className="font-mono text-sm">"{alias.detected_text}"</span>
                                                 <Button 
@@ -305,7 +305,7 @@ export default function VoiceTrainingDialog({
                                                 </Button>
                                             </div>
                                         ))}
-                                        {aliases.filter((a: any) => a.doctor_id === selectedDoctor.id).length === 0 && (
+                                        {aliases.filter((a) => a.doctor_id === selectedDoctor.id).length === 0 && (
                                             <div className="text-sm text-slate-400 italic">Keine Aliases gespeichert</div>
                                         )}
                                     </div>
