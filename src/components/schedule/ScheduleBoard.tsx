@@ -2757,17 +2757,9 @@ export default function ScheduleBoard() {
   };
 
   const handleClearRow = (rowName: string, timeslotId: string | null = null): void => {
-      // Bei Timeslot-Zeilen: nur Shifts mit dieser Timeslot-ID löschen
       const shiftsToDelete = currentWeekShifts.filter((s: any) => {
           if (s.position !== rowName) return false;
           if (timeslotId) return s.timeslot_id === timeslotId;
-          // Wenn keine Timeslot-ID angegeben, prüfen ob der Arbeitsplatz Timeslots hat
-          const workplace = workplaces.find((w: any) => w.name === rowName);
-          if (workplace?.timeslots_enabled) {
-              // Hat Timeslots - nur Shifts ohne Timeslot löschen (Legacy)
-              return !s.timeslot_id;
-          }
-          // Keine Timeslots - alle löschen
           return true;
       });
       
@@ -4284,42 +4276,101 @@ export default function ScheduleBoard() {
             const allWeekDays = [0, 1, 2, 3, 4, 5, 6].map((offset: any) => addDays(monday, offset));
             const daysToAssign = allWeekDays.filter((day: any) => isWorkplaceActiveOnDate(rowName, format(day, 'yyyy-MM-dd')));
 
-            const toCreate = [];
-            const toDelete = [];
-
-            let successCount = 0;
-            let blockedCount = 0;
+            // ── Phase 1: Pre-validate ALL days, collect blockers/warnings ──
+            const scheduleBlockedDays: string[] = [];
+            const validatedDays: { dateStr: string; day: Date; blockers: string[]; warnings: string[] }[] = [];
+            let allBlockers: string[] = [];
+            const allWarnings: string[] = [];
 
             for (const day of daysToAssign) {
                 const dateStr = format(day, 'yyyy-MM-dd');
 
                 if (getScheduleBlock(dateStr, rowName, resolvedTimeslotId ?? undefined)) {
-                    blockedCount++;
+                    scheduleBlockedDays.push(dateStr);
                     continue;
                 }
 
-                if (await checkConflicts(doctorId, dateStr, rowName, true)) {
-                    blockedCount++;
-                    continue;
+                const result = validate(doctorId, dateStr, rowName, {});
+                if (result.blockers.length > 0 || result.warnings.length > 0) {
+                    validatedDays.push({ dateStr, day, blockers: result.blockers, warnings: result.warnings });
+                    allBlockers = [...allBlockers, ...result.blockers.map((b: string) => `${format(day, 'dd.MM.')}: ${b}`)];
+                    allWarnings.push(...result.warnings.map((w: string) => `${format(day, 'dd.MM.')}: ${w}`));
+                } else {
+                    // No issues → can proceed directly, still track for batch create
+                    validatedDays.push({ dateStr, day, blockers: [], warnings: [] });
                 }
+            }
 
+            const effectiveDateStrs = validatedDays.map((d) => d.dateStr);
+
+            // ── Phase 2: If blockers, show ONE override dialog ──
+            if (allBlockers.length > 0) {
+                const doctor = doctors.find((d: any) => d.id === doctorId);
+                return new Promise<void>((resolve) => {
+                    requestOverride({
+                        blockers: allBlockers,
+                        warnings: allWarnings,
+                        doctorId,
+                        doctorName: doctor?.name,
+                        date: format(monday, 'yyyy-MM-dd'),
+                        position: `${rowName} (Mo–Fr Batch)`,
+                        onConfirm: () => {
+                            void batchCreateShifts(
+                                effectiveDateStrs,
+                                normalizedSelection,
+                                resolvedTimeslotId,
+                                scheduleBlockedDays.length,
+                            ).then(() => resolve());
+                        },
+                    });
+                });
+            }
+
+            // ── Phase 3: Warnings only or no issues → warn as toasts, then create ──
+            if (allWarnings.length > 0) {
+                toast.warning(allWarnings.join('\n'));
+            }
+
+            if (effectiveDateStrs.length === 0) {
+                toast.error('Keine Tage zum Zuweisen (alle gesperrt oder inaktiv).');
+                return;
+            }
+
+            await batchCreateShifts(
+                effectiveDateStrs,
+                normalizedSelection,
+                resolvedTimeslotId,
+                scheduleBlockedDays.length,
+            );
+        };
+
+        const batchCreateShifts = async (
+            dateStrs: string[],
+            normalizedSelection: any,
+            resolvedTimeslotId: string | null,
+            scheduleBlockedCount: number,
+        ) => {
+            const toCreate: any[] = [];
+            const toDelete: any[] = [];
+            let successCount = 0;
+            let skippedCount = 0;
+
+            for (const dateStr of dateStrs) {
                 const limitWarning = checkLimits(doctorId, dateStr, rowName);
                 if (limitWarning) {
-                    toast.warning(`Limit Warnung (${format(day, 'dd.MM')}): ${limitWarning}`);
+                    toast.warning(`Limit Warnung (${dateStr}): ${limitWarning}`);
                 }
 
                 if (absencePositions.includes(rowName)) {
                     const staffingWarn = checkStaffing(dateStr, doctorId);
                     if (staffingWarn) toast.warning(staffingWarn);
 
-                    const others = currentWeekShifts.filter((s: any) => s.doctor_id === doctorId && s.date === dateStr);
-                    others.forEach((s: any) => toDelete.push(s.id));
+                    currentWeekShifts
+                        .filter((s: any) => s.doctor_id === doctorId && s.date === dateStr)
+                        .forEach((s: any) => toDelete.push(s.id));
                 } else {
                     const occupying = findOccupyingShift(dateStr, rowName, null, resolvedTimeslotId);
                     if (occupying) {
-                        if (isAutoOffPosition(occupying.position)) {
-                            // cleanupAutoFrei omitted for batch simplicity or handled later
-                        }
                         toDelete.push(occupying.id);
                     }
                 }
@@ -4331,32 +4382,29 @@ export default function ScheduleBoard() {
                     if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                     return !s.timeslot_id;
                 });
-                if (existingShift) continue; 
+                if (existingShift) {
+                    skippedCount++;
+                    continue;
+                }
 
-                // Bei Timeslot-Zeilen: Filter auch nach timeslot_id
                 const cellShifts = currentWeekShifts.filter((s: any) => {
                     if (s.date !== dateStr || s.position !== rowName) return false;
                     if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                     return !s.timeslot_id;
                 });
-                // Also check pending creates for order calculation within this batch
-                const pendingInCell = toCreate.filter((s: any) => s.date === dateStr && s.position === rowName && s.timeslot_id === effectiveTsId);
+                const pendingInCell = toCreate.filter((s: any) =>
+                    s.date === dateStr && s.position === rowName && s.timeslot_id === effectiveTsId,
+                );
 
                 const maxOrder = Math.max(
                     cellShifts.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1),
-                    pendingInCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1)
+                    pendingInCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1),
                 );
 
-                const newShiftData = {
-                    date: dateStr,
-                    position: rowName,
-                    doctor_id: doctorId,
-                    order: maxOrder + 1
-                };
-                toCreate.push(applyTimeslotSelectionToCreateData(newShiftData, {
-                    ...normalizedSelection,
-                    timeslotId: effectiveTsId,
-                }));
+                toCreate.push(applyTimeslotSelectionToCreateData(
+                    { date: dateStr, position: rowName, doctor_id: doctorId, order: maxOrder + 1 },
+                    { ...normalizedSelection, timeslotId: effectiveTsId },
+                ));
                 successCount++;
             }
 
@@ -4371,21 +4419,26 @@ export default function ScheduleBoard() {
                 setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
             }
 
-            if (successCount > 0) toast.success(`${successCount} Tage zugewiesen (Mo-Fr)`);
-            if (blockedCount > 0) toast.warning(`${blockedCount} Tage übersprungen wegen Konflikten`);
+            if (successCount > 0) toast.success(`${successCount} Tage zugewiesen (Mo–Fr)`);
+            const skippedReasons: string[] = [];
+            if (skippedCount > 0) skippedReasons.push(`${skippedCount} bereits vorhanden`);
+            if (scheduleBlockedCount > 0) skippedReasons.push(`${scheduleBlockedCount} gesperrt`);
+            if (skippedReasons.length > 0) toast.warning(`${skippedReasons.join(', ')} übersprungen`);
         };
 
-        if (!resolveTimeslotSelection({
+        const onRowHeaderResolved = (selection: any) => {
+            void assignWeekdaysToTimeslot(selection).catch((err: any) => {
+                console.error('[RowHeader Drop] assignWeekdaysToTimeslot failed', err);
+                toast.error('Fehler beim Zuweisen der Wochentage');
+            });
+        };
+
+        resolveTimeslotSelection({
             positionName: rowName,
             requestedTimeslotId: rowHeaderTimeslotId,
-            onResolved: (selection: any) => {
-                void assignWeekdaysToTimeslot(selection);
-            },
+            onResolved: onRowHeaderResolved,
             doctorId,
-        })) {
-            return;
-        }
-
+        });
         return;
     }
 
