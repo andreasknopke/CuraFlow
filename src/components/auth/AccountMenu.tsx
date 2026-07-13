@@ -39,7 +39,7 @@ export default function AccountMenu() {
     password: ''
   });
 
-  const handlePasswordChange = async (e) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
@@ -74,7 +74,7 @@ export default function AccountMenu() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: error.message || "Passwort konnte nicht geändert werden",
+        description: (error as Error).message || "Passwort konnte nicht geändert werden",
         variant: "destructive"
       });
     } finally {
@@ -82,7 +82,7 @@ export default function AccountMenu() {
     }
   };
 
-  const handleEmailChange = async (e) => {
+  const handleEmailChange = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!emailForm.newEmail || !emailForm.newEmail.includes('@')) {
@@ -113,7 +113,7 @@ export default function AccountMenu() {
     } catch (error) {
       toast({
         title: "Fehler",
-        description: error.message || "E-Mail-Adresse konnte nicht geändert werden",
+        description: (error as Error).message || "E-Mail-Adresse konnte nicht geändert werden",
         variant: "destructive"
       });
     } finally {
@@ -132,13 +132,13 @@ export default function AccountMenu() {
             className="flex items-center gap-2 hover:bg-slate-100"
           >
             <User className="h-4 w-4" />
-            <span className="hidden sm:inline">{user?.full_name || user?.email}</span>
+            <span className="hidden sm:inline">{(user?.full_name || user?.email) as React.ReactNode}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel>
             <div className="flex flex-col">
-              <span className="font-medium">{user?.full_name || 'Mein Account'}</span>
+              <span className="font-medium">{(user?.full_name || 'Mein Account') as React.ReactNode}</span>
               <span className="text-xs text-slate-500 font-normal">{user?.email}</span>
               {commitShortSha && (
                 <span

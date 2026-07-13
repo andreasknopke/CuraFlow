@@ -12,11 +12,11 @@ describe('useIsMobile', () => {
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: false,
       media: query,
-      addEventListener: vi.fn((_, _handler) => {
+      addEventListener: vi.fn((_: any, _handler: any) => {
         // Store handler for later invocation
       }),
       removeEventListener: vi.fn(),
-    }));
+    } as any));
 
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(false);
@@ -29,7 +29,7 @@ describe('useIsMobile', () => {
       media: query,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    }));
+    } as any));
 
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(true);
@@ -42,23 +42,23 @@ describe('useIsMobile', () => {
       media: query,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-    }));
+    } as any));
 
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(true);
   });
 
   it('updates state when the viewport is resized from desktop to mobile', () => {
-    let resizeHandler = null;
+    let resizeHandler: any = null;
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1024);
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: false,
       media: query,
-      addEventListener: vi.fn((_, handler) => {
+      addEventListener: vi.fn((_: any, handler: any) => {
         resizeHandler = handler;
       }),
       removeEventListener: vi.fn(),
-    }));
+    } as any));
 
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(false);
@@ -73,16 +73,16 @@ describe('useIsMobile', () => {
   });
 
   it('updates state when the viewport is resized from mobile to desktop', () => {
-    let resizeHandler = null;
+    let resizeHandler: any = null;
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(480);
     vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
       matches: true,
       media: query,
-      addEventListener: vi.fn((_, handler) => {
+      addEventListener: vi.fn((_: any, handler: any) => {
         resizeHandler = handler;
       }),
       removeEventListener: vi.fn(),
-    }));
+    } as any));
 
     const { result } = renderHook(() => useIsMobile());
     expect(result.current).toBe(true);
@@ -104,7 +104,7 @@ describe('useIsMobile', () => {
       media: '',
       addEventListener: vi.fn(),
       removeEventListener,
-    }));
+    } as any));
 
     const { unmount } = renderHook(() => useIsMobile());
     unmount();

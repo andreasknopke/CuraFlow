@@ -39,8 +39,8 @@ import {
 vi.mock('@radix-ui/react-dropdown-menu', async (importOriginal) => {
   const actual = await importOriginal();
   return {
-    ...actual,
-    Portal: ({ children }) => React.createElement(React.Fragment, null, children),
+    ...(actual as object),
+    Portal: ({ children }: any) => React.createElement(React.Fragment, null, children),
   };
 });
 
@@ -134,7 +134,7 @@ function createSeedEntities() {
  * Returns the renderWithProviders result.
  */
 function renderBoard(overrides = {}) {
-  const entities = overrides.entities ?? createSeedEntities();
+  const entities = (overrides as any).entities ?? createSeedEntities();
 
   server.use(
     ...createDbHandlers({ entities }),

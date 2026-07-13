@@ -122,10 +122,10 @@ export default function StaffPage() {
       const { _qualificationIds, ...doctorData } = data;
       const result = await db.Doctor.create({...doctorData, order: doctors.length}) as { id: string };
       await syncTenantDoctorCentralLink({
-        doctorId: result?.id,
-        tenantId: getActiveTokenId(),
+        doctorId: result.id as string,
+        tenantId: getActiveTokenId() as string,
         previousCentralEmployeeId: null,
-        nextCentralEmployeeId: doctorData.central_employee_id,
+        nextCentralEmployeeId: doctorData.central_employee_id as string | null | undefined,
       });
       // Direkt nach dem Anlegen die Qualifikationen zuweisen, falls vorhanden
       if (_qualificationIds && _qualificationIds.length > 0 && result?.id) {
@@ -157,9 +157,9 @@ export default function StaffPage() {
       const result = await db.Doctor.update(id, data);
       await syncTenantDoctorCentralLink({
         doctorId: id,
-        tenantId: getActiveTokenId(),
+        tenantId: getActiveTokenId() as string,
         previousCentralEmployeeId,
-        nextCentralEmployeeId: data.central_employee_id,
+        nextCentralEmployeeId: data.central_employee_id as string | null | undefined,
       });
       return result;
     },
@@ -443,8 +443,8 @@ export default function StaffPage() {
                                                                       </Badge>
                                                                       <DoctorQualificationBadges
                                                                           doctorId={doctor.id}
-                                                                          qualificationMap={qualificationMap}
-                                                                          allDoctorQualifications={doctorQualsByDoctor}
+                                                                          qualificationMap={qualificationMap as any}
+                                                                          allDoctorQualifications={doctorQualsByDoctor as any}
                                                                       />
                                                                   </div>
                                                               </div>
@@ -515,7 +515,7 @@ export default function StaffPage() {
 
           <TabsContent value="staffing" className="mt-0 min-h-0 flex-1 overflow-hidden">
               <div className="h-full overflow-y-auto pr-1">
-                <StaffingPlanTable doctors={doctors} isReadOnly={isReadOnly} />
+                <StaffingPlanTable doctors={doctors as any} isReadOnly={isReadOnly} />
               </div>
           </TabsContent>
 
@@ -526,8 +526,8 @@ export default function StaffPage() {
           key={editingDoctor?.id || 'new-doctor'}
           open={isFormOpen}
           onOpenChange={handleFormOpenChange}
-          doctor={editingDoctor}
-          onSubmit={handleSave}
+          doctor={editingDoctor as any}
+          onSubmit={handleSave as any}
         />
       )}
     </div>

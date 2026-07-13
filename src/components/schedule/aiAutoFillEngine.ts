@@ -43,8 +43,8 @@ function scorePlan(suggestions: any[], doctors: any[], workplaces: any[], traini
     wishes: [],
     serviceHistory: {},
     weeklyCount: {},
-    foregroundPosition: null,
-    backgroundPosition: null,
+    foregroundPosition: null as unknown as string | undefined,
+    backgroundPosition: null as unknown as string | undefined,
     limitFG: 4,
     limitBG: 12,
     limitWeekend: 1,
@@ -61,18 +61,18 @@ function scorePlan(suggestions: any[], doctors: any[], workplaces: any[], traini
 // ============================================================
 
 function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[], qualData: any, workplaces: any[]): Record<string, Record<string, string[]>> {
-  const nameMap = {};
+  const nameMap: Record<string, string> = {};
   for (const d of doctors) nameMap[d.id] = d.name;
 
   // Build workplace lookup by name for qualification checks
-  const wpByName = {};
+  const wpByName: Record<string, any> = {};
   for (const wp of (workplaces || [])) wpByName[wp.name] = wp;
   const { getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getWpDiscouragedQualIds } = qualData || {};
 
-  const byDate = {};
+  const byDate: Record<string, Record<string, string[]>> = {};
   for (const s of suggestions) {
     if (!byDate[s.date]) byDate[s.date] = {};
-    if (!byDate[s.date][s.position]) byDate[s.date][s.position] = [];
+    if (!byDate[s.date][s.position as string]) byDate[s.date][s.position as string] = [];
 
     let label = nameMap[s.doctor_id] || s.doctor_id;
 
@@ -85,11 +85,11 @@ function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[
         const disc = getWpDiscouragedQualIds?.(wp.id) || [];
         const req = getWpRequiredQualIds(wp.id) || [];
 
-        if (excl.length > 0 && excl.some(q => docQuals.includes(q))) {
+        if (excl.length > 0 && excl.some((q: string) => docQuals.includes(q))) {
           label += ' (NICHT-QUALIFIZIERT!)';
-        } else if (disc.length > 0 && disc.some(q => docQuals.includes(q))) {
+        } else if (disc.length > 0 && disc.some((q: string) => docQuals.includes(q))) {
           label += ' (sollte-nicht)';
-        } else if (req.length > 0 && !req.every(q => docQuals.includes(q))) {
+        } else if (req.length > 0 && !req.every((q: string) => docQuals.includes(q))) {
           label += ' (UNQUALIFIZIERT!)';
         }
       }
@@ -99,9 +99,9 @@ function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[
   }
 
   // Sort dates
-  const sorted = {};
+  const sorted: Record<string, Record<string, string[]>> = {};
   for (const d of weekDayStrs) {
-    if (byDate[d]) sorted[d] = byDate[d];
+    if (byDate[d as string]) sorted[d as string] = byDate[d as string];
   }
 
   return sorted;
@@ -185,14 +185,14 @@ export async function generateAISuggestions(params: {
   }));
 
   // 4. Build qualification data for server validation
-  const doctorQuals = {};
+  const doctorQuals: Record<string, string[]> = {};
   for (const doc of doctors) {
-    doctorQuals[doc.id] = getDoctorQualIds(doc.id) || [];
+    doctorQuals[doc.id as string] = (getDoctorQualIds(doc.id) || []) as string[];
   }
-  const workplaceQuals = {};
+  const workplaceQuals: Record<string, any[]> = {};
   for (const wp of workplaces) {
-    const wpQuals = (allWorkplaceQualifications || []).filter(wq => wq.workplace_id === wp.id);
-    workplaceQuals[wp.id] = wpQuals.map(wq => ({
+    const wpQuals = (allWorkplaceQualifications || []).filter((wq: any) => wq.workplace_id === wp.id);
+    workplaceQuals[wp.id as string] = wpQuals.map((wq: any) => ({
       qualification_id: wq.qualification_id,
       is_mandatory: wq.is_mandatory,
       is_excluded: wq.is_excluded,
@@ -205,7 +205,7 @@ export async function generateAISuggestions(params: {
   };
 
   // 5. Call server endpoint
-  const response = await api.request('/api/schedule/ai-autofill', {
+  const response = (await api.request('/api/schedule/ai-autofill', {
     method: 'POST',
     body: JSON.stringify({
       weekDays: weekDayStrs,
@@ -236,7 +236,7 @@ export async function generateAISuggestions(params: {
       // NEW: send top 3 scored variants instead of single baseline
       variants: readableVariants,
       // Also send the raw best variant for fallback
-      bestVariant: topVariants[0].suggestions.map(s => ({
+      bestVariant: topVariants[0].suggestions.map((s: any) => ({
         date: s.date, position: s.position, doctor_id: s.doctor_id,
       })),
       holidays,
@@ -245,7 +245,7 @@ export async function generateAISuggestions(params: {
       })),
       debug: debugEnabled,
     }),
-  });
+  })) as Record<string, any>;
 
   // 6. If server returned swap-optimized plan, use it; otherwise fall back to best deterministic
   const aiSuggestions = response.suggestions || [];

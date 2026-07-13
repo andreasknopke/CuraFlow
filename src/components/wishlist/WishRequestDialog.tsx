@@ -13,6 +13,24 @@ import { useQuery } from "@tanstack/react-query";
 import { db } from "@/api/client";
 import { clampRangeToContract, isDateWithinContract } from '@/components/training/trainingContractUtils';
 
+interface WishRequestDialogProps {
+    isOpen: boolean;
+    onClose: () => void;
+    wish?: any;
+    date?: any;
+    doctorName?: string;
+    contractInfo?: any;
+    isReadOnly?: boolean;
+    isAdmin?: boolean;
+    canApprove?: boolean;
+    onSave: (data: any) => void;
+    onDelete: () => void;
+    activePosition?: string;
+    activePositionLabel?: string;
+    initialDraft?: any;
+    rangeWishes?: any[];
+}
+
 export default function WishRequestDialog({ 
     isOpen, 
     onClose, 
@@ -29,9 +47,9 @@ export default function WishRequestDialog({
     activePositionLabel,
     initialDraft,
     rangeWishes
-}) {
+}: WishRequestDialogProps) {
     const dialogContentRef = useRef<HTMLDivElement | null>(null);
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<any>({
         type: 'service',
         position: '',
         priority: 'medium',
@@ -45,18 +63,16 @@ export default function WishRequestDialog({
 
     const { data: settings = [] } = useQuery({
         queryKey: ['systemSettings'],
-        queryFn: () => db.SystemSetting.list(),
+        queryFn: () => (db as any).SystemSetting.list(),
     });
 
-    // Deadline Logic
-    const deadlineMonths = settings.find(s => s.key === 'wish_deadline_months')?.value;
-    const isDeadlineRestricted = !isAdmin && deadlineMonths && !isNaN(parseInt(deadlineMonths)); // Admins bypass
+    const deadlineMonths = (settings as any[]).find((s: any) => s.key === 'wish_deadline_months')?.value;
+    const isDeadlineRestricted = !isAdmin && deadlineMonths && !isNaN(parseInt(deadlineMonths));
     let isBlockedByDeadline = false;
-    let minDate = null;
+    let minDate: Date | null = null;
 
     if (isDeadlineRestricted && date) {
         minDate = startOfMonth(addMonths(startOfDay(new Date()), parseInt(deadlineMonths) + 1));
-        // If date is BEFORE minDate, block.
         if (isBefore(date, minDate)) {
             isBlockedByDeadline = true;
         }
@@ -105,10 +121,9 @@ export default function WishRequestDialog({
         });
     }, [isOpen]);
 
-    // Check if approval is required based on settings
     const getRequiresApproval = () => {
-        const approvalSettingRaw = settings.find(s => s.key === 'wish_approval_rules')?.value;
-        if (!approvalSettingRaw) return true; // Default: requires approval
+        const approvalSettingRaw = (settings as any[]).find((s: any) => s.key === 'wish_approval_rules')?.value;
+        if (!approvalSettingRaw) return true;
         
         try {
             const rules = JSON.parse(approvalSettingRaw);
@@ -117,7 +132,6 @@ export default function WishRequestDialog({
                 return rules.no_service_requires_approval ?? false;
             }
             
-            // For service wishes, check position override first
             if (formData.type === 'service' && formData.position) {
                 const positionOverride = rules.position_overrides?.[formData.position];
                 if (positionOverride !== undefined) {
@@ -131,9 +145,8 @@ export default function WishRequestDialog({
         }
     };
 
-    // Check if auto-create shift on approval is enabled
     const getAutoCreateShiftOnApproval = () => {
-        const approvalSettingRaw = settings.find(s => s.key === 'wish_approval_rules')?.value;
+        const approvalSettingRaw = (settings as any[]).find((s: any) => s.key === 'wish_approval_rules')?.value;
         if (!approvalSettingRaw) return false;
         try {
             const rules = JSON.parse(approvalSettingRaw);
@@ -173,19 +186,17 @@ export default function WishRequestDialog({
         }
 
         const requiresApproval = getRequiresApproval();
-        const dataToSave = { ...formData };
+        const dataToSave: any = { ...formData };
 
         if (!formData.range_enabled) {
             dataToSave.range_start = null;
             dataToSave.range_end = null;
         }
         
-        // Auto-approve if no approval required and it's a new wish (not editing)
         if (!requiresApproval && !wish && !isAdmin) {
             dataToSave.status = 'approved';
         }
         
-        // Flag to create shift if approval is being granted and setting is enabled
         const wasNotApproved = !wish || wish.status !== 'approved';
         const isNowApproved = dataToSave.status === 'approved';
         const autoCreateShift = getAutoCreateShiftOnApproval();
@@ -398,7 +409,7 @@ export default function WishRequestDialog({
                 </div>
 
                 <DialogFooter className="shrink-0 bg-white border-t px-4 sm:px-6 py-4 gap-4 sm:flex-row sm:items-end sm:justify-between">
-                    {wish || rangeWishes?.length > 1 ? (
+                    {wish || (rangeWishes && rangeWishes.length > 1) ? (
                         <Button 
                             data-testid="wish-delete-button"
                             variant="destructive" 

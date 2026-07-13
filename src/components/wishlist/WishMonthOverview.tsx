@@ -10,6 +10,20 @@ import { api, base44 } from "@/api/client";
 import { isWishOnDate } from '@/utils/wishRange';
 import { isDateWithinContract } from '@/components/training/trainingContractUtils';
 
+interface WishMonthOverviewProps {
+    year: number;
+    month: number;
+    doctors: any[];
+    contractInfoByDoctorId?: Record<string, any>;
+    wishes: any[];
+    shifts: any[];
+    onDateChange: (date: Date) => void;
+    onToggle?: (date: Date, doctorId: any) => void;
+    isSchoolHoliday?: (date: Date) => boolean;
+    isPublicHoliday?: (date: Date) => boolean;
+    activeType?: string;
+}
+
 export default function WishMonthOverview({ 
     year, 
     month, 
@@ -22,17 +36,16 @@ export default function WishMonthOverview({
     isSchoolHoliday,
     isPublicHoliday,
     activeType
-}) {
-    const [hiddenDoctorIds, setHiddenDoctorIds] = useState([]);
+}: WishMonthOverviewProps) {
+    const [hiddenDoctorIds, setHiddenDoctorIds] = useState<any[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [showAbsences, setShowAbsences] = useState(true);
-    // Wunschmarkierung ist immer ausgeschaltet
     const showOccupiedDates = false;
-    // Load all user preferences
+
     useEffect(() => {
         const loadPreferences = async () => {
             try {
-                const user = await base44.auth.me();
+                const user = await (base44 as any).auth.me();
                 if (user) {
                     if (user.wish_overview_show_absences !== undefined) {
                         setShowAbsences(user.wish_overview_show_absences);
@@ -48,26 +61,23 @@ export default function WishMonthOverview({
         loadPreferences();
     }, []);
 
-    // Save absences preference when changed
-    const handleShowAbsencesChange = async (checked) => {
+    const handleShowAbsencesChange = async (checked: boolean) => {
         setShowAbsences(checked);
         try {
-            await api.updateMe({ data: { wish_show_absences: checked } });
+            await (api as any).updateMe({ data: { wish_show_absences: checked } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
     };
 
-    // Save hidden doctors preference when changed
-    const saveHiddenDoctors = async (newHiddenIds) => {
+    const saveHiddenDoctors = async (newHiddenIds: any[]) => {
         try {
-            await api.updateMe({ data: { wish_hidden_doctors: newHiddenIds } });
+            await (api as any).updateMe({ data: { wish_hidden_doctors: newHiddenIds } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
     };
 
-    // Derived current date
     const currentMonth = new Date(year, month, 1);
     
     const handlePrevMonth = () => {
@@ -83,49 +93,46 @@ export default function WishMonthOverview({
     const daysInMonth = getDaysInMonth(currentMonth);
     const days = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
 
-    const visibleDoctors = doctors.filter(d => !hiddenDoctorIds.includes(d.id));
+    const visibleDoctors = doctors.filter((d: any) => !hiddenDoctorIds.includes(d.id));
     const areAllDoctorsVisible = doctors.length > 0 && hiddenDoctorIds.length === 0;
 
-    const getWish = (doctor, date) => {
+    const getWish = (doctor: any, date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        const doctorDateWishes = wishes.filter(w => 
+        const doctorDateWishes = wishes.filter((w: any) => 
             w.doctor_id === doctor.id && 
             isWishOnDate(w, dateStr)
         );
 
         if (!activeType) {
-            // No filter: prefer service over no_service when both exist
-            return doctorDateWishes.find(w => w.type === 'service') || doctorDateWishes[0];
+            return doctorDateWishes.find((w: any) => w.type === 'service') || doctorDateWishes[0];
         }
 
-        // With activeType filter: find service wish matching the position first
-        const serviceWish = doctorDateWishes.find(w => w.type === 'service' && w.position === activeType);
+        const serviceWish = doctorDateWishes.find((w: any) => w.type === 'service' && w.position === activeType);
         if (serviceWish) return serviceWish;
 
-        // Fall back to no_service wishes (global or matching activeType)
-        return doctorDateWishes.find(w => w.type === 'no_service' && (!w.position || w.position === activeType));
+        return doctorDateWishes.find((w: any) => w.type === 'no_service' && (!w.position || w.position === activeType));
     };
 
-    const hasAnyWish = (date) => {
+    const hasAnyWish = (date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        return wishes.some(w => 
+        return wishes.some((w: any) => 
             isWishOnDate(w, dateStr) &&
             w.type === 'service' &&
             w.position === activeType
         );
     };
 
-    const getAbsence = (doctor, date) => {
+    const getAbsence = (doctor: any, date: Date) => {
         if (!shifts) return null;
         const dateStr = format(date, 'yyyy-MM-dd');
-        return shifts.find(s => 
+        return shifts.find((s: any) => 
             s.doctor_id === doctor.id && 
             s.date === dateStr && 
             ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"].includes(s.position)
         );
     };
 
-    const toggleDoctorVisibility = (docId) => {
+    const toggleDoctorVisibility = (docId: any) => {
         setHiddenDoctorIds(prev => {
             const newHiddenIds = prev.includes(docId) 
                 ? prev.filter(id => id !== docId)
@@ -141,7 +148,7 @@ export default function WishMonthOverview({
     };
 
     const hideAllDoctors = () => {
-        const allDoctorIds = doctors.map((doc) => doc.id);
+        const allDoctorIds = doctors.map((doc: any) => doc.id);
         setHiddenDoctorIds(allDoctorIds);
         saveHiddenDoctors(allDoctorIds);
     };
@@ -155,8 +162,8 @@ export default function WishMonthOverview({
         showAllDoctors();
     };
 
-    const renderCell = (doctor, date) => {
-        const contractInfo = contractInfoByDoctorId[doctor.id] || null;
+    const renderCell = (doctor: any, date: Date) => {
+        const contractInfo = (contractInfoByDoctorId as any)[doctor.id] || null;
         const dateStr = format(date, 'yyyy-MM-dd');
         const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
         const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo.contractEnd;
@@ -239,7 +246,6 @@ export default function WishMonthOverview({
 
         const wish = getWish(doctor, date);
         
-        // Don't show rejected wishes (prevent "ghost" boxes)
         if (!wish || wish.status === 'rejected') {
             const borderClass = hasOtherWish ? "ring-2 ring-inset ring-emerald-400/60" : "";
             return (
@@ -251,7 +257,7 @@ export default function WishMonthOverview({
         }
 
         let bgColor = 'bg-gray-50';
-        let icon = null;
+        let icon: any = null;
         let borderColor = 'border-transparent';
         let textColor = 'text-slate-700';
 
@@ -259,9 +265,6 @@ export default function WishMonthOverview({
             bgColor = wish.status === 'approved' ? 'bg-green-200' : wish.status === 'rejected' ? 'bg-green-50 opacity-50 grayscale' : 'bg-green-100';
             borderColor = wish.status === 'approved' ? 'border-green-600' : 'border-green-400';
             textColor = 'text-green-900';
-            // For narrow columns, maybe just a small dot or checkmark?
-            // Or just color code. 
-            // "D" for Dienst?
             icon = <div className="font-bold text-[10px] leading-tight">D</div>;
         } else if (wish.type === 'no_service') {
             bgColor = wish.status === 'approved' ? 'bg-red-200' : wish.status === 'rejected' ? 'bg-red-50 opacity-50 grayscale' : 'bg-red-100';
@@ -352,12 +355,11 @@ export default function WishMonthOverview({
 
             <StickyHorizontalScrollbar className="flex-1 w-full">
                 <div className="min-w-fit">
-                    {/* Header Row: Doctors */}
                     <div className="flex border-b border-slate-200 sticky top-0 z-20 bg-white shadow-sm">
                         <div className="w-[80px] flex-shrink-0 p-2 font-bold text-slate-500 text-xs border-r border-slate-200 bg-slate-50 flex items-center justify-center sticky left-0 z-30 shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)]">
                             Datum
                         </div>
-                        {visibleDoctors.map(doc => (
+                        {visibleDoctors.map((doc: any) => (
                             <TooltipProvider key={doc.id}>
                                 <Tooltip delayDuration={0}>
                                     <TooltipTrigger asChild>
@@ -368,10 +370,10 @@ export default function WishMonthOverview({
                                     <TooltipContent>
                                         <div>
                                             <p>{doc.name} ({doc.role})</p>
-                                            {contractInfoByDoctorId[doc.id] && (
+                                            {((contractInfoByDoctorId as any)[doc.id]) && (
                                                 <>
-                                                    <p>Vertrag: {contractInfoByDoctorId[doc.id].contractRangeLabel}</p>
-                                                    <p>{contractInfoByDoctorId[doc.id].remainingLabel}</p>
+                                                    <p>Vertrag: {((contractInfoByDoctorId as any)[doc.id]).contractRangeLabel}</p>
+                                                    <p>{((contractInfoByDoctorId as any)[doc.id]).remainingLabel}</p>
                                                 </>
                                             )}
                                         </div>
@@ -381,7 +383,6 @@ export default function WishMonthOverview({
                         ))}
                     </div>
 
-                    {/* Rows: Days */}
                     <div className="flex flex-col">
                         {days.map(day => {
                             const isToday = isSameDay(day, new Date());
@@ -391,7 +392,7 @@ export default function WishMonthOverview({
                             const isSchoolHol = isSchoolHoliday ? isSchoolHoliday(day) : false;
                             
                             let bgClass = 'bg-white';
-                            let hatchStyle = {};
+                            let hatchStyle: any = {};
 
                             if (isToday) {
                                 bgClass = 'bg-blue-50/50';
@@ -415,7 +416,6 @@ export default function WishMonthOverview({
                                     className={`flex border-b border-slate-100 last:border-b-0 hover:bg-slate-50 transition-colors ${bgClass}`}
                                     style={hatchStyle}
                                 >
-                                    {/* Date Column */}
                                     <div 
                                         className={`w-[80px] flex-shrink-0 p-1 border-r border-slate-200 flex flex-col items-center justify-center text-xs sticky left-0 z-10 bg-opacity-95 backdrop-blur-sm shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)] ${bgClass}`}
                                         style={hatchStyle}
@@ -428,8 +428,7 @@ export default function WishMonthOverview({
                                         </span>
                                     </div>
                                     
-                                    {/* Doctor Columns */}
-                                    {visibleDoctors.map(doc => (
+                                    {visibleDoctors.map((doc: any) => (
                                         <div key={`${day.toISOString()}-${doc.id}`} className="w-[45px] flex-shrink-0 p-0.5 border-r border-slate-100 last:border-r-0 relative group">
                                             {renderCell(doc, day)}
                                         </div>
@@ -459,7 +458,7 @@ export default function WishMonthOverview({
                                 )}
                                 <span className="font-medium">{areAllDoctorsVisible ? 'Keinen ansehen' : 'Alle ansehen'}</span>
                             </div>
-                            {doctors.map(doc => {
+                            {doctors.map((doc: any) => {
                                 const isHidden = hiddenDoctorIds.includes(doc.id);
                                 return (
                                     <div 

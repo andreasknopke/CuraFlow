@@ -153,16 +153,15 @@ export default function DoctorYearView({
 
   const { data: colorSettings = [] } = useQuery<ColorSetting[]>({
     queryKey: ['colorSettings'],
-    queryFn: () => db.ColorSetting.list(),
+    queryFn: () => db.ColorSetting.list() as Promise<ColorSetting[]>,
     staleTime: 1000 * 60 * 10, // 10 minutes
-    cacheTime: 1000 * 60 * 30, // 30 minutes
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 
   const getCustomColor = (position: string): React.CSSProperties | null => {
-      const setting = colorSettings.find(s => s.name === position && s.category === 'position');
-      if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
+      const setting = (colorSettings as ColorSetting[]).find((s: any) => s.name === position && s.category === 'position');
+      if (setting) return { backgroundColor: setting.bg_color ?? undefined, color: setting.text_color ?? undefined };
       if (DEFAULT_COLORS.positions[position]) return { backgroundColor: DEFAULT_COLORS.positions[position].bg, color: DEFAULT_COLORS.positions[position].text };
       return null;
   };
@@ -175,7 +174,7 @@ export default function DoctorYearView({
           const shiftDate = new Date(s.date);
           return absenceTypes.includes(s.position) && shiftDate >= today;
       })
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   // Kalender/Dienstplan-Emails gehen an die Kalender-Adresse
   const doctorEmail = doctor?.google_email || doctor?.email;
@@ -234,7 +233,7 @@ export default function DoctorYearView({
           body += `Hier ist eine Übersicht deiner eingetragenen Abwesenheiten:\n\n${dateList}`;
           body += `\n\nViele Grüße,\nDein CuraFlow-System`;
 
-          await base44.integrations.Core.SendEmail({
+          await (base44 as any).integrations.Core.SendEmail({
               to: doctorEmail.trim(),
               subject: `[CuraFlow] Deine Abwesenheiten`,
               body: body
@@ -421,7 +420,7 @@ export default function DoctorYearView({
   });
 
   const carryOverMutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (): Promise<{ carried_days: number }> =>
       api.request('/api/vacation/shift-entitlement/carry-over', {
         method: 'POST',
         body: JSON.stringify({
@@ -429,7 +428,7 @@ export default function DoctorYearView({
           toYear: year + 1,
           doctorId: doctor?.id,
         }),
-      }),
+      }) as Promise<{ carried_days: number }>,
     onSuccess: (result: { carried_days: number }) => {
       queryClient.invalidateQueries({ queryKey: entitlementKey });
       queryClient.invalidateQueries({ queryKey: nextYearKey(year + 1) });
@@ -480,7 +479,7 @@ export default function DoctorYearView({
               {doctor.initials}
           </div>
           <div>
-              <h2 className="text-xl font-bold text-slate-900" title={getContractTooltipLabel(contractInfo) || undefined}>{doctor.name}</h2>
+              <h2 className="text-xl font-bold text-slate-900" title={getContractTooltipLabel(contractInfo as any) || undefined}>{doctor.name}</h2>
               <p className="text-slate-500">{doctor.role} • Jahresplanung {year}</p>
           </div>
         </div>
@@ -641,8 +640,8 @@ export default function DoctorYearView({
             isDateDisabled={isDateDisabled}
             customColors={propCustomColors}
             getCustomColor={getCustomColor}
-            isSchoolHoliday={isSchoolHoliday}
-            isPublicHoliday={isPublicHoliday}
+            isSchoolHoliday={isSchoolHoliday ?? (() => false)}
+            isPublicHoliday={isPublicHoliday ?? (() => false)}
             dayTestIdPrefix={dayTestIdPrefix}
             pendingRequestsByDate={pendingRequestsByDate}
             rejectedRequestsByDate={rejectedRequestsByDate}
@@ -677,7 +676,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
         {days.map(date => {
           const status = getShiftStatus(date);
                     const disabled = isDateDisabled ? isDateDisabled(date) : false;
-                    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo.contractEnd;
+                    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === (contractInfo?.contractEnd ?? '');
           const isWeekendDay = isWeekend(date);
           // Use passed functions or defaults if missing
           const isHoliday = checkPublicHoliday ? checkPublicHoliday(date) : false;
@@ -701,8 +700,8 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
                   backgroundImage: 'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.22) 0, rgba(148, 163, 184, 0.22) 4px, transparent 4px, transparent 10px)'
               };
               colorClass = "text-slate-300 cursor-not-allowed";
-          } else if (customColors && customColors[status]) {
-              const colorVal = customColors[status];
+          } else if (status && customColors && customColors[status]) {
+              const colorVal = customColors[status]!;
               if (typeof colorVal === 'object' && colorVal !== null && 'backgroundColor' in colorVal) {
                   // Inline style object (new format from Training & Vacation)
                   style = colorVal;

@@ -1,7 +1,7 @@
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 
-function clone(value) {
+function clone(value: any) {
   if (value === undefined) {
     return undefined;
   }
@@ -13,20 +13,20 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function ensureArray(value) {
+function ensureArray(value: any) {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeEntities(entities = {}) {
+function normalizeEntities(entities: any = {}) {
   return Object.fromEntries(
     Object.entries(entities).map(([entityName, records]) => [entityName, ensureArray(records).map(clone)])
   );
 }
 
-function createEntityStore(initialEntities = {}) {
+function createEntityStore(initialEntities: any = {}) {
   const entities = normalizeEntities(initialEntities);
 
-  const ensureEntity = (entityName) => {
+  const ensureEntity = (entityName: any) => {
     if (!entities[entityName]) {
       entities[entityName] = [];
     }
@@ -34,21 +34,21 @@ function createEntityStore(initialEntities = {}) {
     return entities[entityName];
   };
 
-  const getId = (record) => record?.id ?? record?._id;
+  const getId = (record: any) => record?.id ?? record?._id;
 
   return {
-    all(entityName) {
+    all(entityName: any) {
       return clone(ensureEntity(entityName));
     },
-    get(entityName, id) {
-      return clone(ensureEntity(entityName).find((record) => getId(record) === id) ?? null);
+    get(entityName: any, id: any) {
+      return clone(ensureEntity(entityName).find((record: any) => getId(record) === id) ?? null);
     },
-    list(entityName) {
+    list(entityName: any) {
       return clone(ensureEntity(entityName));
     },
-    filter(entityName, query = {}) {
+    filter(entityName: any, query: any = {}) {
       const records = ensureEntity(entityName);
-      const filtered = records.filter((record) =>
+      const filtered = records.filter((record: any) =>
         Object.entries(query).every(([key, expected]) => {
           const actual = record?.[key];
 
@@ -57,33 +57,33 @@ function createEntityStore(initialEntities = {}) {
           }
 
               if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
-                if (Array.isArray(expected.$in)) {
-                  return expected.$in.includes(actual);
+                if (Array.isArray((expected as any).$in)) {
+                  return (expected as any).$in.includes(actual);
                 }
 
-                if (expected.$ne !== undefined) {
-                  return actual !== expected.$ne;
+                if ((expected as any).$ne !== undefined) {
+                  return actual !== (expected as any).$ne;
                 }
 
-                if (expected.$gte !== undefined) {
-                  if (String(actual) < String(expected.$gte)) return false;
+                if ((expected as any).$gte !== undefined) {
+                  if (String(actual) < String((expected as any).$gte)) return false;
                 }
 
-                if (expected.$lte !== undefined) {
-                  if (String(actual) > String(expected.$lte)) return false;
+                if ((expected as any).$lte !== undefined) {
+                  if (String(actual) > String((expected as any).$lte)) return false;
                 }
 
-                if (expected.$gt !== undefined) {
-                  if (String(actual) <= String(expected.$gt)) return false;
+                if ((expected as any).$gt !== undefined) {
+                  if (String(actual) <= String((expected as any).$gt)) return false;
                 }
 
-                if (expected.$lt !== undefined) {
-                  if (String(actual) >= String(expected.$lt)) return false;
+                if ((expected as any).$lt !== undefined) {
+                  if (String(actual) >= String((expected as any).$lt)) return false;
                 }
 
                 // Operator-based query matched all checks (none returned false)
                 const hasOperator = ['$in', '$ne', '$gte', '$lte', '$gt', '$lt']
-                  .some(op => expected[op] !== undefined);
+                  .some(op => (expected as any)[op] !== undefined);
                 if (hasOperator) return true;
               }
 
@@ -93,19 +93,19 @@ function createEntityStore(initialEntities = {}) {
 
       return clone(filtered);
     },
-    create(entityName, data = {}) {
+    create(entityName: any, data: any = {}) {
       const records = ensureEntity(entityName);
       const nextRecord = {
-        id: data.id ?? `${entityName.toLowerCase()}-${records.length + 1}`,
+        id: data.id ?? `${String(entityName).toLowerCase()}-${records.length + 1}`,
         ...clone(data),
       };
 
       records.push(nextRecord);
       return clone(nextRecord);
     },
-    update(entityName, id, data = {}) {
+    update(entityName: any, id: any, data: any = {}) {
       const records = ensureEntity(entityName);
-      const index = records.findIndex((record) => getId(record) === id);
+      const index = records.findIndex((record: any) => getId(record) === id);
 
       if (index === -1) {
         return null;
@@ -118,9 +118,9 @@ function createEntityStore(initialEntities = {}) {
 
       return clone(records[index]);
     },
-    delete(entityName, id) {
+    delete(entityName: any, id: any) {
       const records = ensureEntity(entityName);
-      const index = records.findIndex((record) => getId(record) === id);
+      const index = records.findIndex((record: any) => getId(record) === id);
 
       if (index === -1) {
         return false;
@@ -129,24 +129,24 @@ function createEntityStore(initialEntities = {}) {
       records.splice(index, 1);
       return true;
     },
-    bulkCreate(entityName, data = []) {
-      return ensureArray(data).map((record) => this.create(entityName, record));
+    bulkCreate(entityName: any, data: any = []) {
+      return ensureArray(data).map((record: any) => this.create(entityName, record));
     },
   };
 }
 
-function errorResponse(status, error) {
+function errorResponse(status: any, error: any) {
   return HttpResponse.json({ error }, { status });
 }
 
 export const server = setupServer();
 
-export function createDbHandlers({ entities = {}, onRequest } = {}) {
+export function createDbHandlers({ entities = {}, onRequest }: any = {}) {
   const store = createEntityStore(entities);
 
   return [
     http.post('*/api/db', async ({ request }) => {
-      const payload = await request.json();
+      const payload: any = await request.json();
       const { action, table, id, data, query } = payload;
 
       onRequest?.(payload, store);
@@ -186,7 +186,7 @@ export function createAuthHandlers({
   loginResponse = null,
   tenants = [],
   hasFullAccess = false,
-} = {}) {
+}: any = {}) {
   const clonedUser = user ? clone(user) : null;
 
   return [
@@ -234,6 +234,6 @@ export function createAuthHandlers({
   ];
 }
 
-export function createRouteHandler(method, path, resolver) {
-  return http[method.toLowerCase()](path, resolver);
+export function createRouteHandler(method: any, path: any, resolver: any) {
+  return (http as any)[String(method).toLowerCase()](path, resolver);
 }

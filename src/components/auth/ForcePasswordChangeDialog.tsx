@@ -7,7 +7,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { api } from "@/api/client";
 import { AlertTriangle } from "lucide-react";
 
-export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged }) {
+interface ForcePasswordChangeDialogProps {
+  isOpen: boolean;
+  onPasswordChanged: () => void;
+}
+
+export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged }: ForcePasswordChangeDialogProps) {
   const { toast } = useToast();
   const [isChanging, setIsChanging] = useState(false);
   const [form, setForm] = useState({
@@ -15,7 +20,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
     confirmPassword: ''
   });
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (form.newPassword !== form.confirmPassword) {
@@ -49,7 +54,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged })
     } catch (error) {
       toast({
         title: "Fehler",
-        description: error.message || "Passwort konnte nicht geändert werden",
+        description: (error as Error).message || "Passwort konnte nicht geändert werden",
         variant: "destructive"
       });
     } finally {

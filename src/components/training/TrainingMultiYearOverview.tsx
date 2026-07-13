@@ -201,7 +201,7 @@ export default function TrainingMultiYearOverview({
             const lastSegment = segments[segments.length - 1];
 
             if (!lastSegment || lastSegment.modality !== modality) {
-              segments.push({ modality, days: 1 });
+              segments.push({ modality: modality as string, days: 1 });
             } else {
               lastSegment.days += 1;
             }
@@ -333,7 +333,7 @@ export default function TrainingMultiYearOverview({
             {monthCells.map(({ doctor, cells }: DoctorCells) => (
               <tr key={doctor.id} className="hover:bg-slate-50/60">
                 <td className="sticky left-0 z-20 border-b border-r border-slate-200 bg-white p-3 text-slate-700">
-                  <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id]) || undefined}>{doctor.name}</div>
+                  <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doctor.id] as any) || undefined}>{doctor.name}</div>
                 </td>
                 {cells.map((cell) => {
                   const contractInfo = getDoctorContractInfo ? getDoctorContractInfo(doctor.id) : contractInfoByDoctorId[doctor.id];

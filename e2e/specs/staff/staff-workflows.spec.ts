@@ -112,7 +112,7 @@ test.describe('staff workflows', () => {
 
       await expect
         .poll(async () => {
-          const remainingDoctors = await dbFilter<{ id: string }>(request, authHeaders, 'Doctor', { id: createdDoctor.id });
+          const remainingDoctors = await dbFilter<{ id: string }>(request, authHeaders!, 'Doctor', { id: createdDoctor.id });
           return remainingDoctors.length;
         }, { timeout: 10_000 })
         .toBe(0);
@@ -171,7 +171,7 @@ test.describe('staff workflows', () => {
 
       await expect
         .poll(async () => {
-          const reorderedDoctor = await dbGet<{ order: number | null }>(request, authHeaders, 'Doctor', secondDoctor.id);
+          const reorderedDoctor = await dbGet<{ order: number | null }>(request, authHeaders!, 'Doctor', secondDoctor.id);
           return reorderedDoctor.order;
         }, { timeout: 10_000 })
         .toBe(firstDoctor.order ?? 0);

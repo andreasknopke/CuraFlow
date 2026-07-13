@@ -74,14 +74,14 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('@/components/ui/dialog', () => {
-  let capturedOnOpenChange = null;
+  let capturedOnOpenChange: any = null;
 
-  function MockDialog({ children, onOpenChange }) {
+  function MockDialog({ children, onOpenChange }: any) {
     capturedOnOpenChange = onOpenChange;
     return <>{children}</>;
   }
 
-  function MockDialogTrigger({ children, ...props }) {
+  function MockDialogTrigger({ children, ...props }: any) {
     // Don't wrap in <button> to avoid nested button issues;
     // the original component passes asChild which means the Button is the trigger.
     return (
@@ -100,25 +100,25 @@ vi.mock('@/components/ui/dialog', () => {
 
   return {
     Dialog: MockDialog,
-    DialogContent: ({ children, ...props }) => <div {...props}>{children}</div>,
-    DialogDescription: ({ children }) => <div>{children}</div>,
-    DialogFooter: ({ children }) => <div>{children}</div>,
-    DialogHeader: ({ children }) => <div>{children}</div>,
-    DialogTitle: ({ children }) => <div>{children}</div>,
+    DialogContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    DialogDescription: ({ children }: any) => <div>{children}</div>,
+    DialogFooter: ({ children }: any) => <div>{children}</div>,
+    DialogHeader: ({ children }: any) => <div>{children}</div>,
+    DialogTitle: ({ children }: any) => <div>{children}</div>,
     DialogTrigger: MockDialogTrigger,
   };
 });
 
 vi.mock('@/components/ui/alert-dialog', () => ({
-  AlertDialog: ({ children }) => <>{children}</>,
-  AlertDialogAction: ({ children, ...props }) => <button {...props}>{children}</button>,
-  AlertDialogCancel: ({ children, ...props }) => <button {...props}>{children}</button>,
-  AlertDialogContent: ({ children, ...props }) => <div {...props}>{children}</div>,
-  AlertDialogDescription: ({ children }) => <div>{children}</div>,
-  AlertDialogFooter: ({ children }) => <div>{children}</div>,
-  AlertDialogHeader: ({ children }) => <div>{children}</div>,
-  AlertDialogTitle: ({ children }) => <div>{children}</div>,
-  AlertDialogTrigger: ({ children, ...props }) => <button {...props}>{children}</button>,
+  AlertDialog: ({ children }: any) => <>{children}</>,
+  AlertDialogAction: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+  AlertDialogCancel: ({ children, ...props }: any) => <button {...props}>{children}</button>,
+  AlertDialogContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  AlertDialogDescription: ({ children }: any) => <div>{children}</div>,
+  AlertDialogFooter: ({ children }: any) => <div>{children}</div>,
+  AlertDialogHeader: ({ children }: any) => <div>{children}</div>,
+  AlertDialogTitle: ({ children }: any) => <div>{children}</div>,
+  AlertDialogTrigger: ({ children, ...props }: any) => <button {...props}>{children}</button>,
 }));
 
 vi.mock('@/components/admin/TimeslotEditor', () => ({
@@ -137,28 +137,28 @@ vi.mock('@/hooks/useQualifications', () => ({
 
 describe('SettingsDialogs smoke tests', () => {
   beforeEach(() => {
-    Object.values(mocks).forEach((mock) => mock.mockReset());
+    Object.values(mocks).forEach((mock: any) => mock.mockReset());
 
-    mocks.workplaceList.mockResolvedValue([
+    (mocks.workplaceList as any).mockResolvedValue([
       { id: 1, name: 'CT', category: 'Rotationen', order: 1, active_days: [1, 2, 3, 4, 5] },
     ]);
-    mocks.systemSettingList.mockResolvedValue([]);
-    mocks.teamRoleList.mockResolvedValue([
+    (mocks.systemSettingList as any).mockResolvedValue([]);
+    (mocks.teamRoleList as any).mockResolvedValue([
       { id: 1, name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
       { id: 2, name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: '' },
       { id: 3, name: 'Facharzt', priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann alle Dienste' },
     ]);
-    mocks.colorSettingList.mockResolvedValue([]);
-    mocks.workplaceCreate.mockResolvedValue({ id: 99 });
-    mocks.workplaceUpdate.mockResolvedValue({});
-    mocks.workplaceDelete.mockResolvedValue({});
-    mocks.systemSettingUpdate.mockResolvedValue({});
-    mocks.systemSettingCreate.mockResolvedValue({});
-    mocks.teamRoleCreate.mockResolvedValue({ id: 99 });
-    mocks.teamRoleUpdate.mockResolvedValue({});
-    mocks.teamRoleDelete.mockResolvedValue({});
+    (mocks.colorSettingList as any).mockResolvedValue([]);
+    (mocks.workplaceCreate as any).mockResolvedValue({ id: 99 });
+    (mocks.workplaceUpdate as any).mockResolvedValue({});
+    (mocks.workplaceDelete as any).mockResolvedValue({});
+    (mocks.systemSettingUpdate as any).mockResolvedValue({});
+    (mocks.systemSettingCreate as any).mockResolvedValue({});
+    (mocks.teamRoleCreate as any).mockResolvedValue({ id: 99 });
+    (mocks.teamRoleUpdate as any).mockResolvedValue({});
+    (mocks.teamRoleDelete as any).mockResolvedValue({});
 
-    mocks.useQualifications.mockReturnValue({
+    (mocks.useQualifications as any).mockReturnValue({
       qualifications: [
         { id: 1, name: 'CT-Befundung', short_label: 'CT', category: 'Medizinisch', color_bg: '#e0e7ff', color_text: '#3730a3', is_active: true, requires_certificate: false },
         { id: 2, name: 'Notfall-Sono', short_label: 'SON', category: 'Medizinisch', color_bg: '#dbeafe', color_text: '#1e40af', is_active: true, requires_certificate: false },

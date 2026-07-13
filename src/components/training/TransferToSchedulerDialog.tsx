@@ -12,6 +12,19 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
 
+interface TransferToSchedulerDialogProps {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    rotations?: any[];
+    doctors?: any[];
+    allShifts?: any[];
+    staffingPlanEntries?: any[];
+    workplaces?: any[];
+    isPublicHoliday?: (date: Date) => boolean;
+    onTransfer: (data: any) => void;
+    isPending?: boolean;
+}
+
 export default function TransferToSchedulerDialog({ 
     open, 
     onOpenChange, 
@@ -23,8 +36,8 @@ export default function TransferToSchedulerDialog({
     isPublicHoliday,
     onTransfer,
     isPending = false
-}) {
-    const [transferMode, setTransferMode] = useState('day'); // 'day' | 'week' | 'from_date'
+}: TransferToSchedulerDialogProps) {
+    const [transferMode, setTransferMode] = useState<'day' | 'week' | 'from_date'>('day');
     const [selectedDate, setSelectedDate] = useState(new Date());
     const [overwriteExisting, setOverwriteExisting] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
@@ -32,15 +45,13 @@ export default function TransferToSchedulerDialog({
 
     const today = startOfDay(new Date());
 
-    // Ensure selected date is never before today
     const effectiveDate = useMemo(() => {
         const d = startOfDay(selectedDate);
         return isBefore(d, today) ? today : d;
     }, [selectedDate, today]);
 
-    // Calculate the date range based on the transfer mode
     const dateRange = useMemo(() => {
-        let start, end;
+        let start: Date, end: Date;
         
         switch (transferMode) {
             case 'day':
@@ -48,14 +59,12 @@ export default function TransferToSchedulerDialog({
                 end = effectiveDate;
                 break;
             case 'week':
-                start = startOfWeek(effectiveDate, { weekStartsOn: 1 }); // Monday
-                end = endOfWeek(effectiveDate, { weekStartsOn: 1 }); // Sunday
-                // Ensure start is not before today
+                start = startOfWeek(effectiveDate, { weekStartsOn: 1 });
+                end = endOfWeek(effectiveDate, { weekStartsOn: 1 });
                 if (isBefore(start, today)) start = today;
                 break;
             case 'from_date':
                 start = effectiveDate;
-                // End of year or last rotation end, whichever is earlier
                 const maxEnd = new Date(effectiveDate.getFullYear(), 11, 31);
                 end = maxEnd;
                 break;
@@ -67,39 +76,33 @@ export default function TransferToSchedulerDialog({
         return { start, end };
     }, [transferMode, effectiveDate, today]);
 
-    // Calculate all entries that would be created
     const transferPreview = useMemo(() => {
         const { start, end } = dateRange;
-        const entries = [];
-        const skipped = [];
+        const entries: any[] = [];
+        const skipped: any[] = [];
         
         const startStr = format(start, 'yyyy-MM-dd');
         const endStr = format(end, 'yyyy-MM-dd');
         
-        // Build shift lookup for quick conflict detection
-        const shiftLookup = new Map();
-        allShifts.forEach(s => {
+        const shiftLookup = new Map<string, any[]>();
+        allShifts.forEach((s: any) => {
             const key = `${s.date}_${s.doctor_id}`;
             if (!shiftLookup.has(key)) shiftLookup.set(key, []);
-            shiftLookup.get(key).push(s);
+            shiftLookup.get(key)!.push(s);
         });
         
-        // Get rotation workplaces for matching
-        const rotationWorkplaces = workplaces.filter(w => w.category === 'Rotationen').map(w => w.name);
+        const rotationWorkplaces = workplaces.filter((w: any) => w.category === 'Rotationen').map((w: any) => w.name);
         
-        rotations.forEach(rot => {
-            // Check if rotation overlaps with our date range
+        rotations.forEach((rot: any) => {
             if (rot.end_date < startStr || rot.start_date > endStr) return;
             
-            const doctor = doctors.find(d => d.id === rot.doctor_id);
+            const doctor = doctors.find((d: any) => d.id === rot.doctor_id);
             if (!doctor) return;
             
-            // The rotation modality must match a workplace in "Rotationen" category
             if (!rotationWorkplaces.includes(rot.modality)) {
-                return; // Skip - modality doesn't match any rotation workplace
+                return;
             }
             
-            // Calculate effective overlap period
             const rotStart = rot.start_date > startStr ? new Date(rot.start_date) : start;
             const rotEnd = rot.end_date < endStr ? new Date(rot.end_date) : end;
             
@@ -108,24 +111,20 @@ export default function TransferToSchedulerDialog({
             days.forEach(day => {
                 const dateStr = format(day, 'yyyy-MM-dd');
                 
-                // Skip past dates
                 if (isBefore(day, today)) {
                     return;
                 }
                 
-                // Check active_days of the workplace for this rotation
-                // Feiertage verhalten sich wie Sonntag (Index 0)
-                const wp = workplaces.find(w => w.name === rot.modality && w.category === 'Rotationen');
+                const wp = workplaces.find((w: any) => w.name === rot.modality && w.category === 'Rotationen');
                 const activeDays = (wp?.active_days?.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
                 const isHoliday = isPublicHoliday && isPublicHoliday(day);
                 const isActiveDay = isHoliday
-                    ? activeDays.some(d => Number(d) === 0)
-                    : activeDays.some(d => Number(d) === day.getDay());
+                    ? activeDays.some((d: any) => Number(d) === 0)
+                    : activeDays.some((d: any) => Number(d) === day.getDay());
                 if (!isActiveDay) {
                     return;
                 }
                 
-                // Check availability (FTE, contract end, KO/EZ/MS)
                 const available = isDoctorAvailable(doctor, day, staffingPlanEntries);
                 if (!available) {
                     skipped.push({
@@ -138,13 +137,12 @@ export default function TransferToSchedulerDialog({
                     return;
                 }
                 
-                // Check for existing shifts/absences on that day
                 const existingShifts = shiftLookup.get(`${dateStr}_${rot.doctor_id}`) || [];
                 const absenceTypes = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
-                const hasAbsence = existingShifts.some(s => absenceTypes.includes(s.position));
+                const hasAbsence = existingShifts.some((s: any) => absenceTypes.includes(s.position));
                 
                 if (hasAbsence) {
-                    const absenceShift = existingShifts.find(s => absenceTypes.includes(s.position));
+                    const absenceShift = existingShifts.find((s: any) => absenceTypes.includes(s.position));
                     skipped.push({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
@@ -155,9 +153,8 @@ export default function TransferToSchedulerDialog({
                     return;
                 }
                 
-                // Existing non-absence entries can optionally be replaced.
-                const existingAssignableEntries = existingShifts.filter(s => !absenceTypes.includes(s.position));
-                const hasExistingRotation = existingAssignableEntries.some(s => s.position === rot.modality);
+                const existingAssignableEntries = existingShifts.filter((s: any) => !absenceTypes.includes(s.position));
+                const hasExistingRotation = existingAssignableEntries.some((s: any) => s.position === rot.modality);
 
                 if (hasExistingRotation && !overwriteExisting) {
                     skipped.push({
@@ -177,7 +174,7 @@ export default function TransferToSchedulerDialog({
                         doctorName: doctor.name,
                         modality: rot.modality,
                         reason: `Bereits belegt (${existingAssignableEntries[0].position})`,
-                        existingShiftIds: existingAssignableEntries.map(s => s.id)
+                        existingShiftIds: existingAssignableEntries.map((s: any) => s.id)
                     });
                     return;
                 }
@@ -189,13 +186,12 @@ export default function TransferToSchedulerDialog({
                     position: rot.modality,
                     modality: rot.modality,
                     overwrite: existingAssignableEntries.length > 0,
-                    existingShiftIds: existingAssignableEntries.map(s => s.id),
+                    existingShiftIds: existingAssignableEntries.map((s: any) => s.id),
                     existingPosition: existingAssignableEntries.length > 0 ? existingAssignableEntries[0].position : null
                 });
             });
         });
         
-        // Sort by date, then doctor name
         entries.sort((a, b) => a.date.localeCompare(b.date) || a.doctorName.localeCompare(b.doctorName));
         skipped.sort((a, b) => a.date.localeCompare(b.date) || a.doctorName.localeCompare(b.doctorName));
         
@@ -211,24 +207,23 @@ export default function TransferToSchedulerDialog({
         });
     };
 
-    const handleDateSelect = (date) => {
+    const handleDateSelect = (date: any) => {
         if (date) {
             setSelectedDate(date);
             setCalendarOpen(false);
         }
     };
 
-    const handleOpenChange = (open) => {
+    const handleOpenChange = (open: boolean) => {
         if (!open) {
             setShowPreview(false);
         }
         onOpenChange(open);
     };
 
-    // Summary by doctor
     const doctorSummary = useMemo(() => {
-        const summary = {};
-        transferPreview.entries.forEach(e => {
+        const summary: Record<string, { count: number; modalities: Set<string> }> = {};
+        transferPreview.entries.forEach((e: any) => {
             if (!summary[e.doctorName]) {
                 summary[e.doctorName] = { count: 0, modalities: new Set() };
             }
@@ -239,8 +234,8 @@ export default function TransferToSchedulerDialog({
     }, [transferPreview.entries]);
 
     const skippedReasonSummary = useMemo(() => {
-        const summary = new Map();
-        transferPreview.skipped.forEach(item => {
+        const summary = new Map<string, number>();
+        transferPreview.skipped.forEach((item: any) => {
             summary.set(item.reason, (summary.get(item.reason) || 0) + 1);
         });
 
@@ -269,10 +264,9 @@ export default function TransferToSchedulerDialog({
 
                 {!showPreview ? (
                     <div className="space-y-6 py-4">
-                        {/* Transfer Mode */}
                         <div className="space-y-3">
                             <Label className="text-sm font-medium text-slate-700">Übertragungsmodus</Label>
-                            <RadioGroup value={transferMode} onValueChange={setTransferMode} className="space-y-2">
+                            <RadioGroup value={transferMode} onValueChange={setTransferMode as any} className="space-y-2">
                                 <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-slate-50 transition-colors">
                                     <RadioGroupItem data-testid="training-transfer-mode-day" value="day" id="mode-day" />
                                     <Label htmlFor="mode-day" className="flex-1 cursor-pointer">
@@ -297,7 +291,6 @@ export default function TransferToSchedulerDialog({
                             </RadioGroup>
                         </div>
 
-                        {/* Date Picker */}
                         <div className="space-y-2">
                             <Label className="text-sm font-medium text-slate-700">Datum auswählen</Label>
                             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
@@ -330,13 +323,12 @@ export default function TransferToSchedulerDialog({
                             )}
                         </div>
 
-                        {/* Overwrite Checkbox */}
                         <div className="flex items-start space-x-3 p-4 rounded-lg border bg-amber-50 border-amber-200">
                             <Checkbox 
                                 id="overwrite" 
                                 data-testid="training-transfer-overwrite"
                                 checked={overwriteExisting} 
-                                onCheckedChange={setOverwriteExisting}
+                                onCheckedChange={setOverwriteExisting as any}
                                 className="mt-0.5"
                             />
                             <div>
@@ -350,7 +342,6 @@ export default function TransferToSchedulerDialog({
                             </div>
                         </div>
 
-                        {/* Info Box */}
                         <div className="p-4 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
                             <div className="flex gap-2">
                                 <Info className="w-4 h-4 mt-0.5 shrink-0" />
@@ -367,9 +358,7 @@ export default function TransferToSchedulerDialog({
                         </div>
                     </div>
                 ) : (
-                    /* Preview Mode */
                     <div className="flex-1 overflow-hidden flex flex-col gap-4 py-2">
-                        {/* Summary */}
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-lg">
                             <div className="text-center">
                                 <div className="text-2xl font-bold text-emerald-600">{transferPreview.entries.length}</div>
@@ -411,7 +400,7 @@ export default function TransferToSchedulerDialog({
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {transferPreview.entries.map((entry, idx) => (
+                                        {transferPreview.entries.map((entry: any, idx: number) => (
                                             <TableRow key={idx} className={entry.overwrite ? "bg-amber-50" : "bg-emerald-50"}>
                                                 <TableCell>
                                                     {entry.overwrite ? (
@@ -447,7 +436,6 @@ export default function TransferToSchedulerDialog({
                             </div>
                         )}
 
-                        {/* Skipped entries (collapsible) */}
                         {transferPreview.skipped.length > 0 && (
                             <div className="space-y-3">
                                 <div className="border rounded-lg bg-slate-50 p-3">
@@ -476,7 +464,7 @@ export default function TransferToSchedulerDialog({
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {transferPreview.skipped.map((item, idx) => (
+                                            {transferPreview.skipped.map((item: any, idx: number) => (
                                                 <TableRow key={idx} className="bg-slate-50">
                                                     <TableCell className="text-xs">{item.doctorName}</TableCell>
                                                     <TableCell className="text-xs">{format(new Date(item.date), 'EE, dd.MM.', { locale: de })}</TableCell>
@@ -491,7 +479,6 @@ export default function TransferToSchedulerDialog({
                             </div>
                         )}
 
-                        {/* Doctor Summary */}
                         {Object.keys(doctorSummary).length > 0 && (
                             <div className="p-3 bg-emerald-50 rounded-lg">
                                 <h4 className="font-medium mb-2 text-emerald-800 text-sm">Zusammenfassung pro Mitarbeiter:</h4>

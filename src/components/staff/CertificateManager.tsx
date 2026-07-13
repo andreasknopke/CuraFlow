@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { format, differenceInCalendarDays, isValid, parseISO } from 'date-fns';
 import { de } from 'date-fns/locale';
 import {
@@ -140,7 +140,7 @@ function getExpiryStatus(expiry_date: string | Date | null | undefined): ExpiryS
 }
 
 function getCertificateDisplayExpiry(cert: CertificateItem, summary: any): string | null {
-    return summary?.certificate_valid_until_by_id?.[cert.id] || (cert.expiry_date as string) || null;
+    return (summary as any)?.certificate_valid_until_by_id?.[cert.id as string] || (cert.expiry_date as string) || null;
 }
 
 function getRoleLabel(role: string, baseLabel: string, refreshLabel: string): string {
@@ -210,8 +210,8 @@ function AnalysisBadge({ cert }: AnalysisBadgeProps) {
                 {cfg.icon}
                 {cfg.label}
             </Badge>
-            {(status === 'warning' || status === 'failed' || status === 'error') && cert.analysis_reasoning && (
-                <div className="text-[11px] text-slate-600 mt-1 italic">{cert.analysis_reasoning as string}</div>
+            {(status === 'warning' || status === 'failed' || status === 'error') && !!cert.analysis_reasoning && (
+                <div className="text-[11px] text-slate-600 mt-1 italic">{cert.analysis_reasoning as React.ReactNode}</div>
             )}
         </div>
     );
@@ -325,10 +325,10 @@ export default function CertificateManager({
     });
 
     const normalizedCertificates = useMemo(() => {
-        return certificates.map((cert) => ({
+        return (certificates as CertificateItem[]).map((cert) => ({
             ...cert,
             evidence_role: normalizeEvidenceRole(cert.evidence_role as string, requirementMode),
-        }));
+        })) as CertificateItem[];
     }, [certificates, requirementMode]);
 
     const sorted = useMemo(() => {
@@ -427,14 +427,14 @@ export default function CertificateManager({
         checkRequestRef.current = requestId;
         setCheckResult({
             upload_allowed: false,
-            analysis: { status: 'pending', reasoning: null },
+            analysis: { status: 'pending', reasoning: undefined },
         });
 
         try {
             const result = await checkCertificate({
                 file,
-                qualification_name: qualificationName,
-                qualification_description: qualificationDescription,
+                qualification_name: qualificationName as string,
+                qualification_description: qualificationDescription as string | undefined,
             });
             if (checkRequestRef.current !== requestId) return;
 
@@ -549,10 +549,10 @@ export default function CertificateManager({
         try {
             await uploadCertificate({
                 file: pendingFile,
-                doctor_id: doctorId,
-                qualification_id: qualificationId,
-                doctor_qualification_id: doctorQualificationId,
-                evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode),
+                doctor_id: doctorId as string,
+                qualification_id: qualificationId as string,
+                doctor_qualification_id: doctorQualificationId as string | undefined,
+                evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode) as string,
                 granted_date: grantedDate || undefined,
                 expiry_date: expiryDate || undefined,
                 notes: notes || undefined,
@@ -618,10 +618,10 @@ export default function CertificateManager({
         try {
             await updateCertificate({
                 id: editId,
-                evidence_role: normalizeEvidenceRole(editEvidenceRole, requirementMode),
-                granted_date: editGranted || null,
-                expiry_date: editExpiry || null,
-                notes: editNotes || null,
+                evidence_role: normalizeEvidenceRole(editEvidenceRole, requirementMode) as string,
+                granted_date: editGranted || undefined,
+                expiry_date: editExpiry || undefined,
+                notes: editNotes || undefined,
             });
             toast({ title: 'Zertifikat aktualisiert' });
             cancelEdit();
@@ -702,8 +702,8 @@ export default function CertificateManager({
                             </Badge>
                         )}
                         <AnalysisBadge cert={cert} />
-                        {cert.notes && (
-                            <div className="text-xs text-slate-500 mt-1 italic">{cert.notes as string}</div>
+                        {!!cert.notes && (
+                            <div className="text-xs text-slate-500 mt-1 italic">{cert.notes as React.ReactNode}</div>
                         )}
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
@@ -824,7 +824,7 @@ export default function CertificateManager({
         <div className="space-y-2">
             <div className="flex items-center gap-2">
                 <div className="text-xs font-semibold text-slate-600">{title}</div>
-                {requiredRoles.includes(role) && (
+                {requiredRoles.includes(role as any) && (
                     <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-700 bg-amber-50">
                         Pflicht
                     </Badge>

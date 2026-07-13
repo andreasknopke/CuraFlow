@@ -100,7 +100,7 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
 }: VacationOverviewCellProps) {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
     const isDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
-    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === contractInfo.contractEnd;
+    const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === (contractInfo!.contractEnd as any);
 
     // Only calculate isDragged if the drag is happening on this doctor's row
     const isRowInvolved = isDragging && dragDoctorId === doctor.id;
@@ -406,7 +406,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                 if (s.position === 'Urlaub') {
                     const d = new Date(s.date);
                     if (!isWeekend(d) && !isPublicHoliday(d)) {
-                        if (counts[s.doctor_id] !== undefined) {
+                        if (s.doctor_id && counts[s.doctor_id] !== undefined) {
                             counts[s.doctor_id]++;
                         }
                     }
@@ -551,7 +551,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                     {doctors.map(doc => (
                                         <tr key={doc.id} className="hover:bg-slate-50">
                                             <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                                <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
+                                                <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id] as any) || undefined}>{doc.name}</div>
                                             </td>
                                             <td className="sticky left-[190px] z-10 bg-white border-b border-r p-1 text-center text-xs font-bold text-slate-600 shadow-[1px_0_0_0_rgba(0,0,0,0.1)]" title={`${vacationCounts[doc.id]} verplante+genommene Tage von ${entitlementByDoctorId[doc.id] ?? parseAnnualVacationDays(doc.vacation_days)} Tagen Jahresanspruch`}>
                                                 {entitlementByDoctorId[doc.id] ?? parseAnnualVacationDays(doc.vacation_days)}

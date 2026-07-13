@@ -65,13 +65,13 @@ export class TimeslotOverlapRule extends ValidationRule {
                 continue;
             }
 
-            if (timeslotsOverlap(newEffectiveSlot, existingEffectiveSlot, tolerance)) {
+            if (timeslotsOverlap(newEffectiveSlot as any, existingEffectiveSlot as any, tolerance)) {
                 const existingLabel = existingTimeslot?.label || existingShift.position;
                 const newLabel = newTimeslot?.label || position;
                 return [{
                     ruleId: this.id,
                     severity: 'blocker',
-                    message: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot)}.`,
+                    message: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot as any)}.`,
                     shiftIds: [existingShift.id].filter(Boolean),
                 }];
             }

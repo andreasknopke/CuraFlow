@@ -1,6 +1,7 @@
 import { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
 import { base44 } from "@/api/client";
 import { appParams } from '@/lib/app-params';
+// @ts-ignore - axios-client import from SDK
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
 
 interface AuthError {
@@ -112,7 +113,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     try {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
-      const currentUser = await base44.auth.me();
+      const currentUser = await (base44 as any).auth.me();
       setUser(currentUser);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
@@ -137,16 +138,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     if (shouldRedirect) {
       // Use the SDK's logout method which handles token cleanup and redirect
-      base44.auth.logout(window.location.href);
+      (base44 as any).auth.logout(window.location.href);
     } else {
       // Just remove the token without redirect
-      base44.auth.logout();
+      (base44 as any).auth.logout();
     }
   };
 
   const navigateToLogin = () => {
     // Use the SDK's redirectToLogin method
-    base44.auth.redirectToLogin(window.location.href);
+    (base44 as any).auth.redirectToLogin(window.location.href);
   };
 
   return (

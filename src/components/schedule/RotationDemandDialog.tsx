@@ -83,7 +83,7 @@ export default function RotationDemandDialog({
     const createMutation = useMutation({
         mutationFn: async () => {
             const payload = {
-                rotation_workplace_id: workplace.id,
+                rotation_workplace_id: workplace!.id,
                 date: dateStr,
                 timeslot_id: timeslot?.id || null,
                 note: note.trim() || null,
@@ -102,7 +102,7 @@ export default function RotationDemandDialog({
     });
 
     const cancelMutation = useMutation({
-        mutationFn: () => api.updateRotationDemand(existingDemand.id, { status: 'cancelled' }),
+        mutationFn: () => api.updateRotationDemand(existingDemand!.id, { status: 'cancelled' }),
         onSuccess: () => {
             invalidateRotationQueries();
             toast.success('Bedarf zurückgezogen');

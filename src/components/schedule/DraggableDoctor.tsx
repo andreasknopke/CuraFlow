@@ -35,7 +35,7 @@ interface DraggableDoctorProps {
 
 export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null }: DraggableDoctorProps) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
-  const targetWeekly = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
+  const targetWeekly = resolveDoctorTargetWeeklyHours(doctor as any, workTimeModel, centralEmployee as any);
   const planned = plannedHours || 0;
   const pct = targetWeekly ? (planned / targetWeekly) * 100 : null;
 
@@ -76,7 +76,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
             data-testid={`schedule-sidebar-doctor-${doctor.id}`}
             className={containerClass}
             style={containerStyle}
-            title={!isCompact ? hintTitle : undefined}
+            title={!isCompact ? (hintTitle as string | undefined) : undefined}
           >
             {isCompact ? (
               <div
@@ -105,14 +105,14 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                     <div className="flex items-center gap-1 text-[10px] leading-tight mt-0.5">
                       <Clock size={9} className="text-slate-400 flex-shrink-0" />
                       <span className={
-                        pct > 100 ? 'text-red-600 font-semibold' :
-                        pct >= 80 ? 'text-emerald-600' :
+                        (pct ?? 0) > 100 ? 'text-red-600 font-semibold' :
+                        (pct ?? 0) >= 80 ? 'text-emerald-600' :
                         'text-slate-400'
                       }>
                         {planned > 0 ? `${planned.toFixed(1)}` : '0'}
                       </span>
                       <span className="text-slate-400">/ {targetWeekly}h</span>
-                      {pct > 100 && <span className="text-red-500" title="Überplanung!">⚠</span>}
+                      {(pct ?? 0) > 100 && <span className="text-red-500" title="Überplanung!">⚠</span>}
                     </div>
                   )}
                 </div>

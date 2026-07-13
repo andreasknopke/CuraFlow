@@ -36,7 +36,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
 
     // Initialize Audio Context
     useEffect(() => {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         if (AudioContext) {
             audioContextRef.current = new AudioContext();
         }
@@ -75,7 +75,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
         source.onended = () => {
              scheduledSourcesRef.current = scheduledSourcesRef.current.filter(s => s !== source);
              // Check if we have caught up
-             if (audioContextRef.current.currentTime >= nextStartTimeRef.current) {
+             if (audioContextRef.current && audioContextRef.current.currentTime >= nextStartTimeRef.current) {
                  // Try to play next immediately or set playing to false
                  if (audioQueueRef.current.length === 0) {
                     isPlayingRef.current = false;

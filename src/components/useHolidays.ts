@@ -36,7 +36,7 @@ export function useHolidays(yearOverride?: number) {
         queryKey: ['externalHolidays', year],
         queryFn: async (): Promise<HolidayApiData> => {
             try {
-                return await api.getHolidays(year);
+                return await api.getHolidays(year) as HolidayApiData;
             } catch (err) {
                 console.error("Error fetching holidays", err);
                 return { school: [], public: [] };

@@ -26,28 +26,28 @@ describe('HolidayCalculator', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 0, 1));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Neujahr');
+      expect(result!.name).toContain('Neujahr');
     });
 
     it('returns holiday data for Tag der Arbeit (May 1)', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 4, 1));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Tag der Arbeit');
+      expect(result!.name).toContain('Tag der Arbeit');
     });
 
     it('returns holiday data for Tag der Deutschen Einheit (Oct 3)', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 9, 3));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Tag der Deutschen Einheit');
+      expect(result!.name).toContain('Tag der Deutschen Einheit');
     });
 
     it('returns holiday data for 1. Weihnachtstag (Dec 25)', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 11, 25));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Weihnachtstag');
+      expect(result!.name).toContain('Weihnachtstag');
     });
 
     it('returns holiday data for Easter Monday (Ostermontag)', () => {
@@ -55,7 +55,7 @@ describe('HolidayCalculator', () => {
       // Easter 2026: April 5 → Easter Monday: April 6
       const result = calc.isPublicHoliday(new Date(2026, 3, 6));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Ostermontag');
+      expect(result!.name).toContain('Ostermontag');
     });
 
     it('returns holiday data for Karfreitag', () => {
@@ -63,14 +63,14 @@ describe('HolidayCalculator', () => {
       // Easter 2026: April 5 → Karfreitag: April 3
       const result = calc.isPublicHoliday(new Date(2026, 3, 3));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Karfreitag');
+      expect(result!.name).toContain('Karfreitag');
     });
 
     it('returns Reformationstag for MV state', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 9, 31));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Reformationstag');
+      expect(result!.name).toContain('Reformationstag');
     });
 
     it('returns null for Reformationstag in BY state', () => {
@@ -83,7 +83,7 @@ describe('HolidayCalculator', () => {
       const calc = new HolidayCalculator('MV');
       const result = calc.isPublicHoliday(new Date(2026, 2, 8));
       expect(result).not.toBeNull();
-      expect(result.name).toContain('Frauentag');
+      expect(result!.name).toContain('Frauentag');
     });
 
     it('correctly handles year boundaries', () => {
@@ -123,7 +123,7 @@ describe('HolidayCalculator', () => {
       });
       const result = calc.isSchoolHoliday(new Date(2026, 6, 15));
       expect(result).not.toBeNull();
-      expect(result.name).toBe('Sommerferien');
+      expect(result!.name).toBe('Sommerferien');
     });
 
     it('returns null for a date outside an API-provided range', () => {
@@ -140,23 +140,23 @@ describe('HolidayCalculator', () => {
       ]);
       const result = calc.isSchoolHoliday(new Date(2026, 4, 3));
       expect(result).not.toBeNull();
-      expect(result.name).toBe('Extra Ferien');
+      expect(result!.name).toBe('Extra Ferien');
     });
   });
 
   describe('public holiday with custom additions and removals', () => {
     it('adds a custom public holiday', () => {
       const calc = new HolidayCalculator('MV', [
-        { type: 'public', action: 'add', start_date: '2026-11-27', name: 'Brückentag' },
+        { type: 'public', action: 'add', start_date: '2026-11-27', name: 'Brückentag' } as any,
       ]);
       const result = calc.isPublicHoliday(new Date(2026, 10, 27));
       expect(result).not.toBeNull();
-      expect(result.name).toBe('Brückentag');
+      expect(result!.name).toBe('Brückentag');
     });
 
     it('removes a default public holiday via custom removal', () => {
       const calc = new HolidayCalculator('MV', [
-        { type: 'public', action: 'remove', start_date: '2026-10-03', end_date: '2026-10-03' },
+        { type: 'public', action: 'remove', start_date: '2026-10-03', end_date: '2026-10-03', name: '' } as any,
       ]);
       const result = calc.isPublicHoliday(new Date(2026, 9, 3));
       expect(result).toBeNull();
@@ -170,7 +170,7 @@ describe('HolidayCalculator', () => {
       });
       const result = calc.isPublicHoliday(new Date(2026, 0, 1));
       expect(result).not.toBeNull();
-      expect(result.name).toBe('API Neujahr');
+      expect(result!.name).toBe('API Neujahr');
     });
   });
 });

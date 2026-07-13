@@ -99,17 +99,17 @@ export default function DemoSettingsDialog() {
   
   const createOrUpdate = useMutation({
       mutationFn: async ({ name, active_days, time }: { name: string; active_days: number[]; time: string }) => {
-          const existing = settings.find(s => s.name === name);
+          const existing = settings.find((s: DemoSetting) => s.name === name);
           if (existing) {
               return base44.entities.DemoSetting.update(existing.id, { active_days, time });
           } else {
               return base44.entities.DemoSetting.create({ name, active_days, time });
           }
       },
-      onSuccess: () => queryClient.invalidateQueries(['demoSettings'])
+      onSuccess: () => queryClient.invalidateQueries({ queryKey: ['demoSettings'] } as any)
   });
 
-  const getSetting = (name: string): DemoSetting => settings.find(s => s.name === name) || { active_days: [1, 2, 3, 4, 5], time: "" };
+  const getSetting = (name: string): DemoSetting => settings.find((s: DemoSetting) => s.name === name) || { active_days: [1, 2, 3, 4, 5], time: "" };
 
   const handleDayToggle = (name: string, dayId: number) => {
       const current = getSetting(name);

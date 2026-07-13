@@ -40,7 +40,7 @@ export default function NavigationTracker(): null {
         }
 
         if (isAuthenticated && pageName) {
-            base44.appLogs.logUserInApp(pageName).catch(() => {
+            (base44 as any).appLogs.logUserInApp(pageName).catch(() => {
                 // Silently fail - logging shouldn't break the app
             });
         }

@@ -16,16 +16,17 @@ interface TicketDialogProps {
 }
 
 function resolveUserName(user: Record<string, unknown> | null): string | undefined {
-  const explicitUserName = user?.username || user?.preferred_username || user?.name || '';
+  const u = user as any;
+  const explicitUserName = u?.username || u?.preferred_username || u?.name || '';
   if (explicitUserName && explicitUserName.trim()) {
     return explicitUserName.trim();
   }
 
-  if (user?.email && user.email.includes('@')) {
-    return user.email.split('@')[0].trim();
+  if (u?.email && u.email.includes('@')) {
+    return u.email.split('@')[0].trim();
   }
 
-  return user?.email?.trim() || undefined;
+  return u?.email?.trim() || undefined;
 }
 
 /**
@@ -86,11 +87,11 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     try {
       const resolvedUserName = resolveUserName(user);
       const ticketOptions = {
-        contactEmail: contactEmail.trim() || user?.email || undefined,
-        reporterEmail: user?.email || contactEmail.trim() || undefined,
-        reporterName: user?.full_name || resolvedUserName || user?.email || undefined,
-        userName: resolvedUserName,
-        reporterId: user?.id || undefined,
+        contactEmail: (contactEmail.trim() || user?.email || undefined) as string | undefined,
+        reporterEmail: (user?.email || contactEmail.trim() || undefined) as string | undefined,
+        reporterName: (user?.full_name || resolvedUserName || user?.email || undefined) as string | undefined,
+        userName: resolvedUserName as string | undefined,
+        reporterId: (user?.id || undefined) as string | undefined,
       };
 
       if (type === 'bug') {

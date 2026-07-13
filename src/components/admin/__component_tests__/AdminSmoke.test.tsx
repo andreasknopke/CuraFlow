@@ -56,7 +56,7 @@ vi.mock('@/api/client', () => ({
 }));
 
 vi.mock('@/components/AuthProvider', () => ({
-  AuthProvider: ({ children }) => <>{children}</>,
+  AuthProvider: ({ children }: any) => <>{children}</>,
   useAuth: mocks.useAuth,
 }));
 
@@ -77,13 +77,13 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }) => <>{children}</>,
-  DialogContent: ({ children, ...props }) => <div {...props}>{children}</div>,
-  DialogDescription: ({ children }) => <div>{children}</div>,
-  DialogFooter: ({ children }) => <div>{children}</div>,
-  DialogHeader: ({ children }) => <div>{children}</div>,
-  DialogTitle: ({ children }) => <div>{children}</div>,
-  DialogTrigger: ({ children, ...props }) => <button {...props}>{children}</button>,
+  Dialog: ({ children }: any) => <>{children}</>,
+  DialogContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  DialogDescription: ({ children }: any) => <div>{children}</div>,
+  DialogFooter: ({ children }: any) => <div>{children}</div>,
+  DialogHeader: ({ children }: any) => <div>{children}</div>,
+  DialogTitle: ({ children }: any) => <div>{children}</div>,
+  DialogTrigger: ({ children, ...props }: any) => <button {...props}>{children}</button>,
 }));
 
 // Note: ServerTokenManager is NOT mocked here — test 9 renders the real component.
@@ -102,36 +102,36 @@ vi.mock('@/components/admin/UserPermissionsDialog', () => ({
 
 describe('Admin smoke tests', () => {
   beforeEach(() => {
-    Object.values(mocks).forEach((mock) => mock.mockReset());
+    Object.values(mocks).forEach((mock: any) => mock.mockReset());
 
     // Default: mock a simple admin user
-    mocks.useAuth.mockReturnValue({
+    (mocks.useAuth as any).mockReturnValue({
       user: { id: 1, email: 'admin@test.de', full_name: 'Admin User', role: 'admin' },
       token: 'test-jwt-token',
     });
 
-    mocks.listUsers.mockResolvedValue([
+    (mocks.listUsers as any).mockResolvedValue([
       { id: 1, email: 'admin@test.de', full_name: 'Admin User', role: 'admin', is_active: 1, email_verified: 1, allowed_tenants: null, allowed_groups: null, group_admin_groups: null },
       { id: 2, email: 'user@test.de', full_name: 'Test User', role: 'user', is_active: 1, email_verified: 0, allowed_tenants: null, allowed_groups: null, group_admin_groups: null },
     ]);
 
-    mocks.apiRequest.mockImplementation((url, options) => {
+    (mocks.apiRequest as any).mockImplementation((url: string, options?: any) => {
       // ServerTokenManager queries
       if (url === '/api/admin/db-tokens') return Promise.resolve([]);
       if (url === '/api/admin/migration-status') return Promise.resolve({ migrations: [], allApplied: true });
       return Promise.resolve([]);
     });
 
-    mocks.listGroups.mockResolvedValue({ groups: [] });
-    mocks.systemSettingList.mockResolvedValue([
+    (mocks.listGroups as any).mockResolvedValue({ groups: [] });
+    (mocks.systemSettingList as any).mockResolvedValue([
       { id: 1, key: 'wish_deadline_months', value: '2' },
       { id: 2, key: 'wish_approval_rules', value: JSON.stringify({ service_requires_approval: true, no_service_requires_approval: false, position_overrides: {}, auto_create_shift_on_approval: false }) },
     ]);
-    mocks.workplaceList.mockResolvedValue([]);
-    mocks.systemSettingUpdate.mockResolvedValue({});
-    mocks.systemSettingCreate.mockResolvedValue({});
-    mocks.getActiveDbToken.mockReturnValue(null);
-    mocks.isDbTokenEnabled.mockReturnValue(false);
+    (mocks.workplaceList as any).mockResolvedValue([]);
+    (mocks.systemSettingUpdate as any).mockResolvedValue({});
+    (mocks.systemSettingCreate as any).mockResolvedValue({});
+    (mocks.getActiveDbToken as any).mockReturnValue(null);
+    (mocks.isDbTokenEnabled as any).mockReturnValue(false);
 
     window.confirm = vi.fn(() => true);
   });

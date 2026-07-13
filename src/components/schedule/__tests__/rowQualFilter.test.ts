@@ -51,9 +51,9 @@ describe('rowQualFilter helpers', () => {
         it('tolerates missing getter functions', () => {
             const result = buildRowQualSets({
                 workplaceId: 'wp-1',
-                getRequired: undefined,
+                getRequired: undefined as any,
                 getOptional: () => ['q1'],
-                getDiscouraged: null,
+                getDiscouraged: null as any,
                 getExcluded: () => ['q2'],
             });
             expect(result.requiredIds).toEqual([]);
@@ -168,8 +168,8 @@ describe('rowQualFilter helpers', () => {
 
         it('treats missing doctorQualIds as empty array', () => {
             const filter = { requiredIds: ['a'], optionalIds: [], discouragedIds: [], excludeIds: [] };
-            expect(matchesRowQualFilter(filter, undefined)).toBe(false);
-            expect(matchesRowQualFilter(filter, null)).toBe(false);
+            expect(matchesRowQualFilter(filter, undefined as any)).toBe(false);
+            expect(matchesRowQualFilter(filter, null as any)).toBe(false);
         });
 
         it('when only Nicht is set, only excludes doctors with that qualification', () => {
@@ -214,8 +214,8 @@ describe('rowQualFilter helpers', () => {
 
         it('treats missing doctorQualIds as empty', () => {
             const filter = { requiredIds: [], optionalIds: ['a'], discouragedIds: [], excludeIds: [] };
-            expect(getDoctorRowQualHint(filter, undefined)).toBe(null);
-            expect(getDoctorRowQualHint(filter, null)).toBe(null);
+            expect(getDoctorRowQualHint(filter, undefined as any)).toBe(null);
+            expect(getDoctorRowQualHint(filter, null as any)).toBe(null);
         });
     });
 
@@ -230,7 +230,7 @@ describe('rowQualFilter helpers', () => {
 
         it('returns null for null/undefined hint', () => {
             expect(getDoctorRowQualRingClass(null)).toBe(null);
-            expect(getDoctorRowQualRingClass(undefined)).toBe(null);
+            expect(getDoctorRowQualRingClass(undefined as any)).toBe(null);
             expect(getDoctorRowQualRingClass('something-else')).toBe(null);
         });
     });

@@ -39,15 +39,19 @@ const PaginationLink = ({
   ...props
 }: React.ComponentProps<"a"> & {
   isActive?: boolean
-}) => (
+  size?: string
+}) => {
+  const btnSize = size as any;
+  return (
   <a
     aria-current={isActive ? "page" : undefined}
     className={cn(buttonVariants({
       variant: isActive ? "outline" : "ghost",
-      size,
+      size: btnSize,
     }), className)}
     {...props} />
-)
+  );
+}
 
 const PaginationPrevious = ({
   className,

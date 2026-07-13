@@ -89,7 +89,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     queryKey: ["central-employees-for-linking"],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/staff/central-employees');
+        const res = await api.request('/api/staff/central-employees') as any;
         return res.employees || [];
       } catch {
         return [];
@@ -101,7 +101,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     queryKey: ["central-employees-meta"],
     queryFn: async () => {
       try {
-        const res = await api.request('/api/staff/central-employees');
+        const res = await api.request('/api/staff/central-employees') as any;
         return { tenantCostCenters: res.tenantCostCenters || [] };
       } catch {
         return { tenantCostCenters: [] };
@@ -109,7 +109,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     },
   });
 
-  const { tenantCostCenters = [] } = centralEmployeesMeta;
+  const { tenantCostCenters = [] } = centralEmployeesMeta as any;
 
   const [selectedCostCenter, setSelectedCostCenter] = React.useState<string | null>(null);
   const costCenterFilterActive = selectedCostCenter !== null;
@@ -124,7 +124,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   const [selectedQualIds, setSelectedQualIds] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<DoctorFormData>(
-    doctor || {
+    (doctor as DoctorFormData) || {
       name: "",
       initials: "",
       role: defaultRole,
@@ -137,11 +137,11 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     if (doctor) {
       setFormData({
         ...doctor,
-        fte: doctor.fte !== undefined ? Math.round(parseFloat(doctor.fte) * 100) / 100 : 1.0,
+        fte: doctor.fte !== undefined ? Math.round(parseFloat(String(doctor.fte)) * 100) / 100 : 1.0,
         target_weekly_hours: doctor.target_weekly_hours || '',
         central_employee_id: doctor.central_employee_id || '',
         part_time_model: (doctor as DoctorFormData).part_time_model || 'reduced_daily',
-      });
+      } as DoctorFormData);
       setSelectedQualIds([]);
     } else if (open) {
       setFormData({
@@ -164,7 +164,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   // zentralen Mitarbeiter, damit der Select immer einen Value anzeigen kann.
   const effectiveRoles = React.useMemo(() => {
     const roles = [...availableRoles];
-    if (formData.central_employee_id && formData.role && !roles.some(r => r.toLowerCase() === formData.role!.toLowerCase())) {
+    if (formData.central_employee_id && formData.role && !roles.some(r => r.toLowerCase() === (formData.role as string).toLowerCase())) {
       roles.push(formData.role);
     }
     return roles;
@@ -173,8 +173,8 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   // Wenn formData.role eine noch nicht in roleNames vorhandene Rolle ist,
   // forcieren wir einen neuen key für den Select. Radix Select erkennt
   // den value sonst nicht, wenn die Option beim ersten Mount fehlte.
-  const selectRoleKey = formData.role && !roleNames.some(r => r.toLowerCase() === formData.role.toLowerCase())
-    ? `role-${formData.role}`
+  const selectRoleKey = formData.role && !roleNames.some((r: any) => r.toLowerCase() === (formData.role as string).toLowerCase())
+    ? `role-${formData.role as string}`
     : 'role-default';
 
   // Set für bereits asynchron angelegte Rollen (Schutz vor doppelter Anlage)
@@ -248,7 +248,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
       const result = await api.request('/api/staff/send-test-email', {
         method: 'POST',
         body: JSON.stringify({ to: email }),
-      });
+      }) as any;
       toast.success(result.message || `Testmail an ${email} gesendet`);
     } catch (error: any) {
       toast.error(error.message || "Testmail konnte nicht gesendet werden");
@@ -275,7 +275,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     
     // Prüfen ob Kürzel bereits existiert (außer beim aktuellen Arzt bei Bearbeitung)
     const existingDoctor = allDoctors.find(
-      d => d.initials?.toLowerCase() === trimmedInitials.toLowerCase() && d.id !== doctor?.id
+      (d: any) => d.initials?.toLowerCase() === trimmedInitials.toLowerCase() && d.id !== doctor?.id
     );
     
     if (existingDoctor) {
@@ -293,7 +293,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
           : (formData.target_weekly_hours ? parseFloat(formData.target_weekly_hours as any) : null),
         central_employee_id: formData.central_employee_id || null,
         _qualificationIds: selectedQualIds,  // für Staff.jsx
-    };
+    } as DoctorFormData;
     onSubmit(dataToSubmit);
   };
 
@@ -653,7 +653,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
       {/* Qualifikations-Zuordnung immer anzeigen */}
           <div className="border rounded-lg p-3 bg-slate-50">
               <DoctorQualificationEditor 
-                doctorId={doctor?.id} 
+                doctorId={doctor?.id ?? null} 
                 selectedQualIds={selectedQualIds} 
                 onToggle={handleToggleQual} 
               />

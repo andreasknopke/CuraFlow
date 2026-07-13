@@ -9,7 +9,7 @@ describe('invalidatePoolShiftQueries', () => {
   it('refreshes pool and tenant schedule queries after a cross-tenant change', async () => {
     const invalidateQueries = vi.fn().mockResolvedValue(undefined);
 
-    await invalidatePoolShiftQueries({ invalidateQueries });
+    await invalidatePoolShiftQueries({ invalidateQueries } as any);
 
     expect(invalidateQueries).toHaveBeenCalledTimes(POOL_SHIFT_REFRESH_QUERY_KEYS.length);
     expect(invalidateQueries).toHaveBeenNthCalledWith(1, { queryKey: ['pool', 'visible-shifts'] });

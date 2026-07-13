@@ -255,15 +255,15 @@ export default function StatisticsPage() {
                             ))}
                         </SelectContent>
                     </Select>
-                    <Button variant="outline" onClick={() => handleExport(exportStatisticsCsv)} data-testid="statistics-export-csv" title="CSV Export">
+                    <Button variant="outline" onClick={() => handleExport(exportStatisticsCsv as any)} data-testid="statistics-export-csv" title="CSV Export">
                         <Download className="h-4 w-4 mr-2" />
                         CSV
                     </Button>
-                    <Button variant="outline" onClick={() => handleExport(exportStatisticsExcel)} data-testid="statistics-export-excel" title="Excel Export">
+                    <Button variant="outline" onClick={() => handleExport(exportStatisticsExcel as any)} data-testid="statistics-export-excel" title="Excel Export">
                         <Download className="h-4 w-4 mr-2" />
                         Excel
                     </Button>
-                    <Button variant="outline" onClick={() => handleExport(exportStatisticsPdf)} data-testid="statistics-export-pdf" title="PDF Export">
+                    <Button variant="outline" onClick={() => handleExport(exportStatisticsPdf as any)} data-testid="statistics-export-pdf" title="PDF Export">
                         <Download className="h-4 w-4 mr-2" />
                         PDF
                     </Button>
@@ -391,11 +391,11 @@ export default function StatisticsPage() {
                 </TabsContent>
 
                 <TabsContent value="compliance">
-                    <ComplianceReport doctors={doctors} shifts={shifts} workplaces={workplaces} month={month} />
+                    <ComplianceReport doctors={doctors as any} shifts={shifts as any} workplaces={workplaces as any} month={month} />
                 </TabsContent>
 
                 <TabsContent value="wishes">
-                    <WishFulfillmentReport doctors={doctors} wishes={wishes} shifts={shifts} />
+                    <WishFulfillmentReport doctors={doctors as any} wishes={wishes as any} shifts={shifts as any} />
                 </TabsContent>
 
                 <TabsContent value="details">

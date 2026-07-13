@@ -47,11 +47,16 @@ const STATUS_CONFIG = {
  * @param {string} props.targetMonth - Format: "YYYY-MM"
  * @param {boolean} [props.compact=false] - Show compact summary only (for Dashboard)
  */
-export default function WishReminderStatus({ targetMonth, compact = false }) {
+interface WishReminderStatusProps {
+  targetMonth: string;
+  compact?: boolean;
+}
+
+export default function WishReminderStatus({ targetMonth, compact = false }: WishReminderStatusProps) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['wish-reminder-status', targetMonth],
     queryFn: async () => {
-      const res = await api.fetch(`/api/staff/wish-reminder-status?month=${targetMonth}`);
+      const res = await (api as any).fetch(`/api/staff/wish-reminder-status?month=${targetMonth}`);
       if (!res.ok) throw new Error('Fehler beim Laden des Erinnerungsstatus');
       return res.json();
     },
@@ -146,16 +151,16 @@ export default function WishReminderStatus({ targetMonth, compact = false }) {
         <TooltipProvider>
           <div className="flex flex-wrap gap-1.5">
             {doctorStatuses
-              .filter(d => d.reminder_status !== 'no_reminder')
-              .map(d => {
-                const cfg = STATUS_CONFIG[d.reminder_status];
+              .filter((d: any) => d.reminder_status !== 'no_reminder')
+              .map((d: any) => {
+                const cfg = STATUS_CONFIG[d.reminder_status as keyof typeof STATUS_CONFIG];
                 const Icon = cfg.icon;
                 return (
                   <Tooltip key={d.doctor_id}>
                     <TooltipTrigger asChild>
                       <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${cfg.color} cursor-default`}>
                         <Icon className="w-3 h-3" />
-                        {d.initials || d.name.split(' ').map(n => n[0]).join('')}
+                        {d.initials || d.name.split(' ').map((n: string) => n[0]).join('')}
                       </div>
                     </TooltipTrigger>
                     <TooltipContent>

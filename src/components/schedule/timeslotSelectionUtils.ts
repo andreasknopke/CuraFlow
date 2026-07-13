@@ -56,7 +56,7 @@ export const normalizeCustomTimeslotEndMinutes = (option: TimeslotOption, timeVa
         return defaultEndMinutes;
     }
 
-    let normalizedEndMinutes = parsedMinutes;
+    let normalizedEndMinutes: number = parsedMinutes!;
     // Only treat as overnight when the slot actually spans past midnight
     if (maxEndMinutes > 24 * 60 && normalizedEndMinutes <= startMinutes) {
         normalizedEndMinutes += 24 * 60;
@@ -100,10 +100,10 @@ export const normalizeCustomTimeslotStartMinutes = (option: TimeslotOption, time
     const maxEndMinutes = Number(option?.slotEndMinutes);
     if (Number.isFinite(maxEndMinutes)) {
         const latestStart = maxEndMinutes - MIN_CUSTOM_TIMESLOT_DURATION_MINUTES;
-        return Math.min(latestStart, Math.max(0, parsedMinutes));
+        return Math.min(latestStart, Math.max(0, parsedMinutes!));
     }
 
-    return Math.max(0, parsedMinutes);
+    return Math.max(0, parsedMinutes!);
 };
 
 export const buildInitialCustomTimeslotStartMinutesByOption = (

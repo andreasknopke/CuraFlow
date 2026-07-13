@@ -106,7 +106,7 @@ describe('isWishOnDate', () => {
 
   it('returns false for null wish or null date', () => {
     expect(isWishOnDate(null, '2024-03-05')).toBe(false);
-    expect(isWishOnDate(singleWish, null)).toBe(false);
+    expect(isWishOnDate(singleWish, null as any)).toBe(false);
   });
 
   it('accepts a Date object as dateValue', () => {

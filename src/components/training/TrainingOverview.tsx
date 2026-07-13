@@ -4,7 +4,27 @@ import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 
-// Memoized Cell Component for Training Overview
+interface TrainingOverviewCellProps {
+    date: Date;
+    doctor: any;
+    status: any;
+    isWeekend: boolean;
+    isHoliday: boolean;
+    isSchoolHoliday: boolean;
+    isDisabled: boolean;
+    isContractEnd: boolean;
+    customColors: any;
+    dragInfo: {
+        isDragging: boolean;
+        dragStart: any;
+        dragCurrent: any;
+        dragDoctorId: any;
+    };
+    onMouseDown: (date: Date, doctorId: any) => void;
+    onMouseEnter: (date: Date, doctorId: any) => void;
+    onToggle: (date: Date, status: any, docId: any, e: any) => void;
+}
+
 const TrainingOverviewCell = memo(({ 
     date, 
     doctor, 
@@ -19,7 +39,7 @@ const TrainingOverviewCell = memo(({
     onMouseDown, 
     onMouseEnter, 
     onToggle 
-}) => {
+}: TrainingOverviewCellProps) => {
     const { isDragging, dragStart, dragCurrent, dragDoctorId } = dragInfo;
 
     const isRowInvolved = isDragging && dragDoctorId === doctor.id;
@@ -29,7 +49,7 @@ const TrainingOverviewCell = memo(({
         end: dragCurrent > dragStart ? dragCurrent : dragStart
     });
 
-    let style = {};
+    let style: any = {};
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none";
 
     if (isDisabled) {
@@ -41,11 +61,9 @@ const TrainingOverviewCell = memo(({
     } else if (status && customColors[status]) {
         const colorVal = customColors[status];
         if (typeof colorVal === 'object' && colorVal.backgroundColor) {
-            // Inline style object (new format: { backgroundColor, color })
             style = colorVal;
             cellClass += " hover:opacity-90 font-medium";
         } else if (typeof colorVal === 'string') {
-            // Legacy Tailwind class string
             cellClass += ` ${colorVal} text-white`;
         }
     } else if (!status) {
@@ -114,6 +132,21 @@ const TrainingOverviewCell = memo(({
     return false;
 });
 
+interface TrainingOverviewProps {
+    year: number;
+    doctors: any[];
+    rotations: any[];
+    contractInfoByDoctorId?: Record<string, any>;
+    isSchoolHoliday?: (date: Date) => boolean;
+    isPublicHoliday?: (date: Date) => boolean;
+    customColors?: Record<string, any>;
+    onToggle?: (date: Date, status: any, docId: any, e: any) => void;
+    onRangeSelect?: (start: Date, end: Date, doctorId: any) => void;
+    activeType?: string;
+    isReadOnly?: boolean;
+    monthsPerRow?: number;
+}
+
 export default function TrainingOverview({ 
     year, 
     doctors, 
@@ -127,10 +160,10 @@ export default function TrainingOverview({
     activeType, 
     isReadOnly, 
     monthsPerRow = 3 
-}) {
-    const [dragStart, setDragStart] = useState(null);
-    const [dragCurrent, setDragCurrent] = useState(null);
-    const [dragDoctorId, setDragDoctorId] = useState(null);
+}: TrainingOverviewProps) {
+    const [dragStart, setDragStart] = useState<Date | null>(null);
+    const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
+    const [dragDoctorId, setDragDoctorId] = useState<any>(null);
     const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
@@ -149,7 +182,7 @@ export default function TrainingOverview({
         return () => window.removeEventListener('mouseup', handleMouseUp);
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
-    const handleMouseDown = React.useCallback((date, doctorId) => {
+    const handleMouseDown = React.useCallback((date: Date, doctorId: any) => {
         if (isReadOnly) return;
         setDragStart(date);
         setDragCurrent(date);
@@ -157,28 +190,25 @@ export default function TrainingOverview({
         setIsDragging(true);
     }, [isReadOnly]);
 
-    const handleMouseEnter = React.useCallback((date, doctorId) => {
+    const handleMouseEnter = React.useCallback((date: Date, doctorId: any) => {
         setDragCurrent(prev => {
             if (prev && isSameDay(prev, date)) return prev;
             return date;
         });
     }, []);
     
-    const handleToggle = React.useCallback((date, status, docId, e) => {
+    const handleToggle = React.useCallback((date: Date, status: any, docId: any, e: any) => {
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
             onToggle && onToggle(date, status, docId, e);
         }
     }, [isDragging, dragStart, dragCurrent, onToggle]);
 
-    // Build a lookup map: "yyyy-MM-dd_doctorId" -> modality
     const rotationLookup = React.useMemo(() => {
-        const lookup = new Map();
-        rotations.forEach(rot => {
-            // Expand the range into daily entries
+        const lookup = new Map<string, string>();
+        rotations.forEach((rot: any) => {
             const start = new Date(rot.start_date);
             const end = new Date(rot.end_date);
             
-            // Only process if overlaps with selected year
             const yearStart = new Date(year, 0, 1);
             const yearEnd = new Date(year, 11, 31);
             
@@ -198,15 +228,15 @@ export default function TrainingOverview({
         return lookup;
     }, [rotations, year]);
 
-    const getStatus = React.useCallback((date, doctorId) => {
+    const getStatus = React.useCallback((date: Date, doctorId: any) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return rotationLookup.get(`${dateStr}_${doctorId}`) || null;
     }, [rotationLookup]);
 
     const monthChunks = React.useMemo(() => {
-        const chunks = [];
+        const chunks: number[][] = [];
         for (let i = 0; i < 12; i += monthsPerRow) {
-            const chunk = [];
+            const chunk: number[] = [];
             for (let j = 0; j < monthsPerRow && (i + j) < 12; j++) {
                 chunk.push(i + j);
             }
@@ -228,7 +258,6 @@ export default function TrainingOverview({
                 <StickyHorizontalScrollbar key={qIdx} className="border rounded-lg shadow-sm bg-white">
                     <table className="w-full border-collapse text-xs table-fixed">
                             <thead>
-                                {/* Month Headers */}
                                 <tr>
                                     <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-2 w-[220px] min-w-[220px] text-left">
                                         Mitarbeiter
@@ -243,7 +272,6 @@ export default function TrainingOverview({
                                         );
                                     })}
                                 </tr>
-                                {/* Day Headers */}
                                 <tr>
                                     <th className="sticky left-0 z-20 bg-slate-100 border-b border-r p-1"></th>
                                     {months.map(m => {
@@ -267,10 +295,10 @@ export default function TrainingOverview({
                                 </tr>
                             </thead>
                             <tbody>
-                                {doctors.map(doc => (
+                                {doctors.map((doc: any) => (
                                     <tr key={doc.id} className="hover:bg-slate-50">
                                         <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                            <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
+                                            <div className="truncate font-medium" title={getContractTooltipLabel((contractInfoByDoctorId as any)[doc.id]) || undefined}>{doc.name}</div>
                                         </td>
                                         {months.map(m => {
                                             const date = setMonth(setYear(new Date(), year), m);
@@ -281,7 +309,7 @@ export default function TrainingOverview({
                                                 const isHol = isPublicHoliday ? isPublicHoliday(d) : false;
                                                 const isSchool = isSchoolHoliday ? isSchoolHoliday(d) : false;
                                                 const status = getStatus(d, doc.id);
-                                                const contractInfo = contractInfoByDoctorId[doc.id];
+                                                const contractInfo = (contractInfoByDoctorId as any)[doc.id];
                                                 const isDisabled = !isDateWithinContract(d, contractInfo?.contractStart, contractInfo?.contractEnd);
                                                 const isContractEnd = Boolean(contractInfo?.contractEnd) && format(d, 'yyyy-MM-dd') === contractInfo.contractEnd;
 

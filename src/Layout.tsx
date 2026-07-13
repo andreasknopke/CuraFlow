@@ -98,7 +98,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (user?.theme) {
-      const css = generateThemeCss(user.theme as Record<string, unknown>);
+      const css = generateThemeCss(user.theme as string);
       const styleId = 'theme-override-style';
       let styleEl = document.getElementById(styleId);
       if (!styleEl) {
@@ -447,7 +447,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       <TicketDialog
         open={isTicketDialogOpen}
         onOpenChange={setIsTicketDialogOpen}
-        initialType={ticketDialogType}
+        initialType={ticketDialogType as any}
         initialError={ticketDialogError as any}
       />
     </div>

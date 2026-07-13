@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { createShiftValidator } from '../ShiftValidation';
 
-function createValidator(workplaces = []) {
+function createValidator(workplaces: any[] = []) {
   return createShiftValidator({
-    doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1 }],
+    doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1 }] as any,
     shifts: [
       {
         id: 'shift-1',
@@ -11,8 +11,8 @@ function createValidator(workplaces = []) {
         date: '2026-05-19',
         position: 'Frei',
       },
-    ],
-    workplaces,
+    ] as any,
+    workplaces: workplaces as any,
     wishes: [],
     systemSettings: [],
     staffingEntries: [],
@@ -49,13 +49,12 @@ describe('ShiftValidator absence overlap setting', () => {
 
   it('blocks a tenant rotation when an exclusive cross-tenant service already exists for the linked employee', () => {
     const validator = createShiftValidator({
-      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' }],
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' }] as any,
       shifts: [],
       sharedShifts: [
         {
-          id: 'shared-1',
-          date: '2026-05-19',
           employee_id: 'employee-1',
+          date: '2026-05-19',
           workplace_name: 'Pool Hintergrund',
           workplace_category: 'Dienste',
           allows_rotation_concurrently: false,
@@ -64,7 +63,7 @@ describe('ShiftValidator absence overlap setting', () => {
       ],
       workplaces: [
         { id: 'workplace-1', name: 'CT Rotation', category: 'Rotationen', affects_availability: true },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -82,13 +81,12 @@ describe('ShiftValidator absence overlap setting', () => {
 
   it('blocks an availability-affecting non-service area when an exclusive cross-tenant service already exists for the linked employee', () => {
     const validator = createShiftValidator({
-      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' }],
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, central_employee_id: 'employee-1' }] as any,
       shifts: [],
       sharedShifts: [
         {
-          id: 'shared-1',
-          date: '2026-05-19',
           employee_id: 'employee-1',
+          date: '2026-05-19',
           workplace_name: 'Pool Hintergrund',
           workplace_category: 'Dienste',
           allows_rotation_concurrently: false,
@@ -97,7 +95,7 @@ describe('ShiftValidator absence overlap setting', () => {
       ],
       workplaces: [
         { id: 'workplace-1', name: 'CT Spezialbereich', category: 'Demonstrationen & Konsile', affects_availability: true },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -122,9 +120,9 @@ describe('ShiftValidator absence overlap setting', () => {
  * anderen Regelüberschreitungen" UX.
  */
 describe('ShiftValidator vacation overshoot', () => {
-  function build(overrides = {}) {
+  function build(overrides: any = {}) {
     return createShiftValidator({
-      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, vacation_days: 30 }],
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1, vacation_days: 30 }] as any,
       shifts: [],
       workplaces: [],
       wishes: [],
@@ -139,8 +137,8 @@ describe('ShiftValidator vacation overshoot', () => {
   }
 
   // Build N consecutive past weekdays in 2026 (Mon–Fri only).
-  function buildPastWeekdays(start, count) {
-    const dates = [];
+  function buildPastWeekdays(start: any, count: any) {
+    const dates: string[] = [];
     let cursor = new Date(start);
     while (dates.length < count) {
       const day = cursor.getDay();
@@ -159,7 +157,7 @@ describe('ShiftValidator vacation overshoot', () => {
       ],
     });
     const result = validator.validate('doctor-1', '2026-05-20', 'Urlaub');
-    expect(result.warnings.find((w) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
+    expect(result.warnings.find((w: string) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
     expect(result.canProceed).toBe(true);
   });
 
@@ -194,7 +192,7 @@ describe('ShiftValidator vacation overshoot', () => {
     }));
     const validator = build({ shifts });
     const result = validator.validate('doctor-1', '2026-05-20', 'Krank');
-    expect(result.warnings.find((w) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
+    expect(result.warnings.find((w: string) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
   });
 
   it('uses singular "Tag" for a 1-day overshoot', () => {
@@ -209,7 +207,7 @@ describe('ShiftValidator vacation overshoot', () => {
     const validator = build({ shifts });
     // 2026-05-21 is a Thursday
     const result = validator.validate('doctor-1', '2026-05-21', 'Urlaub');
-    const warning = result.warnings.find((w) => w.startsWith('Urlaubskontingent'));
+    const warning = result.warnings.find((w: string) => w.startsWith('Urlaubskontingent'));
     expect(warning).toBeDefined();
     expect(warning).toMatch(/1 Tag über/);
   });
@@ -227,7 +225,7 @@ describe('ShiftValidator vacation overshoot', () => {
     const result = validator.validate('doctor-1', '2026-05-20', 'Urlaub', {
       excludeShiftId: 's-edit',
     });
-    expect(result.warnings.find((w) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
+    expect(result.warnings.find((w: string) => w.startsWith('Urlaubskontingent'))).toBeUndefined();
   });
 });
 
@@ -240,13 +238,13 @@ describe('ShiftValidator employee relationship conflicts', () => {
         { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
-      ],
+      ] as any,
       shifts: [
         { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
-      ],
+      ] as any,
       workplaces: [
         { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -261,7 +259,7 @@ describe('ShiftValidator employee relationship conflicts', () => {
     const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
     expect(result.canProceed).toBe(true);
     // Keine Dienstkonflikt-Warnung bei leerer Relationships-Map
-    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+    expect(result.warnings.filter((w: string) => w.includes('Dienstkonflikt'))).toEqual([]);
   });
 
   it('warns when a related employee with shift_conflict is already assigned a real shift on the same day', () => {
@@ -272,13 +270,13 @@ describe('ShiftValidator employee relationship conflicts', () => {
         { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
-      ],
+      ] as any,
       shifts: [
         { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
-      ],
+      ] as any,
       workplaces: [
         { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -296,7 +294,7 @@ describe('ShiftValidator employee relationship conflicts', () => {
 
     const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
     expect(result.canProceed).toBe(true);
-    const conflictWarnings = result.warnings.filter(w => w.includes('Dienstkonflikt'));
+    const conflictWarnings = result.warnings.filter((w: string) => w.includes('Dienstkonflikt'));
     expect(conflictWarnings.length).toBeGreaterThan(0);
     expect(conflictWarnings[0]).toContain('Dr. Max Schmidt');
   });
@@ -309,13 +307,13 @@ describe('ShiftValidator employee relationship conflicts', () => {
         { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
-      ],
+      ] as any,
       shifts: [
         { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'Bereitschaftsdienst' },
-      ],
+      ] as any,
       workplaces: [
         { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -334,7 +332,7 @@ describe('ShiftValidator employee relationship conflicts', () => {
     const result = validator.validate('doctor-1', '2026-06-22', 'Frei');
     expect(result.canProceed).toBe(true);
     // Es sollte keine Warnung wegen Dienstkonflikt geben (nur ggf. Mindestbesetzung, aber das ist ein anderes Feature)
-    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+    expect(result.warnings.filter((w: string) => w.includes('Dienstkonflikt'))).toEqual([]);
   });
 
   it('does not warn for routine categories (Rotationen)', () => {
@@ -345,13 +343,13 @@ describe('ShiftValidator employee relationship conflicts', () => {
         { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
-      ],
+      ] as any,
       shifts: [
         { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-22', position: 'CT Rotation' },
-      ],
+      ] as any,
       workplaces: [
         { id: 'workplace-1', name: 'CT Rotation', category: 'Rotationen' },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -369,7 +367,7 @@ describe('ShiftValidator employee relationship conflicts', () => {
     const result = validator.validate('doctor-1', '2026-06-22', 'CT Rotation');
     expect(result.canProceed).toBe(true);
     // Keine Dienstkonflikt-Warnung für Rotationen
-    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+    expect(result.warnings.filter((w: string) => w.includes('Dienstkonflikt'))).toEqual([]);
   });
 
   it('warns only when both employees are assigned to real shifts on the same day', () => {
@@ -380,13 +378,13 @@ describe('ShiftValidator employee relationship conflicts', () => {
         { id: 'doctor-3', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-4', role: 'Assistenzarzt', fte: 1 },
         { id: 'doctor-5', role: 'Assistenzarzt', fte: 1 },
-      ],
+      ] as any,
       shifts: [
         { id: 'shift-1', doctor_id: 'doctor-2', date: '2026-06-23', position: 'Bereitschaftsdienst' },
-      ],
+      ] as any,
       workplaces: [
         { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
-      ],
+      ] as any,
       wishes: [],
       systemSettings: [],
       staffingEntries: [],
@@ -405,6 +403,6 @@ describe('ShiftValidator employee relationship conflicts', () => {
     const result = validator.validate('doctor-1', '2026-06-22', 'Bereitschaftsdienst');
     expect(result.canProceed).toBe(true);
     // Keine Dienstkonflikt-Warnung, da doctor-2 nicht am gleichen Tag eingeteilt ist
-    expect(result.warnings.filter(w => w.includes('Dienstkonflikt'))).toEqual([]);
+    expect(result.warnings.filter((w: string) => w.includes('Dienstkonflikt'))).toEqual([]);
   });
 });

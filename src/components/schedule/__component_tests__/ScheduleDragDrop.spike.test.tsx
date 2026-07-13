@@ -114,9 +114,9 @@ function renderBoardWithSeed() {
  * drop target. We pin believable rects on the source handle and target cell so
  * the library has real coordinates to work with.
  */
-function pinLayout(sourceHandle, targetCell) {
-  const handleRect = { x: 10, y: 10, width: 40, height: 40, top: 10, left: 10, right: 50, bottom: 50 };
-  const cellRect = { x: 200, y: 200, width: 80, height: 60, top: 200, left: 200, right: 280, bottom: 260 };
+function pinLayout(sourceHandle: any, targetCell: any) {
+  const handleRect = { x: 10, y: 10, width: 40, height: 40, top: 10, left: 10, right: 50, bottom: 50 } as DOMRect;
+  const cellRect = { x: 200, y: 200, width: 80, height: 60, top: 200, left: 200, right: 280, bottom: 260 } as DOMRect;
 
   sourceHandle.getBoundingClientRect = () => handleRect;
   targetCell.getBoundingClientRect = () => cellRect;
@@ -161,7 +161,7 @@ describe.skip('SPIKE: ScheduleBoard drag-and-drop in happy-dom', () => {
 
     const cell = document.querySelector('[data-testid^="schedule-cell-"]');
     expect(cell).not.toBeNull();
-    const cellTestId = cell.getAttribute('data-testid');
+    const cellTestId = cell!.getAttribute('data-testid');
 
     pinLayout(handle, cell);
 

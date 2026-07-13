@@ -17,7 +17,7 @@ export default function ChartCard({ title, description, children, defaultHeight 
 
     // Esc key to exit
     useEffect(() => {
-        const handleEsc = (e) => {
+        const handleEsc = (e: KeyboardEvent) => {
             if (e.key === 'Escape') setIsFullscreen(false);
         };
         window.addEventListener('keydown', handleEsc);

@@ -6,72 +6,61 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Database, Building2 } from 'lucide-react';
 
-/**
- * TenantSelectionDialog - Zeigt nach dem Login eine Mandanten-Auswahl an
- * 
- * Props:
- * - open: boolean - Ob der Dialog geöffnet ist
- * - onComplete: () => void - Callback wenn Auswahl abgeschlossen
- * - tenants: Array - Liste der erlaubten Tenants
- * - hasFullAccess: boolean - Ob User Zugriff auf alle Tenants hat
- */
-export default function TenantSelectionDialog({ open, onComplete, tenants = [], hasFullAccess = false }) {
+interface TenantSelectionDialogProps {
+    open: boolean;
+    onComplete: () => void;
+    tenants?: any[];
+    hasFullAccess?: boolean;
+}
+
+export default function TenantSelectionDialog({ open, onComplete, tenants = [], hasFullAccess = false }: TenantSelectionDialogProps) {
     const [isActivating, setIsActivating] = useState(false);
-    const [selectedId, setSelectedId] = useState(null);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
     const [error, setError] = useState('');
 
-    // Sortierte Tenants: zuletzt aktiver Token zuerst
     const sortedTenants = useMemo(() => {
         const lastActiveTokenId = getActiveTokenId();
         console.log('[TenantSort] lastActiveTokenId from localStorage:', lastActiveTokenId, typeof lastActiveTokenId);
-        console.log('[TenantSort] tenants:', tenants.map(t => ({ id: t.id, type: typeof t.id, is_active: t.is_active, name: t.name })));
+        console.log('[TenantSort] tenants:', tenants.map((t: any) => ({ id: t.id, type: typeof t.id, is_active: t.is_active, name: t.name })));
         
-        return [...tenants].sort((a, b) => {
-            // Zuletzt aktiver Token zuerst (aus localStorage) - compare as strings
+        return [...tenants].sort((a: any, b: any) => {
             const aWasActive = String(a.id) === String(lastActiveTokenId);
             const bWasActive = String(b.id) === String(lastActiveTokenId);
             if (aWasActive && !bWasActive) return -1;
             if (!aWasActive && bWasActive) return 1;
-            // Dann is_active vom Server
             if (a.is_active && !b.is_active) return -1;
             if (!a.is_active && b.is_active) return 1;
-            // Dann alphabetisch nach Name
             return (a.name || '').localeCompare(b.name || '');
         });
     }, [tenants]);
 
-    // Automatisch aktivieren wenn nur ein Tenant erlaubt ist
     useEffect(() => {
         if (open && tenants.length === 1 && !hasFullAccess) {
             handleActivateTenant(tenants[0].id);
         }
     }, [open, tenants, hasFullAccess]);
 
-    const handleActivateTenant = async (tokenId) => {
+    const handleActivateTenant = async (tokenId: string) => {
         setIsActivating(true);
         setSelectedId(tokenId);
         setError('');
         
         try {
-            const result = await api.activateTenant(tokenId);
+            const result = await (api as any).activateTenant(tokenId);
             
             if (result && result.token) {
-                // Token lokal speichern und aktivieren
                 await saveDbToken(result.token);
                 await enableDbToken();
                 
-                // Speichere die aktive Token-ID
                 localStorage.setItem('active_token_id', tokenId);
                 
-                // Callback ausführen
                 onComplete();
                 
-                // Seite neu laden um alle Daten mit neuem Token zu laden
                 setTimeout(() => window.location.reload(), 500);
             } else {
                 throw new Error('Token-Aktivierung fehlgeschlagen');
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Tenant activation failed:', err);
             setError(err.message || 'Aktivierung fehlgeschlagen');
             setIsActivating(false);
@@ -84,15 +73,13 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
         setSelectedId('default');
         
         try {
-            // Deaktiviere alle Tokens - verwende Standard-DB
             await disableDbToken();
             localStorage.removeItem('active_token_id');
             
             onComplete();
             
-            // Seite neu laden
             setTimeout(() => window.location.reload(), 500);
-        } catch (err) {
+        } catch (err: any) {
             console.error('Deactivation failed:', err);
             setError(err.message || 'Deaktivierung fehlgeschlagen');
             setIsActivating(false);
@@ -100,7 +87,6 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
         }
     };
 
-    // Wenn nur ein Tenant und kein Full-Access, zeige Loading während Auto-Aktivierung
     if (open && tenants.length === 1 && !hasFullAccess) {
         return (
             <Dialog open={open}>
@@ -135,7 +121,6 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                 )}
 
                 <div className="space-y-3 max-h-80 overflow-y-auto py-2">
-                    {/* Standard-Datenbank Option (nur wenn Full-Access) */}
                     {hasFullAccess && (
                         <Card 
                             className={`p-4 cursor-pointer transition-all hover:border-indigo-300 hover:shadow-sm ${
@@ -162,8 +147,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                         </Card>
                     )}
 
-                    {/* Tenant Liste - zuletzt aktiver Token zuerst */}
-                    {sortedTenants.map((tenant) => {
+                    {sortedTenants.map((tenant: any) => {
                         const lastActiveTokenId = getActiveTokenId();
                         const wasLastActive = tenant.id === lastActiveTokenId;
                         return (

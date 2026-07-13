@@ -6,28 +6,19 @@ import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 
-// Jitsi External API — loaded dynamically via script tag
-declare const JitsiMeetExternalAPI: any;
-
 let jitsiExternalApiLoader: Promise<any> | null = null;
 let jitsiExternalApiScriptUrl: string | null = null;
 
-/**
- * Leitet den ersten Mandanten-Slug aus dem allowed_tenants-Feld ab.
- * Gibt einen sicheren ASCII-Slug zurück, der als Jitsi-Raumname genutzt wird.
- */
 function parseTenantSlug(allowed_tenants: unknown): string {
   if (!allowed_tenants) return 'default';
   try {
-    // Könnte ein JSON-Array-String sein: '["Krankenhaus_A","Krankenhaus_B"]'
     const parsed = JSON.parse(allowed_tenants as string);
     if (Array.isArray(parsed) && parsed.length > 0) {
       return parsed[0].toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
     }
   } catch {
-    // Kein JSON → direkter String
   }
-  return allowed_tenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
+  return (allowed_tenants as any).toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
 function buildJitsiDomain(baseUrl: string): string | null {
@@ -43,8 +34,8 @@ function loadJitsiExternalApi(baseUrl: string): Promise<any> {
     return Promise.reject(new Error('Jitsi kann nur im Browser geladen werden'));
   }
 
-  if (window.JitsiMeetExternalAPI) {
-    return Promise.resolve(window.JitsiMeetExternalAPI);
+  if ((window as any).JitsiMeetExternalAPI) {
+    return Promise.resolve((window as any).JitsiMeetExternalAPI);
   }
 
   const scriptUrl = `${baseUrl}/external_api.js`;
@@ -57,7 +48,7 @@ function loadJitsiExternalApi(baseUrl: string): Promise<any> {
     const existingScript = document.querySelector(`script[data-jitsi-external-api="true"][src="${scriptUrl}"]`);
 
     if (existingScript) {
-      existingScript.addEventListener('load', () => resolve(window.JitsiMeetExternalAPI), { once: true });
+      existingScript.addEventListener('load', () => resolve((window as any).JitsiMeetExternalAPI), { once: true });
       existingScript.addEventListener('error', () => reject(new Error('Jitsi-API konnte nicht geladen werden')), { once: true });
       return;
     }
@@ -67,8 +58,8 @@ function loadJitsiExternalApi(baseUrl: string): Promise<any> {
     script.async = true;
     script.dataset.jitsiExternalApi = 'true';
     script.onload = () => {
-      if (window.JitsiMeetExternalAPI) {
-        resolve(window.JitsiMeetExternalAPI);
+      if ((window as any).JitsiMeetExternalAPI) {
+        resolve((window as any).JitsiMeetExternalAPI);
         return;
       }
 
@@ -127,9 +118,9 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
-  const authState = masterAuth?.isAuthenticated ? masterAuth : appAuth;
-  const { user, isAuthenticated } = authState;
-  const isAdmin = user?.role === 'admin';
+  const authState = (masterAuth as any)?.isAuthenticated ? masterAuth : appAuth;
+  const { user, isAuthenticated } = authState as any;
+  const isAdmin = (user as any)?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -138,7 +129,7 @@ export default function CoWorkWidget() {
   const [isDetailsOpen, setIsDetailsOpen] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
-  const [position, setPosition] = useState<{ x: number | null; y: number | null }>({ x: null, y: null }); // null = CSS-Default
+  const [position, setPosition] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   const [activeSession, setActiveSession] = useState<Record<string, any> | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -148,19 +139,19 @@ export default function CoWorkWidget() {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const jitsiContainerRef = useRef<HTMLDivElement | null>(null);
   const jitsiApiRef = useRef<any>(null);
-  const hideTimerRef = useRef<number | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const announcedInviteIdsRef = useRef<Set<string>>(new Set());
   const lastInviteErrorRef = useRef<string | null>(null);
 
-  const tenantSlug = parseTenantSlug(user?.allowed_tenants);
-  const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
+  const tenantSlug = parseTenantSlug((user as any)?.allowed_tenants);
+  const rawJitsiBaseUrl = (import.meta as any).env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
   const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
   const jitsiDomain = buildJitsiDomain(jitsiBaseUrl);
   const activeRoomName = activeSession?.roomName || null;
 
   const invitesQuery = useQuery({
     queryKey: ['coworkInvites'],
-    queryFn: () => api.listCoworkInvites(),
+    queryFn: () => (api as any).listCoworkInvites(),
     enabled: isAuthenticated,
     refetchInterval: false,
     refetchIntervalInBackground: false,
@@ -169,28 +160,28 @@ export default function CoWorkWidget() {
 
   const contactsQuery = useQuery({
     queryKey: ['coworkContacts'],
-    queryFn: () => api.listCoworkContacts(),
+    queryFn: () => (api as any).listCoworkContacts(),
     enabled: isAuthenticated && isAdmin && isOpen && isDetailsOpen,
     refetchInterval: false,
     refetchOnWindowFocus: false,
   });
 
-  const hideInviteLocally = useCallback((inviteId) => {
+  const hideInviteLocally = useCallback((inviteId: string) => {
     if (!inviteId) return;
     setHiddenInviteIds((currentIds) => (
       currentIds.includes(inviteId) ? currentIds : [...currentIds, inviteId]
     ));
   }, []);
 
-  const showInviteLocally = useCallback((inviteId) => {
+  const showInviteLocally = useCallback((inviteId: string) => {
     if (!inviteId) return;
     setHiddenInviteIds((currentIds) => currentIds.filter((currentId) => currentId !== inviteId));
   }, []);
 
-  const incomingInvites = (invitesQuery.data?.incoming || []).filter((invite) => !hiddenInviteIds.includes(invite.id));
-  const outgoingInvites = invitesQuery.data?.outgoing || [];
+  const incomingInvites = ((invitesQuery.data as any)?.incoming || []).filter((invite: any) => !hiddenInviteIds.includes(invite.id));
+  const outgoingInvites = (invitesQuery.data as any)?.outgoing || [];
   const currentIncomingInvite = incomingInvites[0] || null;
-  const sortedContacts = [...(contactsQuery.data || [])].sort((left, right) => {
+  const sortedContacts = [...((contactsQuery.data as any) || [])].sort((left: any, right: any) => {
     if (left.is_online !== right.is_online) {
       return left.is_online ? -1 : 1;
     }
@@ -236,12 +227,12 @@ export default function CoWorkWidget() {
     }
   }, []);
 
-  const joinInviteInternal = useCallback(async (inviteId) => {
+  const joinInviteInternal = useCallback(async (inviteId: string) => {
     setBusyId(inviteId);
     setIsLoadingSession(true);
 
     try {
-      const session = await api.joinCoworkInvite(inviteId);
+      const session = await (api as any).joinCoworkInvite(inviteId) as Record<string, any>;
       toast.dismiss(getInviteToastId(inviteId));
       setActiveSession(session);
       setIsContactsCollapsed(true);
@@ -249,7 +240,7 @@ export default function CoWorkWidget() {
       setIsOpen(true);
       await refreshCoworkData();
       return session;
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message || 'CoWork-Session konnte nicht geoeffnet werden');
       return null;
     } finally {
@@ -263,12 +254,12 @@ export default function CoWorkWidget() {
     setIsLoadingSession(true);
 
     try {
-      const session = await api.getJitsiToken();
+      const session = await (api as any).getJitsiToken() as Record<string, any>;
       setActiveSession(session);
       setIsContactsCollapsed(true);
       setIsDetailsOpen(false);
       setIsOpen(true);
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
     } finally {
       setBusyId(null);
@@ -276,19 +267,19 @@ export default function CoWorkWidget() {
     }
   }, []);
 
-  const handleSendInvite = useCallback(async (contact) => {
+  const handleSendInvite = useCallback(async (contact: any) => {
     setBusyId(contact.id);
     setIsLoadingSession(true);
 
     try {
-      const result = await api.sendCoworkInvite(contact.id);
+      const result = await (api as any).sendCoworkInvite(contact.id) as any;
       setActiveSession(result.session);
       setIsContactsCollapsed(true);
       setIsDetailsOpen(false);
       setIsOpen(true);
       toast.success(`Einladung an ${contact.full_name || contact.email} gesendet`);
       await refreshCoworkData();
-    } catch (error) {
+    } catch (error: any) {
       toast.error(error.message || 'Einladung konnte nicht gesendet werden');
     } finally {
       setBusyId(null);
@@ -296,22 +287,22 @@ export default function CoWorkWidget() {
     }
   }, [refreshCoworkData]);
 
-  const handleJoinInvite = useCallback(async (inviteId) => {
+  const handleJoinInvite = useCallback(async (inviteId: string) => {
     await joinInviteInternal(inviteId);
   }, [joinInviteInternal]);
 
-  const handleDeclineInvite = useCallback(async (inviteId) => {
+  const handleDeclineInvite = useCallback(async (inviteId: string) => {
     setBusyId(inviteId);
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await api.declineCoworkInvite(inviteId);
+      await (api as any).declineCoworkInvite(inviteId);
       toast.success('Einladung abgelehnt');
       if (activeSession?.inviteId === inviteId) {
         setActiveSession(null);
       }
       await refreshCoworkData();
-    } catch (error) {
+    } catch (error: any) {
       showInviteLocally(inviteId);
       toast.error(error.message || 'Einladung konnte nicht abgelehnt werden');
     } finally {
@@ -319,18 +310,18 @@ export default function CoWorkWidget() {
     }
   }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
-  const handleCancelInvite = useCallback(async (inviteId) => {
+  const handleCancelInvite = useCallback(async (inviteId: string) => {
     setBusyId(inviteId);
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await api.cancelCoworkInvite(inviteId);
+      await (api as any).cancelCoworkInvite(inviteId);
       toast.success('Einladung abgebrochen');
       if (activeSession?.inviteId === inviteId) {
         setActiveSession(null);
       }
       await refreshCoworkData();
-    } catch (error) {
+    } catch (error: any) {
       showInviteLocally(inviteId);
       toast.error(error.message || 'Einladung konnte nicht abgebrochen werden');
     } finally {
@@ -354,12 +345,12 @@ export default function CoWorkWidget() {
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await api.cancelCoworkInvite(inviteId);
+      await (api as any).cancelCoworkInvite(inviteId);
       setActiveSession(null);
       setIsExpanded(false);
       setIsOpen(false);
       await refreshCoworkData();
-    } catch (error) {
+    } catch (error: any) {
       showInviteLocally(inviteId);
       toast.error(error.message || 'CoWork-Session konnte nicht beendet werden');
     } finally {
@@ -367,9 +358,8 @@ export default function CoWorkWidget() {
     }
   }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
-  // Drag-Logik für das Panel
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.target.closest('button') || e.target.closest('iframe')) return;
+    if ((e.target as any).closest('button') || (e.target as any).closest('iframe')) return;
     dragging.current = true;
     const rect = panelRef.current!.getBoundingClientRect();
     dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -410,9 +400,9 @@ export default function CoWorkWidget() {
   }, [activeSession]);
 
   useEffect(() => {
-    const activeIncomingIds = new Set((invitesQuery.data?.incoming || []).map((invite) => invite.id));
+    const activeIncomingIds = new Set(((invitesQuery.data as any)?.incoming || []).map((invite: any) => invite.id));
     setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
-  }, [invitesQuery.data?.incoming]);
+  }, [(invitesQuery.data as any)?.incoming]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
@@ -431,27 +421,27 @@ export default function CoWorkWidget() {
     if (!activeSession?.token || !activeRoomName || !jitsiDomain || !jitsiContainerRef.current) return undefined;
 
     let disposed = false;
-    let externalApi = null;
+    let externalApi: any = null;
 
     setIsLoadingSession(true);
     setIsScreenSharing(false);
 
     void loadJitsiExternalApi(jitsiBaseUrl)
-      .then((JitsiMeetExternalAPI) => {
+      .then((JitsiMeetExternalAPICtor: any) => {
         if (disposed || !jitsiContainerRef.current) return;
 
         jitsiContainerRef.current.innerHTML = '';
         const tokenPayload = decodeJwtPayload(activeSession.token);
 
-        externalApi = new JitsiMeetExternalAPI(jitsiDomain, {
+        externalApi = new JitsiMeetExternalAPICtor(jitsiDomain, {
           roomName: activeRoomName,
           parentNode: jitsiContainerRef.current,
           jwt: activeSession.token,
           width: '100%',
           height: '100%',
           userInfo: {
-            displayName: user?.full_name || user?.email || 'CuraFlow',
-            email: user?.email || undefined,
+            displayName: (user as any)?.full_name || (user as any)?.email || 'CuraFlow',
+            email: (user as any)?.email || undefined,
           },
           apiLogLevels: ['debug', 'info', 'warn', 'error'],
           configOverwrite: {
@@ -470,28 +460,28 @@ export default function CoWorkWidget() {
         console.info('[CoWork/Jitsi] session created', {
           roomName: activeRoomName,
           tokenExp: tokenPayload?.exp || null,
-          secondsLeft: tokenPayload?.exp ? tokenPayload.exp - Math.floor(Date.now() / 1000) : null,
+          secondsLeft: tokenPayload?.exp ? Number(tokenPayload.exp) - Math.floor(Date.now() / 1000) : null,
         });
 
-        externalApi.addListener('log', (event: MessageEvent) => {
+        externalApi.addListener('log', (event: any) => {
           console.debug('[CoWork/Jitsi log]', event);
         });
 
         externalApi.addEventListeners({
-          videoConferenceJoined: (event: MessageEvent) => {
+          videoConferenceJoined: (event: any) => {
             console.info('[CoWork/Jitsi] joined', event);
             setIsLoadingSession(false);
           },
-          videoConferenceLeft: (event: MessageEvent) => {
+          videoConferenceLeft: (event: any) => {
             console.warn('[CoWork/Jitsi] left', event);
           },
           readyToClose: () => {
             console.warn('[CoWork/Jitsi] readyToClose');
           },
-          errorOccurred: (event: MessageEvent) => {
+          errorOccurred: (event: any) => {
             console.error('[CoWork/Jitsi] errorOccurred', event);
           },
-          screenSharingStatusChanged: (event: MessageEvent) => {
+          screenSharingStatusChanged: (event: any) => {
             console.warn('[CoWork/Jitsi] screenSharingStatusChanged', event);
             const sharingActive = Boolean(event?.on);
             setIsScreenSharing(sharingActive);
@@ -504,7 +494,7 @@ export default function CoWorkWidget() {
 
         setIsLoadingSession(false);
       })
-      .catch((error) => {
+      .catch((error: any) => {
         if (disposed) return;
 
         setActiveSession(null);
@@ -528,7 +518,7 @@ export default function CoWorkWidget() {
         jitsiContainerRef.current.innerHTML = '';
       }
     };
-  }, [activeRoomName, activeSession?.token, jitsiBaseUrl, jitsiDomain, user?.email, user?.full_name]);
+  }, [activeRoomName, activeSession?.token, jitsiBaseUrl, jitsiDomain, (user as any)?.email, (user as any)?.full_name]);
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
@@ -562,7 +552,7 @@ export default function CoWorkWidget() {
   }, [currentIncomingInvite, joinInviteInternal]);
 
   useEffect(() => {
-    const message = invitesQuery.error?.message || null;
+    const message = (invitesQuery.error as any)?.message || null;
     if (!message || lastInviteErrorRef.current === message) return;
 
     lastInviteErrorRef.current = message;
@@ -600,8 +590,8 @@ export default function CoWorkWidget() {
 
   const panelStyle: React.CSSProperties = isExpanded
     ? { position: 'fixed', top: 20, right: 20, bottom: 20, left: 20 }
-    : position.x !== null
-      ? { position: 'fixed', left: position.x, top: position.y, bottom: 'auto', right: 'auto' }
+    : position.x !== null && position.y !== null
+      ? { position: 'fixed', left: position.x as number, top: position.y as number, bottom: 'auto' as any, right: 'auto' as any }
       : { position: 'fixed', bottom: 80, right: 20 };
   const sessionHeight = isExpanded ? '100%' : 360;
 
@@ -649,7 +639,6 @@ export default function CoWorkWidget() {
         </div>
       )}
 
-      {/* Floating-Toggle-Button */}
       {!isScreenSharing && (
         <button
           onClick={() => {
@@ -676,7 +665,6 @@ export default function CoWorkWidget() {
         </button>
       )}
 
-      {/* CoWork-Panel */}
       {isOpen && (
         <div
           ref={panelRef}
@@ -691,7 +679,6 @@ export default function CoWorkWidget() {
           }}
           className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col transition-all duration-200"
         >
-          {/* Header – Drag-Handle */}
           <div
             className={`flex items-center justify-between px-4 py-3 bg-indigo-600 text-white select-none ${isExpanded ? 'cursor-default' : 'cursor-move'}`}
             onMouseDown={isExpanded ? undefined : onMouseDown}
@@ -717,7 +704,6 @@ export default function CoWorkWidget() {
             </div>
           </div>
 
-          {/* Raum-Info */}
           <div className="px-4 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
             <span className="text-xs text-indigo-700 flex-1 truncate">
               Geschuetzter Raum: <strong>{activeRoomName || 'noch nicht gestartet'}</strong>
@@ -818,7 +804,7 @@ export default function CoWorkWidget() {
                         Kontakte werden geladen...
                       </div>
                     ) : sortedContacts.length > 0 ? (
-                      sortedContacts.map((contact) => (
+                      sortedContacts.map((contact: any) => (
                         <div key={contact.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
                           <div className={`h-2.5 w-2.5 rounded-full ${contact.is_online ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                           <div className="min-w-0 flex-1">
@@ -854,7 +840,7 @@ export default function CoWorkWidget() {
                 <div className="mb-2 text-sm font-semibold text-slate-900">Ausgehende Einladungen</div>
                 <div className="max-h-40 space-y-2 overflow-auto pr-1">
                   {outgoingInvites.length > 0 ? (
-                    outgoingInvites.map((invite) => (
+                    outgoingInvites.map((invite: any) => (
                       <div key={invite.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <div className={`rounded-full px-2 py-1 text-[11px] font-semibold ${invite.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                           {invite.status === 'accepted' ? 'angenommen' : 'wartet'}
@@ -890,7 +876,6 @@ export default function CoWorkWidget() {
             </div>
           )}
 
-          {/* Jitsi iFrame */}
           {activeSession?.token && activeRoomName ? (
             <div className="relative bg-slate-950" style={{ height: sessionHeight, flex: isExpanded ? '1 1 auto' : '0 0 auto' }}>
               {isLoadingSession && (

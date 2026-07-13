@@ -111,11 +111,11 @@ export default function VisualEditAgent(): null {
 	// Find elements by ID - first try data-source-location, fallback to data-visual-selector-id
 	const findElementsById = (id: string): Element[] => {
 		if (!id) return [];
-		const sourceElements = [...document.querySelectorAll(`[data-source-location="${id}"]`)];
+        const sourceElements = Array.from(document.querySelectorAll(`[data-source-location="${id}"]`));
 		if (sourceElements.length > 0) {
 			return sourceElements;
 		}
-		return [...document.querySelectorAll(`[data-visual-selector-id="${id}"]`)];
+        return Array.from(document.querySelectorAll(`[data-visual-selector-id="${id}"]`));
 	};
 
 	// Clear hover overlays
@@ -239,7 +239,7 @@ export default function VisualEditAgent(): null {
 			positionOverlay(overlay, el, true);
 		});
 
-		selectedElementIdRef.current = visualSelectorId;
+        selectedElementIdRef.current = visualSelectorId || null;
 
 		// Clear hover overlays
 		clearHoverOverlays();
@@ -261,8 +261,8 @@ export default function VisualEditAgent(): null {
 		const elementData = {
 			type: 'element-selected',
 			tagName: element.tagName,
-			classes: (element as HTMLElement).className?.baseVal || (element as HTMLElement).className || '',
-			visualSelectorId: visualSelectorId,
+            classes: (element as any).className?.baseVal || (element as HTMLElement).className || '',
+            visualSelectorId: visualSelectorId,
 			content: (element as HTMLElement).innerText,
 			dataSourceLocation: (element as HTMLElement).dataset.sourceLocation,
 			isDynamicContent: (element as HTMLElement).dataset.dynamicContent === 'true',
@@ -302,7 +302,7 @@ export default function VisualEditAgent(): null {
 				(element as HTMLElement).className = classes;
 			} else {
 				// For normal updates, merge with existing classes
-				const currentClasses = (element as HTMLElement).className?.baseVal || (element as HTMLElement).className || '';
+                const currentClasses = (element as any).className?.baseVal || (element as HTMLElement).className || '';
 				(element as HTMLElement).className = twMerge(currentClasses, classes);
 			}
 		});

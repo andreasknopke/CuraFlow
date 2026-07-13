@@ -133,7 +133,7 @@ export default function CertificateUploadPage() {
                 <div className="text-xs text-slate-500">{summary.reason}</div>
               </div>
               <CertificateManager
-                doctorId={user.doctor_id}
+                doctorId={(user as any).doctor_id}
                 qualificationId={qualification.id}
                 qualificationName={qualification.name}
                 qualificationDescription={qualification.description}

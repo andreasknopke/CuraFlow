@@ -76,7 +76,7 @@ export const JWTAuthProvider = ({ children }: JWTAuthProviderProps) => {
         });
         
         // The response from base44.functions.invoke wraps in { data }
-        return response.data;
+        return (response as { data: unknown }).data;
     }, [token]);
 
     // Check auth status on mount
