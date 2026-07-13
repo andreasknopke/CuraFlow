@@ -14,7 +14,7 @@ import type {
   ShiftEntry,
   WishRequest,
   Workplace,
-  WorkplaceTimeslot, // eslint-disable-line unused-imports/no-unused-imports -- used as EntityClient<T> generic
+  WorkplaceTimeslot,  
   Qualification,
   DoctorQualification,
   WorkplaceQualification,

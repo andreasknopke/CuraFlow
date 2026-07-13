@@ -26,7 +26,6 @@ import { useShiftLimitCheck } from '@/components/useShiftLimitCheck';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/components/AuthProvider';
-import type { ShiftEntry, Doctor, Workplace } from '@/types';
 
 // CONFIG: Set your Agent ID here or via Environment Variable if possible
 const ELEVENLABS_AGENT_ID = "agent_1901kb1v556ke8trk5g98xjaxrp4"; 
@@ -95,12 +94,12 @@ export default function GlobalVoiceControl() {
     // --- DATA FETCHING (Replicated from ScheduleBoard for global access) ---
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],
-        queryFn: () => db.Doctor.list() as Promise<Doctor[]>,
+        queryFn: () => db.Doctor.list(),
     });
 
     const { data: workplaces = [] } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list({ limit: 1000 }) as Promise<Workplace[]>,
+        queryFn: () => db.Workplace.list({ limit: 1000 }),
     });
 
     // Fetch shifts around today to handle commands
@@ -117,7 +116,7 @@ export default function GlobalVoiceControl() {
         queryKey: ['shifts', fetchRange.start, fetchRange.end],
         queryFn: () => db.ShiftEntry.filter({
             date: { $gte: fetchRange.start, $lte: fetchRange.end }
-        }, { limit: 5000 }) as Promise<ShiftEntry[]>,
+        }, { limit: 5000 }),
     });
 
     // Hooks expect narrower ShiftEntry types; cast since @/types ShiftEntry is a superset

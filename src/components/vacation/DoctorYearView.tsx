@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, db, base44 } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useToast } from '@/components/ui/use-toast';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
 import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
@@ -154,14 +154,14 @@ export default function DoctorYearView({
 
   const { data: colorSettings = [] } = useQuery<ColorSetting[]>({
     queryKey: ['colorSettings'],
-    queryFn: () => db.ColorSetting.list() as Promise<ColorSetting[]>,
+    queryFn: () => db.ColorSetting.list(),
     staleTime: 1000 * 60 * 10, // 10 minutes
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
 
   const getCustomColor = (position: string): React.CSSProperties | null => {
-      const setting = (colorSettings as ColorSetting[]).find((s) => s.name === position && s.category === 'position');
+      const setting = (colorSettings).find((s) => s.name === position && s.category === 'position');
       if (setting) return { backgroundColor: setting.bg_color ?? undefined, color: setting.text_color ?? undefined };
       if (DEFAULT_COLORS.positions[position]) return { backgroundColor: DEFAULT_COLORS.positions[position].bg, color: DEFAULT_COLORS.positions[position].text };
       return null;

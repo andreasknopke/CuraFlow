@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { db, base44, api } from "@/api/client";
+import { db, api } from "@/api/client";
 import { useMemo, useCallback } from 'react';
 import type { ShiftEntry, Doctor, SystemSetting, Workplace, StaffingPlanEntry, WorkplaceTimeslot } from '@/types';
 import type { SharedShift } from './ShiftValidation';

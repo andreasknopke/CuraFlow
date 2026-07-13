@@ -12,7 +12,6 @@ import { computeQualificationEvidenceSummary } from '@/lib/qualificationEvidence
 import type { EvidenceSummary } from '@/lib/qualificationEvidence';
 import type { DoctorQualification } from '@/types';
 import type { Qualification as QualificationModel } from '@/types';
-import type { Qualification as EvidenceQualification } from '@/lib/qualificationEvidence';
 
 interface CertificateEntry {
   id?: string;
@@ -61,7 +60,7 @@ export default function CertificateUploadPage() {
         }
 
         const summary: EvidenceSummary = computeQualificationEvidenceSummary({
-          qualification: qualification as EvidenceQualification,
+          qualification: qualification,
           certificates: groupedCertificates[qualification.id] || [],
         });
         const shouldInclude = summary.status !== 'valid' || qualification.id === selectedQualificationId;

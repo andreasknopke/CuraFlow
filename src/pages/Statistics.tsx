@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import ChartCard from "@/components/statistics/ChartCard";
 import WishFulfillmentReport from "@/components/statistics/WishFulfillmentReport";
 import ComplianceReport from "@/components/statistics/ComplianceReport";
-import type { WishRequest } from '@/types';
 import WorkingTimeReport from "@/components/statistics/WorkingTimeReport";
 import { useToast } from '@/components/ui/use-toast';
 import { exportStatisticsCsv, exportStatisticsExcel, exportStatisticsPdf } from '@/components/statistics/exportUtils';
@@ -101,11 +100,11 @@ export default function StatisticsPage() {
             if (month === 'all') {
                 return (await db.WishRequest.filter({
                     target_month: { "$gte": `${year}-01`, "$lte": `${year}-12` }
-                })) as WishRequest[];
+                }));
             }
 
             const targetMonth = `${year}-${String(parseInt(month, 10) + 1).padStart(2, '0')}`;
-            return (await db.WishRequest.filter({ target_month: targetMonth })) as WishRequest[];
+            return (await db.WishRequest.filter({ target_month: targetMonth }));
         },
     });
 

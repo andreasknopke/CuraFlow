@@ -99,7 +99,7 @@ export default function WishRequestDialog({
         queryFn: () => db.SystemSetting.list(),
     });
 
-    const deadlineMonths = (settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'wish_deadline_months')?.value;
+    const deadlineMonths = (settings).find((s: SystemSetting) => s.key === 'wish_deadline_months')?.value;
     const isDeadlineRestricted = !isAdmin && deadlineMonths && !isNaN(parseInt(deadlineMonths));
     let isBlockedByDeadline = false;
     let minDate: Date | null = null;
@@ -155,7 +155,7 @@ export default function WishRequestDialog({
     }, [isOpen]);
 
     const getRequiresApproval = () => {
-        const approvalSettingRaw = (settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
+        const approvalSettingRaw = (settings).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
         if (!approvalSettingRaw) return true;
 
         try {
@@ -179,7 +179,7 @@ export default function WishRequestDialog({
     };
 
     const getAutoCreateShiftOnApproval = () => {
-        const approvalSettingRaw = (settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
+        const approvalSettingRaw = (settings).find((s: SystemSetting) => s.key === 'wish_approval_rules')?.value;
         if (!approvalSettingRaw) return false;
         try {
             const rules = JSON.parse(approvalSettingRaw);

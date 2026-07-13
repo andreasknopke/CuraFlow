@@ -136,7 +136,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       const payloads = pendingPayloadsRef.current;
       console.info('[PlanUpdateListener] Invalidiere Queries nach Push-Event', {
         count: payloads.length,
-        entities: payloads.map((payload) => String((payload as Record<string, unknown>).entity)),
+        entities: payloads.map((payload) => String((payload).entity)),
       });
 
       const foreignChange = payloads.find((payload) => {

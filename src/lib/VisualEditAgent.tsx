@@ -261,7 +261,7 @@ export default function VisualEditAgent(): null {
 		const elementData = {
 			type: 'element-selected',
 			tagName: element.tagName,
-	            classes: (element instanceof SVGElement && (element as SVGElement).className instanceof SVGAnimatedString) ? (element as SVGElement).className.baseVal : (element as HTMLElement).className || '',
+	            classes: (element instanceof SVGElement && (element).className instanceof SVGAnimatedString) ? (element).className.baseVal : (element as HTMLElement).className || '',
             visualSelectorId: visualSelectorId,
 			content: (element as HTMLElement).innerText,
 			dataSourceLocation: (element as HTMLElement).dataset.sourceLocation,
@@ -302,7 +302,7 @@ export default function VisualEditAgent(): null {
 				(element as HTMLElement).className = classes;
 			} else {
 				// For normal updates, merge with existing classes
-	                const currentClasses = (element instanceof SVGElement && (element as SVGElement).className instanceof SVGAnimatedString) ? (element as SVGElement).className.baseVal : (element as HTMLElement).className || '';
+	                const currentClasses = (element instanceof SVGElement && (element).className instanceof SVGAnimatedString) ? (element).className.baseVal : (element as HTMLElement).className || '';
 				(element as HTMLElement).className = twMerge(currentClasses, classes);
 			}
 		});

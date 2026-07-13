@@ -114,7 +114,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
         const doctorEntries = byDoctor[doctorId] || [];
         const existing = doctorEntries.find(dq => dq.qualification_id === qualId);
         if (existing) {
-            removeMutation.mutate(existing.id as string);
+            removeMutation.mutate(existing.id);
             return;
         }
         const qual = qualificationMap?.[qualId];
@@ -366,7 +366,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                                     className={`text-center py-2 px-2 ${
                                                         !isReadOnly ? 'cursor-pointer hover:bg-slate-100 transition-colors' : ''
                                                     } ${certWarning ? 'bg-amber-50/60' : ''}`}
-                                                    onClick={() => !isPending && handleToggle(doctor.id, qual.id as string)}
+                                                    onClick={() => !isPending && handleToggle(doctor.id, qual.id)}
                                                     title={tooltip}
                                                 >
                                                     {hasQual ? (
@@ -401,7 +401,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                 {activeQuals.map(qual => {
                                     const count = doctors.filter(doc => {
                                         const dqIds = (byDoctor[doc.id] || []).map(dq => dq.qualification_id);
-                                        return dqIds.includes(qual.id as string);
+                                        return dqIds.includes(qual.id);
                                     }).length;
                                     return (
                                         <td key={qual.id} className="text-center py-2 px-2 text-xs font-semibold text-slate-600">

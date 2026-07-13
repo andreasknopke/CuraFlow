@@ -521,7 +521,7 @@ export default function QualificationManagement() {
                                                                         <AlertDialogFooter>
                                                                             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                                                                             <AlertDialogAction
-                                                                                onClick={() => { deleteQualification(String(qual.id!)); }}
+                                                                                onClick={() => { deleteQualification(String(qual.id)); }}
                                                                                 className="bg-red-600 hover:bg-red-700"
                                                                             >
                                                                                 Löschen

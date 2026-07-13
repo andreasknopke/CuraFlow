@@ -290,7 +290,7 @@ export default function TransferToSchedulerDialog({
                     <div className="space-y-6 py-4">
                         <div className="space-y-3">
                             <Label className="text-sm font-medium text-slate-700">Übertragungsmodus</Label>
-                            <RadioGroup value={transferMode} onValueChange={(v) => setTransferMode(v as 'day' | 'week' | 'from_date')} className="space-y-2">
+                            <RadioGroup value={transferMode} onValueChange={(v) => { setTransferMode(v as 'day' | 'week' | 'from_date'); }} className="space-y-2">
                                 <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-slate-50 transition-colors">
                                     <RadioGroupItem data-testid="training-transfer-mode-day" value="day" id="mode-day" />
                                     <Label htmlFor="mode-day" className="flex-1 cursor-pointer">
@@ -352,7 +352,7 @@ export default function TransferToSchedulerDialog({
                                 id="overwrite" 
                                 data-testid="training-transfer-overwrite"
                                 checked={overwriteExisting} 
-                                onCheckedChange={(v) => setOverwriteExisting(v === true)}
+                                onCheckedChange={(v) => { setOverwriteExisting(v === true); }}
                                 className="mt-0.5"
                             />
                             <div>

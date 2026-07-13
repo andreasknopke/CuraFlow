@@ -679,7 +679,7 @@ describe('generateSuggestions', () => {
     const originalLength = docs.length;
     generateSuggestions({
       weekDays: [new Date(2026, 5, 15)],
-      doctors: docs as any,
+      doctors: docs,
       workplaces: [svc],
       existingShifts: [],
       trainingRotations: [],

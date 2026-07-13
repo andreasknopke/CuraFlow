@@ -116,7 +116,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             <button
                                 key={qual.id}
                                 type="button"
-                                onClick={() => { toggleHandler!(qual.id as string); }}
+                                onClick={() => { toggleHandler!(qual.id); }}
                                 aria-pressed={isAssigned}
                                 data-testid={`doctor-qualification-toggle-${qual.id}`}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
@@ -148,7 +148,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                                 <CertificateManager
                                     key={qual.id}
                                     doctorId={doctorId}
-                                    qualificationId={qual.id as string}
+                                    qualificationId={qual.id}
                                     qualificationName={qual.name}
                                     qualificationDescription={qual.description ?? undefined}
                                     qualificationRequirementMode={qual.certificate_requirement_mode ?? undefined}
@@ -192,7 +192,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             {catQuals.map(qual => {
                                 const isAssigned = assignedQualIds.includes(qual.id);
                                 const requiresCert = qual.requires_certificate === true;
-                                const handleToggle = () => { toggleHandler!(qual.id as string); };
+                                const handleToggle = () => { toggleHandler!(qual.id); };
                                 return (
                                     <button
                                         key={qual.id}
@@ -250,7 +250,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             <CertificateManager
                                 key={qual.id}
                                 doctorId={doctorId}
-                                qualificationId={qual.id as string}
+                                qualificationId={qual.id}
                                 qualificationName={qual.name}
                                 qualificationDescription={qual.description ?? undefined}
                                 qualificationRequirementMode={qual.certificate_requirement_mode ?? undefined}

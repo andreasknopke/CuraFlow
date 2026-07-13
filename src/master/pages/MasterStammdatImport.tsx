@@ -452,7 +452,7 @@ export default function MasterStammdatImport() {
 
   // ============ FILTERING ============
 
-  const stammdatLinkOptions = ((analysis as AnalysisResult | null)?.no_match || []).map((s: StammdatEmployee) => ({
+  const stammdatLinkOptions = ((analysis)?.no_match || []).map((s: StammdatEmployee) => ({
     value: String(s.stammdat_id),
     label: `${s.last_name}, ${s.first_name}`,
     description: `${s.personalnummer} — ${s.position || 'o.A.'}`,

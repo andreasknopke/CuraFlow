@@ -316,12 +316,12 @@ export default function StaffPage() {
                           <CommandList>
                             <CommandEmpty>Keine Qualifikation gefunden.</CommandEmpty>
                             {activeQualifications.map((qualification) => {
-                              const isSelected = selectedQualificationIds.includes(qualification.id as string);
+                              const isSelected = selectedQualificationIds.includes(qualification.id);
                               return (
                                 <CommandItem
                                   key={qualification.id}
                                   value={`${qualification.name} ${qualification.short_label || ''}`}
-                                  onSelect={() => { handleQualificationToggle(qualification.id as string); }}
+                                  onSelect={() => { handleQualificationToggle(qualification.id); }}
                                 >
                                   <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 text-transparent'}`}>
                                     <Check className="h-3 w-3" />

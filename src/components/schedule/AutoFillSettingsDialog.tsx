@@ -6,7 +6,6 @@ import { Switch } from '@/components/ui/switch';
 import { Settings2 } from 'lucide-react';
 import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import type { SystemSetting } from '@/types';
 
 interface AutoFillSettingsDialogProps {
   trigger: ReactNode;
@@ -17,14 +16,14 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
 
     const { data: settings = [] } = useQuery({
         queryKey: ['systemSettings'],
-        queryFn: () => db.SystemSetting.list() as Promise<SystemSetting[]>,
+        queryFn: () => db.SystemSetting.list(),
         staleTime: 10 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
 
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }: { key: string; value: string }) => {
-            const existing = (settings as SystemSetting[]).find((s) => s.key === key);
+            const existing = (settings).find((s) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             } else {
@@ -34,7 +33,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
-    const getSetting = (key: string, def: string = ''): string => (settings as SystemSetting[]).find((s) => s.key === key)?.value ?? def;
+    const getSetting = (key: string, def: string = ''): string => (settings).find((s) => s.key === key)?.value ?? def;
     const getSettingBool = (key: string): boolean => getSetting(key) === 'true';
 
     const limitFG = getSetting('limit_fore_services', '4');
