@@ -67,10 +67,16 @@ export class AppShellPage {
   }
 
   async logout() {
-    await this.accountMenuTrigger.click({ force: true });
-    await expect(this.logoutButton).toBeVisible({ timeout: 10_000 });
-    await expect(this.logoutButton).toBeEnabled({ timeout: 10_000 });
-    await this.logoutButton.click({ force: true });
-    await this.page.waitForURL(/\/authlogin(?:\?|$)/, { timeout: 20_000 });
+    // account-menu-logout renders in a Radix Portal that mounts lazily once the
+    // menu opens; Playwright's auto-wait handles the mount, so no force:true —
+    // a forced click can slip past Radix's pointerdown open detection and leave
+    // the menu closed (firefox), or let the menu dismiss before the item click
+    // lands (chromium). Race the click against the hard navigation it triggers
+    // (logout() sets window.location.href after an awaited DB-token clear).
+    await this.accountMenuTrigger.click();
+    await Promise.all([
+      this.page.waitForURL(/\/authlogin(?:\?|$)/, { timeout: 20_000 }),
+      this.logoutButton.click(),
+    ]);
   }
 }
