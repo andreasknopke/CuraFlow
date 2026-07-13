@@ -35,7 +35,7 @@ interface TeamRoleData {
   can_do_foreground_duty: boolean | undefined;
   can_do_background_duty: boolean | undefined;
   excluded_from_statistics: boolean | undefined;
-  description: string;
+  description?: string | null;
   [key: string]: unknown;
 }
 
@@ -162,19 +162,20 @@ export function useTeamRoles(): TeamRolesResult {
 export async function initializeDefaultRoles(): Promise<TeamRoleData[]> {
     try {
         const existing = await db.TeamRole.list();
-        const existingNames = new Set((existing || []).map((r: TeamRoleData) => r.name));
+        const existingCasted = existing as unknown as TeamRoleData[];
+        const existingNames = new Set((existingCasted || []).map((r: TeamRoleData) => r.name));
         const missingRoles = DEFAULT_TEAM_ROLES.filter(r => !existingNames.has(r.name));
 
         if (missingRoles.length === 0) {
-            return existing;
+            return existingCasted;
         }
 
         console.log(`Adding ${missingRoles.length} missing default team roles...`);
         for (const role of missingRoles) {
-            await db.TeamRole.create(role);
+            await db.TeamRole.create(role as Record<string, unknown>);
         }
         console.log('Missing default team roles created');
-        return [...(existing || []), ...missingRoles];
+        return [...(existingCasted || []), ...missingRoles];
     } catch (error) {
         console.error('Failed to initialize team roles:', error);
         return DEFAULT_TEAM_ROLES;
@@ -254,7 +255,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                         <Input
                             id="roleName"
                             value={formData.name}
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            onChange={(e) => { setFormData({ ...formData, name: e.target.value }); }}
                             placeholder="z.B. Oberarzt, Facharzt, etc."
                             required
                         />
@@ -264,7 +265,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                         <Input
                             id="roleDescription"
                             value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            onChange={(e) => { setFormData({ ...formData, description: e.target.value }); }}
                             placeholder="z.B. Kann Hintergrunddienste übernehmen"
                         />
                     </div>
@@ -277,7 +278,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                                     type="checkbox"
                                     id="isSpecialist"
                                     checked={formData.is_specialist}
-                                    onChange={(e) => setFormData({ ...formData, is_specialist: e.target.checked })}
+                                    onChange={(e) => { setFormData({ ...formData, is_specialist: e.target.checked }); }}
                                     className="h-4 w-4 rounded border-slate-300"
                                 />
                                 <Label htmlFor="isSpecialist" className="text-sm font-normal">
@@ -289,7 +290,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                                     type="checkbox"
                                     id="canDoForeground"
                                     checked={formData.can_do_foreground_duty}
-                                    onChange={(e) => setFormData({ ...formData, can_do_foreground_duty: e.target.checked })}
+                                    onChange={(e) => { setFormData({ ...formData, can_do_foreground_duty: e.target.checked }); }}
                                     className="h-4 w-4 rounded border-slate-300"
                                 />
                                 <Label htmlFor="canDoForeground" className="text-sm font-normal">
@@ -301,7 +302,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                                     type="checkbox"
                                     id="canDoBackground"
                                     checked={formData.can_do_background_duty}
-                                    onChange={(e) => setFormData({ ...formData, can_do_background_duty: e.target.checked })}
+                                    onChange={(e) => { setFormData({ ...formData, can_do_background_duty: e.target.checked }); }}
                                     className="h-4 w-4 rounded border-slate-300"
                                 />
                                 <Label htmlFor="canDoBackground" className="text-sm font-normal">
@@ -313,7 +314,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                                     type="checkbox"
                                     id="excludedFromStats"
                                     checked={formData.excluded_from_statistics}
-                                    onChange={(e) => setFormData({ ...formData, excluded_from_statistics: e.target.checked })}
+                                    onChange={(e) => { setFormData({ ...formData, excluded_from_statistics: e.target.checked }); }}
                                     className="h-4 w-4 rounded border-slate-300"
                                 />
                                 <Label htmlFor="excludedFromStats" className="text-sm font-normal">
@@ -324,7 +325,7 @@ function RoleEditDialog({ role, open, onOpenChange, onSave }: RoleEditDialogProp
                     </div>
                     
                     <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                        <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
                             Abbrechen
                         </Button>
                         <Button type="submit">Speichern</Button>
@@ -352,10 +353,10 @@ export default function TeamRoleSettings() {
     });
 
     const createMutation = useMutation({
-        mutationFn: (data: TeamRoleData) => db.TeamRole.create({ 
-            ...data, 
-            priority: teamRoles.length 
-        }),
+        mutationFn: (data: TeamRoleData) => db.TeamRole.create({
+            ...data,
+            priority: teamRoles.length
+        } as Record<string, unknown>),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['teamRoles'] });
             setEditDialogOpen(false);
@@ -492,7 +493,7 @@ export default function TeamRoleSettings() {
                                                                         variant="ghost" 
                                                                         size="icon" 
                                                                         className="h-7 w-7 text-slate-400 hover:text-indigo-600"
-                                                                        onClick={() => handleEdit(role)}
+                                                                        onClick={() => { handleEdit(role); }}
                                                                     >
                                                                         <Pencil className="w-3 h-3" />
                                                                     </Button>
@@ -517,7 +518,7 @@ export default function TeamRoleSettings() {
                                                                             <AlertDialogFooter>
                                                                                 <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                                                                                 <AlertDialogAction
-                                                                                    onClick={() => deleteMutation.mutate(role.id!)}
+                                                                                    onClick={() => { deleteMutation.mutate(role.id!); }}
                                                                                     className="bg-red-600 hover:bg-red-700"
                                                                                 >
                                                                                     Löschen

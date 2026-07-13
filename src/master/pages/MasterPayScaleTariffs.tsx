@@ -313,7 +313,7 @@ export default function MasterPayScaleTariffs() {
                 {tariffs.map((t) => (
                   <>
                     <TableRow key={t.id} className="cursor-pointer hover:bg-slate-50"
-                      onClick={() => toggleExpand(t.id)}>
+                      onClick={() => { toggleExpand(t.id); }}>
                       <TableCell>
                         <button className="p-1 hover:bg-slate-200 rounded">
                           {expandedTariff === t.id
@@ -358,9 +358,9 @@ export default function MasterPayScaleTariffs() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1" onClick={(e: React.MouseEvent<HTMLDivElement>) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1" onClick={(e: React.MouseEvent<HTMLDivElement>) => { e.stopPropagation(); }}>
                           <Button variant="ghost" size="icon" className="h-8 w-8"
-                            onClick={() => openEdit(t)}
+                            onClick={() => { openEdit(t); }}
                             title="Bearbeiten">
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
@@ -414,7 +414,7 @@ export default function MasterPayScaleTariffs() {
                                       </span>
                                     )}
                                     <button className="text-slate-300 hover:text-indigo-600 ml-1"
-                                      onClick={() => openEditGroup(g)}
+                                      onClick={() => { openEditGroup(g); }}
                                       title="Bearbeiten">
                                       <Pencil className="w-3 h-3" />
                                     </button>
@@ -457,13 +457,13 @@ export default function MasterPayScaleTariffs() {
               <div>
                 <Label className="text-sm">Name *</Label>
                 <Input value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, name: e.target.value }); }}
                   placeholder="z.B. TV-Ärzte" className="mt-1" />
               </div>
               <div>
                 <Label className="text-sm">Kurzname *</Label>
                 <Input value={form.short_name}
-                  onChange={(e) => setForm({ ...form, short_name: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, short_name: e.target.value }); }}
                   placeholder="z.B. TV-Ärzte" className="mt-1" />
               </div>
             </div>
@@ -472,7 +472,7 @@ export default function MasterPayScaleTariffs() {
                 <Label className="text-sm">Standard Wochenstunden</Label>
                 <Input type="number" step="0.5" min="0" max="60"
                   value={form.default_weekly_hours}
-                  onChange={(e) => setForm({ ...form, default_weekly_hours: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, default_weekly_hours: e.target.value }); }}
                   placeholder="z.B. 38,5" className="mt-1" />
                 <p className="text-xs text-slate-400 mt-1">Leer lassen bei AT (individuell)</p>
               </div>
@@ -480,7 +480,7 @@ export default function MasterPayScaleTariffs() {
                 <Label className="text-sm">Standard Urlaubstage</Label>
                 <Input type="number" step="1" min="0" max="40"
                   value={form.default_vacation_days}
-                  onChange={(e) => setForm({ ...form, default_vacation_days: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, default_vacation_days: e.target.value }); }}
                   placeholder="z.B. 30" className="mt-1" />
                 <p className="text-xs text-slate-400 mt-1">Leer lassen bei AT (individuell)</p>
               </div>
@@ -488,7 +488,7 @@ export default function MasterPayScaleTariffs() {
             <div>
               <Label className="text-sm">Beschreibung</Label>
               <Input value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                onChange={(e) => { setForm({ ...form, description: e.target.value }); }}
                 placeholder="Optionale Beschreibung…" className="mt-1" />
             </div>
           </div>
@@ -515,13 +515,13 @@ export default function MasterPayScaleTariffs() {
             <div>
               <Label className="text-sm">Name *</Label>
               <Input value={groupForm.name}
-                onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })}
+                onChange={(e) => { setGroupForm({ ...groupForm, name: e.target.value }); }}
                 placeholder="z.B. Ä1, E5, P8" className="mt-1" />
             </div>
             <div>
               <Label className="text-sm">Beschreibung</Label>
               <Input value={groupForm.description}
-                onChange={(e) => setGroupForm({ ...groupForm, description: e.target.value })}
+                onChange={(e) => { setGroupForm({ ...groupForm, description: e.target.value }); }}
                 placeholder="Optionale Beschreibung…" className="mt-1" />
             </div>
           </div>

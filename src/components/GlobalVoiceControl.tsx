@@ -86,7 +86,7 @@ export default function GlobalVoiceControl() {
         }, { limit: 5000 }) as Promise<ShiftEntry[]>,
     });
 
-    const { checkStaffing } = useStaffingCheck(doctors as any, allShifts as any);
+    const { checkStaffing } = useStaffingCheck(doctors, allShifts as any);
     const { checkLimits } = useShiftLimitCheck(allShifts as any, workplaces as any);
 
     const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
@@ -515,7 +515,7 @@ export default function GlobalVoiceControl() {
                         setError("Transkriptionsfehler");
                         setIsProcessing(false);
                     } finally {
-                        stream.getTracks().forEach(track => track.stop());
+                        stream.getTracks().forEach(track => { track.stop(); });
                     }
                 };
             };
@@ -534,7 +534,7 @@ export default function GlobalVoiceControl() {
             mediaRecorderRef.current.stop();
         }
         if (mediaRecorderRef.current?.stream) {
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+            mediaRecorderRef.current.stream.getTracks().forEach(track => { track.stop(); });
         }
         setIsListening(false);
     };
@@ -629,23 +629,23 @@ export default function GlobalVoiceControl() {
                 <ContextMenuContent>
                     {!isReadOnly && (
                         <>
-                            <ContextMenuCheckboxItem checked={mode === 'browser'} onCheckedChange={() => setMode('browser')}>
+                            <ContextMenuCheckboxItem checked={mode === 'browser'} onCheckedChange={() => { setMode('browser'); }}>
                                 <Mic className="w-4 h-4 mr-2" /> Browser
                             </ContextMenuCheckboxItem>
-                            <ContextMenuCheckboxItem checked={mode === 'transcribe'} onCheckedChange={() => setMode('transcribe')}>
+                            <ContextMenuCheckboxItem checked={mode === 'transcribe'} onCheckedChange={() => { setMode('transcribe'); }}>
                                 <Volume2 className="w-4 h-4 mr-2" /> ElevenLabs (HQ Transkription)
                             </ContextMenuCheckboxItem>
-                            <ContextMenuCheckboxItem checked={mode === 'agent'} onCheckedChange={() => setMode('agent')}>
+                            <ContextMenuCheckboxItem checked={mode === 'agent'} onCheckedChange={() => { setMode('agent'); }}>
                                 <Bot className="w-4 h-4 mr-2" /> ElevenLabs Agent (Standard)
                             </ContextMenuCheckboxItem>
                             <ContextMenuSeparator />
-                            <ContextMenuItem onClick={() => setShowTraining(true)}>
+                            <ContextMenuItem onClick={() => { setShowTraining(true); }}>
                                 <Volume2 className="w-4 h-4 mr-2" />
                                 Sprachmodell trainieren
                             </ContextMenuItem>
                         </>
                     )}
-                    <ContextMenuItem onClick={() => setShowHelp(true)}>
+                    <ContextMenuItem onClick={() => { setShowHelp(true); }}>
                         <HelpCircle className="w-4 h-4 mr-2" />
                         Hilfe
                     </ContextMenuItem>

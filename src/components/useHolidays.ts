@@ -28,11 +28,11 @@ export function useHolidays(yearOverride?: number) {
         queryFn: () => db.SystemSetting.list(),
     });
 
-    const showSchoolSetting = settings.find((s: { key: string; value: string }) => s.key === 'show_school_holidays');
+    const showSchoolSetting = settings.find((s) => s.key === 'show_school_holidays');
     const showSchoolHolidays = showSchoolSetting ? showSchoolSetting.value === 'true' : true;
 
     // Fetch holidays from central API (corrections are already applied server-side)
-    const { data: apiData = { school: [], public: [] } as HolidayApiData, isLoading: isLoadingApi } = useQuery({
+    const { data: apiData = { school: [], public: [] }, isLoading: isLoadingApi } = useQuery({
         queryKey: ['externalHolidays', year],
         queryFn: async (): Promise<HolidayApiData> => {
             try {

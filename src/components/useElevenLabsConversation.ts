@@ -312,7 +312,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
             // Convert Float32 to Int16 (PCM)
             const pcmData = new Int16Array(downsampledData.length);
             for (let i = 0; i < downsampledData.length; i++) {
-                let s = Math.max(-1, Math.min(1, downsampledData[i]));
+                const s = Math.max(-1, Math.min(1, downsampledData[i]));
                 pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
@@ -370,7 +370,7 @@ export function useElevenLabsConversation({ agentId, onMessage, onError, onConne
         scheduledSourcesRef.current = [];
 
         if (mediaStreamRef.current) {
-            mediaStreamRef.current.getTracks().forEach(track => track.stop());
+            mediaStreamRef.current.getTracks().forEach(track => { track.stop(); });
             mediaStreamRef.current = null;
         }
         if (audioWorkletNodeRef.current) {

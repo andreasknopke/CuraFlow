@@ -86,7 +86,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                                         <div className="flex flex-wrap items-center gap-2">
                                             {qual && (
                                                 <Badge
-                                                    style={{ backgroundColor: qual.color_bg as any, color: qual.color_text as any }}
+                                                    style={{ backgroundColor: qual.color_bg, color: qual.color_text }}
                                                     className="border-0 text-[10px]"
                                                 >
                                                     {qual.short_label || qual.name?.substring(0, 3).toUpperCase()}

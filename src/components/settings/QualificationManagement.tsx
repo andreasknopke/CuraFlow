@@ -157,7 +157,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                             <Input
                                 id="qualName"
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                onChange={(e) => { setFormData({ ...formData, name: e.target.value }); }}
                                 placeholder="z.B. CT-Befundung, Notfall-Sono, ..."
                                 required
                             />
@@ -167,7 +167,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                             <Input
                                 id="qualShortLabel"
                                 value={formData.short_label}
-                                onChange={(e) => setFormData({ ...formData, short_label: e.target.value.substring(0, 5) })}
+                                onChange={(e) => { setFormData({ ...formData, short_label: e.target.value.substring(0, 5) }); }}
                                 placeholder="z.B. CT"
                                 maxLength={5}
                             />
@@ -179,7 +179,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                         <Input
                             id="qualDescription"
                             value={formData.description}
-                            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                            onChange={(e) => { setFormData({ ...formData, description: e.target.value }); }}
                             placeholder="Kurze Beschreibung der Qualifikation"
                         />
                     </div>
@@ -191,7 +191,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                 <button
                                     key={cat}
                                     type="button"
-                                    onClick={() => setFormData({ ...formData, category: cat })}
+                                    onClick={() => { setFormData({ ...formData, category: cat }); }}
                                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                                         formData.category === cat 
                                             ? 'bg-indigo-600 text-white' 
@@ -211,11 +211,11 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                 <button
                                     key={preset.label}
                                     type="button"
-                                    onClick={() => setFormData({ 
+                                    onClick={() => { setFormData({ 
                                         ...formData, 
                                         color_bg: preset.bg, 
                                         color_text: preset.text 
-                                    })}
+                                    }); }}
                                     className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
                                         formData.color_bg === preset.bg 
                                             ? 'ring-2 ring-offset-1 ring-indigo-500' 
@@ -247,7 +247,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                         </div>
                         <Switch
                             checked={formData.is_active}
-                            onCheckedChange={(checked) => setFormData({ ...formData, is_active: checked })}
+                            onCheckedChange={(checked) => { setFormData({ ...formData, is_active: checked }); }}
                         />
                     </div>
 
@@ -264,7 +264,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                         </div>
                         <Switch
                             checked={formData.requires_certificate}
-                            onCheckedChange={(checked) => setFormData({ ...formData, requires_certificate: checked })}
+                            onCheckedChange={(checked) => { setFormData({ ...formData, requires_certificate: checked }); }}
                         />
                     </div>
 
@@ -280,7 +280,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                         <button
                                             key={option.value}
                                             type="button"
-                                            onClick={() => setFormData({ ...formData, certificate_requirement_mode: option.value })}
+                                            onClick={() => { setFormData({ ...formData, certificate_requirement_mode: option.value }); }}
                                             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                                                 formData.certificate_requirement_mode === option.value
                                                     ? 'bg-amber-600 text-white'
@@ -301,7 +301,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                         type="number"
                                         min="1"
                                         value={formData.certificate_validity_months}
-                                        onChange={(e) => setFormData({ ...formData, certificate_validity_months: e.target.value })}
+                                        onChange={(e) => { setFormData({ ...formData, certificate_validity_months: e.target.value }); }}
                                         placeholder="z.B. 60"
                                     />
                                 </div>
@@ -313,7 +313,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                             type="number"
                                             min="1"
                                             value={formData.certificate_refresh_validity_months}
-                                            onChange={(e) => setFormData({ ...formData, certificate_refresh_validity_months: e.target.value })}
+                                            onChange={(e) => { setFormData({ ...formData, certificate_refresh_validity_months: e.target.value }); }}
                                             placeholder="z.B. 60"
                                         />
                                     </div>
@@ -327,7 +327,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                         <Input
                                             id="certificateBaseLabel"
                                             value={formData.certificate_base_label}
-                                            onChange={(e) => setFormData({ ...formData, certificate_base_label: e.target.value })}
+                                            onChange={(e) => { setFormData({ ...formData, certificate_base_label: e.target.value }); }}
                                             placeholder="z.B. Original-Fachkunde"
                                         />
                                     </div>
@@ -336,7 +336,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                                         <Input
                                             id="certificateRefreshLabel"
                                             value={formData.certificate_refresh_label}
-                                            onChange={(e) => setFormData({ ...formData, certificate_refresh_label: e.target.value })}
+                                            onChange={(e) => { setFormData({ ...formData, certificate_refresh_label: e.target.value }); }}
                                             placeholder="z.B. Auffrischung"
                                         />
                                     </div>
@@ -346,7 +346,7 @@ function QualificationEditDialog({ qualification, open, onOpenChange, onSave }: 
                     )}
 
                     <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                        <Button type="button" variant="outline" onClick={() => { onOpenChange(false); }}>
                             Abbrechen
                         </Button>
                         <Button type="submit">Speichern</Button>
@@ -439,7 +439,7 @@ export default function QualificationManagement() {
                                 {categories.map(cat => (
                                     <div key={cat} className="mb-4">
                                         <button
-                                            onClick={() => toggleCategory(cat)}
+                                            onClick={() => { toggleCategory(cat); }}
                                             className="flex items-center gap-2 w-full text-left text-sm font-semibold text-slate-600 hover:text-slate-900 py-1"
                                         >
                                             {expandedCategories[cat] === false ? (
@@ -496,7 +496,7 @@ export default function QualificationManagement() {
                                                                     variant="ghost" 
                                                                     size="icon" 
                                                                     className="h-7 w-7 text-slate-400 hover:text-indigo-600"
-                                                                    onClick={() => handleEdit(qual)}
+                                                                    onClick={() => { handleEdit(qual); }}
                                                                 >
                                                                     <Pencil className="w-3 h-3" />
                                                                 </Button>
@@ -521,7 +521,7 @@ export default function QualificationManagement() {
                                                                         <AlertDialogFooter>
                                                                             <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                                                                             <AlertDialogAction
-                                                                                onClick={() => deleteQualification(String(qual.id!))}
+                                                                                onClick={() => { deleteQualification(String(qual.id!)); }}
                                                                                 className="bg-red-600 hover:bg-red-700"
                                                                             >
                                                                                 Löschen

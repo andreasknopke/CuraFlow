@@ -10,45 +10,48 @@
 import { useMemo, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { db } from '@/api/client';
+import type {
+  Qualification as QualificationBase,
+  DoctorQualification,
+  WorkplaceQualification,
+} from '@/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface Qualification {
-  id?: string | number;
-  name: string;
-  short_label?: string | null;
-  description?: string | null;
-  color_bg?: string | null;
-  color_text?: string | null;
-  category?: string | null;
-  order?: number | null;
-  requires_certificate?: boolean | null;
+/**
+ * Extended qualification type used locally for extra certificate fields and
+ * index signature compatibility with the flexible DB client API.
+ */
+export interface Qualification extends QualificationBase {
   certificate_requirement_mode?: string | null;
-  certificate_validity_months?: number | null;
   certificate_refresh_validity_months?: number | null;
   certificate_base_label?: string | null;
   certificate_refresh_label?: string | null;
   [key: string]: unknown;
 }
 
-interface DoctorQualification {
-  id?: string | number;
-  doctor_id?: string;
-  qualification_id?: string;
-  [key: string]: unknown;
-}
-
-interface WorkplaceQualification {
-  id?: string | number;
-  workplace_id?: string;
-  qualification_id?: string;
-  [key: string]: unknown;
+/** Shape of a default qualification template (before DB creation adds id/dates). */
+interface QualificationTemplate {
+  name: string;
+  short_label: string;
+  description: string;
+  color_bg: string;
+  color_text: string;
+  category: string;
+  order: number;
+  is_active: boolean;
+  requires_certificate?: boolean;
+  certificate_requirement_mode?: string | null;
+  certificate_validity_months?: number | null;
+  certificate_refresh_validity_months?: number | null;
+  certificate_base_label?: string | null;
+  certificate_refresh_label?: string | null;
 }
 
 // ─── Default Qualifications ──────────────────────────────────────────────────
 
 /** Standard qualifications created on first initialization if DB is empty. */
-export const DEFAULT_QUALIFICATIONS: Qualification[] = [
+export const DEFAULT_QUALIFICATIONS: QualificationTemplate[] = [
   {
     name: 'Facharzt',
     short_label: 'FA',
@@ -57,6 +60,7 @@ export const DEFAULT_QUALIFICATIONS: Qualification[] = [
     color_text: '#166534',
     category: 'Medizinisch',
     order: 0,
+    is_active: true,
   },
   {
     name: 'Vordergrund-berechtigt',
@@ -66,6 +70,7 @@ export const DEFAULT_QUALIFICATIONS: Qualification[] = [
     color_text: '#1e40af',
     category: 'Dienst',
     order: 1,
+    is_active: true,
   },
   {
     name: 'Hintergrund-berechtigt',
@@ -75,6 +80,7 @@ export const DEFAULT_QUALIFICATIONS: Qualification[] = [
     color_text: '#9a3412',
     category: 'Dienst',
     order: 2,
+    is_active: true,
   },
   {
     name: 'Strahlenschutz',
@@ -84,6 +90,7 @@ export const DEFAULT_QUALIFICATIONS: Qualification[] = [
     color_text: '#854d0e',
     category: 'Zertifizierung',
     order: 3,
+    is_active: true,
     requires_certificate: true,
     certificate_requirement_mode: 'base_refresh',
     certificate_validity_months: 60,
@@ -99,21 +106,21 @@ export const DEFAULT_QUALIFICATIONS: Qualification[] = [
 export async function initializeDefaultQualifications(): Promise<Qualification[]> {
   try {
     const existing = await db.Qualification.list();
-    if (existing && (existing as unknown[]).length > 0) {
-      return existing as unknown as Qualification[];
+    if (existing && existing.length > 0) {
+      return existing as Qualification[];
     }
 
     console.log('Initializing default qualifications...');
     const created: Qualification[] = [];
     for (const qual of DEFAULT_QUALIFICATIONS) {
-      const result = await db.Qualification.create(qual as Record<string, unknown>);
-      created.push(result as unknown as Qualification);
+      const result = await db.Qualification.create(qual as unknown as Record<string, unknown>);
+      created.push(result as Qualification);
     }
     console.log('Default qualifications created');
     return created;
   } catch (error) {
     console.error('Failed to initialize qualifications:', error);
-    return DEFAULT_QUALIFICATIONS;
+    return DEFAULT_QUALIFICATIONS as Qualification[];
   }
 }
 
@@ -130,11 +137,11 @@ export function useQualifications() {
   } = useQuery({
     queryKey: ['qualifications'],
     queryFn: async () => {
-      const data = (await db.Qualification.list()) as unknown as Qualification[];
+      const data = await db.Qualification.list();
       if (!data || data.length === 0) {
         return initializeDefaultQualifications();
       }
-      return data.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+      return (data as Qualification[]).sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
     },
   });
 
@@ -159,10 +166,10 @@ export function useQualifications() {
     mutationFn: async (id: string) => {
       // Cascade delete: also remove all DoctorQualification and
       // WorkplaceQualification entries referencing this qualification.
-      const [doctorQuals, workplaceQuals] = (await Promise.all([
+      const [doctorQuals, workplaceQuals] = await Promise.all([
         db.DoctorQualification.filter({ qualification_id: id }),
         db.WorkplaceQualification.filter({ qualification_id: id }),
-      ])) as [DoctorQualification[], WorkplaceQualification[]];
+      ]);
 
       await Promise.all([
         ...doctorQuals.map((dq) => db.DoctorQualification.delete(String(dq.id))),
@@ -231,9 +238,7 @@ export function useDoctorQualifications(doctorId: string | null | undefined) {
   } = useQuery({
     queryKey: ['doctorQualifications', doctorId],
     queryFn: () =>
-      db.DoctorQualification.filter({ doctor_id: doctorId }) as Promise<
-        DoctorQualification[]
-      >,
+      db.DoctorQualification.filter({ doctor_id: doctorId }),
     enabled: !!doctorId,
   });
 
@@ -282,8 +287,7 @@ export function useAllDoctorQualifications() {
     isLoading,
   } = useQuery({
     queryKey: ['allDoctorQualifications'],
-    queryFn: () =>
-      db.DoctorQualification.list() as Promise<DoctorQualification[]>,
+    queryFn: () => db.DoctorQualification.list(),
   });
 
   // Group by doctor_id for fast lookup (memoized – stable reference)
@@ -332,7 +336,7 @@ export function useWorkplaceQualifications(
     queryFn: () =>
       db.WorkplaceQualification.filter({
         workplace_id: workplaceId,
-      }) as Promise<WorkplaceQualification[]>,
+      }),
     enabled: !!workplaceId,
   });
 
@@ -373,12 +377,11 @@ export function useAllWorkplaceQualifications() {
     isLoading,
   } = useQuery({
     queryKey: ['allWorkplaceQualifications'],
-    queryFn: () =>
-      db.WorkplaceQualification.list() as Promise<WorkplaceQualification[]>,
+    queryFn: () => db.WorkplaceQualification.list(),
   });
 
   // Group by workplace_id
-  const byWorkplace = (allWorkplaceQualifications as WorkplaceQualification[]).reduce(
+  const byWorkplace = (allWorkplaceQualifications).reduce(
     (acc, wq) => {
       const key = String(wq.workplace_id ?? '');
       if (!acc[key]) acc[key] = [];

@@ -21,7 +21,7 @@ export default function ChartCard({ title, description, children, defaultHeight 
             if (e.key === 'Escape') setIsFullscreen(false);
         };
         window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
+        return () => { window.removeEventListener('keydown', handleEsc); };
     }, []);
 
     if (isFullscreen) {
@@ -32,7 +32,7 @@ export default function ChartCard({ title, description, children, defaultHeight 
                         <h2 className="text-xl font-bold text-slate-900">{title}</h2>
                         {description && <p className="text-sm text-slate-500">{description}</p>}
                     </div>
-                    <Button variant="outline" size="icon" onClick={() => setIsFullscreen(false)}>
+                    <Button variant="outline" size="icon" onClick={() => { setIsFullscreen(false); }}>
                         <Minimize2 className="h-5 w-5" />
                     </Button>
                 </div>
@@ -56,7 +56,7 @@ export default function ChartCard({ title, description, children, defaultHeight 
                     variant="ghost" 
                     size="icon" 
                     className="text-slate-400 hover:text-slate-900 shrink-0"
-                    onClick={() => setIsFullscreen(true)}
+                    onClick={() => { setIsFullscreen(true); }}
                 >
                     <Maximize2 className="h-4 w-4" />
                 </Button>

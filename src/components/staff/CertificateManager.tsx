@@ -140,7 +140,7 @@ function getExpiryStatus(expiry_date: string | Date | null | undefined): ExpiryS
 }
 
 function getCertificateDisplayExpiry(cert: CertificateItem, summary: any): string | null {
-    return (summary as any)?.certificate_valid_until_by_id?.[cert.id as string] || (cert.expiry_date as string) || null;
+    return (summary)?.certificate_valid_until_by_id?.[cert.id as string] || (cert.expiry_date as string) || null;
 }
 
 function getRoleLabel(role: string, baseLabel: string, refreshLabel: string): string {
@@ -197,7 +197,7 @@ function AnalysisBadge({ cert }: AnalysisBadgeProps) {
 
     const tooltipParts: string[] = [];
     if (cert.analysis_scope_detected) tooltipParts.push(`Erkannt: ${cert.analysis_scope_detected}`);
-    if (typeof cert.analysis_confidence === 'number') tooltipParts.push(`Konfidenz: ${(cert.analysis_confidence as number * 100).toFixed(0)}%`);
+    if (typeof cert.analysis_confidence === 'number') tooltipParts.push(`Konfidenz: ${(cert.analysis_confidence * 100).toFixed(0)}%`);
     if (cert.analysis_reasoning) tooltipParts.push(cert.analysis_reasoning as string);
 
     return (
@@ -325,10 +325,10 @@ export default function CertificateManager({
     });
 
     const normalizedCertificates = useMemo(() => {
-        return (certificates as CertificateItem[]).map((cert) => ({
+        return (certificates as CertificateItem[]).map((cert): CertificateItem => ({
             ...cert,
             evidence_role: normalizeEvidenceRole(cert.evidence_role as string, requirementMode),
-        })) as CertificateItem[];
+        }));
     }, [certificates, requirementMode]);
 
     const sorted = useMemo(() => {
@@ -369,7 +369,7 @@ export default function CertificateManager({
             recertification: [],
         };
         for (const cert of sorted) {
-            const role = normalizeEvidenceRole(cert.evidence_role as string, requirementMode);
+            const role = normalizeEvidenceRole(cert.evidence_role as string | null | undefined, requirementMode);
             if (!buckets[role]) buckets[role] = [];
             buckets[role].push(cert);
         }
@@ -388,8 +388,8 @@ export default function CertificateManager({
                 {
                     id: '__pending__',
                     evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode),
-                    granted_date: grantedDate || (checkResult.analysis?.detected_granted_date as string) || null,
-                    expiry_date: expiryDate || (checkResult.analysis?.detected_expiry_date as string) || null,
+                    granted_date: grantedDate || (checkResult.analysis?.detected_granted_date) || null,
+                    expiry_date: expiryDate || (checkResult.analysis?.detected_expiry_date) || null,
                     uploaded_at: new Date().toISOString(),
                 },
             ],
@@ -434,7 +434,7 @@ export default function CertificateManager({
             const result = await checkCertificate({
                 file,
                 qualification_name: qualificationName as string,
-                qualification_description: qualificationDescription as string | undefined,
+                qualification_description: qualificationDescription,
             });
             if (checkRequestRef.current !== requestId) return;
 
@@ -552,7 +552,7 @@ export default function CertificateManager({
                 doctor_id: doctorId as string,
                 qualification_id: qualificationId as string,
                 doctor_qualification_id: doctorQualificationId as string | undefined,
-                evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode) as string,
+                evidence_role: normalizeEvidenceRole(pendingEvidenceRole, requirementMode),
                 granted_date: grantedDate || undefined,
                 expiry_date: expiryDate || undefined,
                 notes: notes || undefined,
@@ -618,7 +618,7 @@ export default function CertificateManager({
         try {
             await updateCertificate({
                 id: editId,
-                evidence_role: normalizeEvidenceRole(editEvidenceRole, requirementMode) as string,
+                evidence_role: normalizeEvidenceRole(editEvidenceRole, requirementMode),
                 granted_date: editGranted || undefined,
                 expiry_date: editExpiry || undefined,
                 notes: editNotes || undefined,
@@ -646,7 +646,7 @@ export default function CertificateManager({
                         type="button"
                         size="sm"
                         variant={value === option.value ? 'default' : 'outline'}
-                        onClick={() => onChange(option.value)}
+                        onClick={() => { onChange(option.value); }}
                         disabled={disabled}
                         className="h-8"
                     >
@@ -723,7 +723,7 @@ export default function CertificateManager({
                                 variant="ghost"
                                 size="icon"
                                 className="h-7 w-7"
-                                onClick={() => startEdit(cert)}
+                                onClick={() => { startEdit(cert); }}
                                 title="Daten bearbeiten"
                             >
                                 <CalendarClock className="w-3.5 h-3.5" />
@@ -785,7 +785,7 @@ export default function CertificateManager({
                             <Input
                                 type="date"
                                 value={editGranted}
-                                onChange={(e) => setEditGranted(e.target.value)}
+                                onChange={(e) => { setEditGranted(e.target.value); }}
                             />
                         </div>
                         <div className="space-y-1">
@@ -793,14 +793,14 @@ export default function CertificateManager({
                             <Input
                                 type="date"
                                 value={editExpiry}
-                                onChange={(e) => setEditExpiry(e.target.value)}
+                                onChange={(e) => { setEditExpiry(e.target.value); }}
                             />
                         </div>
                         <div className="space-y-1 sm:col-span-2">
                             <Label className="text-xs">Notiz</Label>
                             <Input
                                 value={editNotes}
-                                onChange={(e) => setEditNotes(e.target.value)}
+                                onChange={(e) => { setEditNotes(e.target.value); }}
                                 placeholder="optional"
                                 maxLength={500}
                             />
@@ -958,7 +958,7 @@ export default function CertificateManager({
                                 <Input
                                     type="date"
                                     value={grantedDate}
-                                    onChange={(e) => setGrantedDate(e.target.value)}
+                                    onChange={(e) => { setGrantedDate(e.target.value); }}
                                     disabled={isChecking}
                                 />
                             </div>
@@ -967,7 +967,7 @@ export default function CertificateManager({
                                 <Input
                                     type="date"
                                     value={expiryDate}
-                                    onChange={(e) => setExpiryDate(e.target.value)}
+                                    onChange={(e) => { setExpiryDate(e.target.value); }}
                                     disabled={isChecking}
                                 />
                             </div>
@@ -975,7 +975,7 @@ export default function CertificateManager({
                                 <Label className="text-xs">Notiz (optional)</Label>
                                 <Input
                                     value={notes}
-                                    onChange={(e) => setNotes(e.target.value)}
+                                    onChange={(e) => { setNotes(e.target.value); }}
                                     placeholder="z.B. ausstellende Stelle"
                                     maxLength={500}
                                     disabled={isChecking}

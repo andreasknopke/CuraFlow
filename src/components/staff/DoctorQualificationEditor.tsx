@@ -116,7 +116,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             <button
                                 key={qual.id}
                                 type="button"
-                                onClick={() => toggleHandler!(qual.id as string)}
+                                onClick={() => { toggleHandler!(qual.id as string); }}
                                 aria-pressed={isAssigned}
                                 data-testid={`doctor-qualification-toggle-${qual.id}`}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
@@ -192,7 +192,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             {catQuals.map(qual => {
                                 const isAssigned = assignedQualIds.includes(qual.id);
                                 const requiresCert = qual.requires_certificate === true;
-                                const handleToggle = () => toggleHandler!(qual.id as string);
+                                const handleToggle = () => { toggleHandler!(qual.id as string); };
                                 return (
                                     <button
                                         key={qual.id}

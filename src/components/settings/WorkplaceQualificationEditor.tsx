@@ -36,7 +36,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }: WorkplaceQ
 
     const { data: workplaceQuals = [], isLoading: wqLoading } = useQuery<WorkplaceQualificationEntry[]>({
         queryKey: ['workplaceQualifications', workplaceId],
-        queryFn: () => db.WorkplaceQualification.filter({ workplace_id: workplaceId }),
+        queryFn: () => db.WorkplaceQualification.filter({ workplace_id: workplaceId }) as unknown as WorkplaceQualificationEntry[],
         enabled: !!workplaceId,
     });
 
@@ -152,7 +152,7 @@ export default function WorkplaceQualificationEditor({ workplaceId }: WorkplaceQ
                         >
                             <Checkbox
                                 checked={isAssigned}
-                                onCheckedChange={() => handleToggle(qual.id)}
+                                onCheckedChange={() => { handleToggle(qual.id); }}
                             />
                             <Badge
                                 style={{
@@ -169,11 +169,11 @@ export default function WorkplaceQualificationEditor({ workplaceId }: WorkplaceQ
                                     type="button"
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        cycleMode(wqEntry!);
+                                        cycleMode(wqEntry);
                                     }}
-                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${getModeStyle(wqEntry!)}`}
+                                    className={`text-[10px] px-2 py-0.5 rounded-full transition-colors ${getModeStyle(wqEntry)}`}
                                 >
-                                    {getModeLabel(wqEntry!)}
+                                    {getModeLabel(wqEntry)}
                                 </button>
                             )}
                         </div>

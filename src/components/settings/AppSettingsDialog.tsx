@@ -173,7 +173,7 @@ export default function AppSettingsDialog() {
                             </div>
                             <Switch 
                                 checked={showSchoolHolidays}
-                                onCheckedChange={(checked) => updateSettingMutation.mutate({ key: 'show_school_holidays', value: String(checked) })}
+                                onCheckedChange={(checked) => { updateSettingMutation.mutate({ key: 'show_school_holidays', value: String(checked) }); }}
                             />
                         </div>
 
@@ -188,7 +188,7 @@ export default function AppSettingsDialog() {
                                         <Switch 
                                             id={`type-${type}`}
                                             checked={visibleTypes.includes(type)}
-                                            onCheckedChange={() => toggleVisibleType(type)}
+                                            onCheckedChange={() => { toggleVisibleType(type); }}
                                         />
                                         <Label htmlFor={`type-${type}`} className="text-sm font-normal cursor-pointer">{type}</Label>
                                     </div>
@@ -203,7 +203,7 @@ export default function AppSettingsDialog() {
                             </div>
                             <Select 
                                 value={monthsPerRow} 
-                                onValueChange={(val) => updateSettingMutation.mutate({ key: 'vacation_months_per_row', value: val })}
+                                onValueChange={(val) => { updateSettingMutation.mutate({ key: 'vacation_months_per_row', value: val }); }}
                             >
                                 <SelectTrigger className="w-full">
                                     <SelectValue />
@@ -230,7 +230,7 @@ export default function AppSettingsDialog() {
                                 <div key={idx} className="flex items-center gap-2">
                                     <Select
                                         value={t.qualificationId}
-                                        onValueChange={(val) => updateThreshold(idx, 'qualificationId', val)}
+                                        onValueChange={(val) => { updateThreshold(idx, 'qualificationId', val); }}
                                     >
                                         <SelectTrigger className="h-8 flex-1">
                                             <SelectValue />
@@ -249,14 +249,14 @@ export default function AppSettingsDialog() {
                                         type="number" 
                                         min="0"
                                         value={t.min}
-                                        onChange={(e) => updateThreshold(idx, 'min', parseInt(e.target.value) || 0)}
+                                        onChange={(e) => { updateThreshold(idx, 'min', parseInt(e.target.value) || 0); }}
                                         className="h-8 w-20 text-center"
                                     />
                                     <Button 
                                         variant="ghost" 
                                         size="icon" 
                                         className="h-8 w-8 shrink-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                        onClick={() => removeThreshold(idx)}
+                                        onClick={() => { removeThreshold(idx); }}
                                         title="Entfernen"
                                     >
                                         <Trash2 className="h-4 w-4" />
@@ -314,7 +314,7 @@ export default function AppSettingsDialog() {
                                             </div>
                                             <Switch 
                                                 checked={absenceRules[type]} 
-                                                onCheckedChange={() => toggleAbsenceRule(type)}
+                                                onCheckedChange={() => { toggleAbsenceRule(type); }}
                                             />
                                         </div>
                                     </div>
@@ -325,7 +325,7 @@ export default function AppSettingsDialog() {
                 </Tabs>
 
                 <DialogFooter>
-                    <Button variant="ghost" onClick={() => setIsOpen(false)}>Schließen</Button>
+                    <Button variant="ghost" onClick={() => { setIsOpen(false); }}>Schließen</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

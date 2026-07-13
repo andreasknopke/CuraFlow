@@ -50,7 +50,7 @@ export default function SharedWorkplaceQualificationsDialog({
 
     const currentQuery = useQuery<QualificationsResponse>({
         queryKey: ['admin', 'shared-workplace-qualifications', groupId, workplace?.id],
-        queryFn: () => api.getWorkplaceQualifications(String(groupId!), workplace!.id!) as Promise<QualificationsResponse>,
+        queryFn: () => api.getWorkplaceQualifications(String(groupId!), workplace!.id) as Promise<QualificationsResponse>,
         enabled,
         staleTime: 30_000,
     });
@@ -82,7 +82,7 @@ export default function SharedWorkplaceQualificationsDialog({
         mutationFn: () =>
             api.replaceWorkplaceQualifications(
                 String(groupId!),
-                String(workplace!.id!),
+                String(workplace!.id),
                 required.map((name: string) => ({ qualification_name: name, is_excluded: false }))
             ),
         onSuccess: () => {
@@ -142,7 +142,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                                 <button
                                                     type="button"
                                                     className="rounded-full p-0.5 hover:bg-slate-300/60"
-                                                    onClick={() => removeQualification(name)}
+                                                    onClick={() => { removeQualification(name); }}
                                                     aria-label={`${name} entfernen`}
                                                 >
                                                     <X className="h-3 w-3" />
@@ -158,7 +158,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                 <div className="flex gap-2">
                                     <Input
                                         value={draft}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDraft(e.target.value)}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setDraft(e.target.value); }}
                                         placeholder="Qualifikationsname"
                                         onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
                                             if (e.key === 'Enter') {
@@ -167,7 +167,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                             }
                                         }}
                                     />
-                                    <Button type="button" variant="outline" onClick={() => addQualification(draft)}>
+                                    <Button type="button" variant="outline" onClick={() => { addQualification(draft); }}>
                                         <Plus className="mr-1 h-3.5 w-3.5" /> Hinzufügen
                                     </Button>
                                 </div>
@@ -183,7 +183,7 @@ export default function SharedWorkplaceQualificationsDialog({
                                                 <button
                                                     key={name}
                                                     type="button"
-                                                    onClick={() => addQualification(name)}
+                                                    onClick={() => { addQualification(name); }}
                                                     className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs hover:bg-slate-50"
                                                 >
                                                     {name}
@@ -198,10 +198,10 @@ export default function SharedWorkplaceQualificationsDialog({
                 </div>
 
                 <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 gap-2 sm:gap-0">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => { onOpenChange(false); }}>
                         Abbrechen
                     </Button>
-                    <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+                    <Button onClick={() => { saveMutation.mutate(); }} disabled={saveMutation.isPending}>
                         {saveMutation.isPending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
                         Speichern
                     </Button>

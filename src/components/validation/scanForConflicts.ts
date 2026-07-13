@@ -1,6 +1,6 @@
 import type { ShiftValidator } from './ShiftValidation';
 import { RULES } from './rules';
-import type { RuleViolation, RuleContext } from './rules';
+import type { RuleContext } from './rules';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 

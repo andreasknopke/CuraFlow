@@ -28,7 +28,7 @@ import {
   ChevronLeft,
   Palette,
 } from 'lucide-react';
-import { api, db, base44 } from '@/api/client';
+import { api, db } from '@/api/client';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import AccountMenu from '@/components/auth/AccountMenu';
@@ -145,7 +145,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         setIsSidebarOpen(false);
       }, 3000);
     }
-    return () => clearTimeout(timeout);
+    return () => { clearTimeout(timeout); };
   }, [isSidebarOpen, isSidebarHovered, location.pathname]);
 
   // ── Auth redirect ────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
+          onClick={() => { setIsSidebarOpen(false); }}
         />
       )}
 
@@ -222,8 +222,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         className={`fixed left-0 top-0 z-40 h-screen w-64 border-r border-slate-200 bg-white shadow-sm transition-transform duration-300 ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        onMouseEnter={() => setIsSidebarHovered(true)}
-        onMouseLeave={() => setIsSidebarHovered(false)}
+        onMouseEnter={() => { setIsSidebarHovered(true); }}
+        onMouseLeave={() => { setIsSidebarHovered(false); }}
       >
         <div className="flex h-16 items-center justify-between border-b border-slate-100 px-4">
           <Link
@@ -240,7 +240,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
           <button
-            onClick={() => setIsSidebarOpen(false)}
+            onClick={() => { setIsSidebarOpen(false); }}
             className="text-slate-400 hover:text-slate-600"
           >
             <ChevronLeft className="h-5 w-5" />
@@ -352,7 +352,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
               </button>
 
               <button
-                onClick={() => setIsThemeOpen(true)}
+                onClick={() => { setIsThemeOpen(true); }}
                 className="flex w-full items-center rounded-lg px-3 py-2 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600 group transition-colors text-left"
               >
                 <Palette className="h-5 w-5 mr-3 text-slate-500 group-hover:text-indigo-600" />
@@ -412,7 +412,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           {!isSidebarOpen && (
             <button
               data-testid="sidebar-open-button"
-              onClick={() => setIsSidebarOpen(true)}
+              onClick={() => { setIsSidebarOpen(true); }}
               className="mr-4 p-2 rounded-md text-slate-500 hover:bg-slate-100"
             >
               <Menu className="h-6 w-6" />
@@ -439,7 +439,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       {mustChangePassword && (
         <ForcePasswordChangeDialog
           isOpen={mustChangePassword}
-          onPasswordChanged={() => setMustChangePassword(false)}
+          onPasswordChanged={() => { setMustChangePassword(false); }}
         />
       )}
       <ThemeSelector open={isThemeOpen} onOpenChange={setIsThemeOpen} />
@@ -448,7 +448,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         open={isTicketDialogOpen}
         onOpenChange={setIsTicketDialogOpen}
         initialType={ticketDialogType as any}
-        initialError={ticketDialogError as any}
+        initialError={ticketDialogError}
       />
     </div>
   );

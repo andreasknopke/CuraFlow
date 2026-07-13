@@ -5,7 +5,7 @@ import { getAutoFreiDate } from '@/utils/autoFrei';
 import { categoryAllowsMultiple, getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { computeVacationBalance } from '@/components/vacation/vacationBalance';
 import { RULES } from './rules';
-import type { RuleContext, RuleViolation } from './rules';
+import type { RuleContext } from './rules';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -458,7 +458,7 @@ export class ShiftValidator {
             }
 
             // Überlappung prüfen
-            if (timeslotsOverlap(newEffectiveSlot as any, existingEffectiveSlot as any, tolerance)) {
+            if (timeslotsOverlap(newEffectiveSlot, existingEffectiveSlot, tolerance)) {
                 const existingLabel = existingTimeslot?.label || existingShift.position;
                 const newLabel = newTimeslot?.label || newPosition;
                 return { 

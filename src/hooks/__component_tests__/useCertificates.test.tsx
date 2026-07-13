@@ -62,7 +62,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(api.listCertificates).toHaveBeenCalledWith({
       doctor_id: undefined,
@@ -78,7 +78,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(api.listCertificates).toHaveBeenCalledWith({
       doctor_id: '42',
@@ -93,7 +93,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(api.listCertificates).toHaveBeenCalledWith({
       doctor_id: undefined,
@@ -120,7 +120,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
     expect((result.current.certificates as any[])).toHaveLength(1);
     expect((result.current.certificates as any[])[0].analysis_status).toBe('pending');
   });
@@ -134,7 +134,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
     expect((result.current.certificates as any[])).toHaveLength(1);
     expect((result.current.certificates as any[])[0].analysis_status).toBe('completed');
   });
@@ -146,7 +146,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
     expect(result.current.certificates).toEqual([]);
   });
 
@@ -158,7 +158,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     await result.current.uploadCertificate({ file: new File([], 'test.pdf') } as any);
     expect(api.uploadCertificate).toHaveBeenCalledWith({ file: expect.any(File) });
@@ -172,7 +172,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     await result.current.deleteCertificate('5');
     expect(api.deleteCertificate).toHaveBeenCalledWith('5');
@@ -186,9 +186,9 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
-    await result.current.checkCertificate({ file: new File([], 'test.pdf'), qualification_name: 'CT' } as any);
+    await result.current.checkCertificate({ file: new File([], 'test.pdf'), qualification_name: 'CT' });
     expect(api.checkCertificate).toHaveBeenCalledWith({ file: expect.any(File), qualification_name: 'CT' });
   });
 
@@ -200,7 +200,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     await result.current.updateCertificate({ id: '2', name: 'Updated' } as any);
     // The mutation destructures `id` from the payload, passing only `rest` as the second arg
@@ -215,9 +215,9 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
-    await result.current.reanalyzeCertificate({ id: '4', qualification_name: 'CT', qualification_description: 'CT-Befund' } as any);
+    await result.current.reanalyzeCertificate({ id: '4', qualification_name: 'CT', qualification_description: 'CT-Befund' });
     expect(api.reanalyzeCertificate).toHaveBeenCalledWith('4', { qualification_name: 'CT', qualification_description: 'CT-Befund' });
   });
 
@@ -228,7 +228,7 @@ describe('useCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(result.current.isChecking).toBe(false);
     expect(result.current.isUploading).toBe(false);
@@ -250,7 +250,7 @@ describe('useExpiringCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(api.listExpiringCertificates).toHaveBeenCalledWith(60);
     expect(result.current.expiring).toEqual([{ id: 1, name: 'Expiring' }]);
@@ -263,7 +263,7 @@ describe('useExpiringCertificates', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(api.listExpiringCertificates).toHaveBeenCalledWith(30);
   });

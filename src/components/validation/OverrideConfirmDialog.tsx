@@ -174,7 +174,7 @@ export default function OverrideConfirmDialog({
                                     id="override-reason"
                                     placeholder="Warum wird dieser Konflikt überschrieben? (optional)"
                                     value={reason}
-                                    onChange={(e) => setReason(e.target.value)}
+                                    onChange={(e) => { setReason(e.target.value); }}
                                     className="resize-none"
                                     rows={2}
                                 />

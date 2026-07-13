@@ -194,7 +194,7 @@ export async function openCertificateInNewTab(certificateId: string): Promise<vo
   const url = URL.createObjectURL(blob);
   const win = window.open(url, '_blank');
   // Revoke after a short delay so the new tab can load the content.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  setTimeout(() => { URL.revokeObjectURL(url); }, 60_000);
   if (!win) {
     // Pop-up blocked: trigger as download link instead.
     const a = document.createElement('a');

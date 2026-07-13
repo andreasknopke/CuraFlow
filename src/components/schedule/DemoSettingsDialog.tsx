@@ -60,7 +60,7 @@ const DemoRow = ({ rowName, setting, onTimeChange, onDayToggle }: DemoRowProps) 
                     <Input 
                         id={`time-${rowName}`}
                         value={time} 
-                        onChange={(e) => setTime(e.target.value)}
+                        onChange={(e) => { setTime(e.target.value); }}
                         onBlur={handleBlur}
                         placeholder="z.B. 13:00"
                         className="h-8 w-24 bg-white"
@@ -76,7 +76,7 @@ const DemoRow = ({ rowName, setting, onTimeChange, onDayToggle }: DemoRowProps) 
                             type="button"
                             variant={isActive ? "default" : "outline"}
                             size="sm"
-                            onClick={() => onDayToggle(rowName, day.id)}
+                            onClick={() => { onDayToggle(rowName, day.id); }}
                             className={`w-10 h-10 p-0 rounded-full ${isActive ? 'bg-indigo-600 hover:bg-indigo-700' : 'text-slate-400'}`}
                         >
                             {day.label}
@@ -92,16 +92,16 @@ export default function DemoSettingsDialog() {
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
 
-  const { data: settings = [], isLoading } = useQuery({
+  const { data: settings = [], isLoading } = useQuery<DemoSetting[]>({
     queryKey: ['demoSettings'],
-    queryFn: () => base44.entities.DemoSetting.list(),
+    queryFn: () => base44.entities.DemoSetting.list() as Promise<DemoSetting[]>,
   });
   
   const createOrUpdate = useMutation({
       mutationFn: async ({ name, active_days, time }: { name: string; active_days: number[]; time: string }) => {
           const existing = settings.find((s: DemoSetting) => s.name === name);
           if (existing) {
-              return base44.entities.DemoSetting.update(existing.id, { active_days, time });
+              return base44.entities.DemoSetting.update(existing.id!, { active_days, time });
           } else {
               return base44.entities.DemoSetting.create({ name, active_days, time });
           }
@@ -109,7 +109,7 @@ export default function DemoSettingsDialog() {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: ['demoSettings'] } as any)
   });
 
-  const getSetting = (name: string): DemoSetting => settings.find((s: DemoSetting) => s.name === name) || { active_days: [1, 2, 3, 4, 5], time: "" };
+  const getSetting = (name: string): DemoSetting => settings.find((s: DemoSetting) => s.name === name) || { name, active_days: [1, 2, 3, 4, 5], time: "" };
 
   const handleDayToggle = (name: string, dayId: number) => {
       const current = getSetting(name);

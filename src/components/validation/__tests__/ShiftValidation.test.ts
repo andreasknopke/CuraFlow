@@ -139,7 +139,7 @@ describe('ShiftValidator vacation overshoot', () => {
   // Build N consecutive past weekdays in 2026 (Mon–Fri only).
   function buildPastWeekdays(start: any, count: any) {
     const dates: string[] = [];
-    let cursor = new Date(start);
+    const cursor = new Date(start);
     while (dates.length < count) {
       const day = cursor.getDay();
       if (day !== 0 && day !== 6) {

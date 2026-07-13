@@ -27,7 +27,7 @@ export default function AIRulesDialog() {
   const createRuleMutation = useMutation({
     mutationFn: (data: { content: string; is_active: boolean }) => base44.entities.ScheduleRule.create(data),
     onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any);
+        queryClient.invalidateQueries({ queryKey: ['scheduleRules'] });
         setNewRule("");
     },
   });
@@ -73,7 +73,7 @@ export default function AIRulesDialog() {
             <Input 
                 placeholder="Neue Regel hinzufügen (z.B. 'Maximal 2 Spätdienste pro Woche')" 
                 value={newRule}
-                onChange={(e) => setNewRule(e.target.value)}
+                onChange={(e) => { setNewRule(e.target.value); }}
                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 className="flex-1"
             />
@@ -96,10 +96,10 @@ export default function AIRulesDialog() {
                             <div className="flex items-start gap-3 flex-1 mr-4">
                                 <Switch 
                                     checked={rule.is_active}
-                                    onCheckedChange={(checked) => updateRuleMutation.mutate({
+                                    onCheckedChange={(checked) => { updateRuleMutation.mutate({
                                         id: rule.id,
                                         data: { is_active: checked }
-                                    })}
+                                    }); }}
                                     className="mt-1"
                                 />
                                 <span className={`text-sm ${!rule.is_active ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
@@ -110,7 +110,7 @@ export default function AIRulesDialog() {
                                 variant="ghost" 
                                 size="icon" 
                                 className="h-8 w-8 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => deleteRuleMutation.mutate(rule.id)}
+                                onClick={() => { deleteRuleMutation.mutate(rule.id); }}
                             >
                                 <Trash2 className="w-4 h-4" />
                             </Button>

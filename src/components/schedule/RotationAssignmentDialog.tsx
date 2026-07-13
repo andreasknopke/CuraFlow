@@ -115,7 +115,7 @@ export default function RotationAssignmentDialog({
                 note: note.trim() || null,
             };
             if (isEdit) {
-                return api.updateRotationAssignment(groupId as string, assignment!.id, payload);
+                return api.updateRotationAssignment(groupId as string, assignment.id, payload);
             }
             return api.createRotationAssignment(groupId as string, payload);
         },
@@ -200,7 +200,7 @@ export default function RotationAssignmentDialog({
                         <Textarea
                             id="rotation-assignment-note"
                             value={note}
-                            onChange={(e) => setNote(e.target.value)}
+                            onChange={(e) => { setNote(e.target.value); }}
                             placeholder="z. B. „Eingeteilt für Gyn2, Spätschicht“"
                             rows={2}
                         />
@@ -220,18 +220,18 @@ export default function RotationAssignmentDialog({
                             type="button"
                             variant="outline"
                             className="text-rose-700 border-rose-200 hover:bg-rose-50 mr-auto"
-                            onClick={() => deleteMutation.mutate()}
+                            onClick={() => { deleteMutation.mutate(); }}
                             disabled={deleteMutation.isPending}
                         >
                             <Trash2 className="w-4 h-4 mr-1.5" />
                             {deleteMutation.isPending ? 'Lösche …' : 'Löschen'}
                         </Button>
                     )}
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => { onOpenChange(false); }}>
                         Abbrechen
                     </Button>
                     <Button
-                        onClick={() => saveMutation.mutate()}
+                        onClick={() => { saveMutation.mutate(); }}
                         disabled={!canSubmit}
                     >
                         {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}

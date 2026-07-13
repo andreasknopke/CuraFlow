@@ -112,7 +112,7 @@ export default function WishYearView({ doctor, year, wishes, shifts, contractInf
     };
 
     window.addEventListener('mouseup', handleWindowMouseUp);
-    return () => window.removeEventListener('mouseup', handleWindowMouseUp);
+    return () => { window.removeEventListener('mouseup', handleWindowMouseUp); };
   });
 
   const handleDayMouseDown = (date: Date, event: MouseEvent) => {
@@ -219,7 +219,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           const isSchoolHoliday = checkSchoolHoliday ? checkSchoolHoliday(date) : false;
           
           let colorClass = "";
-          let content = format(date, 'd');
+          const content = format(date, 'd');
           let title = isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '';
           let style: React.CSSProperties = {};
 
@@ -327,7 +327,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
               onMouseDown={(e) => !isBeforeDeadline && !isContractDisabled && onDayMouseDown?.(date, e)}
               onMouseEnter={() => !isBeforeDeadline && !isContractDisabled && onDayMouseEnter?.(date)}
               onMouseUp={() => onDayMouseUp?.()}
-              onDragStart={(e) => e.preventDefault()}
+              onDragStart={(e) => { e.preventDefault(); }}
               className={cn(
                 "aspect-square flex items-center justify-center rounded-sm transition-colors text-xs sm:text-sm select-none relative",
                 colorClass,

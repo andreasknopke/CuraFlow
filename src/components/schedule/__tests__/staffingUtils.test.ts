@@ -18,12 +18,12 @@ describe('isDoctorAvailable', () => {
   });
 
   it('returns false when date is strictly after contract_end_date', () => {
-    const doctor = { ...baseDoctor, contract_end_date: '2024-03-10' } as any;
+    const doctor = { ...baseDoctor, contract_end_date: '2024-03-10' };
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(false);
   });
 
   it('returns true on the contract_end_date itself', () => {
-    const doctor = { ...baseDoctor, contract_end_date: '2024-03-11' } as any;
+    const doctor = { ...baseDoctor, contract_end_date: '2024-03-11' };
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(true);
   });
 

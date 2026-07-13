@@ -324,7 +324,7 @@ export default function MasterCentralEmployeeDetail() {
         <AlertCircle className="w-12 h-12 mx-auto mb-4 text-slate-300" />
         <h2 className="text-lg font-semibold text-slate-700">Mitarbeiter nicht gefunden</h2>
         <p className="text-sm text-slate-500 mt-1">Die angeforderten Daten konnten nicht geladen werden.</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate('/mitarbeiter')}>
+        <Button variant="outline" className="mt-4" onClick={() => { navigate('/mitarbeiter'); }}>
           <ArrowLeft className="w-4 h-4 mr-2" /> Zurück zur Übersicht
         </Button>
       </div>
@@ -338,7 +338,7 @@ export default function MasterCentralEmployeeDetail() {
   return (
     <div className="space-y-6">
       {/* Navigation zurück */}
-      <Button variant="ghost" size="sm" onClick={() => navigate('/mitarbeiter')}>
+      <Button variant="ghost" size="sm" onClick={() => { navigate('/mitarbeiter'); }}>
         <ArrowLeft className="w-4 h-4 mr-2" /> Mitarbeiterübersicht
       </Button>
 
@@ -394,7 +394,7 @@ export default function MasterCentralEmployeeDetail() {
               </Button>
             </>
           ) : (
-            <Button variant="outline" size="sm" onClick={() => setEditMode(true)}>
+            <Button variant="outline" size="sm" onClick={() => { setEditMode(true); }}>
               <Pencil className="w-4 h-4 mr-2" /> Bearbeiten
             </Button>
           )}
@@ -437,37 +437,37 @@ export default function MasterCentralEmployeeDetail() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Nachname *" icon={User} value={form.last_name} editMode={editMode}
-                  onChange={(v) => updateField('last_name', v)} />
+                  onChange={(v) => { updateField('last_name', v); }} />
                 <FieldRow label="Vorname" icon={User} value={form.first_name} editMode={editMode}
-                  onChange={(v) => updateField('first_name', v)} />
+                  onChange={(v) => { updateField('first_name', v); }} />
                 <FieldRow label="Geburtsname" icon={User} value={form.former_name} editMode={editMode}
-                  onChange={(v) => updateField('former_name', v)} />
+                  onChange={(v) => { updateField('former_name', v); }} />
               </div>
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Titel" icon={Award} value={form.title} editMode={editMode}
-                  onChange={(v) => updateField('title', v)} />
+                  onChange={(v) => { updateField('title', v); }} />
                 <FieldRow label="Personalnummer" icon={Hash} value={form.payroll_id} editMode={editMode}
-                  onChange={(v) => updateField('payroll_id', v)} />
+                  onChange={(v) => { updateField('payroll_id', v); }} />
                 <FieldRow label="Geburtsdatum" icon={CalendarDays} value={form.date_of_birth} editMode={editMode}
-                  type="date" onChange={(v) => updateField('date_of_birth', v)} />
+                  type="date" onChange={(v) => { updateField('date_of_birth', v); }} />
               </div>
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FieldRow label="E-Mail" icon={Mail} value={form.email} editMode={editMode}
-                  type="email" onChange={(v) => updateField('email', v)} />
+                  type="email" onChange={(v) => { updateField('email', v); }} />
                 <FieldRow label="Telefon" icon={Phone} value={form.phone} editMode={editMode}
-                  onChange={(v) => updateField('phone', v)} />
+                  onChange={(v) => { updateField('phone', v); }} />
               </div>
               <div>
                 <FieldRow label="Adresse" icon={MapPin} value={form.address} editMode={editMode}
-                  onChange={(v) => updateField('address', v)} />
+                  onChange={(v) => { updateField('address', v); }} />
               </div>
               {editMode && (
                 <>
                   <Separator />
                   <div className="flex items-center gap-3">
-                    <Switch checked={form.is_active} onCheckedChange={(v) => updateField('is_active', v)} />
+                    <Switch checked={form.is_active} onCheckedChange={(v) => { updateField('is_active', v); }} />
                     <Label>Mitarbeiter aktiv</Label>
                   </div>
                 </>
@@ -488,7 +488,7 @@ export default function MasterCentralEmployeeDetail() {
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">Vertragsart</Label>
                   {editMode ? (
-                    <Select value={form.contract_type} onValueChange={(v) => updateField('contract_type', v)}>
+                    <Select value={form.contract_type} onValueChange={(v) => { updateField('contract_type', v); }}>
                       <SelectTrigger><SelectValue placeholder="Wählen…" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="unbefristet">Unbefristet</SelectItem>
@@ -506,7 +506,7 @@ export default function MasterCentralEmployeeDetail() {
                 <div>
                   <Label className="text-xs text-slate-500 mb-1 block">Arbeitszeitmodell</Label>
                   {editMode ? (
-                    <Select value={form.work_time_model_id || '__none__'} onValueChange={(v) => updateField('work_time_model_id', v === '__none__' ? '' : v)}>
+                    <Select value={form.work_time_model_id || '__none__'} onValueChange={(v) => { updateField('work_time_model_id', v === '__none__' ? '' : v); }}>
                       <SelectTrigger><SelectValue placeholder="Modell wählen…" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="__none__">Kein Modell</SelectItem>
@@ -525,34 +525,34 @@ export default function MasterCentralEmployeeDetail() {
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Funktion (Beschäftigt als)" icon={Briefcase} value={form.position}
-                  editMode={editMode} onChange={(v) => updateField('position', v)} />
+                  editMode={editMode} onChange={(v) => { updateField('position', v); }} />
               </div>
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <FieldRow label="Vertragsbeginn" icon={CalendarDays} value={form.contract_start}
-                  editMode={editMode} type="date" onChange={(v) => updateField('contract_start', v)} />
+                  editMode={editMode} type="date" onChange={(v) => { updateField('contract_start', v); }} />
                 <FieldRow label="Vertragsende" icon={CalendarDays} value={form.contract_end}
-                  editMode={editMode} type="date" onChange={(v) => updateField('contract_end', v)} />
+                  editMode={editMode} type="date" onChange={(v) => { updateField('contract_end', v); }} />
                 <FieldRow label="Probezeit bis" icon={CalendarDays} value={form.probation_end}
-                  editMode={editMode} type="date" onChange={(v) => updateField('probation_end', v)} />
+                  editMode={editMode} type="date" onChange={(v) => { updateField('probation_end', v); }} />
               </div>
               <Separator />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FieldRow label="Wochenstunden (Soll)" icon={Clock}
                   value={form.target_hours_per_week} editMode={editMode} type="number"
-                  onChange={(v) => updateField('target_hours_per_week', v)} />
+                  onChange={(v) => { updateField('target_hours_per_week', v); }} />
                 <FieldRow label="Urlaubstage / Jahr" icon={CalendarDays}
                   value={form.vacation_days_annual} editMode={editMode} type="number"
-                  onChange={(v) => updateField('vacation_days_annual', v)} />
+                  onChange={(v) => { updateField('vacation_days_annual', v); }} />
               </div>
               {(form.exit_date || editMode) && (
                 <>
                   <Separator />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FieldRow label="Austrittsdatum" icon={CalendarDays} value={form.exit_date}
-                      editMode={editMode} type="date" onChange={(v) => updateField('exit_date', v)} />
+                      editMode={editMode} type="date" onChange={(v) => { updateField('exit_date', v); }} />
                     <FieldRow label="Austrittsgrund" icon={FileText} value={form.exit_reason}
-                      editMode={editMode} onChange={(v) => updateField('exit_reason', v)} />
+                      editMode={editMode} onChange={(v) => { updateField('exit_reason', v); }} />
                   </div>
                 </>
               )}
@@ -561,7 +561,7 @@ export default function MasterCentralEmployeeDetail() {
                   <Separator />
                   <div>
                     <Label className="text-xs text-slate-500 mb-1 block">Notizen</Label>
-                    <Textarea value={form.notes} onChange={(e) => updateField('notes', e.target.value)}
+                    <Textarea value={form.notes} onChange={(e) => { updateField('notes', e.target.value); }}
                       placeholder="Interne Notizen…" rows={3} />
                   </div>
                 </>
@@ -814,7 +814,7 @@ export default function MasterCentralEmployeeDetail() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => syncTimeAccountsMutation.mutate()}
+                  onClick={() => { syncTimeAccountsMutation.mutate(); }}
                   disabled={!hasLinkedAssignments || syncTimeAccountsMutation.isPending}
                 >
                   {syncTimeAccountsMutation.isPending ? (
@@ -955,7 +955,7 @@ function CertificatesTab({ employeeId }: { employeeId: string | undefined }) {
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank', 'noopener,noreferrer');
     // Object URLs stay alive until the tab closes; revoke later to free memory.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setTimeout(() => { URL.revokeObjectURL(url); }, 60_000);
   };
 
   const formatSize = (bytes: number | null | undefined): string => {
@@ -1219,7 +1219,7 @@ function RelationshipsTab({ employeeId }: { employeeId: string | undefined }) {
                 Lebensgemeinschaften und andere Beziehungen zwischen Mitarbeitern. Ein Dienstkonflikt verhindert gleichzeitige Dienste.
               </CardDescription>
             </div>
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
+            <Button size="sm" onClick={() => { setDialogOpen(true); }}>
               <UserPlus className="w-4 h-4 mr-2" />
               Beziehung hinzufügen
             </Button>
@@ -1275,7 +1275,7 @@ function RelationshipsTab({ employeeId }: { employeeId: string | undefined }) {
                         size="sm"
                         className="text-red-500 hover:text-red-700 hover:bg-red-50"
                         disabled={deleteMutation.isPending}
-                        onClick={() => handleDelete(rel)}
+                        onClick={() => { handleDelete(rel); }}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -1315,7 +1315,7 @@ function RelationshipsTab({ employeeId }: { employeeId: string | undefined }) {
               <Label className="text-sm font-medium">Beziehungstyp</Label>
               <Input
                 value={relationshipType}
-                onChange={(e) => setRelationshipType(e.target.value)}
+                onChange={(e) => { setRelationshipType(e.target.value); }}
                 placeholder="z.B. lebensgemeinschaft"
               />
             </div>
@@ -1358,7 +1358,7 @@ function FieldRow({ label, icon: Icon, value, editMode, type = 'text', onChange 
       ) : (
         <p className="text-sm text-slate-800 py-1.5">
           {type === 'date' && value
-            ? new Date(value as string).toLocaleDateString('de-DE')
+            ? new Date(value).toLocaleDateString('de-DE')
             : value || '–'}
         </p>
       )}

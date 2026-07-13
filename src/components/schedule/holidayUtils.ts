@@ -172,7 +172,7 @@ export class HolidayCalculator {
             const startDate = parseISO(h.start_date + 'T00:00:00');
             const endDate = h.end_date ? parseISO(h.end_date + 'T00:00:00') : startDate;
             
-            let currentDate = new Date(startDate);
+            const currentDate = new Date(startDate);
             while (currentDate <= endDate) {
                 const y = currentDate.getFullYear();
                 const m = currentDate.getMonth() + 1;

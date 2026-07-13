@@ -61,7 +61,7 @@ export default function MasterEmployeeDetail() {
         <AlertCircle className="w-12 h-12 mx-auto mb-4 text-slate-300" />
         <h2 className="text-lg font-semibold text-slate-700">Mitarbeiter nicht gefunden</h2>
         <p className="text-sm text-slate-500 mt-1">Die angeforderten Daten konnten nicht geladen werden.</p>
-        <Button variant="outline" className="mt-4" onClick={() => navigate('/mitarbeiter')}>
+        <Button variant="outline" className="mt-4" onClick={() => { navigate('/mitarbeiter'); }}>
           <ArrowLeft className="w-4 h-4 mr-2" /> Zurück zur Übersicht
         </Button>
       </div>
@@ -71,7 +71,7 @@ export default function MasterEmployeeDetail() {
   return (
     <div className="space-y-6">
       {/* Navigation zurück */}
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+      <Button variant="ghost" size="sm" onClick={() => { navigate(-1); }}>
         <ArrowLeft className="w-4 h-4 mr-2" /> Mitarbeiterübersicht
       </Button>
 
@@ -106,7 +106,7 @@ export default function MasterEmployeeDetail() {
           <Button
             variant={editMode ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setEditMode(!editMode)}
+            onClick={() => { setEditMode(!editMode); }}
           >
             <Pencil className="w-4 h-4 mr-2" />
             {editMode ? 'Bearbeitung aktiv' : 'Bearbeiten'}
@@ -359,7 +359,7 @@ export default function MasterEmployeeDetail() {
             <MiniCard
               icon={employee.overtime_balance! > 0 ? TrendingUp : employee.overtime_balance! < 0 ? TrendingDown : Minus}
               label="Überstunden-Saldo"
-              value={employee.overtime_balance != null ? `${employee.overtime_balance! > 0 ? '+' : ''}${employee.overtime_balance}` : '–'}
+              value={employee.overtime_balance != null ? `${employee.overtime_balance > 0 ? '+' : ''}${employee.overtime_balance}` : '–'}
               suffix="h"
               color={employee.overtime_balance! > 0 ? 'emerald' : employee.overtime_balance! < 0 ? 'red' : 'slate'}
             />
@@ -502,7 +502,7 @@ function CertificatesTab({ tenantId, employeeId }: { tenantId: string; employeeI
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank', 'noopener,noreferrer');
     // Object URLs stay alive until the tab closes; revoke later to free memory.
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setTimeout(() => { URL.revokeObjectURL(url); }, 60_000);
   };
 
   const formatSize = (bytes: number | null | undefined): string => {

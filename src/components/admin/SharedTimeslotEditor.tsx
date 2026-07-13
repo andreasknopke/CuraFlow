@@ -193,7 +193,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Label className="text-xs">Bezeichnung</Label>
                                                                 <Input
                                                                     value={editForm.label}
-                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, label: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setEditForm((current: EditForm) => ({ ...current, label: event.target.value })); }}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -202,7 +202,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.start_time}
-                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, start_time: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setEditForm((current: EditForm) => ({ ...current, start_time: event.target.value })); }}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -211,7 +211,7 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.end_time}
-                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, end_time: event.target.value }))}
+                                                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setEditForm((current: EditForm) => ({ ...current, end_time: event.target.value })); }}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -230,13 +230,13 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                                 min={0}
                                                                 max={60}
                                                                 value={editForm.overlap_tolerance_minutes}
-                                                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setEditForm((current: EditForm) => ({ ...current, overlap_tolerance_minutes: Number.parseInt(event.target.value, 10) || 0 }))}
+                                                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setEditForm((current: EditForm) => ({ ...current, overlap_tolerance_minutes: Number.parseInt(event.target.value, 10) || 0 })); }}
                                                                 className="h-8 w-24"
                                                             />
                                                         </div>
 
                                                         <div className="flex justify-end gap-2">
-                                                            <Button type="button" variant="ghost" size="sm" onClick={() => setEditingId(null)}>Abbrechen</Button>
+                                                            <Button type="button" variant="ghost" size="sm" onClick={() => { setEditingId(null); }}>Abbrechen</Button>
                                                             <Button type="button" size="sm" onClick={handleSaveEdit}>Speichern</Button>
                                                         </div>
                                                     </div>
@@ -254,10 +254,10 @@ export default function SharedTimeslotEditor({ groupId, workplaceId, defaultTole
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                                                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => startEdit(slot)}>
+                                                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => { startEdit(slot); }}>
                                                                 <Clock className="h-3 w-3" />
                                                             </Button>
-                                                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => handleDelete(slot.id)}>
+                                                            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { handleDelete(slot.id); }}>
                                                                 <Trash2 className="h-3 w-3" />
                                                             </Button>
                                                         </div>

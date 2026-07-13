@@ -90,7 +90,7 @@ export default function MasterHolidays() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['masterCustomHolidays'] });
       queryClient.invalidateQueries({ queryKey: ['masterHolidayPreview'] });
-      setNewHoliday({ name: '', start_date: '', end_date: '', type: 'public', action: 'add' } as Record<string, string>);
+      setNewHoliday({ name: '', start_date: '', end_date: '', type: 'public', action: 'add' });
       toast({ title: 'Korrektur gespeichert', description: 'Der Eintrag wurde zentral hinzugefügt.' });
     },
     onError: (err: Error) => toast({ title: 'Fehler', description: err.message, variant: 'destructive' }),
@@ -242,7 +242,7 @@ export default function MasterHolidays() {
             <CardContent>
               <Select
                 value={federalState}
-                onValueChange={(val) => updateSettingMutation.mutate({ key: 'federal_state', value: val })}
+                onValueChange={(val) => { updateSettingMutation.mutate({ key: 'federal_state', value: val }); }}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -272,7 +272,7 @@ export default function MasterHolidays() {
                 <Label className="text-xs">Bezeichnung</Label>
                 <Input
                   value={newHoliday.name}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHoliday({ ...newHoliday, name: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewHoliday({ ...newHoliday, name: e.target.value }); }}
                   placeholder="z.B. Brückentag"
                   className="h-8"
                 />
@@ -283,11 +283,11 @@ export default function MasterHolidays() {
                   <Input
                     type="date"
                     value={newHoliday.start_date}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHoliday({
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewHoliday({
                       ...newHoliday,
                       start_date: e.target.value,
                       end_date: e.target.value
-                    })}
+                    }); }}
                     className="h-8"
                   />
                 </div>
@@ -296,7 +296,7 @@ export default function MasterHolidays() {
                   <Input
                     type="date"
                     value={newHoliday.end_date}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewHoliday({ ...newHoliday, end_date: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewHoliday({ ...newHoliday, end_date: e.target.value }); }}
                     className="h-8"
                   />
                 </div>
@@ -306,7 +306,7 @@ export default function MasterHolidays() {
                   <Label className="text-xs">Typ</Label>
                   <Select
                     value={newHoliday.type}
-                    onValueChange={v => setNewHoliday({ ...newHoliday, type: v })}
+                    onValueChange={v => { setNewHoliday({ ...newHoliday, type: v }); }}
                   >
                     <SelectTrigger className="h-8">
                       <SelectValue />
@@ -321,7 +321,7 @@ export default function MasterHolidays() {
                   <Label className="text-xs">Aktion</Label>
                   <Select
                     value={newHoliday.action}
-                    onValueChange={v => setNewHoliday({ ...newHoliday, action: v })}
+                    onValueChange={v => { setNewHoliday({ ...newHoliday, action: v }); }}
                   >
                     <SelectTrigger className="h-8">
                       <SelectValue />
@@ -384,7 +384,7 @@ export default function MasterHolidays() {
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-red-500 hover:text-red-700"
-                      onClick={() => deleteHolidayMutation.mutate(h.id)}
+                      onClick={() => { deleteHolidayMutation.mutate(h.id); }}
                       disabled={deleteHolidayMutation.isPending}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -415,7 +415,7 @@ export default function MasterHolidays() {
                     variant="outline"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => setPreviewYear(y => y - 1)}
+                    onClick={() => { setPreviewYear(y => y - 1); }}
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </Button>
@@ -424,7 +424,7 @@ export default function MasterHolidays() {
                     variant="outline"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => setPreviewYear(y => y + 1)}
+                    onClick={() => { setPreviewYear(y => y + 1); }}
                   >
                     <ChevronRight className="w-4 h-4" />
                   </Button>

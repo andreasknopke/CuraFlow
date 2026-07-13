@@ -67,10 +67,25 @@ export class AppShellPage {
   }
 
   async logout() {
-    await this.accountMenuTrigger.click({ force: true });
-    await expect(this.logoutButton).toBeVisible({ timeout: 10_000 });
-    await expect(this.logoutButton).toBeEnabled({ timeout: 10_000 });
-    await this.logoutButton.click({ force: true });
+    // account-menu-logout renders in a Radix Portal that mounts lazily once the
+    // menu opens. On Firefox the menu can auto-dismiss mid-click when a
+    // background re-render (SSE reconnect / query refetch in
+    // PlanUpdateListener) closes it before the onClick handler fires, so the
+    // navigation goes to the current page instead of /authlogin. Retry the
+    // open+click until the handler confirms it ran by navigating away.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await this.accountMenuTrigger.click();
+      try {
+        await this.logoutButton.click({ timeout: 5_000 });
+      } catch {
+        continue;
+      }
+      const navigated = await this.page
+        .waitForURL(/\/authlogin(?:\?|$)/, { timeout: 5_000 })
+        .then(() => true)
+        .catch(() => false);
+      if (navigated) return;
+    }
     await this.page.waitForURL(/\/authlogin(?:\?|$)/, { timeout: 20_000 });
   }
 }

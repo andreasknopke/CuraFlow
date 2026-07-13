@@ -204,7 +204,7 @@ export default function ServerTokenManager() {
             toast.success(`Token "${activateData.name}" aktiviert`);
             
             // Reload to apply changes
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => { window.location.reload(); }, 1000);
         },
         onError: (err: unknown) => {
             toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
@@ -229,7 +229,7 @@ export default function ServerTokenManager() {
             toast.success('Token-Modus deaktiviert - Standard-DB wird verwendet');
             
             // Reload to apply changes
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => { window.location.reload(); }, 1000);
         },
         onError: (err: unknown) => {
             toast.error('Fehler: ' + (err instanceof Error ? err.message : String(err)));
@@ -532,7 +532,7 @@ export default function ServerTokenManager() {
                         <Button 
                             variant="outline" 
                             size="sm"
-                            onClick={() => deactivateMutation.mutate()}
+                            onClick={() => { deactivateMutation.mutate(); }}
                             disabled={deactivateMutation.isPending}
                         >
                             <PowerOff className="w-4 h-4 mr-1" />
@@ -558,7 +558,7 @@ export default function ServerTokenManager() {
                             </div>
                             <Button 
                                 size="sm"
-                                onClick={() => runMigrationsMutation.mutate()}
+                                onClick={() => { runMigrationsMutation.mutate(); }}
                                 disabled={runMigrationsMutation.isPending}
                                 className="bg-amber-600 hover:bg-amber-700"
                             >
@@ -643,7 +643,7 @@ export default function ServerTokenManager() {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => openEditDialog(token)}
+                                            onClick={() => { openEditDialog(token); }}
                                             title="Bearbeiten"
                                         >
                                             <Edit2 className="w-4 h-4" />
@@ -653,7 +653,7 @@ export default function ServerTokenManager() {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => activateMutation.mutate(token.id)}
+                                                    onClick={() => { activateMutation.mutate(token.id); }}
                                                     disabled={activateMutation.isPending}
                                                     title="Aktivieren"
                                                     className="text-green-600 hover:text-green-700 hover:bg-green-50"
@@ -663,7 +663,7 @@ export default function ServerTokenManager() {
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
-                                                    onClick={() => handleDelete(token)}
+                                                    onClick={() => { handleDelete(token); }}
                                                     disabled={deleteMutation.isPending}
                                                     title="Löschen"
                                                     className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -691,7 +691,7 @@ export default function ServerTokenManager() {
                                             variant="ghost" 
                                             size="sm" 
                                             className="ml-auto h-6 w-6 p-0"
-                                            onClick={() => setTestResult(null)}
+                                            onClick={() => { setTestResult(null); }}
                                         >
                                             <X className="w-3 h-3" />
                                         </Button>
@@ -740,7 +740,7 @@ export default function ServerTokenManager() {
                             <Input
                                 id="name"
                                 value={formData.name}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setFormData(prev => ({ ...prev, name: e.target.value })); }}
                                 placeholder="z.B. Klinik Süd Rostock"
                                 className="h-8 text-xs"
                             />
@@ -751,7 +751,7 @@ export default function ServerTokenManager() {
                             <Textarea
                                 id="description"
                                 value={formData.description}
-                                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => { setFormData(prev => ({ ...prev, description: e.target.value })); }}
                                 placeholder="Optionale Beschreibung..."
                                 rows={1}
                                 className="text-xs"
@@ -762,7 +762,7 @@ export default function ServerTokenManager() {
                             <div className="flex items-center gap-2 p-2 bg-amber-50 rounded-lg text-xs">
                                 <Switch
                                     checked={formData.updateCredentials ?? false}
-                                    onCheckedChange={(checked: boolean) => setFormData(prev => ({ ...prev, updateCredentials: checked }))}
+                                    onCheckedChange={(checked: boolean) => { setFormData(prev => ({ ...prev, updateCredentials: checked })); }}
                                     className="scale-75"
                                 />
                                 <Label className="text-xs">Zugangsdaten aktualisieren</Label>
@@ -777,7 +777,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="host"
                                             value={formData.host}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, host: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setFormData(prev => ({ ...prev, host: e.target.value })); }}
                                             placeholder="mysql.railway.app"
                                             className="h-8 text-xs"
                                         />
@@ -787,7 +787,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="port"
                                             value={formData.port}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, port: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setFormData(prev => ({ ...prev, port: e.target.value })); }}
                                             placeholder="3306"
                                             className="h-8 text-xs"
                                         />
@@ -800,7 +800,7 @@ export default function ServerTokenManager() {
                                         <Input
                                             id="user"
                                             value={formData.user}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, user: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setFormData(prev => ({ ...prev, user: e.target.value })); }}
                                             placeholder="root"
                                             className="h-8 text-xs"
                                         />
@@ -811,7 +811,7 @@ export default function ServerTokenManager() {
                                             id="password"
                                             type="password"
                                             value={formData.password}
-                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setFormData(prev => ({ ...prev, password: e.target.value })); }}
                                             placeholder="••••••••"
                                             className="h-8 text-xs"
                                         />
@@ -893,7 +893,7 @@ export default function ServerTokenManager() {
                                     <Switch
                                         id="ssl"
                                         checked={formData.ssl}
-                                        onCheckedChange={(checked: boolean) => setFormData(prev => ({ ...prev, ssl: checked }))}
+                                        onCheckedChange={(checked: boolean) => { setFormData(prev => ({ ...prev, ssl: checked })); }}
                                         className="scale-75"
                                     />
                                     <Label htmlFor="ssl" className="text-xs">SSL-Verbindung verwenden</Label>

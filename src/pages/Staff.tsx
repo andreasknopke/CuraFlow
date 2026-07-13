@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { DragDropContext, Droppable, Draggable, type DropResult } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
+import type { Doctor } from "@/types";
 import { useAuth } from '@/components/AuthProvider';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,7 +40,7 @@ export default function StaffPage() {
   const isAdmin = user?.role === 'admin';
 
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingDoctor, setEditingDoctor] = useState<{ id: string; central_employee_id?: string | null; [key: string]: unknown } | null>(null);
+  const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedQualificationIds, setSelectedQualificationIds] = useState<string[]>([]);
   const queryClient = useQueryClient();
@@ -53,10 +54,10 @@ export default function StaffPage() {
 
   const { data: doctors = [], isLoading } = useQuery({
     queryKey: ["doctors"],
-        queryFn: () => db.Doctor.list() as Promise<{ id: string; name: string; role: string; order: number; initials?: string | null; is_active: boolean; [key: string]: unknown }[]>,
+        queryFn: () => db.Doctor.list(),
     enabled: isAdmin,
     select: (data) => data.sort((a, b) => {
-      const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
+      const roleDiff = (rolePriority[a.role ?? ''] ?? 99) - (rolePriority[b.role ?? ''] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
     }),
@@ -64,7 +65,7 @@ export default function StaffPage() {
 
   const { data: colorSettings = [] } = useQuery({
       queryKey: ['colorSettings'],
-      queryFn: () => db.ColorSetting.list() as Promise<{ name: string; category: string; bg_color: string; text_color: string }[]>,
+      queryFn: () => db.ColorSetting.list() as unknown as Promise<{ name: string; category: string; bg_color: string; text_color: string }[]>,
       enabled: isAdmin,
   });
 
@@ -86,7 +87,7 @@ export default function StaffPage() {
     });
   }, [doctors, doctorQualsByDoctor, selectedQualificationIds]);
 
-  const getRoleColor = (role: string) => {
+  const getRoleColor = (role: string | null | undefined) => {
       const setting = colorSettings.find(s => s.name === role && s.category === 'role');
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       
@@ -113,7 +114,8 @@ export default function StaffPage() {
           "Pflegerische Hilfskraft": { bg: "#f1f5f9", text: "#1e293b" }
       };
       
-      if (defaults[role]) return { backgroundColor: defaults[role].bg, color: defaults[role].text };
+      const safeRole = role || '';
+      if (defaults[safeRole]) return { backgroundColor: defaults[safeRole].bg, color: defaults[safeRole].text };
       return { backgroundColor: "#f3f4f6", color: "#1f2937" };
   };
 
@@ -122,10 +124,10 @@ export default function StaffPage() {
       const { _qualificationIds, ...doctorData } = data;
       const result = await db.Doctor.create({...doctorData, order: doctors.length}) as { id: string };
       await syncTenantDoctorCentralLink({
-        doctorId: result.id as string,
+        doctorId: result.id,
         tenantId: getActiveTokenId() as string,
         previousCentralEmployeeId: null,
-        nextCentralEmployeeId: doctorData.central_employee_id as string | null | undefined,
+        nextCentralEmployeeId: doctorData.central_employee_id,
       });
       // Direkt nach dem Anlegen die Qualifikationen zuweisen, falls vorhanden
       if (_qualificationIds && _qualificationIds.length > 0 && result?.id) {
@@ -197,7 +199,7 @@ export default function StaffPage() {
     }
   };
 
-  const handleEdit = (doctor: { id: string; central_employee_id?: string | null; [key: string]: unknown }) => {
+  const handleEdit = (doctor: Doctor) => {
     setEditingDoctor(doctor);
     setIsFormOpen(true);
   };
@@ -317,9 +319,9 @@ export default function StaffPage() {
                               const isSelected = selectedQualificationIds.includes(qualification.id as string);
                               return (
                                 <CommandItem
-                                  key={qualification.id as string}
+                                  key={qualification.id}
                                   value={`${qualification.name} ${qualification.short_label || ''}`}
-                                  onSelect={() => handleQualificationToggle(qualification.id as string)}
+                                  onSelect={() => { handleQualificationToggle(qualification.id as string); }}
                                 >
                                   <div className={`flex h-4 w-4 items-center justify-center rounded-sm border ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300 text-transparent'}`}>
                                     <Check className="h-3 w-3" />
@@ -353,7 +355,7 @@ export default function StaffPage() {
                             <button
                               key={qualificationId}
                               type="button"
-                              onClick={() => handleQualificationToggle(qualificationId)}
+                              onClick={() => { handleQualificationToggle(qualificationId); }}
                               className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-slate-700 transition-colors hover:bg-slate-100"
                             >
                               <span>{qualification.short_label || qualification.name}</span>
@@ -365,7 +367,7 @@ export default function StaffPage() {
                           variant="ghost"
                           size="sm"
                           className="h-7 px-2 text-xs text-slate-500"
-                          onClick={() => setSelectedQualificationIds([])}
+                          onClick={() => { setSelectedQualificationIds([]); }}
                         >
                           Filter zurücksetzen
                         </Button>
@@ -456,7 +458,7 @@ export default function StaffPage() {
                                                                    variant="ghost"
                                                                    size="icon"
                                                                    className="h-8 w-8 text-slate-400 hover:text-indigo-600"
-                                                                   onClick={() => handleEdit(doctor)}
+                                                                   onClick={() => { handleEdit(doctor); }}
                                                                    data-testid={`staff-doctor-edit-${doctor.id}`}
                                                                >
                                                                    <Pencil className="h-4 w-4" />
@@ -482,7 +484,7 @@ export default function StaffPage() {
                                                                       <AlertDialogFooter className="">
                                                                           <AlertDialogCancel>Abbrechen</AlertDialogCancel>
                                                                            <AlertDialogAction
-                                                                               onClick={() => deleteMutation.mutate(doctor.id)}
+                                                                               onClick={() => { deleteMutation.mutate(doctor.id); }}
                                                                                className="bg-red-600 hover:bg-red-700"
                                                                                data-testid={`staff-doctor-delete-confirm-${doctor.id}`}
                                                                            >

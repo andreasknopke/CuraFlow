@@ -45,7 +45,7 @@ export default function FreeTextCell({ date, rowName, notes, onCreate, onUpdate,
             <textarea
                 className="absolute inset-0 w-full h-full bg-transparent resize-none p-2 text-base focus:outline-none focus:ring-1 focus:ring-purple-300 focus:bg-white/50 text-slate-700 placeholder:text-purple-300/50 rounded-none overflow-hidden"
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(e) => { setValue(e.target.value); }}
                 onBlur={handleBlur}
                 placeholder="..."
             />

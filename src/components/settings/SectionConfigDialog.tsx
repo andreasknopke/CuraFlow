@@ -352,7 +352,7 @@ export default function SectionConfigDialog() {
                                                         <Input
                                                             placeholder={section.defaultName}
                                                             value={section.customName || ''}
-                                                            onChange={(e) => handleNameChange(section.id, e.target.value)}
+                                                            onChange={(e) => { handleNameChange(section.id, e.target.value); }}
                                                             className="h-8"
                                                         />
                                                     </div>
@@ -400,7 +400,7 @@ export default function SectionConfigDialog() {
                                                             id={inputId}
                                                             type="checkbox"
                                                             checked={checked}
-                                                            onChange={(event) => toggleAlwaysVisible(row.rowName, targetSection.defaultName, event.target.checked)}
+                                                            onChange={(event) => { toggleAlwaysVisible(row.rowName, targetSection.defaultName, event.target.checked); }}
                                                             className="mt-0.5 h-4 w-4"
                                                         />
                                                         <span className="min-w-0">
@@ -423,7 +423,7 @@ export default function SectionConfigDialog() {
                         Zurücksetzen
                     </Button>
                     <div className="flex gap-2">
-                        <Button variant="outline" onClick={() => setOpen(false)}>
+                        <Button variant="outline" onClick={() => { setOpen(false); }}>
                             Abbrechen
                         </Button>
                         <Button onClick={handleSave} disabled={isSaving}>

@@ -216,7 +216,7 @@ export default function VoiceControl({
                     setError("Transkriptionsfehler: " + (e.response?.data?.error || e.message));
                     setIsProcessing(false);
                 } finally {
-                    stream.getTracks().forEach(track => track.stop());
+                    stream.getTracks().forEach(track => { track.stop(); });
                 }
             };
 
@@ -238,7 +238,7 @@ export default function VoiceControl({
             }
             // Also stop all tracks explicitly to release microphone
             if (mediaRecorderRef.current?.stream) {
-                mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+                mediaRecorderRef.current.stream.getTracks().forEach(track => { track.stop(); });
             }
         } catch (e) {
             console.error("VoiceControl: Error stopping media recorder:", e);
@@ -357,21 +357,21 @@ export default function VoiceControl({
                     </Button>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
-                    <ContextMenuCheckboxItem checked={mode === 'browser'} onCheckedChange={() => setMode('browser')}>
+                    <ContextMenuCheckboxItem checked={mode === 'browser'} onCheckedChange={() => { setMode('browser'); }}>
                         <Mic className="w-4 h-4 mr-2" /> Browser
                     </ContextMenuCheckboxItem>
-                    <ContextMenuCheckboxItem checked={mode === 'transcribe'} onCheckedChange={() => setMode('transcribe')}>
+                    <ContextMenuCheckboxItem checked={mode === 'transcribe'} onCheckedChange={() => { setMode('transcribe'); }}>
                         <Volume2 className="w-4 h-4 mr-2" /> ElevenLabs (HQ Transkription)
                     </ContextMenuCheckboxItem>
-                    <ContextMenuCheckboxItem checked={mode === 'agent'} onCheckedChange={() => setMode('agent')}>
+                    <ContextMenuCheckboxItem checked={mode === 'agent'} onCheckedChange={() => { setMode('agent'); }}>
                         <Bot className="w-4 h-4 mr-2" /> ElevenLabs Agent (Standard)
                     </ContextMenuCheckboxItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem onClick={() => setShowTraining(true)}>
+                    <ContextMenuItem onClick={() => { setShowTraining(true); }}>
                         <Volume2 className="w-4 h-4 mr-2" />
                         Sprachmodell trainieren
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => setShowHelp(true)}>
+                    <ContextMenuItem onClick={() => { setShowHelp(true); }}>
                         <HelpCircle className="w-4 h-4 mr-2" />
                         Hilfe
                     </ContextMenuItem>

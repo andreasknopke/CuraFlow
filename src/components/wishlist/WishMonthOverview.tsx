@@ -212,7 +212,7 @@ export default function WishMonthOverview({
         if (absence && showAbsences) {
             let bgColor = 'bg-slate-100';
             let textColor = 'text-slate-600';
-            let label = absence.position;
+            const label = absence.position;
             let shortLabel = label.substring(0, 1);
             
             if (absence.position === 'Urlaub') {
@@ -334,7 +334,7 @@ export default function WishMonthOverview({
                             Abwesenheiten
                         </label>
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => setIsConfigOpen(true)} className="h-8 gap-2">
+                    <Button variant="outline" size="sm" onClick={() => { setIsConfigOpen(true); }} className="h-8 gap-2">
                         <Eye className="w-4 h-4" />
                         <span className="hidden sm:inline">Personal</span>
                     </Button>
@@ -464,7 +464,7 @@ export default function WishMonthOverview({
                                     <div 
                                         key={doc.id} 
                                         className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-200"
-                                        onClick={() => toggleDoctorVisibility(doc.id)}
+                                        onClick={() => { toggleDoctorVisibility(doc.id); }}
                                     >
                                         {isHidden ? (
                                             <Square className="w-4 h-4 text-slate-300" />
@@ -481,7 +481,7 @@ export default function WishMonthOverview({
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button onClick={() => setIsConfigOpen(false)}>Fertig</Button>
+                        <Button onClick={() => { setIsConfigOpen(false); }}>Fertig</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

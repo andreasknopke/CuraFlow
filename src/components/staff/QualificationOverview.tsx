@@ -465,10 +465,10 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
 
                         {eligibleReminderCandidates.length > 0 && (
                             <div className="flex gap-2">
-                                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedReminderDoctorIds(eligibleReminderCandidates.map((candidate) => candidate.doctor_id))}>
+                                <Button type="button" variant="outline" size="sm" onClick={() => { setSelectedReminderDoctorIds(eligibleReminderCandidates.map((candidate) => candidate.doctor_id)); }}>
                                     Alle auswaehlen
                                 </Button>
-                                <Button type="button" variant="outline" size="sm" onClick={() => setSelectedReminderDoctorIds([])}>
+                                <Button type="button" variant="outline" size="sm" onClick={() => { setSelectedReminderDoctorIds([]); }}>
                                     Auswahl leeren
                                 </Button>
                             </div>
@@ -485,7 +485,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                                     <button
                                         type="button"
                                         key={candidate.doctor_id}
-                                        onClick={() => toggleReminderDoctor(candidate.doctor_id)}
+                                        onClick={() => { toggleReminderDoctor(candidate.doctor_id); }}
                                         className="flex gap-3 rounded-md border border-slate-200 px-3 py-3 hover:bg-slate-50"
                                     >
                                         <Checkbox
@@ -517,7 +517,7 @@ export default function QualificationOverview({ doctors = [], isReadOnly = false
                     </div>
 
                     <DialogFooter>
-                        <Button type="button" variant="outline" onClick={() => setIsReminderDialogOpen(false)} disabled={isSendingReminders}>
+                        <Button type="button" variant="outline" onClick={() => { setIsReminderDialogOpen(false); }} disabled={isSendingReminders}>
                             Abbrechen
                         </Button>
                         <Button type="button" onClick={handleSendReminders} disabled={isSendingReminders || selectedReminderDoctorIds.length === 0}>

@@ -11,8 +11,8 @@ import { Label } from "@/components/ui/label";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { StickyHorizontalScrollbar } from "@/components/ui/sticky-horizontal-scrollbar";
 import { cn } from "@/lib/utils";
-import { getDoctorEffectiveFte, getMonthlyEffectiveFte, getStatusCodeRatioForMonth } from "@/components/schedule/staffingUtils";
-import type { Doctor, StaffingPlanEntry, StaffingPlanNote } from '@/types';
+import { getMonthlyEffectiveFte, getStatusCodeRatioForMonth } from "@/components/schedule/staffingUtils";
+import type { Doctor } from '@/types';
 
 const FTE_CODES = ["EZ", "KO", "MS", "BV", "OU"];
 const FTE_CODE_LABELS: Record<string, string> = {
@@ -105,7 +105,7 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
         <Input 
             className={className}
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => { setValue(e.target.value); }}
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             disabled={disabled}
@@ -130,7 +130,7 @@ const StaffingPlanNoteInput = ({ value: initialValue, onChange, disabled }: Staf
         <Textarea
             className="h-14 text-xs resize-none border-0 bg-transparent p-1 focus-visible:ring-1 focus-visible:ring-slate-300 shadow-none"
             value={value}
-            onChange={(e) => setValue(e.target.value)}
+            onChange={(e) => { setValue(e.target.value); }}
             onBlur={handleBlur}
             disabled={disabled}
             placeholder="Notiz..."
@@ -352,8 +352,8 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
         setDialogValue(isCode ? "" : currentValue);
         setDialogCode(isCode ? currentValue : "EZ");
         setDialogApplyMode("single");
-        const startDay = (entry as any)?.status_start_day || 1;
-        const endDay = (entry as any)?.status_end_day || new Date(year, month, 0).getDate();
+        const startDay = (entry)?.status_start_day || 1;
+        const endDay = (entry)?.status_end_day || new Date(year, month, 0).getDate();
         setDialogStartDate(`${year}-${String(month).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`);
         setDialogEndDate(`${year}-12-31`);
     };
@@ -429,11 +429,11 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                 <div className="flex items-center gap-4">
                     <h2 className="text-lg font-semibold text-slate-800">Stellenplan {year}</h2>
                     <div className="flex items-center gap-1 bg-white rounded-md border shadow-sm">
-                        <Button variant="ghost" size="icon" onClick={() => setYear(y => y - 1)}>
+                        <Button variant="ghost" size="icon" onClick={() => { setYear(y => y - 1); }}>
                             <ChevronLeft className="w-4 h-4" />
                         </Button>
                         <span className="px-2 font-medium min-w-[4ch] text-center">{year}</span>
-                        <Button variant="ghost" size="icon" onClick={() => setYear(y => y + 1)}>
+                        <Button variant="ghost" size="icon" onClick={() => { setYear(y => y + 1); }}>
                             <ChevronRight className="w-4 h-4" />
                         </Button>
                     </div>
@@ -512,7 +512,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                                     style={statusRatio > 0 && statusRatio < 1 ? {
                                                         background: `linear-gradient(to top, ${getStatusColor(val, statusRatio)} 0%, ${getStatusColor(val, statusRatio)} ${Math.round(statusRatio * 100)}%, transparent ${Math.round(statusRatio * 100)}%, transparent 100%)`
                                                     } : undefined}
-                                                    onClick={() => openEditDialog(doc.id, doctorName, month, val)}
+                                                    onClick={() => { openEditDialog(doc.id, doctorName, month, val); }}
                                                 >
                                                     <div className={cn(
                                                         "h-8 w-full flex items-center justify-center text-xs",
@@ -527,7 +527,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                         <TableCell className="border-l p-1 bg-white max-w-[220px] min-w-[220px]">
                                             <StaffingPlanNoteInput
                                                 value={getNoteForDoctor(doc.id)}
-                                                onChange={(val) => handleNoteSave(doc.id, val)}
+                                                onChange={(val) => { handleNoteSave(doc.id, val); }}
                                                 disabled={isReadOnly}
                                             />
                                         </TableCell>
@@ -555,7 +555,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                         <StaffingPlanInput 
                                             className="h-8 w-full border-0 bg-transparent text-center text-xs px-0 focus-visible:ring-0 shadow-none font-bold"
                                             value={formatNumber(targetFTE)}
-                                            onChange={(val) => updateTargetMutation.mutate(val)}
+                                            onChange={(val) => { updateTargetMutation.mutate(val); }}
                                         />
                                     )}
                                 </TableCell>
@@ -589,7 +589,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
             )}
 
             {/* Edit Dialog */}
-            <Dialog open={editDialog.open} onOpenChange={(open) => setEditDialog({ ...editDialog, open })}>
+            <Dialog open={editDialog.open} onOpenChange={(open) => { setEditDialog({ ...editDialog, open }); }}>
                 <DialogContent className="sm:max-w-md max-h-[90vh] flex flex-col p-0">
                     <DialogHeader className="px-6 pt-6">
                         <DialogTitle>
@@ -623,7 +623,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                 <Input
                                     id="fte-value"
                                     value={dialogValue}
-                                    onChange={(e) => setDialogValue(e.target.value)}
+                                    onChange={(e) => { setDialogValue(e.target.value); }}
                                     placeholder="z.B. 1,00 oder 0,50"
                                     className="text-center"
                                 />
@@ -693,7 +693,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                         <Input
                                             type="date"
                                             value={dialogStartDate}
-                                            onChange={(e) => setDialogStartDate(e.target.value)}
+                                            onChange={(e) => { setDialogStartDate(e.target.value); }}
                                             className="text-center"
                                         />
                                     </div>
@@ -702,7 +702,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                         <Input
                                             type="date"
                                             value={dialogEndDate}
-                                            onChange={(e) => setDialogEndDate(e.target.value)}
+                                            onChange={(e) => { setDialogEndDate(e.target.value); }}
                                             className="text-center"
                                         />
                                     </div>
@@ -715,7 +715,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                     </div>
 
                     <DialogFooter className="gap-2 px-6 py-4 border-t">
-                        <Button variant="outline" onClick={() => setEditDialog({ ...editDialog, open: false })}>
+                        <Button variant="outline" onClick={() => { setEditDialog({ ...editDialog, open: false }); }}>
                             Abbrechen
                         </Button>
                         <Button onClick={handleDialogSave} disabled={updateEntryMutation.isPending}>

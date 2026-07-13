@@ -169,7 +169,7 @@ export default function WeekdayRecurrenceDialog({
                   <input
                     type="checkbox"
                     checked={selectedWeekdays.includes(index)}
-                    onChange={() => toggleWeekday(index)}
+                    onChange={() => { toggleWeekday(index); }}
                     className="sr-only"
                   />
                   {short}
@@ -187,7 +187,7 @@ export default function WeekdayRecurrenceDialog({
               <Input
                 type="date"
                 value={rangeStart}
-                onChange={(e) => setRangeStart(e.target.value)}
+                onChange={(e) => { setRangeStart(e.target.value); }}
                 min={`${selectedYear - 1}-01-01`}
                 max={rangeEnd}
               />
@@ -199,7 +199,7 @@ export default function WeekdayRecurrenceDialog({
               <Input
                 type="date"
                 value={rangeEnd}
-                onChange={(e) => setRangeEnd(e.target.value)}
+                onChange={(e) => { setRangeEnd(e.target.value); }}
                 min={rangeStart}
                 max={`${selectedYear + 2}-12-31`}
               />
@@ -283,7 +283,7 @@ export default function WeekdayRecurrenceDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button variant="outline" onClick={() => { handleOpenChange(false); }}>
             Abbrechen
           </Button>
           <Button onClick={handleApply} disabled={!canApply}>

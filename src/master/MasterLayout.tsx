@@ -52,7 +52,7 @@ export default function MasterLayout({ children }: { children: React.ReactNode }
             </div>
           )}
           <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
+            onClick={() => { setSidebarOpen(!sidebarOpen); }}
             className="p-1.5 rounded-md hover:bg-indigo-800 text-indigo-300 hover:text-white transition-colors"
           >
             {sidebarOpen ? <ChevronLeft className="w-4 h-4" /> : <Menu className="w-4 h-4" />}

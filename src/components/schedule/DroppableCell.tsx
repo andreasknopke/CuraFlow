@@ -55,10 +55,10 @@ export default function DroppableCell({
       return undefined;
     }
 
-    const observer = new ResizeObserver(() => updateWidth());
+    const observer = new ResizeObserver(() => { updateWidth(); });
     observer.observe(node);
 
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); };
   }, []);
 
   const effectiveDisabled = isDisabled || isBlocked;

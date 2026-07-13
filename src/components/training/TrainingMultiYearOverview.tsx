@@ -231,7 +231,7 @@ export default function TrainingMultiYearOverview({
       return {
         doctor,
         cells,
-      } as DoctorCells;
+      };
     });
   }, [contractInfoByDoctorId, doctors, rotationLookup, visibleYears]);
 

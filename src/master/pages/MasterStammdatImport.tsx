@@ -124,7 +124,7 @@ function EmployeeRow({ employee, category, isChecked, onDecision, selectedCandid
       {/* Header row */}
       <div className="flex items-center gap-4 p-3">
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={() => { setExpanded(!expanded); }}
           className="p-1 rounded hover:bg-slate-100 text-slate-400"
         >
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -263,7 +263,7 @@ function SelectAllBar({ items, decisions, itemKey, onDecision, label }: {
   const handleToggleAll = () => {
     const newAction = allChecked ? 'skip' : 'apply';
     for (const item of items) {
-      onDecision({ [itemKey]: item[itemKey], action: newAction } as StammdatImportDecision);
+      onDecision({ [itemKey]: item[itemKey], action: newAction });
     }
   };
 
@@ -528,7 +528,7 @@ export default function MasterStammdatImport() {
             <Input
               placeholder="Suche nach Name, Personalnummer, Position..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); }}
               className="max-w-xs"
             />
             <div className="flex-1" />
@@ -674,9 +674,9 @@ export default function MasterStammdatImport() {
                           {Object.entries(item.changes || {}).map(([field, diff]) => (
                             <div key={field} className="text-xs flex items-start gap-2">
                               <code className="text-slate-500 min-w-[140px]">{field}:</code>
-                               <span className="text-red-500 line-through">{String((diff as { old: unknown; new: unknown }).old ?? '—')}</span>
+                               <span className="text-red-500 line-through">{String((diff).old ?? '—')}</span>
                                <span className="text-slate-300">→</span>
-                               <span className="text-emerald-600 font-medium">{String((diff as { old: unknown; new: unknown }).new ?? '—')}</span>
+                               <span className="text-emerald-600 font-medium">{String((diff).new ?? '—')}</span>
                             </div>
                           ))}
                         </div>
@@ -744,7 +744,7 @@ export default function MasterStammdatImport() {
             ].map(tab => (
               <button
                 key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => { setActiveTab(tab.key); }}
                 className={`px-4 py-2 text-sm font-medium rounded-t transition-colors border-b-2 ${
                   activeTab === tab.key
                     ? `${tab.color}`
@@ -873,7 +873,7 @@ export default function MasterStammdatImport() {
                           <div className="flex-1 min-w-0">
                             <EmployeeSelect
                               value={selectedStammdatId ? String(selectedStammdatId) : ''}
-                              onValueChange={(v) => setLinkSelections(prev => ({ ...prev, [emp.id]: v ? parseInt(v, 10) : null }))}
+                              onValueChange={(v) => { setLinkSelections(prev => ({ ...prev, [emp.id]: v ? parseInt(v, 10) : null })); }}
                               options={stammdatLinkOptions}
                               placeholder="Stammdaten-Eintrag suchen…"
                               searchPlaceholder="Name oder Personalnummer suchen…"

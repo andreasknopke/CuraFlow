@@ -160,7 +160,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     const handlePlanUpdate = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        const queryKeys = getQueryKeysForEntity((payload as any).entity);
+        const queryKeys = getQueryKeysForEntity((payload).entity);
 
         console.info('[PlanUpdateListener] Push-Event empfangen', payload);
 

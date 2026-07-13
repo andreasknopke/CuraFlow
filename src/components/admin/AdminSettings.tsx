@@ -95,7 +95,7 @@ export default function AdminSettings() {
                                 data-testid="admin-settings-wish-deadline-months"
                                 placeholder="Keine Frist"
                                 value={wishDeadlineMonths}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateSettingMutation.mutate({ key: 'wish_deadline_months', value: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { updateSettingMutation.mutate({ key: 'wish_deadline_months', value: e.target.value }); }}
                                 className="h-9 w-32 bg-white"
                             />
                             <span className="text-sm text-slate-600">Monate im Voraus</span>
@@ -107,10 +107,10 @@ export default function AdminSettings() {
                                     id="wish-reminder-email"
                                     data-testid="admin-settings-wish-reminder-email"
                                     checked={wishReminderEnabled}
-                                    onCheckedChange={(checked: boolean | string) => updateSettingMutation.mutate({
+                                    onCheckedChange={(checked: boolean | string) => { updateSettingMutation.mutate({
                                         key: 'wish_reminder_email_enabled',
                                         value: checked ? 'true' : 'false'
-                                    })}
+                                    }); }}
                                     className="mt-0.5"
                                 />
                                 <div className="space-y-1">
@@ -155,10 +155,10 @@ export default function AdminSettings() {
                             <Switch
                                 data-testid="admin-settings-service-requires-approval"
                                 checked={approvalRules.service_requires_approval}
-                                onCheckedChange={(checked: boolean) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => { updateApprovalRules({
                                     ...approvalRules,
                                     service_requires_approval: checked
-                                })}
+                                }); }}
                             />
                         </div>
 
@@ -170,10 +170,10 @@ export default function AdminSettings() {
                             <Switch
                                 data-testid="admin-settings-no-service-requires-approval"
                                 checked={approvalRules.no_service_requires_approval}
-                                onCheckedChange={(checked: boolean) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => { updateApprovalRules({
                                     ...approvalRules,
                                     no_service_requires_approval: checked
-                                })}
+                                }); }}
                             />
                         </div>
 
@@ -185,10 +185,10 @@ export default function AdminSettings() {
                             <Switch
                                 data-testid="admin-settings-auto-create-shift-on-approval"
                                 checked={approvalRules.auto_create_shift_on_approval}
-                                onCheckedChange={(checked: boolean) => updateApprovalRules({
+                                onCheckedChange={(checked: boolean) => { updateApprovalRules({
                                     ...approvalRules,
                                     auto_create_shift_on_approval: checked
-                                })}
+                                }); }}
                             />
                         </div>
                     </div>

@@ -1414,7 +1414,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
                 wpStaffing[wp.name].add(s.doctor_id);
             }
-            for (const [, docIds] of Object.entries(wpStaffing) as [string, Set<any>][]) {
+            for (const [, docIds] of Object.entries(wpStaffing)) {
                 if (docIds.size === 1) {
                     for (const docId of docIds) soleOccupantDoctors.add(docId);
                 }

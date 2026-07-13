@@ -161,7 +161,7 @@ export default function VoiceTrainingDialog({
                     toast.error("Transkriptionsfehler");
                 } finally {
                     setIsProcessing(false);
-                    stream.getTracks().forEach(track => track.stop());
+                    stream.getTracks().forEach(track => { track.stop(); });
                 }
             };
 
@@ -267,7 +267,7 @@ export default function VoiceTrainingDialog({
                                         type="checkbox" 
                                         id="useElevenLabs"
                                         checked={useElevenLabs}
-                                        onChange={(e) => setUseElevenLabs(e.target.checked)}
+                                        onChange={(e) => { setUseElevenLabs(e.target.checked); }}
                                         className="rounded border-slate-300"
                                     />
                                     <label htmlFor="useElevenLabs" className="text-xs text-slate-500 cursor-pointer select-none">
@@ -284,7 +284,7 @@ export default function VoiceTrainingDialog({
                                                 <Plus className="w-4 h-4 mr-2" />
                                                 Als Alias speichern
                                             </Button>
-                                            <Button variant="outline" onClick={() => setDetectedText("")}>Verwerfen</Button>
+                                            <Button variant="outline" onClick={() => { setDetectedText(""); }}>Verwerfen</Button>
                                         </div>
                                     </div>
                                 )}
@@ -299,7 +299,7 @@ export default function VoiceTrainingDialog({
                                                     variant="ghost" 
                                                     size="icon" 
                                                     className="h-6 w-6 text-slate-400 hover:text-red-600"
-                                                    onClick={() => deleteAliasMutation.mutate(alias.id)}
+                                                    onClick={() => { deleteAliasMutation.mutate(alias.id); }}
                                                 >
                                                     <Trash2 className="w-3 h-3" />
                                                 </Button>

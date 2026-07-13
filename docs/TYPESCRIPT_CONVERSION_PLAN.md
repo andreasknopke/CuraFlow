@@ -4,13 +4,15 @@
 
 Convert all CuraFlow frontend code from JS/JSX to TypeScript with `strict: true`.
 
-## Part 1 — Pages ✅ COMPLETE
+## ✅ PLAN COMPLETE
 
-All 14 page components converted `.jsx` → `.tsx`, `src/types/` created, `strict: true` enabled in `jsconfig.json`, `pages.config.js` → `pages.config.ts`.
+All `.jsx` files in `src/` have been converted to `.tsx`. Zero `.js`/`.jsx` files remain in `src/`. `strict: true` is enabled. `npm run typecheck` passes with zero errors.
 
-5 pages deferred with `@ts-nocheck` (MyDashboard, ServiceStaffing, Vacation, WishList, Training) — blocked on TanStack Query v5 API migration and component prop types.
+5 pages deferred with `@ts-nocheck` (MyDashboard, ServiceStaffing, Vacation, WishList, Training) — blocked on TanStack Query v5 API migration and component prop types. These are tracked in the type-safety enforcement plan below.
 
-**Verification:** `npm run typecheck` zero errors with `strict: true`, `npm run build` passes, 46 E2E tests pass.
+**Verification:** `npm run typecheck` zero errors, `npm run lint` zero errors, `npm run build` passes, 738 tests pass.
+
+For the ongoing effort to eliminate `any` usage and tighten type enforcement, see [`docs/TYPE_SAFETY_ENFORCEMENT_PLAN.md`](./TYPE_SAFETY_ENFORCEMENT_PLAN.md).
 
 ---
 

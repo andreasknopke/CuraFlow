@@ -97,7 +97,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     },
   });
 
-  const { data: centralEmployeesMeta = {} } = useQuery({
+  const { data: centralEmployeesMeta = { tenantCostCenters: [] } } = useQuery<{ tenantCostCenters: { code: string; name: string }[] }>({
     queryKey: ["central-employees-meta"],
     queryFn: async () => {
       try {
@@ -109,7 +109,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
     },
   });
 
-  const { tenantCostCenters = [] } = centralEmployeesMeta as any;
+  const { tenantCostCenters = [] } = centralEmployeesMeta;
 
   const [selectedCostCenter, setSelectedCostCenter] = React.useState<string | null>(null);
   const costCenterFilterActive = selectedCostCenter !== null;
@@ -174,7 +174,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
   // forcieren wir einen neuen key für den Select. Radix Select erkennt
   // den value sonst nicht, wenn die Option beim ersten Mount fehlte.
   const selectRoleKey = formData.role && !roleNames.some((r: any) => r.toLowerCase() === (formData.role as string).toLowerCase())
-    ? `role-${formData.role as string}`
+    ? `role-${formData.role}`
     : 'role-default';
 
   // Set für bereits asynchron angelegte Rollen (Schutz vor doppelter Anlage)
@@ -325,7 +325,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                   <span className="text-xs text-slate-500 mr-1">Kostenstelle:</span>
                   <button
                     type="button"
-                    onClick={() => setSelectedCostCenter(null)}
+                    onClick={() => { setSelectedCostCenter(null); }}
                     className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                       !costCenterFilterActive
                         ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
@@ -338,7 +338,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     <button
                       key={cc.code}
                       type="button"
-                      onClick={() => setSelectedCostCenter(cc.code)}
+                      onClick={() => { setSelectedCostCenter(cc.code); }}
                       className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
                         selectedCostCenter === cc.code
                           ? 'bg-indigo-100 text-indigo-700 border-indigo-200 font-medium'
@@ -408,7 +408,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 id="name"
                 data-testid="staff-form-name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, name: e.target.value }); }}
                 required
             />
           </div>
@@ -419,7 +419,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 id="initials"
                 data-testid="staff-form-initials"
                 value={formData.initials}
-                onChange={(e) => setFormData({ ...formData, initials: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, initials: e.target.value }); }}
                 required
                 maxLength={5}
               />
@@ -429,7 +429,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
               <Select
                 key={selectRoleKey}
                 value={formData.role}
-                onValueChange={(value) => setFormData({ ...formData, role: value })}
+                onValueChange={(value) => { setFormData({ ...formData, role: value }); }}
               >
                 <SelectTrigger data-testid="staff-form-role-trigger">
                   <SelectValue />
@@ -452,7 +452,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 data-testid="staff-form-email"
                 type="email"
                 value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, email: e.target.value }); }}
                 placeholder="name@klinik.de"
                 className="flex-1"
               />
@@ -475,7 +475,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                 data-testid="staff-form-google-email"
                 type="email"
                 value={formData.google_email || ''}
-                onChange={(e) => setFormData({ ...formData, google_email: e.target.value })}
+                onChange={(e) => { setFormData({ ...formData, google_email: e.target.value }); }}
                 placeholder="name@klinik.de"
             />
           </div>
@@ -504,7 +504,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     min="0"
                     max="1"
                     value={formData.fte !== undefined ? formData.fte : 1.0}
-                    onChange={(e) => setFormData({ ...formData, fte: e.target.value as any })}
+                    onChange={(e) => { setFormData({ ...formData, fte: e.target.value as any }); }}
                   />
                 )}
             </div>
@@ -535,7 +535,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     max="48"
                     placeholder="z.B. 38.5"
                     value={formData.target_weekly_hours || ''}
-                    onChange={(e) => setFormData({ ...formData, target_weekly_hours: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, target_weekly_hours: e.target.value }); }}
                   />
                 )}
             </div>
@@ -554,7 +554,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     name="part_time_model"
                     value="reduced_daily"
                     checked={(formData.part_time_model || 'reduced_daily') === 'reduced_daily'}
-                    onChange={(e) => setFormData({ ...formData, part_time_model: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, part_time_model: e.target.value }); }}
                     className="mt-0.5"
                   />
                   <div className="text-sm">
@@ -569,7 +569,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     name="part_time_model"
                     value="full_days_off"
                     checked={formData.part_time_model === 'full_days_off'}
-                    onChange={(e) => setFormData({ ...formData, part_time_model: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, part_time_model: e.target.value }); }}
                     className="mt-0.5"
                   />
                   <div className="text-sm">
@@ -587,7 +587,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
                     data-testid="staff-form-contract-end-date"
                     type="date"
                     value={formData.contract_end_date || ''}
-                    onChange={(e) => setFormData({ ...formData, contract_end_date: e.target.value })}
+                    onChange={(e) => { setFormData({ ...formData, contract_end_date: e.target.value }); }}
                 />
             </div>
           </div>
@@ -602,7 +602,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
               <Switch
                   id="exclude_from_staffing_plan"
                   checked={formData.exclude_from_staffing_plan || false}
-                  onCheckedChange={(checked) => setFormData({ ...formData, exclude_from_staffing_plan: checked })}
+                  onCheckedChange={(checked) => { setFormData({ ...formData, exclude_from_staffing_plan: checked }); }}
               />
           </div>
           
@@ -616,7 +616,7 @@ export default function DoctorForm({ open, onOpenChange, doctor, onSubmit }: Doc
               </Label>
               {formData.central_employee_id && (
                 <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-slate-500"
-                  onClick={() => setFormData({ ...formData, central_employee_id: '' })}>
+                  onClick={() => { setFormData({ ...formData, central_employee_id: '' }); }}>
                   <Unlink className="w-3 h-3 mr-1" /> Trennen
                 </Button>
               )}

@@ -105,7 +105,7 @@ export default function MasterEmployeeList() {
   const SortHeader = ({ field, children }: { field: string; children: React.ReactNode }) => (
     <TableHead
       className="cursor-pointer select-none hover:text-slate-900"
-      onClick={() => toggleSort(field)}
+      onClick={() => { toggleSort(field); }}
     >
       <span className="inline-flex items-center gap-1">
         {children}
@@ -393,7 +393,7 @@ export default function MasterEmployeeList() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => globalTimeAccountSyncMutation.mutate()}
+            onClick={() => { globalTimeAccountSyncMutation.mutate(); }}
             disabled={globalTimeAccountSyncMutation.isPending || linkedCentralCount === 0}
           >
             {globalTimeAccountSyncMutation.isPending
@@ -401,7 +401,7 @@ export default function MasterEmployeeList() {
               : <RefreshCw className="w-4 h-4 mr-2" />}
             Zeitkonten neu berechnen ({linkedCentralCount})
           </Button>
-          <Button onClick={() => navigate('/mitarbeiter/neu')} size="sm">
+          <Button onClick={() => { navigate('/mitarbeiter/neu'); }} size="sm">
             <Plus className="w-4 h-4 mr-2" />
             Neuer Mitarbeiter
           </Button>
@@ -421,13 +421,13 @@ export default function MasterEmployeeList() {
         <div className="flex rounded-lg border bg-white overflow-hidden">
           <button
             className={`px-3 py-1.5 text-sm font-medium transition-colors ${viewMode === 'central' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}
-            onClick={() => setViewMode('central')}
+            onClick={() => { setViewMode('central'); }}
           >
             Zentral ({centralEmployees.filter(e => e.is_active).length})
           </button>
           <button
             className={`px-3 py-1.5 text-sm font-medium transition-colors border-l ${viewMode === 'legacy' ? 'bg-amber-50 text-amber-700' : 'text-slate-500 hover:text-slate-700'}`}
-            onClick={() => setViewMode('legacy')}
+            onClick={() => { setViewMode('legacy'); }}
           >
             Nur lokal ({unlinkedStaff.length})
           </button>
@@ -451,7 +451,7 @@ export default function MasterEmployeeList() {
             variant="ghost"
             size="sm"
             className={`text-xs ${showInactive ? 'text-amber-700 bg-amber-50' : 'text-slate-500'}`}
-            onClick={() => setShowInactive(v => !v)}
+            onClick={() => { setShowInactive(v => !v); }}
           >
             {showInactive ? <Eye className="w-3.5 h-3.5 mr-1" /> : <EyeOff className="w-3.5 h-3.5 mr-1" />}
             Inaktive {showInactive ? 'ausblenden' : `anzeigen (${inactiveCount})`}
@@ -463,7 +463,7 @@ export default function MasterEmployeeList() {
           <Input
             placeholder="Mitarbeiter suchen…"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); }}
             className="pl-9"
           />
         </div>
@@ -539,7 +539,7 @@ export default function MasterEmployeeList() {
                     <TableRow
                       key={emp.id}
                       className={`cursor-pointer transition-colors ${emp.is_active ? 'hover:bg-indigo-50/50' : 'hover:bg-red-50/50 opacity-60'}`}
-                      onClick={() => navigate(`/mitarbeiter/central/${emp.id}`)}
+                      onClick={() => { navigate(`/mitarbeiter/central/${emp.id}`); }}
                     >
                       <TableCell>
                         <div>
@@ -605,7 +605,7 @@ export default function MasterEmployeeList() {
                             className="text-red-500 hover:text-red-700 hover:bg-red-50 text-xs px-2"
                             disabled={deleteMutation.isPending || emp.is_active}
                             title={emp.is_active ? 'Zum Löschen zuerst deaktivieren und speichern.' : 'Mitarbeiter endgültig löschen'}
-                            onClick={(e) => handleDelete(emp, e)}
+                            onClick={(e) => { handleDelete(emp, e); }}
                           >
                             <Trash2 className="w-3.5 h-3.5 mr-1" />
                             Löschen
@@ -637,7 +637,7 @@ export default function MasterEmployeeList() {
                     <TableRow
                       key={`${staff.tenantId}-${staff.id}-${i}`}
                       className="cursor-pointer hover:bg-amber-50/50 transition-colors"
-                      onClick={() => navigate(`/mitarbeiter/${staff.tenantId || 'default'}/${staff.id}`)}
+                      onClick={() => { navigate(`/mitarbeiter/${staff.tenantId || 'default'}/${staff.id}`); }}
                     >
                       <TableCell>
                         <Badge variant="outline" className="text-xs">

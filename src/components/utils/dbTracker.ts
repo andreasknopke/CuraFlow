@@ -1,7 +1,7 @@
 
 
-let _pendingCount: number = 0;
-let _debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+const _pendingCount: number = 0;
+const _debounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
 // In MySQL mode, auto-backup via base44 is not used.
 // trackDbChange is kept as a no-op to avoid breaking callers.

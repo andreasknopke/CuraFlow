@@ -90,7 +90,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
 
     const { data: workplaces = [] } = useQuery<WorkplaceExtended[]>({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list(),
+        queryFn: () => db.Workplace.list() as unknown as Promise<WorkplaceExtended[]>,
     });
 
     const { data: settings = [] } = useQuery<SystemSetting[]>({
@@ -110,7 +110,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
 
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }: { key: string; value: string }) => {
-            const existing = (settings as SystemSetting[]).find((s: SystemSetting) => s.key === key);
+            const existing = (settings).find((s: SystemSetting) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             } else {
@@ -130,12 +130,12 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
     }, [workplaces, activeTab]);
 
     const createMutation = useMutation({
-        mutationFn: (data: Record<string, unknown>) => db.Workplace.create(data as unknown as Record<string, any>),
+        mutationFn: (data: Record<string, unknown>) => db.Workplace.create(data),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workplaces'] })
     });
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => db.Workplace.update(id, data as unknown as Record<string, any>),
+        mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => db.Workplace.update(id, data),
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workplaces'] })
     });
 
@@ -155,7 +155,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
 
         const items: WorkplaceExtended[] = Array.from(localItems);
         const [reorderedItem] = items.splice(result.source.index, 1);
-        items.splice(result.destination!.index, 0, reorderedItem);
+        items.splice(result.destination.index, 0, reorderedItem);
 
         setLocalItems(items);
 
@@ -185,7 +185,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
             time: "",
             allows_multiple: getCategoryAllowsMultiple(activeTab)
         };
-        createMutation.mutate(newItem as unknown as Record<string, any>);
+        createMutation.mutate(newItem);
     };
 
     const handleAddCategory = async () => {
@@ -270,7 +270,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
     };
 
     const toggleDay = (dayIndex: number) => {
-        const currentDays: number[] = (editForm.active_days || []) as number[];
+        const currentDays: number[] = (editForm.active_days || []);
         const newDays = currentDays.includes(dayIndex)
             ? currentDays.filter((d: number) => d !== dayIndex)
             : [...currentDays, dayIndex];
@@ -327,7 +327,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8 shrink-0"
-                            onClick={() => setShowAddCategory(true)}
+                            onClick={() => { setShowAddCategory(true); }}
                             title="Neue Kategorie hinzufügen"
                         >
                             <FolderPlus className="w-4 h-4" />
@@ -341,7 +341,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                 <Input
                                     placeholder="Name der neuen Kategorie (z.B. OP Säle)"
                                     value={newCategoryName}
-                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewCategoryName(e.target.value)}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewCategoryName(e.target.value); }}
                                     onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleAddCategory()}
                                     className="flex-1"
                                     autoFocus
@@ -420,7 +420,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 <Label>Bezeichnung</Label>
                                                                                 <Input
                                                                                     value={editForm.name || ''}
-                                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, name: e.target.value})}
+                                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, name: e.target.value}); }}
                                                                                 />
                                                                             </div>
                                                                             {activeTab === "Demonstrationen & Konsile" && (
@@ -428,7 +428,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     <Label>Uhrzeit (Optional)</Label>
                                                                                     <Input
                                                                                         value={editForm.time || ''}
-                                                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, time: e.target.value})}
+                                                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, time: e.target.value}); }}
                                                                                         placeholder="z.B. 14:30"
                                                                                     />
                                                                                 </div>
@@ -446,7 +446,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 </div>
                                                                                 <Select
                                                                                     value={String(editForm.service_type || '')}
-                                                                                    onValueChange={(val: string) => setEditForm({...editForm, service_type: parseInt(val)})}
+                                                                                    onValueChange={(val: string) => { setEditForm({...editForm, service_type: parseInt(val)}); }}
                                                                                 >
                                                                                     <SelectTrigger className="bg-white">
                                                                                         <SelectValue placeholder="Diensttyp wählen..." />
@@ -470,7 +470,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 </div>
                                                                                 <Switch
                                                                                     checked={editForm.auto_off || false}
-                                                                                    onCheckedChange={(checked: boolean) => setEditForm({...editForm, auto_off: checked})}
+                                                                                    onCheckedChange={(checked: boolean) => { setEditForm({...editForm, auto_off: checked}); }}
                                                                                 />
                                                                             </div>
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
@@ -482,7 +482,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 </div>
                                                                                 <Switch
                                                                                     checked={editForm.allows_rotation_concurrently || false}
-                                                                                    onCheckedChange={(checked: boolean) => setEditForm({...editForm, allows_rotation_concurrently: checked})}
+                                                                                    onCheckedChange={(checked: boolean) => { setEditForm({...editForm, allows_rotation_concurrently: checked}); }}
                                                                                 />
                                                                             </div>
                                                                             <div className="flex items-center justify-between p-3 border rounded bg-slate-50">
@@ -494,7 +494,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 </div>
                                                                                 <Switch
                                                                                     checked={editForm.allows_absence_overlap || false}
-                                                                                    onCheckedChange={(checked: boolean) => setEditForm({...editForm, allows_absence_overlap: checked})}
+                                                                                    onCheckedChange={(checked: boolean) => { setEditForm({...editForm, allows_absence_overlap: checked}); }}
                                                                                 />
                                                                             </div>
                                                                             <div className="p-3 border rounded bg-slate-50 space-y-2">
@@ -541,7 +541,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             max="100"
                                                                                             step="5"
                                                                                             value={editForm.work_time_percentage ?? 100}
-                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, work_time_percentage: parseFloat(e.target.value) || 100})}
+                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, work_time_percentage: parseFloat(e.target.value) || 100}); }}
                                                                                             className="w-20"
                                                                                         />
                                                                                         <span className="text-sm text-slate-500">%</span>
@@ -558,7 +558,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             <button
                                                                                                 key={i}
                                                                                                 type="button"
-                                                                                                onClick={() => toggleDay(i)}
+                                                                                                onClick={() => { toggleDay(i); }}
                                                                                                 className={cn(
                                                                                                     "w-8 h-8 rounded-full text-xs font-medium transition-colors",
                                                                                                     (editForm.active_days as number[] || []).includes(i)
@@ -583,7 +583,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             <button
                                                                                                 key={i}
                                                                                                 type="button"
-                                                                                                onClick={() => toggleDay(i)}
+                                                                                                onClick={() => { toggleDay(i); }}
                                                                                                 className={cn(
                                                                                                     "w-8 h-8 rounded-full text-xs font-medium transition-colors",
                                                                                                     (editForm.active_days as number[] || []).includes(i)
@@ -605,7 +605,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     </div>
                                                                                     <Switch
                                                                                         checked={editForm.show_in_service_plan || false}
-                                                                                        onCheckedChange={(checked: boolean) => setEditForm({...editForm, show_in_service_plan: checked})}
+                                                                                        onCheckedChange={(checked: boolean) => { setEditForm({...editForm, show_in_service_plan: checked}); }}
                                                                                     />
                                                                                 </div>
                                                                                 <div className="flex items-center justify-between p-3 border rounded bg-amber-50">
@@ -618,7 +618,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     </div>
                                                                                     <Switch
                                                                                         checked={editForm.affects_availability !== false} // Default true
-                                                                                        onCheckedChange={(checked: boolean) => setEditForm({...editForm, affects_availability: checked})}
+                                                                                        onCheckedChange={(checked: boolean) => { setEditForm({...editForm, affects_availability: checked}); }}
                                                                                     />
                                                                                 </div>
                                                                             </div>
@@ -634,7 +634,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             <button
                                                                                                 key={i}
                                                                                                 type="button"
-                                                                                                onClick={() => toggleDay(i)}
+                                                                                                onClick={() => { toggleDay(i); }}
                                                                                                 className={cn(
                                                                                                     "w-8 h-8 rounded-full text-xs font-medium transition-colors",
                                                                                                     (editForm.active_days as number[] || []).includes(i)
@@ -656,7 +656,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     </div>
                                                                                     <Switch
                                                                                         checked={editForm.show_in_service_plan || false}
-                                                                                        onCheckedChange={(checked: boolean) => setEditForm({...editForm, show_in_service_plan: checked})}
+                                                                                        onCheckedChange={(checked: boolean) => { setEditForm({...editForm, show_in_service_plan: checked}); }}
                                                                                     />
                                                                                 </div>
                                                                                 <div className="flex items-center justify-between p-3 border rounded bg-amber-50">
@@ -669,7 +669,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     </div>
                                                                                     <Switch
                                                                                         checked={editForm.affects_availability !== false} // Default true
-                                                                                        onCheckedChange={(checked: boolean) => setEditForm({...editForm, affects_availability: checked})}
+                                                                                        onCheckedChange={(checked: boolean) => { setEditForm({...editForm, affects_availability: checked}); }}
                                                                                     />
                                                                                 </div>
                                                                             </div>
@@ -687,7 +687,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                         <button
                                                                                             key={i}
                                                                                             type="button"
-                                                                                            onClick={() => toggleDay(i)}
+                                                                                            onClick={() => { toggleDay(i); }}
                                                                                             className={cn(
                                                                                                 "w-8 h-8 rounded-full text-xs font-medium transition-colors",
                                                                                                 (editForm.active_days as number[] || []).includes(i)
@@ -713,7 +713,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 </div>
                                                                                 <Switch
                                                                                     checked={editForm.allows_multiple ?? categoryAllowsMultiple(activeTab)}
-                                                                                    onCheckedChange={(checked: boolean) => setEditForm({...editForm, allows_multiple: checked})}
+                                                                                    onCheckedChange={(checked: boolean) => { setEditForm({...editForm, allows_multiple: checked}); }}
                                                                                 />
                                                                             </div>
 
@@ -728,7 +728,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             min="0"
                                                                                             max="20"
                                                                                             value={editForm.min_staff ?? 1}
-                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, min_staff: parseInt(e.target.value) || 0})}
+                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, min_staff: parseInt(e.target.value) || 0}); }}
                                                                                             className="h-8 w-20"
                                                                                         />
                                                                                     </div>
@@ -740,7 +740,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                             min="0"
                                                                                             max="20"
                                                                                             value={editForm.optimal_staff ?? 1}
-                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, optimal_staff: parseInt(e.target.value) || 1})}
+                                                                                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, optimal_staff: parseInt(e.target.value) || 1}); }}
                                                                                             className="h-8 w-20"
                                                                                         />
                                                                                     </div>
@@ -762,7 +762,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                     </div>
                                                                                     <Switch
                                                                                         checked={editForm.timeslots_enabled || false}
-                                                                                        onCheckedChange={(checked: boolean) => setEditForm({...editForm, timeslots_enabled: checked})}
+                                                                                        onCheckedChange={(checked: boolean) => { setEditForm({...editForm, timeslots_enabled: checked}); }}
                                                                                     />
                                                                                 </div>
 
@@ -816,7 +816,7 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                         </div>
 
                                                                         <div className="flex justify-end gap-2 pt-2">
-                                                                            <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Abbrechen</Button>
+                                                                            <Button variant="ghost" size="sm" onClick={() => { setEditingId(null); }}>Abbrechen</Button>
                                                                             <Button size="sm" onClick={handleSaveEdit} disabled={isRenaming}>
                                                                                 {isRenaming && <Loader2 className="w-3 h-3 mr-2 animate-spin" />}
                                                                                 Speichern
@@ -864,10 +864,10 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                             )}
                                                                         </div>
                                                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEdit(item)}>
+                                                                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { startEdit(item); }}>
                                                                                 <Settings className="w-4 h-4" />
                                                                             </Button>
-                                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => handleDelete(item)}>
+                                                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600" onClick={() => { handleDelete(item); }}>
                                                                                 <Trash2 className="w-4 h-4" />
                                                                             </Button>
                                                                         </div>
@@ -901,8 +901,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                             <Input
                                                 type="number"
                                                 min="0"
-                                                defaultValue={(settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'limit_fore_services')?.value || '4'}
-                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => updateSettingMutation.mutate({ key: 'limit_fore_services', value: e.target.value })}
+                                                defaultValue={(settings).find((s: SystemSetting) => s.key === 'limit_fore_services')?.value || '4'}
+                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => { updateSettingMutation.mutate({ key: 'limit_fore_services', value: e.target.value }); }}
                                                 className="bg-white"
                                             />
                                         </div>
@@ -911,8 +911,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                             <Input
                                                 type="number"
                                                 min="0"
-                                                defaultValue={(settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'limit_weekend_services')?.value || '1'}
-                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => updateSettingMutation.mutate({ key: 'limit_weekend_services', value: e.target.value })}
+                                                defaultValue={(settings).find((s: SystemSetting) => s.key === 'limit_weekend_services')?.value || '1'}
+                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => { updateSettingMutation.mutate({ key: 'limit_weekend_services', value: e.target.value }); }}
                                                 className="bg-white"
                                             />
                                         </div>
@@ -922,8 +922,8 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                             <Input
                                                 type="number"
                                                 min="0"
-                                                defaultValue={(settings as SystemSetting[]).find((s: SystemSetting) => s.key === 'limit_back_services')?.value || '12'}
-                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => updateSettingMutation.mutate({ key: 'limit_back_services', value: e.target.value })}
+                                                defaultValue={(settings).find((s: SystemSetting) => s.key === 'limit_back_services')?.value || '12'}
+                                                onBlur={(e: React.FocusEvent<HTMLInputElement>) => { updateSettingMutation.mutate({ key: 'limit_back_services', value: e.target.value }); }}
                                                 className="bg-white"
                                             />
                                         </div>
