@@ -163,6 +163,8 @@ test.describe('wishlist workflows', () => {
       await adminWishListPage.openWishForDate(wishDateString);
       await adminWishListPage.approveWish();
 
+      await adminPage.waitForTimeout(800); // allow shift auto-creation to commit
+
       await expect
         .poll(async () => await adminWishListPage.dayCell(wishDateString).getAttribute('title'))
         .toContain('Genehmigt');

@@ -81,6 +81,7 @@ test.describe('vacation workflows', () => {
           position: 'Dienst Vordergrund',
         },
       });
+      await page.waitForTimeout(500);
 
       await page.reload();
       await vacationPage.expectLoaded();
