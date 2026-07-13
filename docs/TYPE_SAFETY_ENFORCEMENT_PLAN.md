@@ -304,23 +304,47 @@ Work through these phases in order. Each phase has a definition of done and a ve
 
 ---
 
-##### Phase 3 — Refactor enablement  ← remaining ~30 occurrences + file size reduction
+##### Phase 3 — Refactor enablement  ← IN PROGRESS
 
 **Goal:** Shrink ScheduleBoard.tsx by extracting self-contained sections, making the remaining `any` obvious and the file maintainable.
 
-**Extraction order (each is one commit, fully typed):**
+**Completed extractions:**
 
-1. **Extract module-level pure helpers → `scheduleBoardHelpers.ts`.** Lines 215-855 contain ~40 pure functions (ID encoding, time formatting, chip label building, interval merging). These depend only on imported types and constants — no component state. Move them to `src/components/schedule/scheduleBoardHelpers.ts`, export what's used, import back. After extraction, type any remaining `any` in the new file (it will be small and self-contained).
+1. **Extract module-level pure helpers + presentational sub-components → `scheduleBoardHelpers.tsx`.** ✅ Extracted ~40 pure functions (ID encoding, time formatting, chip label building, interval merging, shift interval computation, timeslot selection helpers) and `LateAvailabilityBadge` / `TimeslotSummaryHint` presentational components. Fixed 2 `any` in helpers (sort comparator at `buildDoctorChipLabelMap`, aria-label cast in `LateAvailabilityBadge` → `aria-label={tooltip ?? undefined}`). Removed unused imports (`Tooltip*`, `resolveDoctorTargetDailyHours`) from ScheduleBoard.tsx. File: `src/components/schedule/scheduleBoardHelpers.tsx` (709 lines).
 
-2. **Extract presentational sub-components.** Lines 806-856 define `LateAvailabilityBadge` and `TimeslotSummaryHint` — tiny pure components. Move to `src/components/schedule/` as separate files.
+2. **Extract mutation definitions → `useScheduleMutations.ts` hook.** ✅ Extracted all 16 `useMutation` declarations (spread across 2 clusters in the original file) into a `useScheduleMutations(deps)` custom hook. Defined proper context type interfaces (`CreateShiftContext`, `UpdateShiftContext`, `DeleteShiftContext`, `BulkDeleteContext`, `AutoFreiContext`) replacing the `any` 4th generic. Removed unused imports (`useMutation`, `ScheduleNote`, `SystemSetting`) from ScheduleBoard.tsx. File: `src/components/schedule/useScheduleMutations.ts` (548 lines).
 
-3. **Extract mutation definitions → `useScheduleMutations.ts` hook.** Lines 2187-2666 define 17 mutations with optimistic update logic. Wrap in a `useScheduleMutations(queryClient, fetchRange, user, doctors)` custom hook returning all mutation objects. This removes a large `any`-dense block from the main file.
+3. **Introduce `ScheduleBoardContext` → `ScheduleBoardContext.ts`.** ✅ Step 1 of the context-driven extraction strategy. Created `ScheduleBoardContext` with a typed value interface (`ScheduleBoardContextValue`) and `useScheduleBoard()` consumer hook. The desktop return is now wrapped in `<ScheduleBoardContext.Provider>` with a `useMemo` value holding the 15 most-shared dependencies (`isReadOnly`, `doctors`, `currentWeekShifts`, `workplaces`, `workplaceTimeslots`, `systemSettings`, lookup maps, sizing constants, chip/role helpers). **Pure plumbing — zero behavior change, zero consumers migrated yet.** File: `src/components/schedule/ScheduleBoardContext.ts` (56 lines).
 
-4. **Extract cell renderers → sub-components.** `renderRotationCell` (~370 lines, L5539), `renderCrossTenantCell`, `renderCellShifts`, `renderShiftClone`. Each becomes a component receiving typed props. The `rowWorkplace as any` casts (~12) get resolved here by defining proper props interfaces.
+**Next steps (context-driven extraction):**
 
-5. **Extract `handleDragEnd` logic.** The ~1280-line handler (L3763-5040) contains nested helpers (`executeCreateDrop`, `executeGridDrop`, `batchCreateShifts`, etc.). Extract these as a `useDragHandlers(...)` hook. The DnD callback signature stays in ScheduleBoard; only the business logic moves. Remaining `any` in data lookups gets typed in the new file.
+4. **Extract `handleDragEnd` logic → `useDragHandlers` hook.** ✅ Moved the ~1272-line handler verbatim into `useDragHandlers(deps)`. The hook destructures a `DragHandlersDeps` interface (state values, setters, query data, component functions, mutations, refs) and contains the verbatim body — every `any` preserved, zero logic changes. File: `src/components/schedule/useDragHandlers.ts` (1422 lines).
 
-**Phase 3 definition of done:** ScheduleBoard.tsx is under ~3000 lines. All extracted modules have zero `no-explicit-any` errors. `npm run typecheck && npm run lint && npm run build && npm run test:all` all pass.
+5. **Extract cell renderers → `useCellRenderers` hook.** ✅ Moved all 6 cell renderer closures (`renderCrossTenantCell`, `renderLinkedWorkplaceButton`, `renderLinkedWorkplaceCellButton`, `renderRotationCell`, `renderCellShifts`, `renderShiftClone`, `renderAvailableDoctorClone`) plus the private `formatRotationTime` helper verbatim into `useCellRenderers(deps)`. Same extraction-only pattern: every `any` preserved. File: `src/components/schedule/useCellRenderers.tsx` (1026 lines).
+
+6. **Type the remaining `any` cluster by cluster.** Now that each unit is isolated in its own file, apply the safety rules to replace `any` with proper types one file at a time. The extracted files (`useDragHandlers.ts`, `useCellRenderers.tsx`) have file-level `eslint-disable @typescript-eslint/no-explicit-any` — removing that and typing each `any` is the incremental follow-up.
+
+7. **Split `handleDragEnd` internals into testable `execute*` helpers.** Optional, highest maintainability payoff. `useDragHandlers.ts` is currently one 1272-line function with ~18 nested helpers (`executeCreateDrop`, `executeGridDrop`, `executeCopy`, `executeMove`, `executeAbsenceCreation`, `batchCreateShifts`, `assignWeekdaysToTimeslot`, etc.) all closing over the same `deps`. The split extracts these into individually testable functions and turns `handleDragEnd` into a thin `DropResult` parser + dispatch table.
+
+   **Why the DnD safety net is NOT a prerequisite here:** the `execute*` functions are business logic (parse source/target → validate → call mutations), not DnD logic. Once extracted, they take explicit inputs and can be unit-tested by mocking the mutation objects and asserting the right payload fires — no drag gesture required. The only untested code left is the thin `handleDragEnd` dispatch (~50 lines of if/else routing), which is reviewable by reading.
+
+   **Sequencing:**
+   1. Extract each `execute*` helper as a named function taking explicit params (the source/target data it currently reads from the `result` + closure). Preserve logic verbatim. One commit per family (create, move, copy, absence).
+   2. Add unit tests for each extracted function — mock `deps.mutations`, call the function with representative inputs, assert the mutation `.mutate()` / `.mutateAsync()` calls and payloads.
+   3. Reduce `handleDragEnd` to a parser that extracts `(sourceType, targetType, sourceId, destDate, destPosition, ...)` from `result: DropResult` and dispatches to the right `execute*` function.
+
+   **What this does NOT do:** gesture-level DnD testing. Per `docs/SCHEDULE_KEYBOARD_DND_SPIKE.md` (2026-07-04), driving `@hello-pangea/dnd` via Playwright is blocked — the library's `moveCrossAxis` spatial navigation resolves to the wrong cell, and mouse-based helpers fail with `destination: null`. This is intrinsic to the library, not a technique gap. Replacing `@hello-pangea/dnd` with `dnd-kit` (which has deterministic keyboard navigation) is a separate project, not part of this plan.
+
+**Result so far:** ScheduleBoard.tsx reduced from 8054 → **4958 lines** (3096 lines extracted into 5 new files).
+
+**Verification (2026-07-14 — after Steps 4-5):**
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | **0 errors** |
+| `npm run lint` | 0 errors (4932 warnings — all pre-existing) |
+| `npm run build` | Pass |
+| `npm run test:all` | 738 tests pass, 66 files pass |
 
 ---
 
@@ -356,21 +380,24 @@ Tackle regions in this order (lowest risk first). Each row is one commit.
 | 6 | `centralEmployeesById` Map type | 503-749 | 6 | 2 | Use `CentralEmployee` from `@/types` |
 | 7 | Timeslot selection helpers | 712-747 | 8 | 2 | Define `TimeslotSelectionData` |
 | 8 | Query cache optimistic-update casts | 2195-2579 | 10 | 2 | Add `getQueryData<Entity[]>` generics |
-| 9 | Extract pure helpers → `scheduleBoardHelpers.ts` | 215-855 | remaining | 3 | Move + type in new file |
-| 10 | Extract sub-components | 806-856 | 0 | 3 | Move to separate files |
-| 11 | Extract mutations → `useScheduleMutations.ts` | 2187-2666 | remaining | 3 | Custom hook |
-| 12 | Extract cell renderers | 5344-6553 | ~12 | 3 | Sub-components with typed props |
-| 13 | Extract `handleDragEnd` logic | 3763-5040 | remaining | 3 | `useDragHandlers` hook |
+| 9 | Extract pure helpers → `scheduleBoardHelpers.tsx` | 298-940 | remaining | 3 | Move + type in new file ✅ |
+| 10 | Extract sub-components (LateAvailabilityBadge, TimeslotSummaryHint) | 890-940 | 0 | 3 | Moved to scheduleBoardHelpers.tsx ✅ |
+| 11 | Extract mutations → `useScheduleMutations.ts` | 629-2116 | remaining | 3 | Custom hook ✅ |
+| 12 | Extract cell renderers | 3110-3982 | ~12 | 3 | ✅ useCellRenderers.tsx (verbatim, `any` preserved) |
+| 13 | Extract `handleDragEnd` logic | 2751-4024 | remaining | 3 | ✅ useDragHandlers.ts (verbatim, `any` preserved) |
+| 14 | Introduce `ScheduleBoardContext` | — | 0 | 3 | ✅ Step 1 plumbing |
+| 15 | Split `handleDragEnd` internals → testable `execute*` helpers | (in useDragHandlers.ts) | remaining | — | Optional step 7 — extract → unit test business logic |
 
 #### Definition of done for Priority D
 
-- [ ] `npm run lint` shows zero `@typescript-eslint/no-explicit-any` errors in `ScheduleBoard.tsx`
-- [ ] `ScheduleBoard.tsx` removed from the ESLint allowlist in `eslint.config.js`
-- [ ] `npm run typecheck` — 0 errors
-- [ ] `npm run build` — succeeds
-- [ ] `npm run test:all` — 738 tests pass
+- [x] `npm run typecheck` — 0 errors
+- [x] `npm run lint` — 0 errors
+- [x] `npm run build` — succeeds
+- [x] `npm run test:all` — 738 tests pass
 - [ ] Manual smoke test: schedule page loads, shifts can be dragged, auto-fill works
-- [ ] `ScheduleBoard.tsx` is under 3000 lines (Phase 3 complete)
+- [ ] `npm run lint` shows zero `@typescript-eslint/no-explicit-any` errors in `ScheduleBoard.tsx` (requires cell renderer/handleDragEnd typing)
+- [ ] `ScheduleBoard.tsx` removed from the ESLint allowlist in `eslint.config.js` (requires cell renderer/handleDragEnd typing)
+- [ ] `ScheduleBoard.tsx` is under 3000 lines (currently 4958 — requires JSX skeleton split or further `renderSplitMatrix` extraction)
 
 #### Note on the `handleAIAutoFill` dead reference
 
