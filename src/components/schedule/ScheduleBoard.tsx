@@ -33,6 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { db, api } from "@/api/client";
 import type { Doctor, ShiftEntry, Workplace, WorkplaceTimeslot, WorkTimeModel, ScheduleBlock, ScheduleNote, SystemSetting, WishRequest } from '@/types';
+import type { CentralEmployee } from '@/types/master';
 import { cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -140,6 +141,8 @@ interface UndoAction {
   data?: unknown;
 }
 
+type UndoStackEntry = UndoAction | UndoAction[];
+
 interface RowQualFilter {
   key: string;
   sourceName: string;
@@ -202,6 +205,86 @@ interface BlockContextMenuState {
   timeslotId?: string | null;
   existingBlock?: ScheduleBlock | null;
   existingInfo?: ScheduleBlock | null;
+}
+
+interface PoolShift {
+  shared_workplace_id?: string;
+  date: string;
+  employee_id?: string;
+  affects_availability?: boolean;
+  auto_off?: boolean;
+  workplace_category?: string;
+}
+
+interface VisiblePoolShiftsResponse {
+  shifts: PoolShift[];
+  workplaces: Workplace[];
+}
+
+interface LinkedWorkplacePartner {
+  tenant_id: string;
+  workplace_name: string;
+  tenant_name: string;
+  shifts: Array<{
+    date: string;
+    doctor_name: string;
+    start_time: string;
+    end_time: string;
+  }>;
+}
+
+interface VisibleWorkplaceLinksResponse {
+  linkedWorkplaces: Record<string, LinkedWorkplacePartner[]>;
+  tenantId: string | null;
+}
+
+interface RotationAssignment {
+  id: string;
+  rotation_workplace_id: string;
+  date: string;
+  employee_id: string;
+  employee_name?: string;
+  group_id: string | number;
+  timeslot_id?: string | null;
+}
+
+interface RotationDemand {
+  id: string;
+  rotation_workplace_id: string;
+  date: string;
+  timeslot_id?: string | null;
+  status: string;
+  return_requested_assignment_id?: string;
+  offered_employee_id?: string;
+  offered_employee_name?: string;
+}
+
+interface RotationWorkplace {
+  id: string;
+  name: string;
+  group_id: number | string;
+  canWrite: boolean;
+  timeslots_enabled?: boolean;
+  timeslots?: Array<{ id: string; label: string; start_time: string; end_time: string }>;
+}
+
+interface VisibleRotationsResponse {
+  workplaces: RotationWorkplace[];
+  assignments: RotationAssignment[];
+  demands: RotationDemand[];
+}
+
+interface TimeslotSelectionNormalized {
+  timeslotId: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  breakMinutes: number | null;
+  isCustom: boolean;
+}
+
+interface PartialBulkError extends Error {
+  failedIds?: string[];
+  partial?: boolean;
 }
 
 interface AugmentedDoctor extends Doctor {
@@ -500,7 +583,7 @@ const mergePlannedIntervals = (intervals: Array<{ start: number; end: number }>)
     return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
 };
 
-const buildShiftInterval = (shift: ShiftEntry, doctor: Doctor, workplace: Workplace, timeslot: WorkplaceTimeslot | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): { start: number; end: number } | null => {
+const buildShiftInterval = (shift: ShiftEntry, doctor: Doctor, workplace: Workplace, timeslot: WorkplaceTimeslot | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>): { start: number; end: number } | null => {
     if (shift.start_time && shift.end_time) {
         const start = parseTimeToMinutes(shift.start_time);
         let end = parseTimeToMinutes(shift.end_time);
@@ -536,7 +619,7 @@ const buildShiftInterval = (shift: ShiftEntry, doctor: Doctor, workplace: Workpl
     };
 };
 
-const getExpandedTimeslotRowLabel = (rowObj: any, rowDisplayName: string): string => {
+const getExpandedTimeslotRowLabel = (rowObj: { isTimeslotRow?: boolean; isUnassignedRow?: boolean; startTime?: string; endTime?: string; timeslotLabel?: string }, rowDisplayName: string): string => {
     if (!rowObj?.isTimeslotRow || rowObj?.isUnassignedRow) {
         return rowDisplayName;
     }
@@ -580,7 +663,7 @@ const getRowLabelPresentation = (label: string, isCompactMode: boolean = false):
     };
 };
 
-const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
+const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>): number | null => {
     if (!doctor) return null;
 
     const model = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
@@ -588,7 +671,7 @@ const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap:
     return resolveDoctorTargetDailyHours(doctor, model, centralEmployee);
 };
 
-const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
+const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>): number | null => {
     const dailyHours = getDoctorTargetDailyHours(doctor, workTimeModelMap, centralEmployeesById);
     if (dailyHours === null || dailyHours === undefined) return null;
 
@@ -598,7 +681,7 @@ const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMa
     return Math.round(parsedDailyHours * 60);
 };
 
-const getTimeslotDerivedTimeRange = (timeslot: WorkplaceTimeslot | undefined | null, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): { start: number; end: number; displayEnd: number; workMinutes: number; appliedBreakMinutes: number } | null => {
+const getTimeslotDerivedTimeRange = (timeslot: WorkplaceTimeslot | undefined | null, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>): { start: number; end: number; displayEnd: number; workMinutes: number; appliedBreakMinutes: number } | null => {
     if (!timeslot?.start_time || !timeslot?.end_time) return null;
 
     const start = parseTimeToMinutes(timeslot.start_time);
@@ -636,7 +719,7 @@ const getTimeslotDerivedTimeRange = (timeslot: WorkplaceTimeslot | undefined | n
     };
 };
 
-const buildTimeslotSelectionOption = (timeslot: WorkplaceTimeslot, doctor: Doctor, workplace: Workplace, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>) => {
+const buildTimeslotSelectionOption = (timeslot: WorkplaceTimeslot, doctor: Doctor, workplace: Workplace, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>) => {
     const rawStartMinutes = parseTimeToMinutes(timeslot?.start_time);
     let rawEndMinutes = parseTimeToMinutes(timeslot?.end_time);
     if (rawStartMinutes === null || rawEndMinutes === null) {
@@ -689,19 +772,20 @@ const buildTimeslotSelectionOption = (timeslot: WorkplaceTimeslot, doctor: Docto
     };
 };
 
-const normalizeTimeslotSelection = (selection: any): { timeslotId: string | null; startTime: string | null; endTime: string | null; breakMinutes: number | null; isCustom: boolean } => {
+const normalizeTimeslotSelection = (selection: unknown): TimeslotSelectionNormalized => {
     if (selection && typeof selection === 'object' && !Array.isArray(selection)) {
+        const obj = selection as Record<string, unknown>;
         return {
-            timeslotId: selection.timeslotId ?? null,
-            startTime: selection.startTime ?? null,
-            endTime: selection.endTime ?? null,
-            breakMinutes: selection.breakMinutes ?? null,
-            isCustom: Boolean(selection.isCustom),
+            timeslotId: (obj.timeslotId as string) ?? null,
+            startTime: (obj.startTime as string) ?? null,
+            endTime: (obj.endTime as string) ?? null,
+            breakMinutes: (obj.breakMinutes as number) ?? null,
+            isCustom: Boolean(obj.isCustom),
         };
     }
 
     return {
-        timeslotId: selection === '__unassigned__' ? null : (selection ?? null),
+        timeslotId: selection === '__unassigned__' ? null : (selection as string ?? null),
         startTime: null,
         endTime: null,
         breakMinutes: null,
@@ -709,9 +793,9 @@ const normalizeTimeslotSelection = (selection: any): { timeslotId: string | null
     };
 };
 
-const applyTimeslotSelectionToCreateData = (data: Record<string, any>, selection: any): Record<string, any> => {
+const applyTimeslotSelectionToCreateData = (data: Record<string, unknown>, selection: unknown): Record<string, unknown> => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
-    const nextData = { ...data };
+    const nextData: Record<string, unknown> = { ...data };
 
     if (normalizedSelection.timeslotId) {
         nextData.timeslot_id = normalizedSelection.timeslotId;
@@ -726,9 +810,9 @@ const applyTimeslotSelectionToCreateData = (data: Record<string, any>, selection
     return nextData;
 };
 
-const applyTimeslotSelectionToUpdateData = (data: Record<string, any>, selection: any): Record<string, any> => {
+const applyTimeslotSelectionToUpdateData = (data: Record<string, unknown>, selection: unknown): Record<string, unknown> => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
-    const nextData: Record<string, any> = {
+    const nextData: Record<string, unknown> = {
         ...data,
         timeslot_id: normalizedSelection.timeslotId || null,
     };
@@ -746,7 +830,7 @@ const applyTimeslotSelectionToUpdateData = (data: Record<string, any>, selection
     return nextData;
 };
 
-const getShiftTimeRangeLabel = (shift: ShiftEntry, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workplaceTimeslots: WorkplaceTimeslot[], workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): string | null => {
+const getShiftTimeRangeLabel = (shift: ShiftEntry, doctor: Doctor | undefined, workplace: Workplace | undefined | null, workplaceTimeslots: WorkplaceTimeslot[], workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, CentralEmployee>): string | null => {
     if (shift?.start_time && shift?.end_time) {
         return formatTimeslotTimeRange(shift.start_time, shift.end_time);
     }
@@ -868,7 +952,7 @@ export default function ScheduleBoard() {
     const isMonthView = viewMode === 'month';
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCtrlPressed, setIsCtrlPressed] = useState(false);
-  const [undoStack, setUndoStack] = useState<UndoAction[]>([]);
+  const [undoStack, setUndoStack] = useState<UndoStackEntry[]>([]);
 
   // Cell-lock to prevent race conditions during rapid drag-drops
   // Keys are "date|position" or "date|position|timeslot_id", values are timestamps
@@ -898,21 +982,21 @@ export default function ScheduleBoard() {
       try {
           for (const action of actions) {
               if (action.type === 'DELETE') {
-                  await db.ShiftEntry.delete(action.id);
+                  await db.ShiftEntry.delete(action.id!);
               } else if (action.type === 'CREATE') {
-                  await db.ShiftEntry.create(action.data);
+                  await db.ShiftEntry.create(action.data as Record<string, unknown>);
               } else if (action.type === 'UPDATE') {
-                  await db.ShiftEntry.update(action.id, action.data);
+                  await db.ShiftEntry.update(action.id!, action.data as Record<string, unknown>);
               } else if (action.type === 'BULK_CREATE') {
-                  await db.ShiftEntry.bulkCreate(action.data);
+                  await db.ShiftEntry.bulkCreate(action.data as Record<string, unknown>[]);
               } else if (action.type === 'BULK_DELETE') {
-                  await Promise.all(action.ids.map((id: any) => db.ShiftEntry.delete(id)));
+                  await Promise.all(action.ids!.map((id) => db.ShiftEntry.delete(id)));
               }
           }
           queryClient.invalidateQueries({ queryKey: ['shifts'] });
       } catch (e) {
           console.error("Undo failed", e);
-          alert("Rückgängig fehlgeschlagen: " + (e as Error).message);
+          alert("Rückgängig fehlgeschlagen: " + (e instanceof Error ? e.message : String(e)));
       }
   };
 
@@ -1067,12 +1151,12 @@ export default function ScheduleBoard() {
       }
   }, [showSidebarTimeAccount, updateMe, user]);
 
-  const sortDoctorsForDisplay = (doctorList: any[] = []) => {
+  const sortDoctorsForDisplay = (doctorList: Doctor[] = []): Doctor[] => {
       if (!sortDoctorsAlphabetically) {
           return doctorList;
       }
 
-      return [...doctorList].sort((a: any, b: any) => {
+      return [...doctorList].sort((a, b) => {
           const nameDiff = (a?.name || '').localeCompare(b?.name || '', 'de', { sensitivity: 'base' });
           if (nameDiff !== 0) return nameDiff;
 
@@ -1167,14 +1251,14 @@ export default function ScheduleBoard() {
     queryFn: () => db.Doctor.list(),
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
-    select: (data: any) => [...data].sort((a: any, b: any) => {
-      const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
+    select: (data: Doctor[]) => [...data].sort((a, b) => {
+      const roleDiff = (rolePriority[a.role ?? ''] ?? 99) - (rolePriority[b.role ?? ''] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
     }),
   });
 
-  const updateDoctorMutation = useMutation<Doctor, Error, any>({
+  const updateDoctorMutation = useMutation<Doctor, Error, { id: string; data: Partial<Doctor> }>({
     mutationFn: ({ id, data }: { id: string; data: Partial<Doctor> }) => db.Doctor.update(id, data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['doctors'] }),
   });
@@ -1194,16 +1278,16 @@ export default function ScheduleBoard() {
 
   const { data: allShifts = [] as any } = useQuery({
     queryKey: ['shifts', fetchRange.start, fetchRange.end],
-    queryFn: () => (db.ShiftEntry.filter as any)({
+    queryFn: () => db.ShiftEntry.filter({
         date: { $gte: fetchRange.start, $lte: fetchRange.end }
-    }, null, 5000),
+    }),
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000, // 30 seconds cache
   });
 
-    const { data: visiblePoolData } = useQuery({
+    const { data: visiblePoolData } = useQuery<VisiblePoolShiftsResponse>({
         queryKey: ['pool', 'visible-shifts', fetchRange.start, fetchRange.end],
-        queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }),
+        queryFn: () => api.getVisiblePoolShifts({ from: fetchRange.start, to: fetchRange.end }) as Promise<VisiblePoolShiftsResponse>,
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         // Keep prior data visible while a new fetch (e.g. after view switch) is in-flight.
@@ -1212,39 +1296,39 @@ export default function ScheduleBoard() {
         placeholderData: keepPreviousData,
     });
 
-    const visiblePoolShifts = (visiblePoolData as any)?.shifts || [];
-    const crossTenantWorkplaces = (visiblePoolData as any)?.workplaces || [];
+    const visiblePoolShifts = visiblePoolData?.shifts || [];
+    const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
 
     // Read-only cross-tenant staffing mirror (e.g. Radiology "CT" ↔ MTR "CT1"/"CT2").
     // Only fetched/shown in day view — see docs/features/WORKPLACE_LINKS.md.
-    const { data: visibleWorkplaceLinksData } = useQuery({
+    const { data: visibleWorkplaceLinksData } = useQuery<VisibleWorkplaceLinksResponse>({
         queryKey: ['workplace-links', 'visible-links', fetchRange.start, fetchRange.end],
-        queryFn: () => api.getVisibleWorkplaceLinks({ from: fetchRange.start, to: fetchRange.end }),
+        queryFn: () => api.getVisibleWorkplaceLinks({ from: fetchRange.start, to: fetchRange.end }) as Promise<VisibleWorkplaceLinksResponse>,
         enabled: viewMode === 'day' || viewMode === 'week',
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         placeholderData: keepPreviousData,
     });
 
-    const linkedWorkplacesByName = (visibleWorkplaceLinksData as any)?.linkedWorkplaces || {};
-    const activeLinkTenantId = (visibleWorkplaceLinksData as any)?.tenantId || null;
+    const linkedWorkplacesByName = visibleWorkplaceLinksData?.linkedWorkplaces || {};
+    const activeLinkTenantId = visibleWorkplaceLinksData?.tenantId || null;
 
     // ===== Springerpool-Rotationen (separates System) =====
-    const { data: visibleRotationData } = useQuery({
+    const { data: visibleRotationData } = useQuery<VisibleRotationsResponse>({
         queryKey: ['rotations', 'visible-rotations', fetchRange.start, fetchRange.end],
-        queryFn: () => api.getVisibleRotations({ from: fetchRange.start, to: fetchRange.end }),
+        queryFn: () => api.getVisibleRotations({ from: fetchRange.start, to: fetchRange.end }) as Promise<VisibleRotationsResponse>,
         staleTime: 30 * 1000,
         refetchOnWindowFocus: false,
         placeholderData: keepPreviousData,
     });
 
-    const rotationWorkplaces = (visibleRotationData as any)?.workplaces || [];
-    const rotationAssignments = (visibleRotationData as any)?.assignments || [];
-    const rotationDemands = (visibleRotationData as any)?.demands || [];
+    const rotationWorkplaces = visibleRotationData?.workplaces || [];
+    const rotationAssignments = visibleRotationData?.assignments || [];
+    const rotationDemands = visibleRotationData?.demands || [];
 
     // Map assignments by `${rotation_workplace_id}|${date}` for fast cell lookup.
     const rotationAssignmentsByCell = useMemo(() => {
-        const map = new Map();
+        const map = new Map<string, RotationAssignment[]>();
         for (const assignment of rotationAssignments) {
             const key = `${assignment.rotation_workplace_id}|${String(assignment.date).slice(0, 10)}`;
             const list = map.get(key) || [];
@@ -1256,7 +1340,7 @@ export default function ScheduleBoard() {
 
     // Map demands by `${rotation_workplace_id}|${date}|${timeslot_id}` for cell overlay.
     const rotationDemandsByCell = useMemo(() => {
-        const map = new Map();
+        const map = new Map<string, RotationDemand>();
         for (const demand of rotationDemands) {
             const key = `${demand.rotation_workplace_id}|${String(demand.date).slice(0, 10)}|${demand.timeslot_id || ''}`;
             map.set(key, demand);
@@ -1483,17 +1567,17 @@ export default function ScheduleBoard() {
     placeholderData: keepPreviousData,
   });
 
-  const { data: workplaces = [] } = useQuery({
+  const { data: workplaces = [] } = useQuery<Workplace[]>({
     queryKey: ['workplaces'],
-    queryFn: () => (db.Workplace.list as any)(null, 1000),
+    queryFn: () => db.Workplace.list(),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 
   // Timeslots für Zeitfenster-Feature
-  const { data: workplaceTimeslots = [] } = useQuery({
+  const { data: workplaceTimeslots = [] } = useQuery<WorkplaceTimeslot[]>({
     queryKey: ['workplaceTimeslots'],
-    queryFn: () => (db.WorkplaceTimeslot.list as any)(null, 1000),
+    queryFn: () => db.WorkplaceTimeslot.list(),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -1553,10 +1637,10 @@ export default function ScheduleBoard() {
   });
 
   // Arbeitszeitmodelle aus Master-DB laden
-  const { data: workTimeModels = [] } = useQuery({
+  const { data: workTimeModels = [] } = useQuery<WorkTimeModel[]>({
     queryKey: ['workTimeModels'],
     queryFn: async () => {
-      const res = await api.request('/api/staff/work-time-models') as any;
+      const res = await api.request('/api/staff/work-time-models') as { models: WorkTimeModel[] };
       return res.models || [];
     },
     staleTime: 30 * 60 * 1000,
@@ -1565,18 +1649,18 @@ export default function ScheduleBoard() {
 
   // Lookup: work_time_model_id → { name, hours_per_week, hours_per_day }
   const workTimeModelMap = useMemo(() => {
-    const map = new Map();
+    const map = new Map<string, WorkTimeModel>();
     for (const m of workTimeModels) {
       map.set(m.id, m);
     }
     return map;
   }, [workTimeModels]);
 
-    const { data: centralEmployees = [] } = useQuery({
+    const { data: centralEmployees = [] } = useQuery<CentralEmployee[]>({
         queryKey: ['tenant-central-employees-for-schedule'],
         queryFn: async () => {
             try {
-                const res = await api.request('/api/staff/central-employees') as any;
+                const res = await api.request('/api/staff/central-employees') as { employees: CentralEmployee[] };
                 return res.employees || [];
             } catch {
                 return [];
@@ -1587,7 +1671,7 @@ export default function ScheduleBoard() {
     });
 
     const centralEmployeesById = useMemo(() => {
-        const map = new Map();
+        const map = new Map<string, CentralEmployee>();
         for (const employee of centralEmployees) {
             map.set(String(employee.id), employee);
         }
@@ -2184,15 +2268,15 @@ export default function ScheduleBoard() {
       return {};
   }, [colorSettings]);
 
-  const createShiftMutation = useMutation<ShiftEntry, Error, any, any>({
+  const createShiftMutation = useMutation<ShiftEntry, Error, Partial<ShiftEntry>, any>({
     mutationFn: (data: Partial<ShiftEntry>) => db.ShiftEntry.create(data),
     onMutate: async (newData) => {
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
+        const previousShifts = queryClient.getQueryData<ShiftEntry[]>(['shifts', fetchRange.start, fetchRange.end]);
         
         const tempShift = { ...newData, id: `temp-${Date.now()}` };
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => [...(old as any[]), tempShift]);
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: ShiftEntry[] | undefined) => [...(old ?? []), tempShift]);
         }
         return { previousShifts };
     },
@@ -2241,7 +2325,7 @@ export default function ScheduleBoard() {
     onSettled: (_data, _error, newData) => {
         // Release cell lock after mutation completes (success or error)
         if (newData?.date && newData?.position) {
-            unlockCell(newData.date, newData.position, newData.timeslot_id);
+            unlockCell(newData.date, newData.position, newData.timeslot_id as string | undefined);
         }
     },
     onError: (error, newData, context) => {
@@ -2264,16 +2348,16 @@ export default function ScheduleBoard() {
     }
   });
 
-  const bulkCreateShiftsMutation = useMutation<ShiftEntry[], Error, any, any>({
+  const bulkCreateShiftsMutation = useMutation<ShiftEntry[], Error, Partial<ShiftEntry>[], any>({
     mutationFn: (shiftsData: Partial<ShiftEntry>[]) => db.ShiftEntry.bulkCreate(shiftsData),
     onMutate: async (newShifts) => {
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
+        const previousShifts = queryClient.getQueryData<ShiftEntry[]>(['shifts', fetchRange.start, fetchRange.end]);
         
         const tempShifts = newShifts.map((s: Partial<ShiftEntry>, i: number) => ({ ...s, id: `temp-bulk-${Date.now()}-${i}` }));
         
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => [...(old as any[]), ...tempShifts]);
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: ShiftEntry[] | undefined) => [...(old ?? []), ...tempShifts]);
         }
         return { previousShifts };
     },
@@ -2335,20 +2419,20 @@ export default function ScheduleBoard() {
     }
   });
 
-  const updateShiftMutation = useMutation<ShiftEntry, Error, any, any>({
+  const updateShiftMutation = useMutation<ShiftEntry, Error, { id: string; data: Partial<ShiftEntry> }, any>({
     mutationFn: ({ id, data }: { id: string; data: Partial<ShiftEntry> }) => db.ShiftEntry.update(id, data),
     onMutate: async ({ id, data }) => {
         // Cancel any outgoing refetches to avoid overwriting our optimistic update
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         
         // Snapshot the previous value for rollback
-        const previousShifts = queryClient.getQueryData<any[]>(['shifts', fetchRange.start, fetchRange.end]);
-        const oldShift = previousShifts?.find((s: any) => s.id === id);
+        const previousShifts = queryClient.getQueryData<ShiftEntry[]>(['shifts', fetchRange.start, fetchRange.end]);
+        const oldShift = previousShifts?.find((s) => s.id === id);
         
         // Optimistically update to the new value immediately
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => 
-                old.map((s: any) => s.id === id ? { ...s, ...data } : s)
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: ShiftEntry[] | undefined) => 
+                (old ?? []).map((s) => s.id === id ? { ...s, ...data } : s)
             );
         }
         
@@ -2446,14 +2530,14 @@ export default function ScheduleBoard() {
     });
 
   // Dedicated mutations for automatic background operations
-  const createAutoFreiMutation = useMutation<ShiftEntry, Error, any, any>({
+  const createAutoFreiMutation = useMutation<ShiftEntry, Error, Partial<ShiftEntry>, any>({
     mutationFn: (data: Partial<ShiftEntry>) => db.ShiftEntry.create(data),
     onSuccess: (data) => {
-        setUndoStack((prev: any) => {
+        setUndoStack((prev) => {
             const undoAction = { type: 'DELETE', id: data.id };
             if (prev.length === 0) return [...prev, undoAction];
-            const last = prev[prev.length - 1];
-            const newGroup = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
+            const last = prev[prev.length - 1] as UndoAction | UndoAction[];
+            const newGroup: UndoAction[] = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
             return [...prev.slice(0, -1), newGroup];
         });
         setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
@@ -2461,10 +2545,10 @@ export default function ScheduleBoard() {
     onError: (error) => { console.error('Auto-Frei creation failed:', error); }
   });
 
-  const updateAutoFreiMutation = useMutation<ShiftEntry, Error, any, any>({
+  const updateAutoFreiMutation = useMutation<ShiftEntry, Error, { id: string; data: Partial<ShiftEntry> }, any>({
     mutationFn: ({ id, data }: { id: string; data: Partial<ShiftEntry> }) => db.ShiftEntry.update(id, data),
     onMutate: async ({ id }) => {
-        const oldShift = allShifts.find((s: any) => s.id === id);
+        const oldShift = allShifts.find((s: ShiftEntry) => s.id === id);
         return { oldShift };
     },
     onSuccess: (data, { id }, context) => {
@@ -2472,10 +2556,10 @@ export default function ScheduleBoard() {
             const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...oldData } = context.oldShift;
             const undoAction = { type: 'UPDATE', id, data: oldData };
             
-            setUndoStack((prev: any) => {
+            setUndoStack((prev) => {
                 if (prev.length === 0) return [...prev, undoAction];
-                const last = prev[prev.length - 1];
-                const newGroup = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
+                const last = prev[prev.length - 1] as UndoAction | UndoAction[];
+                const newGroup: UndoAction[] = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
                 return [...prev.slice(0, -1), newGroup];
             });
         }
@@ -2484,10 +2568,10 @@ export default function ScheduleBoard() {
     onError: (error) => { console.error('Auto-Frei update failed:', error); }
   });
 
-  const deleteShiftMutation = useMutation<ShiftEntry, Error, any, any>({
+  const deleteShiftMutation = useMutation<ShiftEntry, Error, string, any>({
     mutationFn: async (id: string) => {
         // Find shift to check for related wish
-        const shiftToDelete = allShifts.find((s: any) => s.id === id);
+        const shiftToDelete = allShifts.find((s: ShiftEntry) => s.id === id);
         
         if (shiftToDelete) {
             // Find matching approved wish
@@ -2509,13 +2593,13 @@ export default function ScheduleBoard() {
     },
     onMutate: async (id) => {
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
+        const previousShifts = queryClient.getQueryData<ShiftEntry[]>(['shifts', fetchRange.start, fetchRange.end]);
 
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => old.filter((s: any) => s.id !== id));
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: ShiftEntry[] | undefined) => (old ?? []).filter((s) => s.id !== id));
         }
 
-        const shift = allShifts.find((s: any) => s.id === id);
+        const shift = allShifts.find((s: ShiftEntry) => s.id === id);
         return { shift, previousShifts };
     },
     onSuccess: (_data, id, context) => {
@@ -2552,43 +2636,44 @@ export default function ScheduleBoard() {
     }
   });
 
-  const bulkDeleteMutation = useMutation<void, Error, any, any>({
+  const bulkDeleteMutation = useMutation<void, Error, string[], any>({
     mutationFn: async (ids: string[]) => {
         // Use allSettled so a single failure does not leave the batch in a
         // partially deleted state without the caller knowing. We collect
         // failures and surface them so the user is informed.
-        const results = await Promise.allSettled(ids.map((id: any) => db.ShiftEntry.delete(id)));
+        const results = await Promise.allSettled(ids.map((id) => db.ShiftEntry.delete(id)));
         const failures = results
-            .map((r: any, idx: any) => ({ r, id: ids[idx] }))
+            .map((r, idx) => ({ r, id: ids[idx] }))
             .filter(({ r }) => r.status === 'rejected');
         if (failures.length > 0) {
-            const firstError = failures[0].r.reason;
+            const firstError = failures[0].r.status === 'rejected' ? failures[0].r.reason : undefined;
             const err = new Error(
                 `${failures.length} von ${ids.length} Löschvorgängen sind fehlgeschlagen: ${firstError?.message || 'Unbekannter Fehler'}`,
-            ) as any;
-            err.failedIds = failures.map((f: any) => f.id);
+            ) as PartialBulkError;
+            err.failedIds = failures.map((f) => f.id);
             err.partial = failures.length < ids.length;
             throw err;
         }
     },
     onMutate: async (ids) => {
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
+        const previousShifts = queryClient.getQueryData<ShiftEntry[]>(['shifts', fetchRange.start, fetchRange.end]);
 
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => old.filter((s: any) => !ids.includes(s.id)));
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: ShiftEntry[] | undefined) => (old ?? []).filter((s) => !ids.includes(s.id)));
         }
 
-        const shifts = allShifts.filter((s: any) => ids.includes(s.id));
+        const shifts = allShifts.filter((s: ShiftEntry) => ids.includes(s.id));
         return { shifts, previousShifts };
     },
     onError: (err, _ids, context) => {
          // If the failure was total, restore the optimistic snapshot. For a
          // partial failure we cannot trust the snapshot (some rows really
          // were deleted on the server), so refetch instead.
-         if ((err as any)?.partial && (context)?.previousShifts) {
+         const partialErr = err as PartialBulkError;
+         if (partialErr.partial && (context)?.previousShifts) {
              queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
-             toast.error(`Teilweiser Löschfehler: ${(err as any).message}`, {
+             toast.error(`Teilweiser Löschfehler: ${partialErr.message}`, {
                  description: 'Die Daten wurden vom Server neu geladen, damit die Anzeige korrekt ist.',
              });
              return;
@@ -2601,7 +2686,7 @@ export default function ScheduleBoard() {
     onSuccess: (_data, ids, context) => {
         // trackDbChange(ids.length); // Disabled - MySQL mode
         if (context.shifts && context.shifts.length > 0) {
-            const shiftsData = context.shifts.map((s: any) => {
+            const shiftsData = context.shifts.map((s: ShiftEntry) => {
                 const { id: _id, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...rest } = s;
                 return rest;
             });
@@ -2964,7 +3049,7 @@ export default function ScheduleBoard() {
           a.remove();
       } catch (error) {
           console.error("Export Error:", error);
-          alert("Export fehlgeschlagen: " + ((error as any).message || "Unbekannter Fehler"));
+          alert("Export fehlgeschlagen: " + (error instanceof Error ? error.message : "Unbekannter Fehler"));
       } finally {
           setIsExporting(false);
       }
@@ -3039,7 +3124,7 @@ export default function ScheduleBoard() {
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd'); // end is exclusive in logic below, but for string range let's be careful
     
-    const dbShifts = allShifts.filter((s: any) => {
+    const dbShifts = allShifts.filter((s: ShiftEntry) => {
       // Robust string comparison to avoid timezone issues
       return s.date >= startStr && s.date < endStr;
     });
@@ -3062,7 +3147,7 @@ export default function ScheduleBoard() {
   const doctorNamesMap = useMemo(() => {
       const map = new Map();
       for (const d of doctors) {
-          map.set(d.id, d.name || `${d.first_name || ''} ${d.last_name || ''}`.trim() || d.id);
+          map.set(d.id, d.name || `${(d as unknown as Record<string, unknown>).first_name || ''} ${(d as unknown as Record<string, unknown>).last_name || ''}`.trim() || d.id);
       }
       return map;
   }, [doctors]);
@@ -3098,7 +3183,7 @@ export default function ScheduleBoard() {
       });
   }, [deleteShiftMutation, scanConflicts]);
 
-        const currentWeekShiftLookup = useMemo(() => createScheduleShiftLookup(currentWeekShifts), [currentWeekShifts]);
+        const currentWeekShiftLookup = useMemo(() => createScheduleShiftLookup(currentWeekShifts as Array<{ id: string; date: string; position: string; order?: number; timeslot_id?: string; doctor_id?: string }>), [currentWeekShifts]);
 
         const currentWeekShiftDates = useMemo(() => new Set(currentWeekShifts.map((shift: any) => shift.date)), [currentWeekShifts]);
 
@@ -3716,9 +3801,9 @@ export default function ScheduleBoard() {
         docId = parseAvailableDoctorId(normalizedDraggableId);
     } else if (normalizedDraggableId.startsWith('shift-')) {
         shiftId = normalizedDraggableId.replace('shift-', '');
-        const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
+        const shift = currentWeekShifts.find((s: ShiftEntry) => s.id === shiftId);
         if (shift) {
-            docId = shift.doctor_id;
+            docId = shift.doctor_id ?? null;
         }
     }
     flushSync(() => {
@@ -3731,9 +3816,7 @@ export default function ScheduleBoard() {
     console.log('Drag Start:', start);
     const { draggableId } = start;
     const normalizedDraggableId = normalizeDraggableId(draggableId);
-    let docId = null;
-    
-    if (!normalizedDraggableId) return;
+    let docId: string | null = null;
 
     if (normalizedDraggableId.startsWith('sidebar-doc-')) {
         docId = normalizedDraggableId.replace('sidebar-doc-', '');
@@ -3742,9 +3825,9 @@ export default function ScheduleBoard() {
     } else if (normalizedDraggableId.startsWith('shift-')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
         setDraggingShiftId(shiftId);
-        const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
+        const shift = currentWeekShifts.find((s: ShiftEntry) => s.id === shiftId);
         if (shift) {
-            docId = shift.doctor_id;
+            docId = shift.doctor_id ?? null;
         }
     }
     console.log('Dragging Doctor ID:', docId);
@@ -3825,12 +3908,12 @@ export default function ScheduleBoard() {
         // Dropped outside or to Verfügbar/sidebar/trash → delete
         if (!destination || destinationDroppableId! === 'sidebar' || destinationDroppableId!.startsWith('available__') || destinationDroppableId!.endsWith('__Verfügbar') || destinationDroppableId! === 'trash' || destinationDroppableId! === 'trash-overlay') {
             try {
-                await api.deleteRotationAssignment(assignment.group_id, assignmentId);
+                await api.deleteRotationAssignment(String(assignment.group_id), assignmentId);
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                 toast.success('Einteilung entfernt');
             } catch (err) {
-                toast.error('Fehler beim Entfernen: ' + ((err as any)?.message || ''));
+                toast.error('Fehler beim Entfernen: ' + (err instanceof Error ? err.message : ''));
             }
         }
         return;
@@ -3964,11 +4047,11 @@ export default function ScheduleBoard() {
             }
         }
 
-        const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
+        const hasTimeslots = Boolean(wp.timeslots_enabled) && (wp.timeslots?.length ?? 0) > 0;
 
         // Build callback for timeslot selection (or direct creation)
-        const doCreate = (timeslotId: any) => {
-            api.createRotationAssignment(wp.group_id, {
+        const doCreate = (timeslotId: string | null) => {
+            api.createRotationAssignment(String(wp.group_id), {
                 rotation_workplace_id: wp.id,
                 date: destDate,
                 employee_id: doctorId,
@@ -3989,7 +4072,7 @@ export default function ScheduleBoard() {
         }
 
         if (hasTimeslots) {
-            const options = wp.timeslots.map((ts: any) => ({
+            const options = (wp.timeslots ?? []).map((ts) => ({
                 id: ts.id,
                 label: ts.label,
                 start_time: ts.start_time,
@@ -4751,7 +4834,7 @@ export default function ScheduleBoard() {
                                 }
                             }
                         },
-                        onError: (err: any) => {
+                        onError: (err: Error) => {
                             console.error('DEBUG: Error creating shifts:', err);
                             toast.error('Fehler beim Erstellen: ' + err.message);
                         }
@@ -5140,7 +5223,7 @@ export default function ScheduleBoard() {
       }
     } catch (error) {
       console.error('AutoFill Error:', error);
-      toast.error('Fehler beim Generieren: ' + (error as any).message);
+      toast.error('Fehler beim Generieren: ' + (error instanceof Error ? error.message : String(error)));
     } finally {
       setIsGenerating(false);
     }
@@ -6124,8 +6207,10 @@ export default function ScheduleBoard() {
     const shift = currentWeekShiftLookup.byId.get(shiftId);
     if (!shift) return null;
     
-    const doctor = doctorById.get(shift.doctor_id)
-        || springerDoctorById.get(shift.doctor_id);
+    const doctor = shift.doctor_id
+        ? doctorById.get(shift.doctor_id)
+            || springerDoctorById.get(shift.doctor_id)
+        : undefined;
     if (!doctor) return null;
     const compactLabel = doctor._isSpringer ? doctor._springerLabel : getDoctorChipLabel(doctor);
     const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${shift.date}`) || null;
