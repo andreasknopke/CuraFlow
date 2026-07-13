@@ -3148,7 +3148,7 @@ export default function ScheduleBoard() {
             return true;
         }
 
-        if (options.length === 1 && !options[0].canCustomize && !forceDialog) {
+        if (options.length === 1 && !forceDialog) {
             onResolved(options[0].id);
             return true;
         }
