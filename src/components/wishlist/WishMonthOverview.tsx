@@ -6,19 +6,21 @@ import { Button } from '@/components/ui/button';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { api, base44 } from "@/api/client";
+import { api } from "@/api/client";
 import { isWishOnDate } from '@/utils/wishRange';
 import { isDateWithinContract } from '@/components/training/trainingContractUtils';
+import type { ContractInfo } from '@/components/training/trainingContractUtils';
+import type { Doctor, WishRequest, ShiftEntry } from '@/types';
 
 interface WishMonthOverviewProps {
     year: number;
     month: number;
-    doctors: any[];
-    contractInfoByDoctorId?: Record<string, any>;
-    wishes: any[];
-    shifts: any[];
+    doctors: Doctor[];
+    contractInfoByDoctorId?: Record<string, ContractInfo>;
+    wishes: WishRequest[];
+    shifts: ShiftEntry[];
     onDateChange: (date: Date) => void;
-    onToggle?: (date: Date, doctorId: any) => void;
+    onToggle?: (date: Date, doctorId: string) => void;
     isSchoolHoliday?: (date: Date) => boolean;
     isPublicHoliday?: (date: Date) => boolean;
     activeType?: string;
@@ -37,7 +39,7 @@ export default function WishMonthOverview({
     isPublicHoliday,
     activeType
 }: WishMonthOverviewProps) {
-    const [hiddenDoctorIds, setHiddenDoctorIds] = useState<any[]>([]);
+    const [hiddenDoctorIds, setHiddenDoctorIds] = useState<string[]>([]);
     const [isConfigOpen, setIsConfigOpen] = useState(false);
     const [showAbsences, setShowAbsences] = useState(true);
     const showOccupiedDates = false;
@@ -45,13 +47,13 @@ export default function WishMonthOverview({
     useEffect(() => {
         const loadPreferences = async () => {
             try {
-                const user = await (base44 as any).auth.me();
+                const user = await api.me() as Record<string, unknown> | null;
                 if (user) {
                     if (user.wish_overview_show_absences !== undefined) {
-                        setShowAbsences(user.wish_overview_show_absences);
+                        setShowAbsences(Boolean(user.wish_overview_show_absences));
                     }
                     if (user.wish_overview_hidden_doctors && Array.isArray(user.wish_overview_hidden_doctors)) {
-                        setHiddenDoctorIds(user.wish_overview_hidden_doctors);
+                        setHiddenDoctorIds(user.wish_overview_hidden_doctors as string[]);
                     }
                 }
             } catch (e) {
@@ -64,15 +66,15 @@ export default function WishMonthOverview({
     const handleShowAbsencesChange = async (checked: boolean) => {
         setShowAbsences(checked);
         try {
-            await (api as any).updateMe({ data: { wish_show_absences: checked } });
+            await api.updateMe({ data: { wish_show_absences: checked } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
     };
 
-    const saveHiddenDoctors = async (newHiddenIds: any[]) => {
+    const saveHiddenDoctors = async (newHiddenIds: string[]) => {
         try {
-            await (api as any).updateMe({ data: { wish_hidden_doctors: newHiddenIds } });
+            await api.updateMe({ data: { wish_hidden_doctors: newHiddenIds } });
         } catch (e) {
             console.error("Could not save preference", e);
         }
@@ -93,46 +95,46 @@ export default function WishMonthOverview({
     const daysInMonth = getDaysInMonth(currentMonth);
     const days = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
 
-    const visibleDoctors = doctors.filter((d: any) => !hiddenDoctorIds.includes(d.id));
+    const visibleDoctors = doctors.filter((d: Doctor) => !hiddenDoctorIds.includes(d.id));
     const areAllDoctorsVisible = doctors.length > 0 && hiddenDoctorIds.length === 0;
 
-    const getWish = (doctor: any, date: Date) => {
+    const getWish = (doctor: Doctor, date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        const doctorDateWishes = wishes.filter((w: any) => 
-            w.doctor_id === doctor.id && 
+        const doctorDateWishes = wishes.filter((w: WishRequest) =>
+            w.doctor_id === doctor.id &&
             isWishOnDate(w, dateStr)
         );
 
         if (!activeType) {
-            return doctorDateWishes.find((w: any) => w.type === 'service') || doctorDateWishes[0];
+            return doctorDateWishes.find((w: WishRequest) => w.type === 'service') || doctorDateWishes[0];
         }
 
-        const serviceWish = doctorDateWishes.find((w: any) => w.type === 'service' && w.position === activeType);
+        const serviceWish = doctorDateWishes.find((w: WishRequest) => w.type === 'service' && w.position === activeType);
         if (serviceWish) return serviceWish;
 
-        return doctorDateWishes.find((w: any) => w.type === 'no_service' && (!w.position || w.position === activeType));
+        return doctorDateWishes.find((w: WishRequest) => w.type === 'no_service' && (!w.position || w.position === activeType));
     };
 
     const hasAnyWish = (date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        return wishes.some((w: any) => 
+        return wishes.some((w: WishRequest) => 
             isWishOnDate(w, dateStr) &&
             w.type === 'service' &&
             w.position === activeType
         );
     };
 
-    const getAbsence = (doctor: any, date: Date) => {
+    const getAbsence = (doctor: Doctor, date: Date) => {
         if (!shifts) return null;
         const dateStr = format(date, 'yyyy-MM-dd');
-        return shifts.find((s: any) => 
+        return shifts.find((s: ShiftEntry) => 
             s.doctor_id === doctor.id && 
             s.date === dateStr && 
             ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"].includes(s.position)
         );
     };
 
-    const toggleDoctorVisibility = (docId: any) => {
+    const toggleDoctorVisibility = (docId: string) => {
         setHiddenDoctorIds(prev => {
             const newHiddenIds = prev.includes(docId) 
                 ? prev.filter(id => id !== docId)
@@ -148,7 +150,7 @@ export default function WishMonthOverview({
     };
 
     const hideAllDoctors = () => {
-        const allDoctorIds = doctors.map((doc: any) => doc.id);
+        const allDoctorIds = doctors.map((doc: Doctor) => doc.id);
         setHiddenDoctorIds(allDoctorIds);
         saveHiddenDoctors(allDoctorIds);
     };
@@ -162,10 +164,10 @@ export default function WishMonthOverview({
         showAllDoctors();
     };
 
-    const renderCell = (doctor: any, date: Date) => {
-        const contractInfo = (contractInfoByDoctorId as any)[doctor.id] || null;
+    const renderCell = (doctor: Doctor, date: Date) => {
+        const contractInfo = contractInfoByDoctorId[doctor.id] || null;
         const dateStr = format(date, 'yyyy-MM-dd');
-        const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
+        const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
         const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo.contractEnd;
         const absence = getAbsence(doctor, date);
         const hasOtherWish = showOccupiedDates && hasAnyWish(date);
@@ -257,17 +259,17 @@ export default function WishMonthOverview({
         }
 
         let bgColor = 'bg-gray-50';
-        let icon: any = null;
+            let icon: React.ReactNode = null;
         let borderColor = 'border-transparent';
         let textColor = 'text-slate-700';
 
         if (wish.type === 'service') {
-            bgColor = wish.status === 'approved' ? 'bg-green-200' : wish.status === 'rejected' ? 'bg-green-50 opacity-50 grayscale' : 'bg-green-100';
+            bgColor = wish.status === 'approved' ? 'bg-green-200' : 'bg-green-100';
             borderColor = wish.status === 'approved' ? 'border-green-600' : 'border-green-400';
             textColor = 'text-green-900';
             icon = <div className="font-bold text-[10px] leading-tight">D</div>;
         } else if (wish.type === 'no_service') {
-            bgColor = wish.status === 'approved' ? 'bg-red-200' : wish.status === 'rejected' ? 'bg-red-50 opacity-50 grayscale' : 'bg-red-100';
+            bgColor = wish.status === 'approved' ? 'bg-red-200' : 'bg-red-100';
             borderColor = wish.status === 'approved' ? 'border-red-600' : 'border-red-400';
             textColor = 'text-red-900';
             icon = <XCircle className="w-3 h-3 text-red-600 mx-auto" />;
@@ -359,7 +361,7 @@ export default function WishMonthOverview({
                         <div className="w-[80px] flex-shrink-0 p-2 font-bold text-slate-500 text-xs border-r border-slate-200 bg-slate-50 flex items-center justify-center sticky left-0 z-30 shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)]">
                             Datum
                         </div>
-                        {visibleDoctors.map((doc: any) => (
+                        {visibleDoctors.map((doc: Doctor) => (
                             <TooltipProvider key={doc.id}>
                                 <Tooltip delayDuration={0}>
                                     <TooltipTrigger asChild>
@@ -370,10 +372,10 @@ export default function WishMonthOverview({
                                     <TooltipContent>
                                         <div>
                                             <p>{doc.name} ({doc.role})</p>
-                                            {((contractInfoByDoctorId as any)[doc.id]) && (
+                                            {contractInfoByDoctorId[doc.id] && (
                                                 <>
-                                                    <p>Vertrag: {((contractInfoByDoctorId as any)[doc.id]).contractRangeLabel}</p>
-                                                    <p>{((contractInfoByDoctorId as any)[doc.id]).remainingLabel}</p>
+                                                    <p>Vertrag: {contractInfoByDoctorId[doc.id].contractRangeLabel}</p>
+                                                    <p>{contractInfoByDoctorId[doc.id].remainingLabel}</p>
                                                 </>
                                             )}
                                         </div>
@@ -392,7 +394,7 @@ export default function WishMonthOverview({
                             const isSchoolHol = isSchoolHoliday ? isSchoolHoliday(day) : false;
                             
                             let bgClass = 'bg-white';
-                            let hatchStyle: any = {};
+                            let hatchStyle: React.CSSProperties = {};
 
                             if (isToday) {
                                 bgClass = 'bg-blue-50/50';
@@ -428,7 +430,7 @@ export default function WishMonthOverview({
                                         </span>
                                     </div>
                                     
-                                    {visibleDoctors.map((doc: any) => (
+                                    {visibleDoctors.map((doc: Doctor) => (
                                         <div key={`${day.toISOString()}-${doc.id}`} className="w-[45px] flex-shrink-0 p-0.5 border-r border-slate-100 last:border-r-0 relative group">
                                             {renderCell(doc, day)}
                                         </div>
@@ -458,7 +460,7 @@ export default function WishMonthOverview({
                                 )}
                                 <span className="font-medium">{areAllDoctorsVisible ? 'Keinen ansehen' : 'Alle ansehen'}</span>
                             </div>
-                            {doctors.map((doc: any) => {
+                            {doctors.map((doc: Doctor) => {
                                 const isHidden = hiddenDoctorIds.includes(doc.id);
                                 return (
                                     <div 

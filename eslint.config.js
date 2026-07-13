@@ -201,20 +201,15 @@ export default [
       "src/components/staff/DoctorForm.tsx",
       "src/components/staff/DoctorQualificationEditor.tsx",
       "src/components/staff/QualificationOverview.tsx",
-      "src/components/staff/StaffingPlanTable.tsx",
 
       // --- Training ---
-      "src/components/training/TrainingOverview.tsx",
       "src/components/training/TrainingMultiYearOverview.tsx",
-      "src/components/training/TransferToSchedulerDialog.tsx",
 
       // --- Wishlist ---
-      "src/components/wishlist/WishMonthOverview.tsx",
       "src/components/wishlist/WishRequestDialog.tsx",
       "src/components/wishlist/WishReminderStatus.tsx",
 
       // --- Statistics ---
-      "src/components/statistics/WorkingTimeReport.tsx",
       "src/components/statistics/WishFulfillmentReport.tsx",
 
       // --- Validation ---
@@ -227,7 +222,6 @@ export default [
       "src/components/vacation/VacationOverview.tsx",
 
       // --- Misc components ---
-      "src/components/CoWorkWidget.tsx",
       "src/components/GlobalVoiceControl.tsx",
       "src/components/PlanUpdateListener.tsx",
       "src/components/TicketDialog.tsx",

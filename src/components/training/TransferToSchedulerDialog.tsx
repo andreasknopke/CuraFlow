@@ -11,17 +11,42 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { isDoctorAvailable } from '@/components/schedule/staffingUtils';
+import type { Doctor, ShiftEntry, TrainingRotation, StaffingPlanEntry, Workplace } from '@/types';
+
+interface TransferEntry {
+    date: string;
+    doctor_id: string;
+    doctorName: string;
+    position: string;
+    modality: string;
+    overwrite: boolean;
+    existingShiftIds: string[];
+    existingPosition: string | null;
+}
+
+interface SkippedEntry {
+    date: string;
+    doctor_id: string;
+    doctorName: string;
+    modality: string;
+    reason: string;
+}
+
+interface TransferData {
+    entries: TransferEntry[];
+    overwriteExisting: boolean;
+}
 
 interface TransferToSchedulerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    rotations?: any[];
-    doctors?: any[];
-    allShifts?: any[];
-    staffingPlanEntries?: any[];
-    workplaces?: any[];
+    rotations?: TrainingRotation[];
+    doctors?: Doctor[];
+    allShifts?: ShiftEntry[];
+    staffingPlanEntries?: StaffingPlanEntry[];
+    workplaces?: Workplace[];
     isPublicHoliday?: (date: Date) => boolean;
-    onTransfer: (data: any) => void;
+    onTransfer: (data: TransferData) => void;
     isPending?: boolean;
 }
 
@@ -78,28 +103,28 @@ export default function TransferToSchedulerDialog({
 
     const transferPreview = useMemo(() => {
         const { start, end } = dateRange;
-        const entries: any[] = [];
-        const skipped: any[] = [];
+        const entries: TransferEntry[] = [];
+        const skipped: SkippedEntry[] = [];
         
         const startStr = format(start, 'yyyy-MM-dd');
         const endStr = format(end, 'yyyy-MM-dd');
         
-        const shiftLookup = new Map<string, any[]>();
-        allShifts.forEach((s: any) => {
+        const shiftLookup = new Map<string, ShiftEntry[]>();
+        allShifts.forEach((s: ShiftEntry) => {
             const key = `${s.date}_${s.doctor_id}`;
             if (!shiftLookup.has(key)) shiftLookup.set(key, []);
             shiftLookup.get(key)!.push(s);
         });
         
-        const rotationWorkplaces = workplaces.filter((w: any) => w.category === 'Rotationen').map((w: any) => w.name);
-        
-        rotations.forEach((rot: any) => {
+        const rotationWorkplaces = workplaces.filter((w: Workplace) => w.category === 'Rotationen').map((w: Workplace) => w.name);
+
+        rotations.forEach((rot: TrainingRotation) => {
             if (rot.end_date < startStr || rot.start_date > endStr) return;
             
-            const doctor = doctors.find((d: any) => d.id === rot.doctor_id);
+            const doctor = doctors.find((d: Doctor) => d.id === rot.doctor_id);
             if (!doctor) return;
             
-            if (!rotationWorkplaces.includes(rot.modality)) {
+            if (!rotationWorkplaces.includes(rot.modality || '')) {
                 return;
             }
             
@@ -115,12 +140,12 @@ export default function TransferToSchedulerDialog({
                     return;
                 }
                 
-                const wp = workplaces.find((w: any) => w.name === rot.modality && w.category === 'Rotationen');
-                const activeDays = (wp?.active_days?.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
+                const wp = workplaces.find((w: Workplace) => w.name === rot.modality && w.category === 'Rotationen');
+                const activeDays = (wp && wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
                 const isHoliday = isPublicHoliday && isPublicHoliday(day);
                 const isActiveDay = isHoliday
-                    ? activeDays.some((d: any) => Number(d) === 0)
-                    : activeDays.some((d: any) => Number(d) === day.getDay());
+                    ? activeDays.some((d: number) => Number(d) === 0)
+                    : activeDays.some((d: number) => Number(d) === day.getDay());
                 if (!isActiveDay) {
                     return;
                 }
@@ -131,7 +156,7 @@ export default function TransferToSchedulerDialog({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
                         doctorName: doctor.name,
-                        modality: rot.modality,
+                        modality: rot.modality || '',
                         reason: 'Nicht verfügbar (Stellenplan)'
                     });
                     return;
@@ -139,29 +164,29 @@ export default function TransferToSchedulerDialog({
                 
                 const existingShifts = shiftLookup.get(`${dateStr}_${rot.doctor_id}`) || [];
                 const absenceTypes = ["Urlaub", "Krank", "Frei", "Dienstreise", "Nicht verfügbar"];
-                const hasAbsence = existingShifts.some((s: any) => absenceTypes.includes(s.position));
-                
+                const hasAbsence = existingShifts.some((s: ShiftEntry) => absenceTypes.includes(s.position));
+
                 if (hasAbsence) {
-                    const absenceShift = existingShifts.find((s: any) => absenceTypes.includes(s.position));
+                    const absenceShift = existingShifts.find((s: ShiftEntry) => absenceTypes.includes(s.position));
                     skipped.push({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
                         doctorName: doctor.name,
-                        modality: rot.modality,
-                        reason: `Abwesend (${absenceShift.position})`
+                        modality: rot.modality || '',
+                        reason: `Abwesend (${absenceShift?.position || ''})`
                     });
                     return;
                 }
                 
-                const existingAssignableEntries = existingShifts.filter((s: any) => !absenceTypes.includes(s.position));
-                const hasExistingRotation = existingAssignableEntries.some((s: any) => s.position === rot.modality);
+                const existingAssignableEntries = existingShifts.filter((s: ShiftEntry) => !absenceTypes.includes(s.position));
+                const hasExistingRotation = existingAssignableEntries.some((s: ShiftEntry) => s.position === rot.modality);
 
                 if (hasExistingRotation && !overwriteExisting) {
                     skipped.push({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
                         doctorName: doctor.name,
-                        modality: rot.modality,
+                        modality: rot.modality || '',
                         reason: 'Bereits eingetragen'
                     });
                     return;
@@ -172,9 +197,8 @@ export default function TransferToSchedulerDialog({
                         date: dateStr,
                         doctor_id: rot.doctor_id,
                         doctorName: doctor.name,
-                        modality: rot.modality,
-                        reason: `Bereits belegt (${existingAssignableEntries[0].position})`,
-                        existingShiftIds: existingAssignableEntries.map((s: any) => s.id)
+                        modality: rot.modality || '',
+                        reason: `Bereits belegt (${existingAssignableEntries[0].position})`
                     });
                     return;
                 }
@@ -183,10 +207,10 @@ export default function TransferToSchedulerDialog({
                     date: dateStr,
                     doctor_id: rot.doctor_id,
                     doctorName: doctor.name,
-                    position: rot.modality,
-                    modality: rot.modality,
+                    position: rot.modality || '',
+                    modality: rot.modality || '',
                     overwrite: existingAssignableEntries.length > 0,
-                    existingShiftIds: existingAssignableEntries.map((s: any) => s.id),
+                    existingShiftIds: existingAssignableEntries.map((s: ShiftEntry) => s.id),
                     existingPosition: existingAssignableEntries.length > 0 ? existingAssignableEntries[0].position : null
                 });
             });
@@ -207,7 +231,7 @@ export default function TransferToSchedulerDialog({
         });
     };
 
-    const handleDateSelect = (date: any) => {
+    const handleDateSelect = (date: Date | undefined) => {
         if (date) {
             setSelectedDate(date);
             setCalendarOpen(false);
@@ -223,7 +247,7 @@ export default function TransferToSchedulerDialog({
 
     const doctorSummary = useMemo(() => {
         const summary: Record<string, { count: number; modalities: Set<string> }> = {};
-        transferPreview.entries.forEach((e: any) => {
+        transferPreview.entries.forEach((e: TransferEntry) => {
             if (!summary[e.doctorName]) {
                 summary[e.doctorName] = { count: 0, modalities: new Set() };
             }
@@ -235,7 +259,7 @@ export default function TransferToSchedulerDialog({
 
     const skippedReasonSummary = useMemo(() => {
         const summary = new Map<string, number>();
-        transferPreview.skipped.forEach((item: any) => {
+        transferPreview.skipped.forEach((item: SkippedEntry) => {
             summary.set(item.reason, (summary.get(item.reason) || 0) + 1);
         });
 
@@ -266,7 +290,7 @@ export default function TransferToSchedulerDialog({
                     <div className="space-y-6 py-4">
                         <div className="space-y-3">
                             <Label className="text-sm font-medium text-slate-700">Übertragungsmodus</Label>
-                            <RadioGroup value={transferMode} onValueChange={setTransferMode as any} className="space-y-2">
+                            <RadioGroup value={transferMode} onValueChange={(v) => setTransferMode(v as 'day' | 'week' | 'from_date')} className="space-y-2">
                                 <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-slate-50 transition-colors">
                                     <RadioGroupItem data-testid="training-transfer-mode-day" value="day" id="mode-day" />
                                     <Label htmlFor="mode-day" className="flex-1 cursor-pointer">
@@ -328,7 +352,7 @@ export default function TransferToSchedulerDialog({
                                 id="overwrite" 
                                 data-testid="training-transfer-overwrite"
                                 checked={overwriteExisting} 
-                                onCheckedChange={setOverwriteExisting as any}
+                                onCheckedChange={(v) => setOverwriteExisting(v === true)}
                                 className="mt-0.5"
                             />
                             <div>
@@ -400,7 +424,7 @@ export default function TransferToSchedulerDialog({
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {transferPreview.entries.map((entry: any, idx: number) => (
+                                        {transferPreview.entries.map((entry: TransferEntry, idx: number) => (
                                             <TableRow key={idx} className={entry.overwrite ? "bg-amber-50" : "bg-emerald-50"}>
                                                 <TableCell>
                                                     {entry.overwrite ? (
@@ -464,7 +488,7 @@ export default function TransferToSchedulerDialog({
                                             </TableRow>
                                         </TableHeader>
                                         <TableBody>
-                                            {transferPreview.skipped.map((item: any, idx: number) => (
+                                            {transferPreview.skipped.map((item: SkippedEntry, idx: number) => (
                                                 <TableRow key={idx} className="bg-slate-50">
                                                     <TableCell className="text-xs">{item.doctorName}</TableCell>
                                                     <TableCell className="text-xs">{format(new Date(item.date), 'EE, dd.MM.', { locale: de })}</TableCell>

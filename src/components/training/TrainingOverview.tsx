@@ -2,27 +2,29 @@ import React, { useState, useEffect, memo } from 'react';
 import { format, getDaysInMonth, setDate, setMonth, setYear, isWeekend, isSameDay, isWithinInterval } from 'date-fns';
 import { de } from 'date-fns/locale';
 import { getContractTooltipLabel, isDateWithinContract } from '@/components/training/trainingContractUtils';
+import type { ContractInfo } from '@/components/training/trainingContractUtils';
+import type { Doctor, TrainingRotation } from '@/types';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 
 interface TrainingOverviewCellProps {
     date: Date;
-    doctor: any;
-    status: any;
+    doctor: Doctor;
+    status: string | null;
     isWeekend: boolean;
     isHoliday: boolean;
     isSchoolHoliday: boolean;
     isDisabled: boolean;
     isContractEnd: boolean;
-    customColors: any;
+    customColors: Record<string, React.CSSProperties | string>;
     dragInfo: {
         isDragging: boolean;
-        dragStart: any;
-        dragCurrent: any;
-        dragDoctorId: any;
+        dragStart: Date | null;
+        dragCurrent: Date | null;
+        dragDoctorId: string | null;
     };
-    onMouseDown: (date: Date, doctorId: any) => void;
-    onMouseEnter: (date: Date, doctorId: any) => void;
-    onToggle: (date: Date, status: any, docId: any, e: any) => void;
+    onMouseDown: (date: Date, doctorId: string) => void;
+    onMouseEnter: (date: Date, doctorId: string) => void;
+    onToggle: (date: Date, status: string | null, docId: string, e: React.MouseEvent) => void;
 }
 
 const TrainingOverviewCell = memo(({ 
@@ -49,7 +51,7 @@ const TrainingOverviewCell = memo(({
         end: dragCurrent > dragStart ? dragCurrent : dragStart
     });
 
-    let style: any = {};
+    let style: React.CSSProperties = {};
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none";
 
     if (isDisabled) {
@@ -134,14 +136,14 @@ const TrainingOverviewCell = memo(({
 
 interface TrainingOverviewProps {
     year: number;
-    doctors: any[];
-    rotations: any[];
-    contractInfoByDoctorId?: Record<string, any>;
+    doctors: Doctor[];
+    rotations: TrainingRotation[];
+    contractInfoByDoctorId?: Record<string, ContractInfo>;
     isSchoolHoliday?: (date: Date) => boolean;
     isPublicHoliday?: (date: Date) => boolean;
-    customColors?: Record<string, any>;
-    onToggle?: (date: Date, status: any, docId: any, e: any) => void;
-    onRangeSelect?: (start: Date, end: Date, doctorId: any) => void;
+    customColors?: Record<string, React.CSSProperties | string>;
+    onToggle?: (date: Date, status: string | null, docId: string, e: React.MouseEvent) => void;
+    onRangeSelect?: (start: Date, end: Date, doctorId: string) => void;
     activeType?: string;
     isReadOnly?: boolean;
     monthsPerRow?: number;
@@ -163,7 +165,7 @@ export default function TrainingOverview({
 }: TrainingOverviewProps) {
     const [dragStart, setDragStart] = useState<Date | null>(null);
     const [dragCurrent, setDragCurrent] = useState<Date | null>(null);
-    const [dragDoctorId, setDragDoctorId] = useState<any>(null);
+    const [dragDoctorId, setDragDoctorId] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
@@ -182,7 +184,7 @@ export default function TrainingOverview({
         return () => { window.removeEventListener('mouseup', handleMouseUp); };
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
-    const handleMouseDown = React.useCallback((date: Date, doctorId: any) => {
+    const handleMouseDown = React.useCallback((date: Date, doctorId: string) => {
         if (isReadOnly) return;
         setDragStart(date);
         setDragCurrent(date);
@@ -190,14 +192,14 @@ export default function TrainingOverview({
         setIsDragging(true);
     }, [isReadOnly]);
 
-    const handleMouseEnter = React.useCallback((date: Date, doctorId: any) => {
+    const handleMouseEnter = React.useCallback((date: Date, doctorId: string) => {
         setDragCurrent(prev => {
             if (prev && isSameDay(prev, date)) return prev;
             return date;
         });
     }, []);
     
-    const handleToggle = React.useCallback((date: Date, status: any, docId: any, e: any) => {
+    const handleToggle = React.useCallback((date: Date, status: string | null, docId: string, e: React.MouseEvent) => {
         if (!isDragging || (dragStart && dragCurrent && isSameDay(dragStart, dragCurrent))) {
             onToggle && onToggle(date, status, docId, e);
         }
@@ -205,7 +207,7 @@ export default function TrainingOverview({
 
     const rotationLookup = React.useMemo(() => {
         const lookup = new Map<string, string>();
-        rotations.forEach((rot: any) => {
+        rotations.forEach((rot: TrainingRotation) => {
             const start = new Date(rot.start_date);
             const end = new Date(rot.end_date);
             
@@ -220,7 +222,7 @@ export default function TrainingOverview({
             let current = new Date(effectiveStart);
             while (current <= effectiveEnd) {
                 const dateStr = format(current, 'yyyy-MM-dd');
-                lookup.set(`${dateStr}_${rot.doctor_id}`, rot.modality);
+                lookup.set(`${dateStr}_${rot.doctor_id}`, rot.modality || '');
                 current = new Date(current);
                 current.setDate(current.getDate() + 1);
             }
@@ -228,7 +230,7 @@ export default function TrainingOverview({
         return lookup;
     }, [rotations, year]);
 
-    const getStatus = React.useCallback((date: Date, doctorId: any) => {
+    const getStatus = React.useCallback((date: Date, doctorId: string) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         return rotationLookup.get(`${dateStr}_${doctorId}`) || null;
     }, [rotationLookup]);
@@ -295,10 +297,10 @@ export default function TrainingOverview({
                                 </tr>
                             </thead>
                             <tbody>
-                                {doctors.map((doc: any) => (
+                                {doctors.map((doc: Doctor) => (
                                     <tr key={doc.id} className="hover:bg-slate-50">
                                         <td className="sticky left-0 z-10 bg-white border-b border-r p-1 px-2 text-slate-700">
-                                            <div className="truncate font-medium" title={getContractTooltipLabel((contractInfoByDoctorId as any)[doc.id]) || undefined}>{doc.name}</div>
+                                            <div className="truncate font-medium" title={getContractTooltipLabel(contractInfoByDoctorId[doc.id]) || undefined}>{doc.name}</div>
                                         </td>
                                         {months.map(m => {
                                             const date = setMonth(setYear(new Date(), year), m);
@@ -309,8 +311,8 @@ export default function TrainingOverview({
                                                 const isHol = isPublicHoliday ? isPublicHoliday(d) : false;
                                                 const isSchool = isSchoolHoliday ? isSchoolHoliday(d) : false;
                                                 const status = getStatus(d, doc.id);
-                                                const contractInfo = (contractInfoByDoctorId as any)[doc.id];
-                                                const isDisabled = !isDateWithinContract(d, contractInfo?.contractStart, contractInfo?.contractEnd);
+                                                const contractInfo = contractInfoByDoctorId[doc.id];
+                                                const isDisabled = !isDateWithinContract(d, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
                                                 const isContractEnd = Boolean(contractInfo?.contractEnd) && format(d, 'yyyy-MM-dd') === contractInfo.contractEnd;
 
                                                 return (
