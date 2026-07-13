@@ -20,8 +20,8 @@ const openDB = (): Promise<IDBDatabase> => {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, 1);
 
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => { reject(request.error); };
+        request.onsuccess = () => { resolve(request.result); };
 
         request.onupgradeneeded = (event) => {
             const db = (event.target as IDBOpenDBRequest).result;
@@ -40,8 +40,8 @@ export const saveTokenToIndexedDB = async (token: string): Promise<void> => {
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_KEY, value: token, updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -186,8 +186,8 @@ export const enableDbToken = async (): Promise<void> => {
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'true', updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -204,8 +204,8 @@ export const disableDbToken = async (): Promise<void> => {
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -226,8 +226,8 @@ export const clearActiveDbToken = async (): Promise<void> => {
         store.delete(TOKEN_KEY);
         store.put({ key: TOKEN_ENABLED_KEY, value: 'false', updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -253,8 +253,8 @@ export const deleteDbToken = async (): Promise<void> => {
         store.delete(TOKEN_KEY);
         store.delete(TOKEN_ENABLED_KEY);
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -286,8 +286,8 @@ export const deleteAllTokenData = async (): Promise<void> => {
         store.delete(TOKEN_ENABLED_KEY);
         store.delete(SAVED_TOKENS_KEY);
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
         console.log('[TokenStorage] All token data deleted');
@@ -339,8 +339,8 @@ export const saveNamedToken = async (name: string, token: string): Promise<Saved
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -362,8 +362,8 @@ export const deleteNamedToken = async (id: string): Promise<void> => {
         const store = tx.objectStore(STORE_NAME);
         store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
         await new Promise<void>((resolve, reject) => {
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
+            tx.oncomplete = () => { resolve(); };
+            tx.onerror = () => { reject(tx.error); };
         });
         db.close();
     } catch (e) {
@@ -387,8 +387,8 @@ export const renameToken = async (id: string, newName: string): Promise<void> =>
             const store = tx.objectStore(STORE_NAME);
             store.put({ key: SAVED_TOKENS_KEY, value: tokens, updatedAt: Date.now() });
             await new Promise<void>((resolve, reject) => {
-                tx.oncomplete = () => resolve();
-                tx.onerror = () => reject(tx.error);
+                tx.oncomplete = () => { resolve(); };
+                tx.onerror = () => { reject(tx.error); };
             });
             db.close();
         } catch (e) {

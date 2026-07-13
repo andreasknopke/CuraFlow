@@ -32,7 +32,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { db, api } from "@/api/client";
-import type { Doctor, ShiftEntry, Workplace, WorkplaceTimeslot, SystemSetting, StaffingPlanEntry, WorkTimeModel, TrainingRotation, ColorSetting, ScheduleNote, ScheduleBlock, WishRequest } from '@/types';
+import type { Doctor, ShiftEntry, Workplace, WorkplaceTimeslot, WorkTimeModel, ScheduleBlock, WishRequest } from '@/types';
 import { cn } from '@/lib/utils';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useAuth } from '@/components/AuthProvider';
@@ -927,7 +927,7 @@ export default function ScheduleBoard() {
     const handleKeyUp = (e: KeyboardEvent): void => {
       if (e.key === 'Control') setIsCtrlPressed(false);
     };
-    const handleBlur = () => setIsCtrlPressed(false);
+    const handleBlur = () => { setIsCtrlPressed(false); };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -1042,28 +1042,28 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_highlightMyName', JSON.stringify(highlightMyName));
       if (user && user.highlight_my_name !== highlightMyName) {
-          updateMe({ highlight_my_name: highlightMyName }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ highlight_my_name: highlightMyName }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [highlightMyName, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_showInitialsOnly', JSON.stringify(showInitialsOnly));
       if (user && user.schedule_initials_only !== showInitialsOnly) {
-          updateMe({ schedule_initials_only: showInitialsOnly }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ schedule_initials_only: showInitialsOnly }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [showInitialsOnly, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_sortDoctorsAlphabetically', JSON.stringify(sortDoctorsAlphabetically));
       if (user && user.schedule_sort_doctors_alphabetically !== sortDoctorsAlphabetically) {
-          updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [sortDoctorsAlphabetically, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_showSidebarTimeAccount', JSON.stringify(showSidebarTimeAccount));
       if (user && user.schedule_show_time_account !== showSidebarTimeAccount) {
-          updateMe({ schedule_show_time_account: showSidebarTimeAccount }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ schedule_show_time_account: showSidebarTimeAccount }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [showSidebarTimeAccount, updateMe, user]);
 
@@ -1108,14 +1108,14 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_showSidebar', JSON.stringify(showSidebar));
       if (user && user.schedule_show_sidebar !== showSidebar) {
-          updateMe({ schedule_show_sidebar: showSidebar }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ schedule_show_sidebar: showSidebar }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [showSidebar, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_hiddenRows', JSON.stringify(hiddenRows));
       if (user && JSON.stringify(user.schedule_hidden_rows) !== JSON.stringify(hiddenRows)) {
-          updateMe({ schedule_hidden_rows: hiddenRows }).catch((e: any) => console.error("Pref save failed", e));
+          updateMe({ schedule_hidden_rows: hiddenRows }).catch((e: any) => { console.error("Pref save failed", e); });
       }
   }, [hiddenRows, updateMe, user]);
 
@@ -1130,7 +1130,7 @@ export default function ScheduleBoard() {
           // However, updateMe triggers user update which triggers effect.
           // We should only updateMe if the value is different from what's in user object currently.
           if (JSON.stringify(user.collapsed_sections) !== JSON.stringify(collapsedSections)) {
-             updateMe({ collapsed_sections: collapsedSections }).catch((e: any) => console.error("Pref save failed", e));
+             updateMe({ collapsed_sections: collapsedSections }).catch((e: any) => { console.error("Pref save failed", e); });
           }
       }
   }, [collapsedSections, updateMe, user]);
@@ -2151,7 +2151,7 @@ export default function ScheduleBoard() {
 
   const getRoleColor = useMemo(() => (role: any): { backgroundColor: string; color: string } => {
       const setting = colorSettings.find((s: any) => s.name === role && s.category === 'role');
-      if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
+      if (setting) return { backgroundColor: setting.bg_color ?? '#ffffff', color: setting.text_color ?? '#000000' };
       if (DEFAULT_COLORS.roles[role]) return { backgroundColor: DEFAULT_COLORS.roles[role].bg, color: DEFAULT_COLORS.roles[role].text };
       return { backgroundColor: '#f3f4f6', color: '#1f2937' }; // Default gray
   }, [colorSettings]);
@@ -2173,8 +2173,8 @@ export default function ScheduleBoard() {
       const setting = colorSettings.find((s: any) => s.name === rowName && s.category === 'position');
       if (setting) {
           return { 
-              backgroundColor: setting.bg_color + '33', // ~20% opacity
-              color: setting.text_color
+              backgroundColor: (setting.bg_color ?? '#ffffff') + '33', // ~20% opacity
+              color: setting.text_color ?? '#000000'
           };
       }
       // Fallback to section style
@@ -2214,7 +2214,7 @@ export default function ScheduleBoard() {
                     type: 'create',
                     message: `Neuer Dienst eingetragen: ${newData.position}`,
                     acknowledged: false,
-                }).catch((err: any) => console.warn('[ScheduleBoard] Notification create failed:', err?.message));
+                }).catch((err: any) => { console.warn('[ScheduleBoard] Notification create failed:', err?.message); });
             }
         }
 
@@ -2292,7 +2292,7 @@ export default function ScheduleBoard() {
                              type: 'create',
                              message: `Neuer Dienst eingetragen: ${shift.position}`,
                              acknowledged: false,
-                         }).catch((err: any) => console.warn('[ScheduleBoard] Bulk notification failed:', err?.message));
+                         }).catch((err: any) => { console.warn('[ScheduleBoard] Bulk notification failed:', err?.message); });
                      }
                  }
                  const matchingWish = wishes.find((w: any) =>
@@ -2309,7 +2309,7 @@ export default function ScheduleBoard() {
                          admin_comment: 'Automatisch genehmigt durch Diensteinteilung',
                      })
                          .then(() => queryClient.invalidateQueries({ queryKey: ['wishes'] }))
-                         .catch((err: any) => console.warn('[ScheduleBoard] Bulk wish approval failed:', err?.message));
+                         .catch((err: any) => { console.warn('[ScheduleBoard] Bulk wish approval failed:', err?.message); });
                  }
              }
         }
@@ -2342,7 +2342,7 @@ export default function ScheduleBoard() {
         await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         
         // Snapshot the previous value for rollback
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]) as any;
+        const previousShifts = queryClient.getQueryData<any[]>(['shifts', fetchRange.start, fetchRange.end]);
         const oldShift = previousShifts?.find((s: any) => s.id === id);
         
         // Optimistically update to the new value immediately
@@ -2458,7 +2458,7 @@ export default function ScheduleBoard() {
         });
         setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
     },
-    onError: (error: any) => console.error('Auto-Frei creation failed:', error)
+    onError: (error: any) => { console.error('Auto-Frei creation failed:', error); }
   });
 
   const updateAutoFreiMutation = useMutation<any, Error, any, any>({
@@ -2481,7 +2481,7 @@ export default function ScheduleBoard() {
         }
         setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
     },
-    onError: (error: any) => console.error('Auto-Frei update failed:', error)
+    onError: (error: any) => { console.error('Auto-Frei update failed:', error); }
   });
 
   const deleteShiftMutation = useMutation<any, Error, any, any>({
@@ -2586,7 +2586,7 @@ export default function ScheduleBoard() {
          // If the failure was total, restore the optimistic snapshot. For a
          // partial failure we cannot trust the snapshot (some rows really
          // were deleted on the server), so refetch instead.
-         if ((err as any)?.partial && (context as any)?.previousShifts) {
+         if ((err as any)?.partial && (context)?.previousShifts) {
              queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
              toast.error(`Teilweiser Löschfehler: ${(err as any).message}`, {
                  description: 'Die Daten wurden vom Server neu geladen, damit die Anzeige korrekt ist.',
@@ -3128,7 +3128,7 @@ export default function ScheduleBoard() {
         const baseDoctor = doctorId ? doctorById.get(doctorId) : null;
         const doctor = baseDoctor ? getDoctorWithEffectiveFte(baseDoctor, currentDate) : null;
 
-        return ((workplaceTimeslotsByWorkplaceId as any).get((workplace as any).id) || []).map((timeslot: any) => ({
+        return ((workplaceTimeslotsByWorkplaceId as any).get((workplace).id) || []).map((timeslot: any) => ({
             ...buildTimeslotSelectionOption(timeslot, doctor as any, workplace, workTimeModelMap, centralEmployeesById),
         }));
     };
@@ -3665,7 +3665,7 @@ export default function ScheduleBoard() {
       };
       console.log('[PREVIEW] Auto-Frei hinzugefügt:', newAutoFrei);
       toast.info(`Auto-Frei für ${autoFreiDateStr} hinzugefügt`);
-      return [...currentPreviews, newAutoFrei as any];
+      return [...currentPreviews, newAutoFrei];
   };
 
   /**
@@ -3841,9 +3841,9 @@ export default function ScheduleBoard() {
     //  Timeslot-Auswahl wie bei normalen Rotationen.
     //  Für Ward-Tenants: Springer-Chip → Rückgabe an den Pool anfordern.
     // ============================================================
-    if (destinationDroppableId && (destinationDroppableId!.startsWith('rotationCell__') || destinationDroppableId!.startsWith('rotationCellTslot__'))) {
-        const isTimeslotCell = destinationDroppableId!.startsWith('rotationCellTslot__');
-        const parts = destinationDroppableId!.split('__');
+    if (destinationDroppableId && (destinationDroppableId.startsWith('rotationCell__') || destinationDroppableId.startsWith('rotationCellTslot__'))) {
+        const isTimeslotCell = destinationDroppableId.startsWith('rotationCellTslot__');
+        const parts = destinationDroppableId.split('__');
         const wpId = isTimeslotCell ? parts[1] : parts[1];
         const destDate = isTimeslotCell ? parts[2] : parts[2];
         const tsId = isTimeslotCell ? parts[3] : null;
@@ -4201,7 +4201,7 @@ export default function ScheduleBoard() {
             s.date === dateStr && 
             s.id !== currentShiftId
         );
-        shiftsToDelete.forEach((s: any) => deleteShiftMutation.mutate(s.id));
+        shiftsToDelete.forEach((s: any) => { deleteShiftMutation.mutate(s.id); });
     };
 
     // Helper to handle automatic "Frei" after "Dienst Vordergrund" or other auto-off shifts
@@ -4320,7 +4320,7 @@ export default function ScheduleBoard() {
                                 normalizedSelection,
                                 resolvedTimeslotId,
                                 scheduleBlockedDays.length,
-                            ).then(() => resolve());
+                            ).then(() => { resolve(); });
                         },
                     });
                 });
@@ -4530,6 +4530,7 @@ export default function ScheduleBoard() {
         } else {
             doctorId = parseAvailableDoctorId(normalizedDraggableId);
         }
+        if (!doctorId) return;
 
         const dropParts = destinationDroppableId!.split('__');
         const dateStr = dropParts[0];
@@ -4578,9 +4579,9 @@ export default function ScheduleBoard() {
 
                 let updatedPreviews: any = [...previewShifts, newPreviewShift];
                 if (isAutoOffPosition(position)) {
-                    updatedPreviews = addPreviewAutoFrei(doctorId!, dateStr, position, updatedPreviews) as any;
+                    updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews) as any;
                 }
-                setPreviewShifts(updatedPreviews as any);
+                setPreviewShifts(updatedPreviews);
                 toast.info('Vorschlag hinzugefügt');
             };
 
@@ -4631,7 +4632,7 @@ export default function ScheduleBoard() {
                     createShiftMutation.mutate({ date: dateStr, position, doctor_id: doctorId, order: newOrder });
                 };
 
-                const hasConflicts = checkAbsenceDropConflicts(doctorId!, dateStr, position, executeAbsenceCreation);
+                const hasConflicts = checkAbsenceDropConflicts(doctorId, dateStr, position, executeAbsenceCreation);
                 if (hasConflicts) {
                     console.log('Absence drop conflicts - waiting for override decision');
                     return;
@@ -4641,7 +4642,7 @@ export default function ScheduleBoard() {
                 return;
             }
 
-            const limitWarning = checkLimits(doctorId!, dateStr, position);
+            const limitWarning = checkLimits(doctorId, dateStr, position);
             if (limitWarning) alert(limitWarning);
 
             {
@@ -4713,7 +4714,7 @@ export default function ScheduleBoard() {
                 let existingAutoFreiShift = null;
 
                 if (autoFreiDateStr) {
-                    const warning = checkStaffing(autoFreiDateStr, doctorId!);
+                    const warning = checkStaffing(autoFreiDateStr, doctorId);
                     if (warning) {
                         toast.warning(`${warning}\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
                     }
@@ -4770,7 +4771,7 @@ export default function ScheduleBoard() {
                 && ((allDisplayDocsByDate.get(springerSourceDate) || [])[source.index] || {})._isSpringer;
 
             if (!isSpringerDrop) {
-                const hasConflict = await checkConflictsWithOverride(doctorId!, dateStr, position, null, executeShiftCreation);
+                const hasConflict = await checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
                 if (hasConflict) {
                     console.log('Conflict detected - waiting for override decision');
                     return;
@@ -5226,13 +5227,13 @@ export default function ScheduleBoard() {
    * Returns { fg, bg, total, weekend, wishText } or null.
    */
   const getFairnessInfo = useMemo(() => (shift: ShiftEntry): any => {
-    if (!shift.isPreview || !shift.doctor_id || !(previewFairnessData as any)[shift.doctor_id]) return null;
+    if (!shift.isPreview || !shift.doctor_id || !(previewFairnessData)[shift.doctor_id]) return null;
 
     const serviceWps = workplaces.filter((w: any) => w.category === 'Dienste');
     const serviceNames = new Set(serviceWps.map((w: any) => w.name));
     if (!serviceNames.has(shift.position)) return null;
 
-    const info = { ...(previewFairnessData as any)[shift.doctor_id] };
+    const info = { ...(previewFairnessData)[shift.doctor_id] };
 
     // Check wishes for this date+doctor
     const shiftWishes = wishes.filter((w: any) =>
@@ -5863,7 +5864,7 @@ export default function ScheduleBoard() {
                                 {() => (
                                     <div
                                         className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer hover:bg-amber-50/40 w-full ${isCovered ? 'bg-teal-50/30' : ''}`}
-                                        onClick={() => openDemandFor(ts)}
+                                        onClick={() => { openDemandFor(ts); }}
                                         title={`${ts.label}${tsDemand ? ` · ${hasReturnRequest ? 'Rückgabe angefordert' : tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
                                     >
                                         <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">{ts.label}</span>
@@ -5935,7 +5936,7 @@ export default function ScheduleBoard() {
                 {() => (
                     <div
                         className={`min-h-[40px] p-1 w-full ${demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
-                        onClick={() => openDemandFor(null)}
+                        onClick={() => { openDemandFor(null); }}
                     >
                         <div className="flex flex-wrap gap-1">
                             {assignments.map((assignment: any) => {
@@ -6009,8 +6010,8 @@ export default function ScheduleBoard() {
     const boxSize = shiftBoxSize;
 
     // Qualifikations-Status für diese Position ermitteln
-    const wpRequiredQuals = workplace ? getWpRequiredQualIds((workplace as any).id) : [];
-    const wpExcludedQuals = workplace ? getWpExcludedQualIds((workplace as any).id) : [];
+    const wpRequiredQuals = workplace ? getWpRequiredQualIds((workplace).id) : [];
+    const wpExcludedQuals = workplace ? getWpExcludedQualIds((workplace).id) : [];
     const hasQualRequirements = wpRequiredQuals.length > 0;
 
     // Bei Mehrfachbesetzung: Warnung nur wenn KEINER der Eingetragenen qualifiziert ist
@@ -6031,7 +6032,7 @@ export default function ScheduleBoard() {
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
-        const shiftTimeLabel = getShiftTimeRangeLabel(shift, doctor as any, workplace as any, workplaceTimeslots, workTimeModelMap, centralEmployeesById);
+        const shiftTimeLabel = getShiftTimeRangeLabel(shift, doctor, workplace, workplaceTimeslots, workTimeModelMap, centralEmployeesById);
         // Im Benutzermodus (ReadOnly) nur die Zeiten des eigenen Mitarbeiters anzeigen
         const isOwnShift = user?.doctor_id && doctor.id === user?.doctor_id;
         const effectiveTimeLabel = isReadOnly && !isOwnShift ? null : shiftTimeLabel;
@@ -6104,7 +6105,7 @@ export default function ScheduleBoard() {
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={null}
                     timeLabelOverride={effectiveTimeLabel}
-                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || (workplace as any)?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor as any, workplace as any) : null}
+                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || (workplace)?.timeslots_enabled) ? () => { handleShiftTimeslotEdit(shift, doctor, workplace); } : null}
                     hideTimeLabel={isReadOnly && !isOwnShift}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
@@ -6264,7 +6265,7 @@ export default function ScheduleBoard() {
                               <div
                                   className={`px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-slate-200 flex items-center justify-between cursor-pointer select-none transition-colors ${!customStyle ? section.headerColor : ''}`}
                                   style={customStyle ? customStyle.header : {}}
-                                  onClick={() => setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title])}
+                                  onClick={() => { setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title]); }}
                               >
                                   <div className="flex items-center gap-2">
                                       {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -6362,7 +6363,7 @@ export default function ScheduleBoard() {
                                                                   size="icon"
                                                                   data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
                                                                   className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
-                                                                  onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
+                                                                  onClick={() => { applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace); }}
                                                                   title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${(rowWorkplace as any)?.name || rowName})`}
                                                               >
                                                                   <Filter className="h-3 w-3" />
@@ -6404,7 +6405,7 @@ export default function ScheduleBoard() {
                                               if (rowName !== 'Verfügbar') {
                                                   const setting = workplaces.find((s: any) => s.name === rowName);
                                                   if (setting) {
-                                                      const activeDays = ((setting as any).active_days && (setting as any).active_days.length > 0) ? (setting as any).active_days : [1, 2, 3, 4, 5];
+                                                      const activeDays = ((setting).active_days && (setting).active_days.length > 0) ? (setting).active_days : [1, 2, 3, 4, 5];
                                                       // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
                                                       const isActive = isPublicHoliday(day)
                                                           ? activeDays.some((d: any) => Number(d) === 0)
@@ -6514,10 +6515,10 @@ export default function ScheduleBoard() {
                                                                   isAlternate={rIdx % 2 !== 0}
                                                                   isTrainingHighlight={isTrainingHighlight}
                                                                   isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                                  blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId as any)?.reason as any}
-                                                                  infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId as any)?.reason as any}
+                                                                  blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason as any}
+                                                                  infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason as any}
                                                                   isOccupied={isOccupied}
-                                                                  onContextMenu={(e: any) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId as any)}
+                                                                  onContextMenu={(e: any) => { handleCellContextMenu(e, dateStr, rowName, rowTimeslotId); }}
                                                                   baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                                   baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                                   renderClone={renderShiftClone}
@@ -6591,7 +6592,7 @@ export default function ScheduleBoard() {
         <Button 
             variant="outline" 
             data-testid="schedule-today"
-                        onClick={() => setCurrentDate(viewMode === 'week' ? startOfWeek(new Date(), { weekStartsOn: 1 }) : viewMode === 'month' ? startOfMonth(new Date()) : new Date())}
+                        onClick={() => { setCurrentDate(viewMode === 'week' ? startOfWeek(new Date(), { weekStartsOn: 1 }) : viewMode === 'month' ? startOfMonth(new Date()) : new Date()); }}
             className="h-9"
             disabled={!!previewShifts}
             title={previewShifts ? 'Navigation im Preview-Modus gesperrt' : undefined}
@@ -6605,7 +6606,7 @@ export default function ScheduleBoard() {
                             data-testid="schedule-nav-prev"
                             className="h-7 w-7"
                             disabled={!!previewShifts}
-                            onClick={() => setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}
+                            onClick={() => { setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1)); }}
                         >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -6627,7 +6628,7 @@ export default function ScheduleBoard() {
                             data-testid="schedule-nav-next"
                             className="h-7 w-7"
                             disabled={!!previewShifts}
-                            onClick={() => setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}
+                            onClick={() => { setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1)); }}
                         >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -6664,7 +6665,7 @@ export default function ScheduleBoard() {
                   data-testid="schedule-view-day"
                   data-state={viewMode === 'day' ? 'active' : 'inactive'}
                    disabled={!!previewShifts}
-                   onClick={() => setViewMode('day')}
+                   onClick={() => { setViewMode('day'); }}
                   className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'day' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
                   <LayoutList className="w-4 h-4 sm:mr-1" />
@@ -6703,21 +6704,21 @@ export default function ScheduleBoard() {
                      <DropdownMenuContent align="end" className="w-56">
                          <DropdownMenuLabel>Vorschläge generieren</DropdownMenuLabel>
                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleAutoFill()} data-testid="schedule-auto-fill-all">
+                          <DropdownMenuItem onClick={() => { handleAutoFill(); }} data-testid="schedule-auto-fill-all">
                               Alle Kategorien
                           </DropdownMenuItem>
                          <DropdownMenuSeparator />
-                         <DropdownMenuItem onClick={() => handleAutoFill(['Rotationen'])}>
+                         <DropdownMenuItem onClick={() => { handleAutoFill(['Rotationen']); }}>
                              Nur {getSectionName('Rotationen')}
                          </DropdownMenuItem>
-                         <DropdownMenuItem onClick={() => handleAutoFill(['Dienste'])}>
+                         <DropdownMenuItem onClick={() => { handleAutoFill(['Dienste']); }}>
                              Nur {getSectionName('Dienste')}
                          </DropdownMenuItem>
-                         <DropdownMenuItem onClick={() => handleAutoFill(['Demonstrationen & Konsile'])}>
+                         <DropdownMenuItem onClick={() => { handleAutoFill(['Demonstrationen & Konsile']); }}>
                              Nur {getSectionName('Demonstrationen & Konsile')}
                          </DropdownMenuItem>
                          {getWorkplaceCategoryNames(systemSettings).map((name: any) => (
-                             <DropdownMenuItem key={name} onClick={() => handleAutoFill([name])}>
+                             <DropdownMenuItem key={name} onClick={() => { handleAutoFill([name]); }}>
                                  Nur {name}
                              </DropdownMenuItem>
                          ))}
@@ -6725,7 +6726,7 @@ export default function ScheduleBoard() {
                            <>
                              <DropdownMenuSeparator />
                              <AutoFillSettingsDialog trigger={
-                               <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                               <DropdownMenuItem onSelect={(e) => { e.preventDefault(); }}>
                                  <Settings2 className="w-4 h-4 mr-2 text-slate-500" />
                                  Einstellungen
                                </DropdownMenuItem>
@@ -6838,14 +6839,14 @@ export default function ScheduleBoard() {
                           <span>Schriftgröße</span>
                           <span className="text-xs font-normal text-slate-500">{gridFontSize}px</span>
                        </DropdownMenuLabel>
-                       <div className="px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                       <div className="px-2 py-2" onClick={(e) => { e.stopPropagation(); }}>
                            <input 
                                type="range" 
                                min="10" 
                                max="24" 
                                step="1"
                                value={gridFontSize} 
-                               onChange={(e) => setGridFontSize(Number(e.target.value))}
+                               onChange={(e) => { setGridFontSize(Number(e.target.value)); }}
                                className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                            />
                        </div>
@@ -6888,7 +6889,7 @@ export default function ScheduleBoard() {
                             {!isEmbeddedSchedule && availableSectionTabs.length > 0 && (
                     <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-200 flex items-center gap-2 overflow-x-auto">
                         <button
-                            onClick={() => setActiveSectionTabId('main')}
+                            onClick={() => { setActiveSectionTabId('main'); }}
                             className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap transition-colors ${activeSectionTabId === 'main' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-100'}`}
                         >
                             Hauptplan
@@ -6913,7 +6914,7 @@ export default function ScheduleBoard() {
                                         {getSectionName(tab.sectionTitle)}
                                     </button>
                                     <button
-                                        onClick={() => handleOpenSectionTabInNewWindow(tab.id)}
+                                        onClick={() => { handleOpenSectionTabInNewWindow(tab.id); }}
                                         className="px-2 py-1.5 text-slate-400 hover:text-indigo-600"
                                         title="In separatem Fenster öffnen"
                                     >
@@ -6921,7 +6922,7 @@ export default function ScheduleBoard() {
                                     </button>
                                     {canUseSplitView && (
                                         <button
-                                            onClick={() => handleOpenSectionTabInSplitView(tab.id)}
+                                            onClick={() => { handleOpenSectionTabInSplitView(tab.id); }}
                                             className="px-2 py-1.5 text-slate-400 hover:text-indigo-600"
                                             title="Im Split-View öffnen"
                                         >
@@ -6940,7 +6941,7 @@ export default function ScheduleBoard() {
                         })}
                         {canUseSplitView && isSplitViewEnabled && (
                             <button
-                                onClick={() => setIsSplitViewEnabled(false)}
+                                onClick={() => { setIsSplitViewEnabled(false); }}
                                 className="px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap text-slate-600 hover:bg-slate-100"
                                 title="Split-View schließen"
                             >
@@ -6995,7 +6996,7 @@ export default function ScheduleBoard() {
                                         <CommandItem
                                             key={qualification.id}
                                             value={`${qualification.name} ${qualification.short_label || ''}`}
-                                            onSelect={() => toggleScheduleQualification(qualification.id)}
+                                            onSelect={() => { toggleScheduleQualification(qualification.id); }}
                                         >
                                             <div className={cn(
                                                 "flex h-4 w-4 items-center justify-center rounded-sm border",
@@ -7028,7 +7029,7 @@ export default function ScheduleBoard() {
                                             <button
                                                 key={`chip-${qid}`}
                                                 type="button"
-                                                onClick={() => toggleScheduleQualification(qid)}
+                                                onClick={() => { toggleScheduleQualification(qid); }}
                                                 className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700 transition-colors hover:bg-slate-100"
                                             >
                                                 <span>{qualification.short_label || qualification.name}</span>
@@ -7046,7 +7047,7 @@ export default function ScheduleBoard() {
                                     variant="ghost"
                                     size="sm"
                                     className="h-7 w-full text-xs text-slate-500"
-                                    onClick={() => setSelectedQualificationIds([])}
+                                    onClick={() => { setSelectedQualificationIds([]); }}
                                 >
                                     Filter zurücksetzen
                                 </Button>
@@ -7268,7 +7269,7 @@ export default function ScheduleBoard() {
                             
                             {hasShifts && (
                                 <button
-                                    onClick={() => handleClearDay(day)}
+                                    onClick={() => { handleClearDay(day); }}
                                     data-testid={`schedule-day-clear-${dateStr}`}
                                     className="absolute top-1 right-1 p-1 rounded-full bg-white/80 text-red-400 hover:text-red-600 hover:bg-white shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                                     title="Tag leeren"
@@ -7304,7 +7305,7 @@ export default function ScheduleBoard() {
                     <div 
                         className={`px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-slate-200 flex items-center justify-between cursor-pointer select-none transition-colors ${!customStyle ? section.headerColor : ''}`}
                         style={customStyle ? customStyle.header : {}}
-                        onClick={() => setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title])}
+                        onClick={() => { setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title]); }}
                     >
                         <div className="flex items-center gap-2">
                             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -7426,7 +7427,7 @@ export default function ScheduleBoard() {
                                                     size="icon"
                                                     data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
                                                     className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
-                                                    onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
+                                                    onClick={() => { applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace); }}
                                                     title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${(rowWorkplace as any)?.name || rowName})`}
                                                 >
                                                     <Filter className="h-3 w-3" />
@@ -7438,7 +7439,7 @@ export default function ScheduleBoard() {
                                                     size="icon"
                                                     data-testid={`schedule-row-clear-${encodeScheduleTargetId(headerDroppableId)}`}
                                                     className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600"
-                                                    onClick={() => handleClearRow(rowName, rowTimeslotId)}
+                                                    onClick={() => { handleClearRow(rowName, rowTimeslotId); }}
                                                     title="Zeile leeren"
                                                 >
                                                     <Trash2 className="h-3 w-3" />
@@ -7448,7 +7449,7 @@ export default function ScheduleBoard() {
                                                 variant="ghost" 
                                                 size="icon" 
                                                 className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:bg-black/10"
-                                                onClick={() => setHiddenRows((prev: any) => [...prev, rowName])}
+                                                onClick={() => { setHiddenRows((prev: any) => [...prev, rowName]); }}
                                                 title="Zeile ausblenden"
                                                 >
                                                 <EyeOff className="h-3 w-3 opacity-50" />
@@ -7647,10 +7648,10 @@ export default function ScheduleBoard() {
                                                     isAlternate={rIdx % 2 !== 0}
                                                     isTrainingHighlight={isTrainingHighlight}
                                                     isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                    blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId as any)?.reason as any}
-                                                    infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId as any)?.reason as any}
+                                                    blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason as any}
+                                                    infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason as any}
                                                     isOccupied={isOccupied}
-                                                    onContextMenu={(e: any) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId as any)}
+                                                    onContextMenu={(e: any) => { handleCellContextMenu(e, dateStr, rowName, rowTimeslotId); }}
                                                     baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                     baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                     renderClone={renderShiftClone}
@@ -7774,7 +7775,7 @@ export default function ScheduleBoard() {
                                                       <Button
                                                           type="button"
                                                           size="sm"
-                                                          onClick={() => handleTimeslotDialogSelect(timeslot.id)}
+                                                          onClick={() => { handleTimeslotDialogSelect(timeslot.id); }}
                                                           data-testid={`schedule-timeslot-option-${timeslot.id}`}
                                                       >
                                                           Standard übernehmen
@@ -7790,7 +7791,7 @@ export default function ScheduleBoard() {
                                                               type="time"
                                                               step={300}
                                                               value={Number.isFinite(customStartMinutes) ? (formatMinutesAsTime(customStartMinutes) ?? '') : ''}
-                                                              onChange={(event) => handleTimeslotCustomStartChange(timeslot.id, timeslot, event.target.value)}
+                                                              onChange={(event) => { handleTimeslotCustomStartChange(timeslot.id, timeslot, event.target.value); }}
                                                               className="h-8 w-[124px]"
                                                               data-testid={`schedule-timeslot-custom-start-${timeslot.id}`}
                                                           />
@@ -7801,7 +7802,7 @@ export default function ScheduleBoard() {
                                                               type="time"
                                                               step={300}
                                                               value={Number.isFinite(customEndMinutes) ? (formatMinutesAsTime(customEndMinutes) ?? '') : ''}
-                                                              onChange={(event) => handleTimeslotCustomEndChange(timeslot.id, timeslot, event.target.value)}
+                                                              onChange={(event) => { handleTimeslotCustomEndChange(timeslot.id, timeslot, event.target.value); }}
                                                               className="h-8 w-[124px]"
                                                               data-testid={`schedule-timeslot-custom-end-${timeslot.id}`}
                                                           />
@@ -7810,7 +7811,7 @@ export default function ScheduleBoard() {
                                                           type="button"
                                                           size="sm"
                                                           className="h-8 px-3"
-                                                          onClick={() => handleTimeslotCustomApply(timeslot)}
+                                                          onClick={() => { handleTimeslotCustomApply(timeslot); }}
                                                           data-testid={`schedule-timeslot-custom-apply-${timeslot.id}`}
                                                       >
                                                           Speichern
@@ -7844,7 +7845,7 @@ export default function ScheduleBoard() {
       {/* Schedule Block & Info Context Menu */}
       {blockContextMenu && (
         <>
-          <div className="fixed inset-0 z-[9998]" onClick={() => setBlockContextMenu(null)} />
+          <div className="fixed inset-0 z-[9998]" onClick={() => { setBlockContextMenu(null); }} />
           <div
             className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-200 p-3 min-w-[260px]"
             style={{ left: blockContextMenu.x, top: blockContextMenu.y }}
@@ -7874,7 +7875,7 @@ export default function ScheduleBoard() {
                   type="text"
                   placeholder="Begründung (z.B. Wartung)"
                   value={blockReasonInput}
-                  onChange={(e) => setBlockReasonInput(e.target.value)}
+                  onChange={(e) => { setBlockReasonInput(e.target.value); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleBlockCell(); }}
                   className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-red-300"
                 />
@@ -7913,7 +7914,7 @@ export default function ScheduleBoard() {
                   type="text"
                   placeholder="Info-Text (z.B. Wartung ab 8:00)"
                   value={infoReasonInput}
-                  onChange={(e) => setInfoReasonInput(e.target.value)}
+                  onChange={(e) => { setInfoReasonInput(e.target.value); }}
                   onKeyDown={(e) => { if (e.key === 'Enter') handleInfoCell(); }}
                   className="w-full text-sm border border-slate-200 rounded px-2 py-1 mb-1.5 focus:outline-none focus:ring-1 focus:ring-blue-300"
                 />
@@ -7933,7 +7934,7 @@ export default function ScheduleBoard() {
       {/* Cross-tenant (group/pool) shift editor */}
       <PoolShiftEditDialog
         open={poolEditDialog.open}
-        onOpenChange={(open) => setPoolEditDialog((prev: any) => ({ ...prev, open }))}
+        onOpenChange={(open) => { setPoolEditDialog((prev: any) => ({ ...prev, open })); }}
         workplace={poolEditDialog.workplace}
         date={poolEditDialog.date}
         shift={poolEditDialog.shift}
@@ -7957,7 +7958,7 @@ export default function ScheduleBoard() {
       {/* Springerpool-Rotationen — demand dialog (ward staff) */}
       <RotationDemandDialog
         open={rotationDemandDialog.open}
-        onOpenChange={(open) => setRotationDemandDialog((prev: any) => ({ ...prev, open }))}
+        onOpenChange={(open) => { setRotationDemandDialog((prev: any) => ({ ...prev, open })); }}
         workplace={rotationDemandDialog.workplace}
         dateStr={rotationDemandDialog.date}
         timeslot={rotationDemandDialog.timeslot}

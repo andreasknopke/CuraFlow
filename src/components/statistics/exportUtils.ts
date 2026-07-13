@@ -154,7 +154,7 @@ export function exportStatisticsPdf({ stats, year, month, title }: { stats: Stat
     pdfDocument.setFontSize(10);
     pdfDocument.text(`Exportjahr: ${year}`, margin, cursorY);
     cursorY += 12;
-    pdfDocument.text(`Filter: ${month === 'all' ? 'Ganzes Jahr' : `Monat ${Number.parseInt(month as string, 10) + 1}`}`, margin, cursorY);
+    pdfDocument.text(`Filter: ${month === 'all' ? 'Ganzes Jahr' : `Monat ${Number.parseInt(month, 10) + 1}`}`, margin, cursorY);
     cursorY += 18;
 
     const printableLines = [
@@ -176,5 +176,5 @@ export function exportStatisticsPdf({ stats, year, month, title }: { stats: Stat
         cursorY += (wrappedLines.length * lineHeight) + 4;
     });
 
-    pdfDocument.save(`statistik_${year}_${buildFileSuffix(month as string)}.pdf`);
+    pdfDocument.save(`statistik_${year}_${buildFileSuffix(month)}.pdf`);
 }

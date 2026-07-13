@@ -228,7 +228,7 @@ export default function MasterPPUGV() {
       // Wenn building, aktivieren wir den Poll-Intervall im naechsten Render
       if (result?.building) {
         setRefreshStarted(true);
-      } else if ((result as PPUGVDataResponse)?.data?.length > 0) {
+      } else if ((result)?.data?.length > 0) {
         setRefreshStarted(false);
       }
 
@@ -515,7 +515,7 @@ export default function MasterPPUGV() {
           </Badge>
           {/* Datenqualitaets-Badge */}
           {qualityData && (qualityData.years?.length ?? 0) > 0 && (() => {
-            const y = qualityData!.years.find((y: PPUGVQualityYear) => y.jahr === Number(selectedYear));
+            const y = qualityData.years.find((y: PPUGVQualityYear) => y.jahr === Number(selectedYear));
             if (!y) return null;
             const isComplete = y.komplett;
             return (
@@ -530,7 +530,7 @@ export default function MasterPPUGV() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refreshMutation.mutate()}
+            onClick={() => { refreshMutation.mutate(); }}
             disabled={refreshMutation.isPending || isBuilding}
           >
             {refreshMutation.isPending || isBuilding ? (
@@ -574,7 +574,7 @@ export default function MasterPPUGV() {
 
       {/* Datenqualitaets-Warnung bei unvollstaendigen Daten */}
       {qualityData && (qualityData.years?.length ?? 0) > 0 && (() => {
-        const y = qualityData!.years.find((y: PPUGVQualityYear) => y.jahr === Number(selectedYear));
+        const y = qualityData.years.find((y: PPUGVQualityYear) => y.jahr === Number(selectedYear));
         if (!y || y.komplett) return null;
         return (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
@@ -617,7 +617,7 @@ export default function MasterPPUGV() {
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => { setActiveTab(tab.key); }}
               className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
                 activeTab === tab.key
                   ? 'bg-white text-indigo-700 border border-b-0 border-slate-200 -mb-px'
@@ -675,7 +675,7 @@ export default function MasterPPUGV() {
             {/* Toggle: Zukunftsmonate ein-/ausblenden */}
             <div className="flex items-center gap-1.5 ml-auto">
               <button
-                onClick={() => setShowFutureMonths(p => !p)}
+                onClick={() => { setShowFutureMonths(p => !p); }}
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                   showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
                 }`}
@@ -984,7 +984,7 @@ export default function MasterPPUGV() {
             </div>
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setShowFutureMonths(p => !p)}
+                onClick={() => { setShowFutureMonths(p => !p); }}
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                   showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
                 }`}
@@ -1064,7 +1064,7 @@ export default function MasterPPUGV() {
             </div>
             <div className="flex items-center gap-1.5">
               <button
-                onClick={() => setShowFutureMonths(p => !p)}
+                onClick={() => { setShowFutureMonths(p => !p); }}
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                   showFutureMonths ? 'bg-amber-400' : 'bg-slate-300'
                 }`}
@@ -1089,7 +1089,7 @@ export default function MasterPPUGV() {
                   ? <>❌ {ppbvMeta.error_message?.substring(0, 50)}</>
                   : <>⏳ Cache leer</>}
             </Badge>
-            <Button variant="outline" size="sm" onClick={() => ppbvRefreshMutation.mutate()}
+            <Button variant="outline" size="sm" onClick={() => { ppbvRefreshMutation.mutate(); }}
               disabled={ppbvRefreshMutation.isPending || ppbvBuilding}>
               {ppbvRefreshMutation.isPending || ppbvBuilding ? (
                 <Loader2 className="w-4 h-4 mr-1 animate-spin" />

@@ -1,5 +1,4 @@
 import { ValidationRule, type RuleContext, type RuleViolation } from './ValidationRule';
-import type { Workplace } from '@/types';
 
 /**
  * Checks if the doctor meets the qualification requirements of the workplace.

@@ -301,16 +301,16 @@ export function initConsoleCapture(): void {
 
   console.log = function (...args: unknown[]) {
     pushEntry('LOG')(...args);
-    return originalLog.apply(console, args);
+    originalLog.apply(console, args);
   };
 
   console.warn = function (...args: unknown[]) {
     pushEntry('WARN')(...args);
-    return originalWarn.apply(console, args);
+    originalWarn.apply(console, args);
   };
 
   console.error = function (...args: unknown[]) {
     pushEntry('ERROR')(...args);
-    return originalError.apply(console, args);
+    originalError.apply(console, args);
   };
 }

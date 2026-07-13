@@ -64,7 +64,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
     expect(Array.isArray(result)).toBe(true);
     expect(result.length).toBe(0);
   });
@@ -84,7 +84,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
     expect(Array.isArray(result)).toBe(true);
     expect(result.filter((s: any) => s.position === 'BG').length).toBeGreaterThanOrEqual(1);
   });
@@ -111,7 +111,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     // Doctor is absent -> should not be assigned to any service
     const serviceAssignments = result.filter((s: any) => s.position !== 'Frei');
@@ -138,7 +138,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste', 'Rotationen'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const serviceAssignments = result.filter((s: any) => s.position === 'VG');
     expect(serviceAssignments.length).toBeGreaterThanOrEqual(1);
@@ -167,7 +167,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Rotationen'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const rotAssignments = result.filter((s: any) => s.position === 'CT');
     expect(rotAssignments.length).toBeGreaterThanOrEqual(1);
@@ -194,7 +194,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Demonstrationen & Konsile'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const demoAssignments = result.filter((s: any) => s.position === 'Demo');
     expect(demoAssignments.length).toBeGreaterThanOrEqual(1);
@@ -220,7 +220,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Rotationen'], // Dienste not included!
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const assignments = result.filter((s: any) => s.position === 'BG');
     expect(assignments).toHaveLength(0);
@@ -254,7 +254,7 @@ describe('generateSuggestions', () => {
         },
       ],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const serviceAssignments = result.filter((s: any) => s.position === 'VG');
     expect(serviceAssignments).toHaveLength(0);
@@ -281,7 +281,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const freiEntries = result.filter((s: any) => s.position === 'Frei');
     // Doctor was assigned on June 15 -> Auto-Frei on June 16
@@ -317,7 +317,7 @@ describe('generateSuggestions', () => {
       getWpExcludedQualIds: () => [],
       getWpDiscouragedQualIds: () => [],
       isPublicHoliday: () => false,
-    } as any);
+    });
 
     const ctAssignments = result.filter((s: any) => s.position === 'CT');
     expect(ctAssignments.length).toBeGreaterThanOrEqual(1);
@@ -351,7 +351,7 @@ describe('generateSuggestions', () => {
       getWpExcludedQualIds: () => ['qual-excl'],
       getWpDiscouragedQualIds: () => [],
       isPublicHoliday: () => false,
-    } as any);
+    });
 
     const assignments = result.filter((s: any) => s.position === 'VG');
     expect(assignments.length).toBeGreaterThanOrEqual(1);
@@ -380,7 +380,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const assignments = result.filter((s: any) => s.position === 'VG');
     expect(assignments).toHaveLength(0);
@@ -406,7 +406,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     // Should have entries for both days
     const dates = [...new Set(result.filter((s: any) => s.position === 'BG').map((s: any) => s.date))];
@@ -434,7 +434,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const assignments = result.filter((s: any) => s.position === 'VG');
     const docAssignments = assignments.filter((s: any) => s.doctor_id === 'doc-1');
@@ -464,7 +464,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
     expect(resultSat.filter((s: any) => s.position === 'VG').length).toBeGreaterThanOrEqual(1);
 
     // Sunday
@@ -477,7 +477,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
     expect(resultSun.filter((s: any) => s.position === 'VG').length).toBeGreaterThanOrEqual(1);
   });
 
@@ -511,7 +511,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     const assignments = result.filter((s: any) => s.position === 'BG');
     // Each day should have exactly one assignment
@@ -553,7 +553,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste', 'Rotationen'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     // Doctor should be assigned to either service (Phase A) or rotation (Phase B),
     // but not both since both affect availability
@@ -587,7 +587,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     // Should still assign since there's nothing blocking today
     const assignments = result.filter((s: any) => s.position === 'BG');
@@ -614,7 +614,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     for (const suggestion of result) {
       expect(suggestion).toHaveProperty('date');
@@ -628,7 +628,7 @@ describe('generateSuggestions', () => {
   });
 
   it('does not mutate the input doctors array', () => {
-    const docs = [doctor({ id: 'doc-1', name: 'Dr. A' }) as any];
+    const docs = [doctor({ id: 'doc-1', name: 'Dr. A' })];
     const svc: any = workplace({ id: 'wp-svc', name: 'BG', category: 'Dienste', service_type: 2 });
 
     const originalLength = docs.length;
@@ -641,7 +641,7 @@ describe('generateSuggestions', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
     expect(docs).toHaveLength(originalLength);
   });
@@ -673,7 +673,7 @@ describe('generateSuggestions', () => {
       getWpExcludedQualIds: () => [],
       getWpDiscouragedQualIds: () => [],
       isPublicHoliday: () => true, // Everything is a holiday
-    } as any);
+    });
 
     // Since active_days doesn't include 0 (Sunday/holiday), no assignment
     const assignments = result.filter((s: any) => s.position === 'BG');
@@ -700,13 +700,13 @@ describe('generateSuggestions -- debug mode', () => {
       systemSettings: [],
       debug: { enabled: true, entries: debugEntries, requestId: 'test-1' },
       ...defaultQualFns(),
-    } as any);
+    });
 
     // The return value should have __debug attached
-    expect((result as any).__debug).toBeDefined();
-    expect((result as any).__debug.requestId).toBe('test-1');
-    expect(Array.isArray((result as any).__debug.entries)).toBe(true);
-    expect((result as any).__debug.entries.length).toBeGreaterThan(0);
+    expect((result).__debug).toBeDefined();
+    expect((result).__debug.requestId).toBe('test-1');
+    expect(Array.isArray((result).__debug.entries)).toBe(true);
+    expect((result).__debug.entries.length).toBeGreaterThan(0);
     // The original debugEntries array should also have entries pushed
     expect(debugEntries.length).toBeGreaterThan(0);
   });
@@ -727,8 +727,8 @@ describe('generateSuggestions -- debug mode', () => {
       categoriesToFill: ['Dienste'],
       systemSettings: [],
       ...defaultQualFns(),
-    } as any);
+    });
 
-    expect((result as any).__debug).toBeUndefined();
+    expect((result).__debug).toBeUndefined();
   });
 });

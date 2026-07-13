@@ -1,6 +1,6 @@
 import { ValidationRule, type RuleContext, type RuleViolation } from './ValidationRule';
 import { timeslotsOverlap, createFullDayTimeslot } from '@/utils/timeslotUtils';
-import type { Workplace, WorkplaceTimeslot } from '@/types';
+import type { WorkplaceTimeslot } from '@/types';
 
 /**
  * Checks if the doctor would have overlapping timeslots on the same day.
@@ -41,7 +41,7 @@ export class TimeslotOverlapRule extends ValidationRule {
             ? v.timeslots.find(t => t.id === timeslotId)
             : null;
 
-        const newWorkplace = v.workplaces.find(w => w.name === position) as (Workplace & { default_overlap_tolerance_minutes?: number }) | undefined;
+        const newWorkplace = v.workplaces.find(w => w.name === position);
         const newEffectiveSlot = newTimeslot ||
             (newWorkplace?.timeslots_enabled ? null : createFullDayTimeslot());
 
@@ -57,7 +57,7 @@ export class TimeslotOverlapRule extends ValidationRule {
                 ? v.timeslots.find(t => t.id === existingShift.timeslot_id)
                 : null;
 
-            const existingWorkplace = v.workplaces.find(w => w.name === existingShift.position) as (Workplace & { default_overlap_tolerance_minutes?: number }) | undefined;
+            const existingWorkplace = v.workplaces.find(w => w.name === existingShift.position);
             const existingEffectiveSlot = existingTimeslot ||
                 (existingWorkplace?.timeslots_enabled ? null : createFullDayTimeslot());
 
@@ -65,7 +65,7 @@ export class TimeslotOverlapRule extends ValidationRule {
                 continue;
             }
 
-            if (timeslotsOverlap(newEffectiveSlot as any, existingEffectiveSlot as any, tolerance)) {
+            if (timeslotsOverlap(newEffectiveSlot, existingEffectiveSlot, tolerance)) {
                 const existingLabel = existingTimeslot?.label || existingShift.position;
                 const newLabel = newTimeslot?.label || position;
                 return [{

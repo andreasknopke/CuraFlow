@@ -51,7 +51,7 @@ describe('rowQualFilter helpers', () => {
         it('tolerates missing getter functions', () => {
             const result = buildRowQualSets({
                 workplaceId: 'wp-1',
-                getRequired: undefined as any,
+                getRequired: undefined,
                 getOptional: () => ['q1'],
                 getDiscouraged: null as any,
                 getExcluded: () => ['q2'],

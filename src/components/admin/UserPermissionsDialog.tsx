@@ -111,7 +111,7 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
                   id={key}
                   checked={checked}
                   disabled={disabled}
-                  onCheckedChange={() => togglePermission(key)}
+                  onCheckedChange={() => { togglePermission(key); }}
                   className="mt-0.5"
                 />
                 <div className="grid gap-0.5">
@@ -119,7 +119,7 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
                     htmlFor={key}
                     className={`text-sm font-medium leading-none ${disabled ? 'text-slate-400' : ''} ${checked ? '' : 'text-slate-400'}`}
                   >
-                    {PERMISSION_LABELS[key as keyof typeof PERMISSION_LABELS]}
+                    {PERMISSION_LABELS[key]}
                   </Label>
                 </div>
               </div>
@@ -130,12 +130,12 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
         <DialogFooter>
           <Button
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => { onOpenChange(false); }}
           >
             Abbrechen
           </Button>
           <Button
-            onClick={() => saveMutation.mutate()}
+            onClick={() => { saveMutation.mutate(); }}
             disabled={!canEdit || !hasChanges || saveMutation.isPending}
           >
             {saveMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}

@@ -302,7 +302,7 @@ function ColorRow({ name, category, colors, onChange, onReset }: ColorRowProps) 
                     <Label className="text-[10px] text-slate-500">Hintergrund</Label>
                     <DebouncedColorInput 
                         value={colors.bg}
-                        onChange={(val) => onChange(name, category, 'bg', val)}
+                        onChange={(val) => { onChange(name, category, 'bg', val); }}
                     />
                 </div>
 
@@ -310,14 +310,14 @@ function ColorRow({ name, category, colors, onChange, onReset }: ColorRowProps) 
                     <Label className="text-[10px] text-slate-500">Text</Label>
                     <DebouncedColorInput 
                         value={colors.text}
-                        onChange={(val) => onChange(name, category, 'text', val)}
+                        onChange={(val) => { onChange(name, category, 'text', val); }}
                     />
                 </div>
 
                 <Button 
                     variant="ghost" 
                     size="icon" 
-                    onClick={() => onReset(name, category)}
+                    onClick={() => { onReset(name, category); }}
                     title="Zurücksetzen"
                     className="mt-4"
                 >
@@ -341,7 +341,7 @@ function DebouncedColorInput({ value, onChange }: DebouncedColorInputProps) {
                 onChange(localValue);
             }
         }, 500);
-        return () => clearTimeout(timer);
+        return () => { clearTimeout(timer); };
     }, [localValue, onChange, value]);
 
     return (
@@ -349,7 +349,7 @@ function DebouncedColorInput({ value, onChange }: DebouncedColorInputProps) {
             <Input 
                 type="color" 
                 value={localValue}
-                onChange={(e) => setLocalValue(e.target.value)}
+                onChange={(e) => { setLocalValue(e.target.value); }}
                 className="w-12 h-8 p-1 cursor-pointer"
             />
             <span className="text-xs font-mono text-slate-400">{localValue}</span>

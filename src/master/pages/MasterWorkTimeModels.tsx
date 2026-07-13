@@ -182,11 +182,11 @@ export default function MasterWorkTimeModels() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEdit(m)}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { openEdit(m); }}>
                           <Pencil className="w-3.5 h-3.5" />
                         </Button>
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-700"
-                          onClick={() => deleteMutation.mutate(m.id)}
+                          onClick={() => { deleteMutation.mutate(m.id); }}
                           disabled={deleteMutation.isPending}>
                           <Trash2 className="w-3.5 h-3.5" />
                         </Button>
@@ -212,7 +212,7 @@ export default function MasterWorkTimeModels() {
           <div className="space-y-4 py-2">
             <div>
               <Label className="text-sm">Name *</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              <Input value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); }}
                 placeholder="z.B. Vollzeit 39h" className="mt-1" />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -220,24 +220,24 @@ export default function MasterWorkTimeModels() {
                 <Label className="text-sm">Stunden / Woche</Label>
                 <Input type="number" step="0.5" min="0" max="60"
                   value={form.hours_per_week}
-                  onChange={(e) => setForm({ ...form, hours_per_week: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, hours_per_week: e.target.value }); }}
                   placeholder="39" className="mt-1" />
               </div>
               <div>
                 <Label className="text-sm">Stunden / Tag</Label>
                 <Input type="number" step="0.25" min="0" max="12"
                   value={form.hours_per_day}
-                  onChange={(e) => setForm({ ...form, hours_per_day: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, hours_per_day: e.target.value }); }}
                   placeholder="7.8" className="mt-1" />
               </div>
             </div>
             <div>
               <Label className="text-sm">Beschreibung</Label>
-              <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+              <Input value={form.description} onChange={(e) => { setForm({ ...form, description: e.target.value }); }}
                 placeholder="Optionale Beschreibung…" className="mt-1" />
             </div>
             <div className="flex items-center gap-3">
-              <Switch checked={form.is_default} onCheckedChange={(v) => setForm({ ...form, is_default: v })} />
+              <Switch checked={form.is_default} onCheckedChange={(v) => { setForm({ ...form, is_default: v }); }} />
               <Label className="text-sm">Als Standard-Modell markieren</Label>
             </div>
           </div>

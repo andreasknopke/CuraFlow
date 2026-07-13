@@ -113,7 +113,7 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     const hasShift = Boolean(status);
     const hasRequest = Boolean(requestStatus);
 
-    let content = "";
+    const content = "";
     let style: React.CSSProperties = {};
     let cellClass = "cursor-pointer hover:opacity-80 transition-opacity select-none relative";
 
@@ -276,7 +276,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
             }
         };
         window.addEventListener('mouseup', handleMouseUp);
-        return () => window.removeEventListener('mouseup', handleMouseUp);
+        return () => { window.removeEventListener('mouseup', handleMouseUp); };
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
     const handleMouseDown = React.useCallback((date: Date, doctorId: string) => {
@@ -600,7 +600,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
             ))}
 
             {/* Admin-Dialog für Antrag genehmigen/ablehnen */}
-            <Dialog open={requestActionDialog.open} onOpenChange={(open) => setRequestActionDialog(prev => ({ ...prev, open }))}>
+            <Dialog open={requestActionDialog.open} onOpenChange={(open) => { setRequestActionDialog(prev => ({ ...prev, open })); }}>
                 <DialogContent className="max-w-sm">
                     <DialogHeader>
                         <DialogTitle>Antrag bearbeiten</DialogTitle>
@@ -616,7 +616,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                             variant="outline"
                             size="sm"
                             className="text-xs px-2"
-                            onClick={() => setRequestActionDialog(prev => ({ ...prev, open: false }))}
+                            onClick={() => { setRequestActionDialog(prev => ({ ...prev, open: false })); }}
                         >
                             Abbrechen
                         </Button>

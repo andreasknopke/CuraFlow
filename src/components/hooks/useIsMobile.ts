@@ -16,7 +16,7 @@ export function useIsMobile(breakpoint: number = 768): boolean {
         window.addEventListener('resize', handleResize);
         handleResize(); // Initial check
 
-        return () => window.removeEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); };
     }, [breakpoint]);
 
     return isMobile;

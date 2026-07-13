@@ -187,7 +187,7 @@ export default function ConflictDialog({
                                     id="keep-services" 
                                     data-testid="vacation-conflict-keep-services"
                                     checked={keepOptionalServices}
-                                    onCheckedChange={(checked) => setKeepOptionalServices(checked === true)}
+                                    onCheckedChange={(checked) => { setKeepOptionalServices(checked === true); }}
                                 />
                                 <label 
                                     htmlFor="keep-services" 

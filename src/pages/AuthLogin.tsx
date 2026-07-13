@@ -67,7 +67,7 @@ export default function AuthLoginPage() {
             await login(email, password);
             console.log('[AuthLogin] Login finished, setting loginComplete=true');
             // Warte kurz damit React die States aktualisieren kann
-            setTimeout(() => setLoginComplete(true), 100);
+            setTimeout(() => { setLoginComplete(true); }, 100);
         } catch (err) {
             setError((err as Error).message || 'Anmeldung fehlgeschlagen');
             setLoginComplete(false);
@@ -121,7 +121,7 @@ export default function AuthLoginPage() {
                                 type="email"
                                 placeholder="name@beispiel.de"
                                 value={email}
-                                onChange={(e: any) => setEmail(e.target.value)}
+                                onChange={(e: any) => { setEmail(e.target.value); }}
                                 required
                                 autoComplete="email"
                                 autoFocus
@@ -137,14 +137,14 @@ export default function AuthLoginPage() {
                                     type={showPassword ? 'text' : 'password'}
                                     placeholder="••••••••"
                                     value={password}
-                                    onChange={(e: any) => setPassword(e.target.value)}
+                                    onChange={(e: any) => { setPassword(e.target.value); }}
                                     required
                                     autoComplete="current-password"
                                     className="pr-10"
                                 />
                                 <button
                                     type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
+                                    onClick={() => { setShowPassword(!showPassword); }}
                                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                 >
                                     {showPassword ? (

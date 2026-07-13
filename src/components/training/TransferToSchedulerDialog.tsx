@@ -498,19 +498,19 @@ export default function TransferToSchedulerDialog({
 
                 <DialogFooter className="border-t pt-4">
                     {showPreview && (
-                        <Button data-testid="training-transfer-back" variant="ghost" onClick={() => setShowPreview(false)} className="mr-auto">
+                        <Button data-testid="training-transfer-back" variant="ghost" onClick={() => { setShowPreview(false); }} className="mr-auto">
                             ← Zurück
                         </Button>
                     )}
                     
-                    <Button data-testid="training-transfer-cancel" variant="outline" onClick={() => handleOpenChange(false)}>
+                    <Button data-testid="training-transfer-cancel" variant="outline" onClick={() => { handleOpenChange(false); }}>
                         Abbrechen
                     </Button>
                     
                     {!showPreview ? (
                         <Button 
                             data-testid="training-transfer-preview"
-                            onClick={() => setShowPreview(true)}
+                            onClick={() => { setShowPreview(true); }}
                             className="bg-emerald-600 hover:bg-emerald-700"
                         >
                             Vorschau anzeigen ({transferPreview.entries.length} Einträge)

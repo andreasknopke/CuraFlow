@@ -145,7 +145,7 @@ export default function WorkplaceLinkManagement() {
                             Zugriffsrechten oder Schreibzugriffen statt.
                         </CardDescription>
                     </div>
-                    <Button onClick={() => setShowGroupDialog(true)} size="sm">
+                    <Button onClick={() => { setShowGroupDialog(true); }} size="sm">
                         <Plus className="w-4 h-4 mr-1" /> Neue Verknüpfung
                     </Button>
                 </CardHeader>
@@ -188,7 +188,7 @@ export default function WorkplaceLinkManagement() {
                                                 <button
                                                     type="button"
                                                     className="ml-1 text-slate-400 hover:text-red-600"
-                                                    onClick={() => removeMemberMutation.mutate({ groupId: group.id, memberId: member.id })}
+                                                    onClick={() => { removeMemberMutation.mutate({ groupId: group.id, memberId: member.id }); }}
                                                     title="Entfernen"
                                                 >
                                                     ×
@@ -231,7 +231,7 @@ export default function WorkplaceLinkManagement() {
                                                         className="h-8"
                                                         placeholder="Name eingeben"
                                                         value={memberWorkplaceName}
-                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMemberWorkplaceName(e.target.value)}
+                                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setMemberWorkplaceName(e.target.value); }}
                                                         disabled={!memberTenantId}
                                                     />
                                                 )}
@@ -239,11 +239,11 @@ export default function WorkplaceLinkManagement() {
                                             <Button
                                                 size="sm"
                                                 disabled={!memberTenantId || !memberWorkplaceName.trim() || addMemberMutation.isPending}
-                                                onClick={() => addMemberMutation.mutate({
+                                                onClick={() => { addMemberMutation.mutate({
                                                     groupId: group.id,
                                                     tenantId: memberTenantId,
                                                     workplaceName: memberWorkplaceName.trim(),
-                                                })}
+                                                }); }}
                                             >
                                                 Hinzufügen
                                             </Button>
@@ -260,7 +260,7 @@ export default function WorkplaceLinkManagement() {
                                             </Button>
                                         </div>
                                     ) : (
-                                        <Button size="sm" variant="outline" onClick={() => setAddingToGroupId(group.id)}>
+                                        <Button size="sm" variant="outline" onClick={() => { setAddingToGroupId(group.id); }}>
                                             <Plus className="w-3.5 h-3.5 mr-1" /> Arbeitsplatz hinzufügen
                                         </Button>
                                     )}
@@ -284,7 +284,7 @@ export default function WorkplaceLinkManagement() {
                             <Label>Name</Label>
                             <Input
                                 value={groupForm.name}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGroupForm((f: GroupForm) => ({ ...f, name: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setGroupForm((f: GroupForm) => ({ ...f, name: e.target.value })); }}
                                 placeholder="z.B. CT – ärztlich/MTR"
                             />
                         </div>
@@ -292,15 +292,15 @@ export default function WorkplaceLinkManagement() {
                             <Label>Beschreibung (optional)</Label>
                             <Input
                                 value={groupForm.description}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setGroupForm((f: GroupForm) => ({ ...f, description: e.target.value }))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setGroupForm((f: GroupForm) => ({ ...f, description: e.target.value })); }}
                             />
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowGroupDialog(false); }}>Abbrechen</Button>
                         <Button
                             disabled={!groupForm.name.trim() || createGroupMutation.isPending}
-                            onClick={() => createGroupMutation.mutate(groupForm)}
+                            onClick={() => { createGroupMutation.mutate(groupForm); }}
                         >
                             Erstellen
                         </Button>

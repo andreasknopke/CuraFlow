@@ -77,7 +77,7 @@ export default function ConflictPanelSheet({
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs gap-1 text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
-                onClick={() => onResolveShift(shiftId)}
+                onClick={() => { onResolveShift(shiftId); }}
             >
                 <Trash2 className="w-3 h-3" />
                 {label || 'Entfernen'}
@@ -121,14 +121,14 @@ export default function ConflictPanelSheet({
                                 </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start">
-                                <DropdownMenuItem onClick={() => setSeverityFilter('all')}>
+                                <DropdownMenuItem onClick={() => { setSeverityFilter('all'); }}>
                                     Alle ({conflicts.length})
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setSeverityFilter('blocker')}>
+                                <DropdownMenuItem onClick={() => { setSeverityFilter('blocker'); }}>
                                     <AlertTriangle className="w-3 h-3 mr-1 text-red-500" />
                                     Nur Blocker ({blockerCount})
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => setSeverityFilter('warning')}>
+                                <DropdownMenuItem onClick={() => { setSeverityFilter('warning'); }}>
                                     <AlertTriangle className="w-3 h-3 mr-1 text-yellow-500" />
                                     Nur Warnungen ({warningCount})
                                 </DropdownMenuItem>

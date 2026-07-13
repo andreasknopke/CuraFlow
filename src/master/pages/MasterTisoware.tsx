@@ -431,7 +431,7 @@ export default function MasterTisoware() {
                     <Collapsible
                       key={t.full_name as React.Key}
                       open={expandedTable?.full_name === t.full_name}
-                      onOpenChange={() => handleTableClick(t)}
+                      onOpenChange={() => { handleTableClick(t); }}
                     >
                       <div className="flex items-center px-4 py-2 hover:bg-slate-50 transition-colors">
                         <CollapsibleTrigger asChild>
@@ -479,12 +479,12 @@ export default function MasterTisoware() {
                                     {(col.max_length as number) > 0 && (col.max_length as number) !== 255 && (
                                       <span className="text-slate-400">({col.max_length as React.ReactNode})</span>
                                     )}
-                                    {!!(col.is_nullable as unknown as boolean) ? (
+                                    {!!(col.is_nullable as boolean) ? (
                                       <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-slate-400">NULL</Badge>
                                     ) : (
                                       <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 text-emerald-600 border-emerald-200">NOT NULL</Badge>
                                     )}
-                                    {!!(col.is_identity as unknown as boolean) && (
+                                    {!!(col.is_identity as boolean) && (
                                       <Badge className="text-[10px] px-1 py-0 h-4 bg-blue-100 text-blue-700 border-blue-200">IDENTITY</Badge>
                                     )}
                                   </div>
@@ -518,7 +518,7 @@ export default function MasterTisoware() {
               <div className="relative">
                 <textarea
                   value={sqlQuery}
-                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSqlQuery(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => { setSqlQuery(e.target.value); }}
                   onKeyDown={handleKeyDown}
                   className="w-full h-32 p-3 font-mono text-sm border rounded-lg bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none resize-y"
                   placeholder="SELECT TOP 100 * FROM dbo.PERSTAMM"

@@ -152,7 +152,7 @@ describe('useQualifications', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     // Results should be sorted by order
     expect(result.current.qualifications).toHaveLength(3);
@@ -169,7 +169,7 @@ describe('useQualifications', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     // Should have created defaults since DB was empty
     expect(db.Qualification.create).toHaveBeenCalled();
@@ -183,7 +183,7 @@ describe('useQualifications', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     expect(typeof result.current.refetch).toBe('function');
   });
@@ -195,7 +195,7 @@ describe('useQualifications', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
     expect(result.current.qualifications).toEqual([]);
   });
 });
@@ -215,7 +215,7 @@ describe('useQualifications — mutations', () => {
       wrapper: createWrapper(),
     });
 
-    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => { expect(result.current.isLoading).toBe(false); });
 
     // We don't directly expose createQualification, but the hook uses a mutation internally.
     // The query and mutation are set up; we verify the initial state loads.

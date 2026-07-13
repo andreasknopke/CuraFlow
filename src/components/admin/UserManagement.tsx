@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, db } from "@/api/client";
-import type { ApiError } from "@/api/client";
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +11,6 @@ import { Loader2, Shield, ShieldAlert, ShieldCheck, UserCog, UserPlus, Trash2, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAuth } from '@/components/AuthProvider';
-import type { AppUser } from '@/types/auth';
 import type { Doctor } from '@/types/models';
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import { isAlphabeticalDoctorSortingEnabled, sortDoctorsAlphabetically } from '@/utils/doctorSorting';
@@ -206,7 +204,7 @@ export default function UserManagement() {
     const updateUserMutation = useMutation({
         mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
             console.log('[UserManagement] Updating user:', { id, data });
-            const result = await api.updateUser(id, data as unknown as Record<string, unknown>);
+            const result = await api.updateUser(id, data);
             console.log('[UserManagement] Update result:', result);
             return result;
         },
@@ -249,7 +247,7 @@ export default function UserManagement() {
             setCreateError('E-Mail und Passwort sind erforderlich');
             return;
         }
-        createUserMutation.mutate({ ...newUser, sendPasswordEmail } as unknown as Record<string, unknown>);
+        createUserMutation.mutate({ ...newUser, sendPasswordEmail });
     };
 
     const handleSendPasswordEmail = async (userId: string) => {
@@ -275,7 +273,7 @@ export default function UserManagement() {
                     <h2 className="text-xl font-semibold">Benutzerverwaltung</h2>
                 </div>
                 <Button
-                    onClick={() => setShowCreateDialog(true)}
+                    onClick={() => { setShowCreateDialog(true); }}
                     className="bg-indigo-600 hover:bg-indigo-700"
                     data-testid="admin-user-create-button"
                 >
@@ -289,7 +287,7 @@ export default function UserManagement() {
                     <Label htmlFor="tenantFilter" className="text-sm">Mandant filtern:</Label>
                     <Select
                         value={tenantFilter || "__all__"}
-                        onValueChange={(val: string) => setTenantFilter(val === "__all__" ? "" : val)}
+                        onValueChange={(val: string) => { setTenantFilter(val === "__all__" ? "" : val); }}
                     >
                         <SelectTrigger id="tenantFilter" className="w-64" data-testid="admin-user-tenant-filter">
                             <SelectValue placeholder="Alle Mandanten" />
@@ -353,10 +351,10 @@ export default function UserManagement() {
                                 <TableCell>
                                     <EmployeeSelect
                                         value={user.doctor_id || 'none'}
-                                        onValueChange={(val: string) => updateUserMutation.mutate({
+                                        onValueChange={(val: string) => { updateUserMutation.mutate({
                                             id: user.id,
                                             data: { doctor_id: val === 'none' ? null : val }
-                                        })}
+                                        }); }}
                                         options={doctorSelectOptions}
                                         placeholder="Keine Person"
                                         searchPlaceholder="Person suchen..."
@@ -485,7 +483,7 @@ export default function UserManagement() {
                                         </Button>
                                         <Select 
                                             defaultValue={user.role} 
-                                            onValueChange={(val: string) => updateUserMutation.mutate({ id: user.id, data: { role: val } })}
+                                            onValueChange={(val: string) => { updateUserMutation.mutate({ id: user.id, data: { role: val } }); }}
                                         >
                                             <SelectTrigger className="w-32" data-testid={`admin-user-role-${user.id}`}>
                                                 <SelectValue />
@@ -536,7 +534,7 @@ export default function UserManagement() {
                                 type="email"
                                 data-testid="admin-user-create-email"
                                 value={newUser.email}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, email: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewUser({ ...newUser, email: e.target.value }); }}
                                 placeholder="name@beispiel.de"
                             />
                         </div>
@@ -546,7 +544,7 @@ export default function UserManagement() {
                                 id="full_name"
                                 data-testid="admin-user-create-name"
                                 value={newUser.full_name}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, full_name: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewUser({ ...newUser, full_name: e.target.value }); }}
                                 placeholder="Max Mustermann"
                             />
                         </div>
@@ -557,13 +555,13 @@ export default function UserManagement() {
                                 type="password"
                                 data-testid="admin-user-create-password"
                                 value={newUser.password}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewUser({ ...newUser, password: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setNewUser({ ...newUser, password: e.target.value }); }}
                                 placeholder="Mindestens 6 Zeichen"
                             />
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="role">Rolle</Label>
-                            <Select value={newUser.role} onValueChange={(val: string) => setNewUser({ ...newUser, role: val })}>
+                            <Select value={newUser.role} onValueChange={(val: string) => { setNewUser({ ...newUser, role: val }); }}>
                                 <SelectTrigger data-testid="admin-user-create-role">
                                     <SelectValue />
                                 </SelectTrigger>
@@ -578,7 +576,7 @@ export default function UserManagement() {
                                 id="sendPasswordEmail"
                                 data-testid="admin-user-create-send-password-email"
                                 checked={sendPasswordEmail}
-                                onCheckedChange={(checked: boolean | string) => setSendPasswordEmail(!!checked)}
+                                onCheckedChange={(checked: boolean | string) => { setSendPasswordEmail(!!checked); }}
                             />
                             <label 
                                 htmlFor="sendPasswordEmail" 
@@ -595,7 +593,7 @@ export default function UserManagement() {
                         )}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                        <Button variant="outline" onClick={() => { setShowCreateDialog(false); }}>
                             Abbrechen
                         </Button>
                         <Button 
@@ -637,10 +635,10 @@ export default function UserManagement() {
                                     id: selectedUser.id,
                                     data: { allowed_tenants: allowedTenants }
                                 }, {
-                                    onSuccess: () => setShowTenantDialog(false)
+                                    onSuccess: () => { setShowTenantDialog(false); }
                                 });
                             }}
-                            onClose={() => setShowTenantDialog(false)}
+                            onClose={() => { setShowTenantDialog(false); }}
                             isLoading={updateUserMutation.isPending}
                         />
                     )}
@@ -670,10 +668,10 @@ export default function UserManagement() {
                                         group_admin_groups: adminGroups,
                                     }
                                 }, {
-                                    onSuccess: () => setShowGroupDialog(false)
+                                    onSuccess: () => { setShowGroupDialog(false); }
                                 });
                             }}
-                            onClose={() => setShowGroupDialog(false)}
+                            onClose={() => { setShowGroupDialog(false); }}
                             isLoading={updateUserMutation.isPending}
                         />
                     )}
@@ -701,7 +699,7 @@ export default function UserManagement() {
                                 id="edit-email"
                                 type="email"
                                 value={editUser.email}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, email: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditUser({ ...editUser, email: e.target.value }); }}
                                 placeholder="name@beispiel.de"
                             />
                         </div>
@@ -710,7 +708,7 @@ export default function UserManagement() {
                             <Input
                                 id="edit-name"
                                 value={editUser.full_name}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, full_name: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditUser({ ...editUser, full_name: e.target.value }); }}
                                 placeholder="Max Mustermann"
                             />
                         </div>
@@ -720,13 +718,13 @@ export default function UserManagement() {
                                 id="edit-password"
                                 type="password"
                                 value={editUser.password}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditUser({ ...editUser, password: e.target.value })}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditUser({ ...editUser, password: e.target.value }); }}
                                 placeholder="Mindestens 6 Zeichen"
                             />
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+                        <Button variant="outline" onClick={() => { setShowEditDialog(false); }}>
                             Abbrechen
                         </Button>
                         <Button
@@ -872,7 +870,7 @@ function TenantSelector({ user, tenants, adminHasFullAccess, onSave, onClose, is
                                         console.log('[TenantSelector] Checkbox changed for tenant:', tenant.id);
                                         toggleTenant(tenant.id);
                                     }}
-                                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); }}
                                 />
                                 <div className="flex-1">
                                     <div className="font-medium text-sm">{tenant.name}</div>
@@ -986,7 +984,7 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }: Group
                                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                                         <Checkbox
                                             checked={canRead}
-                                            onCheckedChange={() => toggleReadGroup(groupId)}
+                                            onCheckedChange={() => { toggleReadGroup(groupId); }}
                                             data-testid={`admin-user-group-read-${groupId}`}
                                         />
                                         Sichtrecht
@@ -994,7 +992,7 @@ function GroupAccessSelector({ user, groups, onSave, onClose, isLoading }: Group
                                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                                         <Checkbox
                                             checked={canWrite}
-                                            onCheckedChange={() => toggleWriteGroup(groupId)}
+                                            onCheckedChange={() => { toggleWriteGroup(groupId); }}
                                             data-testid={`admin-user-group-write-${groupId}`}
                                         />
                                         <PenSquare className="w-3.5 h-3.5 text-indigo-600" /> Schreibrecht

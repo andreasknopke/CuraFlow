@@ -1,0 +1,213 @@
+# Type Safety Enforcement Plan
+
+## Goal
+
+Prevent `any` from proliferating in `src/` by making `npm run lint` catch explicit `any` usage, and eliminate the root-cause `any` propagation source in the API client.
+
+## Context
+
+The TypeScript conversion plan (`docs/TYPESCRIPT_CONVERSION_PLAN.md`) is complete — all `.jsx` files in `src/` are now `.tsx`. However, the conversion often used `any` as a shortcut:
+
+| Metric | Count |
+|---|---|
+| `: any` annotations | ~923 (766 production, 157 tests) |
+| `as any` casts | ~495 (273 production, 222 tests) |
+| `<any>` generics | ~25 |
+| `@ts-nocheck` files | 5 (deferred pages) |
+| `@ts-ignore` | 1 (third-party SDK import) |
+| `@ts-expect-error` | 2 (react-day-picker overloads) |
+
+**The single biggest propagation source:** `EntityClient` in `src/api/client.ts` — every `db.<Entity>.list/filter/get/create/update/delete()` method returned `Promise<any>` with `Record<string, any>` parameters. This silently infected all consumers.
+
+**The enforcement gap:** Before this work, ESLint only linted `.js/.jsx` files (zero remaining), so `npm run lint` silently passed regardless of TypeScript quality. No `@typescript-eslint` was installed.
+
+---
+
+## Step 1 — ESLint TypeScript enforcement ✅ COMPLETE
+
+**What was done:**
+
+- Installed `typescript-eslint` (dev dependency: `typescript-eslint`)
+- Rewrote `eslint.config.js` to add a `src/**/*.{ts,tsx}` config block with:
+  - `@typescript-eslint/parser` with `parserOptions.project: "./jsconfig.json"` for type-aware linting
+  - `@typescript-eslint/no-explicit-any`: **error** — blocks CI
+  - `@typescript-eslint/ban-ts-comment`: **error** — forbids `@ts-ignore` and `@ts-nocheck`; `@ts-expect-error` allowed with description ≥10 chars
+  - All other `recommendedTypeChecked` rules set to **warn** (not blocking)
+- Added an **allowlist** of ~65 files exempted from `no-explicit-any: error` (set to `"off"`). These are existing offenders that will be cleaned file-by-file. New files are NOT exempt.
+- Test files (`__tests__/`, `__component_tests__/`, `*.test.*`) exempted — mocks legitimately use `any`.
+- 5 deferred `@ts-nocheck` pages in the ignores list (tracked from conversion plan).
+- Auto-fixed 28 unused imports and 8 `prefer-const` issues across the codebase (free cleanup from finally having a working linter).
+
+**How it works:**
+
+- Any new file with `any` → `npm run lint` → CI fails
+- Any file removed from the allowlist without cleaning → `npm run lint` → CI fails
+- The allowlist is self-documenting in `eslint.config.js` — each entry has a comment
+
+**Files changed:** `eslint.config.js`, `package.json`, `package-lock.json`
+
+---
+
+## Step 2 — EntityClient generic refactor ✅ COMPLETE
+
+**What was done:**
+
+- Made `EntityClient` generic: `class EntityClient<T = unknown>`
+- All methods now use typed parameters/returns:
+  - `list(options: Record<string, unknown>): Promise<T[]>`
+  - `filter(query, options): Promise<T[]>`
+  - `get(id: string): Promise<T>`
+  - `create(data: Record<string, unknown>): Promise<T>`
+  - `update(id: string, data: Record<string, unknown>): Promise<T>`
+  - `delete(id: string): Promise<T>`
+  - `bulkCreate(dataArray: Record<string, unknown>[]): Promise<T[]>`
+- Typed 24 named `db.<Entity>` clients with domain model types from `@/types`:
+
+| Entity | Type | Source |
+|---|---|---|
+| Doctor | `Doctor` | `@/types` |
+| ShiftEntry | `ShiftEntry` | `@/types` |
+| WishRequest | `WishRequest` | `@/types` |
+| Workplace | `Workplace` | `@/types` |
+| WorkplaceTimeslot | `WorkplaceTimeslot` | `@/types` |
+| Qualification | `Qualification` | `@/types` |
+| DoctorQualification | `DoctorQualification` | `@/types` |
+| WorkplaceQualification | `WorkplaceQualification` | `@/types` |
+| TeamRole | `TeamRole` | `@/types` |
+| SystemSetting | `SystemSetting` | `@/types` |
+| ScheduleBlock | `ScheduleBlock` | `@/types` |
+| ScheduleNote | `ScheduleNote` | `@/types` |
+| StaffingPlanEntry | `StaffingPlanEntry` | `@/types` |
+| StaffingPlanNote | `StaffingPlanNote` | `@/types` |
+| ShiftTimeRule | `ShiftTimeRule` | `@/types` |
+| TrainingRotation | `TrainingRotation` | `@/types` |
+| ColorSetting | `ColorSetting` | `@/types` |
+| CustomHoliday | `CustomHoliday` | `@/types` |
+| User | `AppUser` | `@/types` |
+| TimeslotTemplate | `unknown` | needs type |
+| ShiftNotification | `unknown` | needs type |
+| DemoSetting | `unknown` | needs type |
+| ScheduleRule | `unknown` | needs type |
+| BackupLog | `unknown` | needs type |
+| SystemLog | `unknown` | needs type |
+| VoiceAlias | `unknown` | needs type |
+
+- `db.collection(name)` returns `EntityClient<unknown>`
+
+**Impact:** This is the highest-leverage single change — every `db.Doctor.list()` call now returns `Promise<Doctor[]>` instead of `Promise<any>`, surfacing precise type errors at consumer sites instead of silently passing `any` through.
+
+**Files changed:** `src/api/client.ts`
+
+---
+
+## Step 3 — Call-site fallout fixes ✅ COMPLETE
+
+Fixed type errors across 16 files that relied on the old untyped `EntityClient`. Key changes:
+
+| File | What was fixed |
+|---|---|
+| `src/hooks/useQualifications.ts` | Local `Qualification` interface now extends `@/types` version; removed shadowing local `DoctorQualification`/`WorkplaceQualification` |
+| `src/components/settings/WorkplaceConfigDialog.tsx` | Removed `as unknown as Record<string, any>` casts; typed `useQuery` generics |
+| `src/components/schedule/ScheduleBoard.tsx` | Null handling for `string \| null` typed fields; typed query cache access |
+| `src/components/staff/CertificateManager.tsx` | Typed `map()` callback return type for normalized certs |
+| `src/components/staff/DoctorForm.tsx` | Typed `useQuery` generic for meta endpoint |
+| `src/pages/Staff.tsx` | Used `Doctor` type for state; removed manual index signature |
+| `src/components/settings/ColorSettingsDialog.tsx` | Fixed mutation data type casting |
+| `src/components/settings/TeamRoleSettings.tsx` | Fixed `description` optional field to match model |
+| `src/components/settings/WorkplaceQualificationEditor.tsx` | Fixed filter result casting |
+| `src/components/schedule/DemoSettingsDialog.tsx` | Typed `DemoSetting` query and mutations |
+| `src/components/admin/SystemLogs.tsx` | Typed `SystemLog` query result |
+| `src/components/admin/TimeslotEditor.tsx` | Removed unused `WorkplaceTimeslot` import |
+| `src/components/useHolidays.ts` | Removed explicit callback type annotations |
+| `src/components/useShiftLimitCheck.ts` | Removed explicit callback type annotations |
+| `src/components/useStaffingCheck.ts` | Removed explicit callback type annotations |
+| `src/components/validation/useShiftValidation.tsx` | Fixed `Doctor`/`SystemSetting` type casts |
+
+---
+
+## Verification ✅ ALL PASS
+
+| Check | Result |
+|---|---|
+| `npm run typecheck` | 0 errors |
+| `npm run lint` | 0 errors (8739 warnings from downgraded rules) |
+| `npm run build` | Pass |
+| `npm run test:all` | 738 tests pass, 66 files pass |
+
+---
+
+## Remaining work — shrink the allowlist
+
+The allowlist in `eslint.config.js` contains ~65 files that still use `any`. These should be cleaned file-by-file, removing each entry from the allowlist after cleanup. The order should follow the risk tiers from the conversion plan.
+
+### Priority A: High leverage, test-backed
+
+| File | `: any` | Why first | Notes |
+|---|---|---|---|
+| `autoFillEngine.ts` | 96 | Has 24 unit tests | Define `GenerateSuggestionsParams` interface |
+| `costFunction.ts` | 20 | Has unit tests | Type the cost function parameters |
+| `aiAutoFillEngine.ts` | 16 | Variant of autoFillEngine | Follows same pattern |
+
+### Priority B: Medium risk, moderate count
+
+| File | `: any` | Notes |
+|---|---|---|
+| `TransferToSchedulerDialog.tsx` | 26 | Large dialog, test-backed |
+| `CoWorkWidget.tsx` | 20 | Complex, isolated |
+| `WorkTimeReport.tsx` | 10 | Statistics |
+| `WishMonthOverview.tsx` | 22 | Wishlist |
+| `TrainingOverview.tsx` | 20 | Training |
+| `StaffingPlanTable.tsx` | 11 | Staff |
+
+### Priority C: Many small files (5-10 `any` each)
+
+~40 files with small `any` counts. Straightforward cleanup after the EntityClient refactor removed the upstream `any` propagation.
+
+### Priority D: ScheduleBoard.tsx — LAST
+
+416 `: any` + 94 `as any` = 510 total. High-risk 7k-line file with no DnD test coverage. Keep allowlisted until all other files are done. Type-annotation-only discipline per the conversion plan.
+
+### Priority E: 5 deferred `@ts-nocheck` pages
+
+| File | Blocker |
+|---|---|
+| `src/pages/MyDashboard.tsx` | TanStack Query v5 migration + unconverted components |
+| `src/pages/WishList.tsx` | TanStack Query v5 migration |
+| `src/pages/ServiceStaffing.tsx` | TanStack Query v5 migration |
+| `src/pages/Vacation.tsx` | TanStack Query v5 migration |
+| `src/pages/Training.tsx` | TanStack Query v5 migration |
+
+Remove from ESLint ignores list as each is converted.
+
+### Priority F: Untyped entities — add model types
+
+| Entity | Needs interface in `src/types/models.ts` |
+|---|---|
+| `ShiftNotification` | `id, doctor_id, recipient_id, message, acknowledged, created_date` |
+| `VoiceAlias` | `id, doctor_id, detected_text, created_by, created_date` |
+| `BackupLog` | `id, action, status, details, created_date` |
+| `SystemLog` | `id, level, message, context, user_id, created_date` |
+| `TimeslotTemplate` | `id, label, start_time, end_time, workplace_id` |
+| `ScheduleRule` | `id, name, rule_type, config, created_date` |
+| `DemoSetting` | `id, name, value, created_date` |
+
+---
+
+## How to clean a file from the allowlist
+
+1. Open the file and find all `any` occurrences
+2. Replace with proper types from `@/types` or new local interfaces
+3. Remove the file's entry from the allowlist in `eslint.config.js`
+4. Run `npm run typecheck && npm run lint` — must pass with zero errors
+5. Run `npm run test:all` — all tests must pass
+6. Commit with `refactor: replace any with proper types in <file>`
+
+## The enforcement loop
+
+```
+Developer writes code → npm run lint → any in non-allowlisted file?
+├── No  → lint passes → CI green
+└── Yes → lint fails with @typescript-eslint/no-explicit-any → CI red → blocked
+```
+
+This works for both PRs and direct pushes to master (CI runs on every push).

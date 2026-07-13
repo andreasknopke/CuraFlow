@@ -22,9 +22,9 @@ export function useShiftLimitCheck(shifts: ShiftEntry[], workplaces: Workplace[]
         staleTime: 1000 * 60 * 5
     });
 
-    const limitFG = parseInt(settings.find((s: { key: string; value: string }) => s.key === 'limit_fore_services')?.value || '4');
-    const limitWeekend = parseInt(settings.find((s: { key: string; value: string }) => s.key === 'limit_weekend_services')?.value || '1');
-    const limitBG = parseInt(settings.find((s: { key: string; value: string }) => s.key === 'limit_back_services')?.value || '12');
+    const limitFG = parseInt(settings.find((s) => s.key === 'limit_fore_services')?.value || '4');
+    const limitWeekend = parseInt(settings.find((s) => s.key === 'limit_weekend_services')?.value || '1');
+    const limitBG = parseInt(settings.find((s) => s.key === 'limit_back_services')?.value || '12');
 
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],

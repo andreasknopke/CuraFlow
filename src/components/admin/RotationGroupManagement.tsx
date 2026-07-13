@@ -122,7 +122,7 @@ function normalizeGroup(group: Record<string, unknown>): NormalizedGroup {
         name: String(group.name ?? ''),
         description: String(group.description ?? ''),
         is_active: Boolean(group.is_active),
-    } as NormalizedGroup;
+    };
 }
 
 export default function RotationGroupManagement() {
@@ -459,7 +459,7 @@ export default function RotationGroupManagement() {
                                         key={group.id}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => setSelectedGroupId(group.id)}
+                                        onClick={() => { setSelectedGroupId(group.id); }}
                                         onKeyDown={(event: React.KeyboardEvent) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
@@ -587,7 +587,7 @@ export default function RotationGroupManagement() {
                                                                 variant="ghost"
                                                                 size="sm"
                                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id })}
+                                                                onClick={() => { removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id }); }}
                                                             >
                                                                 <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                             </Button>
@@ -659,17 +659,17 @@ export default function RotationGroupManagement() {
                                                     </TableCell>
                                                     <TableCell className="text-right">
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <Button variant="outline" size="sm" onClick={() => setTimeslotWorkplace(workplace)} title="Zeitfenster verwalten">
+                                                            <Button variant="outline" size="sm" onClick={() => { setTimeslotWorkplace(workplace); }} title="Zeitfenster verwalten">
                                                                 <Clock className="mr-1 h-3.5 w-3.5" /> Zeitfenster
                                                             </Button>
-                                                            <Button variant="outline" size="sm" onClick={() => handleOpenEditWorkplace(workplace)}>
+                                                            <Button variant="outline" size="sm" onClick={() => { handleOpenEditWorkplace(workplace); }}>
                                                                 <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
                                                             </Button>
                                                             <Button
                                                                 variant="outline"
                                                                 size="sm"
                                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                onClick={() => handleDeleteWorkplace(workplace)}
+                                                                onClick={() => { handleDeleteWorkplace(workplace); }}
                                                             >
                                                                 <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
                                                             </Button>
@@ -699,7 +699,7 @@ export default function RotationGroupManagement() {
                             <Input
                                 id="rotation-group-name"
                                 value={groupForm.name}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value })); }}
                                 data-testid="admin-rotation-group-name-input"
                             />
                         </div>
@@ -708,7 +708,7 @@ export default function RotationGroupManagement() {
                             <Textarea
                                 id="rotation-group-description"
                                 value={groupForm.description}
-                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => { setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value })); }}
                                 rows={3}
                             />
                         </div>
@@ -717,11 +717,11 @@ export default function RotationGroupManagement() {
                                 <div className="font-medium text-slate-900">Aktiv</div>
                                 <div className="text-sm text-slate-500">Nur aktive Verbünde erscheinen in der Auswahl.</div>
                             </div>
-                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => setGroupForm((current: GroupForm) => ({ ...current, is_active: checked }))} />
+                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => { setGroupForm((current: GroupForm) => ({ ...current, is_active: checked })); }} />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
-                        <Button variant="outline" onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowGroupDialog(false); }}>Abbrechen</Button>
                         <Button onClick={handleSaveGroup} disabled={createGroupMutation.isPending || updateGroupMutation.isPending} data-testid="admin-rotation-group-save-button">
                             {(createGroupMutation.isPending || updateGroupMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
@@ -745,7 +745,7 @@ export default function RotationGroupManagement() {
                             <Input
                                 id="rotation-workplace-name"
                                 value={workplaceForm.name}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value })); }}
                                 data-testid="admin-rotation-workplace-name-input"
                             />
                         </div>
@@ -754,7 +754,7 @@ export default function RotationGroupManagement() {
                             <div className="text-xs text-slate-500">Welcher Station gehört diese Rotation? Nur Stations-Mandanten (role=ward) sind wählbar.</div>
                             <Select
                                 value={workplaceForm.ward_tenant_id}
-                                onValueChange={(value: string) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, ward_tenant_id: value }))}
+                                onValueChange={(value: string) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, ward_tenant_id: value })); }}
                             >
                                 <SelectTrigger id="rotation-workplace-ward" data-testid="admin-rotation-workplace-ward-select">
                                     <SelectValue placeholder="Station wählen" />
@@ -779,7 +779,7 @@ export default function RotationGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.timeslots_enabled}
-                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked }))}
+                                onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked })); }}
                                 data-testid="admin-rotation-workplace-timeslots-enabled"
                             />
                         </div>
@@ -795,12 +795,12 @@ export default function RotationGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.is_active}
-                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked })); }}
                             />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
-                        <Button variant="outline" onClick={() => setShowWorkplaceDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowWorkplaceDialog(false); }}>Abbrechen</Button>
                         <Button onClick={handleSaveWorkplace} disabled={createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending} data-testid="admin-rotation-workplace-save-button">
                             {(createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
@@ -814,7 +814,7 @@ export default function RotationGroupManagement() {
                 <RotationTimeslotEditor
                     groupId={selectedGroupId}
                     workplace={timeslotWorkplace}
-                    onClose={() => setTimeslotWorkplace(null)}
+                    onClose={() => { setTimeslotWorkplace(null); }}
                 />
             )}
         </div>
@@ -895,7 +895,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                                 variant="ghost"
                                                 size="sm"
                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                onClick={() => deleteMutation.mutate(ts.id)}
+                                                onClick={() => { deleteMutation.mutate(ts.id); }}
                                             >
                                                 <Trash2 className="h-3.5 w-3.5" />
                                             </Button>
@@ -913,7 +913,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Label className="text-sm">Bezeichnung</Label>
                                     <Input
                                         value={form.label}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, label: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, label: e.target.value })); }}
                                         placeholder="z. B. Frühdienst"
                                     />
                                 </div>
@@ -923,7 +923,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                         type="number"
                                         min="0"
                                         value={form.order}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 })); }}
                                         className="w-24"
                                     />
                                 </div>
@@ -932,7 +932,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Input
                                         type="time"
                                         value={form.start_time}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value })); }}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -940,7 +940,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Input
                                         type="time"
                                         value={form.end_time}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value })); }}
                                     />
                                 </div>
                             </div>
@@ -959,11 +959,11 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     {createMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
                                     Hinzufügen
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>Abbrechen</Button>
+                                <Button size="sm" variant="outline" onClick={() => { setShowForm(false); }}>Abbrechen</Button>
                             </div>
                         </div>
                     ) : (
-                        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+                        <Button size="sm" variant="outline" onClick={() => { setShowForm(true); }}>
                             <Plus className="mr-1 h-3.5 w-3.5" /> Zeitfenster hinzufügen
                         </Button>
                     )}

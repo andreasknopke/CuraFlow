@@ -128,7 +128,7 @@ export default function MobileScheduleView({
             {/* Header with Date Navigation */}
             <div className="bg-white border-b border-slate-200 p-4 sticky top-0 z-10">
                 <div className="flex items-center justify-between mb-4">
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(d => addDays(d, -7))}>
+                    <Button variant="ghost" size="icon" onClick={() => { setCurrentDate(d => addDays(d, -7)); }}>
                         <ChevronLeft className="h-5 w-5" />
                     </Button>
                     <div className="text-center">
@@ -139,7 +139,7 @@ export default function MobileScheduleView({
                             {format(selectedDay, 'd. MMMM yyyy', { locale: de })}
                         </div>
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(d => addDays(d, 7))}>
+                    <Button variant="ghost" size="icon" onClick={() => { setCurrentDate(d => addDays(d, 7)); }}>
                         <ChevronRight className="h-5 w-5" />
                     </Button>
                 </div>
@@ -155,7 +155,7 @@ export default function MobileScheduleView({
                         return (
                             <button
                                 key={day.toISOString()}
-                                onClick={() => setSelectedDay(day)}
+                                onClick={() => { setSelectedDay(day); }}
                                 className={`flex-shrink-0 w-12 py-2 rounded-lg text-center transition-colors ${
                                     isSelected 
                                         ? 'bg-indigo-600 text-white' 

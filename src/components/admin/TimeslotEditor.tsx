@@ -141,7 +141,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
         queryKey: ['workplaceTimeslots', workplaceId],
         queryFn: async () => {
             const result = await db.WorkplaceTimeslot.filter({ workplace_id: workplaceId });
-            return (result as Timeslot[]).sort((a: Timeslot, b: Timeslot) => (a.order || 0) - (b.order || 0));
+            return (result as unknown as Timeslot[]).sort((a: Timeslot, b: Timeslot) => (a.order || 0) - (b.order || 0));
         },
         enabled: !!workplaceId
     });
@@ -372,7 +372,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                             <Tooltip>
                                 <TooltipTrigger asChild>
                                     <Button
-                                        onClick={() => setShowSaveTemplateDialog(true)}
+                                        onClick={() => { setShowSaveTemplateDialog(true); }}
                                         size="sm"
                                         variant="outline"
                                         className="text-amber-600 hover:text-amber-700 hover:bg-amber-50"
@@ -403,7 +403,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                         <Input
                             placeholder="Template-Name"
                             value={templateName}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemplateName(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setTemplateName(e.target.value); }}
                             className="flex-1 h-8"
                             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && handleSaveAsTemplate()}
                         />
@@ -461,7 +461,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                 <Label className="text-xs">Bezeichnung</Label>
                                                                 <Input
                                                                     value={editForm.label}
-                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, label: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, label: e.target.value}); }}
                                                                     maxLength={20}
                                                                     className="h-8"
                                                                 />
@@ -471,7 +471,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.start_time}
-                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, start_time: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, start_time: e.target.value}); }}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -480,7 +480,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                 <Input
                                                                     type="time"
                                                                     value={editForm.end_time}
-                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, end_time: e.target.value})}
+                                                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, end_time: e.target.value}); }}
                                                                     className="h-8"
                                                                 />
                                                             </div>
@@ -500,7 +500,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                 min={0}
                                                                 max={60}
                                                                 value={editForm.overlap_tolerance_minutes}
-                                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditForm({...editForm, overlap_tolerance_minutes: parseInt(e.target.value) || 0})}
+                                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setEditForm({...editForm, overlap_tolerance_minutes: parseInt(e.target.value) || 0}); }}
                                                                 className="h-8 w-24"
                                                             />
                                                             <p className="text-[10px] text-slate-500">
@@ -509,7 +509,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                         </div>
 
                                                         <div className="flex justify-end gap-2">
-                                                            <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
+                                                            <Button variant="ghost" size="sm" onClick={() => { setEditingId(null); }}>
                                                                 Abbrechen
                                                             </Button>
                                                             <Button size="sm" onClick={handleSaveEdit}>
@@ -555,7 +555,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                 variant="ghost"
                                                                 size="icon"
                                                                 className="h-7 w-7"
-                                                                onClick={() => startEdit(slot)}
+                                                                onClick={() => { startEdit(slot); }}
                                                             >
                                                                 <Clock className="w-3 h-3" />
                                                             </Button>
@@ -573,7 +573,7 @@ export default function TimeslotEditor({ workplaceId, defaultTolerance = 15 }: T
                                                                                         : "text-red-500 hover:bg-red-50"
                                                                                 )}
                                                                                 disabled={isDeleteDisabled}
-                                                                                onClick={() => handleDelete(slot.id)}
+                                                                                onClick={() => { handleDelete(slot.id); }}
                                                                             >
                                                                                 <Trash2 className="w-3 h-3" />
                                                                             </Button>

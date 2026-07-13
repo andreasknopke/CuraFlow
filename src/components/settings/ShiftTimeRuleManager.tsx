@@ -287,10 +287,10 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }: ShiftTimeRu
   const cardProps = (group: GroupedModel, isPending: boolean): ModelCardProps => ({
     group, isPending,
     isExpanded: expandedModels.has(group.code) || isPending,
-    onToggle: () => toggleExpand(group.code),
+    onToggle: () => { toggleExpand(group.code); },
     workplaceMap, modelMap, workTimeModels, isReadOnly,
     editingModel, modelForm, setModelForm,
-    onEditModel: () => startEditModel(group),
+    onEditModel: () => { startEditModel(group); },
     onSaveModel: saveModel,
     onCancelEditModel: resetModelForm,
     onDeleteModel: () => deleteModel(group),
@@ -321,17 +321,17 @@ export default function ShiftTimeRuleManager({ isReadOnly = false }: ShiftTimeRu
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
               <div>
                 <label className="text-xs font-medium text-slate-600 mb-1 block">Kürzel *</label>
-                <Input value={modelForm.short_code} onChange={e => setModelForm({ ...modelForm, short_code: e.target.value })}
+                <Input value={modelForm.short_code} onChange={e => { setModelForm({ ...modelForm, short_code: e.target.value }); }}
                   placeholder="z.B. Rö6" className="h-9" autoFocus maxLength={20} />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600 mb-1 block">Beschreibung</label>
-                <Input value={modelForm.label} onChange={e => setModelForm({ ...modelForm, label: e.target.value })}
+                <Input value={modelForm.label} onChange={e => { setModelForm({ ...modelForm, label: e.target.value }); }}
                   placeholder="z.B. Röntgenraum 6 – Frühdienst" className="h-9" />
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600 mb-1 block">Arbeitsplatz *</label>
-                <Select value={modelForm.workplace_id} onValueChange={v => setModelForm({ ...modelForm, workplace_id: v })}>
+                <Select value={modelForm.workplace_id} onValueChange={v => { setModelForm({ ...modelForm, workplace_id: v }); }}>
                   <SelectTrigger className="h-9"><SelectValue placeholder="Wählen…" /></SelectTrigger>
                   <SelectContent>
                     {workplaces.map((w: Workplace) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
@@ -378,15 +378,15 @@ function ModelCard({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Kürzel *</label>
-              <Input value={modelForm.short_code} onChange={e => setModelForm({ ...modelForm, short_code: e.target.value })} className="h-9" maxLength={20} />
+              <Input value={modelForm.short_code} onChange={e => { setModelForm({ ...modelForm, short_code: e.target.value }); }} className="h-9" maxLength={20} />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Beschreibung</label>
-              <Input value={modelForm.label} onChange={e => setModelForm({ ...modelForm, label: e.target.value })} className="h-9" />
+              <Input value={modelForm.label} onChange={e => { setModelForm({ ...modelForm, label: e.target.value }); }} className="h-9" />
             </div>
             <div>
               <label className="text-xs font-medium text-slate-600 mb-1 block">Arbeitsplatz *</label>
-              <Select value={modelForm.workplace_id} onValueChange={v => setModelForm({ ...modelForm, workplace_id: v })}>
+              <Select value={modelForm.workplace_id} onValueChange={v => { setModelForm({ ...modelForm, workplace_id: v }); }}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Wählen…" /></SelectTrigger>
                 <SelectContent>
                   {[...workplaceMap.values()].map((w: Workplace) => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
@@ -413,7 +413,7 @@ function ModelCard({
               </div>
             </div>
             {!isReadOnly && (
-              <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+              <div className="flex gap-1" onClick={e => { e.stopPropagation(); }}>
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={onEditModel} title="Bearbeiten"><Pencil size={13} /></Button>
                 <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={onDeleteModel} title="Löschen"><Trash2 size={13} /></Button>
               </div>
@@ -442,7 +442,7 @@ function ModelCard({
                   return (
                     <tr key={entry.id} className="border-b border-slate-200 bg-indigo-50/50">
                       <td className="py-1.5 px-3">
-                        <Select value={timeForm.work_time_model_id} onValueChange={v => setTimeForm({ ...timeForm, work_time_model_id: v })}>
+                        <Select value={timeForm.work_time_model_id} onValueChange={v => { setTimeForm({ ...timeForm, work_time_model_id: v }); }}>
                           <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {workTimeModels.filter((wm: WorkTimeModel) => wm.id === entry.work_time_model_id || availableModels.some((a: WorkTimeModel) => a.id === wm.id)).map((wm: WorkTimeModel) => (
@@ -451,9 +451,9 @@ function ModelCard({
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="py-1.5 px-3"><Input type="time" value={timeForm.start_time} onChange={e => setTimeForm({ ...timeForm, start_time: e.target.value })} className="h-8 text-sm w-28" /></td>
-                      <td className="py-1.5 px-3"><Input type="time" value={timeForm.end_time} onChange={e => setTimeForm({ ...timeForm, end_time: e.target.value })} className="h-8 text-sm w-28" /></td>
-                      <td className="py-1.5 px-3"><Input type="number" value={timeForm.break_minutes} min={0} max={120} onChange={e => setTimeForm({ ...timeForm, break_minutes: e.target.value })} className="h-8 text-sm w-20" /></td>
+                      <td className="py-1.5 px-3"><Input type="time" value={timeForm.start_time} onChange={e => { setTimeForm({ ...timeForm, start_time: e.target.value }); }} className="h-8 text-sm w-28" /></td>
+                      <td className="py-1.5 px-3"><Input type="time" value={timeForm.end_time} onChange={e => { setTimeForm({ ...timeForm, end_time: e.target.value }); }} className="h-8 text-sm w-28" /></td>
+                      <td className="py-1.5 px-3"><Input type="number" value={timeForm.break_minutes} min={0} max={120} onChange={e => { setTimeForm({ ...timeForm, break_minutes: e.target.value }); }} className="h-8 text-sm w-20" /></td>
                       <td></td>
                       <td className="py-1.5 px-3">
                         <div className="flex gap-1">
@@ -474,7 +474,7 @@ function ModelCard({
                     <td className="py-1.5 px-3">
                       {!isReadOnly && (
                         <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => onStartEditTime(entry)}><Pencil size={11} /></Button>
+                          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => { onStartEditTime(entry); }}><Pencil size={11} /></Button>
                           <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-500" onClick={() => { if (confirm('Zeiteintrag löschen?')) onDeleteTime(entry.id); }}><Trash2 size={11} /></Button>
                         </div>
                       )}
@@ -486,16 +486,16 @@ function ModelCard({
               {addingTimeFor === group.code && (
                 <tr className="border-b border-slate-200 bg-indigo-50/50">
                   <td className="py-1.5 px-3">
-                    <Select value={timeForm.work_time_model_id} onValueChange={v => setTimeForm({ ...timeForm, work_time_model_id: v })}>
+                    <Select value={timeForm.work_time_model_id} onValueChange={v => { setTimeForm({ ...timeForm, work_time_model_id: v }); }}>
                       <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="AZ-Modell wählen…" /></SelectTrigger>
                       <SelectContent>
                         {availableModels.map((wm: WorkTimeModel) => <SelectItem key={wm.id} value={wm.id}>{wm.name} ({wm.hours_per_week}h)</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="py-1.5 px-3"><Input type="time" value={timeForm.start_time} onChange={e => setTimeForm({ ...timeForm, start_time: e.target.value })} className="h-8 text-sm w-28" /></td>
-                  <td className="py-1.5 px-3"><Input type="time" value={timeForm.end_time} onChange={e => setTimeForm({ ...timeForm, end_time: e.target.value })} className="h-8 text-sm w-28" /></td>
-                  <td className="py-1.5 px-3"><Input type="number" value={timeForm.break_minutes} min={0} max={120} onChange={e => setTimeForm({ ...timeForm, break_minutes: e.target.value })} className="h-8 text-sm w-20" /></td>
+                  <td className="py-1.5 px-3"><Input type="time" value={timeForm.start_time} onChange={e => { setTimeForm({ ...timeForm, start_time: e.target.value }); }} className="h-8 text-sm w-28" /></td>
+                  <td className="py-1.5 px-3"><Input type="time" value={timeForm.end_time} onChange={e => { setTimeForm({ ...timeForm, end_time: e.target.value }); }} className="h-8 text-sm w-28" /></td>
+                  <td className="py-1.5 px-3"><Input type="number" value={timeForm.break_minutes} min={0} max={120} onChange={e => { setTimeForm({ ...timeForm, break_minutes: e.target.value }); }} className="h-8 text-sm w-20" /></td>
                   <td></td>
                   <td className="py-1.5 px-3">
                     <div className="flex gap-1">
@@ -509,7 +509,7 @@ function ModelCard({
           </table>
 
           {!isReadOnly && addingTimeFor !== group.code && availableModels.length > 0 && (
-            <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => onStartAddTime(group.code)}>
+            <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => { onStartAddTime(group.code); }}>
               <Plus size={12} className="mr-1" />Zeit hinzufügen
             </Button>
           )}

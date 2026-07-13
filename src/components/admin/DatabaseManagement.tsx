@@ -190,7 +190,7 @@ export default function DatabaseManagement() {
                         </Button>
 
                         <Button
-                            onClick={() => setShowWipeDialog(true)}
+                            onClick={() => { setShowWipeDialog(true); }}
                             variant="outline"
                             className="w-full border-red-600 text-red-600 hover:bg-red-50"
                         >
@@ -209,7 +209,7 @@ export default function DatabaseManagement() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                          <Button
-                            onClick={() => checkMutation.mutate()}
+                            onClick={() => { checkMutation.mutate(); }}
                             disabled={checkMutation.isPending}
                             className="w-full"
                         >
@@ -252,14 +252,14 @@ export default function DatabaseManagement() {
                             <Label>Geben Sie <strong>LÖSCHEN</strong> ein, um zu bestätigen:</Label>
                             <Input
                                 value={wipeConfirmText}
-                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWipeConfirmText(e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setWipeConfirmText(e.target.value); }}
                                 placeholder="LÖSCHEN"
                                 className="font-mono"
                             />
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowWipeDialog(false)}>
+                        <Button variant="outline" onClick={() => { setShowWipeDialog(false); }}>
                             Abbrechen
                         </Button>
                         <Button
@@ -284,7 +284,7 @@ export default function DatabaseManagement() {
                                 <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={() => repairMutation.mutate()}
+                                    onClick={() => { repairMutation.mutate(); }}
                                     disabled={repairMutation.isPending}
                                 >
                                     {repairMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Wrench className="w-4 h-4 mr-2" />}
@@ -315,7 +315,7 @@ export default function DatabaseManagement() {
                                             <TableCell>
                                                 <Checkbox
                                                     checked={selectedIssues.includes(id)}
-                                                    onCheckedChange={() => toggleIssue(id)}
+                                                    onCheckedChange={() => { toggleIssue(id); }}
                                                 />
                                             </TableCell>
                                             <TableCell>

@@ -176,7 +176,7 @@ function normalizeGroup(group: Record<string, unknown>): NormalizedGroup {
         name: String(group.name ?? ''),
         description: String(group.description ?? ''),
         is_active: Boolean(group.is_active),
-    } as NormalizedGroup;
+    };
 }
 
 function normalizeWorkplace(workplace: Record<string, unknown>): NormalizedWorkplace {
@@ -192,7 +192,7 @@ function normalizeWorkplace(workplace: Record<string, unknown>): NormalizedWorkp
         timeslots_enabled: Boolean(workplace.timeslots_enabled),
         is_active: Boolean(workplace.is_active),
         active_days: Array.isArray(workplace.active_days) ? workplace.active_days : [1, 2, 3, 4, 5],
-    } as NormalizedWorkplace;
+    };
 }
 
 function serviceTypeLabel(value: number | string | undefined): string {
@@ -866,7 +866,7 @@ export default function TenantGroupManagement() {
                                         key={key}
                                         role="button"
                                         tabIndex={0}
-                                        onClick={() => setSelectedKey(key)}
+                                        onClick={() => { setSelectedKey(key); }}
                                         onKeyDown={(event: React.KeyboardEvent) => {
                                             if (event.key === 'Enter' || event.key === ' ') {
                                                 event.preventDefault();
@@ -996,7 +996,7 @@ export default function TenantGroupManagement() {
                                                                         variant="ghost"
                                                                         size="sm"
                                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                        onClick={() => removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: String(member.tenant_id) })}
+                                                                        onClick={() => { removeMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: String(member.tenant_id) }); }}
                                                                     >
                                                                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                                     </Button>
@@ -1080,13 +1080,13 @@ export default function TenantGroupManagement() {
                                                         </TableCell>
                                                         <TableCell className="text-right">
                                                             <div className="flex items-center justify-end gap-2">
-                                                                <Button variant="outline" size="sm" onClick={() => handleOpenEditWorkplace(workplace)}>
+                                                                <Button variant="outline" size="sm" onClick={() => { handleOpenEditWorkplace(workplace); }}>
                                                                     <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
                                                                 </Button>
                                                                 <Button
                                                                     variant="outline"
                                                                     size="sm"
-                                                                    onClick={() => setQualificationsWorkplace(workplace)}
+                                                                    onClick={() => { setQualificationsWorkplace(workplace); }}
                                                                     title="Pflicht-Qualifikationen verwalten"
                                                                 >
                                                                     <ShieldCheck className="mr-1 h-3.5 w-3.5" /> Qualifikationen
@@ -1095,7 +1095,7 @@ export default function TenantGroupManagement() {
                                                                     variant="outline"
                                                                     size="sm"
                                                                     className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                    onClick={() => handleDeleteWorkplace(workplace)}
+                                                                    onClick={() => { handleDeleteWorkplace(workplace); }}
                                                                 >
                                                                     <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
                                                                 </Button>
@@ -1197,7 +1197,7 @@ export default function TenantGroupManagement() {
                                                                         variant="ghost"
                                                                         size="sm"
                                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                        onClick={() => removeRotationMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id })}
+                                                                        onClick={() => { removeRotationMemberMutation.mutate({ groupId: selectedGroupId!, tenantId: member.tenant_id }); }}
                                                                     >
                                                                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Entfernen
                                                                     </Button>
@@ -1270,17 +1270,17 @@ export default function TenantGroupManagement() {
                                                             </TableCell>
                                                             <TableCell className="text-right">
                                                                 <div className="flex items-center justify-end gap-2">
-                                                                    <Button variant="outline" size="sm" onClick={() => setTimeslotWorkplace(workplace)} title="Zeitfenster verwalten">
+                                                                    <Button variant="outline" size="sm" onClick={() => { setTimeslotWorkplace(workplace); }} title="Zeitfenster verwalten">
                                                                         <Clock className="mr-1 h-3.5 w-3.5" /> Zeitfenster
                                                                     </Button>
-                                                                    <Button variant="outline" size="sm" onClick={() => handleOpenEditRotationWorkplace(workplace)}>
+                                                                    <Button variant="outline" size="sm" onClick={() => { handleOpenEditRotationWorkplace(workplace); }}>
                                                                         <Pencil className="mr-1 h-3.5 w-3.5" /> Bearbeiten
                                                                     </Button>
                                                                     <Button
                                                                         variant="outline"
                                                                         size="sm"
                                                                         className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                                        onClick={() => handleDeleteRotationWorkplace(workplace)}
+                                                                        onClick={() => { handleDeleteRotationWorkplace(workplace); }}
                                                                     >
                                                                         <Trash2 className="mr-1 h-3.5 w-3.5" /> Löschen
                                                                     </Button>
@@ -1323,7 +1323,7 @@ export default function TenantGroupManagement() {
                                 <Label>Verbund-Typ</Label>
                                 <RadioGroup
                                     value={newGroupType}
-                                    onValueChange={(value: string) => setNewGroupType(value as UnifiedGroupType)}
+                                    onValueChange={(value: string) => { setNewGroupType(value as UnifiedGroupType); }}
                                     className="flex gap-4"
                                 >
                                     <label className={`flex flex-1 cursor-pointer items-center gap-3 rounded-lg border p-4 transition ${newGroupType === 'dienst' ? 'border-teal-300 bg-teal-50' : 'border-slate-200 hover:border-slate-300'}`}>
@@ -1357,7 +1357,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="group-name"
                                 value={groupForm.name}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setGroupForm((current: GroupForm) => ({ ...current, name: event.target.value })); }}
                                 data-testid="admin-group-name-input"
                             />
                         </div>
@@ -1366,7 +1366,7 @@ export default function TenantGroupManagement() {
                             <Textarea
                                 id="group-description"
                                 value={groupForm.description}
-                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => { setGroupForm((current: GroupForm) => ({ ...current, description: event.target.value })); }}
                                 rows={3}
                             />
                         </div>
@@ -1375,11 +1375,11 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Aktiv</div>
                                 <div className="text-sm text-slate-500">Nur aktive Verbünde erscheinen in der Auswahl.</div>
                             </div>
-                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => setGroupForm((current: GroupForm) => ({ ...current, is_active: checked }))} />
+                            <Switch checked={groupForm.is_active} onCheckedChange={(checked: boolean) => { setGroupForm((current: GroupForm) => ({ ...current, is_active: checked })); }} />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
-                        <Button variant="outline" onClick={() => setShowGroupDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowGroupDialog(false); }}>Abbrechen</Button>
                         <Button onClick={handleSaveGroup} disabled={createGroupMutation.isPending || updateGroupMutation.isPending || createRotationGroupMutation.isPending || updateRotationGroupMutation.isPending} data-testid="admin-group-save-button">
                             {(createGroupMutation.isPending || updateGroupMutation.isPending || createRotationGroupMutation.isPending || updateRotationGroupMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
@@ -1403,7 +1403,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="workplace-name"
                                 value={workplaceForm.name}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, name: event.target.value })); }}
                                 data-testid="admin-group-workplace-name-input"
                             />
                         </div>
@@ -1412,7 +1412,7 @@ export default function TenantGroupManagement() {
                                 <Label className="text-base">Diensttyp</Label>
                                 <div className="text-xs text-slate-500">Bestimmt die Limit-Prüfung und Autofill-Verteilung.</div>
                             </div>
-                            <Select value={workplaceForm.service_type} onValueChange={(value: string) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, service_type: value }))}>
+                            <Select value={workplaceForm.service_type} onValueChange={(value: string) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, service_type: value })); }}>
                                 <SelectTrigger className="bg-white" data-testid="admin-group-workplace-service-type">
                                     <SelectValue placeholder="Diensttyp wählen" />
                                 </SelectTrigger>
@@ -1432,7 +1432,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Autom. Freistellen</div>
                                 <div className="text-sm text-slate-500">Mitarbeiter erhält am folgenden Werktag automatisch „Frei".</div>
                             </div>
-                            <Switch checked={workplaceForm.auto_off} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, auto_off: checked }))} data-testid="admin-group-workplace-auto-off" />
+                            <Switch checked={workplaceForm.auto_off} onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, auto_off: checked })); }} data-testid="admin-group-workplace-auto-off" />
                         </div>
 
                         <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
@@ -1440,7 +1440,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Rotation erlaubt</div>
                                 <div className="text-sm text-slate-500">Kann parallel zu einer Tagesrotation zugewiesen werden.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_rotation_concurrently} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_rotation_concurrently: checked }))} data-testid="admin-group-workplace-rotation" />
+                            <Switch checked={workplaceForm.allows_rotation_concurrently} onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_rotation_concurrently: checked })); }} data-testid="admin-group-workplace-rotation" />
                         </div>
 
                         <div className="flex items-center justify-between rounded-lg border bg-slate-50 p-3">
@@ -1448,7 +1448,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Gleichzeitige Abwesenheit erlauben</div>
                                 <div className="text-sm text-slate-500">Dieser Dienst darf trotz Abwesenheit am selben Tag zugewiesen werden.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_absence_overlap} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_absence_overlap: checked }))} data-testid="admin-group-workplace-absence-overlap" />
+                            <Switch checked={workplaceForm.allows_absence_overlap} onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_absence_overlap: checked })); }} data-testid="admin-group-workplace-absence-overlap" />
                         </div>
 
                         <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
@@ -1490,7 +1490,7 @@ export default function TenantGroupManagement() {
                                     max="100"
                                     step="5"
                                     value={workplaceForm.work_time_percentage}
-                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, work_time_percentage: event.target.value }))}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, work_time_percentage: event.target.value })); }}
                                     className="w-20"
                                 />
                                 <span className="text-sm text-slate-500">%</span>
@@ -1507,7 +1507,7 @@ export default function TenantGroupManagement() {
                                     <button
                                         key={day}
                                         type="button"
-                                        onClick={() => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, active_days: toggleDay(current.active_days || [], index) }))}
+                                        onClick={() => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, active_days: toggleDay(current.active_days || [], index) })); }}
                                         data-testid={`admin-group-workplace-day-${index}`}
                                         className={`h-8 w-8 rounded-full text-xs font-medium transition-colors ${(workplaceForm.active_days || []).includes(index) ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                                     >
@@ -1522,7 +1522,7 @@ export default function TenantGroupManagement() {
                                 <div className="font-medium text-slate-900">Mehrfachbesetzung</div>
                                 <div className="text-sm text-slate-500">Mehrere Mitarbeiter können gleichzeitig pro Tag eingeteilt werden, z. B. für Ausbildung.</div>
                             </div>
-                            <Switch checked={workplaceForm.allows_multiple} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_multiple: checked }))} data-testid="admin-group-workplace-allows-multiple" />
+                            <Switch checked={workplaceForm.allows_multiple} onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, allows_multiple: checked })); }} data-testid="admin-group-workplace-allows-multiple" />
                         </div>
 
                         {workplaceForm.allows_multiple ? (
@@ -1536,7 +1536,7 @@ export default function TenantGroupManagement() {
                                         min="0"
                                         max="20"
                                         value={workplaceForm.min_staff}
-                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, min_staff: event.target.value }))}
+                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, min_staff: event.target.value })); }}
                                         className="h-8 w-20"
                                     />
                                 </div>
@@ -1549,7 +1549,7 @@ export default function TenantGroupManagement() {
                                         min="0"
                                         max="20"
                                         value={workplaceForm.optimal_staff}
-                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, optimal_staff: event.target.value }))}
+                                        onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, optimal_staff: event.target.value })); }}
                                         className="h-8 w-20"
                                     />
                                 </div>
@@ -1565,7 +1565,7 @@ export default function TenantGroupManagement() {
                                     min="0"
                                     max="60"
                                     value={workplaceForm.default_overlap_tolerance_minutes}
-                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, default_overlap_tolerance_minutes: event.target.value }))}
+                                    onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, default_overlap_tolerance_minutes: event.target.value })); }}
                                     className="w-24"
                                 />
                             </div>
@@ -1576,7 +1576,7 @@ export default function TenantGroupManagement() {
                                 <div className="flex items-center gap-2 font-medium text-slate-900"><Clock className="h-4 w-4" /> Zeitfenster aktivieren</div>
                                 <div className="text-sm text-slate-500">Ermöglicht die Besetzung mit wechselnden Teams über den Tag, z. B. Früh-/Spätdienst.</div>
                             </div>
-                            <Switch checked={workplaceForm.timeslots_enabled} onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked }))} data-testid="admin-group-workplace-timeslots-enabled" />
+                            <Switch checked={workplaceForm.timeslots_enabled} onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, timeslots_enabled: checked })); }} data-testid="admin-group-workplace-timeslots-enabled" />
                         </div>
 
                         {workplaceForm.timeslots_enabled ? (
@@ -1600,7 +1600,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.affects_availability}
-                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, affects_availability: checked }))}
+                                onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, affects_availability: checked })); }}
                                 data-testid="admin-group-workplace-affects-availability"
                             />
                         </div>
@@ -1611,13 +1611,13 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={workplaceForm.is_active}
-                                onCheckedChange={(checked: boolean) => setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => { setWorkplaceForm((current: WorkplaceForm) => ({ ...current, is_active: checked })); }}
                                 data-testid="admin-group-workplace-is-active"
                             />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
-                        <Button variant="outline" onClick={() => setShowWorkplaceDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowWorkplaceDialog(false); }}>Abbrechen</Button>
                         <Button onClick={handleSaveWorkplace} disabled={createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending} data-testid="admin-group-workplace-save-button">
                             {(createWorkplaceMutation.isPending || updateWorkplaceMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
@@ -1641,7 +1641,7 @@ export default function TenantGroupManagement() {
                             <Input
                                 id="rotation-workplace-name"
                                 value={rotationWorkplaceForm.name}
-                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, name: event.target.value }))}
+                                onChange={(event: React.ChangeEvent<HTMLInputElement>) => { setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, name: event.target.value })); }}
                                 data-testid="admin-rotation-workplace-name-input"
                             />
                         </div>
@@ -1650,7 +1650,7 @@ export default function TenantGroupManagement() {
                             <div className="text-xs text-slate-500">Welcher Station gehört diese Rotation? Nur Stations-Mandanten (role=ward) sind wählbar.</div>
                             <Select
                                 value={rotationWorkplaceForm.ward_tenant_id}
-                                onValueChange={(value: string) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, ward_tenant_id: value }))}
+                                onValueChange={(value: string) => { setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, ward_tenant_id: value })); }}
                             >
                                 <SelectTrigger id="rotation-workplace-ward" data-testid="admin-rotation-workplace-ward-select">
                                     <SelectValue placeholder="Station wählen" />
@@ -1675,7 +1675,7 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={rotationWorkplaceForm.timeslots_enabled}
-                                onCheckedChange={(checked: boolean) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, timeslots_enabled: checked }))}
+                                onCheckedChange={(checked: boolean) => { setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, timeslots_enabled: checked })); }}
                                 data-testid="admin-rotation-workplace-timeslots-enabled"
                             />
                         </div>
@@ -1691,12 +1691,12 @@ export default function TenantGroupManagement() {
                             </div>
                             <Switch
                                 checked={rotationWorkplaceForm.is_active}
-                                onCheckedChange={(checked: boolean) => setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, is_active: checked }))}
+                                onCheckedChange={(checked: boolean) => { setRotationWorkplaceForm((current: RotationWorkplaceForm) => ({ ...current, is_active: checked })); }}
                             />
                         </div>
                     </div>
                     <DialogFooter className="bg-white border-t shrink-0 px-6 py-4">
-                        <Button variant="outline" onClick={() => setShowRotationWorkplaceDialog(false)}>Abbrechen</Button>
+                        <Button variant="outline" onClick={() => { setShowRotationWorkplaceDialog(false); }}>Abbrechen</Button>
                         <Button onClick={handleSaveRotationWorkplace} disabled={createRotationWorkplaceMutation.isPending || updateRotationWorkplaceMutation.isPending} data-testid="admin-rotation-workplace-save-button">
                             {(createRotationWorkplaceMutation.isPending || updateRotationWorkplaceMutation.isPending) ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                             Speichern
@@ -1710,7 +1710,7 @@ export default function TenantGroupManagement() {
                 <RotationTimeslotEditor
                     groupId={selectedGroupId!}
                     workplace={timeslotWorkplace}
-                    onClose={() => setTimeslotWorkplace(null)}
+                    onClose={() => { setTimeslotWorkplace(null); }}
                 />
             )}
 
@@ -1799,7 +1799,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                                 variant="ghost"
                                                 size="sm"
                                                 className="text-red-600 hover:bg-red-50 hover:text-red-700"
-                                                onClick={() => deleteMutation.mutate(ts.id)}
+                                                onClick={() => { deleteMutation.mutate(ts.id); }}
                                             >
                                                 <Trash2 className="h-3.5 w-3.5" />
                                             </Button>
@@ -1817,7 +1817,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Label className="text-sm">Bezeichnung</Label>
                                     <Input
                                         value={form.label}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, label: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, label: e.target.value })); }}
                                         placeholder="z. B. Frühdienst"
                                     />
                                 </div>
@@ -1827,7 +1827,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                         type="number"
                                         min="0"
                                         value={form.order}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, order: Number(e.target.value) || 0 })); }}
                                         className="w-24"
                                     />
                                 </div>
@@ -1836,7 +1836,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Input
                                         type="time"
                                         value={form.start_time}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, start_time: e.target.value })); }}
                                     />
                                 </div>
                                 <div className="space-y-1">
@@ -1844,7 +1844,7 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     <Input
                                         type="time"
                                         value={form.end_time}
-                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value }))}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setForm((c: TimeslotForm) => ({ ...c, end_time: e.target.value })); }}
                                     />
                                 </div>
                             </div>
@@ -1863,11 +1863,11 @@ function RotationTimeslotEditor({ groupId, workplace, onClose }: RotationTimeslo
                                     {createMutation.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
                                     Hinzufügen
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={() => setShowForm(false)}>Abbrechen</Button>
+                                <Button size="sm" variant="outline" onClick={() => { setShowForm(false); }}>Abbrechen</Button>
                             </div>
                         </div>
                     ) : (
-                        <Button size="sm" variant="outline" onClick={() => setShowForm(true)}>
+                        <Button size="sm" variant="outline" onClick={() => { setShowForm(true); }}>
                             <Plus className="mr-1 h-3.5 w-3.5" /> Zeitfenster hinzufügen
                         </Button>
                     )}

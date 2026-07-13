@@ -135,7 +135,7 @@ export default function DoctorYearView({
       }
     };
     window.addEventListener('mouseup', handleMouseUp);
-    return () => window.removeEventListener('mouseup', handleMouseUp);
+    return () => { window.removeEventListener('mouseup', handleMouseUp); };
   }, [isDragging, dragStart, dragCurrent, onRangeSelect]);
 
   const handleMouseDown = (date: Date) => {
@@ -160,7 +160,7 @@ export default function DoctorYearView({
   });
 
   const getCustomColor = (position: string): React.CSSProperties | null => {
-      const setting = (colorSettings as ColorSetting[]).find((s: any) => s.name === position && s.category === 'position');
+      const setting = (colorSettings).find((s: any) => s.name === position && s.category === 'position');
       if (setting) return { backgroundColor: setting.bg_color ?? undefined, color: setting.text_color ?? undefined };
       if (DEFAULT_COLORS.positions[position]) return { backgroundColor: DEFAULT_COLORS.positions[position].bg, color: DEFAULT_COLORS.positions[position].text };
       return null;
@@ -488,7 +488,7 @@ export default function DoctorYearView({
             <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setEmailDialogOpen(true)}
+                onClick={() => { setEmailDialogOpen(true); }}
                 className="gap-2"
             >
                 <Mail className="w-4 h-4" />
@@ -522,7 +522,7 @@ export default function DoctorYearView({
           isSaving={saveShiftVacationMutation.isPending}
           canCarryOver={canCarryOver}
           isCarrying={carryOverMutation.isPending}
-          onCarryOver={() => setCarryDialogOpen(true)}
+          onCarryOver={() => { setCarryDialogOpen(true); }}
           year={year}
         />
       )}
@@ -539,10 +539,10 @@ export default function DoctorYearView({
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setCarryDialogOpen(false)}>
+            <Button variant="outline" onClick={() => { setCarryDialogOpen(false); }}>
               Abbrechen
             </Button>
-            <Button onClick={() => carryOverMutation.mutate()} disabled={carryOverMutation.isPending}>
+            <Button onClick={() => { carryOverMutation.mutate(); }} disabled={carryOverMutation.isPending}>
               {carryOverMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
               ) : (
@@ -588,7 +588,7 @@ export default function DoctorYearView({
               </div>
               
               <DialogFooter className="gap-2 sm:gap-0">
-                  <Button variant="outline" onClick={() => setEmailDialogOpen(false)}>
+                  <Button variant="outline" onClick={() => { setEmailDialogOpen(false); }}>
                       Abbrechen
                   </Button>
                   <Button 
@@ -701,7 +701,7 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
               };
               colorClass = "text-slate-300 cursor-not-allowed";
           } else if (status && customColors && customColors[status]) {
-              const colorVal = customColors[status]!;
+              const colorVal = customColors[status];
               if (typeof colorVal === 'object' && colorVal !== null && 'backgroundColor' in colorVal) {
                   // Inline style object (new format from Training & Vacation)
                   style = colorVal;
@@ -934,7 +934,7 @@ function ShiftVacationBox({
               </span>
             </div>
 
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2" onClick={(e) => { e.stopPropagation(); }}>
               <label
                 htmlFor="shift-vacation-days-input"
                 className="text-xs text-slate-600"
@@ -948,7 +948,7 @@ function ShiftVacationBox({
                 step={1}
                 value={draft}
                 disabled={!isLinked || isSaving}
-                onChange={(e) => onDraftChange(e.target.value)}
+                onChange={(e) => { onDraftChange(e.target.value); }}
                 className="w-20 h-8"
                 data-testid="shift-vacation-days-input"
               />

@@ -68,7 +68,7 @@ export default function SystemLogs() {
 
     const { data: logs = [], isLoading, refetch } = useQuery<SystemLogEntry[]>({
         queryKey: ['systemLogs'],
-        queryFn: () => db.SystemLog.list({ sort: '-created_date', limit: 500 }),
+        queryFn: () => db.SystemLog.list({ sort: '-created_date', limit: 500 }) as Promise<SystemLogEntry[]>,
         staleTime: 2 * 60 * 1000, // 2 Minuten
         refetchOnWindowFocus: false,
     });
@@ -147,12 +147,12 @@ export default function SystemLogs() {
                         <Input
                             placeholder="Suche in Logs..."
                             value={searchTerm}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchTerm(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearchTerm(e.target.value); }}
                             className="pl-8"
                         />
                     </div>
                     <div className="mt-4 flex flex-wrap gap-2">
-                         <Select value={filterLevel} onValueChange={(val: string) => setFilterLevel(val as LogLevel)}>
+                         <Select value={filterLevel} onValueChange={(val: string) => { setFilterLevel(val as LogLevel); }}>
                             <SelectTrigger className="w-[180px]">
                                 <Filter className="w-4 h-4 mr-2 text-slate-500" />
                                 <SelectValue placeholder="Filter" />
@@ -297,7 +297,7 @@ export default function SystemLogs() {
                                                             <pre className="whitespace-pre-wrap break-words">
                                                                 {(() => {
                                                                     try {
-                                                                        return JSON.stringify(JSON.parse(log.details!), null, 2);
+                                                                        return JSON.stringify(JSON.parse(log.details), null, 2);
                                                                     } catch (_e) {
                                                                         return log.details;
                                                                     }

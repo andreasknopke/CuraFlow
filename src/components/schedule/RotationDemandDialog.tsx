@@ -171,7 +171,7 @@ export default function RotationDemandDialog({
                             <Textarea
                                 id="rotation-demand-note"
                                 value={note}
-                                onChange={(e) => setNote(e.target.value)}
+                                onChange={(e) => { setNote(e.target.value); }}
                                 placeholder="z. B. „Brauchen dringend einen Springer für die Spätschicht“"
                                 rows={3}
                                 disabled={hasOpenDemand}
@@ -207,19 +207,19 @@ export default function RotationDemandDialog({
                             type="button"
                             variant="outline"
                             className="text-rose-700 border-rose-200 hover:bg-rose-50 mr-auto"
-                            onClick={() => cancelMutation.mutate()}
+                            onClick={() => { cancelMutation.mutate(); }}
                             disabled={cancelMutation.isPending}
                         >
                             {cancelMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
                             Bedarf zurückziehen
                         </Button>
                     )}
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => { onOpenChange(false); }}>
                         {readOnly ? 'Schließen' : 'Abbrechen'}
                     </Button>
                     {!hasOpenDemand && !readOnly && (
                         <Button
-                            onClick={() => createMutation.mutate()}
+                            onClick={() => { createMutation.mutate(); }}
                             disabled={createMutation.isPending}
                         >
                             {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}

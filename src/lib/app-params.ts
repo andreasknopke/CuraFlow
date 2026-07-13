@@ -15,7 +15,7 @@ const isNode = typeof window === 'undefined';
 // In Node SSR context, use a noop Map. In browser, use real localStorage.
 const windowObj: { localStorage: Storage | Map<string, string> } = isNode
   ? { localStorage: new Map<string, string>() }
-  : (window as unknown as { localStorage: Storage });
+  : (window);
 const storage = windowObj.localStorage;
 
 const toSnakeCase = (str: string): string => {

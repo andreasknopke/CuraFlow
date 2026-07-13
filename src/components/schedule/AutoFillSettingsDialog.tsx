@@ -23,7 +23,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
 
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }: { key: string; value: string }) => {
-            const existing = (settings as any[]).find((s: any) => s.key === key);
+            const existing = (settings).find((s: any) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             } else {
@@ -33,7 +33,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
-    const getSetting = (key: string, def: string = ''): string => (settings as any[]).find((s: any) => s.key === key)?.value ?? def;
+    const getSetting = (key: string, def: string = ''): string => (settings).find((s: any) => s.key === key)?.value ?? def;
     const getSettingBool = (key: string): boolean => getSetting(key) === 'true';
 
     const limitFG = getSetting('limit_fore_services', '4');
@@ -70,7 +70,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
                                     min="1"
                                     max="30"
                                     value={limitFG}
-                                    onChange={(e) => updateSettingMutation.mutate({ key: 'limit_fore_services', value: e.target.value })}
+                                    onChange={(e) => { updateSettingMutation.mutate({ key: 'limit_fore_services', value: e.target.value }); }}
                                     className="h-8 bg-white"
                                 />
                             </div>
@@ -81,7 +81,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
                                     min="1"
                                     max="30"
                                     value={limitBG}
-                                    onChange={(e) => updateSettingMutation.mutate({ key: 'limit_back_services', value: e.target.value })}
+                                    onChange={(e) => { updateSettingMutation.mutate({ key: 'limit_back_services', value: e.target.value }); }}
                                     className="h-8 bg-white"
                                 />
                             </div>
@@ -92,7 +92,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
                                     min="1"
                                     max="10"
                                     value={limitWeekend}
-                                    onChange={(e) => updateSettingMutation.mutate({ key: 'limit_weekend_services', value: e.target.value })}
+                                    onChange={(e) => { updateSettingMutation.mutate({ key: 'limit_weekend_services', value: e.target.value }); }}
                                     className="h-8 bg-white"
                                 />
                             </div>
@@ -114,10 +114,10 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
                             <Switch
                                 id="afs-strict-rotation"
                                 checked={strictRotationMode}
-                                onCheckedChange={(checked) => updateSettingMutation.mutate({
+                                onCheckedChange={(checked) => { updateSettingMutation.mutate({
                                     key: 'rotation_restricts_other_assignments',
                                     value: checked ? 'true' : 'false'
-                                })}
+                                }); }}
                             />
                         </div>
                     </div>
@@ -135,10 +135,10 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
                             <Switch
                                 id="afs-debug"
                                 checked={autoFillDebugEnabled}
-                                onCheckedChange={(checked) => updateSettingMutation.mutate({
+                                onCheckedChange={(checked) => { updateSettingMutation.mutate({
                                     key: 'autofill_debug_enabled',
                                     value: checked ? 'true' : 'false'
-                                })}
+                                }); }}
                             />
                         </div>
                     </div>

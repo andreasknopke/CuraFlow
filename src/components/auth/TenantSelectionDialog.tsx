@@ -56,7 +56,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                 
                 onComplete();
                 
-                setTimeout(() => window.location.reload(), 500);
+                setTimeout(() => { window.location.reload(); }, 500);
             } else {
                 throw new Error('Token-Aktivierung fehlgeschlagen');
             }
@@ -78,7 +78,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
             
             onComplete();
             
-            setTimeout(() => window.location.reload(), 500);
+            setTimeout(() => { window.location.reload(); }, 500);
         } catch (err: any) {
             console.error('Deactivation failed:', err);
             setError(err.message || 'Deaktivierung fehlgeschlagen');

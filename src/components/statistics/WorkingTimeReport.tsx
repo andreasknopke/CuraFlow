@@ -107,7 +107,7 @@ export default function WorkingTimeReport() {
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors', statisticsExcludedRoles],
         queryFn: () => db.Doctor.list(),
-        select: (data: any[]) => data.filter((d: any) => !(statisticsExcludedRoles as string[]).includes(d.role)).sort((a: any, b: any) => (a.order || 0) - (b.order || 0)),
+        select: (data: any[]) => data.filter((d: any) => !(statisticsExcludedRoles).includes(d.role)).sort((a: any, b: any) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
@@ -165,7 +165,7 @@ export default function WorkingTimeReport() {
     const workingTimeStats: DoctorWorkStats[] = useMemo(() => {
         if (isLoading || !doctors.length) return [];
 
-        const stats = (doctors as any[]).map((doctor: any) => {
+        const stats = (doctors).map((doctor: any) => {
             // Filter shifts for this doctor in date range
             const doctorShifts = (shifts as any[]).filter((s: any) => {
                 if (s.doctor_id !== doctor.id) return false;
@@ -175,7 +175,7 @@ export default function WorkingTimeReport() {
 
             // Group shifts by date
             const shiftsByDate: Record<string, any[]> = {};
-            (doctorShifts as any[]).forEach((shift: any) => {
+            (doctorShifts).forEach((shift: any) => {
                 if (!shiftsByDate[shift.date]) {
                     shiftsByDate[shift.date] = [];
                 }
@@ -190,7 +190,7 @@ export default function WorkingTimeReport() {
             Object.entries(shiftsByDate).forEach(([date, dayShifts]) => {
                 const intervals: { start: number; end: number; rawDuration: number; adjustedDuration: number }[] = [];
 
-                (dayShifts as any[]).forEach((shift: any) => {
+                (dayShifts).forEach((shift: any) => {
                     const workplace = (workplaces as any[]).find((w: any) => w.name === shift.position);
                     
                     if (isNonWorkingShiftPosition(shift.position)) {
@@ -304,7 +304,7 @@ export default function WorkingTimeReport() {
                         </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Tabs value={viewMode} onValueChange={(v: string) => setViewMode(v as "day" | "week" | "month" | "year")}>
+                        <Tabs value={viewMode} onValueChange={(v: string) => { setViewMode(v as "day" | "week" | "month" | "year"); }}>
                             <TabsList className="h-8">
                                 <TabsTrigger value="day" className="text-xs px-2">Tag</TabsTrigger>
                                 <TabsTrigger value="week" className="text-xs px-2">Woche</TabsTrigger>
@@ -321,13 +321,13 @@ export default function WorkingTimeReport() {
                         <input
                             type="date"
                             value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
+                            onChange={(e) => { setSelectedDate(e.target.value); }}
                             className="border rounded px-2 py-1 text-sm"
                         />
                     )}
                     {viewMode === 'month' && (
                         <div className="flex gap-2">
-                            <Select value={selectedMonth.split('-')[0]} onValueChange={(y) => setSelectedMonth(`${y}-${selectedMonth.split('-')[1]}`)}>
+                            <Select value={selectedMonth.split('-')[0]} onValueChange={(y) => { setSelectedMonth(`${y}-${selectedMonth.split('-')[1]}`); }}>
                                 <SelectTrigger className="w-24">
                                     <SelectValue />
                                 </SelectTrigger>
@@ -337,7 +337,7 @@ export default function WorkingTimeReport() {
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <Select value={selectedMonth.split('-')[1]} onValueChange={(m) => setSelectedMonth(`${selectedMonth.split('-')[0]}-${m}`)}>
+                            <Select value={selectedMonth.split('-')[1]} onValueChange={(m) => { setSelectedMonth(`${selectedMonth.split('-')[0]}-${m}`); }}>
                                 <SelectTrigger className="w-32">
                                     <SelectValue />
                                 </SelectTrigger>

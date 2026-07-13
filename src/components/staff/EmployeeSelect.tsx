@@ -133,7 +133,7 @@ export default function EmployeeSelect({
                 variant={sortDirection === 'asc' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2"
-                onClick={() => setSortDirection('asc')}
+                onClick={() => { setSortDirection('asc'); }}
               >
                 <ArrowUpAZ className="h-3.5 w-3.5" />
                 A-Z
@@ -143,7 +143,7 @@ export default function EmployeeSelect({
                 variant={sortDirection === 'desc' ? 'secondary' : 'ghost'}
                 size="sm"
                 className="h-7 px-2"
-                onClick={() => setSortDirection('desc')}
+                onClick={() => { setSortDirection('desc'); }}
               >
                 <ArrowDownAZ className="h-3.5 w-3.5" />
                 Z-A

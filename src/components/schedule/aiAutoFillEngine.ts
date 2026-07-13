@@ -101,7 +101,7 @@ function planToReadable(suggestions: any[], doctors: any[], weekDayStrs: string[
   // Sort dates
   const sorted: Record<string, Record<string, string[]>> = {};
   for (const d of weekDayStrs) {
-    if (byDate[d as string]) sorted[d as string] = byDate[d as string];
+    if (byDate[d]) sorted[d] = byDate[d];
   }
 
   return sorted;
@@ -187,7 +187,7 @@ export async function generateAISuggestions(params: {
   // 4. Build qualification data for server validation
   const doctorQuals: Record<string, string[]> = {};
   for (const doc of doctors) {
-    doctorQuals[doc.id as string] = (getDoctorQualIds(doc.id) || []) as string[];
+    doctorQuals[doc.id as string] = (getDoctorQualIds(doc.id) || []);
   }
   const workplaceQuals: Record<string, any[]> = {};
   for (const wp of workplaces) {

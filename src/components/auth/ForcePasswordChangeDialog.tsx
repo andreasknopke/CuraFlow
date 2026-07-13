@@ -67,8 +67,8 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged }:
       <DialogContent 
         data-testid="force-password-dialog"
         className="sm:max-w-[500px]" 
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
+        onInteractOutside={(e) => { e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { e.preventDefault(); }}
       >
         <DialogHeader>
           <div className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged }:
               id="newPassword"
               type="password"
               value={form.newPassword}
-              onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+              onChange={(e) => { setForm({ ...form, newPassword: e.target.value }); }}
               required
               minLength={8}
               disabled={isChanging}
@@ -110,7 +110,7 @@ export default function ForcePasswordChangeDialog({ isOpen, onPasswordChanged }:
               id="confirmPassword"
               type="password"
               value={form.confirmPassword}
-              onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+              onChange={(e) => { setForm({ ...form, confirmPassword: e.target.value }); }}
               required
               minLength={8}
               disabled={isChanging}

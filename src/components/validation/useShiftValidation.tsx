@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { db, base44, api } from "@/api/client";
 import { useMemo, useCallback } from 'react';
-import type { ShiftEntry } from '@/types';
+import type { ShiftEntry, Doctor, SystemSetting } from '@/types';
 import { ShiftValidator } from './ShiftValidation';
 import type { ValidationResult } from './ShiftValidation';
 import { toast } from 'sonner';
@@ -91,9 +91,9 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
     const { byWorkplace: wpQualsByWorkplace, allWorkplaceQualifications } = useAllWorkplaceQualifications();
 
     // Merge internal data with custom options (custom options take precedence)
-    const doctors = (customOptions.doctors as ShiftEntry[] | undefined) || doctorsData;
+    const doctors = (customOptions.doctors as Doctor[] | undefined) || doctorsData;
     const workplaces = customOptions.workplaces || workplacesData;
-    const systemSettings = customOptions.systemSettings || settingsData;
+    const systemSettings = (customOptions.systemSettings as SystemSetting[] | undefined) || settingsData;
     const staffingEntries = customOptions.staffingEntries || staffingData;
     const timeslots = customOptions.timeslots || timeslotsData;
     const sharedShifts = (customOptions.sharedShifts as any[]) || [];

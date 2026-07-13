@@ -226,7 +226,7 @@ export default function WishRequestDialog({
         <Dialog open={isOpen} onOpenChange={onClose}>
             <DialogContent
                 ref={dialogContentRef}
-                onOpenAutoFocus={(event) => event.preventDefault()}
+                onOpenAutoFocus={(event) => { event.preventDefault(); }}
                 className="flex flex-col max-h-[85vh] overflow-hidden p-0 !gap-0 sm:max-w-[500px] max-sm:w-[calc(100dvw-1rem)] max-sm:max-w-[calc(100dvw-1rem)] max-sm:max-h-[calc(100dvh-2rem)] max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:top-1/2 max-sm:-translate-y-1/2"
                 data-testid="wish-request-dialog"
             >
@@ -266,7 +266,7 @@ export default function WishRequestDialog({
                         <Label>Art des Wunsches</Label>
                         <RadioGroup 
                             value={formData.type} 
-                            onValueChange={(val) => setFormData({...formData, type: val})}
+                            onValueChange={(val) => { setFormData({...formData, type: val}); }}
                             className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-x-4 sm:gap-y-2"
                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                         >
@@ -318,7 +318,7 @@ export default function WishRequestDialog({
                                             data-testid="wish-range-start"
                                             type="date"
                                             value={formData.range_start || ''}
-                                            onChange={(e) => setFormData({ ...formData, range_start: e.target.value })}
+                                            onChange={(e) => { setFormData({ ...formData, range_start: e.target.value }); }}
                                             min={contractStartInput}
                                             max={contractEndInput}
                                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
@@ -330,7 +330,7 @@ export default function WishRequestDialog({
                                             data-testid="wish-range-end"
                                             type="date"
                                             value={formData.range_end || ''}
-                                            onChange={(e) => setFormData({ ...formData, range_end: e.target.value })}
+                                            onChange={(e) => { setFormData({ ...formData, range_end: e.target.value }); }}
                                             min={contractStartInput}
                                             max={contractEndInput}
                                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
@@ -355,7 +355,7 @@ export default function WishRequestDialog({
                             data-testid="wish-reason-input"
                             placeholder="z.B. Hochzeit, Geburtstag, Fortbildung..." 
                             value={formData.reason}
-                            onChange={(e) => setFormData({...formData, reason: e.target.value})}
+                            onChange={(e) => { setFormData({...formData, reason: e.target.value}); }}
                             disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             className="resize-none"
                             rows={2}
@@ -373,7 +373,7 @@ export default function WishRequestDialog({
                                 <Label>Status</Label>
                                 <Select 
                                     value={formData.status} 
-                                    onValueChange={(val) => setFormData({...formData, status: val})}
+                                    onValueChange={(val) => { setFormData({...formData, status: val}); }}
                                     disabled={!canApprove}
                                 >
                                     <SelectTrigger data-testid="wish-admin-status-trigger" className={
@@ -398,7 +398,7 @@ export default function WishRequestDialog({
                                     data-testid="wish-admin-comment-input"
                                     placeholder="Begründung für Genehmigung/Ablehnung..." 
                                     value={formData.admin_comment}
-                                    onChange={(e) => setFormData({...formData, admin_comment: e.target.value})}
+                                    onChange={(e) => { setFormData({...formData, admin_comment: e.target.value}); }}
                                     disabled={!isAdmin}
                                     className="resize-none bg-white"
                                     rows={2}
@@ -428,7 +428,7 @@ export default function WishRequestDialog({
                             <Label className="text-xs text-slate-500">Priorität</Label>
                             <Select 
                                 value={formData.priority} 
-                                onValueChange={(val) => setFormData({...formData, priority: val})}
+                                onValueChange={(val) => { setFormData({...formData, priority: val}); }}
                                 disabled={(isReadOnly && !isAdmin) || isBlockedByDeadline || isBlockedByContract}
                             >
                                 <SelectTrigger data-testid="wish-priority-trigger" className="h-9 min-w-[110px] w-full sm:w-auto">

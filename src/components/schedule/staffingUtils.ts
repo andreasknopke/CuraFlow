@@ -335,7 +335,7 @@ export function getAvailabilityBlockingDoctorIdsByDate(
         }
 
         const mappedDoctorIds = doctorIdsByCentralEmployeeId.get(String(shift?.employee_id)) || [];
-        mappedDoctorIds.forEach((doctorId) => addDoctorId(String(shift?.date).slice(0, 10), doctorId));
+        mappedDoctorIds.forEach((doctorId) => { addDoctorId(String(shift?.date).slice(0, 10), doctorId); });
     });
 
     return blockingDoctorIdsByDate;

@@ -9,6 +9,27 @@
  */
 
 import { toast as showToast } from '@/components/ui/use-toast';
+import type {
+  Doctor,
+  ShiftEntry,
+  WishRequest,
+  Workplace,
+  WorkplaceTimeslot, // eslint-disable-line unused-imports/no-unused-imports -- used as EntityClient<T> generic
+  Qualification,
+  DoctorQualification,
+  WorkplaceQualification,
+  TeamRole,
+  SystemSetting,
+  ScheduleBlock,
+  ScheduleNote,
+  StaffingPlanEntry,
+  StaffingPlanNote,
+  ShiftTimeRule,
+  TrainingRotation,
+  ColorSetting,
+  CustomHoliday,
+  AppUser,
+} from '@/types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1450,76 +1471,77 @@ export const api = new APIClient();
 
 // ─── Entity Client (compatibility wrapper) ───────────────────────────────────
 
-export class EntityClient {
-  entityName: string;
+export class EntityClient<T = unknown> {
+  private entityName: string;
 
   constructor(entityName: string) {
     this.entityName = entityName;
   }
 
-  async list(options: Record<string, any> = {}): Promise<any> {
-    return api.list(this.entityName, options);
+  async list(options: Record<string, unknown> = {}): Promise<T[]> {
+    return api.list(this.entityName, options) as Promise<T[]>;
   }
 
   async filter(
-    query: Record<string, any>,
-    options: Record<string, any> = {},
-  ): Promise<any> {
-    return api.filter(this.entityName, query, options);
+    query: Record<string, unknown>,
+    options: Record<string, unknown> = {},
+  ): Promise<T[]> {
+    return api.filter(this.entityName, query, options) as Promise<T[]>;
   }
 
-  async get(id: string): Promise<any> {
-    return api.get(this.entityName, id);
+  async get(id: string): Promise<T> {
+    return api.get(this.entityName, id) as Promise<T>;
   }
 
-  async create(data: Record<string, any>): Promise<any> {
-    return api.create(this.entityName, data);
+  async create(data: Record<string, unknown>): Promise<T> {
+    return api.create(this.entityName, data) as Promise<T>;
   }
 
-  async update(id: string, data: Record<string, any>): Promise<any> {
-    return api.update(this.entityName, id, data);
+  async update(id: string, data: Record<string, unknown>): Promise<T> {
+    return api.update(this.entityName, id, data) as Promise<T>;
   }
 
-  async delete(id: string): Promise<any> {
-    return api.delete(this.entityName, id);
+  async delete(id: string): Promise<T> {
+    return api.delete(this.entityName, id) as Promise<T>;
   }
 
-  async bulkCreate(dataArray: Record<string, any>[]): Promise<any> {
-    return api.bulkCreate(this.entityName, dataArray);
+  async bulkCreate(dataArray: Record<string, unknown>[]): Promise<T[]> {
+    return api.bulkCreate(this.entityName, dataArray) as Promise<T[]>;
   }
 }
 
 // ─── Named Entity Clients ────────────────────────────────────────────────────
 
 export const db = {
-  Doctor: new EntityClient('Doctor'),
-  ShiftEntry: new EntityClient('ShiftEntry'),
-  WishRequest: new EntityClient('WishRequest'),
-  Workplace: new EntityClient('Workplace'),
-  WorkplaceTimeslot: new EntityClient('WorkplaceTimeslot'),
-  TimeslotTemplate: new EntityClient('TimeslotTemplate'),
-  ShiftNotification: new EntityClient('ShiftNotification'),
-  DemoSetting: new EntityClient('DemoSetting'),
-  TrainingRotation: new EntityClient('TrainingRotation'),
-  ScheduleRule: new EntityClient('ScheduleRule'),
-  ColorSetting: new EntityClient('ColorSetting'),
-  ScheduleNote: new EntityClient('ScheduleNote'),
-  SystemSetting: new EntityClient('SystemSetting'),
-  CustomHoliday: new EntityClient('CustomHoliday'),
-  StaffingPlanEntry: new EntityClient('StaffingPlanEntry'),
-  StaffingPlanNote: new EntityClient('StaffingPlanNote'),
-  BackupLog: new EntityClient('BackupLog'),
-  SystemLog: new EntityClient('SystemLog'),
-  VoiceAlias: new EntityClient('VoiceAlias'),
-  User: new EntityClient('User'),
-  TeamRole: new EntityClient('TeamRole'),
-  Qualification: new EntityClient('Qualification'),
-  DoctorQualification: new EntityClient('DoctorQualification'),
-  WorkplaceQualification: new EntityClient('WorkplaceQualification'),
-  ShiftTimeRule: new EntityClient('ShiftTimeRule'),
-  ScheduleBlock: new EntityClient('ScheduleBlock'),
+  Doctor: new EntityClient<Doctor>('Doctor'),
+  ShiftEntry: new EntityClient<ShiftEntry>('ShiftEntry'),
+  WishRequest: new EntityClient<WishRequest>('WishRequest'),
+  Workplace: new EntityClient<Workplace>('Workplace'),
+  WorkplaceTimeslot: new EntityClient<WorkplaceTimeslot>('WorkplaceTimeslot'),
+  // Untyped entities — `unknown` until types are added to src/types/models.ts
+  TimeslotTemplate: new EntityClient<unknown>('TimeslotTemplate'),
+  ShiftNotification: new EntityClient<unknown>('ShiftNotification'),
+  DemoSetting: new EntityClient<unknown>('DemoSetting'),
+  TrainingRotation: new EntityClient<TrainingRotation>('TrainingRotation'),
+  ScheduleRule: new EntityClient<unknown>('ScheduleRule'),
+  ColorSetting: new EntityClient<ColorSetting>('ColorSetting'),
+  ScheduleNote: new EntityClient<ScheduleNote>('ScheduleNote'),
+  SystemSetting: new EntityClient<SystemSetting>('SystemSetting'),
+  CustomHoliday: new EntityClient<CustomHoliday>('CustomHoliday'),
+  StaffingPlanEntry: new EntityClient<StaffingPlanEntry>('StaffingPlanEntry'),
+  StaffingPlanNote: new EntityClient<StaffingPlanNote>('StaffingPlanNote'),
+  BackupLog: new EntityClient<unknown>('BackupLog'),
+  SystemLog: new EntityClient<unknown>('SystemLog'),
+  VoiceAlias: new EntityClient<unknown>('VoiceAlias'),
+  User: new EntityClient<AppUser>('User'),
+  TeamRole: new EntityClient<TeamRole>('TeamRole'),
+  Qualification: new EntityClient<Qualification>('Qualification'),
+  DoctorQualification: new EntityClient<DoctorQualification>('DoctorQualification'),
+  WorkplaceQualification: new EntityClient<WorkplaceQualification>('WorkplaceQualification'),
+  ShiftTimeRule: new EntityClient<ShiftTimeRule>('ShiftTimeRule'),
+  ScheduleBlock: new EntityClient<ScheduleBlock>('ScheduleBlock'),
 
-  collection: (name: string) => new EntityClient(name),
+  collection: (name: string) => new EntityClient<unknown>(name),
 };
 
 // ─── Base44 Compatibility Layer ──────────────────────────────────────────────

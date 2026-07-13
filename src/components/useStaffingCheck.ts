@@ -37,7 +37,7 @@ export function useStaffingCheck(doctors: Doctor[], shifts: ShiftEntry[]) {
     });
 
     // Parse thresholds
-    const rawThresholds = settings.find((s: { key: string; value: string }) => s.key === 'availability_thresholds')?.value;
+    const rawThresholds = settings.find((s) => s.key === 'availability_thresholds')?.value;
     const availabilityThresholds: AvailabilityThreshold[] = rawThresholds ? (() => { try { return JSON.parse(rawThresholds); } catch { return []; } })() : [];
 
     // Hilfsfunktion: Qualifikations-IDs eines Arztes

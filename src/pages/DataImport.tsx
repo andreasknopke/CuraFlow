@@ -380,7 +380,7 @@ export default function DataImportPage() {
                                     <li key={key} className="flex justify-between">
                                         <span>{key}:</span>
                                         <span className="font-medium">
-                                            {typeof val === 'object' && val !== null ? `${(val as { imported: number; skipped: number }).imported} (${(val as { imported: number; skipped: number }).skipped} übersprungen)` : String(val)}
+                                            {typeof val === 'object' && val !== null ? `${(val).imported} (${(val).skipped} übersprungen)` : String(val)}
                                         </span>
                                     </li>
                                 ))}

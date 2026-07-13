@@ -87,11 +87,11 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
     try {
       const resolvedUserName = resolveUserName(user);
       const ticketOptions = {
-        contactEmail: (contactEmail.trim() || user?.email || undefined) as string | undefined,
-        reporterEmail: (user?.email || contactEmail.trim() || undefined) as string | undefined,
+        contactEmail: (contactEmail.trim() || user?.email || undefined),
+        reporterEmail: (user?.email || contactEmail.trim() || undefined),
         reporterName: (user?.full_name || resolvedUserName || user?.email || undefined) as string | undefined,
-        userName: resolvedUserName as string | undefined,
-        reporterId: (user?.id || undefined) as string | undefined,
+        userName: resolvedUserName,
+        reporterId: (user?.id || undefined),
       };
 
       if (type === 'bug') {
@@ -142,7 +142,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setType('bug')}
+                  onClick={() => { setType('bug'); }}
                   className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
                     type === 'bug'
                       ? 'border-red-300 bg-red-50 text-red-700'
@@ -154,7 +154,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
                 </button>
                 <button
                   type="button"
-                  onClick={() => setType('feature')}
+                  onClick={() => { setType('feature'); }}
                   className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
                     type === 'feature'
                       ? 'border-amber-300 bg-amber-50 text-amber-700'
@@ -172,7 +172,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
                 <Input
                   id="ticket-title"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => { setTitle(e.target.value); }}
                   placeholder={type === 'bug' ? 'Kurze Fehlerbeschreibung' : 'Kurze Beschreibung des Wunsches'}
                   required
                 />
@@ -184,7 +184,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
                 <Textarea
                   id="ticket-description"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => { setDescription(e.target.value); }}
                   placeholder={type === 'bug'
                     ? 'Schritte zum Reproduzieren:\n1. ...\n2. ...\n\nErwartetes Verhalten:\n...\n\nTatsächliches Verhalten:\n...'
                     : 'Beschreiben Sie Ihren Vorschlag möglichst detailliert...'
@@ -200,7 +200,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
                   id="ticket-email"
                   type="email"
                   value={contactEmail}
-                  onChange={(e) => setContactEmail(e.target.value)}
+                  onChange={(e) => { setContactEmail(e.target.value); }}
                   placeholder="ihre@email.de"
                 />
                 <p className="text-xs text-slate-400">
@@ -255,7 +255,7 @@ export default function TicketDialog({ open, onOpenChange, initialType = 'bug', 
             <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{resultMessage}</p>
             <div className="flex justify-center gap-3">
               <Button variant="outline" onClick={handleClose}>Schließen</Button>
-              <Button onClick={() => setStatus('form')}>Erneut versuchen</Button>
+              <Button onClick={() => { setStatus('form'); }}>Erneut versuchen</Button>
             </div>
           </div>
         )}

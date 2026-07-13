@@ -179,7 +179,7 @@ export default function TrainingOverview({
             }
         };
         window.addEventListener('mouseup', handleMouseUp);
-        return () => window.removeEventListener('mouseup', handleMouseUp);
+        return () => { window.removeEventListener('mouseup', handleMouseUp); };
     }, [isDragging, dragStart, dragCurrent, dragDoctorId, onRangeSelect]);
 
     const handleMouseDown = React.useCallback((date: Date, doctorId: any) => {

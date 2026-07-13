@@ -14,7 +14,7 @@ import {
   Check, X, Database, Plus,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { CostCenter, CostCenterTenantLink, Tenant, CostCenterData } from '@/types/master';
+import type { CostCenterTenantLink, Tenant, CostCenterData } from '@/types/master';
 
 function StatCard({ icon: Icon, label, value, color, variant = 'default' }: {
   icon: LucideIcon;
@@ -99,7 +99,7 @@ function TenantPopover({ costCenterCode, linkedTenants, allTenants, onToggle }: 
                 >
                   <Checkbox
                     checked={isLinked}
-                    onCheckedChange={() => onToggle(costCenterCode, tenant.id, !isLinked)}
+                    onCheckedChange={() => { onToggle(costCenterCode, tenant.id, !isLinked); }}
                   />
                   <span className="text-sm text-slate-700">{tenant.name}</span>
                 </label>
@@ -178,10 +178,10 @@ export default function MasterCostCenters() {
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative w-full max-w-xs">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input placeholder="Code oder Bezeichnung suchen…" value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)} className="pl-8" />
+          <Input placeholder="Code oder Bezeichnung suchen…" value={search} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setSearch(e.target.value); }} className="pl-8" />
         </div>
         <div className="flex-1" />
-        <Button onClick={() => importMutation.mutate()} disabled={importMutation.isPending} variant="outline" className="gap-2">
+        <Button onClick={() => { importMutation.mutate(); }} disabled={importMutation.isPending} variant="outline" className="gap-2">
           {importMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           Aus Stammdaten importieren
         </Button>
@@ -202,7 +202,7 @@ export default function MasterCostCenters() {
             <p className="text-sm text-slate-400 max-w-md mx-auto">
               Bitte führe zuerst den Import aus der Stammdaten-Datenbank durch.
             </p>
-            <Button className="mt-4 gap-2" onClick={() => importMutation.mutate()}>
+            <Button className="mt-4 gap-2" onClick={() => { importMutation.mutate(); }}>
               <Download className="w-4 h-4" /> Aus Stammdaten importieren
             </Button>
           </CardContent>

@@ -50,7 +50,7 @@ export default function ThemeSelector({ open, onOpenChange }: ThemeSelectorProps
                                     relative flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all
                                     ${isSelected ? 'border-indigo-600 bg-indigo-50 ring-1 ring-indigo-600' : 'border-slate-200 hover:bg-slate-50'}
                                 `}
-                                onClick={() => setSelectedTheme(theme.id)}
+                                onClick={() => { setSelectedTheme(theme.id); }}
                             >
                                 <div className="w-8 h-8 rounded-full shadow-sm flex items-center justify-center shrink-0 overflow-hidden border border-slate-100">
                                     <div
@@ -75,7 +75,7 @@ export default function ThemeSelector({ open, onOpenChange }: ThemeSelectorProps
                 </div>
 
                 <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4">
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>Abbrechen</Button>
+                    <Button variant="outline" onClick={() => { onOpenChange(false); }}>Abbrechen</Button>
                     <Button onClick={handleSave}>Speichern</Button>
                 </DialogFooter>
             </DialogContent>

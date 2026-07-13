@@ -151,11 +151,11 @@ export default function AccountMenu() {
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => setIsEmailDialogOpen(true)}>
+          <DropdownMenuItem onClick={() => { setIsEmailDialogOpen(true); }}>
             <Mail className="mr-2 h-4 w-4" />
             E-Mail ändern
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setIsPasswordDialogOpen(true)}>
+          <DropdownMenuItem onClick={() => { setIsPasswordDialogOpen(true); }}>
             <Lock className="mr-2 h-4 w-4" />
             Passwort ändern
           </DropdownMenuItem>
@@ -187,7 +187,7 @@ export default function AccountMenu() {
                 id="currentPassword"
                 type="password"
                 value={passwordForm.currentPassword}
-                onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                onChange={(e) => { setPasswordForm({ ...passwordForm, currentPassword: e.target.value }); }}
                 required
                 disabled={isChangingPassword}
               />
@@ -198,7 +198,7 @@ export default function AccountMenu() {
                 id="newPassword"
                 type="password"
                 value={passwordForm.newPassword}
-                onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                onChange={(e) => { setPasswordForm({ ...passwordForm, newPassword: e.target.value }); }}
                 required
                 minLength={8}
                 disabled={isChangingPassword}
@@ -210,7 +210,7 @@ export default function AccountMenu() {
                 id="confirmPassword"
                 type="password"
                 value={passwordForm.confirmPassword}
-                onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                onChange={(e) => { setPasswordForm({ ...passwordForm, confirmPassword: e.target.value }); }}
                 required
                 minLength={8}
                 disabled={isChangingPassword}
@@ -220,7 +220,7 @@ export default function AccountMenu() {
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => setIsPasswordDialogOpen(false)}
+                onClick={() => { setIsPasswordDialogOpen(false); }}
                 disabled={isChangingPassword}
               >
                 Abbrechen
@@ -259,7 +259,7 @@ export default function AccountMenu() {
                 id="newEmail"
                 type="email"
                 value={emailForm.newEmail}
-                onChange={(e) => setEmailForm({ ...emailForm, newEmail: e.target.value })}
+                onChange={(e) => { setEmailForm({ ...emailForm, newEmail: e.target.value }); }}
                 required
                 disabled={isChangingEmail}
                 placeholder="neue@email.de"
@@ -271,7 +271,7 @@ export default function AccountMenu() {
                 id="emailPassword"
                 type="password"
                 value={emailForm.password}
-                onChange={(e) => setEmailForm({ ...emailForm, password: e.target.value })}
+                onChange={(e) => { setEmailForm({ ...emailForm, password: e.target.value }); }}
                 required
                 disabled={isChangingEmail}
                 placeholder="Ihr aktuelles Passwort"
@@ -281,7 +281,7 @@ export default function AccountMenu() {
               <Button 
                 type="button" 
                 variant="outline" 
-                onClick={() => setIsEmailDialogOpen(false)}
+                onClick={() => { setIsEmailDialogOpen(false); }}
                 disabled={isChangingEmail}
               >
                 Abbrechen

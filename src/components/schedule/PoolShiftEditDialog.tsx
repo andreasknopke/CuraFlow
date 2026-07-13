@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { de } from 'date-fns/locale';
@@ -95,9 +94,9 @@ export default function PoolShiftEditDialog({
         // without requiring a logout/login cycle.
     });
 
-    const staff = (staffQuery.data as any)?.staff || [];
-    const requiredQuals = (staffQuery.data as any)?.required || [];
-    const absencesByEmployee = (staffQuery.data as any)?.absences_by_employee || {};
+    const staff = (staffQuery.data)?.staff || [];
+    const requiredQuals = (staffQuery.data)?.required || [];
+    const absencesByEmployee = (staffQuery.data)?.absences_by_employee || {};
 
     // Central wishes for this date+workplace so that employees who expressed a
     // Dienstwunsch (green) or Kein-Dienst-Wunsch (red) are highlighted in the
@@ -108,7 +107,7 @@ export default function PoolShiftEditDialog({
         queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }) as any,
         enabled: !!open && !!dateStr && !!workplace?.id,
     });
-    const centralWishes = (centralWishesData as any)?.wishes || [];
+    const centralWishes = (centralWishesData)?.wishes || [];
 
     const wishByEmployeeId = useMemo(() => {
         const map = new Map();
@@ -218,7 +217,7 @@ export default function PoolShiftEditDialog({
                 billing_tenant_id: billingTenantId,
             };
             if (isEdit) {
-                return api.updateGroupShift(groupId as string, shift!.id as string, payload, { force: forceOverride });
+                return api.updateGroupShift(groupId as string, shift.id as string, payload, { force: forceOverride });
             }
             return api.createGroupShift(groupId as string, payload, { force: forceOverride });
         },
@@ -357,7 +356,7 @@ export default function PoolShiftEditDialog({
                                         <input
                                             type="checkbox"
                                             checked={forceOverride}
-                                            onChange={(e) => setForceOverride(e.target.checked)}
+                                            onChange={(e) => { setForceOverride(e.target.checked); }}
                                         />
                                         {violations.some((v) => v.rule === 'rotation_conflict')
                                             ? 'Rotation entfernen und Mitarbeiter trotzdem eintragen'
@@ -375,18 +374,18 @@ export default function PoolShiftEditDialog({
                             type="button"
                             variant="outline"
                             className="text-rose-700 border-rose-200 hover:bg-rose-50 mr-auto"
-                            onClick={() => deleteMutation.mutate()}
+                            onClick={() => { deleteMutation.mutate(); }}
                             disabled={deleteMutation.isPending}
                         >
                             <Trash2 className="w-4 h-4 mr-1.5" />
                             {deleteMutation.isPending ? 'Lösche …' : 'Löschen'}
                         </Button>
                     )}
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => { onOpenChange(false); }}>
                         Abbrechen
                     </Button>
                     <Button
-                        onClick={() => saveMutation.mutate()}
+                        onClick={() => { saveMutation.mutate(); }}
                         disabled={!canSubmit}
                     >
                         {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
