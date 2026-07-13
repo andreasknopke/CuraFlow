@@ -138,7 +138,7 @@ Fixed type errors across 16 files that relied on the old untyped `EntityClient`.
 
 ## Remaining work — shrink the allowlist
 
-The allowlist in `eslint.config.js` contains ~65 files that still use `any`. These should be cleaned file-by-file, removing each entry from the allowlist after cleanup. The order should follow the risk tiers from the conversion plan.
+The allowlist in `eslint.config.js` contains ~59 files that still use `any`. These should be cleaned file-by-file, removing each entry from the allowlist after cleanup. The order should follow the risk tiers from the conversion plan.
 
 ### Priority A: High leverage, test-backed ✅ COMPLETE
 
@@ -157,16 +157,20 @@ The allowlist in `eslint.config.js` contains ~65 files that still use `any`. The
 
 **All 3 files removed from ESLint allowlist.**
 
-### Priority B: Medium risk, moderate count
+### Priority B: Medium risk, moderate count ✅ COMPLETE
 
-| File | `: any` | Notes |
-|---|---|---|
-| `TransferToSchedulerDialog.tsx` | 26 | Large dialog, test-backed |
-| `CoWorkWidget.tsx` | 20 | Complex, isolated |
-| `WorkTimeReport.tsx` | 10 | Statistics |
-| `WishMonthOverview.tsx` | 22 | Wishlist |
-| `TrainingOverview.tsx` | 20 | Training |
-| `StaffingPlanTable.tsx` | 11 | Staff |
+| File | `: any` | Status | What was done |
+|---|---|---|---|
+| `TransferToSchedulerDialog.tsx` | 28 | ✅ Cleaned | Imported `Doctor`, `ShiftEntry`, `TrainingRotation`, `StaffingPlanEntry`, `Workplace`. Defined `TransferEntry`, `SkippedEntry`, `TransferData` local interfaces. Replaced all callback params. Replaced `as any` RadioGroup/Checkbox casts with wrapper functions. |
+| `CoWorkWidget.tsx` | 36 | ✅ Cleaned | Defined `JitsiMeetExternalAPI`, `JitsiMeetExternalAPICtor`, `CoworkInvite`, `CoworkContact`, `CoworkInviteListResponse`, `CoworkSession`, `CoworkSendInviteResponse`, `CommonAuthState` local interfaces. Replaced all `(window as any)`, `(api as any)`, `(import.meta as any)`, `error: any` → `error: unknown`. Auth state union gets typed. |
+| `WorkingTimeReport.tsx` | 18 | ✅ Cleaned | All types already imported (`Doctor`, `ShiftEntry`, `Workplace`, `WorkplaceTimeslot`). Replaced callback params and cast removals. Used existing local `DoctorWorkStats` interface. |
+| `WishMonthOverview.tsx` | 30 | ✅ Cleaned | Imported `Doctor`, `WishRequest`, `ShiftEntry` from `@/types`. Exported and imported `ContractInfo` from `trainingContractUtils`. Replaced `React.ReactNode`/`React.CSSProperties` for UI types. Migrated `(base44 as any).auth.me()` → `api.me()`, `(api as any).updateMe()` → `api.updateMe()`. Removed `base44` import. |
+| `TrainingOverview.tsx` | 22 | ✅ Cleaned | Imported `Doctor`, `TrainingRotation` from `@/types`. Exported and imported `ContractInfo`. Typed `status: string \| null`, drag state as `Date \| null` / `string \| null`, `React.CSSProperties` for style. |
+| `StaffingPlanTable.tsx` | 11 | ✅ Cleaned | Added imports for `StaffingPlanEntry`, `StaffingPlanNote`, `SystemSetting`. Replaced `err: any` → `err: unknown`, removed `systemSettings as any[]` casts. Typed mutation payload inline. |
+
+**Prerequisite change:** Exported `ContractInfo` interface from `trainingContractUtils.ts` (was private, needed by WishMonthOverview and TrainingOverview).
+
+**All 6 files removed from ESLint allowlist.**
 
 ### Priority C: Many small files (5-10 `any` each)
 

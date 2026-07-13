@@ -6,7 +6,63 @@ import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/api/client';
 import { useMasterAuth } from '@/master/MasterAuthProvider';
 
-let jitsiExternalApiLoader: Promise<any> | null = null;
+// --- Jitsi types ---
+interface JitsiMeetExternalAPI {
+  addListener(event: string, callback: (event: Record<string, unknown>) => void): void;
+  addEventListeners(events: Record<string, (event: Record<string, unknown>) => void>): void;
+  dispose(): void;
+}
+
+type JitsiMeetExternalAPICtor = new (
+  domain: string,
+  options: Record<string, unknown>,
+) => JitsiMeetExternalAPI;
+
+// --- Cowork API types ---
+interface CoworkInvite {
+  id: string;
+  status: string;
+  inviter_id?: string;
+  inviter_name?: string;
+  inviter_email?: string;
+  invitee_id?: string;
+  invitee_name?: string;
+  invitee_email?: string;
+  room_name: string;
+  expires_date?: string | null;
+}
+
+interface CoworkContact {
+  id: string;
+  full_name?: string;
+  email: string;
+  is_online: boolean;
+  last_seen_at?: string | null;
+}
+
+interface CoworkInviteListResponse {
+  incoming: CoworkInvite[];
+  outgoing: CoworkInvite[];
+}
+
+interface CoworkSession {
+  inviteId?: string;
+  roomName: string;
+  token: string;
+  session?: unknown;
+}
+
+interface CoworkSendInviteResponse {
+  session: CoworkSession;
+}
+
+// --- Shared auth shape ---
+interface CommonAuthState {
+  isAuthenticated: boolean;
+  user: { id: string; email: string; role: string; full_name?: string; allowed_tenants?: unknown } | null;
+}
+
+let jitsiExternalApiLoader: Promise<JitsiMeetExternalAPICtor> | null = null;
 let jitsiExternalApiScriptUrl: string | null = null;
 
 function parseTenantSlug(allowed_tenants: unknown): string {
@@ -18,7 +74,7 @@ function parseTenantSlug(allowed_tenants: unknown): string {
     }
   } catch {
   }
-  return (allowed_tenants as any).toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
+  return String(allowed_tenants).toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
 function buildJitsiDomain(baseUrl: string): string | null {
@@ -29,13 +85,14 @@ function buildJitsiDomain(baseUrl: string): string | null {
   }
 }
 
-function loadJitsiExternalApi(baseUrl: string): Promise<any> {
+function loadJitsiExternalApi(baseUrl: string): Promise<JitsiMeetExternalAPICtor> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('Jitsi kann nur im Browser geladen werden'));
   }
 
-  if ((window as any).JitsiMeetExternalAPI) {
-    return Promise.resolve((window as any).JitsiMeetExternalAPI);
+  const win = window as unknown as { JitsiMeetExternalAPI?: JitsiMeetExternalAPICtor };
+  if (win.JitsiMeetExternalAPI) {
+    return Promise.resolve(win.JitsiMeetExternalAPI);
   }
 
   const scriptUrl = `${baseUrl}/external_api.js`;
@@ -48,7 +105,10 @@ function loadJitsiExternalApi(baseUrl: string): Promise<any> {
     const existingScript = document.querySelector(`script[data-jitsi-external-api="true"][src="${scriptUrl}"]`);
 
     if (existingScript) {
-      existingScript.addEventListener('load', () => { resolve((window as any).JitsiMeetExternalAPI); }, { once: true });
+      existingScript.addEventListener('load', () => {
+        const w = window as unknown as { JitsiMeetExternalAPI?: JitsiMeetExternalAPICtor };
+        resolve(w.JitsiMeetExternalAPI!);
+      }, { once: true });
       existingScript.addEventListener('error', () => { reject(new Error('Jitsi-API konnte nicht geladen werden')); }, { once: true });
       return;
     }
@@ -58,8 +118,9 @@ function loadJitsiExternalApi(baseUrl: string): Promise<any> {
     script.async = true;
     script.dataset.jitsiExternalApi = 'true';
     script.onload = () => {
-      if ((window as any).JitsiMeetExternalAPI) {
-        resolve((window as any).JitsiMeetExternalAPI);
+      const w = window as unknown as { JitsiMeetExternalAPI?: JitsiMeetExternalAPICtor };
+      if (w.JitsiMeetExternalAPI) {
+        resolve(w.JitsiMeetExternalAPI);
         return;
       }
 
@@ -118,8 +179,8 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 export default function CoWorkWidget() {
   const appAuth = useAuth();
   const masterAuth = useMasterAuth();
-  const authState = (masterAuth as any)?.isAuthenticated ? masterAuth : appAuth;
-  const { user, isAuthenticated } = authState as any;
+  const authState: CommonAuthState = (masterAuth as CommonAuthState)?.isAuthenticated ? (masterAuth as CommonAuthState) : (appAuth as CommonAuthState);
+  const { user, isAuthenticated } = authState;
   const isAdmin = (user)?.role === 'admin';
 
   const [isOpen, setIsOpen] = useState(false);
@@ -130,7 +191,7 @@ export default function CoWorkWidget() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [isTriggerHidden, setIsTriggerHidden] = useState(false);
   const [position, setPosition] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
-  const [activeSession, setActiveSession] = useState<Record<string, any> | null>(null);
+  const [activeSession, setActiveSession] = useState<CoworkSession | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [hiddenInviteIds, setHiddenInviteIds] = useState<string[]>([]);
@@ -138,20 +199,20 @@ export default function CoWorkWidget() {
   const dragOffset = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement | null>(null);
   const jitsiContainerRef = useRef<HTMLDivElement | null>(null);
-  const jitsiApiRef = useRef<any>(null);
+  const jitsiApiRef = useRef<JitsiMeetExternalAPI | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const announcedInviteIdsRef = useRef<Set<string>>(new Set());
   const lastInviteErrorRef = useRef<string | null>(null);
 
   const tenantSlug = parseTenantSlug((user)?.allowed_tenants);
-  const rawJitsiBaseUrl = (import.meta as any).env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
+  const rawJitsiBaseUrl = import.meta.env.VITE_JITSI_BASE_URL || 'https://meet.jit.si';
   const jitsiBaseUrl = rawJitsiBaseUrl.replace(/\/$/, '');
   const jitsiDomain = buildJitsiDomain(jitsiBaseUrl);
   const activeRoomName = activeSession?.roomName || null;
 
   const invitesQuery = useQuery({
     queryKey: ['coworkInvites'],
-    queryFn: () => (api as any).listCoworkInvites(),
+    queryFn: () => (api as { listCoworkInvites: () => Promise<CoworkInviteListResponse> }).listCoworkInvites(),
     enabled: isAuthenticated,
     refetchInterval: false,
     refetchIntervalInBackground: false,
@@ -160,7 +221,7 @@ export default function CoWorkWidget() {
 
   const contactsQuery = useQuery({
     queryKey: ['coworkContacts'],
-    queryFn: () => (api as any).listCoworkContacts(),
+    queryFn: () => (api as { listCoworkContacts: () => Promise<CoworkContact[]> }).listCoworkContacts(),
     enabled: isAuthenticated && isAdmin && isOpen && isDetailsOpen,
     refetchInterval: false,
     refetchOnWindowFocus: false,
@@ -178,10 +239,10 @@ export default function CoWorkWidget() {
     setHiddenInviteIds((currentIds) => currentIds.filter((currentId) => currentId !== inviteId));
   }, []);
 
-  const incomingInvites = ((invitesQuery.data)?.incoming || []).filter((invite: any) => !hiddenInviteIds.includes(invite.id));
+  const incomingInvites = ((invitesQuery.data)?.incoming || []).filter((invite: CoworkInvite) => !hiddenInviteIds.includes(invite.id));
   const outgoingInvites = (invitesQuery.data)?.outgoing || [];
   const currentIncomingInvite = incomingInvites[0] || null;
-  const sortedContacts = [...((contactsQuery.data) || [])].sort((left: any, right: any) => {
+  const sortedContacts = [...((contactsQuery.data) || [])].sort((left: CoworkContact, right: CoworkContact) => {
     if (left.is_online !== right.is_online) {
       return left.is_online ? -1 : 1;
     }
@@ -232,7 +293,7 @@ export default function CoWorkWidget() {
     setIsLoadingSession(true);
 
     try {
-      const session = await (api as any).joinCoworkInvite(inviteId) as Record<string, any>;
+      const session = await (api as { joinCoworkInvite: (id: string) => Promise<CoworkSession> }).joinCoworkInvite(inviteId);
       toast.dismiss(getInviteToastId(inviteId));
       setActiveSession(session);
       setIsContactsCollapsed(true);
@@ -240,8 +301,8 @@ export default function CoWorkWidget() {
       setIsOpen(true);
       await refreshCoworkData();
       return session;
-    } catch (error: any) {
-      toast.error(error.message || 'CoWork-Session konnte nicht geoeffnet werden');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'CoWork-Session konnte nicht geoeffnet werden');
       return null;
     } finally {
       setBusyId(null);
@@ -254,33 +315,33 @@ export default function CoWorkWidget() {
     setIsLoadingSession(true);
 
     try {
-      const session = await (api as any).getJitsiToken() as Record<string, any>;
+      const session = await (api as { getJitsiToken: () => Promise<CoworkSession> }).getJitsiToken();
       setActiveSession(session);
       setIsContactsCollapsed(true);
       setIsDetailsOpen(false);
       setIsOpen(true);
-    } catch (error: any) {
-      toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Jitsi-Session konnte nicht geladen werden');
     } finally {
       setBusyId(null);
       setIsLoadingSession(false);
     }
   }, []);
 
-  const handleSendInvite = useCallback(async (contact: any) => {
+  const handleSendInvite = useCallback(async (contact: CoworkContact) => {
     setBusyId(contact.id);
     setIsLoadingSession(true);
 
     try {
-      const result = await (api as any).sendCoworkInvite(contact.id);
+      const result = await (api as { sendCoworkInvite: (id: string) => Promise<CoworkSendInviteResponse> }).sendCoworkInvite(contact.id);
       setActiveSession(result.session);
       setIsContactsCollapsed(true);
       setIsDetailsOpen(false);
       setIsOpen(true);
       toast.success(`Einladung an ${contact.full_name || contact.email} gesendet`);
       await refreshCoworkData();
-    } catch (error: any) {
-      toast.error(error.message || 'Einladung konnte nicht gesendet werden');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : 'Einladung konnte nicht gesendet werden');
     } finally {
       setBusyId(null);
       setIsLoadingSession(false);
@@ -296,15 +357,15 @@ export default function CoWorkWidget() {
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await (api as any).declineCoworkInvite(inviteId);
+      await (api as { declineCoworkInvite: (id: string) => Promise<unknown> }).declineCoworkInvite(inviteId);
       toast.success('Einladung abgelehnt');
       if (activeSession?.inviteId === inviteId) {
         setActiveSession(null);
       }
       await refreshCoworkData();
-    } catch (error: any) {
+    } catch (error: unknown) {
       showInviteLocally(inviteId);
-      toast.error(error.message || 'Einladung konnte nicht abgelehnt werden');
+      toast.error(error instanceof Error ? error.message : 'Einladung konnte nicht abgelehnt werden');
     } finally {
       setBusyId(null);
     }
@@ -315,15 +376,15 @@ export default function CoWorkWidget() {
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await (api as any).cancelCoworkInvite(inviteId);
+      await (api as { cancelCoworkInvite: (id: string) => Promise<unknown> }).cancelCoworkInvite(inviteId);
       toast.success('Einladung abgebrochen');
       if (activeSession?.inviteId === inviteId) {
         setActiveSession(null);
       }
       await refreshCoworkData();
-    } catch (error: any) {
+    } catch (error: unknown) {
       showInviteLocally(inviteId);
-      toast.error(error.message || 'Einladung konnte nicht abgebrochen werden');
+      toast.error(error instanceof Error ? error.message : 'Einladung konnte nicht abgebrochen werden');
     } finally {
       setBusyId(null);
     }
@@ -345,21 +406,21 @@ export default function CoWorkWidget() {
     hideInviteLocally(inviteId);
     toast.dismiss(getInviteToastId(inviteId));
     try {
-      await (api as any).cancelCoworkInvite(inviteId);
+      await (api as { cancelCoworkInvite: (id: string) => Promise<unknown> }).cancelCoworkInvite(inviteId);
       setActiveSession(null);
       setIsExpanded(false);
       setIsOpen(false);
       await refreshCoworkData();
-    } catch (error: any) {
+    } catch (error: unknown) {
       showInviteLocally(inviteId);
-      toast.error(error.message || 'CoWork-Session konnte nicht beendet werden');
+      toast.error(error instanceof Error ? error.message : 'CoWork-Session konnte nicht beendet werden');
     } finally {
       setBusyId(null);
     }
   }, [activeSession?.inviteId, hideInviteLocally, refreshCoworkData, showInviteLocally]);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as any).closest('button') || (e.target as any).closest('iframe')) return;
+    if ((e.target as Element).closest('button') || (e.target as Element).closest('iframe')) return;
     dragging.current = true;
     const rect = panelRef.current!.getBoundingClientRect();
     dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -400,7 +461,7 @@ export default function CoWorkWidget() {
   }, [activeSession]);
 
   useEffect(() => {
-    const activeIncomingIds = new Set(((invitesQuery.data)?.incoming || []).map((invite: any) => invite.id));
+    const activeIncomingIds = new Set(((invitesQuery.data)?.incoming || []).map((invite: CoworkInvite) => invite.id));
     setHiddenInviteIds((currentIds) => currentIds.filter((inviteId) => activeIncomingIds.has(inviteId)));
   }, [(invitesQuery.data)?.incoming]);
 
@@ -421,13 +482,13 @@ export default function CoWorkWidget() {
     if (!activeSession?.token || !activeRoomName || !jitsiDomain || !jitsiContainerRef.current) return undefined;
 
     let disposed = false;
-    let externalApi: any = null;
+    let externalApi: JitsiMeetExternalAPI | null = null;
 
     setIsLoadingSession(true);
     setIsScreenSharing(false);
 
     void loadJitsiExternalApi(jitsiBaseUrl)
-      .then((JitsiMeetExternalAPICtor: any) => {
+      .then((JitsiMeetExternalAPICtor: JitsiMeetExternalAPICtor) => {
         if (disposed || !jitsiContainerRef.current) return;
 
         jitsiContainerRef.current.innerHTML = '';
@@ -463,25 +524,25 @@ export default function CoWorkWidget() {
           secondsLeft: tokenPayload?.exp ? Number(tokenPayload.exp) - Math.floor(Date.now() / 1000) : null,
         });
 
-        externalApi.addListener('log', (event: any) => {
+        externalApi.addListener('log', (event: Record<string, unknown>) => {
           console.debug('[CoWork/Jitsi log]', event);
         });
 
         externalApi.addEventListeners({
-          videoConferenceJoined: (event: any) => {
+          videoConferenceJoined: (event: Record<string, unknown>) => {
             console.info('[CoWork/Jitsi] joined', event);
             setIsLoadingSession(false);
           },
-          videoConferenceLeft: (event: any) => {
+          videoConferenceLeft: (event: Record<string, unknown>) => {
             console.warn('[CoWork/Jitsi] left', event);
           },
           readyToClose: () => {
             console.warn('[CoWork/Jitsi] readyToClose');
           },
-          errorOccurred: (event: any) => {
+          errorOccurred: (event: Record<string, unknown>) => {
             console.error('[CoWork/Jitsi] errorOccurred', event);
           },
-          screenSharingStatusChanged: (event: any) => {
+          screenSharingStatusChanged: (event: Record<string, unknown>) => {
             console.warn('[CoWork/Jitsi] screenSharingStatusChanged', event);
             const sharingActive = Boolean(event?.on);
             setIsScreenSharing(sharingActive);
@@ -494,12 +555,12 @@ export default function CoWorkWidget() {
 
         setIsLoadingSession(false);
       })
-      .catch((error: any) => {
+      .catch((error: unknown) => {
         if (disposed) return;
 
         setActiveSession(null);
         setIsLoadingSession(false);
-        toast.error(error.message || 'Jitsi-Session konnte nicht geladen werden');
+        toast.error(error instanceof Error ? error.message : 'Jitsi-Session konnte nicht geladen werden');
       });
 
     return () => {
@@ -552,7 +613,7 @@ export default function CoWorkWidget() {
   }, [currentIncomingInvite, joinInviteInternal]);
 
   useEffect(() => {
-    const message = (invitesQuery.error as any)?.message || null;
+    const message = (invitesQuery.error instanceof Error) ? invitesQuery.error.message : null;
     if (!message || lastInviteErrorRef.current === message) return;
 
     lastInviteErrorRef.current = message;
@@ -614,7 +675,7 @@ export default function CoWorkWidget() {
                 Support-Einladung von {currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}
               </div>
               <div className="mt-1 text-xs text-slate-500">
-                Raum {currentIncomingInvite.room_name} · gueltig bis {formatExpiry(currentIncomingInvite.expires_date)}
+                Raum {currentIncomingInvite.room_name} · gueltig bis {formatExpiry(currentIncomingInvite.expires_date ?? null)}
               </div>
             </div>
           </div>
@@ -741,7 +802,7 @@ export default function CoWorkWidget() {
                     Support-Einladung von {currentIncomingInvite.inviter_name || currentIncomingInvite.inviter_email}
                   </div>
                   <div className="mt-1 text-xs text-emerald-800">
-                    Raum {currentIncomingInvite.room_name} · gueltig bis {formatExpiry(currentIncomingInvite.expires_date)}
+                    Raum {currentIncomingInvite.room_name} · gueltig bis {formatExpiry(currentIncomingInvite.expires_date ?? null)}
                   </div>
                 </div>
               </div>
@@ -804,12 +865,12 @@ export default function CoWorkWidget() {
                         Kontakte werden geladen...
                       </div>
                     ) : sortedContacts.length > 0 ? (
-                      sortedContacts.map((contact: any) => (
+                      sortedContacts.map((contact: CoworkContact) => (
                         <div key={contact.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
                           <div className={`h-2.5 w-2.5 rounded-full ${contact.is_online ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-sm font-medium text-slate-900">{contact.full_name || contact.email}</div>
-                            <div className="truncate text-xs text-slate-500">{contact.email} · {contact.is_online ? 'online' : formatLastSeen(contact.last_seen_at)}</div>
+                            <div className="truncate text-xs text-slate-500">{contact.email} · {contact.is_online ? 'online' : formatLastSeen(contact.last_seen_at ?? null)}</div>
                           </div>
                           <button
                             onClick={() => handleSendInvite(contact)}
@@ -840,14 +901,14 @@ export default function CoWorkWidget() {
                 <div className="mb-2 text-sm font-semibold text-slate-900">Ausgehende Einladungen</div>
                 <div className="max-h-40 space-y-2 overflow-auto pr-1">
                   {outgoingInvites.length > 0 ? (
-                    outgoingInvites.map((invite: any) => (
+                    outgoingInvites.map((invite: CoworkInvite) => (
                       <div key={invite.id} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
                         <div className={`rounded-full px-2 py-1 text-[11px] font-semibold ${invite.status === 'accepted' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
                           {invite.status === 'accepted' ? 'angenommen' : 'wartet'}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-medium text-slate-900">{invite.invitee_name || invite.invitee_email}</div>
-                          <div className="truncate text-xs text-slate-500">{invite.room_name} · bis {formatExpiry(invite.expires_date)}</div>
+                          <div className="truncate text-xs text-slate-500">{invite.room_name} · bis {formatExpiry(invite.expires_date ?? null)}</div>
                         </div>
                         <button
                           onClick={() => handleJoinInvite(invite.id)}

@@ -107,7 +107,7 @@ export default function WorkingTimeReport() {
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors', statisticsExcludedRoles],
         queryFn: () => db.Doctor.list(),
-        select: (data: any[]) => data.filter((d: any) => !(statisticsExcludedRoles).includes(d.role)).sort((a: any, b: any) => (a.order || 0) - (b.order || 0)),
+        select: (data: Doctor[]) => data.filter((d: Doctor) => !(statisticsExcludedRoles).includes(d.role || '')).sort((a: Doctor, b: Doctor) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
@@ -129,7 +129,7 @@ export default function WorkingTimeReport() {
                 }) || [];
             } catch {
                 const all = await db.ShiftEntry.list();
-                return all.filter((s: any) => s.date.startsWith(year));
+                return all.filter((s: ShiftEntry) => s.date.startsWith(year));
             }
         },
     });
@@ -138,7 +138,7 @@ export default function WorkingTimeReport() {
 
     // Check if any workplace has timeslots enabled
     const hasTimeslotsEnabled = useMemo(() => {
-        return workplaces.some((w: any) => w.timeslots_enabled) && timeslots.length > 0;
+        return workplaces.some((w: Workplace) => w.timeslots_enabled) && timeslots.length > 0;
     }, [workplaces, timeslots]);
 
     // Calculate date range based on view mode
@@ -165,17 +165,17 @@ export default function WorkingTimeReport() {
     const workingTimeStats: DoctorWorkStats[] = useMemo(() => {
         if (isLoading || !doctors.length) return [];
 
-        const stats = (doctors).map((doctor: any) => {
+        const stats = (doctors).map((doctor: Doctor) => {
             // Filter shifts for this doctor in date range
-            const doctorShifts = (shifts as any[]).filter((s: any) => {
+            const doctorShifts = (shifts as ShiftEntry[]).filter((s: ShiftEntry) => {
                 if (s.doctor_id !== doctor.id) return false;
                 const shiftDate = parseISO(s.date);
                 return isWithinInterval(shiftDate, { start: dateRange.start, end: dateRange.end });
             });
 
             // Group shifts by date
-            const shiftsByDate: Record<string, any[]> = {};
-            (doctorShifts).forEach((shift: any) => {
+            const shiftsByDate: Record<string, ShiftEntry[]> = {};
+            (doctorShifts).forEach((shift: ShiftEntry) => {
                 if (!shiftsByDate[shift.date]) {
                     shiftsByDate[shift.date] = [];
                 }
@@ -190,18 +190,18 @@ export default function WorkingTimeReport() {
             Object.entries(shiftsByDate).forEach(([date, dayShifts]) => {
                 const intervals: { start: number; end: number; rawDuration: number; adjustedDuration: number }[] = [];
 
-                (dayShifts).forEach((shift: any) => {
-                    const workplace = (workplaces as any[]).find((w: any) => w.name === shift.position);
+                (dayShifts).forEach((shift: ShiftEntry) => {
+                    const workplace = (workplaces as Workplace[]).find((w: Workplace) => w.name === shift.position);
                     
                     if (isNonWorkingShiftPosition(shift.position)) {
                         return;
                     }
 
                     const timeslot = shift.timeslot_id 
-                        ? (timeslots as any[]).find((t: any) => t.id === shift.timeslot_id)
+                        ? (timeslots as WorkplaceTimeslot[]).find((t: WorkplaceTimeslot) => t.id === shift.timeslot_id)
                         : null;
 
-                    const interval = shiftToInterval(shift, timeslot, workplace);
+                    const interval = shiftToInterval(shift, timeslot ?? null, workplace ?? null);
                     intervals.push(interval);
                 });
 
@@ -232,7 +232,7 @@ export default function WorkingTimeReport() {
             };
         });
 
-        return stats.sort((a: any, b: any) => b.totalMinutes - a.totalMinutes);
+        return stats.sort((a: DoctorWorkStats, b: DoctorWorkStats) => b.totalMinutes - a.totalMinutes);
     }, [doctors, shifts, workplaces, timeslots, dateRange, isLoading]);
 
     // Summary statistics

@@ -1,6 +1,6 @@
 import { differenceInCalendarDays, format, isAfter, isBefore, parseISO, startOfDay } from 'date-fns';
 
-interface ContractInfo {
+export interface ContractInfo {
     contractStart: string | null;
     contractEnd: string | null;
     contractRangeLabel: string;
