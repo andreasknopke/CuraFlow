@@ -100,6 +100,7 @@ import {
 } from './scheduleBoardHelpers';
 import type { ScheduleViewMode, SectionTab } from './scheduleBoardHelpers';
 import { useScheduleMutations } from './useScheduleMutations';
+import { ScheduleBoardContext, type ScheduleBoardContextValue } from './ScheduleBoardContext';
 // import VoiceControl from './VoiceControl';
 
 const STATIC_SECTIONS = {
@@ -5541,6 +5542,44 @@ export default function ScheduleBoard() {
       );
   };
 
+  // ScheduleBoardContext value — populated for the desktop view so that
+  // extracted cell renderers and drag handlers can consume shared
+  // dependencies via context instead of closure scope. Step 1 plumbing:
+  // the value is built but no consumer has been migrated yet.
+  const scheduleBoardContextValue = useMemo<ScheduleBoardContextValue>(() => ({
+    isReadOnly,
+    doctors,
+    currentWeekShifts,
+    workplaces,
+    workplaceTimeslots,
+    systemSettings,
+    doctorById,
+    workplaceByName,
+    centralEmployeesById,
+    workTimeModelMap,
+    allDisplayDocsByDate,
+    effectiveGridFontSize,
+    shiftBoxSize,
+    getDoctorChipLabel,
+    getRoleColor,
+  }), [
+    isReadOnly,
+    doctors,
+    currentWeekShifts,
+    workplaces,
+    workplaceTimeslots,
+    systemSettings,
+    doctorById,
+    workplaceByName,
+    centralEmployeesById,
+    workTimeModelMap,
+    allDisplayDocsByDate,
+    effectiveGridFontSize,
+    shiftBoxSize,
+    getDoctorChipLabel,
+    getRoleColor,
+  ]);
+
   // Mobile View
   if (isMobile) {
       return (
@@ -5557,6 +5596,7 @@ export default function ScheduleBoard() {
   }
 
     return (
+        <ScheduleBoardContext.Provider value={scheduleBoardContextValue}>
         <div className={`flex flex-col h-full ${isEmbeddedSchedule ? '' : 'space-y-4'}`}>
 
             {!isEmbeddedSchedule && (
@@ -6955,5 +6995,6 @@ export default function ScheduleBoard() {
         existingDemand={rotationDemandDialog.existingDemand}
       />
     </div>
+        </ScheduleBoardContext.Provider>
   );
 }

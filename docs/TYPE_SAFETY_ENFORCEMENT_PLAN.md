@@ -304,7 +304,7 @@ Work through these phases in order. Each phase has a definition of done and a ve
 
 ---
 
-##### Phase 3 — Refactor enablement  ← PARTIAL COMPLETE
+##### Phase 3 — Refactor enablement  ← IN PROGRESS
 
 **Goal:** Shrink ScheduleBoard.tsx by extracting self-contained sections, making the remaining `any` obvious and the file maintainable.
 
@@ -314,20 +314,24 @@ Work through these phases in order. Each phase has a definition of done and a ve
 
 2. **Extract mutation definitions → `useScheduleMutations.ts` hook.** ✅ Extracted all 16 `useMutation` declarations (spread across 2 clusters in the original file) into a `useScheduleMutations(deps)` custom hook. Defined proper context type interfaces (`CreateShiftContext`, `UpdateShiftContext`, `DeleteShiftContext`, `BulkDeleteContext`, `AutoFreiContext`) replacing the `any` 4th generic. Removed unused imports (`useMutation`, `ScheduleNote`, `SystemSetting`) from ScheduleBoard.tsx. File: `src/components/schedule/useScheduleMutations.ts` (548 lines).
 
-**Not extracted (deeply coupled closures):**
+3. **Introduce `ScheduleBoardContext` → `ScheduleBoardContext.ts`.** ✅ Step 1 of the context-driven extraction strategy. Created `ScheduleBoardContext` with a typed value interface (`ScheduleBoardContextValue`) and `useScheduleBoard()` consumer hook. The desktop return is now wrapped in `<ScheduleBoardContext.Provider>` with a `useMemo` value holding the 15 most-shared dependencies (`isReadOnly`, `doctors`, `currentWeekShifts`, `workplaces`, `workplaceTimeslots`, `systemSettings`, lookup maps, sizing constants, chip/role helpers). **Pure plumbing — zero behavior change, zero consumers migrated yet.** File: `src/components/schedule/ScheduleBoardContext.ts` (56 lines).
 
-3. **Cell renderers** (`renderRotationCell` ~450 lines, `renderCrossTenantCell` ~40 lines, `renderCellShifts` ~125 lines, `renderShiftClone` ~98 lines). These renderers are closure-heavy functions defined inside the component body that reference 20+ maps, state setters, computed values, and helper functions. Extracting them as sub-components would require passing 20+ props per renderer without reducing `any` count (the props themselves carry `any` from upstream maps). Deferred — requires upstream map typing first.
+**Next steps (context-driven extraction):**
 
-4. **`handleDragEnd` logic** (~1272 lines). References 64 unique external symbols from the component scope (9 state setters, 13 query/computed values, 17 component-level functions, 8 mutations, 13 imported functions). Extracting as a hook would require a dependency object with ~64 entries. Deferred — would benefit from a broader state management refactor.
+4. **Extract `handleDragEnd` logic → `useDragHandlers` hook.** Move the ~1272-line handler verbatim into a hook that consumes `ScheduleBoardContext` for shared deps (`doctors`, `currentWeekShifts`, `workplaces`, `doctorById`, `allDisplayDocsByDate`, `queryClient`, etc.) and receives the remaining deps (mutations, state setters, validation functions) as hook parameters. Keep every `any` as-is — extraction only, no typing changes. Verify with 738 tests + manual drag smoke test.
 
-**Result:** ScheduleBoard.tsx reduced from 8054 → 6959 lines (1095 lines extracted into 2 new files).
+5. **Extract cell renderers → sub-components.** Move `renderRotationCell` (~450 lines), `renderCrossTenantCell` (~40 lines), `renderCellShifts` (~125 lines), `renderShiftClone` (~98 lines) into separate files consuming `ScheduleBoardContext`. Per-call arguments (`workplace`, `dateStr`, `extraProps`) become props; shared deps come from context. Keep every `any` as-is. Verify.
 
-**Verification (2026-07-14 — after Phase 3 partial):**
+6. **Type the remaining `any` cluster by cluster.** Now that each unit is isolated in its own file, apply the safety rules to replace `any` with proper types one file at a time. This is where the careful per-region work happens — but each file is now small and self-contained.
+
+**Result so far:** ScheduleBoard.tsx reduced from 8054 → 7000 lines (1054 lines extracted, context plumbing added).
+
+**Verification (2026-07-14 — after Step 1 context plumbing):**
 
 | Check | Result |
 |---|---|
 | `npm run typecheck` | **0 errors** |
-| `npm run lint` | 0 errors (4796 warnings — all pre-existing) |
+| `npm run lint` | 0 errors (4798 warnings — all pre-existing) |
 | `npm run build` | Pass |
 | `npm run test:all` | 738 tests pass, 66 files pass |
 
@@ -369,7 +373,8 @@ Tackle regions in this order (lowest risk first). Each row is one commit.
 | 10 | Extract sub-components (LateAvailabilityBadge, TimeslotSummaryHint) | 890-940 | 0 | 3 | Moved to scheduleBoardHelpers.tsx ✅ |
 | 11 | Extract mutations → `useScheduleMutations.ts` | 629-2116 | remaining | 3 | Custom hook ✅ |
 | 12 | Extract cell renderers | 4332-5204 | ~12 | 3 | Deferred — 20+ closure deps per renderer |
-| 13 | Extract `handleDragEnd` logic | 2751-4023 | remaining | 3 | Deferred — 64 closure deps |
+| 13 | Extract `handleDragEnd` logic | 2751-4023 | remaining | 3 | Step 4 — context-driven, deps via `useScheduleBoard()` |
+| 14 | Introduce `ScheduleBoardContext` | — | 0 | 3 | Step 1 plumbing ✅ |
 
 #### Definition of done for Priority D
 
@@ -380,7 +385,7 @@ Tackle regions in this order (lowest risk first). Each row is one commit.
 - [ ] Manual smoke test: schedule page loads, shifts can be dragged, auto-fill works
 - [ ] `npm run lint` shows zero `@typescript-eslint/no-explicit-any` errors in `ScheduleBoard.tsx` (requires cell renderer/handleDragEnd typing)
 - [ ] `ScheduleBoard.tsx` removed from the ESLint allowlist in `eslint.config.js` (requires cell renderer/handleDragEnd typing)
-- [ ] `ScheduleBoard.tsx` is under 3000 lines (requires cell renderer/handleDragEnd extraction — deferred due to deep coupling)
+- [ ] `ScheduleBoard.tsx` is under 3000 lines (requires cell renderer/handleDragEnd extraction via context — steps 4-5)
 
 #### Note on the `handleAIAutoFill` dead reference
 
