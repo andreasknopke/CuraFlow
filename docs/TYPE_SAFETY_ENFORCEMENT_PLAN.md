@@ -125,12 +125,12 @@ Fixed type errors across 16 files that relied on the old untyped `EntityClient`.
 
 ---
 
-## Verification ✅ ALL PASS
+## Verification ✅ ALL PASS (updated 2026-07-13)
 
 | Check | Result |
 |---|---|
 | `npm run typecheck` | 0 errors |
-| `npm run lint` | 0 errors (8739 warnings from downgraded rules) |
+| `npm run lint` | 0 errors (warnings only from downgraded rules) |
 | `npm run build` | Pass |
 | `npm run test:all` | 738 tests pass, 66 files pass |
 
@@ -140,13 +140,22 @@ Fixed type errors across 16 files that relied on the old untyped `EntityClient`.
 
 The allowlist in `eslint.config.js` contains ~65 files that still use `any`. These should be cleaned file-by-file, removing each entry from the allowlist after cleanup. The order should follow the risk tiers from the conversion plan.
 
-### Priority A: High leverage, test-backed
+### Priority A: High leverage, test-backed ✅ COMPLETE
 
-| File | `: any` | Why first | Notes |
+| File | `: any` | Status | What was done |
 |---|---|---|---|
-| `autoFillEngine.ts` | 96 | Has 24 unit tests | Define `GenerateSuggestionsParams` interface |
-| `costFunction.ts` | 20 | Has unit tests | Type the cost function parameters |
-| `aiAutoFillEngine.ts` | 16 | Variant of autoFillEngine | Follows same pattern |
+| `autoFillEngine.ts` | 96 | ✅ Cleaned | Defined `Suggestion`, `SuggestionResult`, `AutoFillDebugContext` interfaces; typed all `GenerateSuggestionsParams` fields; guarded nullable `doctor_id`; typed all `Set<string>` and `Map<string, Date[]>` |
+| `costFunction.ts` | 20 | ✅ Cleaned | Exported `AssignmentContext` and `ShiftLike` interfaces; typed all constructor params; guarded nullable `doctor_id` |
+| `aiAutoFillEngine.ts` | 16 | ✅ Cleaned | Added `QualData` and `AIAutoFillResponse` local interfaces; typed all params and body; fixed `ScheduleRule.content` → `ScheduleRule.name` mapping |
+
+**Additional model changes (prerequisite):**
+- Added `auto_off: boolean` to `Workplace` interface in `src/types/models.ts`
+- Added `allows_consecutive_days?: boolean` to `Workplace` interface (backward compat)
+- Changed `active_days` from `boolean[]` to `number[]` in `Workplace` interface (matches DB/runtime)
+- Added `ScheduleRule` interface to `src/types/models.ts`
+- Fixed `WorkplaceConfigDialog.tsx` — removed duplicate `auto_off` override, fixed `active_days` indexing
+
+**All 3 files removed from ESLint allowlist.**
 
 ### Priority B: Medium risk, moderate count
 
@@ -188,7 +197,7 @@ Remove from ESLint ignores list as each is converted.
 | `BackupLog` | `id, action, status, details, created_date` |
 | `SystemLog` | `id, level, message, context, user_id, created_date` |
 | `TimeslotTemplate` | `id, label, start_time, end_time, workplace_id` |
-| `ScheduleRule` | `id, name, rule_type, config, created_date` |
+| `ScheduleRule` | ✅ Done — `id, name, rule_type, rule_config, is_active, created_date, updated_date` |
 | `DemoSetting` | `id, name, value, created_date` |
 
 ---

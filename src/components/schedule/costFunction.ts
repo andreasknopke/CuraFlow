@@ -66,25 +66,54 @@ const WEIGHTS = {
 
 export { WEIGHTS };
 
+import type { Doctor, Workplace, TrainingRotation, WishRequest, SystemSetting } from '@/types';
+
+/** Service history counters per doctor. */
+interface ServiceHistoryEntry {
+    fg: number;
+    bg: number;
+    weekend: number;
+}
+
+/** Per-call context passed to assignmentCost(). */
+export interface AssignmentContext {
+    usedToday?: Set<string>;
+    posCount?: { [key: string]: number };
+    displacementCount?: Record<string, number>;
+    rotationImpactScore?: Record<string, number>;
+    serviceAssignedToday?: Set<string>;
+    soleOccupantDoctors?: Set<string>;
+    phase?: string;
+}
+
+/** Minimal shift-like shape used by CostFunction for suggestions and existing shifts. */
+export interface ShiftLike {
+    date: string;
+    position: string;
+    doctor_id?: string | null;
+    timeslot_id?: string | null;
+    isPreview?: boolean;
+}
+
 /**
  * Constructor parameters for CostFunction.
  */
 interface CostFunctionParams {
-    doctors: any[];
-    workplaces: any[];
-    existingShifts: any[];
-    suggestions: any[];
-    trainingRotations?: any[];
+    doctors: Doctor[];
+    workplaces: Workplace[];
+    existingShifts: ShiftLike[];
+    suggestions: ShiftLike[];
+    trainingRotations?: TrainingRotation[];
     getDoctorQualIds: (id: string) => string[];
     getWpRequiredQualIds: (id: string) => string[];
     getWpOptionalQualIds: (id: string) => string[];
     getWpExcludedQualIds: (id: string) => string[];
     getWpDiscouragedQualIds: (id: string) => string[];
-    wishes?: any[];
-    serviceHistory?: Record<string, any>;
+    wishes?: WishRequest[];
+    serviceHistory?: Record<string, ServiceHistoryEntry>;
     weeklyCount?: Record<string, number>;
-    foregroundPosition?: string;
-    backgroundPosition?: string;
+    foregroundPosition?: string | null;
+    backgroundPosition?: string | null;
     foregroundPositions?: Set<string>;
     backgroundPositions?: Set<string>;
     getServiceType?: (name: string) => string;
@@ -92,9 +121,9 @@ interface CostFunctionParams {
     limitBG?: number;
     limitWeekend?: number;
     isPublicHoliday?: (dateStr: string) => boolean;
-    autoFreiByDate?: Record<string, any>;
+    autoFreiByDate?: Record<string, Set<string>>;
     isPartTimeOffDay?: (doctorId: string, dateStr: string) => boolean;
-    systemSettings?: any;
+    systemSettings?: SystemSetting[];
 }
 
 /**
@@ -104,21 +133,21 @@ interface CostFunctionParams {
  * Then call assignmentCost() for each candidate-workplace pair.
  */
 export class CostFunction {
-    doctors: any[];
-    workplaces: any[];
-    existingShifts: any[];
-    suggestions: any[];
-    trainingRotations: any[];
+    doctors: Doctor[];
+    workplaces: Workplace[];
+    existingShifts: ShiftLike[];
+    suggestions: ShiftLike[];
+    trainingRotations: TrainingRotation[];
     getDoctorQualIds: (id: string) => string[];
     getWpRequiredQualIds: (id: string) => string[];
     getWpOptionalQualIds: (id: string) => string[];
     getWpExcludedQualIds: (id: string) => string[];
     getWpDiscouragedQualIds: (id: string) => string[];
-    wishes: any[];
-    serviceHistory: Record<string, any>;
+    wishes: WishRequest[];
+    serviceHistory: Record<string, ServiceHistoryEntry>;
     weeklyCount: Record<string, number>;
-    foregroundPosition: string | undefined;
-    backgroundPosition: string | undefined;
+    foregroundPosition: string | null | undefined;
+    backgroundPosition: string | null | undefined;
     foregroundPositions: Set<string>;
     backgroundPositions: Set<string>;
     getServiceType: (name: string) => string;
@@ -126,13 +155,13 @@ export class CostFunction {
     limitBG: number | undefined;
     limitWeekend: number | undefined;
     isPublicHoliday: ((dateStr: string) => boolean) | undefined;
-    autoFreiByDate: Record<string, any>;
+    autoFreiByDate: Record<string, Set<string>>;
     isPartTimeOffDay: (doctorId: string, dateStr: string) => boolean;
-    systemSettings: any;
+    systemSettings: SystemSetting[];
 
-    _wpByName: Record<string, any>;
-    _wpById: Record<string, any>;
-    _doctorById: Record<string, any>;
+    _wpByName: Record<string, Workplace>;
+    _wpById: Record<string, Workplace>;
+    _doctorById: Record<string, Doctor>;
 
     constructor({
         doctors,
@@ -190,7 +219,7 @@ export class CostFunction {
         this.isPublicHoliday = isPublicHoliday;
         this.autoFreiByDate = autoFreiByDate || {};
         this.isPartTimeOffDay = isPartTimeOffDay || (() => false);
-        this.systemSettings = systemSettings;
+        this.systemSettings = systemSettings || [];
 
         // Pre-compute lookup maps
         this._wpByName = {};
@@ -228,7 +257,7 @@ export class CostFunction {
      *   }
      * @returns {number} totalCost (lower = better, Infinity = impossible)
      */
-    assignmentCost(doctorId: string, workplace: any, dateStr: string, context: any = {}): number {
+    assignmentCost(doctorId: string, workplace: Workplace, dateStr: string, context: AssignmentContext = {}): number {
         let totalCost = 0;
 
         // 0. Part-time off-day (full_days_off model) → hard block
@@ -304,7 +333,7 @@ export class CostFunction {
     //  Dimension: Qualification
     // ================================================================
 
-    _qualificationCost(doctorId: string, workplace: any): number {
+    _qualificationCost(doctorId: string, workplace: Workplace): number {
         const docQuals = this.getDoctorQualIds(doctorId) || [];
 
         // Excluded ("Nicht"): hard blocker
@@ -345,7 +374,7 @@ export class CostFunction {
     //  Dimension: Rotation Match (analogous to fretPreferenceCost)
     // ================================================================
 
-    _rotationMatchCost(doctorId: string, workplace: any, dateStr: string, context: any): number {
+    _rotationMatchCost(doctorId: string, workplace: Workplace, dateStr: string, context: AssignmentContext): number {
         const rotTargets = this._getActiveRotationTargets(doctorId, dateStr);
         if (rotTargets.length === 0) return WEIGHTS.ROT_NEUTRAL;
 
@@ -372,10 +401,11 @@ export class CostFunction {
                     const roeWp = this.workplaces.find(w =>
                         w.name === 'DL/konv. Rö' || w.name.includes('Rö')
                     );
-                    return roeWp?.name || r.modality;
+                    return roeWp?.name || r.modality || '';
                 }
-                return r.modality;
-            });
+                return r.modality || '';
+            })
+            .filter(Boolean);
     }
 
     // ================================================================
@@ -468,7 +498,7 @@ export class CostFunction {
     //  Backward compat: allows_consecutive_days===false → 'forbidden'
     // ================================================================
 
-    _consecutiveCost(doctorId: string, workplace: any, dateStr: string, _context: any): number {
+    _consecutiveCost(doctorId: string, workplace: Workplace, dateStr: string, _context: AssignmentContext): number {
         if (workplace.category !== 'Dienste') return 0;
 
         // Determine consecutive mode
@@ -515,7 +545,7 @@ export class CostFunction {
     //   available pool and measure impact on other workplaces)
     // ================================================================
 
-    _understaffingCost(doctorId: string, targetWorkplace: any, dateStr: string, context: any): number {
+    _understaffingCost(doctorId: string, targetWorkplace: Workplace, dateStr: string, context: AssignmentContext): number {
         const { usedToday, posCount } = context;
         if (!usedToday || !posCount) return 0;
 
@@ -598,7 +628,7 @@ export class CostFunction {
      * @param {string[]} weekDayStrs - all dates in the planning period
      * @returns {number} totalScore (higher = better, inverted from assignment cost)
      */
-    scorePlan(planSuggestions: any[], weekDayStrs: string[]): number {
+    scorePlan(planSuggestions: ShiftLike[], weekDayStrs: string[]): number {
         const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
         let score = 0;
 
@@ -606,6 +636,7 @@ export class CostFunction {
         const counts: Record<string, number> = {};
         for (const d of this.doctors) counts[d.id] = 0;
         for (const s of planSuggestions) {
+            if (!s.doctor_id) continue;
             if (!absencePositions.includes(s.position) && s.position !== 'Verfügbar') {
                 counts[s.doctor_id] = (counts[s.doctor_id] || 0) + 1;
             }
@@ -635,6 +666,7 @@ export class CostFunction {
         // --- 4. Qualification quality (per-assignment cost) ---
         for (const s of planSuggestions) {
             if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
+            if (!s.doctor_id) continue;
             const wp = this._wpByName[s.position];
             if (!wp) continue;
 
@@ -675,6 +707,7 @@ export class CostFunction {
         const serviceCounts: Record<string, number> = {};
         for (const d of this.doctors) serviceCounts[d.id] = 0;
         for (const s of planSuggestions) {
+            if (!s.doctor_id) continue;
             const wp = this._wpByName[s.position];
             if (wp?.category === 'Dienste') {
                 serviceCounts[s.doctor_id] = (serviceCounts[s.doctor_id] || 0) + 1;

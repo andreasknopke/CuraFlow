@@ -188,9 +188,6 @@ export default [
     files: [
       // --- Core schedule (HIGH RISK — keep allowlisted until DnD coverage) ---
       "src/components/schedule/ScheduleBoard.tsx",
-      "src/components/schedule/autoFillEngine.ts",
-      "src/components/schedule/costFunction.ts",
-      "src/components/schedule/aiAutoFillEngine.ts",
 
       // --- Schedule sub-components / dialogs ---
       "src/components/schedule/AIRulesDialog.tsx",

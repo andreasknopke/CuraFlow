@@ -30,7 +30,6 @@ import type { Workplace, SystemSetting } from '@/types';
 
 /** Extended Workplace type with runtime-only fields not yet in the core model. */
 interface WorkplaceExtended extends Workplace {
-  auto_off?: boolean;
   show_in_service_plan?: boolean;
   [key: string]: unknown;
 }
@@ -845,14 +844,14 @@ export default function WorkplaceConfigDialog({ defaultTab = "Rotationen" }: { d
                                                                                 {item.show_in_service_plan && <Badge variant="secondary" className="text-[10px] font-normal bg-purple-100 text-purple-700">Dienstplan</Badge>}
                                                                                 {item.affects_availability === false && <Badge variant="secondary" className="text-[10px] font-normal bg-amber-100 text-amber-700">Nicht verfügbarkeitsrelevant</Badge>}
                                                                             </div>
-                                                                            {item.active_days && item.active_days.length > 0 && !(item.active_days.length === 5 && [1,2,3,4,5].every((d: number) => (item.active_days as boolean[]).includes(d as unknown as boolean))) && (
+                                                                            {item.active_days && item.active_days.length > 0 && !(item.active_days.length === 5 && [1,2,3,4,5].every((d: number) => item.active_days!.includes(d))) && (
                                                                                 <div className="flex gap-1 mt-1">
                                                                                     {['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'].map((day: string, i: number) => (
                                                                                         <div
                                                                                             key={i}
                                                                                             className={cn(
                                                                                                 "w-4 h-4 rounded-full text-[8px] flex items-center justify-center",
-                                                                                                (item.active_days as boolean[]).includes(i as unknown as boolean)
+                                                                                                item.active_days!.includes(i)
                                                                                                     ? "bg-slate-200 text-slate-700 font-bold"
                                                                                                     : "text-slate-300"
                                                                                             )}

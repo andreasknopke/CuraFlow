@@ -37,14 +37,53 @@ import { CostFunction } from './costFunction';
 import { getAutoFreiDate } from '@/utils/autoFrei';
 import { getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
 import { isFullDaysOffModel, getPartTimeWorkDaysPerWeek } from './doctorWorkTime';
+import type { Doctor, Workplace, ShiftEntry, WishRequest, WorkplaceTimeslot, TrainingRotation, SystemSetting } from '@/types';
+
+/** Internal suggestion object produced by the engine.
+ *  These are partial shift entries that get assigned IDs at the call site. */
+interface Suggestion {
+    date: string;
+    position: string;
+    doctor_id: string;
+    timeslot_id?: string | null;
+    note?: string | null;
+    isPreview?: boolean;
+}
+
+/** Return type of generateSuggestions, including optional __debug metadata. */
+interface SuggestionResult extends Array<Suggestion> {
+    __debug?: {
+        requestId: string;
+        entries: AutoFillDebugEntry[];
+    };
+}
+
+interface AutoFillDebugEntry {
+    ts: string;
+    stage: string;
+    message: string;
+    meta?: unknown;
+}
+
+interface AutoFillDebugContext {
+    enabled?: boolean;
+    entries: AutoFillDebugEntry[];
+    requestId?: string;
+}
+
+interface FillSlot {
+    wp: Workplace;
+    timeslotId: string | null;
+    timeslotLabel: string | null;
+}
 
 interface GenerateSuggestionsParams {
     weekDays: Date[];
-    doctors: any[];
-    workplaces: any[];
-    existingShifts: any[];
-    allShifts?: any[];
-    trainingRotations?: any[];
+    doctors: Doctor[];
+    workplaces: Workplace[];
+    existingShifts: ShiftEntry[];
+    allShifts?: ShiftEntry[];
+    trainingRotations?: TrainingRotation[];
     isPublicHoliday: (date: Date) => boolean;
     getDoctorQualIds: (id: string) => string[];
     getWpRequiredQualIds: (id: string) => string[];
@@ -52,13 +91,13 @@ interface GenerateSuggestionsParams {
     getWpExcludedQualIds?: (id: string) => string[];
     getWpDiscouragedQualIds?: (id: string) => string[];
     categoriesToFill: string[];
-    systemSettings: any[];
-    wishes?: any[];
-    workplaceTimeslots?: any[];
-    debug?: any;
+    systemSettings: SystemSetting[];
+    wishes?: WishRequest[];
+    workplaceTimeslots?: WorkplaceTimeslot[];
+    debug?: AutoFillDebugContext;
 }
 
-export function generateSuggestions(params: GenerateSuggestionsParams): any {
+export function generateSuggestions(params: GenerateSuggestionsParams): SuggestionResult {
     const {
         weekDays,
         workplaces,
@@ -86,15 +125,15 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     }
     doctors = shuffled;
 
-    const suggestions: any[] = [];
+    const suggestions: Suggestion[] = [];
     const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar'];
     const DEFAULT_ACTIVE_DAYS = [1, 2, 3, 4, 5];
 
     const debugEnabled = Boolean(debug?.enabled);
-    const debugEntries = debug?.entries || [];
+    const debugEntries: AutoFillDebugEntry[] = debug?.entries || [];
     const debugRequestId = debug?.requestId || `det-${Date.now().toString(36)}`;
     const debugMaxEntries = 1200;
-    const debugLog = (stage: any, message: any, meta: any = null) => {
+    const debugLog = (stage: string, message: string, meta?: unknown) => {
         if (!debugEnabled) return;
         debugEntries.push({
             ts: new Date().toISOString(),
@@ -119,83 +158,84 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     //  Helper functions
     // ========================================================
 
-    const getActiveDays = (wp: any) =>
-        wp.active_days?.length > 0 ? wp.active_days : DEFAULT_ACTIVE_DAYS;
+    const getActiveDays = (wp: Workplace) =>
+        (wp.active_days?.length ?? 0) > 0 ? wp.active_days : DEFAULT_ACTIVE_DAYS;
 
-    const isActiveOnDate = (wp: any, date: any) => {
+    const isActiveOnDate = (wp: Workplace, date: Date) => {
         const ad = getActiveDays(wp);
+        if (!ad) return false;
         // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
-        if (isPublicHoliday(date)) return ad.some((d: any) => Number(d) === 0);
-        return ad.some((d: any) => Number(d) === date.getDay());
+        if (isPublicHoliday(date)) return ad.some((d: number) => d === 0);
+        return ad.some((d: number) => d === date.getDay());
     };
 
     /** Does this doctor hold ALL mandatory qualifications for a workplace? */
-    const isQualified = (doctorId: any, wpId: any) => {
+    const isQualified = (doctorId: string, wpId: string) => {
         const req = getWpRequiredQualIds(wpId);
         if (!req?.length) return true;
         const doc = getDoctorQualIds(doctorId);
         if (!doc) return false;
-        return req.every((q: any) => doc.includes(q));
+        return req.every((q: string) => doc.includes(q));
     };
 
     /** Is the doctor EXCLUDED from this workplace via a NOT-qualification? */
-    const isExcluded = (doctorId: any, wpId: any) => {
+    const isExcluded = (doctorId: string, wpId: string) => {
         const excl = getWpExcludedQualIds?.(wpId);
         if (!excl?.length) return false;
         const doc = getDoctorQualIds(doctorId);
         if (!doc?.length) return false;
-        return excl.some((q: any) => doc.includes(q));
+        return excl.some((q: string) => doc.includes(q));
     };
 
     /** Does this workplace have any mandatory qualification requirement? */
-    const hasQualReq = (wp: any) => {
+    const hasQualReq = (wp: Workplace) => {
         const rq = getWpRequiredQualIds(wp.id);
         return rq?.length > 0;
     };
 
     /** Does the doctor have ALL optional qualifications for this workplace? */
-    const hasOptionalQuals = (doctorId: any, wpId: any) => {
+    const hasOptionalQuals = (doctorId: string, wpId: string) => {
         const opt = getWpOptionalQualIds?.(wpId);
         if (!opt?.length) return true; // no optional quals = considered "has them"
         const doc = getDoctorQualIds(doctorId);
         if (!doc?.length) return false;
-        return opt.every((q: any) => doc.includes(q));
+        return opt.every((q: string) => doc.includes(q));
     };
 
     /** Does the doctor have ANY optional qualification for this workplace? */
-    const _hasAnyOptionalQual = (doctorId: any, wpId: any) => {
+    const _hasAnyOptionalQual = (doctorId: string, wpId: string) => {
         const opt = getWpOptionalQualIds?.(wpId);
         if (!opt?.length) return true;
         const doc = getDoctorQualIds(doctorId);
         if (!doc?.length) return false;
-        return opt.some((q: any) => doc.includes(q));
+        return opt.some((q: string) => doc.includes(q));
     };
 
     /** Does this workplace have any optional qualification? */
-    const hasOptionalQualReq = (wp: any) => {
+    const hasOptionalQualReq = (wp: Workplace) => {
         const oq = getWpOptionalQualIds?.(wp.id);
         return (oq?.length ?? 0) > 0;
     };
 
     /** Is the doctor DISCOURAGED from this workplace via a 'Sollte nicht'-qualification? */
-    const isDiscouraged = (doctorId: any, wpId: any) => {
+    const isDiscouraged = (doctorId: string, wpId: string) => {
         const disc = getWpDiscouragedQualIds?.(wpId);
         if (!disc?.length) return false;
         const doc = getDoctorQualIds(doctorId);
         if (!doc?.length) return false;
-        return disc.some((q: any) => doc.includes(q));
+        return disc.some((q: string) => doc.includes(q));
     };
 
     const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
-    const allowsMultiple = (wp: any) => workplaceAllowsMultiple(wp, customCategories);
+    const allowsMultiple = (wp: Workplace) => workplaceAllowsMultiple(wp, customCategories);
 
     /** optimal_staff: target headcount */
-    const getOptimal = (wp: any) => {
+    const getOptimal = (wp: Workplace) => {
         if (!allowsMultiple(wp)) return 1;
         return Math.max(wp.optimal_staff ?? 1, wp.min_staff ?? 1);
     };
 
-    const getMinStaff = (wp: any) => {
+    const getMinStaff = (wp: Workplace) => {
         if (!allowsMultiple(wp)) return 1;
         return wp.min_staff ?? 1;
     };
@@ -205,7 +245,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     // ========================================================
 
     /** Get timeslots for a workplace (sorted by order) */
-    const getTimeslots = (wp: any) => {
+    const getTimeslots = (wp: Workplace) => {
         if (!wp.timeslots_enabled) return [];
         return workplaceTimeslots
             .filter(t => t.workplace_id === wp.id)
@@ -213,10 +253,10 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Build a composite key for position counting: position + optional timeslot_id */
-    const slotKey = (posName: any, timeslotId: any) => timeslotId ? `${posName}::${timeslotId}` : posName;
+    const slotKey = (posName: string, timeslotId: string | null | undefined) => timeslotId ? `${posName}::${timeslotId}` : posName;
 
     /** Count existing shifts for a position+timeslot combo on a date */
-    const _countShiftsForSlot = (dateStr: any, posName: any, timeslotId: any, existingArr: any, suggestionsArr: any) => {
+    const _countShiftsForSlot = (dateStr: string, posName: string, timeslotId: string | null, existingArr: ShiftEntry[], suggestionsArr: ShiftEntry[]) => {
         let count = 0;
         for (const s of existingArr) {
             if (s.date !== dateStr || s.position !== posName) continue;
@@ -243,7 +283,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
      * For workplaces with N timeslots, N slots are created, each with the same
      * optimal/min staff and qualification requirements as the parent workplace.
      */
-    const expandToSlots = (wps: any[]) => {
+    const expandToSlots = (wps: Workplace[]): FillSlot[] => {
         const slots = [];
         for (const wp of wps) {
             const ts = getTimeslots(wp);
@@ -265,24 +305,25 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     // ---- Weekly tracking for fair distribution ----
     const weeklyCount: Record<string, number> = {};
     for (const s of existingShifts) {
+        if (!s.doctor_id) continue;
         if (!absencePositions.includes(s.position) && s.position !== 'Verfügbar') {
             weeklyCount[s.doctor_id] = (weeklyCount[s.doctor_id] || 0) + 1;
         }
     }
-    const getWeekly = (id: any) => weeklyCount[id] || 0;
-    const incWeekly = (id: any) => { weeklyCount[id] = (weeklyCount[id] || 0) + 1; };
+    const getWeekly = (id: string) => weeklyCount[id] || 0;
+    const incWeekly = (id: string) => { weeklyCount[id] = (weeklyCount[id] || 0) + 1; };
 
     // ========================================================
     //  4-week service limits & fair VG/HG distribution
     // ========================================================
 
     // Read limit settings
-    const getSetting = (key: any, def: any) => {
-        const s = systemSettings?.find((x: any) => x.key === key);
+    const getSetting = (key: string, def: string) => {
+        const s = systemSettings.find((x: SystemSetting) => x.key === key);
         return parseInt(s?.value || def);
     };
-    const getSettingBool = (key: any, def: any = false) => {
-        const s = systemSettings?.find((x: any) => x.key === key);
+    const getSettingBool = (key: string, def: boolean = false) => {
+        const s = systemSettings.find((x: SystemSetting) => x.key === key);
         if (!s) return def;
         return s.value === 'true' || s.value === '1';
     };
@@ -306,7 +347,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     }
     
     // Helper to get service type of a position
-    const getServiceType = (positionName: any) => {
+    const getServiceType = (positionName: string) => {
         if (foregroundPositions.has(positionName)) return 'fg';
         if (backgroundPositions.has(positionName)) return 'bg';
         return 'other';
@@ -328,7 +369,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
 
     // Count each doctor's services in the 4-week window (existing only, pre-suggestions)
     const serviceHistory: Record<string, { fg: number; bg: number; weekend: number }> = {}; // doctorId -> { fg: n, bg: n, weekend: n }
-    const getServiceHist = (docId: any) => {
+    const getServiceHist = (docId: string) => {
         if (!serviceHistory[docId]) serviceHistory[docId] = { fg: 0, bg: 0, weekend: 0 };
         return serviceHistory[docId];
     };
@@ -336,6 +377,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     for (const s of historyShifts) {
         if (s.date < fourWeekStartStr || s.date > lastPlanStr) continue;
         if (s.isPreview) continue;
+        if (!s.doctor_id) continue;
         const h = getServiceHist(s.doctor_id);
         const svcType = getServiceType(s.position);
         if (svcType === 'fg') {
@@ -347,13 +389,13 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     }
 
     /** Get doctor FTE (from doctor.fte field) */
-    const getDoctorFte = (docId: any) => {
+    const getDoctorFte = (docId: string) => {
         const doc = doctors.find(d => d.id === docId);
         return doc?.fte ?? 1.0;
     };
 
     /** Would assigning this service to this doctor exceed the 4-week limit? */
-    const wouldExceedLimit = (docId: any, serviceName: any, dateStr: any) => {
+    const wouldExceedLimit = (docId: string, serviceName: string, dateStr: string) => {
         const h = getServiceHist(docId);
         const fte = getDoctorFte(docId);
         const svcType = getServiceType(serviceName);
@@ -369,7 +411,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Track a new service assignment in the 4-week history */
-    const recordServiceAssignment = (docId: any, serviceName: any, dateStr: any) => {
+    const recordServiceAssignment = (docId: string, serviceName: string, dateStr: string) => {
         const h = getServiceHist(docId);
         const svcType = getServiceType(serviceName);
         if (svcType === 'fg') {
@@ -385,7 +427,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
      * Considers total services in 4-week window relative to FTE.
      * Separate scoring for FG and BG to balance both independently.
      */
-    const _getFairnessScore = (docId: any, serviceName: any) => {
+    const _getFairnessScore = (docId: string, serviceName: string) => {
         const h = getServiceHist(docId);
         const fte = getDoctorFte(docId) || 1;
         const svcType = getServiceType(serviceName);
@@ -395,27 +437,28 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     // ---- Rotation mapping ----
-    const getActiveRotationTargets = (doctorId: any, dateStr: any) => {
+    const getActiveRotationTargets = (doctorId: string, dateStr: string) => {
         return (trainingRotations || [])
             .filter(r => r.doctor_id === doctorId && r.start_date <= dateStr && r.end_date >= dateStr)
             .map(r => {
                 if (r.modality === 'Röntgen') {
                     const roeWp = workplaces.find(w => w.name === 'DL/konv. Rö' || w.name.includes('Rö'));
-                    return roeWp?.name || r.modality;
+                    return roeWp?.name || r.modality || '';
                 }
-                return r.modality;
-            });
+                return r.modality || '';
+            })
+            .filter(Boolean);
     };
 
     // ---- Displacement tracking ----
     const displacementCount: Record<string, number> = {};
-    const _getDisplaced = (id: any) => displacementCount[id] || 0;
-    const addDisplacement = (id: any) => { displacementCount[id] = (displacementCount[id] || 0) + 1; };
+    const _getDisplaced = (id: string) => displacementCount[id] || 0;
+    const addDisplacement = (id: string) => { displacementCount[id] = (displacementCount[id] || 0) + 1; };
 
     // ---- Auto-Frei tracking across days ----
     // Doctors who get Auto-Frei on a specific date are blocked that day.
-    const autoFreiByDate: Record<string, Set<any>> = {};
-    const autoFreiSuggestions: any[] = [];
+    const autoFreiByDate: Record<string, Set<string>> = {};
+    const autoFreiSuggestions: Suggestion[] = [];
 
     // ---- Part-time off-day tracking (full_days_off model) ----
     // Für Mitarbeiter im Modell "volle Tage mit freien Tagen" werden
@@ -425,7 +468,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     // um Konflikte mit bestehenden Einträgen zu minimieren.
     const partTimeOffDays = new Set(); // Set<`${weekKey}::${doctorId}::${dateStr}`>
 
-    const ptIsoWeekKey = (date: any) => {
+    const ptIsoWeekKey = (date: Date) => {
         const d = new Date(date);
         d.setHours(0, 0, 0, 0);
         d.setDate(d.getDate() + 4 - (d.getDay() || 7));
@@ -434,7 +477,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         return `${d.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
     };
 
-    const ptFormatDate = (date: any) => {
+    const ptFormatDate = (date: Date) => {
         const d = new Date(date);
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -444,11 +487,11 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
 
     const buildPartTimeOffDays = () => {
         // Gruppierung pro ISO-Woche
-        const weekDaysMap = new Map();
+        const weekDaysMap = new Map<string, Date[]>();
         for (const day of weekDays) {
             const key = ptIsoWeekKey(day);
-            if (!weekDaysMap.has(key)) weekDaysMap.set(key, []);
-            weekDaysMap.get(key).push(day);
+                if (!weekDaysMap.has(key)) weekDaysMap.set(key, []);
+                weekDaysMap.get(key)!.push(day);
         }
 
         for (const doctor of doctors) {
@@ -462,7 +505,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 // Konflikt-Score pro Tag: bestehende Absenzen, Auto-Frei. Wir wählen
                 // die Tage mit dem niedrigsten Score, damit fixe Abwesenheiten
                 // Vorrang haben und Sonntage/Feiertage bevorzugt werden.
-                const dayScores = days.map((day: any) => {
+                const dayScores = days.map((day: Date) => {
                     const dateStr = ptFormatDate(day);
                     let score = 0;
                     for (const s of existingShifts) {
@@ -478,7 +521,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                     return { day, dateStr, score };
                 });
 
-                dayScores.sort((a: any, b: any) => a.score - b.score);
+                dayScores.sort((a, b) => a.score - b.score);
                 const chosen = dayScores.slice(0, offDaysCount);
                 for (const { dateStr } of chosen) {
                     partTimeOffDays.add(`${weekKey}::${doctor.id}::${dateStr}`);
@@ -488,7 +531,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
     buildPartTimeOffDays();
 
-    const isPartTimeOffDay = (doctorId: any, dateStr: any) => {
+    const isPartTimeOffDay = (doctorId: string, dateStr: string) => {
         const day = new Date(dateStr + 'T00:00:00');
         const key = `${ptIsoWeekKey(day)}::${doctorId}::${dateStr}`;
         return partTimeOffDays.has(key);
@@ -526,7 +569,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     });
 
     /** Generate an Auto-Frei for a doctor on the direct next day after dateStr when eligible. */
-    const generateAutoFrei = (doctorId: any, dateStr: any) => {
+    const generateAutoFrei = (doctorId: string, dateStr: string) => {
         const nextStr = getAutoFreiDate(dateStr, isPublicHoliday);
         if (!nextStr) return;
 
@@ -555,7 +598,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     // ========================================================
 
     /** Get service wish for a doctor on a date (approved OR pending) */
-    const _getServiceWish = (doctorId: any, dateStr: any) => {
+    const _getServiceWish = (doctorId: string, dateStr: string) => {
         return wishes.find(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -565,7 +608,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Is this doctor hard-blocked from ALL services on this date? (approved "kein Dienst") */
-    const hasApprovedNoService = (doctorId: any, dateStr: any) => {
+    const hasApprovedNoService = (doctorId: string, dateStr: string) => {
         return wishes.some(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -575,7 +618,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Does this doctor have a pending (unapproved) "kein Dienst" wish? (soft NOT) */
-    const _hasPendingNoService = (doctorId: any, dateStr: any) => {
+    const _hasPendingNoService = (doctorId: string, dateStr: string) => {
         return wishes.some(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -585,7 +628,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Does this doctor have a specific service wish for a named position on this date? */
-    const hasSpecificServiceWish = (doctorId: any, dateStr: any, positionName: any) => {
+    const hasSpecificServiceWish = (doctorId: string, dateStr: string, positionName: string) => {
         return wishes.some(w =>
             w.doctor_id === doctorId &&
             w.date === dateStr &&
@@ -598,16 +641,16 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     // ========================================================
     //  Classify workplaces
     // ========================================================
-    const isServiceWp = (wp: any) => wp.category === 'Dienste';
-    const isRotationWp = (wp: any) => wp.category === 'Rotationen';
-    const isAffectsAvailability = (wp: any) => wp.affects_availability !== false;
-    const isRotationTraineeForWp = (doctorId: any, wpName: any, dateStr: any) => {
+    const isServiceWp = (wp: Workplace) => wp.category === 'Dienste';
+    const isRotationWp = (wp: Workplace) => wp.category === 'Rotationen';
+    const isAffectsAvailability = (wp: Workplace) => wp.affects_availability !== false;
+    const isRotationTraineeForWp = (doctorId: string, wpName: string, dateStr: string) => {
         const targets = getActiveRotationTargets(doctorId, dateStr);
         return targets.includes(wpName);
     };
 
     /** Does this doctor have any active rotation on this date? */
-    const hasActiveRotation = (doctorId: any, dateStr: any) => {
+    const hasActiveRotation = (doctorId: string, dateStr: string) => {
         return getActiveRotationTargets(doctorId, dateStr).length > 0;
     };
 
@@ -617,7 +660,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     const strictRotationMode = getSettingBool('rotation_restricts_other_assignments', false);
 
     /** Get consecutive days mode for a workplace: 'forbidden' | 'allowed' | 'preferred' */
-    const getConsecutiveMode = (wp: any) => {
+    const getConsecutiveMode = (wp: Workplace) => {
         if (wp.consecutive_days_mode) return wp.consecutive_days_mode;
         // Backward compat: old boolean field
         if (wp.allows_consecutive_days === false) return 'forbidden';
@@ -625,7 +668,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
     };
 
     /** Check if assigning this doctor to this service on this date would violate consecutive-forbidden */
-    const wouldViolateConsecutive = (docId: any, svcName: any, dateStr: any) => {
+    const wouldViolateConsecutive = (docId: string, svcName: string, dateStr: string) => {
         const wp = workplaces.find(w => w.name === svcName);
         if (!wp || getConsecutiveMode(wp) !== 'forbidden') return false;
 
@@ -658,7 +701,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         });
 
         // --- Base blocked set (absences + existing availability-relevant assignments) ---
-        const baseBlocked = new Set<any>();
+        const baseBlocked = new Set<string>();
         const posCount: Record<string, number> = {};      // position-level count (for backward-compat)
         const slotCount: Record<string, number> = {};     // slot-level count: slotKey(pos, tsId) -> count
 
@@ -683,7 +726,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             const sk = slotKey(s.position, s.timeslot_id);
             slotCount[sk] = (slotCount[sk] || 0) + 1;
 
-            if (absencePositions.includes(s.position)) { baseBlocked.add(s.doctor_id); continue; }
+            if (absencePositions.includes(s.position)) { if (s.doctor_id) baseBlocked.add(s.doctor_id); continue; }
             if (s.position === 'Verfügbar') continue;
 
             const wp = workplaces.find(w => w.name === s.position);
@@ -691,7 +734,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             if (wp?.allows_rotation_concurrently) continue;
             // Demos/Konsile only block if they are marked as availability-relevant
             if (wp?.category === 'Demonstrationen & Konsile' && wp?.affects_availability !== true) continue;
-            baseBlocked.add(s.doctor_id);
+            if (s.doctor_id) baseBlocked.add(s.doctor_id);
         }
 
         // Track who is used today (starts as copy of baseBlocked)
@@ -702,16 +745,16 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             .filter(wp => categoriesToFill.includes(wp.category) && isActiveOnDate(wp, day));
 
         // Track doctors assigned to a service today (even if rotation-OK)
-        const serviceAssignedToday = new Set();
+        const serviceAssignedToday = new Set<string>();
         for (const s of existingShifts) {
             if (s.date !== dateStr) continue;
             const wp = workplaces.find(w => w.name === s.position);
-            if (wp?.category === 'Dienste') serviceAssignedToday.add(s.doctor_id);
+            if (wp?.category === 'Dienste' && s.doctor_id) serviceAssignedToday.add(s.doctor_id);
         }
 
         // Record a suggestion and update tracking
-        const assign = (docId: any, wpName: any, timeslotId: any = null) => {
-            const suggestion: any = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
+        const assign = (docId: string, wpName: string, timeslotId: string | null = null) => {
+            const suggestion: Suggestion = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
             if (timeslotId) suggestion.timeslot_id = timeslotId;
             suggestions.push(suggestion);
             // Only block the doctor if the workplace actually reduces availability
@@ -727,9 +770,9 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         };
 
         /** Does this position already have ≥1 qualified person today? */
-        const _hasQualCoverage = (wp: any) => {
+        const _hasQualCoverage = (wp: Workplace) => {
             for (const s of existingShifts) {
-                if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) return true;
+                if (s.date === dateStr && s.position === wp.name && s.doctor_id && isQualified(s.doctor_id, wp.id)) return true;
             }
             for (const s of suggestions) {
                 if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) return true;
@@ -751,7 +794,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         const rotationImpactScore: Record<string, number> = {}; // doctorId -> number (higher = more critical for rotations)
         {
             /** Compute impact scores for a given day/date, considering who is blocked */
-            const computeImpactForDay = (targetDay: any, blockedSet: any, multiplier: any) => {
+            const computeImpactForDay = (targetDay: Date, blockedSet: Set<string>, multiplier: number) => {
                 const critWps = workplaces.filter(wp =>
                     !isServiceWp(wp) &&
                     isAffectsAvailability(wp) &&
@@ -790,12 +833,13 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                     const nextDay = new Date(nextDateStr + 'T00:00:00');
 
                     // Build blocked set for next day: absences + existing assignments + auto-frei
-                    const nextDayBlocked = new Set();
+                    const nextDayBlocked = new Set<string>();
                     if (autoFreiByDate[nextDateStr]) {
                         for (const docId of autoFreiByDate[nextDateStr]) nextDayBlocked.add(docId);
                     }
                     for (const s of existingShifts) {
                         if (s.date !== nextDateStr) continue;
+                        if (!s.doctor_id) continue;
                         if (absencePositions.includes(s.position)) { nextDayBlocked.add(s.doctor_id); continue; }
                         if (s.position === 'Verfügbar') continue;
                         const xwp = workplaces.find(w => w.name === s.position);
@@ -814,7 +858,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             }
         }
 
-        const _getRotationImpact = (docId: any) => rotationImpactScore[docId] || 0;
+        const _getRotationImpact = (docId: string) => rotationImpactScore[docId] || 0;
 
         // ============================================================
         //  PHASE A: DIENSTE (Services) — highest priority
@@ -839,7 +883,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 // In strict rotation mode: exclude doctors with active rotations
                 // EXCEPTION: Allow dual-service if doctor has a specific wish for THIS service
                 // (e.g. wishes for both Spätdienst and Hintergrunddienst on the same day)
-                const allCandidates = doctors.filter((d: any) => {
+                const allCandidates = doctors.filter((d: Doctor) => {
                     const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
                     return (
                         (!usedToday.has(d.id) || hasWishForThis) &&
@@ -866,13 +910,13 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
 
                 // Sort ALL candidates by cost (ascending = best first)
                 // The cost function handles wishes, fairness, impact, limits, etc.
-                allCandidates.sort((a: any, b: any) => {
+                allCandidates.sort((a: Doctor, b: Doctor) => {
                     const costA = costFn.assignmentCost(a.id, svc, dateStr, costContext);
                     const costB = costFn.assignmentCost(b.id, svc, dateStr, costContext);
                     return costA - costB;
                 });
 
-                const ranked = allCandidates.filter((d: any) => {
+                const ranked = allCandidates.filter((d: Doctor) => {
                     const cost = costFn.assignmentCost(d.id, svc, dateStr, costContext);
                     return cost < Infinity;
                 });
@@ -885,7 +929,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                         timeslotId: tsId,
                     });
                     const fallbackContext = { ...costContext };
-                    const fallback = doctors.filter((d: any) => {
+                    const fallback = doctors.filter((d: Doctor) => {
                         const hasWishForThis = hasSpecificServiceWish(d.id, dateStr, svc.name);
                         return (
                             (!usedToday.has(d.id) || hasWishForThis) &&
@@ -896,7 +940,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                             isQualified(d.id, svc.id) &&
                             !wouldViolateConsecutive(d.id, svc.name, dateStr)
                         );
-                    }).sort((a: any, b: any) => {
+                    }).sort((a: Doctor, b: Doctor) => {
                         const costA = costFn.assignmentCost(a.id, svc, dateStr, fallbackContext);
                         const costB = costFn.assignmentCost(b.id, svc, dateStr, fallbackContext);
                         // Filter out Infinity costs but allow LIMIT_EXCEEDED costs
@@ -956,10 +1000,10 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             // --- B.1: Qualification coverage ---
             // For timeslot workplaces: each timeslot needs coverage independently
             const qualSlots = availSlots
-                .filter((slot: any) => hasQualReq(slot.wp) && getMinStaff(slot.wp) > 0)
-                .sort((a: any, b: any) => {
-                    const aPool = doctors.filter((d: any) => !usedToday.has(d.id) && !isExcluded(d.id, a.wp.id) && isQualified(d.id, a.wp.id)).length;
-                    const bPool = doctors.filter((d: any) => !usedToday.has(d.id) && !isExcluded(d.id, b.wp.id) && isQualified(d.id, b.wp.id)).length;
+                .filter((slot: FillSlot) => hasQualReq(slot.wp) && getMinStaff(slot.wp) > 0)
+                .sort((a: FillSlot, b: FillSlot) => {
+                    const aPool = doctors.filter((d: Doctor) => !usedToday.has(d.id) && !isExcluded(d.id, a.wp.id) && isQualified(d.id, a.wp.id)).length;
+                    const bPool = doctors.filter((d: Doctor) => !usedToday.has(d.id) && !isExcluded(d.id, b.wp.id) && isQualified(d.id, b.wp.id)).length;
                     return aPool - bPool;
                 });
 
@@ -970,7 +1014,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 // Check coverage for this specific slot
                 const hasSlotCoverage = () => {
                     for (const s of existingShifts) {
-                        if (s.date === dateStr && s.position === wp.name && isQualified(s.doctor_id, wp.id)) {
+                        if (s.date === dateStr && s.position === wp.name && s.doctor_id && isQualified(s.doctor_id, wp.id)) {
                             if (tsId) { if (s.timeslot_id === tsId) return true; }
                             else { if (!s.timeslot_id) return true; }
                         }
@@ -986,7 +1030,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 
                 if (hasSlotCoverage()) continue;
 
-                const sortB1 = (a: any, b: any) => {
+                const sortB1 = (a: Doctor, b: Doctor) => {
                     const aRotElsewhere = getActiveRotationTargets(a.id, dateStr)
                         .some(t => t !== wp.name) ? 1 : 0;
                     const bRotElsewhere = getActiveRotationTargets(b.id, dateStr)
@@ -997,21 +1041,21 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
 
                 // Progressive filtering
                 let eligible = doctors
-                    .filter((d: any) => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
+                    .filter((d: Doctor) => !usedToday.has(d.id) && !isExcluded(d.id, wp.id) && isQualified(d.id, wp.id));
 
                 // Strict rotation mode: prefer non-rotating doctors for non-rotation workplaces
                 if (strictRotationMode && !isRotationWp(wp)) {
-                    const nonRotating = eligible.filter((d: any) => !hasActiveRotation(d.id, dateStr));
+                    const nonRotating = eligible.filter((d: Doctor) => !hasActiveRotation(d.id, dateStr));
                     if (nonRotating.length > 0) eligible = nonRotating;
                 }
 
                 {
-                    const nonDiscouraged = eligible.filter((d: any) => !isDiscouraged(d.id, wp.id));
+                    const nonDiscouraged = eligible.filter((d: Doctor) => !isDiscouraged(d.id, wp.id));
                     if (nonDiscouraged.length > 0) eligible = nonDiscouraged;
                 }
 
                 if (hasOptionalQualReq(wp)) {
-                    const withPreferred = eligible.filter((d: any) => hasOptionalQuals(d.id, wp.id));
+                    const withPreferred = eligible.filter((d: Doctor) => hasOptionalQuals(d.id, wp.id));
                     if (withPreferred.length > 0) eligible = withPreferred;
                 }
 
@@ -1038,11 +1082,11 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 changed = false;
 
                 const underFilled = availSlots
-                    .filter((slot: any) => {
+                    .filter((slot: FillSlot) => {
                         const sk = slotKey(slot.wp.name, slot.timeslotId);
                         return (slotCount[sk] || 0) < getOptimal(slot.wp);
                     })
-                    .sort((a: any, b: any) => {
+                    .sort((a: FillSlot, b: FillSlot) => {
                         const aSk = slotKey(a.wp.name, a.timeslotId);
                         const bSk = slotKey(b.wp.name, b.timeslotId);
                         const aCur = slotCount[aSk] || 0;
@@ -1100,13 +1144,13 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 };
 
                 // Progressive filtering: "Sollte nicht" + "Sollte" with fallback
-                let eligible = unassigned.filter((doc: any) => !isExcluded(doc.id, targetWp.id));
+                let eligible = unassigned.filter((doc: Doctor) => !isExcluded(doc.id, targetWp.id));
 
                 // Rotation restriction (configurable per tenant):
                 if (isRotationWp(targetWp)) {
                     // For rotation workplaces: restrict 2nd+ slot to active trainees
                     if (targetCurrentCount >= 1) {
-                        const traineeOnly = eligible.filter((doc: any) =>
+                        const traineeOnly = eligible.filter((doc: Doctor) =>
                             isRotationTraineeForWp(doc.id, targetWp.name, dateStr)
                         );
                         if (traineeOnly.length > 0) {
@@ -1390,9 +1434,9 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         //  an availability-relevant workplace should be deprioritized
         //  for Demo assignments (only assigned if no one else available)
         // ============================================================
-        const soleOccupantDoctors = new Set();
+        const soleOccupantDoctors = new Set<string>();
         {
-            const wpStaffing: Record<string, Set<any>> = {}; // wpName -> Set of doctorIds
+            const wpStaffing: Record<string, Set<string>> = {}; // wpName -> Set of doctorIds
             for (const s of existingShifts) {
                 if (s.date !== dateStr) continue;
                 if (absencePositions.includes(s.position) || s.position === 'Verfügbar') continue;
@@ -1402,7 +1446,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability !== true) continue;
                 if (wp.affects_availability === false) continue;
                 if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
-                wpStaffing[wp.name].add(s.doctor_id);
+                if (s.doctor_id) wpStaffing[wp.name].add(s.doctor_id);
             }
             for (const s of suggestions) {
                 if (s.date !== dateStr) continue;
@@ -1412,7 +1456,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 if (wp.category === 'Demonstrationen & Konsile' && wp.affects_availability !== true) continue;
                 if (wp.affects_availability === false) continue;
                 if (!wpStaffing[wp.name]) wpStaffing[wp.name] = new Set();
-                wpStaffing[wp.name].add(s.doctor_id);
+                if (s.doctor_id) wpStaffing[wp.name].add(s.doctor_id);
             }
             for (const [, docIds] of Object.entries(wpStaffing)) {
                 if (docIds.size === 1) {
@@ -1441,9 +1485,9 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
             const phaseCSlotCount = { ...slotCount };
 
             // Track which doctor is assigned to which Phase C slots (to prevent same-slot duplicates)
-            const phaseCAssignments: Record<string, Set<any>> = {}; // doctor_id -> Set<slotKey>
+            const phaseCAssignments: Record<string, Set<string>> = {}; // doctor_id -> Set<slotKey>
 
-            const isAlreadyAssignedToSlot = (docId: any, wpName: any, tsId: any) => {
+            const isAlreadyAssignedToSlot = (docId: string, wpName: string, tsId: string | null) => {
                 const sk = slotKey(wpName, tsId);
                 if (phaseCAssignments[docId]?.has(sk)) return true;
                 return existingShifts.some(s => {
@@ -1457,8 +1501,8 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 });
             };
 
-            const assignC = (docId: any, wpName: any, wpHasQualReq: any, tsId: any = null) => {
-                const suggestion: any = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
+            const assignC = (docId: string, wpName: string, wpHasQualReq: boolean, tsId: string | null = null) => {
+                const suggestion: Suggestion = { date: dateStr, position: wpName, doctor_id: docId, isPreview: true };
                 if (tsId) suggestion.timeslot_id = tsId;
                 suggestions.push(suggestion);
                 const sk = slotKey(wpName, tsId);
@@ -1491,7 +1535,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
                 
                 // Check coverage for this specific slot
                 const hasCov = [...existingShifts, ...suggestions].some(s => {
-                    if (s.date !== dateStr || s.position !== wp.name || !isQualified(s.doctor_id, wp.id)) return false;
+                    if (s.date !== dateStr || s.position !== wp.name || !s.doctor_id || !isQualified(s.doctor_id, wp.id)) return false;
                     if (tsId) return s.timeslot_id === tsId;
                     return !s.timeslot_id;
                 });
@@ -1957,7 +2001,7 @@ export function generateSuggestions(params: GenerateSuggestionsParams): any {
         }
     }
 
-    const finalResult: any = [...suggestions, ...autoFreiSuggestions];
+    const finalResult: SuggestionResult = [...suggestions, ...autoFreiSuggestions];
     debugLog('result', 'Deterministic AutoFill finished', {
         suggestions: suggestions.length,
         autoFrei: autoFreiSuggestions.length,

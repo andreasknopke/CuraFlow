@@ -43,7 +43,7 @@ export interface Workplace extends Auditable {
   name: string;
   category: string;
   color?: string | null;
-  active_days?: boolean[] | null;
+  active_days?: number[] | null;
   time?: string | null;
   allows_multiple: boolean;
   timeslots_enabled: boolean;
@@ -51,6 +51,7 @@ export interface Workplace extends Auditable {
   work_time_percentage: number;
   affects_availability: boolean;
   allows_rotation_concurrently?: boolean;
+  allows_consecutive_days?: boolean;
   min_staff: number;
   optimal_staff: number;
   service_type?: number | null;
@@ -58,6 +59,7 @@ export interface Workplace extends Auditable {
   consecutive_days_mode: ConsecutiveDaysMode;
   order: number;
   is_active: boolean;
+  auto_off: boolean;
 }
 
 // ── Shift ──────────────────────────────────────────────────────────────────
@@ -270,4 +272,14 @@ export interface CustomHoliday extends Auditable {
   date: string;
   name: string;
   state_code?: string | null;
+}
+
+// ── Schedule rule ──────────────────────────────────────────────────────────
+
+export interface ScheduleRule extends Auditable {
+  id: string;
+  name: string;
+  rule_type?: string | null;
+  rule_config?: unknown;
+  is_active: boolean;
 }
