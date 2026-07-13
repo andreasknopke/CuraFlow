@@ -125,7 +125,7 @@ Fixed type errors across 16 files that relied on the old untyped `EntityClient`.
 
 ---
 
-## Verification ✅ ALL PASS (updated 2026-07-13)
+## Verification ✅ ALL PASS (updated 2026-07-13 — after Phase 2)
 
 | Check | Result |
 |---|---|
@@ -270,23 +270,37 @@ Work through these phases in order. Each phase has a definition of done and a ve
 
 ---
 
-##### Phase 2 — Targeted cluster fixes  ← ~80 occurrences
+##### Phase 2 — Targeted cluster fixes  ← ~80 occurrences  ✅ COMPLETE
 
 **Goal:** Define proper types for the data shapes that currently rely on `as any`, eliminating whole clusters at once.
 
 **Clusters to fix (each is one commit):**
 
-1. **Cross-tenant query response types (~6 casts).** Lines ~1215-1243 have 6 consecutive `as any` casts on `visiblePoolData`, `visibleWorkplaceLinksData`, `visibleRotationData`. These are `useQuery` results typed as `unknown`. Define response interfaces (e.g., `PoolShiftResponse`, `WorkplaceLinkResponse`, `RotationDataResponse`) and type the `useQuery<T>` generics. All 6 casts vanish.
+1. **Cross-tenant query response types (~6 casts).** ✅ Defined `VisiblePoolShiftsResponse`, `VisibleWorkplaceLinksResponse`, `VisibleRotationsResponse` interfaces with nested types (`PoolShift`, `LinkedWorkplacePartner`, `RotationAssignment`, `RotationDemand`, `RotationWorkplace`). Typed `useQuery<T>` generics. Removed 6 `as any` casts.
 
-2. **`centralEmployeesById: Map<string, any>` (~6 occurrences).** This `Map` type is propagated through 6 helper functions (L503, L583, L591, L601, L639, L749). The `CentralEmployee` type already exists in `@/types` — import it and change the type to `Map<string, CentralEmployee>`.
+2. **`centralEmployeesById: Map<string, any>` (~6 occurrences).** ✅ Imported `CentralEmployee` from `@/types/master`. Changed type to `Map<string, CentralEmployee>` in 6 helper functions. Typed `centralEmployees` query as `useQuery<CentralEmployee[]>` and `workTimeModelMap` as `Map<string, WorkTimeModel>`.
 
-3. **Timeslot selection helpers (`Record<string, any>`).** Lines ~712-747 use `Record<string, any>` for timeslot selection data. Define a `TimeslotSelectionData` interface matching the actual fields used (`start_time`, `end_time`, `workplace_id`, `date`, etc.) and type the helpers.
+3. **Timeslot selection helpers (`Record<string, any>`).** ✅ Defined `TimeslotSelectionNormalized` interface. Changed `normalizeTimeslotSelection` to accept `unknown` with proper narrowing. Changed `applyTimeslotSelectionToCreateData`/`applyTimeslotSelectionToUpdateData` to use `Record<string, unknown>`. Typed `getExpandedTimeslotRowLabel` parameter with inline interface.
 
-4. **Query cache optimistic-update casts (~10).** Lines like `queryClient.getQueryData<any[]>(...)` and `(old as any[])` in mutation `onMutate` handlers. Type these as `ShiftEntry[]` (or the relevant entity) by adding the generic to `getQueryData<ShiftEntry[]>`.
+4. **Query cache optimistic-update casts (~10).** ✅ Typed all 7 mutations with proper generics (`Partial<ShiftEntry>`, `string[]`, etc.). Replaced `getQueryData<any[]>` with `getQueryData<ShiftEntry[]>`. Replaced `(old: any)` with `(old: ShiftEntry[] | undefined)`. Defined `PartialBulkError` interface for bulk delete error enrichment.
 
-5. **Error handling (~8 occurrences).** Replace `catch (err: any)` / `(err as any)?.message` with `catch (err: unknown)` + `err instanceof Error ? err.message : String(err)`.
+5. **Error handling (~8 occurrences).** ✅ Replaced `(e as Error).message` with `e instanceof Error ? e.message : String(e)`. Replaced `(err as any).message` with `err instanceof Error ? err.message : ''`. Typed `onError` handler as `(err: Error)`.
 
-**Phase 2 definition of done:** Same as Phase 1. Commit each cluster separately as `refactor: type <cluster-name> in ScheduleBoard (Phase 2)`.
+**Additional changes (prerequisite for clusters):**
+- Typed `doctors` query `select` callback as `(data: Doctor[])`.
+- Typed `sortDoctorsForDisplay` as `(doctorList: Doctor[])`.
+- Removed `(db.Workplace.list as any)(null, 1000)` → `db.Workplace.list()`.
+- Removed `(db.WorkplaceTimeslot.list as any)(null, 1000)` → `db.WorkplaceTimeslot.list()`.
+- Removed `(db.ShiftEntry.filter as any)({...}, null, 5000)` → `db.ShiftEntry.filter({...})`.
+- Typed `updateDoctorMutation` variables as `{ id: string; data: Partial<Doctor> }`.
+- Typed `setUndoStack` state as `UndoStackEntry[]` with proper batch grouping type.
+- Typed undo handler actions with `!` assertions on `action.id`/`action.ids`.
+- Defined `UndoStackEntry` type alias for batch-able undo actions.
+- Replaced `(doctor as unknown as Record<string, unknown>).first_name` for dead-code fallback path.
+
+**Left `any` at `allShifts` (line ~1277):** Typing `allShifts` as `ShiftEntry[]` cascaded ~20 errors in drag handlers where `shift.doctor_id` (`string | null | undefined`) was passed to functions expecting `string`. Per safety rule #4, restoring `any` since fixing would require adding null guards/fallbacks that change runtime behavior. This is a Phase 3 extraction target.
+
+**Verification:** `npm run typecheck` — 0 errors. `npm run lint` — 0 errors (4870 warnings). `npm run build` — succeeds. `npm run test:all` — 738 tests pass, 66 files pass.
 
 ---
 
