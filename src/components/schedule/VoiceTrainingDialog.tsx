@@ -8,6 +8,32 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from "sonner";
 import { useAuth } from '@/components/AuthProvider';
 
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+  error?: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: { new(): SpeechRecognition };
+    webkitSpeechRecognition?: { new(): SpeechRecognition };
+  }
+}
+
 interface VoiceTrainingDoctor {
   id: string;
   name: string;
@@ -51,7 +77,7 @@ export default function VoiceTrainingDialog({
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
             const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new (SpeechRecognitionCtor as typeof window.SpeechRecognition)();
+            const recognition = new (SpeechRecognitionCtor!)();
             recognition.continuous = false;
             recognition.interimResults = false;
             recognition.lang = 'de-DE';
@@ -61,12 +87,12 @@ export default function VoiceTrainingDialog({
                 setDetectedText("");
             };
 
-            recognition.onresult = (event) => {
+            recognition.onresult = (event: SpeechRecognitionEvent) => {
                 const text = event.results[0][0].transcript;
                 setDetectedText(text);
             };
 
-            recognition.onerror = (event) => {
+            recognition.onerror = (event: SpeechRecognitionEvent) => {
                 console.error(event.error);
                 setIsRecording(false);
                 if (event.error !== 'no-speech') toast.error("Fehler: " + event.error);
@@ -89,7 +115,7 @@ export default function VoiceTrainingDialog({
     const createAliasMutation = useMutation({
         mutationFn: (data: { doctor_id: string; detected_text: string }) => db.VoiceAlias.create(data),
         onSuccess: () => {
-            queryClient.invalidateQueries(['voiceAliases']);
+            queryClient.invalidateQueries({ queryKey: ['voiceAliases'] });
             setDetectedText("");
             toast.success("Alias gespeichert");
         }
@@ -97,7 +123,7 @@ export default function VoiceTrainingDialog({
 
     const deleteAliasMutation = useMutation({
         mutationFn: (id: string) => db.VoiceAlias.delete(id),
-        onSuccess: () => queryClient.invalidateQueries(['voiceAliases'])
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['voiceAliases'] })
     });
 
     const startRecording = async () => {
@@ -124,13 +150,13 @@ export default function VoiceTrainingDialog({
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 setIsProcessing(true);
                 try {
-                    const res = await api.transcribeAudio(audioBlob);
+                    const res = await api.transcribeAudio(audioBlob) as { transcript?: string };
                     if (res.transcript) {
                         setDetectedText(res.transcript);
                     } else {
                         toast.error("Kein Text erkannt");
                     }
-                } catch (e) {
+                } catch (e: any) {
                     console.error(e);
                     toast.error("Transkriptionsfehler");
                 } finally {
@@ -141,7 +167,7 @@ export default function VoiceTrainingDialog({
 
             mediaRecorder.start();
             setIsRecording(true);
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
             toast.error("Mikrofonfehler: " + e.message);
         }
@@ -201,7 +227,7 @@ export default function VoiceTrainingDialog({
                                         }`}
                                     >
                                         {doc.name}
-                                        {aliases.some(a => a.doctor_id === doc.id) && (
+                                        {aliases.some((a: any) => a.doctor_id === doc.id) && (
                                             <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full" />
                                         )}
                                     </button>
@@ -266,7 +292,7 @@ export default function VoiceTrainingDialog({
                                 <div>
                                     <div className="font-medium mb-2 text-sm text-slate-500">Gespeicherte Aliases</div>
                                     <div className="space-y-2">
-                                        {aliases.filter(a => a.doctor_id === selectedDoctor.id).map(alias => (
+                                        {aliases.filter((a: any) => a.doctor_id === selectedDoctor.id).map((alias: any) => (
                                             <div key={alias.id} className="flex items-center justify-between p-2 bg-slate-50 rounded border">
                                                 <span className="font-mono text-sm">"{alias.detected_text}"</span>
                                                 <Button 
@@ -279,7 +305,7 @@ export default function VoiceTrainingDialog({
                                                 </Button>
                                             </div>
                                         ))}
-                                        {aliases.filter(a => a.doctor_id === selectedDoctor.id).length === 0 && (
+                                        {aliases.filter((a: any) => a.doctor_id === selectedDoctor.id).length === 0 && (
                                             <div className="text-sm text-slate-400 italic">Keine Aliases gespeichert</div>
                                         )}
                                     </div>

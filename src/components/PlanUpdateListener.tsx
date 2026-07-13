@@ -82,8 +82,8 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
   const authToken = authState.token || api.getToken();
   const activeDbToken = getActiveDbToken();
   const pendingKeysRef = useRef(new Map());
-  const pendingPayloadsRef = useRef([]);
-  const flushTimerRef = useRef(null);
+  const pendingPayloadsRef = useRef<any[]>([]);
+  const flushTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     console.info('[PlanUpdateListener] Mount', {
@@ -136,10 +136,10 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
       const payloads = pendingPayloadsRef.current;
       console.info('[PlanUpdateListener] Invalidiere Queries nach Push-Event', {
         count: payloads.length,
-        entities: payloads.map((payload) => payload.entity),
+        entities: payloads.map((payload: any) => payload.entity),
       });
 
-      const foreignChange = payloads.find((payload) => payload?.actor?.email && payload.actor.email !== user?.email);
+      const foreignChange = payloads.find((payload: any) => payload?.actor?.email && payload.actor.email !== user?.email);
       if (foreignChange) {
         const actorLabel = foreignChange.actor.email;
         toast.info(`Plan aktualisiert durch ${actorLabel}`, {
@@ -160,7 +160,7 @@ export default function PlanUpdateListener({ isAuthenticated: isAuthenticatedPro
     const handlePlanUpdate = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data);
-        const queryKeys = getQueryKeysForEntity(payload.entity);
+        const queryKeys = getQueryKeysForEntity((payload as any).entity);
 
         console.info('[PlanUpdateListener] Push-Event empfangen', payload);
 

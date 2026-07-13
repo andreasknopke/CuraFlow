@@ -32,7 +32,7 @@ describe('buildWishFulfillmentStats', () => {
           date: '2026-05-02',
           status: 'approved',
         },
-      ],
+      ] as any,
       shifts: [
         {
           id: 'shift-anna-service',
@@ -58,7 +58,7 @@ describe('buildWishFulfillmentStats', () => {
           date: '2026-05-02',
           position: 'Dienst Hintergrund',
         },
-      ],
+      ] as any,
     });
 
     expect(stats).toEqual([

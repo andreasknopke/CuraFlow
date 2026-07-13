@@ -55,7 +55,7 @@ const componentProject = defineProject({
   },
 })
 
-function firstNonEmptyString(...values) {
+function firstNonEmptyString(...values: (string | undefined)[]) {
   for (const value of values) {
     if (typeof value === 'string' && value.trim()) {
       return value.trim()
@@ -96,7 +96,7 @@ export default defineConfig({
   },
   test: {
     projects: [unitProject, componentProject],
-    coverage: coverageConfig,
+    coverage: coverageConfig as any,
   },
   logLevel: 'error', // Suppress warnings, only show errors
   cacheDir: '.vite',

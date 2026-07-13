@@ -84,7 +84,7 @@ export const generateThemeCss = (themeId: string): string => {
     // Override Indigo (Primary)
     if (primaryPalette) {
         Object.keys(primaryPalette).forEach(shade => {
-            const color = primaryPalette[shade];
+            const color = primaryPalette[shade as unknown as keyof ColorShade];
             css += `
                 body .bg-indigo-${shade} { background-color: ${color} !important; }
                 body .text-indigo-${shade} { color: ${color} !important; }
@@ -104,7 +104,7 @@ export const generateThemeCss = (themeId: string): string => {
     // Override Slate (Gray/Neutral)
     if (grayPalette && theme.gray !== 'slate') {
          Object.keys(grayPalette).forEach(shade => {
-            const color = grayPalette[shade];
+            const color = grayPalette[shade as unknown as keyof ColorShade];
             css += `
                 body .bg-slate-${shade} { background-color: ${color} !important; }
                 body .text-slate-${shade} { color: ${color} !important; }

@@ -88,27 +88,27 @@ export default function PoolShiftEditDialog({
 
     const staffQuery = useQuery({
         queryKey: ['pool', 'eligible-staff', groupId, workplace?.id],
-        queryFn: () => api.getWorkplaceEligibleStaff(groupId, workplace.id),
+        queryFn: () => api.getWorkplaceEligibleStaff(groupId as string, workplace!.id) as any,
         enabled: !!open && !!groupId && !!workplace?.id,
         // No staleTime — always fetch fresh data when the dialog opens,
         // so that qualification assignments/changes are reflected immediately
         // without requiring a logout/login cycle.
     });
 
-    const staff = staffQuery.data?.staff || [];
-    const requiredQuals = staffQuery.data?.required || [];
-    const absencesByEmployee = staffQuery.data?.absences_by_employee || {};
+    const staff = (staffQuery.data as any)?.staff || [];
+    const requiredQuals = (staffQuery.data as any)?.required || [];
+    const absencesByEmployee = (staffQuery.data as any)?.absences_by_employee || {};
 
     // Central wishes for this date+workplace so that employees who expressed a
     // Dienstwunsch (green) or Kein-Dienst-Wunsch (red) are highlighted in the
     // staff dropdown — exactly like the tenant-internal ServiceStaffing view.
-    const dateStr = date ? String(date).slice(0, 10) : null;
+    const dateStr = date ? String(date).slice(0, 10) : '';
     const { data: centralWishesData } = useQuery({
         queryKey: ['pool', 'central-wishes', dateStr],
-        queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }),
+        queryFn: () => api.getGroupCentralWishes({ from: dateStr, to: dateStr }) as any,
         enabled: !!open && !!dateStr && !!workplace?.id,
     });
-    const centralWishes = centralWishesData?.wishes || [];
+    const centralWishes = (centralWishesData as any)?.wishes || [];
 
     const wishByEmployeeId = useMemo(() => {
         const map = new Map();
@@ -140,7 +140,7 @@ export default function PoolShiftEditDialog({
         }
         const busy = new Set();
         const dateStr = String(date).slice(0, 10);
-        for (const [empId, absences] of Object.entries(absencesByEmployee)) {
+        for (const [empId, absences] of Object.entries(absencesByEmployee as Record<string, any[]>)) {
             for (const a of absences) {
                 if (String(a.date).slice(0, 10) === dateStr) {
                     busy.add(String(empId));
@@ -173,7 +173,7 @@ export default function PoolShiftEditDialog({
             return staff;
         }
         const currentEmp = shift?.employee_id ? String(shift.employee_id) : null;
-        const filtered = staff.filter((s) => {
+        const filtered = staff.filter((s: any) => {
             const id = String(s.id);
             if (id === currentEmp) return true;
             return !busyIds.has(id);
@@ -191,7 +191,7 @@ export default function PoolShiftEditDialog({
     // Distinct list of tenant ids the chosen employee is assigned to.
     // We let the admin pick which tenant gets billed for the shift.
     const billingOptions = useMemo(() => {
-        const emp = staff.find((s) => s.id === employeeId);
+        const emp = staff.find((s: any) => s.id === employeeId);
         const ids = emp?.tenant_ids || [];
         if (ids.length === 0 && activeTenantId) return [activeTenantId];
         return ids;
@@ -212,21 +212,21 @@ export default function PoolShiftEditDialog({
     const saveMutation = useMutation({
         mutationFn: async () => {
             const payload = {
-                shared_workplace_id: workplace.id,
+                shared_workplace_id: workplace!.id,
                 date,
                 employee_id: employeeId,
                 billing_tenant_id: billingTenantId,
             };
             if (isEdit) {
-                return api.updateGroupShift(groupId, shift.id, payload, { force: forceOverride });
+                return api.updateGroupShift(groupId as string, shift!.id as string, payload, { force: forceOverride });
             }
-            return api.createGroupShift(groupId, payload, { force: forceOverride });
+            return api.createGroupShift(groupId as string, payload, { force: forceOverride });
         },
         onSuccess: async () => {
             await refreshAfterShiftChange();
             onOpenChange(false);
         },
-        onError: (err) => {
+        onError: (err: any) => {
             // The constraints validator returns { error: 'constraint_violation', details: [...] }
             const details = err?.details;
             if (details?.error === 'constraint_violation' && Array.isArray(details.details)) {
@@ -238,7 +238,7 @@ export default function PoolShiftEditDialog({
     });
 
     const deleteMutation = useMutation({
-        mutationFn: () => api.deleteGroupShift(groupId, shift.id),
+        mutationFn: () => api.deleteGroupShift(groupId as string, shift!.id as string),
         onSuccess: async () => {
             await refreshAfterShiftChange();
             onOpenChange(false);
@@ -289,7 +289,7 @@ export default function PoolShiftEditDialog({
                                     <SelectValue placeholder="Mitarbeiter wählen" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {visibleStaff.map((s) => {
+                                    {visibleStaff.map((s: any) => {
                                         const wish = wishByEmployeeId.get(String(s.id));
                                         const isServiceWish = wish?.type === 'service' && wish?.status !== 'rejected';
                                         const isNoServiceWish = !isServiceWish && wish?.type === 'no_service' && wish?.status !== 'rejected';
@@ -328,7 +328,7 @@ export default function PoolShiftEditDialog({
                                     <SelectValue placeholder="Mandant wählen" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {billingOptions.map((tid) => (
+                                    {billingOptions.map((tid: string) => (
                                         <SelectItem key={tid} value={tid}>
                                             {tid === activeTenantId ? `${tid} (aktiv)` : tid}
                                         </SelectItem>

@@ -93,7 +93,6 @@ export default function ComplianceReport({
   const stats: DoctorCompliance[] = useMemo(() => {
     return doctors
       .map(doc => {
-        // Filter shifts by doctor and month
         const docShifts = shifts.filter(s => {
           if (s.doctor_id !== doc.id) return false;
           if (month !== 'all') {
@@ -145,7 +144,7 @@ export default function ComplianceReport({
         if (fte <= 0) {
           return {
             name: doc.name,
-            role: doc.role,
+            role: doc.role as string,
             fgCount, fgLimit: 0, fgLimitRaw,
             bgCount, bgLimit: 0, bgLimitRaw,
             weekendCount, weekendLimit: 0, weekendLimitRaw: limitWeekend,
@@ -156,7 +155,7 @@ export default function ComplianceReport({
 
         return {
           name: doc.name,
-          role: doc.role,
+          role: doc.role as string,
           fgCount,
           fgLimit: Math.round(limitFG * fte),
           fgLimitRaw,

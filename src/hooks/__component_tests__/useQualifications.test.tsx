@@ -36,7 +36,7 @@ function createWrapper() {
       mutations: { retry: false },
     },
   });
-  return function Wrapper({ children }) {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
         {children}
@@ -90,7 +90,7 @@ describe('initializeDefaultQualifications', () => {
 
   it('returns existing qualifications when DB already has data', async () => {
     const existing = [{ id: 1, name: 'Existing' }];
-    db.Qualification.list.mockResolvedValue(existing);
+    (db.Qualification.list as any).mockResolvedValue(existing);
 
     const result = await initializeDefaultQualifications();
 
@@ -100,8 +100,8 @@ describe('initializeDefaultQualifications', () => {
   });
 
   it('creates all default qualifications when DB is empty', async () => {
-    db.Qualification.list.mockResolvedValue([]);
-    db.Qualification.create.mockImplementation((data) => ({ id: Math.random(), ...data }));
+    (db.Qualification.list as any).mockResolvedValue([]);
+    (db.Qualification.create as any).mockImplementation((data: any) => ({ id: Math.random(), ...data }));
 
     const result = await initializeDefaultQualifications();
 
@@ -113,7 +113,7 @@ describe('initializeDefaultQualifications', () => {
   });
 
   it('returns DEFAULT_QUALIFICATIONS on error', async () => {
-    db.Qualification.list.mockRejectedValue(new Error('DB error'));
+    (db.Qualification.list as any).mockRejectedValue(new Error('DB error'));
 
     const result = await initializeDefaultQualifications();
 
@@ -131,7 +131,7 @@ describe('useQualifications', () => {
   });
 
   it('returns empty array and isLoading initially', () => {
-    db.Qualification.list.mockResolvedValue([]);
+    (db.Qualification.list as any).mockResolvedValue([]);
 
     const { result } = renderHook(() => useQualifications(), {
       wrapper: createWrapper(),
@@ -142,7 +142,7 @@ describe('useQualifications', () => {
   });
 
   it('fetches and returns qualifications', async () => {
-    db.Qualification.list.mockResolvedValue([
+    (db.Qualification.list as any).mockResolvedValue([
       { id: 1, name: 'Facharzt', order: 0 },
       { id: 2, name: 'CT', order: 3 },
       { id: 3, name: 'MRT', order: 1 },
@@ -162,8 +162,8 @@ describe('useQualifications', () => {
   });
 
   it('calls initializeDefaultQualifications when DB returns empty', async () => {
-    db.Qualification.list.mockResolvedValue([]);
-    db.Qualification.create.mockImplementation((data) => ({ id: Math.random(), ...data }));
+    (db.Qualification.list as any).mockResolvedValue([]);
+    (db.Qualification.create as any).mockImplementation((data: any) => ({ id: Math.random(), ...data }));
 
     const { result } = renderHook(() => useQualifications(), {
       wrapper: createWrapper(),
@@ -177,7 +177,7 @@ describe('useQualifications', () => {
   });
 
   it('returns refetch function', async () => {
-    db.Qualification.list.mockResolvedValue([]);
+    (db.Qualification.list as any).mockResolvedValue([]);
 
     const { result } = renderHook(() => useQualifications(), {
       wrapper: createWrapper(),
@@ -189,7 +189,7 @@ describe('useQualifications', () => {
   });
 
   it('handles API errors gracefully', async () => {
-    db.Qualification.list.mockRejectedValue(new Error('Network error'));
+    (db.Qualification.list as any).mockRejectedValue(new Error('Network error'));
 
     const { result } = renderHook(() => useQualifications(), {
       wrapper: createWrapper(),
@@ -206,10 +206,10 @@ describe('useQualifications — mutations', () => {
   });
 
   it('calls db.Qualification.create when createQualification is triggered', async () => {
-    db.Qualification.list.mockResolvedValue([
+    (db.Qualification.list as any).mockResolvedValue([
       { id: 1, name: 'Existing', order: 0 },
     ]);
-    db.Qualification.create.mockResolvedValue({ id: 2, name: 'New Qual' });
+    (db.Qualification.create as any).mockResolvedValue({ id: 2, name: 'New Qual' });
 
     const { result } = renderHook(() => useQualifications(), {
       wrapper: createWrapper(),

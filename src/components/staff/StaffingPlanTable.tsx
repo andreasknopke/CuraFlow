@@ -97,7 +97,7 @@ const StaffingPlanInput = ({ value: initialValue, onChange, disabled, className 
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
-            e.currentTarget.blur();
+            (e.currentTarget as HTMLElement).blur();
         }
     };
 
@@ -189,7 +189,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
         queryFn: () => db.SystemSetting.list(),
     });
 
-    const rawTarget = systemSettings.find(s => s.key === `staffing_target_${year}`)?.value || "0";
+    const rawTarget = (systemSettings as any[]).find((s: any) => s.key === `staffing_target_${year}`)?.value || "0";
     const targetFTE = parseFloat(String(rawTarget).replace(',', '.')) || 0;
 
     // --- Mutations ---
@@ -212,25 +212,25 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                 status_end_day: statusEndDay,
             });
         },
-        onSuccess: () => queryClient.invalidateQueries(["staffingPlanEntries", year]),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staffingPlanEntries", year] }),
         onError: (err: any) => {
             alert("Fehler beim Speichern: " + (err.response?.data?.message || err.message));
             // Force refresh to show current data
-            queryClient.invalidateQueries(["staffingPlanEntries", year]);
+            queryClient.invalidateQueries({ queryKey: ["staffingPlanEntries", year] });
         }
     });
 
     const updateTargetMutation = useMutation({
         mutationFn: async (value: string) => {
             const key = `staffing_target_${year}`;
-            const existing = systemSettings.find(s => s.key === key);
+            const existing = (systemSettings as any[]).find((s: any) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value: String(value) });
             } else {
                 return db.SystemSetting.create({ key, value: String(value) });
             }
         },
-        onSuccess: () => queryClient.invalidateQueries(["systemSettings"]),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["systemSettings"] }),
     });
 
     const saveNoteMutation = useMutation({
@@ -239,7 +239,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
             year: number;
             note: string;
         }) => {
-            const existing = notes.find(n => n.doctor_id === doctor_id && n.year === year);
+            const existing = notes.find((n: any) => n.doctor_id === doctor_id && n.year === year);
             if (existing) {
                 if (!note || !note.trim()) {
                     await db.StaffingPlanNote.delete(existing.id);
@@ -250,7 +250,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
             if (!note || !note.trim()) return { skipped: true };
             return db.StaffingPlanNote.create({ doctor_id, year, note });
         },
-        onSuccess: () => queryClient.invalidateQueries(["staffingPlanNotes", year]),
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ["staffingPlanNotes", year] }),
         onError: (err: any) => {
             console.error("Fehler beim Speichern der Notiz:", err);
         },
@@ -262,7 +262,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
     };
 
     const getEntryValue = (doctorId: string, month: number) => {
-        const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
+        const entry = entries.find((e: any) => e.doctor_id === doctorId && e.month === month);
         if (entry) {
             // Ensure DB values are formatted too if they are simple numbers like "1"
             // But avoid formatting codes like "EZ"
@@ -293,7 +293,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
         }
 
         // Default to doctor's FTE (rounded to 2 decimal places)
-        const parsedFte = parseFloat(doctor.fte);
+        const parsedFte = parseFloat(String(doctor.fte));
         const defaultFte = !isNaN(parsedFte) ? Math.round(parsedFte * 100) / 100 : 1.0;
         return formatNumber(defaultFte);
     };
@@ -324,7 +324,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
 
     const handleValueChange = (doctorId: string, month: number, newValue: string, statusStartDay?: number, statusEndDay?: number) => {
         // Get current known value for optimistic check
-        const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
+        const entry = entries.find((e: any) => e.doctor_id === doctorId && e.month === month);
         const oldValue = entry ? entry.value : undefined; // undefined for new entries implies "expecting nothing"
 
         const payload: any = { doctor_id: doctorId, month, value: newValue, oldValue };
@@ -339,7 +339,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
 
         // Determine if current value is a code or number
         const isCode = FTE_CODES.includes(currentValue);
-        const entry = entries.find(e => e.doctor_id === doctorId && e.month === month);
+        const entry = entries.find((e: any) => e.doctor_id === doctorId && e.month === month);
 
         setEditDialog({
             open: true,
@@ -415,7 +415,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
     };
 
     const getNoteForDoctor = (doctorId: string) => {
-        const note = notes.find(n => n.doctor_id === doctorId && n.year === year);
+        const note = notes.find((n: any) => n.doctor_id === doctorId && n.year === year);
         return note ? note.note || "" : "";
     };
 
@@ -498,7 +498,7 @@ export default function StaffingPlanTable({ doctors, isReadOnly }: StaffingPlanT
                                             if (numVal >= 1) { textColor = "text-slate-900 font-medium"; }
 
                                             // Determine if this value is a default (auto-filled) or explicit
-                                            const entryExists = entries.some(e => e.doctor_id === doc.id && e.month === month);
+                                            const entryExists = entries.some((e: any) => e.doctor_id === doc.id && e.month === month);
                                             const isDefault = !entryExists && val !== "";
 
                                             return (

@@ -49,7 +49,7 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
 
     const { data: workplacesData = [] } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list(null, 1000),
+        queryFn: () => (db.Workplace.list as any)(null, 1000),
         staleTime: 1000 * 60 * 5
     });
 
@@ -61,14 +61,14 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
 
     const { data: staffingData = [] } = useQuery({
         queryKey: ['staffingPlanEntriesAll'],
-        queryFn: () => base44.entities.StaffingPlanEntry.list(null, 2000),
+        queryFn: () => (base44.entities.StaffingPlanEntry.list as any)(null, 2000),
         staleTime: 1000 * 60 * 5
     });
 
     // Timeslots für Zeitfenster-Validierung
     const { data: timeslotsData = [] } = useQuery({
         queryKey: ['workplaceTimeslots'],
-        queryFn: () => db.WorkplaceTimeslot.list(null, 1000),
+        queryFn: () => (db.WorkplaceTimeslot.list as any)(null, 1000),
         staleTime: 1000 * 60 * 5
     });
 
@@ -76,7 +76,7 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
     const { data: relationshipsData = [] } = useQuery({
         queryKey: ['employee-relationships-conflicts'],
         queryFn: async () => {
-            const res = await api.getEmployeeRelationships();
+            const res: any = await api.getEmployeeRelationships();
             return res.relationships || [];
         },
         staleTime: 1000 * 60 * 5,
@@ -96,7 +96,7 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
     const systemSettings = customOptions.systemSettings || settingsData;
     const staffingEntries = customOptions.staffingEntries || staffingData;
     const timeslots = customOptions.timeslots || timeslotsData;
-    const sharedShifts = customOptions.sharedShifts || [];
+    const sharedShifts = (customOptions.sharedShifts as any[]) || [];
 
     const validator = useMemo(() => {
         return new ShiftValidator({
@@ -107,9 +107,9 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
             staffingEntries,
             timeslots,
             sharedShifts,
-            qualificationMap,
+            qualificationMap: qualificationMap as any,
             getDoctorQualIds,
-            wpQualsByWorkplace,
+            wpQualsByWorkplace: wpQualsByWorkplace as any,
             employeeRelationships,
             ...customOptions
         });

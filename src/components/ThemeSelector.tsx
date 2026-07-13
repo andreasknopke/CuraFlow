@@ -17,7 +17,7 @@ export default function ThemeSelector({ open, onOpenChange }: ThemeSelectorProps
 
     useEffect(() => {
         if (user?.theme) {
-            setSelectedTheme(user.theme);
+            setSelectedTheme(user.theme as string);
         }
     }, [user]);
 

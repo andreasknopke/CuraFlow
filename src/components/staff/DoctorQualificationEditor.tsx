@@ -77,13 +77,13 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
     }
 
     // Determine assigned IDs: from server if doctor exists, otherwise from controlled props
-    const assignedQualIds = doctorId ? doctorQuals.map(dq => dq.qualification_id) : selectedQualIds;
+    const assignedQualIds = doctorId ? doctorQuals.map((dq: any) => dq.qualification_id) : selectedQualIds;
     const assignedCertificateQualifications = doctorId
         ? activeQuals.filter(q => q.requires_certificate === true && assignedQualIds.includes(q.id))
         : [];
     const toggleHandler = doctorId
         ? (qualId: string) => {
-            const existingAssignment = doctorQuals.find(dq => dq.qualification_id === qualId);
+            const existingAssignment = doctorQuals.find((dq: any) => dq.qualification_id === qualId);
             if (existingAssignment) {
                 removeMutation.mutate(existingAssignment.id);
             } else {
@@ -116,7 +116,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             <button
                                 key={qual.id}
                                 type="button"
-                                onClick={() => toggleHandler!(qual.id)}
+                                onClick={() => toggleHandler!(qual.id as string)}
                                 aria-pressed={isAssigned}
                                 data-testid={`doctor-qualification-toggle-${qual.id}`}
                                 className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all cursor-pointer ${
@@ -143,19 +143,19 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             Zertifikate
                         </div>
                         {assignedCertificateQualifications.map(qual => {
-                            const dqEntry = doctorQuals.find(dq => dq.qualification_id === qual.id);
+                            const dqEntry = doctorQuals.find((dq: any) => dq.qualification_id === qual.id);
                             return (
                                 <CertificateManager
                                     key={qual.id}
                                     doctorId={doctorId}
-                                    qualificationId={qual.id}
+                                    qualificationId={qual.id as string}
                                     qualificationName={qual.name}
-                                    qualificationDescription={qual.description}
-                                    qualificationRequirementMode={qual.certificate_requirement_mode}
-                                    qualificationValidityMonths={qual.certificate_validity_months}
-                                    qualificationRefreshValidityMonths={qual.certificate_refresh_validity_months}
-                                    qualificationBaseLabel={qual.certificate_base_label}
-                                    qualificationRefreshLabel={qual.certificate_refresh_label}
+                                    qualificationDescription={qual.description ?? undefined}
+                                    qualificationRequirementMode={qual.certificate_requirement_mode ?? undefined}
+                                    qualificationValidityMonths={qual.certificate_validity_months ?? null}
+                                    qualificationRefreshValidityMonths={qual.certificate_refresh_validity_months ?? null}
+                                    qualificationBaseLabel={qual.certificate_base_label ?? undefined}
+                                    qualificationRefreshLabel={qual.certificate_refresh_label ?? undefined}
                                     doctorQualificationId={dqEntry?.id || null}
                                     doctorQualification={dqEntry || null}
                                 />
@@ -192,7 +192,7 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
                             {catQuals.map(qual => {
                                 const isAssigned = assignedQualIds.includes(qual.id);
                                 const requiresCert = qual.requires_certificate === true;
-                                const handleToggle = () => toggleHandler!(qual.id);
+                                const handleToggle = () => toggleHandler!(qual.id as string);
                                 return (
                                     <button
                                         key={qual.id}
@@ -245,19 +245,19 @@ export default function DoctorQualificationEditor({ doctorId, selectedQualIds = 
             {assignedCertificateQualifications.length > 0 && (
                 <div className="space-y-2 pt-2">
                     {assignedCertificateQualifications.map(qual => {
-                        const dqEntry = doctorQuals.find(dq => dq.qualification_id === qual.id);
+                        const dqEntry = doctorQuals.find((dq: any) => dq.qualification_id === qual.id);
                         return (
                             <CertificateManager
                                 key={qual.id}
                                 doctorId={doctorId}
-                                qualificationId={qual.id}
+                                qualificationId={qual.id as string}
                                 qualificationName={qual.name}
-                                qualificationDescription={qual.description}
-                                qualificationRequirementMode={qual.certificate_requirement_mode}
-                                qualificationValidityMonths={qual.certificate_validity_months}
-                                qualificationRefreshValidityMonths={qual.certificate_refresh_validity_months}
-                                qualificationBaseLabel={qual.certificate_base_label}
-                                qualificationRefreshLabel={qual.certificate_refresh_label}
+                                qualificationDescription={qual.description ?? undefined}
+                                qualificationRequirementMode={qual.certificate_requirement_mode ?? undefined}
+                                qualificationValidityMonths={qual.certificate_validity_months ?? null}
+                                qualificationRefreshValidityMonths={qual.certificate_refresh_validity_months ?? null}
+                                qualificationBaseLabel={qual.certificate_base_label ?? undefined}
+                                qualificationRefreshLabel={qual.certificate_refresh_label ?? undefined}
                                 doctorQualificationId={dqEntry?.id || null}
                                 doctorQualification={dqEntry || null}
                             />

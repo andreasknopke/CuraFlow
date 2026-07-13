@@ -26,7 +26,7 @@ function createWrapper() {
       mutations: { retry: false },
     },
   });
-  return function Wrapper({ children }) {
+  return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
         {children}
@@ -45,9 +45,9 @@ describe('useCertificates', () => {
   });
 
   it('returns empty array and not loading before data arrives', () => {
-    api.listCertificates.mockResolvedValue([]);
+    (api.listCertificates as any).mockResolvedValue([]);
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
@@ -56,7 +56,7 @@ describe('useCertificates', () => {
   });
 
   it('fetches certificates without filters', async () => {
-    api.listCertificates.mockResolvedValue([{ id: 1, name: 'Test-Zertifikat' }]);
+    (api.listCertificates as any).mockResolvedValue([{ id: 1, name: 'Test-Zertifikat' }]);
 
     const { result } = renderHook(() => useCertificates(), {
       wrapper: createWrapper(),
@@ -72,24 +72,24 @@ describe('useCertificates', () => {
   });
 
   it('passes doctor_id filter to the API', async () => {
-    api.listCertificates.mockResolvedValue([]);
+    (api.listCertificates as any).mockResolvedValue([]);
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 42 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '42' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(api.listCertificates).toHaveBeenCalledWith({
-      doctor_id: 42,
+      doctor_id: '42',
       qualification_id: undefined,
     });
   });
 
   it('passes qualification_id filter to the API', async () => {
-    api.listCertificates.mockResolvedValue([]);
+    (api.listCertificates as any).mockResolvedValue([]);
 
-    const { result } = renderHook(() => useCertificates({ qualificationId: 7 }), {
+    const { result } = renderHook(() => useCertificates({ qualificationId: '7' } as any), {
       wrapper: createWrapper(),
     });
 
@@ -97,14 +97,14 @@ describe('useCertificates', () => {
 
     expect(api.listCertificates).toHaveBeenCalledWith({
       doctor_id: undefined,
-      qualification_id: 7,
+      qualification_id: '7',
     });
   });
 
   it('does not fetch when disabled', () => {
-    api.listCertificates.mockResolvedValue([]);
+    (api.listCertificates as any).mockResolvedValue([]);
 
-    renderHook(() => useCertificates({ doctorId: 1, enabled: false }), {
+    renderHook(() => useCertificates({ doctorId: '1', enabled: false } as any), {
       wrapper: createWrapper(),
     });
 
@@ -112,37 +112,37 @@ describe('useCertificates', () => {
   });
 
   it('sets refetchInterval to 3000ms when a certificate has pending analysis', async () => {
-    api.listCertificates.mockResolvedValue([
+    (api.listCertificates as any).mockResolvedValue([
       { id: 1, name: 'Pending Cert', analysis_status: 'pending' },
     ]);
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.certificates).toHaveLength(1);
-    expect(result.current.certificates[0].analysis_status).toBe('pending');
+    expect((result.current.certificates as any[])).toHaveLength(1);
+    expect((result.current.certificates as any[])[0].analysis_status).toBe('pending');
   });
 
   it('does not set refetchInterval when all certificates are processed', async () => {
-    api.listCertificates.mockResolvedValue([
+    (api.listCertificates as any).mockResolvedValue([
       { id: 1, name: 'Completed Cert', analysis_status: 'completed' },
     ]);
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.certificates).toHaveLength(1);
-    expect(result.current.certificates[0].analysis_status).toBe('completed');
+    expect((result.current.certificates as any[])).toHaveLength(1);
+    expect((result.current.certificates as any[])[0].analysis_status).toBe('completed');
   });
 
   it('handles API errors gracefully', async () => {
-    api.listCertificates.mockRejectedValue(new Error('Network error'));
+    (api.listCertificates as any).mockRejectedValue(new Error('Network error'));
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
@@ -151,80 +151,80 @@ describe('useCertificates', () => {
   });
 
   it('provides uploadCertificate mutation', async () => {
-    api.listCertificates.mockResolvedValue([]);
-    api.uploadCertificate.mockResolvedValue({ id: 99 });
+    (api.listCertificates as any).mockResolvedValue([]);
+    (api.uploadCertificate as any).mockResolvedValue({ id: 99 });
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.uploadCertificate({ file: 'test.pdf' });
-    expect(api.uploadCertificate).toHaveBeenCalledWith({ file: 'test.pdf' });
+    await result.current.uploadCertificate({ file: new File([], 'test.pdf') } as any);
+    expect(api.uploadCertificate).toHaveBeenCalledWith({ file: expect.any(File) });
   });
 
   it('provides deleteCertificate mutation', async () => {
-    api.listCertificates.mockResolvedValue([]);
-    api.deleteCertificate.mockResolvedValue({});
+    (api.listCertificates as any).mockResolvedValue([]);
+    (api.deleteCertificate as any).mockResolvedValue({});
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.deleteCertificate(5);
-    expect(api.deleteCertificate).toHaveBeenCalledWith(5);
+    await result.current.deleteCertificate('5');
+    expect(api.deleteCertificate).toHaveBeenCalledWith('5');
   });
 
   it('provides checkCertificate mutation', async () => {
-    api.listCertificates.mockResolvedValue([]);
-    api.checkCertificate.mockResolvedValue({ valid: true });
+    (api.listCertificates as any).mockResolvedValue([]);
+    (api.checkCertificate as any).mockResolvedValue({ valid: true });
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.checkCertificate({ id: 3 });
-    expect(api.checkCertificate).toHaveBeenCalledWith({ id: 3 });
+    await result.current.checkCertificate({ file: new File([], 'test.pdf'), qualification_name: 'CT' } as any);
+    expect(api.checkCertificate).toHaveBeenCalledWith({ file: expect.any(File), qualification_name: 'CT' });
   });
 
   it('provides updateCertificate mutation', async () => {
-    api.listCertificates.mockResolvedValue([]);
-    api.updateCertificate.mockResolvedValue({ id: 2 });
+    (api.listCertificates as any).mockResolvedValue([]);
+    (api.updateCertificate as any).mockResolvedValue({ id: 2 });
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.updateCertificate({ id: 2, name: 'Updated' });
+    await result.current.updateCertificate({ id: '2', name: 'Updated' } as any);
     // The mutation destructures `id` from the payload, passing only `rest` as the second arg
-    expect(api.updateCertificate).toHaveBeenCalledWith(2, { name: 'Updated' });
+    expect(api.updateCertificate).toHaveBeenCalledWith('2', { name: 'Updated' });
   });
 
   it('provides reanalyzeCertificate mutation', async () => {
-    api.listCertificates.mockResolvedValue([]);
-    api.reanalyzeCertificate.mockResolvedValue({});
+    (api.listCertificates as any).mockResolvedValue([]);
+    (api.reanalyzeCertificate as any).mockResolvedValue({});
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.reanalyzeCertificate({ id: 4, qualification_name: 'CT', qualification_description: 'CT-Befund' });
-    expect(api.reanalyzeCertificate).toHaveBeenCalledWith(4, { qualification_name: 'CT', qualification_description: 'CT-Befund' });
+    await result.current.reanalyzeCertificate({ id: '4', qualification_name: 'CT', qualification_description: 'CT-Befund' } as any);
+    expect(api.reanalyzeCertificate).toHaveBeenCalledWith('4', { qualification_name: 'CT', qualification_description: 'CT-Befund' });
   });
 
   it('exposes pending states for all mutations', async () => {
-    api.listCertificates.mockResolvedValue([]);
+    (api.listCertificates as any).mockResolvedValue([]);
 
-    const { result } = renderHook(() => useCertificates({ doctorId: 1 }), {
+    const { result } = renderHook(() => useCertificates({ doctorId: '1' } as any), {
       wrapper: createWrapper(),
     });
 
@@ -244,7 +244,7 @@ describe('useExpiringCertificates', () => {
   });
 
   it('fetches expiring certificates with default days', async () => {
-    api.listExpiringCertificates.mockResolvedValue([{ id: 1, name: 'Expiring' }]);
+    (api.listExpiringCertificates as any).mockResolvedValue([{ id: 1, name: 'Expiring' }]);
 
     const { result } = renderHook(() => useExpiringCertificates(), {
       wrapper: createWrapper(),
@@ -257,7 +257,7 @@ describe('useExpiringCertificates', () => {
   });
 
   it('fetches expiring certificates with custom days', async () => {
-    api.listExpiringCertificates.mockResolvedValue([]);
+    (api.listExpiringCertificates as any).mockResolvedValue([]);
 
     const { result } = renderHook(() => useExpiringCertificates({ days: 30 }), {
       wrapper: createWrapper(),
@@ -269,7 +269,7 @@ describe('useExpiringCertificates', () => {
   });
 
   it('does not fetch when disabled', () => {
-    api.listExpiringCertificates.mockResolvedValue([]);
+    (api.listExpiringCertificates as any).mockResolvedValue([]);
 
     renderHook(() => useExpiringCertificates({ enabled: false }), {
       wrapper: createWrapper(),
@@ -299,20 +299,20 @@ describe('openCertificateInNewTab', () => {
   });
 
   it('fetches the certificate blob and opens it in a new tab', async () => {
-    api.fetchCertificateBlob.mockResolvedValue(new Blob(['test'], { type: 'application/pdf' }));
+    (api.fetchCertificateBlob as any).mockResolvedValue(new Blob(['test'], { type: 'application/pdf' }));
 
-    await openCertificateInNewTab(42);
+    await openCertificateInNewTab('42');
 
-    expect(api.fetchCertificateBlob).toHaveBeenCalledWith(42);
+    expect(api.fetchCertificateBlob).toHaveBeenCalledWith('42');
     // The blob URL is environment-dependent; just verify it opened with any blob:// URL
-    expect(window.open).toHaveBeenCalledTimes(1);
-    expect(window.open.mock.calls[0][1]).toBe('_blank');
-    expect(window.open.mock.calls[0][0]).toMatch(/^blob:/);
+    expect(window.open as any).toHaveBeenCalledTimes(1);
+    expect((window.open as any).mock.calls[0][1]).toBe('_blank');
+    expect((window.open as any).mock.calls[0][0]).toMatch(/^blob:/);
   });
 
   it('creates a download link when popup is blocked', async () => {
-    api.fetchCertificateBlob.mockResolvedValue(new Blob(['test'], { type: 'application/pdf' }));
-    window.open.mockReturnValue(null);
+    (api.fetchCertificateBlob as any).mockResolvedValue(new Blob(['test'], { type: 'application/pdf' }));
+    (window.open as any).mockReturnValue(null);
 
     const appendChild = vi.fn();
     const remove = vi.fn();
@@ -326,7 +326,7 @@ describe('openCertificateInNewTab', () => {
       body: { appendChild },
     });
 
-    await openCertificateInNewTab(42);
+    await openCertificateInNewTab('42');
 
     expect(appendChild).toHaveBeenCalled();
     expect(remove).toHaveBeenCalled();

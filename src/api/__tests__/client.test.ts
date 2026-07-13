@@ -70,7 +70,7 @@ describe('api.request', () => {
   });
 
   it('does not attach tenant DB token to master-admin token management routes', async () => {
-    localStorage.getItem.mockImplementation((key) => {
+    (localStorage.getItem as any).mockImplementation((key: string) => {
       if (key === 'radioplan_jwt_token') return 'jwt-token';
       if (key === 'db_token_enabled') return 'true';
       if (key === 'db_credentials') return 'tenant-token';
@@ -91,7 +91,7 @@ describe('api.request', () => {
   });
 
   it('keeps attaching tenant DB token to tenant data routes', async () => {
-    localStorage.getItem.mockImplementation((key) => {
+    (localStorage.getItem as any).mockImplementation((key: string) => {
       if (key === 'radioplan_jwt_token') return 'jwt-token';
       if (key === 'db_token_enabled') return 'true';
       if (key === 'db_credentials') return 'tenant-token';

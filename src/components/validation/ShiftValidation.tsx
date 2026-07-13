@@ -122,7 +122,7 @@ export class ShiftValidator {
         this.employeeRelationships = employeeRelationships || new Map();
 
         // Custom-Kategorien parsen für Mehrfachbesetzungs-Prüfung
-        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings);
+        this._customCategories = getWorkplaceCategoriesFromSettings(this.systemSettings) as any;
 
         // Parse settings
         this.absenceBlockingRules = this._parseAbsenceRules();
@@ -134,7 +134,7 @@ export class ShiftValidator {
      * Prüft ob eine Kategorie Mehrfachbesetzung erlaubt
      */
     _categoryAllowsMultiple(categoryName: string): boolean {
-        return categoryAllowsMultiple(categoryName, this._customCategories);
+        return categoryAllowsMultiple(categoryName, this._customCategories as any);
     }
 
     /**
@@ -142,7 +142,7 @@ export class ShiftValidator {
      * Nutzt workplace.allows_multiple wenn gesetzt, sonst Kategorie-Default.
      */
     _workplaceAllowsMultiple(workplace: Workplace): boolean {
-        return workplaceAllowsMultiple(workplace, this._customCategories);
+        return workplaceAllowsMultiple(workplace, this._customCategories as any);
     }
 
     _parseAbsenceRules(): Record<string, boolean> {
@@ -458,11 +458,11 @@ export class ShiftValidator {
             }
 
             // Überlappung prüfen
-            if (timeslotsOverlap(newEffectiveSlot, existingEffectiveSlot, tolerance)) {
+            if (timeslotsOverlap(newEffectiveSlot as any, existingEffectiveSlot as any, tolerance)) {
                 const existingLabel = existingTimeslot?.label || existingShift.position;
                 const newLabel = newTimeslot?.label || newPosition;
                 return { 
-                    blocker: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot)}.`
+                    blocker: `Zeitkonflikt: "${existingLabel}" überlappt mit "${newLabel}" um ${formatTimeRange(existingEffectiveSlot as any)}.`
                 };
             }
         }
@@ -739,7 +739,7 @@ export class ShiftValidator {
         const workplace = this.workplaces.find(w => w.name === position);
         if (!(workplace as Workplace & { auto_off?: boolean }).auto_off) return null;
 
-        return getAutoFreiDate(dateStr, isPublicHoliday);
+        return getAutoFreiDate(dateStr, () => isPublicHoliday);
     }
 
     /**

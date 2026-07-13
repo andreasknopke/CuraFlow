@@ -19,7 +19,7 @@ export function createTestQueryClient() {
 }
 
 export function renderWithProviders(
-  ui,
+  ui: React.ReactElement,
   {
     route = '/',
     queryClient = createTestQueryClient(),
@@ -27,7 +27,7 @@ export function renderWithProviders(
     withToaster = true,
   } = {}
 ) {
-  function Wrapper({ children }) {
+  function Wrapper({ children }: { children: React.ReactNode }) {
     const content = withAuthProvider ? <AuthProvider>{children}</AuthProvider> : children;
 
     return (

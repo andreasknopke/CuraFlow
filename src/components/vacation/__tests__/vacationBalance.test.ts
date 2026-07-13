@@ -6,7 +6,7 @@ import { computeVacationBalance, decidePositionsForUrlaubsDays, parseAnnualVacat
  * Build `count` consecutive weekday dates (Mon–Fri) starting from
  * `start`, formatted as `yyyy-MM-dd`. Skips weekends while counting.
  */
-function buildWeekdays(start, count) {
+function buildWeekdays(start: string, count: number) {
   const dates = [];
   let cursor = new Date(start);
   while (dates.length < count) {
@@ -152,8 +152,8 @@ describe('computeVacationBalance', () => {
   it('flags overshoot when remaining goes below zero', () => {
     // Build exactly 5 past weekdays and 26 future weekdays (Mon–Fri only),
     // starting from known-anchored dates so the test is deterministic.
-    const pastDates = buildWeekdays(new Date(`${YEAR}-05-04T12:00:00`), 5);
-    const futureDates = buildWeekdays(new Date(`${YEAR}-07-01T12:00:00`), 26);
+    const pastDates = buildWeekdays(new Date(`${YEAR}-05-04T12:00:00`) as any, 5);
+    const futureDates = buildWeekdays(new Date(`${YEAR}-07-01T12:00:00`) as any, 26);
     const shifts = [...pastDates, ...futureDates].map((d) => ({ date: d, position: 'Urlaub' }));
     const result = computeVacationBalance({
       shifts,
@@ -196,7 +196,7 @@ describe('computeVacationBalance', () => {
   it('accepts Date objects in shifts[].date', () => {
     const d = new Date(`${YEAR}-06-10T00:00:00`);
     const result = computeVacationBalance({
-      shifts: [{ date: d, position: 'Urlaub' }],
+      shifts: [{ date: d as any, position: 'Urlaub' }],
       year: YEAR,
       annualVacationDays: 30,
       today: TODAY,
@@ -218,9 +218,9 @@ describe('computeVacationBalance', () => {
   it('ignores malformed shift entries without crashing', () => {
     const result = computeVacationBalance({
       shifts: [
-        null,
-        undefined,
-        {},
+        null as any,
+        undefined as any,
+        {} as any,
         { date: 'not-a-date', position: 'Urlaub' },
         { date: `${YEAR}-06-10`, position: 'Urlaub' },
       ],

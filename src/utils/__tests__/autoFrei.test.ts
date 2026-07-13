@@ -21,7 +21,7 @@ describe('getAutoFreiDate', () => {
 
   it('returns null when the next day is a public holiday', () => {
     // Use local date parts (getFullYear/Month/Date) to avoid UTC offset issues with toISOString
-    const isHoliday = (date) =>
+    const isHoliday = (date: Date) =>
       date.getFullYear() === 2024 && date.getMonth() === 2 && date.getDate() === 12;
     expect(getAutoFreiDate('2024-03-11', isHoliday)).toBe(null);
   });

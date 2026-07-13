@@ -26,6 +26,7 @@ import { useShiftLimitCheck } from '@/components/useShiftLimitCheck';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
 import { useAuth } from '@/components/AuthProvider';
+import type { ShiftEntry, Doctor, Workplace } from '@/types';
 
 // CONFIG: Set your Agent ID here or via Environment Variable if possible
 const ELEVENLABS_AGENT_ID = "agent_1901kb1v556ke8trk5g98xjaxrp4"; 
@@ -50,7 +51,7 @@ export default function GlobalVoiceControl() {
     
     const recognitionRef = useRef<any>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef([]);
+    const audioChunksRef = useRef<Blob[]>([]);
     const handleSendTextRef = useRef<((text: string) => void) | null>(null);
 
     const queryClient = useQueryClient();
@@ -60,12 +61,12 @@ export default function GlobalVoiceControl() {
     // --- DATA FETCHING (Replicated from ScheduleBoard for global access) ---
     const { data: doctors = [] } = useQuery({
         queryKey: ['doctors'],
-        queryFn: () => db.Doctor.list(),
+        queryFn: () => db.Doctor.list() as Promise<Doctor[]>,
     });
 
     const { data: workplaces = [] } = useQuery({
         queryKey: ['workplaces'],
-        queryFn: () => db.Workplace.list(null, 1000),
+        queryFn: () => db.Workplace.list({ limit: 1000 }) as Promise<Workplace[]>,
     });
 
     // Fetch shifts around today to handle commands
@@ -82,17 +83,16 @@ export default function GlobalVoiceControl() {
         queryKey: ['shifts', fetchRange.start, fetchRange.end],
         queryFn: () => db.ShiftEntry.filter({
             date: { $gte: fetchRange.start, $lte: fetchRange.end }
-        }, null, 5000),
-        keepPreviousData: true,
+        }, { limit: 5000 }) as Promise<ShiftEntry[]>,
     });
 
-    const { checkStaffing } = useStaffingCheck(doctors, allShifts);
-    const { checkLimits } = useShiftLimitCheck(allShifts, workplaces);
+    const { checkStaffing } = useStaffingCheck(doctors as any, allShifts as any);
+    const { checkLimits } = useShiftLimitCheck(allShifts as any, workplaces as any);
 
     const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
 
     // --- CONFLICT CHECKS ---
-    const checkConflicts = (doctorId, dateStr, newPosition, isVoice = false) => {
+    const checkConflicts = (doctorId: string, dateStr: string, newPosition: string, isVoice = false) => {
         const doctorShiftsOnDate = allShifts.filter(s => 
             s.doctor_id === doctorId && 
             s.date === dateStr
@@ -127,7 +127,7 @@ export default function GlobalVoiceControl() {
         if (isNewService) {
             // Determine consecutive mode: 'forbidden' | 'allowed' | 'preferred'
             const consecutiveMode = newServiceWorkplace.consecutive_days_mode
-                || (newServiceWorkplace.allows_consecutive_days === false ? 'forbidden' : 'allowed');
+                || ((newServiceWorkplace as any).allows_consecutive_days === false ? 'forbidden' : 'allowed');
             if (consecutiveMode === 'forbidden') {
                 const currentDt = new Date(dateStr);
                 const prevDateStr = format(addDays(currentDt, -1), 'yyyy-MM-dd');
@@ -178,7 +178,7 @@ export default function GlobalVoiceControl() {
             return;
         }
 
-        const resolveDoctor = (idOrName) => {
+        const resolveDoctor = (idOrName: string) => {
             if (!idOrName) return null;
             const term = idOrName.toString().trim();
             const lower = term.toLowerCase();
@@ -198,7 +198,7 @@ export default function GlobalVoiceControl() {
             return null;
         };
 
-        const resolvePosition = (name) => {
+        const resolvePosition = (name: string) => {
             if (!name) return null;
             let wp = workplaces.find(w => w.name === name);
             if (wp) return wp.name;
@@ -261,8 +261,8 @@ export default function GlobalVoiceControl() {
                             const cellShifts = allShifts.filter(s => s.date === date && s.position === posName);
                             const pendingInCell = toCreate.filter(s => s.date === date && s.position === posName);
                             const maxOrder = Math.max(
-                                cellShifts.reduce((max, s) => Math.max(max, s.order || 0), -1),
-                                pendingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1)
+                                cellShifts.reduce((max: number, s) => Math.max(max, s.order || 0), -1),
+                                pendingInCell.reduce((max: number, s) => Math.max(max, s.order || 0), -1)
                             );
                             toCreate.push({ date, position: posName, doctor_id: doc.id, order: maxOrder + 1 });
                         }
@@ -325,7 +325,7 @@ export default function GlobalVoiceControl() {
                     const doc = resolveDoctor(doctor_id);
 
                     if (doc) {
-                        let idsToDelete = [];
+                        let idsToDelete: string[] = [];
                         if (scope === 'day' && date) {
                             const shifts = allShifts.filter(s => s.date === date && s.doctor_id === doc.id);
                             idsToDelete = shifts.map(s => s.id);
@@ -351,19 +351,19 @@ export default function GlobalVoiceControl() {
             }
 
             if (updatesCount > 0) {
-                queryClient.invalidateQueries(['shifts']);
+                queryClient.invalidateQueries({ queryKey: ['shifts'] });
             }
 
         } catch (err) {
             console.error("Voice Execution Error:", err);
-            toast.error("Fehler: " + err.message);
+            toast.error("Fehler: " + (err as Error).message);
         }
     };
 
     // --- VOICE AGENT LOGIC (From original component) ---
     
     const clientTools = useMemo(() => ({
-        get_current_context: async (parameters) => {
+        get_current_context: async (parameters: unknown) => {
             console.log("Agent asks for context", parameters);
             
             // Map path to readable name
@@ -417,7 +417,7 @@ export default function GlobalVoiceControl() {
         },
         onError: (err) => {
             console.error("Agent Error", err);
-            setError("Agent Fehler: " + err.message);
+            setError("Agent Fehler: " + ((err as Error).message || 'Unbekannter Fehler'));
             setIsListening(false);
         },
         onMessage: (msg) => {
@@ -454,7 +454,7 @@ export default function GlobalVoiceControl() {
                 setTranscript("");
             };
 
-            recognition.onresult = (event) => {
+            recognition.onresult = (event: any) => {
                 let interim = '';
                 let final = '';
                 for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -467,7 +467,7 @@ export default function GlobalVoiceControl() {
                 }
             };
 
-            recognition.onerror = (event) => {
+            recognition.onerror = (event: any) => {
                 if (event.error === 'not-allowed') setError("Mikrofonzugriff verweigert.");
                 else if (event.error !== 'no-speech') setError("Fehler: " + event.error);
                 setIsListening(false);
@@ -501,10 +501,12 @@ export default function GlobalVoiceControl() {
                     setIsProcessing(true);
                     setTranscript("Transkribiere Audio...");
                     try {
-                        const text = await api.transcribeAudio(blob);
+                        const text = await api.transcribeAudio(audioBlob) as string;
                         if (text) {
                             setTranscript(text);
-                            handleSendTextRef.current(text);
+                            if (handleSendTextRef.current) {
+                                handleSendTextRef.current(text);
+                            }
                         } else {
                             setError("Kein Text erkannt.");
                             setIsProcessing(false);
@@ -522,7 +524,7 @@ export default function GlobalVoiceControl() {
             setIsListening(true);
             setError(null);
         } catch (e) {
-            setError("Mikrofonfehler: " + e.message);
+            setError("Mikrofonfehler: " + ((e as Error).message || 'Unbekannt'));
             setIsListening(false);
         }
     };
@@ -590,17 +592,17 @@ export default function GlobalVoiceControl() {
         }
     };
 
-    const handleSendText = async (text) => {
+    const handleSendText = async (text: string) => {
         if (!text || !text.trim()) return;
         setIsProcessing(true);
         
         try {
-            const result = await api.processVoiceCommand(text);
+            const result = await api.processVoiceCommand(text) as { corrected_text?: string };
             if (result.corrected_text) setTranscript(result.corrected_text);
             onVoiceCommand(result);
             
         } catch (err) {
-            const msg = err.response?.data?.error || err.message || "Verarbeitungsfehler";
+            const msg = (err as any).response?.data?.error || (err as Error).message || "Verarbeitungsfehler";
             setError(msg);
         } finally {
             setIsProcessing(false);

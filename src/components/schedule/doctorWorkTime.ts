@@ -1,6 +1,6 @@
 interface Doctor {
     fte?: number;
-    central_employee_id?: string;
+    central_employee_id?: string | null;
     part_time_model?: string;
     target_weekly_hours?: number;
 }
@@ -11,7 +11,7 @@ interface WorkTimeModel {
 }
 
 interface CentralEmployee {
-    target_hours_per_week?: number;
+    target_hours_per_week?: number | null;
     model_hours_per_week?: number;
 }
 

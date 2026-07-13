@@ -47,7 +47,7 @@ vi.mock('sonner', () => ({
 }));
 
 describe('TenantGroupManagement', () => {
-  let originalConfirm;
+  let originalConfirm: any;
 
   beforeEach(() => {
     originalConfirm = window.confirm;

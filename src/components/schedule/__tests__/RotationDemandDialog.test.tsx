@@ -20,7 +20,7 @@ vi.mock('sonner', () => ({
   },
 }));
 
-function renderWithProviders(ui) {
+function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -45,7 +45,7 @@ describe('RotationDemandDialog', () => {
 
   it('renders nothing when workplace is null (null guard)', () => {
     const { container } = renderWithProviders(
-      <RotationDemandDialog open={false} onOpenChange={() => {}} workplace={null} dateStr="2026-07-01" />
+      <RotationDemandDialog open={false} onOpenChange={() => {}} workplace={null} dateStr="2026-07-01" timeslot={null} existingDemand={null} />
     );
     // Dialog content should not render when workplace is null
     expect(container.querySelector('[role="dialog"]')).toBeNull();

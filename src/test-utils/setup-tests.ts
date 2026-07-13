@@ -57,7 +57,7 @@ if (!window.IntersectionObserver) {
     }
   }
 
-  window.IntersectionObserver = IntersectionObserverMock;
+  window.IntersectionObserver = IntersectionObserverMock as any;
 }
 
 if (!window.URL.createObjectURL) {

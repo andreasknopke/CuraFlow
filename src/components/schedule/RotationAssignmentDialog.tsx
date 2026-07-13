@@ -108,20 +108,20 @@ export default function RotationAssignmentDialog({
     const saveMutation = useMutation({
         mutationFn: async () => {
             const payload = {
-                rotation_workplace_id: workplace.id,
+                rotation_workplace_id: workplace!.id,
                 date,
                 employee_id: employeeId,
                 timeslot_id: timeslotId || null,
                 note: note.trim() || null,
             };
             if (isEdit) {
-                return api.updateRotationAssignment(groupId, assignment.id, payload);
+                return api.updateRotationAssignment(groupId as string, assignment!.id, payload);
             }
-            return api.createRotationAssignment(groupId, payload);
+            return api.createRotationAssignment(groupId as string, payload);
         },
         onSuccess: (data) => {
             invalidateRotationQueries();
-            const fulfilled = data?.fulfilled_demand_id;
+            const fulfilled = (data as { fulfilled_demand_id?: string })?.fulfilled_demand_id;
             if (fulfilled) {
                 toast.success('Springer eingeteilt', {
                     description: 'Ein offener Bedarf wurde automatisch erfüllt.',
@@ -138,7 +138,7 @@ export default function RotationAssignmentDialog({
     });
 
     const deleteMutation = useMutation({
-        mutationFn: () => api.deleteRotationAssignment(groupId, assignment.id),
+        mutationFn: () => api.deleteRotationAssignment(groupId as string, assignment!.id),
         onSuccess: () => {
             invalidateRotationQueries();
             toast.success('Einteilung entfernt');

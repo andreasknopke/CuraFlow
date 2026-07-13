@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // ── Fake localStorage (node environment has none) ───────────────────────────
 function createFakeLocalStorage() {
-  const store = {};
+  const store: any = {};
   return {
-    getItem(key) { return store[key] ?? null; },
-    setItem(key, val) { store[key] = String(val); },
-    removeItem(key) { delete store[key]; },
+    getItem(key: any) { return store[key] ?? null; },
+    setItem(key: any, val: any) { store[key] = String(val); },
+    removeItem(key: any) { delete store[key]; },
     clear() { Object.keys(store).forEach(k => delete store[k]); },
   };
 }
@@ -19,32 +19,32 @@ const fakeLocalStorage = createFakeLocalStorage();
 
 const fakeObjectStore = new Map(); // key → { key, value, updatedAt }
 
-function asyncCall(fn) {
+function asyncCall(fn: any) {
   Promise.resolve().then(fn);
 }
 
 function createFakeDB() {
   return {
     objectStoreNames: { contains: () => true },
-    transaction(_storeName, _mode) {
-      const tx = {
+    transaction(_storeName: any, _mode: any) {
+      const tx: any = {
         objectStore() {
           return {
-            put(record) {
+            put(record: any) {
               fakeObjectStore.set(record.key, record);
-              const req = { onsuccess: null, onerror: null, result: undefined };
+              const req: any = { onsuccess: null, onerror: null, result: undefined };
               asyncCall(() => req.onsuccess?.());
               return req;
             },
-            get(key) {
+            get(key: any) {
               const entry = fakeObjectStore.get(key) || undefined;
-              const req = { onsuccess: null, onerror: null, result: entry };
+              const req: any = { onsuccess: null, onerror: null, result: entry };
               asyncCall(() => req.onsuccess?.());
               return req;
             },
-            delete(key) {
+            delete(key: any) {
               fakeObjectStore.delete(key);
-              const req = { onsuccess: null, onerror: null, result: undefined };
+              const req: any = { onsuccess: null, onerror: null, result: undefined };
               asyncCall(() => req.onsuccess?.());
               return req;
             },
@@ -65,7 +65,7 @@ vi.stubGlobal('localStorage', fakeLocalStorage);
 vi.stubGlobal('indexedDB', {
   open() {
     const db = createFakeDB();
-    const req = { onsuccess: null, onerror: null, onupgradeneeded: null, result: db };
+    const req: any = { onsuccess: null, onerror: null, onupgradeneeded: null, result: db };
     // openDB resolves via request.result (not event.target.result)
     asyncCall(() => req.onsuccess?.());
     return req;

@@ -229,7 +229,7 @@ function MonthCalendar({ month, getDayStatus, occupiedWishDates, onDateClick, on
           const isBeforeDeadline = !!minSelectableDateStr && dateStr < minSelectableDateStr;
           const isBoundaryDate = !!minSelectableDateStr && dateStr === minSelectableDateStr;
           const isContractDisabled = !isDateWithinContract(date, contractInfo?.contractStart, contractInfo?.contractEnd);
-          const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo.contractEnd;
+          const isContractEnd = Boolean(contractInfo?.contractEnd) && dateStr === contractInfo!.contractEnd;
           const isOccupied = showOccupiedDates && occupiedWishDates && occupiedWishDates.has(dateStr);
           const borderClass = isOccupied ? "ring-2 ring-emerald-400/60 z-10" : "";
           const isDragSelected = dragSelectedDateKeys?.has(dateStr);

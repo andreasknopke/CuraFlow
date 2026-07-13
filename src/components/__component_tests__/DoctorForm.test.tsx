@@ -16,15 +16,15 @@ vi.mock('sonner', () => ({
 }));
 
 vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }) => <>{children}</>,
-  DialogContent: ({ children, ...props }) => <div {...props}>{children}</div>,
-  DialogHeader: ({ children }) => <div>{children}</div>,
-  DialogTitle: ({ children }) => <div>{children}</div>,
-  DialogFooter: ({ children }) => <div>{children}</div>,
+  Dialog: ({ children }: any) => <>{children}</>,
+  DialogContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  DialogHeader: ({ children }: any) => <div>{children}</div>,
+  DialogTitle: ({ children }: any) => <div>{children}</div>,
+  DialogFooter: ({ children }: any) => <div>{children}</div>,
 }));
 
 vi.mock('@/components/staff/DoctorQualificationEditor', () => ({
-  default: ({ selectedQualIds = [], onToggle }) => (
+  default: ({ selectedQualIds = [], onToggle }: any) => (
     <button
       type="button"
       data-testid="doctor-qualification-toggle-qualification-radiation"
@@ -35,7 +35,7 @@ vi.mock('@/components/staff/DoctorQualificationEditor', () => ({
   ),
 }));
 
-function renderDoctorForm({ doctors = [], qualifications = [], onSubmit = vi.fn() } = {}) {
+function renderDoctorForm({ doctors = [] as any[], qualifications = [] as any[], onSubmit = vi.fn() } = {}) {
   server.use(
     ...createDbHandlers({
       entities: {
@@ -92,7 +92,7 @@ describe('DoctorForm', () => {
     await user.clear(screen.getByTestId('staff-form-target-hours'));
     await user.type(screen.getByTestId('staff-form-target-hours'), '32.5');
     await user.click(screen.getByTestId('doctor-qualification-toggle-qualification-radiation'));
-    fireEvent.submit(screen.getByTestId('staff-form-submit').closest('form'));
+    fireEvent.submit(screen.getByTestId('staff-form-submit').closest('form')!);
 
     await waitFor(() => {
       expect(onSubmit).toHaveBeenCalledWith(
@@ -138,7 +138,7 @@ describe('DoctorForm', () => {
 
     await user.type(await screen.findByTestId('staff-form-name'), 'Andere Person');
     await user.type(screen.getByTestId('staff-form-initials'), 'aa');
-    fireEvent.submit(screen.getByTestId('staff-form-submit').closest('form'));
+    fireEvent.submit(screen.getByTestId('staff-form-submit').closest('form')!);
 
     await waitFor(() => {
       expect(onSubmit).not.toHaveBeenCalled();
@@ -149,8 +149,8 @@ describe('DoctorForm', () => {
   });
 
   it('prefers central target weekly hours over model hours fallback', () => {
-    expect(getCentralWeeklyHours({ target_hours_per_week: 40, model_hours_per_week: null }, '')).toBe(40);
-    expect(getCentralWeeklyHours({ target_hours_per_week: null, model_hours_per_week: 38.5 }, '')).toBe(38.5);
-    expect(getCentralWeeklyHours(null, '')).toBe('');
+    expect(getCentralWeeklyHours({ target_hours_per_week: 40, model_hours_per_week: null } as any, '')).toBe(40);
+    expect(getCentralWeeklyHours({ target_hours_per_week: null, model_hours_per_week: 38.5 } as any, '')).toBe(38.5);
+    expect(getCentralWeeklyHours(null as any, '')).toBe('');
   });
 });

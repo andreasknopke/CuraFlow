@@ -34,7 +34,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
     const { qualificationMap } = useQualifications();
 
     const doctorMap = useMemo(() => {
-        const m = {};
+        const m: Record<string, any> = {};
         for (const d of doctors) m[d.id] = d;
         return m;
     }, [doctors]);
@@ -74,8 +74,8 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                         {expiring.map((cert) => {
                             const days = Number(cert.days_until_expiry);
                             const expired = Number.isFinite(days) && days < 0;
-                            const doctor = doctorMap[cert.doctor_id];
-                            const qual = qualificationMap?.[cert.qualification_id];
+                            const doctor = doctorMap[cert.doctor_id as string];
+                            const qual = (qualificationMap as any)?.[cert.qualification_id as string];
                             return (
                                 <li
                                     key={cert.id}
@@ -86,7 +86,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                                         <div className="flex flex-wrap items-center gap-2">
                                             {qual && (
                                                 <Badge
-                                                    style={{ backgroundColor: qual.color_bg, color: qual.color_text }}
+                                                    style={{ backgroundColor: qual.color_bg as any, color: qual.color_text as any }}
                                                     className="border-0 text-[10px]"
                                                 >
                                                     {qual.short_label || qual.name?.substring(0, 3).toUpperCase()}
@@ -112,7 +112,7 @@ export default function CertificateExpiryWidget({ doctors = [], isAdmin = false 
                                         variant="ghost"
                                         size="icon"
                                         className="h-7 w-7"
-                                        onClick={() => handleView(cert.id)}
+                                        onClick={() => handleView(cert.id as string)}
                                         title="Zertifikat anzeigen"
                                     >
                                         <Eye className="w-3.5 h-3.5" />

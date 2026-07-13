@@ -330,7 +330,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                         <span
                             className="flex-shrink-0 rounded px-1 text-white font-semibold mr-1"
                             style={{ fontSize: `${Math.max(fontSize * 0.65, 8)}px`, backgroundColor: fairnessInfo.total >= 4 ? '#ef4444' : fairnessInfo.total >= 2 ? '#f59e0b' : '#22c55e', lineHeight: '1.4' }}
-                            title={fairnessTooltip}
+                        title={fairnessTooltip ?? undefined}
                         >
                             {fairnessInfo.total}D{fairnessInfo.weekend > 0 ? ` ${fairnessInfo.weekend}W` : ''}{fairnessInfo.wishText ? ' ★' : ''}
                         </span>
@@ -375,7 +375,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
                     <div
                         className="absolute -bottom-1 -right-1 z-20 rounded-full px-1 text-white font-bold leading-none"
                         style={{ fontSize: `${Math.max(fontSize * 0.55, 7)}px`, backgroundColor: fairnessInfo.total >= 4 ? '#ef4444' : fairnessInfo.total >= 2 ? '#f59e0b' : '#22c55e', padding: '1px 3px' }}
-                        title={fairnessTooltip}
+                        title={fairnessTooltip ?? undefined}
                     >
                         {fairnessInfo.total}
                     </div>

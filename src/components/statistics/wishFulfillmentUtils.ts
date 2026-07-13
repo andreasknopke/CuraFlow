@@ -79,7 +79,7 @@ export function buildWishFulfillmentStats({ doctors = [], wishes = [], shifts = 
                 const wishStartDate = getWishStartDate(typedWish);
                 const wishEndDate = getWishEndDate(typedWish) || wishStartDate;
                 const shiftsInRange = wishStartDate
-                    ? doctorShifts.filter((shift) => shift.date >= wishStartDate && shift.date <= wishEndDate)
+                    ? doctorShifts.filter((shift) => shift.date >= wishStartDate && shift.date <= (wishEndDate ?? ''))
                     : [];
 
                 const hasServiceShift = shiftsInRange.some(isServiceShift);

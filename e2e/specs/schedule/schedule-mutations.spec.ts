@@ -20,6 +20,7 @@ test.describe('schedule board safety tests', () => {
     await schedulePage.goto(seededSchedule.focusDate, 'week');
 
     await schedulePage.autoFillTrigger.click();
+    await expect(schedulePage.autoFillAll).toBeVisible();
     await schedulePage.autoFillAll.click();
 
     await expect(schedulePage.previewBar).toBeVisible({ timeout: 25000 });

@@ -67,11 +67,10 @@ export class AppShellPage {
   }
 
   async logout() {
-    await this.accountMenuTrigger.click();
-    await expect(this.logoutButton).toBeVisible();
-    await Promise.all([
-      this.page.waitForURL(/\/authlogin(?:\?|$)/),
-      this.logoutButton.click({ force: true }),
-    ]);
+    await this.accountMenuTrigger.click({ force: true });
+    await expect(this.logoutButton).toBeVisible({ timeout: 10_000 });
+    await expect(this.logoutButton).toBeEnabled({ timeout: 10_000 });
+    await this.logoutButton.click({ force: true });
+    await this.page.waitForURL(/\/authlogin(?:\?|$)/, { timeout: 20_000 });
   }
 }

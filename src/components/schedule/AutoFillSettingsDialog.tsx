@@ -16,25 +16,24 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
 
     const { data: settings = [] } = useQuery({
         queryKey: ['systemSettings'],
-        queryFn: () => db.SystemSetting.list(),
+        queryFn: () => db.SystemSetting.list() as Promise<any[]>,
         staleTime: 10 * 60 * 1000,
-        cacheTime: 15 * 60 * 1000,
         refetchOnWindowFocus: false,
     });
 
     const updateSettingMutation = useMutation({
-        mutationFn: async ({ key, value }) => {
-            const existing = settings.find(s => s.key === key);
+        mutationFn: async ({ key, value }: { key: string; value: string }) => {
+            const existing = (settings as any[]).find((s: any) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             } else {
                 return db.SystemSetting.create({ key, value });
             }
         },
-        onSuccess: () => queryClient.invalidateQueries(['systemSettings'])
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
-    const getSetting = (key: string, def: string = ''): string => settings.find(s => s.key === key)?.value ?? def;
+    const getSetting = (key: string, def: string = ''): string => (settings as any[]).find((s: any) => s.key === key)?.value ?? def;
     const getSettingBool = (key: string): boolean => getSetting(key) === 'true';
 
     const limitFG = getSetting('limit_fore_services', '4');

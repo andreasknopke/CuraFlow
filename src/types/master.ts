@@ -30,6 +30,7 @@ export interface CentralEmployee {
   contract_end?: string | null;
   probation_end?: string | null;
   target_hours_per_week?: number | null;
+  model_hours_per_week?: number | null;
   vacation_days_annual?: number | null;
   work_time_model_id?: string | null;
   payscale_tariff_id?: string | null;

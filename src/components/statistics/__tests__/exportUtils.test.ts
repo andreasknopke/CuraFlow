@@ -18,8 +18,8 @@ const staticMockInstance = vi.hoisted(() => ({
 }));
 
 const { mockJsPDF } = vi.hoisted(() => {
-  const calls = [];
-  function mockJsPDF(...args) {
+  const calls: any[] = [];
+  function mockJsPDF(...args: any[]) {
     calls.push(args);
     return staticMockInstance;
   }

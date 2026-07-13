@@ -9,15 +9,15 @@ import {
 
 describe('doctorWorkTime', () => {
   it('scales central employee weekly hours by doctor fte', () => {
-    const doctor = { fte: 0.5, target_weekly_hours: null, central_employee_id: 'employee-1' };
-    const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null };
+    const doctor = { fte: 0.5, target_weekly_hours: null, central_employee_id: 'employee-1' } as any;
+    const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null } as any;
 
     expect(resolveDoctorTargetWeeklyHours(doctor, null, centralEmployee)).toBe(20);
     expect(resolveDoctorTargetDailyHours(doctor, null, centralEmployee)).toBe(4);
   });
 
   it('scales model hours by doctor fte before falling back to default full time hours', () => {
-    const doctor = { fte: 0.5, target_weekly_hours: null, central_employee_id: 'employee-1' };
+    const doctor = { fte: 0.5, target_weekly_hours: null, central_employee_id: 'employee-1' } as any;
     const workTimeModel = { hours_per_week: 40, hours_per_day: 8 };
     const centralEmployee = { id: 'employee-1', target_hours_per_week: null, model_hours_per_week: 40 };
 
@@ -53,8 +53,8 @@ describe('doctorWorkTime', () => {
         part_time_model: 'full_days_off',
         central_employee_id: 'employee-1',
         target_weekly_hours: null,
-      };
-      const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null };
+      } as any;
+      const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null } as any;
 
       // Full day: 40 / 5 = 8h, not scaled by 0.8
       expect(resolveDoctorTargetDailyHours(doctor, null, centralEmployee)).toBe(8);
@@ -77,8 +77,8 @@ describe('doctorWorkTime', () => {
         fte: 0.8,
         central_employee_id: 'employee-1',
         target_weekly_hours: null,
-      };
-      const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null };
+      } as any;
+      const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null } as any;
 
       // reduced_daily → 40 * 0.8 = 32 weekly, 32/5 = 6.4 daily
       expect(resolveDoctorTargetDailyHours(doctor, null, centralEmployee)).toBe(6.4);

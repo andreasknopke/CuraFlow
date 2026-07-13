@@ -137,8 +137,8 @@ The core of the app. ScheduleBoard.jsx (7,000 lines) is the single largest and m
 >    happy-dom/jsdom.
 >
 > 2. **E2E keyboard DnD (real Chromium) — INPUT DISPATCH SOLVED, SPATIAL
->    NAVIGATION BLOCKED.** `e2e/specs/schedule/schedule-dnd-keyboard.spec.ts`
->    is a stable diagnostic. Deep investigation isolated three problems:
+>    NAVIGATION BLOCKED.** See `docs/SCHEDULE_KEYBOARD_DND_SPIKE.md`
+>    for the full investigation. Three problems were isolated:
 >    - **Input dispatch (SOLVED).** `page.keyboard.press('Space')` synthesizes
 >      a click on the focused `<div role="button">` handle, and pangea
 >      cancels any in-progress drag on click. Also, `new KeyboardEvent(...)`
@@ -461,8 +461,7 @@ achievable for ScheduleBoard. Both confirm it is not.
      a real layout engine.
 
 2. **E2E keyboard-DnD spike — INPUT DISPATCH SOLVED, SPATIAL NAVIGATION BLOCKED.**
-   `e2e/specs/schedule/schedule-dnd-keyboard.spec.ts` (stable, passing diagnostic)
-   - Run: `npx playwright test e2e/specs/schedule/schedule-dnd-keyboard.spec.ts --project=chromium`
+   See `docs/SCHEDULE_KEYBOARD_DND_SPIKE.md` for details.
    - Result: the input-dispatch problems (synthesized-click cancel + `keyCode=0`)
      were fully solved by dispatching raw `KeyboardEvent`s with overridden
      `keyCode`/`which`. Lift, move, AND drop all fire and `handleDragEnd` runs.

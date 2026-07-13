@@ -34,7 +34,7 @@ export function useShiftLimitCheck(shifts: ShiftEntry[], workplaces: Workplace[]
 
     const { data: staffingEntries = [] } = useQuery({
         queryKey: ['staffingPlanEntriesAll'],
-        queryFn: () => base44.entities.StaffingPlanEntry.list(null, 2000),
+        queryFn: () => (base44.entities.StaffingPlanEntry as any).list?.(null, 2000),
         staleTime: 1000 * 60 * 5
     });
 

@@ -24,6 +24,10 @@ jobs:
         include:
           - name: build
             command: npm run build
+          - name: lint
+            command: npm run lint
+          - name: typecheck
+            command: npm run typecheck
           - name: test-unit
             command: npm run test:unit
           - name: test-component

@@ -65,6 +65,7 @@ const useFormField = (): UseFormFieldReturn => {
     formItemId: `${id}-form-item`,
     formDescriptionId: `${id}-form-item-description`,
     formMessageId: `${id}-form-item-message`,
+    dirty: formState.isDirty,
     ...fieldState,
   }
 }

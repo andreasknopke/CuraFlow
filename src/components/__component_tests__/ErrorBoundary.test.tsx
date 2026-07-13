@@ -8,8 +8,9 @@ function NormalChild() {
   return <div data-testid="child-content">All good</div>;
 }
 
-function ThrowingChild() {
+function ThrowingChild(): React.ReactElement {
   throw new Error('test crash');
+  return null as any;
 }
 
 // Suppress console.error from React's error boundary logging

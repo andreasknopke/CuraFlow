@@ -11,24 +11,24 @@ import {
 // isDoctorAvailable
 // ---------------------------------------------------------------------------
 describe('isDoctorAvailable', () => {
-  const baseDoctor = { id: 1, fte: 1.0 };
+  const baseDoctor = { id: 1, fte: 1.0 } as any;
 
   it('returns true for active full-time doctor with no plan entries', () => {
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), [])).toBe(true);
   });
 
   it('returns false when date is strictly after contract_end_date', () => {
-    const doctor = { ...baseDoctor, contract_end_date: '2024-03-10' };
+    const doctor = { ...baseDoctor, contract_end_date: '2024-03-10' } as any;
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(false);
   });
 
   it('returns true on the contract_end_date itself', () => {
-    const doctor = { ...baseDoctor, contract_end_date: '2024-03-11' };
+    const doctor = { ...baseDoctor, contract_end_date: '2024-03-11' } as any;
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(true);
   });
 
   it.each(['KO', 'EZ', 'MS', 'BV'])('returns false when staffing plan value is "%s"', (val) => {
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: val }];
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: val }] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
   });
 
@@ -37,84 +37,84 @@ describe('isDoctorAvailable', () => {
       { doctor_id: 1, year: 2024, month: 1, value: '1,00' },
       { doctor_id: 1, year: 2024, month: 2, value: '0,80' },
       { doctor_id: 1, year: 2024, month: 3, value: 'BV' },
-    ];
+    ] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
     expect(getDoctorEffectiveFte(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(0.8);
   });
 
   it('BV falls back to doctor.fte when no previous numeric FTE exists', () => {
-    const doctor = { id: 1, fte: '0.5' };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'BV' }];
+    const doctor = { id: 1, fte: '0.5' } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'BV' }] as any;
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0.5);
   });
 
   it('returns true when staffing plan value is "OU" (OtherUnit)', () => {
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }];
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(true);
   });
 
   it('returns false when plan entry FTE is 0', () => {
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.0' }];
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.0' }] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
   });
 
   it('returns false when plan entry FTE is 0 with comma notation', () => {
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0,0' }];
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0,0' }] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(false);
   });
 
   it('returns true for partial FTE > 0', () => {
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.5' }];
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.5' }] as any;
     expect(isDoctorAvailable(baseDoctor, new Date(2024, 2, 11), planEntries)).toBe(true);
   });
 
   it('falls back to doctor.fte when no plan entry exists for month', () => {
-    const doctor = { id: 1, fte: 0.0 };
+    const doctor = { id: 1, fte: 0.0 } as any;
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(false);
   });
 
   it('uses default 1.0 FTE when doctor has no fte field and no plan entry', () => {
-    const doctor = { id: 1 };
+    const doctor = { id: 1 } as any;
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), [])).toBe(true);
   });
 });
 
 describe('getDoctorEffectiveFte', () => {
   it('prefers the monthly staffing plan entry over doctor.fte', () => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0,50' }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0,50' }] as any;
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0.5);
   });
 
   it.each(['KO', 'EZ', 'MS'])('maps staffing code %s to 0 fte', (value) => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value }] as any;
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
   });
 
   it('maps staffing code BV to the previous numeric FTE', () => {
-    const doctor = { id: 1, fte: 1.0 };
+    const doctor = { id: 1, fte: 1.0 } as any;
     const planEntries = [
       { doctor_id: 1, year: 2024, month: 2, value: '0.6' },
       { doctor_id: 1, year: 2024, month: 3, value: 'BV' },
-    ];
+    ] as any;
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0.6);
   });
 
   it('maps staffing code OU to 0 fte while remaining available', () => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'OU' }] as any;
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 11), planEntries)).toBe(0);
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 11), planEntries)).toBe(true);
   });
 
   it('applies status code only within start/end day range', () => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }] as any;
 
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 5), planEntries)).toBe(true);
     expect(isDoctorAvailable(doctor, new Date(2024, 2, 15), planEntries)).toBe(false);
@@ -122,8 +122,8 @@ describe('getDoctorEffectiveFte', () => {
   });
 
   it('calculates monthly FTE proportionally with status range', () => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: 'MS', status_start_day: 10, status_end_day: 20 }] as any;
 
     // March 2024 has 31 days; MS applies for 11 days (10-20 inclusive)
     const expected = (0 * 11 + 1.0 * 20) / 31;
@@ -131,11 +131,11 @@ describe('getDoctorEffectiveFte', () => {
   });
 
   it('calculates BV monthly FTE proportionally using previous FTE', () => {
-    const doctor = { id: 1, fte: 1.0 };
+    const doctor = { id: 1, fte: 1.0 } as any;
     const planEntries = [
       { doctor_id: 1, year: 2024, month: 2, value: '0.8' },
       { doctor_id: 1, year: 2024, month: 3, value: 'BV', status_start_day: 5, status_end_day: 15 },
-    ];
+    ] as any;
 
     // March has 31 days; BV applies for 11 days (5-15 inclusive) with FTE 0.8
     const expected = (0.8 * 11 + 1.0 * 20) / 31;
@@ -143,8 +143,8 @@ describe('getDoctorEffectiveFte', () => {
   });
 
   it('applies numeric FTE only within date range and uses default outside', () => {
-    const doctor = { id: 1, fte: 1.0 };
-    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.5', status_start_day: 10, status_end_day: 20 }];
+    const doctor = { id: 1, fte: 1.0 } as any;
+    const planEntries = [{ doctor_id: 1, year: 2024, month: 3, value: '0.5', status_start_day: 10, status_end_day: 20 }] as any;
 
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 5), planEntries)).toBe(1.0);
     expect(getDoctorEffectiveFte(doctor, new Date(2024, 2, 15), planEntries)).toBe(0.5);
@@ -200,7 +200,7 @@ describe('getAvailabilityBlockingDoctorIdsByDate', () => {
         { doctor_id: 1, date: '2025-02-12', position: 'Rotation CT' },
         { doctor_id: 2, date: '2025-02-12', position: 'Dienst A' },
         { doctor_id: 4, date: '2025-02-12', position: 'Demo A' },
-      ],
+      ] as any,
       sharedShifts: [
         {
           employee_id: 200,
@@ -218,21 +218,21 @@ describe('getAvailabilityBlockingDoctorIdsByDate', () => {
           affects_availability: true,
           allows_rotation_concurrently: true,
         },
-      ],
+      ] as any,
       workplaces: [
         { name: 'Rotation CT', category: 'Rotationen' },
         { name: 'Dienst A', category: 'Dienste', allows_rotation_concurrently: false },
         { name: 'Demo A', category: 'Demonstrationen & Konsile' },
-      ],
+      ] as any,
       doctors: [
         { id: 1, central_employee_id: 100 },
         { id: 2, central_employee_id: 101 },
         { id: 3, central_employee_id: 200 },
         { id: 4, central_employee_id: 300 },
-      ],
+      ] as any,
     });
 
-    expect(Array.from(result.get('2025-02-12') || []).sort((a, b) => a - b)).toEqual([1, 2, 3]);
+    expect(Array.from(result.get('2025-02-12') || []).sort((a: any, b: any) => a - b)).toEqual([1, 2, 3]);
   });
 
   it('skips non-blocking workplaces and non-availability-affecting shared shifts', () => {
@@ -240,7 +240,7 @@ describe('getAvailabilityBlockingDoctorIdsByDate', () => {
       localShifts: [
         { doctor_id: 1, date: '2025-02-13', position: 'Service With Concurrency' },
         { doctor_id: 2, date: '2025-02-13', position: 'Non Blocking Role' },
-      ],
+      ] as any,
       sharedShifts: [
         {
           employee_id: 100,
@@ -250,15 +250,15 @@ describe('getAvailabilityBlockingDoctorIdsByDate', () => {
           affects_availability: false,
           allows_rotation_concurrently: false,
         },
-      ],
+      ] as any,
       workplaces: [
         { name: 'Service With Concurrency', category: 'Dienste', allows_rotation_concurrently: true },
         { name: 'Non Blocking Role', category: 'Rotationen', affects_availability: false },
-      ],
+      ] as any,
       doctors: [
         { id: 1, central_employee_id: 100 },
         { id: 2, central_employee_id: 200 },
-      ],
+      ] as any,
     });
 
     expect(result.get('2025-02-13')).toBeUndefined();

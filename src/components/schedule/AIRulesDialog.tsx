@@ -27,19 +27,19 @@ export default function AIRulesDialog() {
   const createRuleMutation = useMutation({
     mutationFn: (data: { content: string; is_active: boolean }) => base44.entities.ScheduleRule.create(data),
     onSuccess: () => {
-        queryClient.invalidateQueries(['scheduleRules']);
+        queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any);
         setNewRule("");
     },
   });
 
   const updateRuleMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: { is_active: boolean } }) => base44.entities.ScheduleRule.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries(['scheduleRules']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any),
   });
 
   const deleteRuleMutation = useMutation({
     mutationFn: (id: string) => base44.entities.ScheduleRule.delete(id),
-    onSuccess: () => queryClient.invalidateQueries(['scheduleRules']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleRules'] } as any),
   });
 
   const handleAdd = () => {
@@ -91,7 +91,7 @@ export default function AIRulesDialog() {
                             Keine Regeln definiert.
                         </div>
                     )}
-                    {rules.map(rule => (
+                    {rules.map((rule: any) => (
                         <div key={rule.id} className="flex items-start justify-between bg-slate-50 p-3 rounded-md border border-slate-100 group">
                             <div className="flex items-start gap-3 flex-1 mr-4">
                                 <Switch 

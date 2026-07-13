@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback, type CSSProperties, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DragStart, BeforeCapture, DraggableProvided, DraggableStateSnapshot, DraggableRubric } from '@hello-pangea/dnd';
@@ -216,11 +217,11 @@ const stripPanelPrefix = (id: string = ''): string => (id.startsWith(SPLIT_PANEL
 const normalizeDraggableId = (id: string = ''): string => (id.startsWith(SPLIT_DRAG_PREFIX) ? id.slice(SPLIT_DRAG_PREFIX.length) : id);
 const encodeScheduleTargetId = (value: string = ''): string => encodeURIComponent(String(value));
 const movePinnedSectionToEnd = (sections: Array<{ title: string }> = []): Array<{ title: string }> => {
-    const pinnedSections = sections.filter((section) => section.title === PINNED_SECTION_TITLE);
+    const pinnedSections = sections.filter((section: any) => section.title === PINNED_SECTION_TITLE);
     if (pinnedSections.length === 0) return sections;
 
     return [
-        ...sections.filter((section) => section.title !== PINNED_SECTION_TITLE),
+        ...sections.filter((section: any) => section.title !== PINNED_SECTION_TITLE),
         ...pinnedSections,
     ];
 };
@@ -255,16 +256,17 @@ const parseDateFromQuery = (rawDate: string | null): Date | null => {
     return isValid(parsed) ? parsed : null;
 };
 
-const getInitialScheduleState = (): { currentDate: Date; viewMode: ScheduleViewMode; activeSectionTabId: string } => {
-    const params = new URLSearchParams(window.location.search);
-    const initialDate = parseDateFromQuery(params.get('date'));
-    const rawView = params.get('view');
+const getInitialScheduleState = (
+  searchParams: URLSearchParams
+): { currentDate: Date; viewMode: ScheduleViewMode; activeSectionTabId: string } => {
+    const initialDate = parseDateFromQuery(searchParams.get('date'));
+    const rawView = searchParams.get('view');
     const initialViewMode: ScheduleViewMode = rawView === 'day' || rawView === 'month' ? rawView : 'week';
 
     return {
         currentDate: initialDate || startOfWeek(new Date(), { weekStartsOn: 1 }),
         viewMode: initialViewMode,
-        activeSectionTabId: params.get('sectionTab') || 'main',
+        activeSectionTabId: searchParams.get('sectionTab') || 'main',
     };
 };
 
@@ -320,7 +322,7 @@ const getUniqueChipCandidates = (doctor: Doctor): string[] => {
         }
     }
 
-    indexPairs.sort((left, right) => {
+    indexPairs.sort((left: any, right: any) => {
         const leftScore = Math.abs(left[0] - 3) + Math.abs(left[1] - 4);
         const rightScore = Math.abs(right[0] - 3) + Math.abs(right[1] - 4);
         if (leftScore !== rightScore) return leftScore - rightScore;
@@ -344,15 +346,15 @@ const buildDoctorChipLabelMap = (doctors: Doctor[] = []): Map<string, string> =>
     const usedLabels = new Set<string>();
     const groupedDoctors = new Map<string, Doctor[]>();
 
-    doctors.forEach((doctor) => {
+    doctors.forEach((doctor: any) => {
         const baseLabel = formatChipLabel(normalizeChipSource(doctor).slice(0, 3));
         if (!groupedDoctors.has(baseLabel)) {
             groupedDoctors.set(baseLabel, []);
         }
-        groupedDoctors.get(baseLabel).push(doctor);
+        groupedDoctors.get(baseLabel)!.push(doctor);
     });
 
-    groupedDoctors.forEach((group, baseLabel) => {
+    groupedDoctors.forEach((group: any, baseLabel: any) => {
         if (group.length === 1) {
             labelMap.set(group[0].id, baseLabel);
             usedLabels.add(baseLabel);
@@ -361,11 +363,11 @@ const buildDoctorChipLabelMap = (doctors: Doctor[] = []): Map<string, string> =>
 
     const conflictingGroups = Array.from(groupedDoctors.entries())
         .filter(([, group]) => group.length > 1)
-        .sort((left, right) => right[1].length - left[1].length);
+        .sort((left: any, right: any) => right[1].length - left[1].length);
 
     conflictingGroups.forEach(([, group]) => {
-        group.forEach((doctor, groupIndex) => {
-            const candidate = getUniqueChipCandidates(doctor).find((label) => !usedLabels.has(label));
+        group.forEach((doctor: any, groupIndex: any) => {
+            const candidate = getUniqueChipCandidates(doctor).find((label: any) => !usedLabels.has(label));
             if (candidate) {
                 labelMap.set(doctor.id, candidate);
                 usedLabels.add(candidate);
@@ -480,7 +482,7 @@ const parseTimeToMinutes = (timeStr: string | null | undefined): number | null =
 const mergePlannedIntervals = (intervals: Array<{ start: number; end: number }>): number => {
     if (!intervals.length) return 0;
 
-    const sorted = [...intervals].sort((left, right) => left.start - right.start);
+    const sorted = [...intervals].sort((left: any, right: any) => left.start - right.start);
     const merged = [{ ...sorted[0] }];
 
     for (let index = 1; index < sorted.length; index += 1) {
@@ -495,7 +497,7 @@ const mergePlannedIntervals = (intervals: Array<{ start: number; end: number }>)
         merged.push({ ...current });
     }
 
-    return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
+    return merged.reduce((sum: any, interval: any) => sum + (interval.end - interval.start), 0);
 };
 
 const buildShiftInterval = (shift: ShiftEntry, doctor: Doctor, workplace: Workplace, timeslot: WorkplaceTimeslot | undefined | null, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): { start: number; end: number } | null => {
@@ -547,7 +549,7 @@ const getExpandedTimeslotRowLabel = (rowObj: any, rowDisplayName: string): strin
 const getRowLabelPresentation = (label: string, isCompactMode: boolean = false): { className: string; style: CSSProperties } => {
     const normalizedLabel = String(label || '').trim();
     const words = normalizedLabel.split(/\s+/).filter(Boolean);
-    const longestWordLength = words.reduce((maxLength, word) => Math.max(maxLength, word.length), 0);
+    const longestWordLength = words.reduce((maxLength: any, word: any) => Math.max(maxLength, word.length), 0);
 
     let fontSizePx = isCompactMode ? 11 : 14;
     if (normalizedLabel.length > (isCompactMode ? 18 : 24)) fontSizePx -= 1;
@@ -583,7 +585,7 @@ const getDoctorTargetDailyHours = (doctor: Doctor | undefined, workTimeModelMap:
 
     const model = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
     const centralEmployee = doctor.central_employee_id ? centralEmployeesById.get(String(doctor.central_employee_id)) : null;
-    return resolveDoctorTargetDailyHours(doctor, model, centralEmployee);
+    return resolveDoctorTargetDailyHours(doctor as any, model, centralEmployee);
 };
 
 const getDoctorTargetDailyMinutes = (doctor: Doctor | undefined, workTimeModelMap: Map<string, WorkTimeModel>, centralEmployeesById: Map<string, any>): number | null => {
@@ -726,7 +728,7 @@ const applyTimeslotSelectionToCreateData = (data: Record<string, any>, selection
 
 const applyTimeslotSelectionToUpdateData = (data: Record<string, any>, selection: any): Record<string, any> => {
     const normalizedSelection = normalizeTimeslotSelection(selection);
-    const nextData = {
+    const nextData: Record<string, any> = {
         ...data,
         timeslot_id: normalizedSelection.timeslotId || null,
     };
@@ -750,7 +752,7 @@ const getShiftTimeRangeLabel = (shift: ShiftEntry, doctor: Doctor | undefined, w
     }
 
     if (shift?.timeslot_id) {
-        const timeslot = workplaceTimeslots.find((entry) => entry.id === shift.timeslot_id);
+        const timeslot = workplaceTimeslots.find((entry: any) => entry.id === shift.timeslot_id);
         const timeRange = getTimeslotDerivedTimeRange(timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById);
         if (!timeRange) return formatTimeslotTimeRange(timeslot?.start_time, timeslot?.end_time);
 
@@ -765,7 +767,7 @@ const getShiftTimeRangeLabel = (shift: ShiftEntry, doctor: Doctor | undefined, w
     // timeslots_enabled=true (z.B. nach Backfill-Migration): Zeige den
     // ersten/Default-Timeslot des Arbeitsplatzes an.
     if (workplace?.timeslots_enabled && workplace?.id) {
-        const defaultTimeslot = workplaceTimeslots.find((entry) => entry.workplace_id === workplace.id);
+        const defaultTimeslot = workplaceTimeslots.find((entry: any) => entry.workplace_id === workplace.id);
         if (defaultTimeslot) {
             const timeRange = getTimeslotDerivedTimeRange(defaultTimeslot, doctor, workplace, workTimeModelMap, centralEmployeesById);
             if (!timeRange) return formatTimeslotTimeRange(defaultTimeslot?.start_time, defaultTimeslot?.end_time);
@@ -786,13 +788,13 @@ const getLateRotationIndicator = (shift: ShiftEntry, workplace: Workplace | unde
         return { show: false, tooltip: null };
     }
 
-    const timeslot = workplaceTimeslots.find((entry) => entry.id === shift.timeslot_id);
+    const timeslot = workplaceTimeslots.find((entry: any) => entry.id === shift.timeslot_id);
     const startMinutes = parseTimeToMinutes(timeslot?.start_time);
     if (startMinutes === null || startMinutes < LATE_ROTATION_THRESHOLD_MINUTES) {
         return { show: false, tooltip: null };
     }
 
-    const startLabel = formatTimeslotStartTime(timeslot.start_time);
+    const startLabel = formatTimeslotStartTime(timeslot!.start_time);
     return {
         show: true,
         tooltip: startLabel
@@ -801,7 +803,7 @@ const getLateRotationIndicator = (shift: ShiftEntry, workplace: Workplace | unde
     };
 };
 
-const LateAvailabilityBadge = ({ tooltip, compact = false }) => (
+const LateAvailabilityBadge = ({ tooltip, compact = false }: { tooltip: string | null; compact?: boolean }) => (
     <TooltipProvider delayDuration={0}>
         <Tooltip>
             <TooltipTrigger asChild>
@@ -809,7 +811,7 @@ const LateAvailabilityBadge = ({ tooltip, compact = false }) => (
                     className={compact
                         ? 'absolute -top-1 -left-1 z-20 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-slate-900/80 text-[9px] leading-none text-white cursor-help'
                         : 'ml-1 inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white cursor-help'}
-                    aria-label={tooltip}
+                    {...({ 'aria-label': tooltip } as any)}
                 >
                     🌙
                 </span>
@@ -821,7 +823,7 @@ const LateAvailabilityBadge = ({ tooltip, compact = false }) => (
     </TooltipProvider>
 );
 
-const TimeslotSummaryHint = ({ summary, details = [], count = 0 }) => {
+const TimeslotSummaryHint = ({ summary, details = [], count = 0 }: { summary: string | null; details?: string[]; count?: number }) => {
     if (!summary) return null;
 
     const tooltipLines = Array.isArray(details) && details.length > 0 ? details : [summary];
@@ -841,7 +843,7 @@ const TimeslotSummaryHint = ({ summary, details = [], count = 0 }) => {
                 <TooltipContent side="bottom" className="max-w-xs px-3 py-2 text-left">
                     <div className="space-y-1">
                         <div className="font-medium">Zeitfenster</div>
-                        {tooltipLines.map((line) => (
+                        {tooltipLines.map((line: any) => (
                             <div key={line} className="text-xs leading-snug">
                                 {line}
                             </div>
@@ -854,11 +856,11 @@ const TimeslotSummaryHint = ({ summary, details = [], count = 0 }) => {
 };
 
 export default function ScheduleBoard() {
-    const initialState = useMemo(() => getInitialScheduleState(), []);
+    const [searchParams] = useSearchParams();
+    const initialState = useMemo(() => getInitialScheduleState(searchParams), [searchParams]);
     const isEmbeddedSchedule = useMemo(() => {
-            const params = new URLSearchParams(window.location.search);
-            return params.get('embeddedSchedule') === '1';
-    }, []);
+            return searchParams.get('embeddedSchedule') === '1';
+    }, [searchParams]);
   // const { isReadOnly } = useAuth(); // Removed duplicate destructuring
   const isMobile = useIsMobile();
     const [currentDate, setCurrentDate] = useState(initialState.currentDate);
@@ -889,7 +891,7 @@ export default function ScheduleBoard() {
       const item = undoStack[undoStack.length - 1];
       
       // Remove from stack immediately
-      setUndoStack(prev => prev.slice(0, -1));
+      setUndoStack((prev: any) => prev.slice(0, -1));
 
       const actions = Array.isArray(item) ? item : [item];
 
@@ -904,13 +906,13 @@ export default function ScheduleBoard() {
               } else if (action.type === 'BULK_CREATE') {
                   await db.ShiftEntry.bulkCreate(action.data);
               } else if (action.type === 'BULK_DELETE') {
-                  await Promise.all(action.ids.map(id => db.ShiftEntry.delete(id)));
+                  await Promise.all(action.ids.map((id: any) => db.ShiftEntry.delete(id)));
               }
           }
-          queryClient.invalidateQueries(['shifts']);
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
       } catch (e) {
           console.error("Undo failed", e);
-          alert("Rückgängig fehlgeschlagen: " + e.message);
+          alert("Rückgängig fehlgeschlagen: " + (e as Error).message);
       }
   };
 
@@ -1015,7 +1017,7 @@ export default function ScheduleBoard() {
   // Sync with user profile when it loads/updates
   useEffect(() => {
       if (user?.collapsed_sections && Array.isArray(user.collapsed_sections)) {
-          setCollapsedSections(prev => {
+          setCollapsedSections((prev: any) => {
               // Only update if significantly different to avoid overwriting local interactions during sync
               if (JSON.stringify(prev) !== JSON.stringify(user.collapsed_sections)) {
                   return user.collapsed_sections;
@@ -1040,37 +1042,37 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_highlightMyName', JSON.stringify(highlightMyName));
       if (user && user.highlight_my_name !== highlightMyName) {
-          updateMe({ highlight_my_name: highlightMyName }).catch(e => console.error("Pref save failed", e));
+          updateMe({ highlight_my_name: highlightMyName }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [highlightMyName, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_showInitialsOnly', JSON.stringify(showInitialsOnly));
       if (user && user.schedule_initials_only !== showInitialsOnly) {
-          updateMe({ schedule_initials_only: showInitialsOnly }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_initials_only: showInitialsOnly }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [showInitialsOnly, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_sortDoctorsAlphabetically', JSON.stringify(sortDoctorsAlphabetically));
       if (user && user.schedule_sort_doctors_alphabetically !== sortDoctorsAlphabetically) {
-          updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_sort_doctors_alphabetically: sortDoctorsAlphabetically }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [sortDoctorsAlphabetically, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_showSidebarTimeAccount', JSON.stringify(showSidebarTimeAccount));
       if (user && user.schedule_show_time_account !== showSidebarTimeAccount) {
-          updateMe({ schedule_show_time_account: showSidebarTimeAccount }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_show_time_account: showSidebarTimeAccount }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [showSidebarTimeAccount, updateMe, user]);
 
-  const sortDoctorsForDisplay = (doctorList = []) => {
+  const sortDoctorsForDisplay = (doctorList: any[] = []) => {
       if (!sortDoctorsAlphabetically) {
           return doctorList;
       }
 
-      return [...doctorList].sort((a, b) => {
+      return [...doctorList].sort((a: any, b: any) => {
           const nameDiff = (a?.name || '').localeCompare(b?.name || '', 'de', { sensitivity: 'base' });
           if (nameDiff !== 0) return nameDiff;
 
@@ -1093,7 +1095,7 @@ export default function ScheduleBoard() {
           setShowSidebar(user.schedule_show_sidebar);
       }
       if (user?.schedule_hidden_rows && Array.isArray(user.schedule_hidden_rows)) {
-          setHiddenRows(prev => {
+          setHiddenRows((prev: any) => {
               if (JSON.stringify(prev) !== JSON.stringify(user.schedule_hidden_rows)) {
                   return user.schedule_hidden_rows;
               }
@@ -1106,14 +1108,14 @@ export default function ScheduleBoard() {
   useEffect(() => {
       localStorage.setItem('radioplan_showSidebar', JSON.stringify(showSidebar));
       if (user && user.schedule_show_sidebar !== showSidebar) {
-          updateMe({ schedule_show_sidebar: showSidebar }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_show_sidebar: showSidebar }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [showSidebar, updateMe, user]);
 
   useEffect(() => {
       localStorage.setItem('radioplan_hiddenRows', JSON.stringify(hiddenRows));
       if (user && JSON.stringify(user.schedule_hidden_rows) !== JSON.stringify(hiddenRows)) {
-          updateMe({ schedule_hidden_rows: hiddenRows }).catch(e => console.error("Pref save failed", e));
+          updateMe({ schedule_hidden_rows: hiddenRows }).catch((e: any) => console.error("Pref save failed", e));
       }
   }, [hiddenRows, updateMe, user]);
 
@@ -1128,7 +1130,7 @@ export default function ScheduleBoard() {
           // However, updateMe triggers user update which triggers effect.
           // We should only updateMe if the value is different from what's in user object currently.
           if (JSON.stringify(user.collapsed_sections) !== JSON.stringify(collapsedSections)) {
-             updateMe({ collapsed_sections: collapsedSections }).catch(e => console.error("Pref save failed", e));
+             updateMe({ collapsed_sections: collapsedSections }).catch((e: any) => console.error("Pref save failed", e));
           }
       }
   }, [collapsedSections, updateMe, user]);
@@ -1137,7 +1139,7 @@ export default function ScheduleBoard() {
         startFromPercentage: 0.12,
         maxScrollAtPercentage: 0.04,
         maxPixelScroll: 30,
-            ease: (value) => value,
+            ease: (value: any) => value,
     }), []);
 
   useEffect(() => {
@@ -1165,16 +1167,16 @@ export default function ScheduleBoard() {
     queryFn: () => db.Doctor.list(),
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
-    select: (data) => [...data].sort((a, b) => {
+    select: (data: any) => [...data].sort((a: any, b: any) => {
       const roleDiff = (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99);
       if (roleDiff !== 0) return roleDiff;
       return (a.order || 0) - (b.order || 0);
     }),
   });
 
-  const updateDoctorMutation = useMutation({
-    mutationFn: ({ id, data }) => db.Doctor.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries(['doctors']),
+  const updateDoctorMutation = useMutation<any, Error, any>({
+    mutationFn: ({ id, data }: any) => db.Doctor.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['doctors'] }),
   });
 
   const fetchRange = useMemo(() => {
@@ -1190,12 +1192,12 @@ export default function ScheduleBoard() {
       };
   }, [currentDate]);
 
-  const { data: allShifts = [] } = useQuery({
+  const { data: allShifts = [] as any } = useQuery({
     queryKey: ['shifts', fetchRange.start, fetchRange.end],
-    queryFn: () => db.ShiftEntry.filter({
+    queryFn: () => (db.ShiftEntry.filter as any)({
         date: { $gte: fetchRange.start, $lte: fetchRange.end }
     }, null, 5000),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
     staleTime: 30 * 1000, // 30 seconds cache
   });
 
@@ -1210,8 +1212,8 @@ export default function ScheduleBoard() {
         placeholderData: keepPreviousData,
     });
 
-    const visiblePoolShifts = visiblePoolData?.shifts || [];
-    const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
+    const visiblePoolShifts = (visiblePoolData as any)?.shifts || [];
+    const crossTenantWorkplaces = (visiblePoolData as any)?.workplaces || [];
 
     // Read-only cross-tenant staffing mirror (e.g. Radiology "CT" ↔ MTR "CT1"/"CT2").
     // Only fetched/shown in day view — see docs/features/WORKPLACE_LINKS.md.
@@ -1224,8 +1226,8 @@ export default function ScheduleBoard() {
         placeholderData: keepPreviousData,
     });
 
-    const linkedWorkplacesByName = visibleWorkplaceLinksData?.linkedWorkplaces || {};
-    const activeLinkTenantId = visibleWorkplaceLinksData?.tenantId || null;
+    const linkedWorkplacesByName = (visibleWorkplaceLinksData as any)?.linkedWorkplaces || {};
+    const activeLinkTenantId = (visibleWorkplaceLinksData as any)?.tenantId || null;
 
     // ===== Springerpool-Rotationen (separates System) =====
     const { data: visibleRotationData } = useQuery({
@@ -1236,9 +1238,9 @@ export default function ScheduleBoard() {
         placeholderData: keepPreviousData,
     });
 
-    const rotationWorkplaces = visibleRotationData?.workplaces || [];
-    const rotationAssignments = visibleRotationData?.assignments || [];
-    const rotationDemands = visibleRotationData?.demands || [];
+    const rotationWorkplaces = (visibleRotationData as any)?.workplaces || [];
+    const rotationAssignments = (visibleRotationData as any)?.assignments || [];
+    const rotationDemands = (visibleRotationData as any)?.demands || [];
 
     // Map assignments by `${rotation_workplace_id}|${date}` for fast cell lookup.
     const rotationAssignmentsByCell = useMemo(() => {
@@ -1358,7 +1360,7 @@ export default function ScheduleBoard() {
         const parsedMinutes = parseTimeToMinutes(value);
         if (!Number.isFinite(parsedMinutes)) return;
 
-        setTimeslotSelectionDialog((current) => ({
+        setTimeslotSelectionDialog((current: any) => ({
             ...current,
             customEndMinutesByOptionId: {
                 ...current.customEndMinutesByOptionId,
@@ -1373,7 +1375,7 @@ export default function ScheduleBoard() {
 
         const normalizedStartMinutes = normalizeCustomTimeslotStartMinutes(option, value);
 
-        setTimeslotSelectionDialog((current) => ({
+        setTimeslotSelectionDialog((current: any) => ({
             ...current,
             customStartMinutesByOptionId: {
                 ...current.customStartMinutesByOptionId,
@@ -1413,13 +1415,13 @@ export default function ScheduleBoard() {
         for (const d of doctors) {
             if (d.central_employee_id) doctorToCentral.set(d.id, String(d.central_employee_id));
         }
-        const map = {};
-        const add = (dateStr, centralId) => {
+        const map: Record<string, Set<string>> = {};
+        const add = (dateStr: any, centralId: any) => {
             const key = String(dateStr).slice(0, 10);
             if (!map[key]) map[key] = new Set();
             map[key].add(String(centralId));
         };
-        const nextWorkdayIso = (dateStr) => {
+        const nextWorkdayIso = (dateStr: any) => {
             const next = new Date(`${dateStr}T00:00:00Z`);
             next.setUTCDate(next.getUTCDate() + 1);
             const day = next.getUTCDay();
@@ -1468,7 +1470,7 @@ export default function ScheduleBoard() {
     refetchOnWindowFocus: false,
   });
 
-  const { data: wishes = [] } = useQuery({
+  const { data: wishes = [] as any } = useQuery({
     queryKey: ['wishes', fetchRange.start, fetchRange.end],
     queryFn: () => db.WishRequest.filter({
                 date: {
@@ -1478,12 +1480,12 @@ export default function ScheduleBoard() {
     }),
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   const { data: workplaces = [] } = useQuery({
     queryKey: ['workplaces'],
-    queryFn: () => db.Workplace.list(null, 1000),
+    queryFn: () => (db.Workplace.list as any)(null, 1000),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -1491,7 +1493,7 @@ export default function ScheduleBoard() {
   // Timeslots für Zeitfenster-Feature
   const { data: workplaceTimeslots = [] } = useQuery({
     queryKey: ['workplaceTimeslots'],
-    queryFn: () => db.WorkplaceTimeslot.list(null, 1000),
+    queryFn: () => (db.WorkplaceTimeslot.list as any)(null, 1000),
     staleTime: 10 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
@@ -1506,38 +1508,38 @@ export default function ScheduleBoard() {
         const workplaceTimeslotsByWorkplaceId = useMemo(() => {
                 const map = new Map();
 
-                workplaceTimeslots.forEach((timeslot) => {
+                workplaceTimeslots.forEach((timeslot: any) => {
                         const key = timeslot.workplace_id;
                         const list = map.get(key) || [];
                         list.push(timeslot);
                         map.set(key, list);
                 });
 
-                map.forEach((list, key) => {
-                        map.set(key, [...list].sort((a, b) => (a.order || 0) - (b.order || 0)));
+                map.forEach((list: any, key: any) => {
+                        map.set(key, [...list].sort((a: any, b: any) => (a.order || 0) - (b.order || 0)));
                 });
 
                 return map;
         }, [workplaceTimeslots]);
 
-    const updateSystemSettingMutation = useMutation({
-        mutationFn: async ({ key, value }) => {
-            const existing = systemSettings.find(s => s.key === key);
+    const updateSystemSettingMutation = useMutation<any, Error, any>({
+        mutationFn: async ({ key, value }: any) => {
+            const existing = systemSettings.find((s: any) => s.key === key);
             if (existing) {
                 return db.SystemSetting.update(existing.id, { value });
             }
             return db.SystemSetting.create({ key, value });
         },
-        onSuccess: () => queryClient.invalidateQueries(['systemSettings'])
+        onSuccess: () => queryClient.invalidateQueries({ queryKey: ['systemSettings'] })
     });
 
     const sectionTabs = useMemo(() => {
-        const tabSetting = systemSettings.find(s => s.key === SECTION_TABS_KEY);
+        const tabSetting = systemSettings.find((s: any) => s.key === SECTION_TABS_KEY);
         return parseSectionTabs(tabSetting?.value);
     }, [systemSettings]);
 
     const alwaysVisibleRows = useMemo(() => {
-        const setting = systemSettings.find(s => s.key === ALWAYS_VISIBLE_ROWS_KEY);
+        const setting = systemSettings.find((s: any) => s.key === ALWAYS_VISIBLE_ROWS_KEY);
         return parseAlwaysVisibleRows(setting?.value);
     }, [systemSettings]);
 
@@ -1554,7 +1556,7 @@ export default function ScheduleBoard() {
   const { data: workTimeModels = [] } = useQuery({
     queryKey: ['workTimeModels'],
     queryFn: async () => {
-      const res = await api.request('/api/staff/work-time-models');
+      const res = await api.request('/api/staff/work-time-models') as any;
       return res.models || [];
     },
     staleTime: 30 * 60 * 1000,
@@ -1574,7 +1576,7 @@ export default function ScheduleBoard() {
         queryKey: ['tenant-central-employees-for-schedule'],
         queryFn: async () => {
             try {
-                const res = await api.request('/api/staff/central-employees');
+                const res = await api.request('/api/staff/central-employees') as any;
                 return res.employees || [];
             } catch {
                 return [];
@@ -1596,13 +1598,13 @@ export default function ScheduleBoard() {
     const allSections = useMemo(() => {
       // Get custom categories from settings
             const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
-            const customCategoryNames = customCategories.map(category => category.name);
+            const customCategoryNames = customCategories.map((category: any) => category.name);
 
       // Hilfsfunktion: Erstellt Zeilen für Arbeitsplätze (kompakt mit optionalen Timeslot-Metadaten)
-      const createRowsForCategory = (categoryName) => {
+      const createRowsForCategory = (categoryName: any) => {
           const categoryWorkplaces = workplaces
-              .filter(w => w.category === categoryName)
-              .sort((a, b) => (a.order || 0) - (b.order || 0));
+              .filter((w: any) => w.category === categoryName)
+              .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
           
           const rows = [];
           for (const wp of categoryWorkplaces) {
@@ -1624,7 +1626,7 @@ export default function ScheduleBoard() {
                       });
                   } else if (wpTimeslots.length > 1) {
                       const timeslotDetails = wpTimeslots
-                          .map((timeslot) => {
+                          .map((timeslot: any) => {
                               const range = formatTimeslotTimeRange(timeslot.start_time, timeslot.end_time);
                               return timeslot.label ? `${timeslot.label}${range ? ` ${range}` : ''}` : range;
                           })
@@ -1638,7 +1640,7 @@ export default function ScheduleBoard() {
                           isTimeslotRow: false,
                           isTimeslotGroupHeader: false,
                           timeslotCount: wpTimeslots.length,
-                          allTimeslotIds: wpTimeslots.map(t => t.id),
+                          allTimeslotIds: wpTimeslots.map((t: any) => t.id),
                           workplaceId: wp.id,
                           timeslotDetails,
                           timeslotSummary: timeslotDetails.join(' · ')
@@ -1655,7 +1657,7 @@ export default function ScheduleBoard() {
           return rows;
       };
 
-      const dynamicRows = {
+      const dynamicRows: Record<string, any[]> = {
           "Dienste": createRowsForCategory("Dienste"),
           "Rotationen": createRowsForCategory("Rotationen"),
           "Demonstrationen & Konsile": createRowsForCategory("Demonstrationen & Konsile")
@@ -1670,7 +1672,7 @@ export default function ScheduleBoard() {
       // These rows are NOT drop targets — they are managed via the
       // PoolShiftEditDialog when the user clicks a cell.
       for (const wp of crossTenantWorkplaces) {
-          dynamicRows["Dienste"].push({
+          (dynamicRows["Dienste"] as any).push({
               name: `__cross_${wp.id}`,
               displayName: `${wp.name} (Gruppendienst)`,
               timeslotId: null,
@@ -1710,7 +1712,7 @@ export default function ScheduleBoard() {
       dynamicRows["Pool-Rotationen"] = wardRotationRows;
 
       // Für statische Sections: Einfache String-zu-Objekt Konvertierung
-      const staticRowsToObjects = (rows) => rows.map(name => ({ 
+      const staticRowsToObjects = (rows: any) => rows.map((name: any) => ({ 
           name, displayName: name, timeslotId: null, isTimeslotRow: false 
       }));
 
@@ -1718,11 +1720,11 @@ export default function ScheduleBoard() {
       const allKnownPositions = new Set([
           ...STATIC_SECTIONS["Anwesenheiten"].rows,
           ...STATIC_SECTIONS["Abwesenheiten"].rows,
-          ...dynamicRows["Dienste"].map(r => r.name),
-          ...dynamicRows["Rotationen"].map(r => r.name),
-          ...dynamicRows["Demonstrationen & Konsile"].map(r => r.name),
-          ...(dynamicRows["Pool-Rotationen"] || []).map(r => r.name),
-          ...customCategoryNames.flatMap(categoryName => (dynamicRows[categoryName] || []).map(r => r.name)),
+          ...dynamicRows["Dienste"].map((r: any) => r.name),
+          ...dynamicRows["Rotationen"].map((r: any) => r.name),
+          ...dynamicRows["Demonstrationen & Konsile"].map((r: any) => r.name),
+          ...(dynamicRows["Pool-Rotationen"] || []).map((r: any) => r.name),
+          ...customCategoryNames.flatMap((categoryName: any) => (dynamicRows[categoryName] || []).map((r: any) => r.name)),
           ...STATIC_SECTIONS["Sonstiges"].rows
       ]);
 
@@ -1733,8 +1735,8 @@ export default function ScheduleBoard() {
       // We only care about shifts in the current view range roughly, but better to check all loaded shifts
       const orphanedPositions = Array.from(new Set(
           currentViewShifts
-              .map(s => s.position)
-              .filter(p => !allKnownPositions.has(p))
+              .map((s: any) => s.position)
+              .filter((p: any) => !allKnownPositions.has(p))
       )).sort();
 
       // Build sections with default order
@@ -1762,7 +1764,7 @@ export default function ScheduleBoard() {
               rows: dynamicRows["Pool-Rotationen"] || []
           },
           // Add custom categories dynamically
-          ...customCategoryNames.map(categoryName => ({
+          ...customCategoryNames.map((categoryName: any) => ({
               title: categoryName,
               headerColor: "bg-indigo-100 text-indigo-900",
               rowColor: "bg-indigo-50/30",
@@ -1774,14 +1776,14 @@ export default function ScheduleBoard() {
       // Apply user-specific order
       const orderedTitles = getSectionOrder();
       const result = orderedTitles
-          .map(title => defaultSections.find(s => s.title === title))
+          .map((title: any) => defaultSections.find((s: any) => s.title === title))
           .filter(Boolean);
       
       // Add any sections that are new and not yet in the order
       for (const section of defaultSections) {
-          if (!result.find(r => r.title === section.title)) {
+          if (!result.find((r: any) => r.title === section.title)) {
               // Insert before "Sonstiges" if possible, otherwise at end
-              const sonstigesIdx = result.findIndex(r => r.title === "Sonstiges");
+              const sonstigesIdx = result.findIndex((r: any) => r.title === "Sonstiges");
               if (sonstigesIdx >= 0) {
                   result.splice(sonstigesIdx, 0, section);
               } else {
@@ -1803,18 +1805,18 @@ export default function ScheduleBoard() {
     }, [workplaces, workplaceTimeslotsByWorkplaceId, allShifts, previewShifts, getSectionOrder, systemSettings, crossTenantWorkplaces, rotationWorkplaces]);
 
     const availableSectionTabs = useMemo(() => {
-        const knownTitles = new Set(allSections.map(s => s.title));
-        return sectionTabs.filter(tab => knownTitles.has(tab.sectionTitle) && tab.sectionTitle !== PINNED_SECTION_TITLE);
+        const knownTitles = new Set(allSections.map((s: any) => s.title));
+        return sectionTabs.filter((tab: any) => knownTitles.has(tab.sectionTitle) && tab.sectionTitle !== PINNED_SECTION_TITLE);
     }, [sectionTabs, allSections]);
 
-    const renderedSections = useMemo(() => {
-        return applyAlwaysVisibleRowsToSections(allSections, alwaysVisibleRows);
+    const renderedSections = useMemo<any[]>(() => {
+        return applyAlwaysVisibleRowsToSections(allSections as any, alwaysVisibleRows);
     }, [allSections, alwaysVisibleRows]);
 
     useEffect(() => {
         if (isLoadingSystemSettings) return;
         if (activeSectionTabId === 'main') return;
-        if (!availableSectionTabs.find(t => t.id === activeSectionTabId)) {
+        if (!availableSectionTabs.find((t: any) => t.id === activeSectionTabId)) {
             setActiveSectionTabId('main');
         }
     }, [activeSectionTabId, availableSectionTabs, isLoadingSystemSettings]);
@@ -1832,7 +1834,7 @@ export default function ScheduleBoard() {
             return;
         }
 
-        if (splitSectionTabId && !availableSectionTabs.some(t => t.id === splitSectionTabId)) {
+        if (splitSectionTabId && !availableSectionTabs.some((t: any) => t.id === splitSectionTabId)) {
             setSplitSectionTabId(availableSectionTabs[0].id);
         }
     }, [availableSectionTabs, splitSectionTabId]);
@@ -1850,16 +1852,16 @@ export default function ScheduleBoard() {
     }, [viewMode, isSplitViewEnabled]);
 
     const canUseSplitView = !isEmbeddedSchedule && !isMobile && viewMode !== 'month';
-    const effectiveSplitTabId = availableSectionTabs.some(t => t.id === splitSectionTabId)
+    const effectiveSplitTabId = availableSectionTabs.some((t: any) => t.id === splitSectionTabId)
         ? splitSectionTabId
         : (availableSectionTabs[0]?.id || '');
 
     const splitSections = useMemo(() => {
         if (!isSplitViewEnabled || !effectiveSplitTabId) return [];
-        const activeTab = availableSectionTabs.find(t => t.id === effectiveSplitTabId);
+        const activeTab = availableSectionTabs.find((t: any) => t.id === effectiveSplitTabId);
         if (!activeTab) return [];
-        const activeSection = renderedSections.find(section => section.title === activeTab.sectionTitle);
-        const pinnedSection = renderedSections.find(section => section.title === PINNED_SECTION_TITLE);
+        const activeSection = renderedSections.find((section: any) => section.title === activeTab.sectionTitle);
+        const pinnedSection = renderedSections.find((section: any) => section.title === PINNED_SECTION_TITLE);
         if (!activeSection) return [];
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
@@ -1867,20 +1869,20 @@ export default function ScheduleBoard() {
 
     const sections = useMemo(() => {
         if (activeSectionTabId === 'main') {
-            const assigned = new Set(availableSectionTabs.map(t => t.sectionTitle));
-            return renderedSections.filter(section => section.title === PINNED_SECTION_TITLE || !assigned.has(section.title));
+            const assigned = new Set(availableSectionTabs.map((t: any) => t.sectionTitle));
+            return renderedSections.filter((section: any) => section.title === PINNED_SECTION_TITLE || !assigned.has(section.title));
         }
-        const activeTab = availableSectionTabs.find(t => t.id === activeSectionTabId);
+        const activeTab = availableSectionTabs.find((t: any) => t.id === activeSectionTabId);
         if (!activeTab) return renderedSections;
-        const activeSection = renderedSections.find(section => section.title === activeTab.sectionTitle);
-        const pinnedSection = renderedSections.find(section => section.title === PINNED_SECTION_TITLE);
+        const activeSection = renderedSections.find((section: any) => section.title === activeTab.sectionTitle);
+        const pinnedSection = renderedSections.find((section: any) => section.title === PINNED_SECTION_TITLE);
         if (!activeSection) return renderedSections;
         if (!pinnedSection || activeSection.title === PINNED_SECTION_TITLE) return [activeSection];
         return [activeSection, pinnedSection];
     }, [activeSectionTabId, availableSectionTabs, renderedSections]);
 
     const persistSectionTabs = async (tabs: SectionTab[]): Promise<void> => {
-        await updateSystemSettingMutation.mutateAsync({
+        await (updateSystemSettingMutation.mutateAsync as any)({
             key: SECTION_TABS_KEY,
             value: JSON.stringify(tabs)
         });
@@ -1891,7 +1893,7 @@ export default function ScheduleBoard() {
             toast.info(`"${getSectionName(PINNED_SECTION_TITLE)}" bleibt immer im Hauptplan enthalten`);
             return;
         }
-        const existing = availableSectionTabs.find(t => t.sectionTitle === sectionTitle);
+        const existing = availableSectionTabs.find((t: any) => t.sectionTitle === sectionTitle);
         if (existing) {
             setActiveSectionTabId(existing.id);
             return;
@@ -1912,7 +1914,7 @@ export default function ScheduleBoard() {
     };
 
     const handleCloseSectionTab = async (tabId: string): Promise<void> => {
-        const nextTabs = sectionTabs.filter(t => t.id !== tabId);
+        const nextTabs = sectionTabs.filter((t: any) => t.id !== tabId);
         try {
             await persistSectionTabs(nextTabs);
             if (activeSectionTabId === tabId) {
@@ -1980,7 +1982,7 @@ export default function ScheduleBoard() {
 
     const scheduleNotesMap = useMemo(() => {
             const noteMap = new Map();
-            scheduleNotes.forEach((note) => {
+            scheduleNotes.forEach((note: any) => {
                     noteMap.set(`${note.date}|${note.position}`, note);
             });
             return noteMap;
@@ -1989,14 +1991,14 @@ export default function ScheduleBoard() {
   // ScheduleBlock: Gesperrte Zellen + Info-Notizen im Wochenplan
   // type='block' = Zelle gesperrt (kein Drag & Drop)
   // type='info'  = nur Information, kein Lock
-  const { data: scheduleBlocks = [] } = useQuery({
+  const { data: scheduleBlocks = [] as any } = useQuery({
     queryKey: ['scheduleBlocks', fetchRange.start, fetchRange.end],
     queryFn: () => db.ScheduleBlock.filter({
         date: { $gte: fetchRange.start, $lte: fetchRange.end }
     }),
     staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   });
 
   // Map for quick lookup: "date|position" or "date|position|timeslotId" → block (type='block')
@@ -2050,7 +2052,7 @@ export default function ScheduleBoard() {
 
     // ─── Verfügbarkeits-Grenzwerte aus SystemSettings parsen ───
     const availabilityThresholds = useMemo(() => {
-        const raw = systemSettings.find(s => s.key === 'availability_thresholds')?.value;
+        const raw = systemSettings.find((s: any) => s.key === 'availability_thresholds')?.value;
         if (raw) {
             try { return JSON.parse(raw); } catch { return []; }
         }
@@ -2058,15 +2060,15 @@ export default function ScheduleBoard() {
     }, [systemSettings]);
 
     const activeQualifications = useMemo(
-        () => qualifications.filter((q) => q.is_active !== false),
+        () => qualifications.filter((q: any) => q.is_active !== false),
         [qualifications]
     );
     const isQualificationDataLoading = qualificationsLoading || allDoctorQualsLoading;
 
     const toggleScheduleQualification = (qid: string): void => {
-        setSelectedQualificationIds((current) => (
+        setSelectedQualificationIds((current: any) => (
             current.includes(qid)
-                ? current.filter((id) => id !== qid)
+                ? current.filter((id: any) => id !== qid)
                 : [...current, qid]
         ));
     };
@@ -2074,7 +2076,7 @@ export default function ScheduleBoard() {
     const matchesScheduleQualificationFilter = useCallback((doctor: Doctor): boolean => {
         if (selectedQualificationIds.length === 0) return true;
         const ids = getDoctorQualIds(doctor.id);
-        return selectedQualificationIds.some((qid) => ids.includes(qid));
+        return selectedQualificationIds.some((qid: any) => ids.includes(qid));
     }, [selectedQualificationIds, getDoctorQualIds]);
 
     // Row-scoped qualification filter: Pflicht (AND), Sollte (OR), Sollte-nicht
@@ -2083,11 +2085,11 @@ export default function ScheduleBoard() {
     const matchesRowQualificationFilter = useCallback((doctor: Doctor): boolean => {
         if (!rowQualFilter) return true;
         const ids = getDoctorQualIds(doctor.id);
-        const doctorList = doctors.map((d) => ({
+        const doctorList = doctors.map((d: any) => ({
             id: d.id,
             qualification_ids: getDoctorQualIds(d.id),
         }));
-        return matchesRowQualFilter(
+        return (matchesRowQualFilter as any)(
             {
                 requiredIds: rowQualFilter.requiredIds,
                 optionalIds: rowQualFilter.optionalIds,
@@ -2104,7 +2106,7 @@ export default function ScheduleBoard() {
     }, [matchesScheduleQualificationFilter, matchesRowQualificationFilter]);
 
     // Build (or toggle off) the row-scoped filter for a given row.
-    const applyRowQualificationFilter = useCallback((rowName, rowTimeslotId, rowWorkplace) => {
+    const applyRowQualificationFilter = useCallback((rowName: any, rowTimeslotId: any, rowWorkplace: any) => {
         if (!rowWorkplace?.id) return;
         const key = buildRowFilterKey(rowName, rowTimeslotId);
         if (rowQualFilter && rowQualFilter.key === key) {
@@ -2145,18 +2147,18 @@ export default function ScheduleBoard() {
       confirmOverride,
       cancelOverride,
       setOverrideDialogOpen
-  } = useOverrideValidation({ user, doctors });
+  } = useOverrideValidation({ user: user as any, doctors });
 
   const getRoleColor = useMemo(() => (role: any): { backgroundColor: string; color: string } => {
-      const setting = colorSettings.find(s => s.name === role && s.category === 'role');
+      const setting = colorSettings.find((s: any) => s.name === role && s.category === 'role');
       if (setting) return { backgroundColor: setting.bg_color, color: setting.text_color };
       if (DEFAULT_COLORS.roles[role]) return { backgroundColor: DEFAULT_COLORS.roles[role].bg, color: DEFAULT_COLORS.roles[role].text };
       return { backgroundColor: '#f3f4f6', color: '#1f2937' }; // Default gray
   }, [colorSettings]);
 
   // Helper to mix tailwind default and custom style
-  const getSectionStyle = useMemo(() => (sectionTitle: string): SectionStyle => {
-      const setting = colorSettings.find(s => s.name === sectionTitle && s.category === 'section');
+  const getSectionStyle = useMemo(() => (sectionTitle: string): any => {
+      const setting = colorSettings.find((s: any) => s.name === sectionTitle && s.category === 'section');
       if (setting) {
           return { 
               header: { backgroundColor: setting.bg_color, color: setting.text_color },
@@ -2168,7 +2170,7 @@ export default function ScheduleBoard() {
 
   const getRowStyle = useMemo(() => (rowName: string, sectionStyle: SectionStyle): CSSProperties => {
       // Check for specific position color
-      const setting = colorSettings.find(s => s.name === rowName && s.category === 'position');
+      const setting = colorSettings.find((s: any) => s.name === rowName && s.category === 'position');
       if (setting) {
           return { 
               backgroundColor: setting.bg_color + '33', // ~20% opacity
@@ -2177,34 +2179,34 @@ export default function ScheduleBoard() {
       }
       // Fallback to section style
       if (sectionStyle) {
-          return { backgroundColor: sectionStyle.row.backgroundColor };
+          return { backgroundColor: (sectionStyle as any).row.backgroundColor };
       }
       return {};
   }, [colorSettings]);
 
-  const createShiftMutation = useMutation({
-    mutationFn: (data) => db.ShiftEntry.create(data),
+  const createShiftMutation = useMutation<any, Error, any, any>({
+    mutationFn: (data: any) => db.ShiftEntry.create(data),
     onMutate: async (newData) => {
-        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
         
         const tempShift = { ...newData, id: `temp-${Date.now()}` };
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => [...old, tempShift]);
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => [...(old as any[]), tempShift]);
         }
         return { previousShifts };
     },
     onSuccess: (data, newData, _context) => {
         // trackDbChange(); // Disabled - MySQL mode
-        setUndoStack(prev => [...prev, { type: 'DELETE', id: data.id }]);
+        setUndoStack((prev: any) => [...prev, { type: 'DELETE', id: data.id }]);
         // Only invalidate shifts in affected range
-        queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+        queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
 
         // Side-effects are best-effort: they must NOT roll back the primary write
         // if they fail (which previously caused the UI to lose a successfully
         // created shift after a transient DB hiccup).
         if (user?.role === 'admin' && newData.doctor_id) {
-            const doc = doctors.find(d => d.id === newData.doctor_id);
+            const doc = doctors.find((d: any) => d.id === newData.doctor_id);
             if (doc && doc.id !== user.doctor_id) {
                 db.ShiftNotification.create({
                     doctor_id: newData.doctor_id,
@@ -2212,11 +2214,11 @@ export default function ScheduleBoard() {
                     type: 'create',
                     message: `Neuer Dienst eingetragen: ${newData.position}`,
                     acknowledged: false,
-                }).catch((err) => console.warn('[ScheduleBoard] Notification create failed:', err?.message));
+                }).catch((err: any) => console.warn('[ScheduleBoard] Notification create failed:', err?.message));
             }
         }
 
-        const matchingWish = wishes.find(w =>
+        const matchingWish = wishes.find((w: any) =>
             w.doctor_id === newData.doctor_id &&
             w.date === newData.date &&
             w.type === 'service' &&
@@ -2229,8 +2231,8 @@ export default function ScheduleBoard() {
                 user_viewed: false,
                 admin_comment: 'Automatisch genehmigt durch Diensteinteilung',
             })
-                .then(() => queryClient.invalidateQueries(['wishes']))
-                .catch((err) => {
+                .then(() => queryClient.invalidateQueries({ queryKey: ['wishes'] }))
+                .catch((err: any) => {
                     console.warn('[ScheduleBoard] Wunsch-Auto-Genehmigung fehlgeschlagen:', err?.message);
                     toast.warning('Dienst wurde gespeichert, aber der zugehörige Wunsch konnte nicht automatisch genehmigt werden.');
                 });
@@ -2250,7 +2252,7 @@ export default function ScheduleBoard() {
         // 409 Conflict = Server-Sentinel blocked a duplicate → silent rollback + refresh
         if (error.message?.includes('Position bereits besetzt') || error.message?.includes('409')) {
             console.warn('[Sentinel] Duplicate blocked by server, refreshing data');
-            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
             return;
         }
         // 403 handled globally in client.ts — just log here
@@ -2262,27 +2264,27 @@ export default function ScheduleBoard() {
     }
   });
 
-  const bulkCreateShiftsMutation = useMutation({
-    mutationFn: (shiftsData) => db.ShiftEntry.bulkCreate(shiftsData),
+  const bulkCreateShiftsMutation = useMutation<any, Error, any, any>({
+    mutationFn: (shiftsData: any) => db.ShiftEntry.bulkCreate(shiftsData),
     onMutate: async (newShifts) => {
-        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
         
-        const tempShifts = newShifts.map((s, i) => ({ ...s, id: `temp-bulk-${Date.now()}-${i}` }));
+        const tempShifts = newShifts.map((s: any, i: any) => ({ ...s, id: `temp-bulk-${Date.now()}-${i}` }));
         
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => [...old, ...tempShifts]);
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => [...(old as any[]), ...tempShifts]);
         }
         return { previousShifts };
     },
     onSuccess: (data, _variables, _context) => {
         // trackDbChange(data.length); // Disabled - MySQL mode
         if (Array.isArray(data)) {
-             setUndoStack(prev => [...prev, { type: 'BULK_DELETE', ids: data.map(s => s.id) }]);
+             setUndoStack((prev: any) => [...prev, { type: 'BULK_DELETE', ids: data.map((s: any) => s.id) }]);
              // Best-effort side-effects (do not block / not rollback)
              for (const shift of data) {
                  if (user?.role === 'admin' && shift.doctor_id) {
-                     const doc = doctors.find(d => d.id === shift.doctor_id);
+                     const doc = doctors.find((d: any) => d.id === shift.doctor_id);
                      if (doc && doc.id !== user.doctor_id) {
                          db.ShiftNotification.create({
                              doctor_id: shift.doctor_id,
@@ -2290,10 +2292,10 @@ export default function ScheduleBoard() {
                              type: 'create',
                              message: `Neuer Dienst eingetragen: ${shift.position}`,
                              acknowledged: false,
-                         }).catch((err) => console.warn('[ScheduleBoard] Bulk notification failed:', err?.message));
+                         }).catch((err: any) => console.warn('[ScheduleBoard] Bulk notification failed:', err?.message));
                      }
                  }
-                 const matchingWish = wishes.find(w =>
+                 const matchingWish = wishes.find((w: any) =>
                      w.doctor_id === shift.doctor_id &&
                      w.date === shift.date &&
                      w.type === 'service' &&
@@ -2306,12 +2308,12 @@ export default function ScheduleBoard() {
                          user_viewed: false,
                          admin_comment: 'Automatisch genehmigt durch Diensteinteilung',
                      })
-                         .then(() => queryClient.invalidateQueries(['wishes']))
-                         .catch((err) => console.warn('[ScheduleBoard] Bulk wish approval failed:', err?.message));
+                         .then(() => queryClient.invalidateQueries({ queryKey: ['wishes'] }))
+                         .catch((err: any) => console.warn('[ScheduleBoard] Bulk wish approval failed:', err?.message));
                  }
              }
         }
-        queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+        queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
     },
     onError: (error, _variables, context) => {
         console.error('DEBUG: Bulk Create Failed', error);
@@ -2321,7 +2323,7 @@ export default function ScheduleBoard() {
         // 409 Conflict = Server-Sentinel blocked duplicates → silent rollback + refresh
         if (error.message?.includes('Position bereits besetzt') || error.message?.includes('409')) {
             console.warn('[Sentinel] Bulk duplicate blocked by server, refreshing data');
-            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
             return;
         }
         // 403 handled globally in client.ts
@@ -2333,20 +2335,20 @@ export default function ScheduleBoard() {
     }
   });
 
-  const updateShiftMutation = useMutation({
-    mutationFn: ({ id, data }) => db.ShiftEntry.update(id, data),
+  const updateShiftMutation = useMutation<any, Error, any, any>({
+    mutationFn: ({ id, data }: any) => db.ShiftEntry.update(id, data),
     onMutate: async ({ id, data }) => {
         // Cancel any outgoing refetches to avoid overwriting our optimistic update
-        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         
         // Snapshot the previous value for rollback
-        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
-        const oldShift = previousShifts?.find(s => s.id === id);
+        const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]) as any;
+        const oldShift = previousShifts?.find((s: any) => s.id === id);
         
         // Optimistically update to the new value immediately
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => 
-                old.map(s => s.id === id ? { ...s, ...data } : s)
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => 
+                old.map((s: any) => s.id === id ? { ...s, ...data } : s)
             );
         }
         
@@ -2356,11 +2358,11 @@ export default function ScheduleBoard() {
         // trackDbChange(); // Disabled - MySQL mode
         if (context.oldShift) {
             const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...oldData } = context.oldShift;
-            setUndoStack(prev => [...prev, { type: 'UPDATE', id, data: oldData }]);
+            setUndoStack((prev: any) => [...prev, { type: 'UPDATE', id, data: oldData }]);
 
             // Best-effort wish auto-approval (does NOT roll back primary update on failure)
             const fullShift = { ...context.oldShift, ...inputData };
-            const matchingWish = wishes.find(w =>
+            const matchingWish = wishes.find((w: any) =>
                 w.doctor_id === fullShift.doctor_id &&
                 w.date === fullShift.date &&
                 w.type === 'service' &&
@@ -2373,8 +2375,8 @@ export default function ScheduleBoard() {
                     user_viewed: false,
                     admin_comment: 'Automatisch genehmigt durch Diensteinteilung',
                 })
-                    .then(() => queryClient.invalidateQueries(['wishes']))
-                    .catch((err) => {
+                    .then(() => queryClient.invalidateQueries({ queryKey: ['wishes'] }))
+                    .catch((err: any) => {
                         console.warn('[ScheduleBoard] Wunsch-Auto-Genehmigung fehlgeschlagen:', err?.message);
                         toast.warning('Dienst wurde aktualisiert, aber der zugehörige Wunsch konnte nicht automatisch genehmigt werden.');
                     });
@@ -2426,7 +2428,7 @@ export default function ScheduleBoard() {
         }
         // Debounced invalidation
         setTimeout(() => {
-            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         }, 100);
     },
     onError: (error, _variables, context) => {
@@ -2444,25 +2446,25 @@ export default function ScheduleBoard() {
     });
 
   // Dedicated mutations for automatic background operations
-  const createAutoFreiMutation = useMutation({
-    mutationFn: (data) => db.ShiftEntry.create(data),
-    onSuccess: (data) => {
-        setUndoStack(prev => {
+  const createAutoFreiMutation = useMutation<any, Error, any, any>({
+    mutationFn: (data: any) => db.ShiftEntry.create(data),
+    onSuccess: (data: any) => {
+        setUndoStack((prev: any) => {
             const undoAction = { type: 'DELETE', id: data.id };
             if (prev.length === 0) return [...prev, undoAction];
             const last = prev[prev.length - 1];
             const newGroup = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
             return [...prev.slice(0, -1), newGroup];
         });
-        setTimeout(() => queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]), 100);
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
     },
-    onError: (error) => console.error('Auto-Frei creation failed:', error)
+    onError: (error: any) => console.error('Auto-Frei creation failed:', error)
   });
 
-  const updateAutoFreiMutation = useMutation({
-    mutationFn: ({ id, data }) => db.ShiftEntry.update(id, data),
+  const updateAutoFreiMutation = useMutation<any, Error, any, any>({
+    mutationFn: ({ id, data }: any) => db.ShiftEntry.update(id, data),
     onMutate: async ({ id }) => {
-        const oldShift = allShifts.find(s => s.id === id);
+        const oldShift = allShifts.find((s: any) => s.id === id);
         return { oldShift };
     },
     onSuccess: (data, { id }, context) => {
@@ -2470,26 +2472,26 @@ export default function ScheduleBoard() {
             const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...oldData } = context.oldShift;
             const undoAction = { type: 'UPDATE', id, data: oldData };
             
-            setUndoStack(prev => {
+            setUndoStack((prev: any) => {
                 if (prev.length === 0) return [...prev, undoAction];
                 const last = prev[prev.length - 1];
                 const newGroup = Array.isArray(last) ? [...last, undoAction] : [last, undoAction];
                 return [...prev.slice(0, -1), newGroup];
             });
         }
-        setTimeout(() => queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]), 100);
+        setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
     },
-    onError: (error) => console.error('Auto-Frei update failed:', error)
+    onError: (error: any) => console.error('Auto-Frei update failed:', error)
   });
 
-  const deleteShiftMutation = useMutation({
-    mutationFn: async (id) => {
+  const deleteShiftMutation = useMutation<any, Error, any, any>({
+    mutationFn: async (id: any) => {
         // Find shift to check for related wish
-        const shiftToDelete = allShifts.find(s => s.id === id);
+        const shiftToDelete = allShifts.find((s: any) => s.id === id);
         
         if (shiftToDelete) {
             // Find matching approved wish
-            const matchingWish = wishes.find(w => 
+            const matchingWish = wishes.find((w: any) => 
                 w.doctor_id === shiftToDelete.doctor_id && 
                 w.date === shiftToDelete.date &&
                 w.status === 'approved' && 
@@ -2506,21 +2508,21 @@ export default function ScheduleBoard() {
         return db.ShiftEntry.delete(id);
     },
     onMutate: async (id) => {
-        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
 
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => old.filter(s => s.id !== id));
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => old.filter((s: any) => s.id !== id));
         }
 
-        const shift = allShifts.find(s => s.id === id);
+        const shift = allShifts.find((s: any) => s.id === id);
         return { shift, previousShifts };
     },
     onSuccess: (_data, id, context) => {
         // trackDbChange(); // Disabled - MySQL mode
         if (context.shift) {
             const { id: _, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...shiftData } = context.shift;
-            setUndoStack(prev => [...prev, { type: 'CREATE', data: shiftData }]);
+            setUndoStack((prev: any) => [...prev, { type: 'CREATE', data: shiftData }]);
 
             if (user?.role === 'admin' && context.shift.doctor_id && context.shift.doctor_id !== user.doctor_id) {
                 db.ShiftNotification.create({
@@ -2533,7 +2535,7 @@ export default function ScheduleBoard() {
             }
         }
         setTimeout(() => {
-            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         }, 100);
     },
     onError: (error, id, context) => {
@@ -2550,43 +2552,43 @@ export default function ScheduleBoard() {
     }
   });
 
-  const bulkDeleteMutation = useMutation({
-    mutationFn: async (ids) => {
+  const bulkDeleteMutation = useMutation<any, Error, any, any>({
+    mutationFn: async (ids: any) => {
         // Use allSettled so a single failure does not leave the batch in a
         // partially deleted state without the caller knowing. We collect
         // failures and surface them so the user is informed.
-        const results = await Promise.allSettled(ids.map(id => db.ShiftEntry.delete(id)));
+        const results = await Promise.allSettled(ids.map((id: any) => db.ShiftEntry.delete(id)));
         const failures = results
-            .map((r, idx) => ({ r, id: ids[idx] }))
+            .map((r: any, idx: any) => ({ r, id: ids[idx] }))
             .filter(({ r }) => r.status === 'rejected');
         if (failures.length > 0) {
             const firstError = failures[0].r.reason;
             const err = new Error(
                 `${failures.length} von ${ids.length} Löschvorgängen sind fehlgeschlagen: ${firstError?.message || 'Unbekannter Fehler'}`,
-            );
-            err.failedIds = failures.map(f => f.id);
+            ) as any;
+            err.failedIds = failures.map((f: any) => f.id);
             err.partial = failures.length < ids.length;
             throw err;
         }
     },
     onMutate: async (ids) => {
-        await queryClient.cancelQueries(['shifts', fetchRange.start, fetchRange.end]);
+        await queryClient.cancelQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         const previousShifts = queryClient.getQueryData(['shifts', fetchRange.start, fetchRange.end]);
 
         if (previousShifts) {
-            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => old.filter(s => !ids.includes(s.id)));
+            queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => old.filter((s: any) => !ids.includes(s.id)));
         }
 
-        const shifts = allShifts.filter(s => ids.includes(s.id));
+        const shifts = allShifts.filter((s: any) => ids.includes(s.id));
         return { shifts, previousShifts };
     },
     onError: (err, _ids, context) => {
          // If the failure was total, restore the optimistic snapshot. For a
          // partial failure we cannot trust the snapshot (some rows really
          // were deleted on the server), so refetch instead.
-         if (err?.partial && context?.previousShifts) {
-             queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
-             toast.error(`Teilweiser Löschfehler: ${err.message}`, {
+         if ((err as any)?.partial && (context as any)?.previousShifts) {
+             queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
+             toast.error(`Teilweiser Löschfehler: ${(err as any).message}`, {
                  description: 'Die Daten wurden vom Server neu geladen, damit die Anzeige korrekt ist.',
              });
              return;
@@ -2599,63 +2601,63 @@ export default function ScheduleBoard() {
     onSuccess: (_data, ids, context) => {
         // trackDbChange(ids.length); // Disabled - MySQL mode
         if (context.shifts && context.shifts.length > 0) {
-            const shiftsData = context.shifts.map(s => {
+            const shiftsData = context.shifts.map((s: any) => {
                 const { id: _id, created_date: _createdDate, updated_date: _updatedDate, created_by: _createdBy, ...rest } = s;
                 return rest;
             });
-            setUndoStack(prev => [...prev, { type: 'BULK_CREATE', data: shiftsData }]);
+            setUndoStack((prev: any) => [...prev, { type: 'BULK_CREATE', data: shiftsData }]);
         }
         setTimeout(() => {
-            queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]);
+            queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] });
         }, 100);
     }
   });
 
-  const createNoteMutation = useMutation({
-    mutationFn: (data) => db.ScheduleNote.create(data),
-    onSuccess: () => queryClient.invalidateQueries(['scheduleNotes']),
+  const createNoteMutation = useMutation<any, Error, any>({
+    mutationFn: (data: any) => db.ScheduleNote.create(data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleNotes'] }),
   });
 
-  const updateNoteMutation = useMutation({
-    mutationFn: ({ id, data }) => db.ScheduleNote.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries(['scheduleNotes']),
+  const updateNoteMutation = useMutation<any, Error, any>({
+    mutationFn: ({ id, data }: any) => db.ScheduleNote.update(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleNotes'] }),
   });
 
-  const deleteNoteMutation = useMutation({
-    mutationFn: (id) => db.ScheduleNote.delete(id),
-    onSuccess: () => queryClient.invalidateQueries(['scheduleNotes']),
+  const deleteNoteMutation = useMutation<any, Error, any>({
+    mutationFn: (id: any) => db.ScheduleNote.delete(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scheduleNotes'] }),
   });
 
   // ScheduleBlock mutations (type='block')
-  const createBlockMutation = useMutation({
-    mutationFn: (data) => db.ScheduleBlock.create({ ...data, type: 'block' }),
+  const createBlockMutation = useMutation<any, Error, any>({
+    mutationFn: (data: any) => db.ScheduleBlock.create({ ...data, type: 'block' }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['scheduleBlocks']);
+      queryClient.invalidateQueries({ queryKey: ['scheduleBlocks'] });
       toast.success('Zelle gesperrt');
     },
   });
 
-  const deleteBlockMutation = useMutation({
-    mutationFn: (id) => db.ScheduleBlock.delete(id),
+  const deleteBlockMutation = useMutation<any, Error, any>({
+    mutationFn: (id: any) => db.ScheduleBlock.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['scheduleBlocks']);
+      queryClient.invalidateQueries({ queryKey: ['scheduleBlocks'] });
       toast.success('Sperrung aufgehoben');
     },
   });
 
   // ScheduleBlock mutations (type='info')
-  const createInfoMutation = useMutation({
-    mutationFn: (data) => db.ScheduleBlock.create({ ...data, type: 'info' }),
+  const createInfoMutation = useMutation<any, Error, any>({
+    mutationFn: (data: any) => db.ScheduleBlock.create({ ...data, type: 'info' }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['scheduleBlocks']);
+      queryClient.invalidateQueries({ queryKey: ['scheduleBlocks'] });
       toast.success('Info hinterlegt');
     },
   });
 
-  const deleteInfoMutation = useMutation({
-    mutationFn: (id) => db.ScheduleBlock.delete(id),
+  const deleteInfoMutation = useMutation<any, Error, any>({
+    mutationFn: (id: any) => db.ScheduleBlock.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['scheduleBlocks']);
+      queryClient.invalidateQueries({ queryKey: ['scheduleBlocks'] });
       toast.success('Info entfernt');
     },
   });
@@ -2668,8 +2670,8 @@ export default function ScheduleBoard() {
   const handleCellContextMenu = (e: MouseEvent, dateStr: string, position: string, timeslotId: string | null = null): void => {
     if (isReadOnly) return;
     e.preventDefault();
-    const block = getScheduleBlock(dateStr, position, timeslotId);
-    const info = getScheduleInfo(dateStr, position, timeslotId);
+    const block = getScheduleBlock(dateStr, position, timeslotId ?? undefined);
+    const info = getScheduleInfo(dateStr, position, timeslotId ?? undefined);
     setBlockContextMenu({
       x: e.clientX,
       y: e.clientY,
@@ -2729,12 +2731,12 @@ export default function ScheduleBoard() {
 
   const handleClearWeek = () => {
       const protectedPositions = ["Frei", "Krank", "Urlaub", "Dienstreise"];
-      const shiftsToDelete = currentWeekShifts.filter(s => !protectedPositions.includes(s.position));
+      const shiftsToDelete = currentWeekShifts.filter((s: any) => !protectedPositions.includes(s.position));
       
       if (shiftsToDelete.length === 0) return;
       
       if (window.confirm('Möchten Sie den Wochenplan bereinigen? (Abwesenheiten bleiben erhalten)')) {
-          const ids = shiftsToDelete.map(s => s.id);
+          const ids = shiftsToDelete.map((s: any) => s.id);
           bulkDeleteMutation.mutate(ids);
       }
   };
@@ -2742,25 +2744,25 @@ export default function ScheduleBoard() {
   const handleClearDay = (date: Date): void => {
       const protectedPositions = ["Frei", "Krank", "Urlaub", "Dienstreise"];
       const dateStr = format(date, 'yyyy-MM-dd');
-      const shiftsToDelete = currentWeekShifts.filter(s => 
+      const shiftsToDelete = currentWeekShifts.filter((s: any) => 
           s.date === dateStr && !protectedPositions.includes(s.position)
       );
       
       if (shiftsToDelete.length === 0) return;
 
       if (window.confirm(`Möchten Sie die Dienste für ${format(date, 'EEEE', { locale: de })} löschen? (Abwesenheiten bleiben erhalten)`)) {
-          const ids = shiftsToDelete.map(s => s.id);
+          const ids = shiftsToDelete.map((s: any) => s.id);
           bulkDeleteMutation.mutate(ids);
       }
   };
 
   const handleClearRow = (rowName: string, timeslotId: string | null = null): void => {
       // Bei Timeslot-Zeilen: nur Shifts mit dieser Timeslot-ID löschen
-      const shiftsToDelete = currentWeekShifts.filter(s => {
+      const shiftsToDelete = currentWeekShifts.filter((s: any) => {
           if (s.position !== rowName) return false;
           if (timeslotId) return s.timeslot_id === timeslotId;
           // Wenn keine Timeslot-ID angegeben, prüfen ob der Arbeitsplatz Timeslots hat
-          const workplace = workplaces.find(w => w.name === rowName);
+          const workplace = workplaces.find((w: any) => w.name === rowName);
           if (workplace?.timeslots_enabled) {
               // Hat Timeslots - nur Shifts ohne Timeslot löschen (Legacy)
               return !s.timeslot_id;
@@ -2776,7 +2778,7 @@ export default function ScheduleBoard() {
           : rowName;
 
       if (window.confirm(`Möchten Sie alle Einträge in der Zeile "${displayName}" für diese Woche löschen?`)) {
-          const ids = shiftsToDelete.map(s => s.id);
+          const ids = shiftsToDelete.map((s: any) => s.id);
           bulkDeleteMutation.mutate(ids);
       }
   };
@@ -2807,7 +2809,7 @@ export default function ScheduleBoard() {
   // Wenn Override möglich: zeigt Dialog und führt onProceed bei Bestätigung aus
   const checkConflictsWithOverride = async (doctorId: string, dateStr: string, newPosition: string, excludeShiftId: string | null = null, onProceed: (() => void) | null = null): Promise<boolean> => {
       const result = validate(doctorId, dateStr, newPosition, { excludeShiftId });
-      const doctor = doctors.find(d => d.id === doctorId);
+      const doctor = doctors.find((d: any) => d.id === doctorId);
 
       // Prüfen, ob ein Rotationskonflikt vorliegt
       const isRotationConflict = result.blockers.some(
@@ -2821,11 +2823,11 @@ export default function ScheduleBoard() {
               ? () => {
                     const rotationPositions = new Set(
                         workplaces
-                            .filter((w) => w.category === 'Rotationen')
-                            .map((w) => w.name)
+                            .filter((w: any) => w.category === 'Rotationen')
+                            .map((w: any) => w.name)
                     );
                     const rotationShift = allShifts.find(
-                        (s) =>
+                        (s: any) =>
                             s.date === dateStr &&
                             s.doctor_id === doctorId &&
                             rotationPositions.has(s.position)
@@ -2843,7 +2845,7 @@ export default function ScheduleBoard() {
               doctorName: doctor?.name,
               date: dateStr,
               position: newPosition,
-              onConfirm: wrappedOnConfirm
+              onConfirm: wrappedOnConfirm as any
           });
           return true; // Blockiert - warte auf Override-Bestätigung
       }
@@ -2859,7 +2861,7 @@ export default function ScheduleBoard() {
       if (!absencePositions.includes(newPosition)) {
           const crossConflicts = await checkCrossTenantConflicts(doctorId, dateStr);
           if (crossConflicts.length > 0) {
-              const names = [...new Set(crossConflicts.map(c => c.related_employee_name))].join(', ');
+              const names = [...new Set(crossConflicts.map((c: any) => c.related_employee_name))].join(', ');
               requestOverride({
                   blockers: [`Dienstkonflikt (mandantenübergreifend): „${names}" hat eine Beziehung mit aktiviertem Dienstkonflikt und ist am selben Tag in einem anderen Mandanten ebenfalls für einen Dienst eingeteilt.`],
                   warnings: [],
@@ -2867,7 +2869,7 @@ export default function ScheduleBoard() {
                   doctorName: doctor?.name,
                   date: dateStr,
                   position: newPosition,
-                  onConfirm: onProceed
+                  onConfirm: onProceed as any
               });
               return true; // Blockiert - warte auf Override-Bestätigung
           }
@@ -2894,15 +2896,15 @@ export default function ScheduleBoard() {
   // Wrapper für Limit-Prüfung (jetzt nur Warnung)
   const checkLimits = (doctorId: string, dateStr: string, position: string): string | null => {
       const result = validate(doctorId, dateStr, position, {});
-      const limitWarnings = result.warnings.filter(w => w.includes('Dienstlimit'));
+      const limitWarnings = result.warnings.filter((w: any) => w.includes('Dienstlimit'));
       return limitWarnings.length > 0 ? limitWarnings.join('\n') : null;
   };
 
   // Prüfung beim Drag in Abwesenheit: Warnung falls bestehende Einträge gelöscht werden
   // Kombiniert Dienst-Lösch-Warnung + Staffing-Check in einem Dialog
   const checkAbsenceDropConflicts = (doctorId: string, dateStr: string, position: string, onProceed: () => void, excludeShiftId: string | null = null): boolean => {
-      const doctor = doctors.find(d => d.id === doctorId);
-      const shiftsToDelete = currentWeekShifts.filter(s =>
+      const doctor = doctors.find((d: any) => d.id === doctorId);
+      const shiftsToDelete = currentWeekShifts.filter((s: any) =>
           s.doctor_id === doctorId &&
           s.date === dateStr &&
           s.id !== excludeShiftId &&
@@ -2911,7 +2913,7 @@ export default function ScheduleBoard() {
 
       // Staffing-Warnungen prüfen
       const result = validate(doctorId, dateStr, position, {});
-      const staffingWarnings = result.warnings.filter(w =>
+      const staffingWarnings = result.warnings.filter((w: any) =>
           w.includes('Mindestbesetzung') || w.includes('anwesend')
       );
 
@@ -2921,7 +2923,7 @@ export default function ScheduleBoard() {
 
       const messages = [];
       if (shiftsToDelete.length > 0) {
-          const entries = shiftsToDelete.map(s => `"${s.position}"`).join(', ');
+          const entries = shiftsToDelete.map((s: any) => `"${s.position}"`).join(', ');
           messages.push(`Bestehende Einträge werden gelöscht: ${entries}`);
       }
       messages.push(...staffingWarnings);
@@ -2949,7 +2951,7 @@ export default function ScheduleBoard() {
               format(startDate, 'yyyy-MM-dd'),
               format(endDate, 'yyyy-MM-dd'),
               hiddenRows
-          );
+          ) as any;
           
           // Decode base64
           const byteCharacters = atob(data.file);
@@ -2970,7 +2972,7 @@ export default function ScheduleBoard() {
           a.remove();
       } catch (error) {
           console.error("Export Error:", error);
-          alert("Export fehlgeschlagen: " + (error.message || "Unbekannter Fehler"));
+          alert("Export fehlgeschlagen: " + ((error as any).message || "Unbekannter Fehler"));
       } finally {
           setIsExporting(false);
       }
@@ -2988,7 +2990,7 @@ export default function ScheduleBoard() {
                 });
         }
     const start = startOfWeek(currentDate, { weekStartsOn: 1 });
-    return Array.from({ length: 7 }).map((_, i) => addDays(start, i));
+    return Array.from({ length: 7 }).map((_: any, i: any) => addDays(start, i));
   }, [currentDate, viewMode]);
 
     const rowLabelWidth = isMonthView ? 160 : 200;
@@ -3012,7 +3014,7 @@ export default function ScheduleBoard() {
     if (!weekDays.length || !doctors.length) return doctors;
         const checkDate = viewMode === 'month' ? currentDate : weekDays[0];
         return sortDoctorsForDisplay(
-            doctors.filter(doc => isDoctorAvailable(doc, checkDate, staffingPlanEntries))
+            doctors.filter((doc: any) => isDoctorAvailable(doc, checkDate, staffingPlanEntries))
         );
         }, [currentDate, doctors, sortDoctorsAlphabetically, staffingPlanEntries, viewMode, weekDays]);
 
@@ -3045,14 +3047,14 @@ export default function ScheduleBoard() {
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd'); // end is exclusive in logic below, but for string range let's be careful
     
-    const dbShifts = allShifts.filter(s => {
+    const dbShifts = allShifts.filter((s: any) => {
       // Robust string comparison to avoid timezone issues
       return s.date >= startStr && s.date < endStr;
     });
     
     if (previewShifts) {
         // Add temporary IDs to preview shifts if they don't have them, to avoid key errors
-        const formattedPreview = previewShifts.map((s, i) => ({
+        const formattedPreview = previewShifts.map((s: any, i: any) => ({
             ...s,
             id: s.id || `preview-${i}`,
             isPreview: true
@@ -3064,7 +3066,7 @@ export default function ScheduleBoard() {
   }, [allShifts, currentDate, previewShifts]);
 
   // ─── Conflict Scanner ────────────────────────────────────────────────
-  const weekDayStrings = useMemo(() => weekDays.map(d => format(d, 'yyyy-MM-dd')), [weekDays]);
+  const weekDayStrings = useMemo(() => weekDays.map((d: any) => format(d, 'yyyy-MM-dd')), [weekDays]);
   const doctorNamesMap = useMemo(() => {
       const map = new Map();
       for (const d of doctors) {
@@ -3106,12 +3108,12 @@ export default function ScheduleBoard() {
 
         const currentWeekShiftLookup = useMemo(() => createScheduleShiftLookup(currentWeekShifts), [currentWeekShifts]);
 
-        const currentWeekShiftDates = useMemo(() => new Set(currentWeekShifts.map((shift) => shift.date)), [currentWeekShifts]);
+        const currentWeekShiftDates = useMemo(() => new Set(currentWeekShifts.map((shift: any) => shift.date)), [currentWeekShifts]);
 
         const currentWeekShiftPositionsByDate = useMemo(() => {
             const map = new Map();
 
-            currentWeekShifts.forEach((shift) => {
+            currentWeekShifts.forEach((shift: any) => {
                 if (!shift?.date || !shift?.position) return;
 
                 if (!map.has(shift.date)) {
@@ -3123,19 +3125,19 @@ export default function ScheduleBoard() {
             return map;
         }, [currentWeekShifts]);
 
-        const doctorById = useMemo(() => new Map(doctors.map((doctor) => [doctor.id, doctor])), [doctors]);
+        const doctorById = useMemo(() => new Map(doctors.map((doctor: any) => [doctor.id, doctor])), [doctors]);
 
-        const workplaceByName = useMemo(() => new Map(workplaces.map((workplace) => [workplace.name, workplace])), [workplaces]);
+        const workplaceByName = useMemo(() => new Map(workplaces.map((workplace: any) => [workplace.name, workplace])), [workplaces]);
 
     const getPositionTimeslotOptions = (positionName: string, doctorId: string | null = null): any[] => {
-        const workplace = workplaceByName.get(positionName);
+        const workplace = workplaceByName.get(positionName) as any;
         if (!workplace?.timeslots_enabled) return [];
 
         const baseDoctor = doctorId ? doctorById.get(doctorId) : null;
         const doctor = baseDoctor ? getDoctorWithEffectiveFte(baseDoctor, currentDate) : null;
 
-        return (workplaceTimeslotsByWorkplaceId.get(workplace.id) || []).map((timeslot) => ({
-            ...buildTimeslotSelectionOption(timeslot, doctor, workplace, workTimeModelMap, centralEmployeesById),
+        return ((workplaceTimeslotsByWorkplaceId as any).get((workplace as any).id) || []).map((timeslot: any) => ({
+            ...buildTimeslotSelectionOption(timeslot, doctor as any, workplace, workTimeModelMap, centralEmployeesById),
         }));
     };
 
@@ -3169,8 +3171,8 @@ export default function ScheduleBoard() {
                 : `${positionName} hat mehrere Zeitfenster.`,
             options,
             allowCustomEditing,
-            customEndMinutesByOptionId: buildInitialCustomTimeslotEndMinutesByOption(options, initialSelection),
-            customStartMinutesByOptionId: buildInitialCustomTimeslotStartMinutesByOption(options, initialSelection),
+            customEndMinutesByOptionId: buildInitialCustomTimeslotEndMinutesByOption(options, initialSelection) as any,
+            customStartMinutesByOptionId: buildInitialCustomTimeslotStartMinutesByOption(options, initialSelection) as any,
             activeTimeslotId: initialSelection?.timeslotId ?? null,
         });
         return false;
@@ -3206,11 +3208,11 @@ export default function ScheduleBoard() {
             initialSelection,
             forceDialog: true,
             allowCustomEditing: true,
-            onResolved: (selection) => {
+            onResolved: (selection: any) => {
                 const normalizedSelection = normalizeTimeslotSelection(selection);
                 const nextTimeslotId = normalizedSelection.timeslotId;
 
-                const duplicate = currentWeekShifts.some((entry) => {
+                const duplicate = currentWeekShifts.some((entry: any) => {
                     if (entry.id === shift.id) return false;
                     if (entry.date !== shift.date || entry.position !== shift.position || entry.doctor_id !== shift.doctor_id) return false;
                     if (nextTimeslotId) return entry.timeslot_id === nextTimeslotId;
@@ -3224,7 +3226,7 @@ export default function ScheduleBoard() {
                 const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
                 const allowsMultiple = workplaceAllowsMultiple(workplace, customCategories);
                 if (!allowsMultiple) {
-                    const occupyingShift = currentWeekShifts.find((entry) => {
+                    const occupyingShift = currentWeekShifts.find((entry: any) => {
                         if (entry.id === shift.id) return false;
                         if (entry.date !== shift.date || entry.position !== shift.position) return false;
                         if (workplace.timeslots_enabled) {
@@ -3262,7 +3264,7 @@ export default function ScheduleBoard() {
         // für reguläre Dienste verfügbar. Mapping via central_employee_id
         // (gleiches Pattern wie sharedShifts in getAvailabilityBlockingDoctorIdsByDate).
         const ceMap = new Map();
-        doctors.forEach((doc) => {
+        doctors.forEach((doc: any) => {
             if (!doc.central_employee_id) return;
             const key = String(doc.central_employee_id);
             const list = ceMap.get(key) || [];
@@ -3300,13 +3302,13 @@ export default function ScheduleBoard() {
     const availableDoctorsByDate = useMemo(() => {
         const map = new Map();
 
-        weekDays.forEach((day) => {
+        weekDays.forEach((day: any) => {
             if (!isValid(day)) return;
 
             const dateStr = format(day, 'yyyy-MM-dd');
             const assignedDocIds = availabilityBlockingDoctorIdsByDate.get(dateStr) || new Set();
             map.set(dateStr, sortDoctorsForDisplay(
-                doctors.filter((doctor) =>
+                doctors.filter((doctor: any) =>
                     !assignedDocIds.has(doctor.id) &&
                     doctor.role !== 'Nicht-Radiologe' &&
                     matchesAllQualificationFilters(doctor) &&
@@ -3330,15 +3332,15 @@ export default function ScheduleBoard() {
         const map = new Map();
 
         // Only show Springer chips for ward tenants (non-write rotation workplaces)
-        const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every(wp => wp.canWrite === false);
+        const isWardTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.every((wp: any) => wp.canWrite === false);
         if (!isWardTenant || rotationAssignments.length === 0) return map;
 
         // Assignments that already have an OPEN return-request must not be
         // draggable again (dragging would produce a 409 "already requested").
         const openReturnRequestAssignmentIds = new Set(
             rotationDemands
-                .filter((d) => d.status === 'open' && d.return_requested_assignment_id)
-                .map((d) => String(d.return_requested_assignment_id))
+                .filter((d: any) => d.status === 'open' && d.return_requested_assignment_id)
+                .map((d: any) => String(d.return_requested_assignment_id))
         );
 
         // Group rotation assignments by date
@@ -3361,8 +3363,8 @@ export default function ScheduleBoard() {
             if (assignments.length === 0) continue;
 
             const chips = assignments
-                .filter((assignment) => !openReturnRequestAssignmentIds.has(String(assignment.id)))
-                .map((assignment) => {
+                .filter((assignment: any) => !openReturnRequestAssignmentIds.has(String(assignment.id)))
+                .map((assignment: any) => {
                     const empName = assignment.employee_name || `#${assignment.employee_id}`;
                     const autoLabel = formatChipLabel(empName);
                     return {
@@ -3404,7 +3406,7 @@ export default function ScheduleBoard() {
     const jokerChipsByDate = useMemo(() => {
         const map = new Map();
         // Only for pool planners (canWrite on at least one workplace)
-        const isPoolTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.some(wp => wp.canWrite === true);
+        const isPoolTenant = rotationWorkplaces.length > 0 && rotationWorkplaces.some((wp: any) => wp.canWrite === true);
         if (!isPoolTenant) return map;
 
         for (const demand of rotationDemands) {
@@ -3415,7 +3417,7 @@ export default function ScheduleBoard() {
             // rotation_assignment will block them in Verfügbar via the
             // availabilityBlockingDoctorIdsByDate mechanism).
             const alreadyAssigned = rotationAssignments.some(
-                (a) => String(a.employee_id) === String(demand.offered_employee_id)
+                (a: any) => String(a.employee_id) === String(demand.offered_employee_id)
                     && String(a.date).slice(0, 10) === dateStr
             );
             if (alreadyAssigned) continue;
@@ -3530,7 +3532,7 @@ export default function ScheduleBoard() {
             const realDocs = availableDoctorsByDate.get(dateStr) || [];
             const springerDocs = springerChipsByDate.get(dateStr) || [];
             const assignedSpringerDoctorIds = springerDoctorIdByDateWithLocalShift.get(dateStr) || new Set();
-            const visibleSpringers = springerDocs.filter(d =>
+            const visibleSpringers = springerDocs.filter((d: any) =>
                 !hiddenSpringerChipIds.has(d._assignmentId) &&
                 !assignedSpringerDoctorIds.has(d.id)
             );
@@ -3543,9 +3545,9 @@ export default function ScheduleBoard() {
     const lateRotationIndicatorByDoctorDay = useMemo(() => {
         const indicatorMap = new Map();
 
-        currentWeekShifts.forEach((shift) => {
+        currentWeekShifts.forEach((shift: any) => {
                 if (!shift?.doctor_id || !shift?.date) return;
-                const workplace = workplaces.find((entry) => entry.name === shift.position);
+                const workplace = workplaces.find((entry: any) => entry.name === shift.position);
                 const indicator = getLateRotationIndicator(shift, workplace, workplaceTimeslots);
                 if (!indicator.show) return;
 
@@ -3568,7 +3570,7 @@ export default function ScheduleBoard() {
             if (!shift.doctor_id) continue;
             if (isNonWorkingShiftPosition(shift.position)) continue;
 
-            const workplace = workplaces.find(wp => wp.name === shift.position);
+            const workplace = workplaces.find((wp: any) => wp.name === shift.position);
             if (workplace?.service_type === 2) continue;
             if (workplace?.affects_availability === false) continue;
 
@@ -3579,16 +3581,16 @@ export default function ScheduleBoard() {
             shiftsByDoctorAndDate.get(groupKey).push({ shift, workplace });
         }
 
-        shiftsByDoctorAndDate.forEach((entries, groupKey) => {
+        shiftsByDoctorAndDate.forEach((entries: any, groupKey: any) => {
             const [doctorId, dateStr] = groupKey.split('__');
-            const baseDoctor = doctors.find(d => d.id === doctorId);
+            const baseDoctor = doctors.find((d: any) => d.id === doctorId);
             const doctor = baseDoctor ? getDoctorWithEffectiveFte(baseDoctor, dateStr) : null;
             const intervals = entries
-                .map(({ shift, workplace }) => {
+                .map(({ shift, workplace }: any) => {
                     const timeslot = shift.timeslot_id
-                        ? workplaceTimeslots.find(slot => slot.id === shift.timeslot_id)
+                        ? workplaceTimeslots.find((slot: any) => slot.id === shift.timeslot_id)
                         : null;
-                    return buildShiftInterval(shift, doctor, workplace, timeslot, workTimeModelMap, centralEmployeesById);
+                    return buildShiftInterval(shift, doctor as any, workplace, timeslot, workTimeModelMap, centralEmployeesById);
                 })
                 .filter(Boolean);
 
@@ -3603,7 +3605,7 @@ export default function ScheduleBoard() {
     return map;
     }, [currentWeekShifts, weekDays, doctors, workplaces, workplaceTimeslots, workTimeModelMap, centralEmployeesById]);
 
-  const cleanupAutoFreiOnly = (doctorId, dateStr, position) => {
+  const cleanupAutoFreiOnly = (doctorId: any, dateStr: any, position: any) => {
       const autoFreiShift = findAutoFreiToCleanup(doctorId, dateStr, position);
       if (autoFreiShift) {
           deleteShiftMutation.mutate(autoFreiShift.id);
@@ -3615,8 +3617,8 @@ export default function ScheduleBoard() {
       if (shift.id?.startsWith('temp-')) {
           console.log(`[DEBUG-LOG] Skipping delete for temp shift ${shift.id}`);
           // Cancel optimistic update
-          queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], old => 
-              old?.filter(s => s.id !== shift.id) || []
+          queryClient.setQueryData(['shifts', fetchRange.start, fetchRange.end], (old: any) => 
+              (old as any[])?.filter((s: any) => s.id !== shift.id) || []
           );
           return;
       }
@@ -3624,7 +3626,7 @@ export default function ScheduleBoard() {
       console.log(`[DEBUG-LOG] deleteShiftWithCleanup triggered for Shift ${shift.id} (${shift.position})`);
       const idsToDelete = [shift.id];
       if (isAutoOffPosition(shift.position)) {
-           const autoFreiShift = findAutoFreiToCleanup(shift.doctor_id, shift.date, shift.position);
+           const autoFreiShift = findAutoFreiToCleanup(shift.doctor_id!, shift.date, shift.position);
            if (autoFreiShift && !autoFreiShift.id?.startsWith('temp-')) {
                console.log(`[DEBUG-LOG] Found Auto-Frei to cleanup: ${autoFreiShift.id}`);
                idsToDelete.push(autoFreiShift.id);
@@ -3650,18 +3652,18 @@ export default function ScheduleBoard() {
      * Returns the updated preview array (or unchanged array if no auto-frei needed).
      */
   const addPreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
-      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
       if (!autoFreiDateStr) return currentPreviews;
 
       // Check if doctor already has something on that date (in preview or DB)
       const allMerged = [...(currentWeekShifts || [])];
       // Also include the current previews being modified
       const previewMerged = [...currentPreviews];
-      const hasExisting = allMerged.some(s => s.date === autoFreiDateStr && s.doctor_id === doctorId && !s.isPreview) ||
-                          previewMerged.some(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+      const hasExisting = allMerged.some((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId && !s.isPreview) ||
+                          previewMerged.some((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId);
       if (hasExisting) return currentPreviews;
 
-      const newAutoFrei = {
+      const newAutoFrei: any = {
           id: `preview-autofrei-${Date.now()}`,
           date: autoFreiDateStr,
           position: 'Frei',
@@ -3671,7 +3673,7 @@ export default function ScheduleBoard() {
       };
       console.log('[PREVIEW] Auto-Frei hinzugefügt:', newAutoFrei);
       toast.info(`Auto-Frei für ${autoFreiDateStr} hinzugefügt`);
-      return [...currentPreviews, newAutoFrei];
+      return [...currentPreviews, newAutoFrei as any];
   };
 
   /**
@@ -3680,11 +3682,11 @@ export default function ScheduleBoard() {
    * Returns the updated preview array.
    */
   const removePreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
-      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
       if (!autoFreiDateStr) return currentPreviews;
 
       // Remove from preview
-      const filtered = currentPreviews.filter(s => {
+      const filtered = currentPreviews.filter((s: any) => {
           if (s.date !== autoFreiDateStr || s.doctor_id !== doctorId) return true;
           if (s.position !== 'Frei') return true;
           // Match auto-frei entries (either by note or by preview-autofrei ID)
@@ -3713,8 +3715,8 @@ export default function ScheduleBoard() {
         const normalizedDraggableId = normalizeDraggableId(draggableId);
         if (!normalizedDraggableId) return;
 
-    let docId = null;
-    let shiftId = null;
+    let docId: string | null = null;
+    let shiftId: string | null = null;
     
     if (normalizedDraggableId.startsWith('sidebar-doc-')) {
         docId = normalizedDraggableId.replace('sidebar-doc-', '');
@@ -3722,7 +3724,7 @@ export default function ScheduleBoard() {
         docId = parseAvailableDoctorId(normalizedDraggableId);
     } else if (normalizedDraggableId.startsWith('shift-')) {
         shiftId = normalizedDraggableId.replace('shift-', '');
-        const shift = currentWeekShifts.find(s => s.id === shiftId);
+        const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
         if (shift) {
             docId = shift.doctor_id;
         }
@@ -3748,7 +3750,7 @@ export default function ScheduleBoard() {
     } else if (normalizedDraggableId.startsWith('shift-')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
         setDraggingShiftId(shiftId);
-        const shift = currentWeekShifts.find(s => s.id === shiftId);
+        const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
         if (shift) {
             docId = shift.doctor_id;
         }
@@ -3789,7 +3791,7 @@ export default function ScheduleBoard() {
         const srcPos = source.droppableId !== 'sidebar' && source.droppableId !== 'available__' && !source.droppableId.startsWith('available__')
           ? stripPanelPrefix(source.droppableId).split('__')[1] : null;
         const checkPos = destPos || srcPos;
-        const isDienste = checkPos && workplaces.some(w => w.name === checkPos && w.category === 'Dienste');
+        const isDienste = checkPos && workplaces.some((w: any) => w.name === checkPos && w.category === 'Dienste');
         if (isDienste) {
           console.warn('[Permissions] Admin ohne can_edit_schedule, Dienste-Drag blockiert:', user.email, 'position:', checkPos);
           alert('Ihre Berechtigung "Dienstplan bearbeiten" ist deaktiviert. Bitte wenden Sie sich an einen Super-Admin.');
@@ -3809,11 +3811,11 @@ export default function ScheduleBoard() {
     //  Grid-drops on station workplaces are handled by the regular
     //  available-doc handler below (same draggableId format).
     // ============================================================
-    if ((destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId === 'sidebar') && sourceDroppableId.startsWith('available__')) {
+    if ((destinationDroppableId! === 'trash' || destinationDroppableId! === 'trash-overlay' || destinationDroppableId! === 'sidebar') && sourceDroppableId.startsWith('available__')) {
         const hideDateStr = sourceDroppableId.replace('available__', '');
         const hideDoc = (allDisplayDocsByDate.get(hideDateStr) || [])[source.index];
         if (hideDoc?._isSpringer) {
-            setHiddenSpringerChipIds(prev => new Set([...prev, hideDoc._assignmentId]));
+            (setHiddenSpringerChipIds as any)((prev: any) => new Set([...prev, hideDoc._assignmentId]));
             toast.success('Springer aus Verfügbar entfernt');
             return;
         }
@@ -3825,18 +3827,18 @@ export default function ScheduleBoard() {
     // ============================================================
     if (normalizedDraggableId.startsWith('rotation-assignment-')) {
         const assignmentId = normalizedDraggableId.replace('rotation-assignment-', '');
-        const assignment = rotationAssignments.find((a) => String(a.id) === String(assignmentId));
+        const assignment = rotationAssignments.find((a: any) => String(a.id) === String(assignmentId));
         if (!assignment) return;
 
         // Dropped outside or to Verfügbar/sidebar/trash → delete
-        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar') || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay') {
+        if (!destination || destinationDroppableId! === 'sidebar' || destinationDroppableId!.startsWith('available__') || destinationDroppableId!.endsWith('__Verfügbar') || destinationDroppableId! === 'trash' || destinationDroppableId! === 'trash-overlay') {
             try {
                 await api.deleteRotationAssignment(assignment.group_id, assignmentId);
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                 toast.success('Einteilung entfernt');
             } catch (err) {
-                toast.error('Fehler beim Entfernen: ' + (err?.message || ''));
+                toast.error('Fehler beim Entfernen: ' + ((err as any)?.message || ''));
             }
         }
         return;
@@ -3847,9 +3849,9 @@ export default function ScheduleBoard() {
     //  Timeslot-Auswahl wie bei normalen Rotationen.
     //  Für Ward-Tenants: Springer-Chip → Rückgabe an den Pool anfordern.
     // ============================================================
-    if (destinationDroppableId && (destinationDroppableId.startsWith('rotationCell__') || destinationDroppableId.startsWith('rotationCellTslot__'))) {
-        const isTimeslotCell = destinationDroppableId.startsWith('rotationCellTslot__');
-        const parts = destinationDroppableId.split('__');
+    if (destinationDroppableId && (destinationDroppableId!.startsWith('rotationCell__') || destinationDroppableId!.startsWith('rotationCellTslot__'))) {
+        const isTimeslotCell = destinationDroppableId!.startsWith('rotationCellTslot__');
+        const parts = destinationDroppableId!.split('__');
         const wpId = isTimeslotCell ? parts[1] : parts[1];
         const destDate = isTimeslotCell ? parts[2] : parts[2];
         const tsId = isTimeslotCell ? parts[3] : null;
@@ -3862,14 +3864,14 @@ export default function ScheduleBoard() {
         } else if (normalizedDraggableId.startsWith('available-doc-')) {
             doctorId = parseAvailableDoctorId(normalizedDraggableId);
         } else if (normalizedDraggableId.startsWith('shift-')) {
-            const shift = currentWeekShifts.find(s => s.id === normalizedDraggableId.replace('shift-', ''));
+            const shift = currentWeekShifts.find((s: any) => s.id === normalizedDraggableId.replace('shift-', ''));
             if (shift) doctorId = shift.doctor_id;
         }
 
         if (!doctorId) return;
 
         // Find the rotation workplace
-        const wp = rotationWorkplaces.find(w => String(w.id) === String(wpId));
+        const wp = rotationWorkplaces.find((w: any) => String(w.id) === String(wpId));
         if (!wp) return;
 
         // ────────────────────────────────────────────────────────────
@@ -3882,7 +3884,7 @@ export default function ScheduleBoard() {
         // ────────────────────────────────────────────────────────────
         if (wp.canWrite === false && normalizedDraggableId.startsWith('available-doc-')) {
             const springerDoc = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
-                .find((d) => d._isSpringer && d.id === doctorId);
+                .find((d: any) => d._isSpringer && d.id === doctorId);
             if (springerDoc?._assignmentId) {
                 const assignmentId = springerDoc._assignmentId;
                 const confirmed = window.confirm('Wollen Sie den Springer an den Pool zurückgeben?');
@@ -3890,7 +3892,7 @@ export default function ScheduleBoard() {
                 // Optimistically hide the chip so the user can't re-trigger
                 // the request while the network round-trip is in flight (which
                 // would otherwise produce a 409 "already requested").
-                setHiddenSpringerChipIds((prev) => new Set([...prev, assignmentId]));
+                (setHiddenSpringerChipIds as any)((prev: any) => new Set([...prev, assignmentId]));
                 api.createRotationDemand({
                     rotation_workplace_id: wp.id,
                     date: destDate,
@@ -3901,9 +3903,9 @@ export default function ScheduleBoard() {
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                     toast.success('Rückgabe angefordert — Pool wurde benachrichtigt.');
-                }).catch((err) => {
+                }).catch((err: any) => {
                     // On error: re-show the chip so the user can retry.
-                    setHiddenSpringerChipIds((prev) => {
+                    (setHiddenSpringerChipIds as any)((prev: any) => {
                         const next = new Set(prev);
                         next.delete(assignmentId);
                         return next;
@@ -3926,7 +3928,7 @@ export default function ScheduleBoard() {
         if (wp.canWrite === false && normalizedDraggableId.startsWith('available-doc-')) {
             // Only regular doctors (not Springer chips) can be offered as Joker
             const isSpringer = (allDisplayDocsByDate.get(sourceDroppableId.replace('available__', '')) || [])
-                .some((d) => d._isSpringer && d.id === doctorId);
+                .some((d: any) => d._isSpringer && d.id === doctorId);
             if (!isSpringer) {
                 const doctor = doctorById.get(doctorId);
                 const doctorName = doctor?.name || doctorId;
@@ -3943,7 +3945,7 @@ export default function ScheduleBoard() {
                 // ward can't accidentally re-offer the same person.
                 const sourceDateKey = sourceDroppableId.replace('available__', '');
                 const hideKey = `${doctorId}|${sourceDateKey}`;
-                setHiddenJokerDoctorIds((prev) => new Set([...prev, hideKey]));
+                (setHiddenJokerDoctorIds as any)((prev: any) => new Set([...prev, hideKey]));
                 api.createRotationDemand({
                     rotation_workplace_id: wp.id,
                     date: destDate,
@@ -3954,9 +3956,9 @@ export default function ScheduleBoard() {
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                     toast.success(`${doctorName} wurde dem Pool angeboten.`);
-                }).catch((err) => {
+                }).catch((err: any) => {
                     // Re-show the chip so the user can retry
-                    setHiddenJokerDoctorIds((prev) => {
+                    (setHiddenJokerDoctorIds as any)((prev: any) => {
                         const next = new Set(prev);
                         next.delete(hideKey);
                         return next;
@@ -3973,7 +3975,7 @@ export default function ScheduleBoard() {
         const hasTimeslots = wp.timeslots_enabled && wp.timeslots?.length > 0;
 
         // Build callback for timeslot selection (or direct creation)
-        const doCreate = (timeslotId) => {
+        const doCreate = (timeslotId: any) => {
             api.createRotationAssignment(wp.group_id, {
                 rotation_workplace_id: wp.id,
                 date: destDate,
@@ -3983,7 +3985,7 @@ export default function ScheduleBoard() {
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                 queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                 toast.success('Springer eingeteilt');
-            }).catch((err) => {
+            }).catch((err: any) => {
                 toast.error('Fehler: ' + (err?.message || ''));
             });
         };
@@ -3995,7 +3997,7 @@ export default function ScheduleBoard() {
         }
 
         if (hasTimeslots) {
-            const options = wp.timeslots.map((ts) => ({
+            const options = wp.timeslots.map((ts: any) => ({
                 id: ts.id,
                 label: ts.label,
                 start_time: ts.start_time,
@@ -4003,7 +4005,7 @@ export default function ScheduleBoard() {
                 canCustomize: false,
             }));
             pendingTimeslotSelectionRef.current = doCreate;
-            setTimeslotSelectionDialog({
+            (setTimeslotSelectionDialog as any)({
                 open: true,
                 workplaceName: wp.name,
                 description: `${wp.name} am ${format(new Date(destDate + 'T00:00:00'), 'dd.MM.yyyy')} hat mehrere Zeitfenster.`,
@@ -4023,15 +4025,15 @@ export default function ScheduleBoard() {
     // ============================================================
     if (normalizedDraggableId.startsWith('shift-preview-')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
-        const previewShift = previewShifts?.find(s => s.id === shiftId);
+        const previewShift = previewShifts?.find((s: any) => s.id === shiftId);
         if (!previewShift || !previewShifts) return;
 
         // Dropped outside or to trash/sidebar → remove from preview
-        if (!destination || destinationDroppableId === 'sidebar' || destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar')) {
-            let remaining = previewShifts.filter(s => s.id !== shiftId);
+        if (!destination || destinationDroppableId! === 'sidebar' || destinationDroppableId! === 'trash' || destinationDroppableId! === 'trash-overlay' || destinationDroppableId!.startsWith('available__') || destinationDroppableId!.endsWith('__Verfügbar')) {
+            let remaining = previewShifts.filter((s: any) => s.id !== shiftId);
             // Auto-Frei cleanup: if removed shift was on an auto-off position, remove its auto-frei too
             if (isAutoOffPosition(previewShift.position)) {
-                remaining = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, remaining);
+                remaining = removePreviewAutoFrei(previewShift.doctor_id!, previewShift.date, previewShift.position, remaining);
             }
             if (remaining.length === 0) {
                 setPreviewShifts(null);
@@ -4044,7 +4046,7 @@ export default function ScheduleBoard() {
         }
 
         // Dropped on row header → assign Mo-Fr (skip for preview)
-        if (destinationDroppableId.startsWith('rowHeader__')) {
+        if (destinationDroppableId!.startsWith('rowHeader__')) {
             return;
         }
 
@@ -4052,25 +4054,25 @@ export default function ScheduleBoard() {
         if (sourceDroppableId === destinationDroppableId && source.index === destination.index) return;
 
         // Dropped to a grid cell → move preview entry
-        const destParts = destinationDroppableId.split('__');
+        const destParts = destinationDroppableId!.split('__');
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         const rawNewTimeslotId = destParts[2] || null;
         if (!newDateStr || !newPosition) return;
 
-        const executePreviewMove = (selection) => {
+        const executePreviewMove = (selection: any) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const resolvedPreviewTimeslotId = normalizedSelection.timeslotId;
             const absencePositions = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
             if (!absencePositions.includes(newPosition)) {
-                const wp = workplaces.find(w => w.name === newPosition);
+                const wp = workplaces.find((w: any) => w.name === newPosition);
                 if (wp) {
                     const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
                     const date = new Date(newDateStr + 'T00:00:00');
                     const dayOfWeek = date.getDay();
                     const isActive = isPublicHoliday(date)
-                        ? activeDays.some(d => Number(d) === 0)
-                        : activeDays.some(d => Number(d) === dayOfWeek);
+                        ? activeDays.some((d: any) => Number(d) === 0)
+                        : activeDays.some((d: any) => Number(d) === dayOfWeek);
                     if (!isActive) {
                         toast.error('Diese Position ist an diesem Tag nicht aktiv.');
                         return;
@@ -4078,14 +4080,14 @@ export default function ScheduleBoard() {
                 }
             }
 
-            const previewBlock = getScheduleBlock(newDateStr, newPosition, resolvedPreviewTimeslotId);
+            const previewBlock = getScheduleBlock(newDateStr, newPosition, resolvedPreviewTimeslotId ?? undefined);
             if (previewBlock) {
                 toast.error('Zelle gesperrt' + (previewBlock.reason ? `: ${previewBlock.reason}` : ''));
                 return;
             }
 
             const allMerged = [...(currentWeekShifts || [])];
-            const duplicate = allMerged.find(s => 
+            const duplicate = allMerged.find((s: any) => 
                 s.id !== shiftId &&
                 s.date === newDateStr && 
                 s.position === newPosition && 
@@ -4097,7 +4099,7 @@ export default function ScheduleBoard() {
                 return;
             }
 
-            let updated = previewShifts.map(s => {
+            let updated = previewShifts.map((s: any) => {
                 if (s.id !== shiftId) return s;
                 const nextShift = applyTimeslotSelectionToUpdateData(
                     { ...s, date: newDateStr, position: newPosition },
@@ -4112,10 +4114,10 @@ export default function ScheduleBoard() {
             });
 
             if (isAutoOffPosition(previewShift.position)) {
-                updated = removePreviewAutoFrei(previewShift.doctor_id, previewShift.date, previewShift.position, updated);
+                updated = removePreviewAutoFrei(previewShift.doctor_id!, previewShift.date, previewShift.position, updated);
             }
             if (isAutoOffPosition(newPosition)) {
-                updated = addPreviewAutoFrei(previewShift.doctor_id, newDateStr, newPosition, updated);
+                updated = addPreviewAutoFrei(previewShift.doctor_id!, newDateStr, newPosition, updated);
             }
 
             setPreviewShifts(updated);
@@ -4141,11 +4143,11 @@ export default function ScheduleBoard() {
             if (shiftId.startsWith('temp-')) {
                 return;
             }
-            const shift = currentWeekShifts.find(s => s.id === shiftId) || allShifts.find(s => s.id === shiftId);
+            const shift = currentWeekShifts.find((s: any) => s.id === shiftId) || allShifts.find((s: any) => s.id === shiftId);
             if (shift) {
                 const springerDoc = springerDoctorById.get(shift.doctor_id);
                 if (springerDoc?._isSpringer) {
-                    setHiddenSpringerChipIds(prev => {
+                    (setHiddenSpringerChipIds as any)((prev: any) => {
                         const next = new Set(prev);
                         next.delete(springerDoc._assignmentId);
                         return next;
@@ -4162,22 +4164,22 @@ export default function ScheduleBoard() {
       // Helper: Check if workplace is active on a given date (active_days + holiday check)
       // Feiertage verhalten sich wie Sonntag (Index 0)
       // Default active_days (wenn nicht gesetzt): Mo-Fr [1,2,3,4,5]
-      const isWorkplaceActiveOnDate = (positionName, dateStr) => {
-          const wp = workplaces.find(w => w.name === positionName);
+      const isWorkplaceActiveOnDate = (positionName: any, dateStr: any) => {
+          const wp = workplaces.find((w: any) => w.name === positionName);
           if (!wp) return true;
           const activeDays = (wp.active_days && wp.active_days.length > 0) ? wp.active_days : [1, 2, 3, 4, 5];
           const date = new Date(dateStr + 'T00:00:00');
           const dayOfWeek = date.getDay(); // 0=So, 1=Mo, ..., 6=Sa
           // Feiertag = wie Sonntag behandeln: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
           if (isPublicHoliday(date)) {
-              return activeDays.some(d => Number(d) === 0);
+              return activeDays.some((d: any) => Number(d) === 0);
           }
-          return activeDays.some(d => Number(d) === dayOfWeek);
+          return activeDays.some((d: any) => Number(d) === dayOfWeek);
       };
 
       // Helper to find occupying shift for services or demos (for replacement)
-      const findOccupyingShift = (dateStr, position, ignoreShiftId = null, timeslotId = null) => {
-          const targetWorkplace = workplaces.find(w => w.name === position);
+      const findOccupyingShift = (dateStr: any, position: any, ignoreShiftId: any = null, timeslotId: any = null) => {
+          const targetWorkplace = workplaces.find((w: any) => w.name === position);
           if (!targetWorkplace) return null;
 
           // Prüfe allows_multiple direkt am Workplace (mit Kategorie-Fallback)
@@ -4186,7 +4188,7 @@ export default function ScheduleBoard() {
 
           if (allowsMultiple) return null;
 
-          return currentWeekShifts.find((shift) => {
+          return currentWeekShifts.find((shift: any) => {
                if (shift.date !== dateStr || shift.position !== position || shift.id === ignoreShiftId) {
                    return false;
                }
@@ -4201,19 +4203,19 @@ export default function ScheduleBoard() {
       };
 
       // Helper to cleanup other shifts when becoming absent
-      const cleanupOtherShifts = (doctorId, dateStr, currentShiftId = null) => {
-        const shiftsToDelete = currentWeekShifts.filter(s => 
+      const cleanupOtherShifts = (doctorId: any, dateStr: any, currentShiftId: any = null) => {
+        const shiftsToDelete = currentWeekShifts.filter((s: any) => 
             s.doctor_id === doctorId && 
             s.date === dateStr && 
             s.id !== currentShiftId
         );
-        shiftsToDelete.forEach(s => deleteShiftMutation.mutate(s.id));
+        shiftsToDelete.forEach((s: any) => deleteShiftMutation.mutate(s.id));
     };
 
     // Helper to handle automatic "Frei" after "Dienst Vordergrund" or other auto-off shifts
     const handlePostShiftOff = (doctorId: string, dateStr: string, positionName: string): void => {
         // Zentrale Logik: Prüft ob Auto-Frei erstellt werden soll (inkl. Feiertag-Check, ohne Wochenend-Block)
-        const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
+        const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
         
         if (!autoFreiDateStr) return;
 
@@ -4225,7 +4227,7 @@ export default function ScheduleBoard() {
             alert(`${warning}\n\n(Durch automatischen Freizeitausgleich am ${format(nextDay, 'dd.MM.')})`);
         }
 
-        const existingShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+        const existingShift = allShifts.find((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId);
 
         if (!existingShift) {
             createAutoFreiMutation.mutate({ 
@@ -4245,9 +4247,9 @@ export default function ScheduleBoard() {
     };
 
     // Handle Drop on Row Header (Assign Mo-Fr)
-    if (destinationDroppableId.startsWith('rowHeader__')) {
+    if (destinationDroppableId!.startsWith('rowHeader__')) {
         // Format: rowHeader__position oder rowHeader__position__timeslotId
-        const headerParts = destinationDroppableId.replace('rowHeader__', '').split('__');
+        const headerParts = destinationDroppableId!.replace('rowHeader__', '').split('__');
         const rowName = headerParts[0];
         const rawHeaderTimeslotId = headerParts[1] || null;
         const rowHeaderTimeslotId = rawHeaderTimeslotId;
@@ -4267,7 +4269,7 @@ export default function ScheduleBoard() {
            if (sourceDroppableId === 'sidebar') {
                doctorId = normalizedDraggableId.replace('sidebar-doc-', '');
            } else if (normalizedDraggableId.startsWith('shift-')) {
-               const shift = currentWeekShifts.find(s => s.id === normalizedDraggableId.replace('shift-', ''));
+               const shift = currentWeekShifts.find((s: any) => s.id === normalizedDraggableId.replace('shift-', ''));
              doctorId = shift?.doctor_id;
            } else if (normalizedDraggableId.startsWith('available-doc-')) {
                doctorId = parseAvailableDoctorId(normalizedDraggableId);
@@ -4275,12 +4277,12 @@ export default function ScheduleBoard() {
 
         if (!doctorId) return;
 
-        const assignWeekdaysToTimeslot = async (selection) => {
+        const assignWeekdaysToTimeslot = async (selection: any) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const resolvedTimeslotId = normalizedSelection.timeslotId;
             const monday = startOfWeek(currentDate, { weekStartsOn: 1 });
-            const allWeekDays = [0, 1, 2, 3, 4, 5, 6].map(offset => addDays(monday, offset));
-            const daysToAssign = allWeekDays.filter(day => isWorkplaceActiveOnDate(rowName, format(day, 'yyyy-MM-dd')));
+            const allWeekDays = [0, 1, 2, 3, 4, 5, 6].map((offset: any) => addDays(monday, offset));
+            const daysToAssign = allWeekDays.filter((day: any) => isWorkplaceActiveOnDate(rowName, format(day, 'yyyy-MM-dd')));
 
             const toCreate = [];
             const toDelete = [];
@@ -4291,12 +4293,12 @@ export default function ScheduleBoard() {
             for (const day of daysToAssign) {
                 const dateStr = format(day, 'yyyy-MM-dd');
 
-                if (getScheduleBlock(dateStr, rowName, resolvedTimeslotId)) {
+                if (getScheduleBlock(dateStr, rowName, resolvedTimeslotId ?? undefined)) {
                     blockedCount++;
                     continue;
                 }
 
-                if (checkConflicts(doctorId, dateStr, rowName, true)) {
+                if (await checkConflicts(doctorId, dateStr, rowName, true)) {
                     blockedCount++;
                     continue;
                 }
@@ -4310,8 +4312,8 @@ export default function ScheduleBoard() {
                     const staffingWarn = checkStaffing(dateStr, doctorId);
                     if (staffingWarn) toast.warning(staffingWarn);
 
-                    const others = currentWeekShifts.filter(s => s.doctor_id === doctorId && s.date === dateStr);
-                    others.forEach(s => toDelete.push(s.id));
+                    const others = currentWeekShifts.filter((s: any) => s.doctor_id === doctorId && s.date === dateStr);
+                    others.forEach((s: any) => toDelete.push(s.id));
                 } else {
                     const occupying = findOccupyingShift(dateStr, rowName, null, resolvedTimeslotId);
                     if (occupying) {
@@ -4324,7 +4326,7 @@ export default function ScheduleBoard() {
 
                 const effectiveTsId = resolvedTimeslotId === '__unassigned__' ? null : resolvedTimeslotId;
                 
-                const existingShift = currentWeekShifts.find(s => {
+                const existingShift = currentWeekShifts.find((s: any) => {
                     if (s.date !== dateStr || s.position !== rowName || s.doctor_id !== doctorId) return false;
                     if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                     return !s.timeslot_id;
@@ -4332,17 +4334,17 @@ export default function ScheduleBoard() {
                 if (existingShift) continue; 
 
                 // Bei Timeslot-Zeilen: Filter auch nach timeslot_id
-                const cellShifts = currentWeekShifts.filter(s => {
+                const cellShifts = currentWeekShifts.filter((s: any) => {
                     if (s.date !== dateStr || s.position !== rowName) return false;
                     if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                     return !s.timeslot_id;
                 });
                 // Also check pending creates for order calculation within this batch
-                const pendingInCell = toCreate.filter(s => s.date === dateStr && s.position === rowName && s.timeslot_id === effectiveTsId);
+                const pendingInCell = toCreate.filter((s: any) => s.date === dateStr && s.position === rowName && s.timeslot_id === effectiveTsId);
 
                 const maxOrder = Math.max(
-                    cellShifts.reduce((max, s) => Math.max(max, s.order || 0), -1),
-                    pendingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1)
+                    cellShifts.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1),
+                    pendingInCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1)
                 );
 
                 const newShiftData = {
@@ -4364,9 +4366,9 @@ export default function ScheduleBoard() {
             if (toCreate.length > 0) {
                 const created = await db.ShiftEntry.bulkCreate(toCreate);
                 if (created && Array.isArray(created)) {
-                    setUndoStack(prev => [...prev, { type: 'BULK_DELETE', ids: created.map(c => c.id) }]);
+                    setUndoStack((prev: any) => [...prev, { type: 'BULK_DELETE', ids: created.map((c: any) => c.id) }]);
                 }
-                setTimeout(() => queryClient.invalidateQueries(['shifts', fetchRange.start, fetchRange.end]), 100);
+                setTimeout(() => queryClient.invalidateQueries({ queryKey: ['shifts', fetchRange.start, fetchRange.end] }), 100);
             }
 
             if (successCount > 0) toast.success(`${successCount} Tage zugewiesen (Mo-Fr)`);
@@ -4376,7 +4378,7 @@ export default function ScheduleBoard() {
         if (!resolveTimeslotSelection({
             positionName: rowName,
             requestedTimeslotId: rowHeaderTimeslotId,
-            onResolved: (selection) => {
+            onResolved: (selection: any) => {
                 void assignWeekdaysToTimeslot(selection);
             },
             doctorId,
@@ -4388,14 +4390,14 @@ export default function ScheduleBoard() {
     }
 
     // 1. Reordering in Sidebar
-    if (sourceDroppableId === 'sidebar' && destinationDroppableId === 'sidebar') {
+    if (sourceDroppableId === 'sidebar' && destinationDroppableId! === 'sidebar') {
         if (source.index === destination.index) return;
 
         const newDoctors = Array.from(sidebarDoctors);
         const [movedDoctor] = newDoctors.splice(source.index, 1);
         newDoctors.splice(destination.index, 0, movedDoctor);
 
-        newDoctors.forEach((doc, index) => {
+        newDoctors.forEach((doc: any, index: any) => {
             if (doc.order !== index) {
                 updateDoctorMutation.mutate({ id: doc.id, data: { order: index } });
             }
@@ -4405,19 +4407,19 @@ export default function ScheduleBoard() {
 
     // Dragged from Grid to Available or Sidebar (Delete/Return)
     // Note: Available droppableId format is `available__${dateStr)}
-    const isDestAvailable = destinationDroppableId.startsWith('available__') || destinationDroppableId.endsWith('__Verfügbar');
+    const isDestAvailable = destinationDroppableId!.startsWith('available__') || destinationDroppableId!.endsWith('__Verfügbar');
     const isSourceFromGrid = sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__');
 
-    if (isSourceFromGrid && (isDestAvailable || destinationDroppableId === 'sidebar')) {
+    if (isSourceFromGrid && (isDestAvailable || destinationDroppableId! === 'sidebar')) {
          const shiftId = normalizedDraggableId.replace('shift-', '');
 
          // Preview shift → remove from preview state (not DB)
          if (shiftId.startsWith('preview-') && previewShifts) {
-             const removedShift = previewShifts.find(s => s.id === shiftId);
-             let remaining = previewShifts.filter(s => s.id !== shiftId);
+             const removedShift = previewShifts.find((s: any) => s.id === shiftId);
+             let remaining = previewShifts.filter((s: any) => s.id !== shiftId);
              // Auto-Frei cleanup: if removed shift was on an auto-off position, remove its auto-frei too
              if (removedShift && isAutoOffPosition(removedShift.position)) {
-                 remaining = removePreviewAutoFrei(removedShift.doctor_id, removedShift.date, removedShift.position, remaining);
+                 remaining = removePreviewAutoFrei(removedShift.doctor_id!, removedShift.date, removedShift.position, remaining);
              }
              if (remaining.length === 0) {
                  setPreviewShifts(null);
@@ -4429,7 +4431,7 @@ export default function ScheduleBoard() {
              return;
          }
 
-         const shift = currentWeekShifts.find(s => s.id === shiftId);
+         const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
 
          console.log(`[DEBUG-LOG] Drop to Trash/Sidebar. ShiftID: ${shiftId}, Found: ${!!shift}`);
 
@@ -4437,7 +4439,7 @@ export default function ScheduleBoard() {
              // If this is a springer shift, unhide the Verfügbar chip
              const springerDoc = springerDoctorById.get(shift.doctor_id);
              if (springerDoc?._isSpringer) {
-                 setHiddenSpringerChipIds(prev => {
+                 (setHiddenSpringerChipIds as any)((prev: any) => {
                      const next = new Set(prev);
                      next.delete(springerDoc._assignmentId);
                      return next;
@@ -4445,14 +4447,14 @@ export default function ScheduleBoard() {
              }
              deleteShiftWithCleanup(shift);
          } else {
-             console.error(`[DEBUG-LOG] Shift ${shiftId} not found in currentWeekShifts! Available IDs:`, currentWeekShifts.map(s => s.id));
+             console.error(`[DEBUG-LOG] Shift ${shiftId} not found in currentWeekShifts! Available IDs:`, currentWeekShifts.map((s: any) => s.id));
              // Fallback: Try finding in allShifts directly as safety net
-             const fallbackShift = allShifts.find(s => s.id === shiftId);
+             const fallbackShift = allShifts.find((s: any) => s.id === shiftId);
              if (fallbackShift) {
                  console.log(`[DEBUG-LOG] Found shift in allShifts fallback. Deleting.`);
                  const fallbackSpringerDoc = springerDoctorById.get(fallbackShift.doctor_id);
                  if (fallbackSpringerDoc?._isSpringer) {
-                     setHiddenSpringerChipIds(prev => {
+                     (setHiddenSpringerChipIds as any)((prev: any) => {
                          const next = new Set(prev);
                          next.delete(fallbackSpringerDoc._assignmentId);
                          return next;
@@ -4467,7 +4469,7 @@ export default function ScheduleBoard() {
     // 2. Dragged from Sidebar OR Available to Grid (Create)
     if (sourceDroppableId === 'sidebar' || sourceDroppableId.startsWith('available__')) {
         // Ignore dragging to trash, unknown destinations, available lists, or back to sidebar
-        if (destinationDroppableId === 'trash' || destinationDroppableId === 'trash-overlay' || destinationDroppableId === 'sidebar' || !destinationDroppableId.includes('__') || destinationDroppableId.endsWith('__Verfügbar') || destinationDroppableId.startsWith('available__')) return;
+        if (destinationDroppableId! === 'trash' || destinationDroppableId! === 'trash-overlay' || destinationDroppableId! === 'sidebar' || !destinationDroppableId!.includes('__') || destinationDroppableId!.endsWith('__Verfügbar') || destinationDroppableId!.startsWith('available__')) return;
 
         let doctorId;
         if (sourceDroppableId === 'sidebar') {
@@ -4476,7 +4478,7 @@ export default function ScheduleBoard() {
             doctorId = parseAvailableDoctorId(normalizedDraggableId);
         }
 
-        const dropParts = destinationDroppableId.split('__');
+        const dropParts = destinationDroppableId!.split('__');
         const dateStr = dropParts[0];
         const position = dropParts[1];
         const rawTimeslotId = dropParts[2] || null;
@@ -4499,10 +4501,10 @@ export default function ScheduleBoard() {
 
         // PREVIEW MODE: Add to previewShifts instead of creating DB entry
         if (previewShifts) {
-            const executePreviewCreate = (selection) => {
+            const executePreviewCreate = (selection: any) => {
                 const normalizedSelection = normalizeTimeslotSelection(selection);
                 const resolvedPreviewTimeslotId = normalizedSelection.timeslotId;
-                const duplicate = currentWeekShifts.find((shift) => {
+                const duplicate = currentWeekShifts.find((shift: any) => {
                     if (shift.date !== dateStr || shift.position !== position || shift.doctor_id !== doctorId) return false;
                     if (resolvedPreviewTimeslotId) return shift.timeslot_id === resolvedPreviewTimeslotId;
                     return !shift.timeslot_id;
@@ -4521,11 +4523,11 @@ export default function ScheduleBoard() {
                     isPreview: true,
                 };
 
-                let updatedPreviews = [...previewShifts, newPreviewShift];
+                let updatedPreviews: any = [...previewShifts, newPreviewShift];
                 if (isAutoOffPosition(position)) {
-                    updatedPreviews = addPreviewAutoFrei(doctorId, dateStr, position, updatedPreviews);
+                    updatedPreviews = addPreviewAutoFrei(doctorId!, dateStr, position, updatedPreviews) as any;
                 }
-                setPreviewShifts(updatedPreviews);
+                setPreviewShifts(updatedPreviews as any);
                 toast.info('Vorschlag hinzugefügt');
             };
 
@@ -4541,12 +4543,12 @@ export default function ScheduleBoard() {
             return;
         }
 
-        const executeCreateDrop = async (selection) => {
+        const executeCreateDrop = async (selection: any) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const timeslotId = normalizedSelection.timeslotId;
             console.log('Dropping Doctor:', doctorId, 'to', dateStr, position, 'timeslotId:', timeslotId);
 
-            const dropBlock = getScheduleBlock(dateStr, position, timeslotId);
+            const dropBlock = getScheduleBlock(dateStr, position, timeslotId ?? undefined);
             if (dropBlock) {
                 toast.error('Zelle gesperrt' + (dropBlock.reason ? `: ${dropBlock.reason}` : ''));
                 return;
@@ -4561,7 +4563,7 @@ export default function ScheduleBoard() {
                 const executeAbsenceCreation = () => {
                     cleanupOtherShifts(doctorId, dateStr);
 
-                    const existing = currentWeekShifts.find(s => 
+                    const existing = currentWeekShifts.find((s: any) => 
                         s.date === dateStr && s.doctor_id === doctorId && s.position === position
                     );
                     if (existing) {
@@ -4569,14 +4571,14 @@ export default function ScheduleBoard() {
                         return;
                     }
 
-                    const existingInCell = currentWeekShifts.filter(s => s.date === dateStr && s.position === position);
-                    const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const existingInCell = currentWeekShifts.filter((s: any) => s.date === dateStr && s.position === position);
+                    const maxOrder = existingInCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                     const newOrder = maxOrder + 1;
 
                     createShiftMutation.mutate({ date: dateStr, position, doctor_id: doctorId, order: newOrder });
                 };
 
-                const hasConflicts = checkAbsenceDropConflicts(doctorId, dateStr, position, executeAbsenceCreation);
+                const hasConflicts = checkAbsenceDropConflicts(doctorId!, dateStr, position, executeAbsenceCreation);
                 if (hasConflicts) {
                     console.log('Absence drop conflicts - waiting for override decision');
                     return;
@@ -4586,12 +4588,12 @@ export default function ScheduleBoard() {
                 return;
             }
 
-            const limitWarning = checkLimits(doctorId, dateStr, position);
+            const limitWarning = checkLimits(doctorId!, dateStr, position);
             if (limitWarning) alert(limitWarning);
 
             {
                 const effectiveTimeslotId = timeslotId === '__unassigned__' ? null : timeslotId;
-                const exists = currentWeekShifts.some(s => {
+                const exists = currentWeekShifts.some((s: any) => {
                     if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
                     if (effectiveTimeslotId) return s.timeslot_id === effectiveTimeslotId;
                     return !s.timeslot_id;
@@ -4608,7 +4610,7 @@ export default function ScheduleBoard() {
 
             if (!occupyingShift) {
                 const effectiveLockTs = timeslotId === '__unassigned__' ? null : timeslotId;
-                if (!lockCell(dateStr, position, effectiveLockTs)) {
+                if (!lockCell(dateStr, position, effectiveLockTs ?? undefined)) {
                     console.warn('[CellLock] Blocked rapid duplicate drop:', dateStr, position);
                     return;
                 }
@@ -4625,7 +4627,7 @@ export default function ScheduleBoard() {
                 for (const tsId of slotsToProcess) {
                     const effectiveTsId = tsId === '__unassigned__' ? null : tsId;
 
-                    const existsForSlot = currentWeekShifts.some(s => {
+                    const existsForSlot = currentWeekShifts.some((s: any) => {
                         if (s.date !== dateStr || s.position !== position || s.doctor_id !== doctorId) return false;
                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                         return !s.timeslot_id;
@@ -4635,12 +4637,12 @@ export default function ScheduleBoard() {
                         continue;
                     }
 
-                    const existingInCell = currentWeekShifts.filter(s => {
+                    const existingInCell = currentWeekShifts.filter((s: any) => {
                         if (s.date !== dateStr || s.position !== position) return false;
                         if (effectiveTsId) return s.timeslot_id === effectiveTsId;
                         return !s.timeslot_id;
                     });
-                    const maxOrder = existingInCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const maxOrder = existingInCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                     const newOrder = maxOrder + 1;
 
                     const newShiftData = applyTimeslotSelectionToCreateData(
@@ -4653,17 +4655,17 @@ export default function ScheduleBoard() {
                     shiftsToCreate.push(newShiftData);
                 }
 
-                const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
+                const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday as any);
                 let updateAutoFreiNeeded = false;
                 let existingAutoFreiShift = null;
 
                 if (autoFreiDateStr) {
-                    const warning = checkStaffing(autoFreiDateStr, doctorId);
+                    const warning = checkStaffing(autoFreiDateStr, doctorId!);
                     if (warning) {
                         toast.warning(`${warning}\n(Durch automatischen Freizeitausgleich am ${format(new Date(autoFreiDateStr), 'dd.MM.')})`);
                     }
 
-                    existingAutoFreiShift = allShifts.find(s => s.date === autoFreiDateStr && s.doctor_id === doctorId);
+                    existingAutoFreiShift = allShifts.find((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId);
 
                     if (!existingAutoFreiShift) {
                         shiftsToCreate.push({
@@ -4684,10 +4686,10 @@ export default function ScheduleBoard() {
                         onSuccess: () => {
                             console.log('DEBUG: Bulk Create Success');
                             if (springerAssignmentId) {
-                                setHiddenSpringerChipIds(prev => new Set([...prev, springerAssignmentId]));
+                                (setHiddenSpringerChipIds as any)((prev: any) => new Set([...prev, springerAssignmentId]));
                             }
                             if (updateAutoFreiNeeded && existingAutoFreiShift) {
-                                if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
+                                if (window.confirm(`Für den Folgetag (${format(new Date(autoFreiDateStr!), 'dd.MM.')}) existiert bereits ein Eintrag "${existingAutoFreiShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
                                     updateAutoFreiMutation.mutate({
                                         id: existingAutoFreiShift.id,
                                         data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
@@ -4695,7 +4697,7 @@ export default function ScheduleBoard() {
                                 }
                             }
                         },
-                        onError: (err) => {
+                        onError: (err: any) => {
                             console.error('DEBUG: Error creating shifts:', err);
                             toast.error('Fehler beim Erstellen: ' + err.message);
                         }
@@ -4715,7 +4717,7 @@ export default function ScheduleBoard() {
                 && ((allDisplayDocsByDate.get(springerSourceDate) || [])[source.index] || {})._isSpringer;
 
             if (!isSpringerDrop) {
-                const hasConflict = await checkConflictsWithOverride(doctorId, dateStr, position, null, executeShiftCreation);
+                const hasConflict = await checkConflictsWithOverride(doctorId!, dateStr, position, null, executeShiftCreation);
                 if (hasConflict) {
                     console.log('Conflict detected - waiting for override decision');
                     return;
@@ -4739,15 +4741,15 @@ export default function ScheduleBoard() {
     }
 
     // Dragged from Grid to Grid
-    if (sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__') && destinationDroppableId !== 'sidebar' && destinationDroppableId !== 'trash' && destinationDroppableId !== 'trash-overlay' && !destinationDroppableId.endsWith('__Verfügbar') && !destinationDroppableId.startsWith('available__')) {
+    if (sourceDroppableId !== 'sidebar' && !sourceDroppableId.startsWith('available__') && destinationDroppableId !== 'sidebar' && destinationDroppableId !== 'trash' && destinationDroppableId !== 'trash-overlay' && !destinationDroppableId!.endsWith('__Verfügbar') && !destinationDroppableId!.startsWith('available__')) {
         const shiftId = normalizedDraggableId.replace('shift-', '');
-        const movingShift = currentWeekShifts.find(s => s.id === shiftId);
+        const movingShift = currentWeekShifts.find((s: any) => s.id === shiftId);
         // Format: date__position oder date__position__timeslotId
-        const destParts = destinationDroppableId.split('__');
+        const destParts = destinationDroppableId!.split('__');
         const newDateStr = destParts[0];
         const newPosition = destParts[1];
         const rawNewTimeslotId = destParts[2] || null;
-        const executeGridDrop = async (selection) => {
+        const executeGridDrop = async (selection: any) => {
             const normalizedSelection = normalizeTimeslotSelection(selection);
             const newTimeslotId = normalizedSelection.timeslotId;
             if (!absencePositions.includes(newPosition) && !isWorkplaceActiveOnDate(newPosition, newDateStr)) {
@@ -4755,7 +4757,7 @@ export default function ScheduleBoard() {
                 return;
             }
 
-            const moveBlock = getScheduleBlock(newDateStr, newPosition, newTimeslotId);
+            const moveBlock = getScheduleBlock(newDateStr, newPosition, newTimeslotId ?? undefined);
             if (moveBlock) {
                 toast.error('Zelle gesperrt' + (moveBlock.reason ? `: ${moveBlock.reason}` : ''));
                 return;
@@ -4764,12 +4766,12 @@ export default function ScheduleBoard() {
             if (sourceDroppableId === destinationDroppableId) {
                 if (source.index === destination.index) return;
 
-                const targetWorkplace = workplaceByName.get(newPosition);
+                const targetWorkplace = workplaceByName.get(newPosition) as any;
                 const targetAllTimeslotIds = targetWorkplace?.timeslots_enabled
-                    ? (workplaceTimeslotsByWorkplaceId.get(targetWorkplace.id) || []).map((timeslot) => timeslot.id)
+                    ? ((workplaceTimeslotsByWorkplaceId as any).get(targetWorkplace.id) || []).map((timeslot: any) => timeslot.id)
                     : [];
                 const cellShifts = currentWeekShifts
-                    .filter(s => {
+                    .filter((s: any) => {
                         if (s.date !== newDateStr || s.position !== newPosition) return false;
                         if (!newTimeslotId && targetAllTimeslotIds.length > 1) {
                             return targetAllTimeslotIds.includes(s.timeslot_id) || !s.timeslot_id;
@@ -4777,13 +4779,13 @@ export default function ScheduleBoard() {
                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                         return !s.timeslot_id;
                     })
-                    .sort((a, b) => (a.order || 0) - (b.order || 0));
+                    .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
                 const newShifts = Array.from(cellShifts);
                 const [movedShift] = newShifts.splice(source.index, 1);
                 newShifts.splice(destination.index, 0, movedShift);
 
-                newShifts.forEach((s, index) => {
+                newShifts.forEach((s: any, index: any) => {
                     if (s.order !== index) {
                         updateShiftMutation.mutate({ id: s.id, data: { order: index } });
                     }
@@ -4791,11 +4793,11 @@ export default function ScheduleBoard() {
                 return;
             }
 
-            const shift = currentWeekShifts.find(s => s.id === shiftId);
+            const shift = currentWeekShifts.find((s: any) => s.id === shiftId);
             if (!shift) return;
 
             if (isCtrlPressed && sourceDroppableId !== destinationDroppableId) {
-                const alreadyInTarget = currentWeekShifts.some(s => {
+                const alreadyInTarget = currentWeekShifts.some((s: any) => {
                     if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id) return false;
                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                     return !s.timeslot_id;
@@ -4809,12 +4811,12 @@ export default function ScheduleBoard() {
                     const executeCopyAbsence = () => {
                         cleanupOtherShifts(shift.doctor_id, newDateStr);
 
-                        const existingInNewCell = currentWeekShifts.filter(s => {
+                        const existingInNewCell = currentWeekShifts.filter((s: any) => {
                             if (s.date !== newDateStr || s.position !== newPosition) return false;
                             if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                             return !s.timeslot_id;
                         });
-                        const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                        const maxOrder = existingInNewCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                         const newOrder = maxOrder + 1;
 
                         const copyData = applyTimeslotSelectionToCreateData(
@@ -4842,18 +4844,18 @@ export default function ScheduleBoard() {
                 const occupyingShift = findOccupyingShift(newDateStr, newPosition, null, newTimeslotId);
                 if (occupyingShift) {
                     if (isAutoOffPosition(occupyingShift.position)) {
-                        cleanupAutoFrei(occupyingShift.doctor_id, occupyingShift.date, occupyingShift.position);
+                        cleanupAutoFreiOnly(occupyingShift.doctor_id, occupyingShift.date, occupyingShift.position);
                     }
                     deleteShiftMutation.mutate(occupyingShift.id);
                 }
 
                 const executeCopy = async () => {
-                    const existingInNewCell = currentWeekShifts.filter(s => {
+                    const existingInNewCell = currentWeekShifts.filter((s: any) => {
                         if (s.date !== newDateStr || s.position !== newPosition) return false;
                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                         return !s.timeslot_id;
                     });
-                    const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const maxOrder = existingInNewCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                     const newOrder = maxOrder + 1;
 
                     const copyData = applyTimeslotSelectionToCreateData(
@@ -4882,7 +4884,7 @@ export default function ScheduleBoard() {
 
             const positionOrTimeslotChanged = newPosition !== shift.position || newTimeslotId !== shift.timeslot_id;
             if (positionOrTimeslotChanged) {
-                const alreadyInTarget = currentWeekShifts.some(s => {
+                const alreadyInTarget = currentWeekShifts.some((s: any) => {
                     if (s.date !== newDateStr || s.position !== newPosition || s.doctor_id !== shift.doctor_id || s.id === shiftId) return false;
                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                     return !s.timeslot_id;
@@ -4897,12 +4899,12 @@ export default function ScheduleBoard() {
                 const executeMoveToAbsence = () => {
                     cleanupOtherShifts(shift.doctor_id, newDateStr, shiftId);
 
-                    const existingInNewCell = currentWeekShifts.filter(s => {
+                    const existingInNewCell = currentWeekShifts.filter((s: any) => {
                         if (s.date !== newDateStr || s.position !== newPosition) return false;
                         if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                         return !s.timeslot_id;
                     });
-                    const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                    const maxOrder = existingInNewCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                     const newOrder = maxOrder + 1;
 
                     const updateData = applyTimeslotSelectionToUpdateData(
@@ -4936,12 +4938,12 @@ export default function ScheduleBoard() {
             }
 
             const executeMove = async () => {
-                const existingInNewCell = currentWeekShifts.filter(s => {
+                const existingInNewCell = currentWeekShifts.filter((s: any) => {
                     if (s.date !== newDateStr || s.position !== newPosition) return false;
                     if (newTimeslotId) return s.timeslot_id === newTimeslotId;
                     return !s.timeslot_id;
                 });
-                const maxOrder = existingInNewCell.reduce((max, s) => Math.max(max, s.order || 0), -1);
+                const maxOrder = existingInNewCell.reduce((max: any, s: any) => Math.max(max, s.order || 0), -1);
                 const newOrder = maxOrder + 1;
 
                 const updateData = applyTimeslotSelectionToUpdateData(
@@ -4983,7 +4985,7 @@ export default function ScheduleBoard() {
       // Remove isPreview flag before saving
     const shiftsToCreate = previewShifts.map(({ isPreview: _isPreview, id: _id, ...rest }) => rest);
       await db.ShiftEntry.bulkCreate(shiftsToCreate);
-      queryClient.invalidateQueries(['shifts']);
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
       setPreviewShifts(null);
       setPreviewCategories(null);
       toast.success(`${shiftsToCreate.length} Eintr\u00e4ge \u00fcbernommen`);
@@ -4998,10 +5000,10 @@ export default function ScheduleBoard() {
     setIsGenerating(true);
     try {
             const autoFillDebugEnabled = (
-                systemSettings.find(s => s.key === 'autofill_debug_enabled')?.value ||
-                systemSettings.find(s => s.key === 'ai_autofill_debug_enabled')?.value
+                systemSettings.find((s: any) => s.key === 'autofill_debug_enabled')?.value ||
+                systemSettings.find((s: any) => s.key === 'ai_autofill_debug_enabled')?.value
             ) === 'true';
-            const autoFillDebugEntries = [];
+            const autoFillDebugEntries: any[] = [];
             const autoFillRequestId = `af-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
       // Determine which categories to fill
@@ -5021,10 +5023,10 @@ export default function ScheduleBoard() {
         weekDays,
         doctors,
         workplaces,
-        existingShifts: currentWeekShifts.filter(s => !s.isPreview),
+        existingShifts: currentWeekShifts.filter((s: any) => !s.isPreview),
         allShifts,
         trainingRotations,
-        isPublicHoliday,
+        isPublicHoliday: isPublicHoliday as any,
         getDoctorQualIds,
         getWpRequiredQualIds,
         getWpOptionalQualIds,
@@ -5047,13 +5049,13 @@ export default function ScheduleBoard() {
         // Build a set of position names belonging to the selected categories  
         const selectedPositions = new Set(
           workplaces
-            .filter(wp => selectedCategories.includes(wp.category))
-            .map(wp => wp.name)
+            .filter((wp: any) => selectedCategories.includes(wp.category))
+            .map((wp: any) => wp.name)
         );
         // Also include absence positions that may be generated (e.g. Auto-Frei)
         const absencePositions = ['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar', 'Verfügbar'];
 
-        filtered = result.filter(s => {
+        filtered = result.filter((s: any) => {
           // Always keep Auto-Frei entries (generated by auto_off services/positions)
           if (absencePositions.includes(s.position)) return true;
           // Keep if position belongs to a selected category
@@ -5063,7 +5065,7 @@ export default function ScheduleBoard() {
 
       if (filtered.length > 0) {
         // Assign stable IDs immediately so drag-drop can find them in state
-        const withIds = filtered.map((s, i) => ({ ...s, id: `preview-${i}` }));
+        const withIds = filtered.map((s: any, i: any) => ({ ...s, id: `preview-${i}` }));
         setPreviewShifts(withIds);
         toast.success(`${filtered.length} Vorschläge generiert` + (categories ? ` (${result.length} insgesamt berechnet)` : ''));
 
@@ -5084,7 +5086,7 @@ export default function ScheduleBoard() {
       }
     } catch (error) {
       console.error('AutoFill Error:', error);
-      toast.error('Fehler beim Generieren: ' + error.message);
+      toast.error('Fehler beim Generieren: ' + (error as any).message);
     } finally {
       setIsGenerating(false);
     }
@@ -5097,22 +5099,22 @@ export default function ScheduleBoard() {
   const previewFairnessData = useMemo(() => {
     if (!previewShifts || previewShifts.length === 0) return {};
 
-    const serviceWps = workplaces.filter(w => w.category === 'Dienste');
+    const serviceWps = workplaces.filter((w: any) => w.category === 'Dienste');
     if (serviceWps.length === 0) return {};
-    const serviceNames = new Set(serviceWps.map(w => w.name));
-    const sorted = [...serviceWps].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const serviceNames = new Set(serviceWps.map((w: any) => w.name));
+    const sorted = [...serviceWps].sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
     const fgName = sorted[0]?.name;
     const bgName = sorted[1]?.name;
 
     // Collect all doctor IDs that have a service in preview
-    const previewServiceShifts = previewShifts.filter(s => serviceNames.has(s.position));
+    const previewServiceShifts = previewShifts.filter((s: any) => serviceNames.has(s.position));
     if (previewServiceShifts.length === 0) return {};
 
-    const doctorIds = new Set(previewServiceShifts.map(s => s.doctor_id));
+    const doctorIds = new Set(previewServiceShifts.map((s: any) => s.doctor_id));
 
     // 4-week window relative to planning dates (mirrors autoFillEngine logic):
     //   3 weeks before first preview date → last preview date
-    const previewDates = previewServiceShifts.map(s => s.date).sort();
+    const previewDates = previewServiceShifts.map((s: any) => s.date).sort();
     const firstPlanStr = previewDates[0];
     const lastPlanStr = previewDates[previewDates.length - 1];
     const fourWeekStart = new Date(firstPlanStr + 'T00:00:00');
@@ -5120,10 +5122,10 @@ export default function ScheduleBoard() {
     const fourWeekStartStr = format(fourWeekStart, 'yyyy-MM-dd');
 
     // Count services per doctor from DB shifts (fairnessShifts) + preview shifts
-    const result = {};
+    const result: any = {};
     for (const docId of doctorIds) {
       // 1) Historical DB shifts (non-preview)
-      const docShifts = fairnessShifts.filter(s =>
+      const docShifts = fairnessShifts.filter((s: any) =>
         s.doctor_id === docId &&
         s.date >= fourWeekStartStr &&
         s.date <= lastPlanStr &&
@@ -5146,7 +5148,7 @@ export default function ScheduleBoard() {
       }
 
       // 2) Preview shifts for this doctor also count towards duty total
-      const docPreviewShifts = previewServiceShifts.filter(s => s.doctor_id === docId);
+      const docPreviewShifts = previewServiceShifts.filter((s: any) => s.doctor_id === docId);
       for (const s of docPreviewShifts) {
         if (s.position === fgName) {
           fg++;
@@ -5171,16 +5173,16 @@ export default function ScheduleBoard() {
    * Returns { fg, bg, total, weekend, wishText } or null.
    */
   const getFairnessInfo = useMemo(() => (shift: ShiftEntry): any => {
-    if (!shift.isPreview || !previewFairnessData[shift.doctor_id]) return null;
+    if (!shift.isPreview || !shift.doctor_id || !(previewFairnessData as any)[shift.doctor_id]) return null;
 
-    const serviceWps = workplaces.filter(w => w.category === 'Dienste');
-    const serviceNames = new Set(serviceWps.map(w => w.name));
+    const serviceWps = workplaces.filter((w: any) => w.category === 'Dienste');
+    const serviceNames = new Set(serviceWps.map((w: any) => w.name));
     if (!serviceNames.has(shift.position)) return null;
 
-    const info = { ...previewFairnessData[shift.doctor_id] };
+    const info = { ...(previewFairnessData as any)[shift.doctor_id] };
 
     // Check wishes for this date+doctor
-    const shiftWishes = wishes.filter(w =>
+    const shiftWishes = wishes.filter((w: any) =>
       w.doctor_id === shift.doctor_id &&
             isWishOnDate(w, shift.date)
     );
@@ -5202,7 +5204,7 @@ export default function ScheduleBoard() {
   }, [previewFairnessData, workplaces, wishes]);
 
     const getDoctorDayWishes = useMemo(() => (doctorId: string, dateStr: string): WishRequest[] => {
-        return wishes.filter(w =>
+        return wishes.filter((w: any) =>
             w.doctor_id === doctorId &&
             isWishOnDate(w, dateStr) &&
             w.status !== 'rejected'
@@ -5253,13 +5255,13 @@ export default function ScheduleBoard() {
     const getShiftWishMarker = useMemo(() => (shift: ShiftEntry): any => {
         if (!shift) return null;
 
-        const workplace = workplaces.find(w => w.name === shift.position);
+        const workplace = workplaces.find((w: any) => w.name === shift.position);
         if (workplace?.category !== 'Dienste') return null;
 
-        const doctorWishes = getDoctorDayWishes(shift.doctor_id, shift.date);
+        const doctorWishes = getDoctorDayWishes(shift.doctor_id!, shift.date);
         if (!doctorWishes.length) return null;
 
-        const matchingServiceWish = doctorWishes.find(w =>
+        const matchingServiceWish = doctorWishes.find((w: any) =>
             w.type === 'service' && (!w.position || w.position === shift.position)
         );
         if (matchingServiceWish) {
@@ -5269,7 +5271,7 @@ export default function ScheduleBoard() {
             };
         }
 
-        const conflictingNoServiceWish = doctorWishes.find(w =>
+        const conflictingNoServiceWish = doctorWishes.find((w: any) =>
             w.type === 'no_service' && (!w.position || w.position === shift.position)
         );
         if (conflictingNoServiceWish) {
@@ -5285,7 +5287,7 @@ export default function ScheduleBoard() {
     // Renders the cell content for a cross-tenant (group/pool) workplace row.
     // The row itself is NOT a drop target; the user clicks to open the
     // PoolShiftEditDialog. Existing shifts are rendered as simple chips.
-    const renderCrossTenantCell = (workplace, dateStr) => {
+    const renderCrossTenantCell = (workplace: any, dateStr: any) => {
         const shifts = crossTenantShiftsByCell.get(`${workplace.id}|${dateStr}`) || [];
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
         return (
@@ -5299,7 +5301,7 @@ export default function ScheduleBoard() {
                     }
                 }}
             >
-                {shifts.map((shift) => (
+                {shifts.map((shift: any) => (
                     <button
                         key={shift.id}
                         type="button"
@@ -5328,13 +5330,13 @@ export default function ScheduleBoard() {
     // Renders a small Link2 icon button in the row header that opens a popover
     // showing the partner workplace staffing for the selected day (read-only).
     // Only shown in day view when workplace links exist.
-    const renderLinkedWorkplaceButton = (rowName, dateStr) => {
+    const renderLinkedWorkplaceButton = (rowName: any, dateStr: any) => {
         const rawPartners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
         if (!rawPartners || rawPartners.length === 0) return null;
         // Show only partners from OTHER tenants — own tenant's workplaces are
         // already visible as separate rows in the schedule.
         const partners = activeLinkTenantId
-            ? rawPartners.filter((p) => String(p.tenant_id) !== String(activeLinkTenantId))
+            ? rawPartners.filter((p: any) => String(p.tenant_id) !== String(activeLinkTenantId))
             : rawPartners;
         if (partners.length === 0) return null;
         return (
@@ -5355,8 +5357,8 @@ export default function ScheduleBoard() {
                             <Link2 className="w-4 h-4 text-teal-600" />
                             Verknüpfte Arbeitsplätze
                         </h4>
-                        {partners.map((partner) => {
-                            const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                        {partners.map((partner: any) => {
+                            const shiftsForDay = (partner.shifts || []).filter((s: any) => s.date === dateStr);
                             return (
                                 <div key={`${partner.tenant_id}__${partner.workplace_name}`}>
                                     <div className="flex items-center gap-2 mb-1">
@@ -5367,7 +5369,7 @@ export default function ScheduleBoard() {
                                     </div>
                                     {shiftsForDay.length > 0 ? (
                                         <div className="flex flex-wrap gap-1.5 ml-1">
-                                            {shiftsForDay.map((s, idx) => (
+                                            {shiftsForDay.map((s: any, idx: any) => (
                                                 <Badge
                                                     key={idx}
                                                     className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
@@ -5397,11 +5399,11 @@ export default function ScheduleBoard() {
     // Same popover as renderLinkedWorkplaceButton but styled for inside a cell:
     // positioned absolute top-right, visible only on row hover.
     // Used in week view (day view uses the header button instead).
-    const renderLinkedWorkplaceCellButton = (rowName, dateStr) => {
+    const renderLinkedWorkplaceCellButton = (rowName: any, dateStr: any) => {
         const rawPartners = linkedWorkplacesByName[rowName] || linkedWorkplacesByName[rowName.trim()];
         if (!rawPartners || rawPartners.length === 0) return null;
         const partners = activeLinkTenantId
-            ? rawPartners.filter((p) => String(p.tenant_id) !== String(activeLinkTenantId))
+            ? rawPartners.filter((p: any) => String(p.tenant_id) !== String(activeLinkTenantId))
             : rawPartners;
         if (partners.length === 0) return null;
         return (
@@ -5421,8 +5423,8 @@ export default function ScheduleBoard() {
                             <Link2 className="w-4 h-4 text-teal-600" />
                             Verknüpfte Arbeitsplätze
                         </h4>
-                        {partners.map((partner) => {
-                            const shiftsForDay = (partner.shifts || []).filter((s) => s.date === dateStr);
+                        {partners.map((partner: any) => {
+                            const shiftsForDay = (partner.shifts || []).filter((s: any) => s.date === dateStr);
                             return (
                                 <div key={`cell-${partner.tenant_id}__${partner.workplace_name}`}>
                                     <div className="flex items-center gap-2 mb-1">
@@ -5433,7 +5435,7 @@ export default function ScheduleBoard() {
                                     </div>
                                     {shiftsForDay.length > 0 ? (
                                         <div className="flex flex-wrap gap-1.5 ml-1">
-                                            {shiftsForDay.map((s, idx) => (
+                                            {shiftsForDay.map((s: any, idx: any) => (
                                                 <Badge
                                                     key={idx}
                                                     className="text-[11px] bg-white border-slate-200 text-slate-700 font-normal"
@@ -5471,7 +5473,7 @@ export default function ScheduleBoard() {
     //   Station (canWrite=false)      → Timeslot-Sub-Zeilen mit Bedarf
     // ================================================================
 
-    const formatRotationTime = (timeStr) => {
+    const formatRotationTime = (timeStr: any) => {
         if (!timeStr) return null;
         const parts = String(timeStr).split(':');
         if (parts.length < 2) return null;
@@ -5480,13 +5482,13 @@ export default function ScheduleBoard() {
         return m === 0 ? `${h}` : `${h}:${String(m).padStart(2, '0')}`;
     };
 
-    const renderRotationCell = (workplace, dateStr, extraProps = {}) => {
+    const renderRotationCell = (workplace: any, dateStr: any, extraProps: any = {}) => {
         const assignments = rotationAssignmentsByCell.get(`${workplace.id}|${dateStr}`) || [];
         const canWrite = !isReadOnly && (workplace.canWrite !== false);
         const hasTimeslots = workplace.timeslots_enabled && workplace.timeslots?.length > 0;
         const { isToday, isWeekend, isAlternate, baseClassName, baseStyle } = extraProps;
 
-        const getEmpName = (a) => {
+        const getEmpName = (a: any) => {
             if (a.employee_name) return a.employee_name;
             // Joker assignments use central_employee_id — resolve from doctors
             const jokerDoc = jokerDoctorById.get(String(a.employee_id))
@@ -5496,7 +5498,7 @@ export default function ScheduleBoard() {
         };
 
         // Collect demands for this cell
-        const cellDemands = [];
+        const cellDemands: any[] = [];
         for (const [key, demand] of rotationDemandsByCell) {
             const [wpId, dDate] = key.split('|');
             if (wpId === String(workplace.id) && dDate === dateStr) {
@@ -5504,7 +5506,7 @@ export default function ScheduleBoard() {
             }
         }
 
-        const openDemandFor = (timeslot = null) => {
+        const openDemandFor = (timeslot: any = null) => {
             const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
             const existing = rotationDemandsByCell.get(demandKey);
             setRotationDemandDialog({
@@ -5523,7 +5525,7 @@ export default function ScheduleBoard() {
             const isOccupied = assignments.length > 0;
 
             // Sammle offene Bedarfsanforderungen fuer diese Zelle
-            const openDemands = cellDemands.filter((d) => d.status === 'open');
+            const openDemands = cellDemands.filter((d: any) => d.status === 'open');
 
             return (
                 <DroppableCell
@@ -5536,6 +5538,8 @@ export default function ScheduleBoard() {
                     isOccupied={isOccupied}
                     baseClassName={baseClassName}
                     baseStyle={baseStyle}
+                    isTrainingHighlight={false}
+                    isBlocked={false}
                 >
                     {() => {
                         const isSingleAssignment = assignments.length === 1 && openDemands.length === 0;
@@ -5550,7 +5554,7 @@ export default function ScheduleBoard() {
                             if (rd && !seenReturnDemandIds.has(rd.id)) {
                                 seenReturnDemandIds.add(rd.id);
                                 const rTsLabel = rd.timeslot_label || (rd.timeslot_id
-                                    ? workplace.timeslots?.find((t) => String(t.id) === String(rd.timeslot_id))?.label
+                                    ? workplace.timeslots?.find((t: any) => String(t.id) === String(rd.timeslot_id))?.label
                                     : null);
                                 globalReturnBadges.push(
                                     <div key={`global-return-${rd.id}`}
@@ -5563,10 +5567,10 @@ export default function ScheduleBoard() {
                             }
                         }
 
-                        return assignments.map((assignment, idx) => {
+                        return assignments.map((assignment: any, idx: any) => {
                             const empName = getEmpName(assignment);
                             const ts = hasTimeslots && assignment.timeslot_id
-                                ? workplace.timeslots.find((t) => String(t.id) === String(assignment.timeslot_id))
+                                ? workplace.timeslots.find((t: any) => String(t.id) === String(assignment.timeslot_id))
                                 : null;
                             const timeLabel = ts
                                 ? `${formatRotationTime(ts.start_time)}–${formatRotationTime(ts.end_time)}`
@@ -5636,7 +5640,7 @@ export default function ScheduleBoard() {
                                                 {...(isSingleAssignment && !isDragging ? {} : provided.dragHandleProps)}
                                                 onDoubleClick={(e) => {
                                                     e.stopPropagation();
-                                                    setRotationAssignmentDialog({
+                                                    (setRotationAssignmentDialog as any)({
                                                         open: true, workplace, date: dateStr,
                                                         assignment, timeslotId: assignment.timeslot_id || null,
                                                     });
@@ -5703,9 +5707,9 @@ export default function ScheduleBoard() {
                                     }}
                                 </Draggable>
                             );
-                        }).concat(openDemands.filter((d) => !d.return_requested_assignment_id && !d.offered_employee_id).map((demand) => {
+                        }).concat(openDemands.filter((d: any) => !d.return_requested_assignment_id && !d.offered_employee_id).map((demand: any) => {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
-                                ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                                ? workplace.timeslots?.find((t: any) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
                             return (
                                 <div key={`demand-${demand.id}`}
@@ -5715,9 +5719,9 @@ export default function ScheduleBoard() {
                                     {tsLabel ? `Bedarf ${tsLabel}` : 'Bedarf'}
                                 </div>
                             );
-                        })).concat(openDemands.filter((d) => d.offered_employee_id).map((demand) => {
+                        })).concat(openDemands.filter((d: any) => d.offered_employee_id).map((demand: any) => {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
-                                ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                                ? workplace.timeslots?.find((t: any) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
                             const centralEmp = demand.offered_employee_id
                                 ? centralEmployeesById.get(String(demand.offered_employee_id))
@@ -5737,7 +5741,7 @@ export default function ScheduleBoard() {
                                     queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
                                     queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
                                     toast.success(`${jokerName} wurde in den Pool übernommen und steht in Anwesenheiten bereit.`);
-                                }).catch((err) => {
+                                }).catch((err: any) => {
                                     toast.error('Fehler beim Übernehmen: ' + (err?.message || ''));
                                 });
                             };
@@ -5750,9 +5754,9 @@ export default function ScheduleBoard() {
                                     {jokerLabel}
                                 </div>
                             );
-                        })).concat(openDemands.filter((d) => d.return_requested_assignment_id).map((demand) => {
+                        })).concat(openDemands.filter((d: any) => d.return_requested_assignment_id).map((demand: any) => {
                             const tsLabel = demand.timeslot_label || (demand.timeslot_id
-                                ? workplace.timeslots?.find((t) => String(t.id) === String(demand.timeslot_id))?.label
+                                ? workplace.timeslots?.find((t: any) => String(t.id) === String(demand.timeslot_id))?.label
                                 : null);
                             return (
                                 <div key={`return-${demand.id}`}
@@ -5777,11 +5781,11 @@ export default function ScheduleBoard() {
         if (hasTimeslots) {
             return (
                 <div className="min-h-[40px] flex flex-col gap-0.5 p-0.5">
-                    {workplace.timeslots.map((ts) => {
-                        const tsAssignments = assignments.filter((a) =>
+                    {workplace.timeslots.map((ts: any) => {
+                        const tsAssignments = assignments.filter((a: any) =>
                             String(a.timeslot_id || '') === String(ts.id)
                         );
-                        const tsDemand = cellDemands.find((d) =>
+                        const tsDemand = cellDemands.find((d: any) =>
                             String(d.timeslot_id || '') === String(ts.id)
                         );
                         const isCovered = tsAssignments.length > 0;
@@ -5799,6 +5803,8 @@ export default function ScheduleBoard() {
                                 isAlternate={isAlternate}
                                 baseClassName={baseClassName}
                                 baseStyle={baseStyle}
+                                isTrainingHighlight={false}
+                                isBlocked={false}
                                 isCompact
                             >
                                 {() => (
@@ -5809,7 +5815,7 @@ export default function ScheduleBoard() {
                                     >
                                         <span className="font-medium text-[9px] text-slate-500 w-12 shrink-0">{ts.label}</span>
                                         <div className="flex flex-1 flex-wrap gap-0.5">
-                                            {tsAssignments.map((assignment) => {
+                                            {tsAssignments.map((assignment: any) => {
                                                 const empName = getEmpName(assignment);
                                                 const isOpenReturn = tsDemand?.status === 'open'
                                                     && tsDemand?.return_requested_assignment_id
@@ -5866,7 +5872,9 @@ export default function ScheduleBoard() {
                 isAlternate={isAlternate}
                 baseClassName={baseClassName}
                 baseStyle={baseStyle}
-                onContextMenu={demand?.status !== 'fulfilled' ? (e) => {
+                isTrainingHighlight={false}
+                isBlocked={false}
+                onContextMenu={demand?.status !== 'fulfilled' ? (e: any) => {
                     e.preventDefault();
                     openDemandFor(null);
                 } : undefined}
@@ -5877,7 +5885,7 @@ export default function ScheduleBoard() {
                         onClick={() => openDemandFor(null)}
                     >
                         <div className="flex flex-wrap gap-1">
-                            {assignments.map((assignment) => {
+                            {assignments.map((assignment: any) => {
                                 const empName = getEmpName(assignment);
                                 const isOpenReturn = cellDemands.some(
                                     (d) => d.status === 'open'
@@ -5932,7 +5940,7 @@ export default function ScheduleBoard() {
     if (!isValid(date)) return null;
     const dateStr = format(date, 'yyyy-MM-dd');
     
-        const workplace = workplaceByName.get(rowName);
+        const workplace = workplaceByName.get(rowName) as any;
         const shifts = getShiftsForScheduleCell({
                 shiftLookup: currentWeekShiftLookup,
                 dateStr,
@@ -5948,20 +5956,20 @@ export default function ScheduleBoard() {
     const boxSize = shiftBoxSize;
 
     // Qualifikations-Status für diese Position ermitteln
-    const wpRequiredQuals = workplace ? getWpRequiredQualIds(workplace.id) : [];
-    const wpExcludedQuals = workplace ? getWpExcludedQualIds(workplace.id) : [];
+    const wpRequiredQuals = workplace ? getWpRequiredQualIds((workplace as any).id) : [];
+    const wpExcludedQuals = workplace ? getWpExcludedQualIds((workplace as any).id) : [];
     const hasQualRequirements = wpRequiredQuals.length > 0;
 
     // Bei Mehrfachbesetzung: Warnung nur wenn KEINER der Eingetragenen qualifiziert ist
     let anyoneQualified = false;
     if (hasQualRequirements && shifts.length > 1) {
-        anyoneQualified = shifts.some(s => {
+        anyoneQualified = shifts.some((s: any) => {
             const docQuals = getDoctorQualIds(s.doctor_id);
-            return wpRequiredQuals.every(qId => docQuals.includes(qId));
+            return wpRequiredQuals.every((qId: any) => docQuals.includes(qId));
         });
     }
 
-    return shifts.map((shift, index) => {
+    return shifts.map((shift: any, index: any) => {
         const baseDoctor = doctorById.get(shift.doctor_id)
             || springerDoctorById.get(shift.doctor_id);
         const doctor = baseDoctor && !baseDoctor._isSpringer
@@ -5970,7 +5978,7 @@ export default function ScheduleBoard() {
         if (!doctor) return null;
         const compactLabel = getDoctorChipLabel(doctor);
         
-        const shiftTimeLabel = getShiftTimeRangeLabel(shift, doctor, workplace, workplaceTimeslots, workTimeModelMap, centralEmployeesById);
+        const shiftTimeLabel = getShiftTimeRangeLabel(shift, doctor as any, workplace as any, workplaceTimeslots, workTimeModelMap, centralEmployeesById);
         // Im Benutzermodus (ReadOnly) nur die Zeiten des eigenen Mitarbeiters anzeigen
         const isOwnShift = user?.doctor_id && doctor.id === user?.doctor_id;
         const effectiveTimeLabel = isReadOnly && !isOwnShift ? null : shiftTimeLabel;
@@ -5981,10 +5989,10 @@ export default function ScheduleBoard() {
         // 'unqualified' wenn Pflicht-Qualifikation fehlt und kein qualifizierter Kollege da ist
         let qualificationStatus = null;
         const docQuals = getDoctorQualIds(doctor.id);
-        if (wpExcludedQuals.length > 0 && wpExcludedQuals.some(qId => docQuals.includes(qId))) {
+        if (wpExcludedQuals.length > 0 && wpExcludedQuals.some((qId: any) => docQuals.includes(qId))) {
             qualificationStatus = 'excluded';
         } else if (hasQualRequirements) {
-            const hasAll = wpRequiredQuals.every(qId => docQuals.includes(qId));
+            const hasAll = wpRequiredQuals.every((qId: any) => docQuals.includes(qId));
             if (!hasAll && (shifts.length === 1 || !anyoneQualified)) {
                 qualificationStatus = 'unqualified';
             }
@@ -5996,7 +6004,6 @@ export default function ScheduleBoard() {
         const displayMode = getShiftDisplayMode({
             doctor,
             isSplitModeActive,
-            isSectionFullWidth,
             isSingleShift,
             forceInitialsOnly: showInitialsOnly || isMonthView,
             cellWidth,
@@ -6036,15 +6043,15 @@ export default function ScheduleBoard() {
                     isDragDisabled={isReadOnly}
                     fontSize={effectiveGridFontSize}
                     boxSize={boxSize}
-                    currentUserDoctorId={user?.doctor_id}
+                    currentUserDoctorId={user?.doctor_id as any}
                     highlightMyName={highlightMyName}
                     isBeingDragged={isDraggingThis}
-                    qualificationStatus={qualificationStatus}
+                    qualificationStatus={qualificationStatus as any}
                     fairnessInfo={shift.isPreview && !isMonthView ? getFairnessInfo(shift) : null}
                     wishMarker={getShiftWishMarker(shift)}
                     timeslotLabel={null}
                     timeLabelOverride={effectiveTimeLabel}
-                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || workplace?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor, workplace) : null}
+                    onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || (workplace as any)?.timeslots_enabled) ? () => handleShiftTimeslotEdit(shift, doctor as any, workplace as any) : null}
                     hideTimeLabel={isReadOnly && !isOwnShift}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
@@ -6162,7 +6169,7 @@ export default function ScheduleBoard() {
                       <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
                           Bereich / Datum
                       </div>
-                      {weekDays.map(day => {
+                      {weekDays.map((day: any) => {
                           if (!isValid(day)) return <div key={Math.random()} className="p-2 text-center text-red-500">Invalid Date</div>;
                           const isToday = isSameDay(day, new Date());
                           const isHoliday = isPublicHoliday(day);
@@ -6187,12 +6194,12 @@ export default function ScheduleBoard() {
                       })}
                   </div>
 
-                  {movePinnedSectionToEnd(splitSections).map((section, sIdx) => {
-                      const normalizedRows = section.rows.map(r =>
+                  {movePinnedSectionToEnd(splitSections).map((section: any, sIdx: any) => {
+                      const normalizedRows = section.rows.map((r: any) =>
                           typeof r === 'string' ? { name: r, displayName: r, timeslotId: null, isTimeslotRow: false, isTimeslotGroupHeader: false } : r
                       );
 
-                      const visibleRows = normalizedRows.filter(r => !hiddenRows.includes(r.name));
+                      const visibleRows = normalizedRows.filter((r: any) => !hiddenRows.includes(r.name));
                       if (visibleRows.length === 0) return null;
 
                       const isCollapsed = collapsedSections.includes(section.title);
@@ -6204,7 +6211,7 @@ export default function ScheduleBoard() {
                               <div
                                   className={`px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-slate-200 flex items-center justify-between cursor-pointer select-none transition-colors ${!customStyle ? section.headerColor : ''}`}
                                   style={customStyle ? customStyle.header : {}}
-                                  onClick={() => setCollapsedSections(prev => prev.includes(section.title) ? prev.filter(t => t !== section.title) : [...prev, section.title])}
+                                  onClick={() => setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title])}
                               >
                                   <div className="flex items-center gap-2">
                                       {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -6232,7 +6239,7 @@ export default function ScheduleBoard() {
                                   <span className="text-[10px] opacity-70 bg-white/20 px-2 py-0.5 rounded-full">{visibleRows.length}</span>
                               </div>
 
-                              {!isCollapsed && visibleRows.map((rowObj, rIdx) => {
+                              {!isCollapsed && visibleRows.map((rowObj: any, rIdx: any) => {
                                   const rowName = rowObj.name;
                                   const rowDisplayName = rowObj.displayName || rowName;
                                   const rowTimeslotId = rowObj.timeslotId;
@@ -6243,9 +6250,9 @@ export default function ScheduleBoard() {
                                   const isRowQualFilterSource = !!rowQualFilter
                                       && rowQualFilter.key === buildRowFilterKey(rowName, rowTimeslotId);
                                   const hasRowQuals = (() => {
-                                      if (!rowWorkplace?.id) return false;
-                                      const { requiredIds, optionalIds, excludeIds } = buildRowQualSets({
-                                          workplaceId: rowWorkplace.id,
+                                      if (!(rowWorkplace as any)?.id) return false;
+                                      const { requiredIds, optionalIds, discouragedIds, excludeIds } = buildRowQualSets({
+                                          workplaceId: (rowWorkplace as any).id,
                                           getRequired: getWpRequiredQualIds,
                                           getOptional: getWpOptionalQualIds,
                                           getDiscouraged: getWpDiscouragedQualIds,
@@ -6303,7 +6310,7 @@ export default function ScheduleBoard() {
                                                                   data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
                                                                   className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
                                                                   onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
-                                                                  title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${rowWorkplace?.name || rowName})`}
+                                                                  title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${(rowWorkplace as any)?.name || rowName})`}
                                                               >
                                                                   <Filter className="h-3 w-3" />
                                                               </Button>
@@ -6314,7 +6321,7 @@ export default function ScheduleBoard() {
                                               )}
                                           </Droppable>
 
-                                          {weekDays.map((day, dIdx) => {
+                                          {weekDays.map((day: any, dIdx: any) => {
                                               const isWeekendDay = [0, 6].includes(day.getDay());
                                               const isToday = isSameDay(day, new Date());
                                               const dateStr = format(day, 'yyyy-MM-dd');
@@ -6322,19 +6329,19 @@ export default function ScheduleBoard() {
                                                   ? `${dateStr}__${rowName}__${rowTimeslotId}`
                                                   : `${dateStr}__${rowName}`;
                                               const cellId = withPanelPrefix(rawCellId, SPLIT_PANEL_PREFIX);
-                                              const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean(rowWorkplace?.timeslots_enabled) });
+                                              const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean((rowWorkplace as any)?.timeslots_enabled) });
                                               const isOccupied = cellShiftsForOcc.length > 0;
 
                                               let isDisabled = false;
                                               let isTrainingHighlight = false;
 
                                               if (draggingDoctorId) {
-                                                  const activeRotations = trainingRotations.filter(rot =>
+                                                  const activeRotations = trainingRotations.filter((rot: any) =>
                                                       rot.doctor_id === draggingDoctorId &&
                                                       rot.start_date <= dateStr &&
                                                       rot.end_date >= dateStr
                                                   );
-                                                  const isTarget = activeRotations.some(rot =>
+                                                  const isTarget = activeRotations.some((rot: any) =>
                                                       rot.modality === rowName ||
                                                       (rot.modality === 'Röntgen' && (rowName === 'DL/konv. Rö' || rowName.includes('Rö')))
                                                   );
@@ -6342,13 +6349,13 @@ export default function ScheduleBoard() {
                                               }
 
                                               if (rowName !== 'Verfügbar') {
-                                                  const setting = workplaces.find(s => s.name === rowName);
+                                                  const setting = workplaces.find((s: any) => s.name === rowName);
                                                   if (setting) {
-                                                      const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
+                                                      const activeDays = ((setting as any).active_days && (setting as any).active_days.length > 0) ? (setting as any).active_days : [1, 2, 3, 4, 5];
                                                       // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
                                                       const isActive = isPublicHoliday(day)
-                                                          ? activeDays.some(d => Number(d) === 0)
-                                                          : activeDays.some(d => Number(d) === day.getDay());
+                                                          ? activeDays.some((d: any) => Number(d) === 0)
+                                                          : activeDays.some((d: any) => Number(d) === day.getDay());
                                                       if (!isActive) isDisabled = true;
                                                   }
                                               }
@@ -6374,7 +6381,7 @@ export default function ScheduleBoard() {
                                                                           {...provided.droppableProps}
                                                                           className={`min-h-[40px] p-1 flex flex-wrap gap-1 transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50'}`}
                                                                       >
-                                                                          {allDocs.map((doc, idx) => {
+                                                                          {allDocs.map((doc: any, idx: any) => {
                                                                               const isSpringer = doc._isSpringer;
                                                                               return (
                                                                               <Draggable key={`split-available-${doc.id}-${dateStr}`} draggableId={`${SPLIT_DRAG_PREFIX}available-doc-${doc.id}-${dateStr}`} index={idx} isDragDisabled={isReadOnly}>
@@ -6431,7 +6438,7 @@ export default function ScheduleBoard() {
                                                       ) : rowName === 'Sonstiges' ? (
                                                           isReadOnly ? (
                                                               <div className="p-2 text-base text-slate-500 h-full min-h-[40px] whitespace-pre-wrap">
-                                                                  {scheduleNotes.find(n => n.date === format(day, 'yyyy-MM-dd') && n.position === rowName)?.content || ''}
+                                                                  {scheduleNotes.find((n: any) => n.date === format(day, 'yyyy-MM-dd') && n.position === rowName)?.content || ''}
                                                               </div>
                                                           ) : (
                                                               <FreeTextCell
@@ -6454,10 +6461,10 @@ export default function ScheduleBoard() {
                                                                   isAlternate={rIdx % 2 !== 0}
                                                                   isTrainingHighlight={isTrainingHighlight}
                                                                   isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                                  blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
-                                                                  infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                                  blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId as any)?.reason as any}
+                                                                  infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId as any)?.reason as any}
                                                                   isOccupied={isOccupied}
-                                                                  onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
+                                                                  onContextMenu={(e: any) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId as any)}
                                                                   baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                                   baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                                   renderClone={renderShiftClone}
@@ -6545,7 +6552,7 @@ export default function ScheduleBoard() {
                             data-testid="schedule-nav-prev"
                             className="h-7 w-7"
                             disabled={!!previewShifts}
-                            onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}
+                            onClick={() => setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, -7) : viewMode === 'month' ? addMonths(d, -1) : addDays(d, -1))}
                         >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -6567,7 +6574,7 @@ export default function ScheduleBoard() {
                             data-testid="schedule-nav-next"
                             className="h-7 w-7"
                             disabled={!!previewShifts}
-                            onClick={() => setCurrentDate(d => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}
+                            onClick={() => setCurrentDate((d: any) => viewMode === 'week' ? addDays(d, 7) : viewMode === 'month' ? addMonths(d, 1) : addDays(d, 1))}
                         >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -6580,7 +6587,7 @@ export default function ScheduleBoard() {
                    disabled={!!previewShifts}
                    onClick={() => {
                     setViewMode('month');
-                    setCurrentDate(d => startOfMonth(d));
+                    setCurrentDate((d: any) => startOfMonth(d));
                   }}
                   className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'month' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
@@ -6593,7 +6600,7 @@ export default function ScheduleBoard() {
                    disabled={!!previewShifts}
                    onClick={() => {
                     setViewMode('week');
-                    setCurrentDate(d => startOfWeek(d, { weekStartsOn: 1 }));
+                    setCurrentDate((d: any) => startOfWeek(d, { weekStartsOn: 1 }));
                   }}
                   className={`flex items-center px-2 py-1 rounded-md text-sm font-medium transition-all ${previewShifts ? 'opacity-50 cursor-not-allowed' : ''} ${viewMode === 'week' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
               >
@@ -6656,7 +6663,7 @@ export default function ScheduleBoard() {
                          <DropdownMenuItem onClick={() => handleAutoFill(['Demonstrationen & Konsile'])}>
                              Nur {getSectionName('Demonstrationen & Konsile')}
                          </DropdownMenuItem>
-                         {getWorkplaceCategoryNames(systemSettings).map(name => (
+                         {getWorkplaceCategoryNames(systemSettings).map((name: any) => (
                              <DropdownMenuItem key={name} onClick={() => handleAutoFill([name])}>
                                  Nur {name}
                              </DropdownMenuItem>
@@ -6698,7 +6705,7 @@ export default function ScheduleBoard() {
                 {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                 <span className="hidden sm:inline ml-1">Regelprüfung</span>
                 {conflicts.length > 0 && (
-                    <Badge variant={conflicts.some(c => c.severity === 'blocker') ? 'destructive' : 'secondary'} className="ml-1 h-5 px-1.5 text-xs">
+                    <Badge variant={conflicts.some((c: any) => c.severity === 'blocker') ? 'destructive' : 'secondary'} className="ml-1 h-5 px-1.5 text-xs">
                         {conflicts.length}
                     </Badge>
                 )}
@@ -6792,7 +6799,7 @@ export default function ScheduleBoard() {
                        <DropdownMenuSeparator />
                        <DropdownMenuLabel>Zeilen verwalten</DropdownMenuLabel>
                        <ScrollArea className="h-[300px]">
-                           {sections.flatMap(s => s.rows).map((row, idx) => {
+                           {sections.flatMap((s: any) => s.rows).map((row: any, idx: any) => {
                                // Rückwärtskompatibilität: Falls string, in Objekt konvertieren
                                const rowObj = typeof row === 'string' 
                                    ? { name: row, displayName: row } 
@@ -6807,9 +6814,9 @@ export default function ScheduleBoard() {
                                    key={rowKey}
                                    checked={!hiddenRows.includes(rowName)}
                                    onCheckedChange={(checked) => {
-                                       setHiddenRows(prev => 
+                                       setHiddenRows((prev: any) => 
                                            checked 
-                                               ? prev.filter(r => r !== rowName) 
+                                               ? prev.filter((r: any) => r !== rowName) 
                                                : [...prev, rowName]
                                        );
                                    }}
@@ -6833,7 +6840,7 @@ export default function ScheduleBoard() {
                         >
                             Hauptplan
                         </button>
-                        {availableSectionTabs.map(tab => {
+                        {availableSectionTabs.map((tab: any) => {
                             const isActive = activeSectionTabId === tab.id;
                             return (
                                 <div
@@ -6929,7 +6936,7 @@ export default function ScheduleBoard() {
                             <CommandInput placeholder="Qualifikation suchen..." aria-label="Qualifikation suchen" />
                             <CommandList>
                                 <CommandEmpty>Keine Qualifikation gefunden.</CommandEmpty>
-                                {activeQualifications.map((qualification) => {
+                                {activeQualifications.map((qualification: any) => {
                                     const isSelected = selectedQualificationIds.includes(qualification.id);
                                     return (
                                         <CommandItem
@@ -6961,7 +6968,7 @@ export default function ScheduleBoard() {
                         {selectedQualificationIds.length > 0 && (
                             <div className="border-t p-2 space-y-2">
                                 <div className="flex flex-wrap items-center gap-1">
-                                    {selectedQualificationIds.flatMap((qid, idx) => {
+                                    {selectedQualificationIds.flatMap((qid: any, idx: any) => {
                                         const qualification = qualificationMap[qid];
                                         if (!qualification) return [];
                                         const chip = (
@@ -7044,7 +7051,7 @@ export default function ScheduleBoard() {
                 >
                     {(provided) => (
                         <div ref={provided.innerRef} {...provided.droppableProps} className="space-y-1">
-                            {sidebarDoctors.map((doctor, index) => {
+                            {sidebarDoctors.map((doctor: any, index: any) => {
                                 const sidebarDoctor = getDoctorWithEffectiveFte(doctor, viewMode === 'month' ? currentDate : weekDays[0]);
                                 const doctorQualIds = rowQualFilter ? getDoctorQualIds(doctor.id) : [];
                                 const doctorHint = rowQualFilter ? getDoctorRowQualHint(rowQualFilter, doctorQualIds) : null;
@@ -7091,7 +7098,7 @@ export default function ScheduleBoard() {
                 <div className="p-3 font-semibold text-slate-700 border-r border-slate-200 flex items-center bg-slate-50">
                     Bereich / Datum
                 </div>
-                {weekDays.map(day => {
+                {weekDays.map((day: any) => {
                     if (!isValid(day)) return <div key={Math.random()} className="p-2 text-center text-red-500">Invalid Date</div>;
 
                     const isToday = isSameDay(day, new Date());
@@ -7111,18 +7118,18 @@ export default function ScheduleBoard() {
                     
                     // Rotations are in sections[2] (if structure maintained)
                     // Better: find section by title
-                    const rotationSection = sections.find(s => s.title === "Rotationen");
+                    const rotationSection = sections.find((s: any) => s.title === "Rotationen");
                     const rotationRows = rotationSection ? rotationSection.rows : [];
                     const dayShiftPositions = currentWeekShiftPositionsByDate.get(dateStr) || new Set();
-                    const allRotationsFilled = rotationRows.length > 0 && rotationRows.every(r => dayShiftPositions.has(typeof r === 'string' ? r : r.name));
+                    const allRotationsFilled = rotationRows.length > 0 && rotationRows.every((r: any) => dayShiftPositions.has(typeof r === 'string' ? r : r.name));
 
                     // Verfügbarkeits-Grenzwerte prüfen
                     const staffingWarnings = getAvailabilityWarnings({
                         doctors,
                         shifts: allShifts,
                         dateStr,
-                        qualificationMap,
-                        doctorQualByDoctor,
+                        qualificationMap: qualificationMap as any,
+                        doctorQualByDoctor: doctorQualByDoctor as any,
                         availabilityThresholds
                     });
 
@@ -7170,7 +7177,7 @@ export default function ScheduleBoard() {
                                                         Personalunterdeckung
                                                     </h4>
                                                     <div className="text-xs space-y-1">
-                                                        {staffingWarnings.warnings.map((w, idx) => (
+                                                        {staffingWarnings.warnings.map((w: any, idx: any) => (
                                                             <div key={idx} className="text-slate-700">
                                                                 <span className="font-semibold">{w.qualName}:</span> {w.present} verfügbar (Min: {w.min})
                                                             </div>
@@ -7189,7 +7196,7 @@ export default function ScheduleBoard() {
                                                     </div>
                                                     <ScrollArea className="h-[180px] border rounded-md bg-slate-50 p-2">
                                                         <div className="space-y-1">
-                                                            {unassignedDocs.map(doc => (
+                                                            {unassignedDocs.map((doc: any) => (
                                                                 <div key={doc.id} className="flex items-center gap-2 text-sm text-slate-700 p-1 hover:bg-white rounded">
                                                                     <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${getRoleColor(doc.role).backgroundColor}`} style={{ color: getRoleColor(doc.role).color }}>
                                                                         {getDoctorChipLabel(doc)}
@@ -7221,15 +7228,15 @@ export default function ScheduleBoard() {
                 })}
               </div>
 
-              {movePinnedSectionToEnd(sections).map((section, sIdx) => {
+              {movePinnedSectionToEnd(sections).map((section: any, sIdx: any) => {
                 // rows sind jetzt Objekte mit { name, displayName, timeslotId, isTimeslotRow, isTimeslotGroupHeader }
                 // Für Rückwärtskompatibilität: Falls string, in Objekt konvertieren
-                const normalizedRows = section.rows.map(r => 
+                const normalizedRows = section.rows.map((r: any) => 
                     typeof r === 'string' ? { name: r, displayName: r, timeslotId: null, isTimeslotRow: false, isTimeslotGroupHeader: false } : r
                 );
                 
                 // Filter: Versteckte Zeilen ausblenden
-                const visibleRows = normalizedRows.filter(r => {
+                const visibleRows = normalizedRows.filter((r: any) => {
                     if (hiddenRows.includes(r.name)) return false;
                     return true;
                 });
@@ -7244,7 +7251,7 @@ export default function ScheduleBoard() {
                     <div 
                         className={`px-3 py-2 text-xs font-bold uppercase tracking-wider border-b border-slate-200 flex items-center justify-between cursor-pointer select-none transition-colors ${!customStyle ? section.headerColor : ''}`}
                         style={customStyle ? customStyle.header : {}}
-                        onClick={() => setCollapsedSections(prev => prev.includes(section.title) ? prev.filter(t => t !== section.title) : [...prev, section.title])}
+                        onClick={() => setCollapsedSections((prev: any) => prev.includes(section.title) ? prev.filter((t: any) => t !== section.title) : [...prev, section.title])}
                     >
                         <div className="flex items-center gap-2">
                             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -7288,7 +7295,7 @@ export default function ScheduleBoard() {
                         </div>
                     </div>
                     
-                    {!isCollapsed && visibleRows.map((rowObj, rIdx) => {
+                    {!isCollapsed && visibleRows.map((rowObj: any, rIdx: any) => {
                         const rowName = rowObj.name;
                         const rowDisplayName = rowObj.displayName || rowName;
                         const rowTimeslotId = rowObj.timeslotId;
@@ -7301,15 +7308,15 @@ export default function ScheduleBoard() {
                         const isRowQualFilterSource = !!rowQualFilter
                             && rowQualFilter.key === buildRowFilterKey(rowName, rowTimeslotId);
                         const hasRowQuals = (() => {
-                            if (!rowWorkplace?.id) return false;
-                            const { requiredIds, optionalIds, excludeIds } = buildRowQualSets({
-                                workplaceId: rowWorkplace.id,
+                            if (!(rowWorkplace as any)?.id) return false;
+                            const { requiredIds, optionalIds, discouragedIds, excludeIds } = buildRowQualSets({
+                                workplaceId: (rowWorkplace as any).id,
                                 getRequired: getWpRequiredQualIds,
                                 getOptional: getWpOptionalQualIds,
                                 getDiscouraged: getWpDiscouragedQualIds,
                                 getExcluded: getWpExcludedQualIds,
                             });
-                            return requiredIds.length > 0 || optionalIds.length > 0 || excludeIds.length > 0;
+                            return requiredIds.length > 0 || optionalIds.length > 0 || discouragedIds.length > 0 || excludeIds.length > 0;
                         })();
 
                         const headerDroppableId = `rowHeader__${rowName}${rowTimeslotId ? '__' + rowTimeslotId : ''}`;
@@ -7352,9 +7359,9 @@ export default function ScheduleBoard() {
                                                     count={rowObj.timeslotCount}
                                                 />
                                             )}
-                                            {!rowObj.isTimeslotRow && rowWorkplace?.time && (
+                                            {!rowObj.isTimeslotRow && (rowWorkplace as any)?.time && (
                                                 <span className="text-[10px] font-normal opacity-80">
-                                                    {rowWorkplace.time} Uhr
+                                                    {(rowWorkplace as any).time} Uhr
                                                 </span>
                                                 )}
                                                 </div>
@@ -7367,7 +7374,7 @@ export default function ScheduleBoard() {
                                                     data-testid={`schedule-row-filter-${encodeScheduleTargetId(headerDroppableId)}`}
                                                     className={`h-5 w-5 hover:bg-amber-100 ${isRowQualFilterSource ? 'opacity-100 text-amber-600' : 'opacity-0 group-hover:opacity-100 text-slate-500'}`}
                                                     onClick={() => applyRowQualificationFilter(rowName, rowTimeslotId, rowWorkplace)}
-                                                    title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${rowWorkplace?.name || rowName})`}
+                                                    title={isRowQualFilterSource ? `Zeilen-Filter aufheben (${rowQualFilter.sourceName})` : `Nach Qualifications dieser Zeile filtern (${(rowWorkplace as any)?.name || rowName})`}
                                                 >
                                                     <Filter className="h-3 w-3" />
                                                 </Button>
@@ -7388,7 +7395,7 @@ export default function ScheduleBoard() {
                                                 variant="ghost" 
                                                 size="icon" 
                                                 className="h-5 w-5 opacity-0 group-hover:opacity-100 hover:bg-black/10"
-                                                onClick={() => setHiddenRows(prev => [...prev, rowName])}
+                                                onClick={() => setHiddenRows((prev: any) => [...prev, rowName])}
                                                 title="Zeile ausblenden"
                                                 >
                                                 <EyeOff className="h-3 w-3 opacity-50" />
@@ -7398,7 +7405,7 @@ export default function ScheduleBoard() {
                                     </div>
                                 )}
                             </Droppable>
-                            {weekDays.map((day, dIdx) => {
+                            {weekDays.map((day: any, dIdx: any) => {
                                 const isWeekend = [0, 6].includes(day.getDay());
                                 const isToday = isSameDay(day, new Date());
                                 const dateStr = format(day, 'yyyy-MM-dd');
@@ -7406,7 +7413,7 @@ export default function ScheduleBoard() {
                                 const cellId = rowTimeslotId 
                                     ? `${dateStr}__${rowName}__${rowTimeslotId}`
                                     : `${dateStr}__${rowName}`;
-                                const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean(rowWorkplace?.timeslots_enabled) });
+                                const cellShiftsForOcc = getShiftsForScheduleCell({ shiftLookup: currentWeekShiftLookup, dateStr, rowName, timeslotId: rowTimeslotId, allTimeslotIds: rowObj.allTimeslotIds || null, singleTimeslotId: rowObj.singleTimeslotId || null, timeslotsEnabled: Boolean((rowWorkplace as any)?.timeslots_enabled) });
                                 const isOccupied = cellShiftsForOcc.length > 0;
                                 
                                 // Check if it's a demo row and if it's allowed
@@ -7414,14 +7421,14 @@ export default function ScheduleBoard() {
                                 let isTrainingHighlight = false;
 
                                 if (draggingDoctorId) {
-                                    const activeRotations = trainingRotations.filter(rot => 
+                                    const activeRotations = trainingRotations.filter((rot: any) => 
                                         rot.doctor_id === draggingDoctorId &&
                                         rot.start_date <= dateStr &&
                                         rot.end_date >= dateStr
                                     );
                                     
                                     // Check match (handling mapping for Röntgen)
-                                    const isTarget = activeRotations.some(rot => 
+                                    const isTarget = activeRotations.some((rot: any) => 
                                         rot.modality === rowName || 
                                         (rot.modality === 'Röntgen' && (rowName === 'DL/konv. Rö' || rowName.includes('Rö')))
                                     );
@@ -7438,11 +7445,11 @@ export default function ScheduleBoard() {
                                     if (rowName !== 'Verfügbar') {
                                         const setting = workplaceByName.get(rowName);
                                         if (setting) {
-                                            const activeDays = (setting.active_days && setting.active_days.length > 0) ? setting.active_days : [1, 2, 3, 4, 5];
+                                            const activeDays = ((setting as any).active_days && (setting as any).active_days.length > 0) ? (setting as any).active_days : [1, 2, 3, 4, 5];
                                             // Feiertag = wie Sonntag: An Feiertagen zählt nur, ob Sonntag (0) aktiv ist
                                             const isActive = isPublicHoliday(day)
-                                                ? activeDays.some(d => Number(d) === 0)
-                                                : activeDays.some(d => Number(d) === day.getDay());
+                                                ? activeDays.some((d: any) => Number(d) === 0)
+                                                : activeDays.some((d: any) => Number(d) === day.getDay());
                                             if (!isActive) {
                                                 isDisabled = true;
                                             }
@@ -7471,7 +7478,7 @@ export default function ScheduleBoard() {
                                                             {...provided.droppableProps}
                                                             className={`${isMonthView ? 'min-h-[32px] p-0.5 gap-0.5' : 'min-h-[40px] p-1 gap-1'} flex flex-wrap transition-colors ${snapshot.isDraggingOver ? 'bg-green-100' : 'bg-green-50'}`}
                                                         >
-                                                            {allDocs.map((doc, idx) => {
+                                                            {allDocs.map((doc: any, idx: any) => {
                                                                 const isSpringer = doc._isSpringer;
                                                                 return (
                                                                 <Draggable
@@ -7587,10 +7594,10 @@ export default function ScheduleBoard() {
                                                     isAlternate={rIdx % 2 !== 0}
                                                     isTrainingHighlight={isTrainingHighlight}
                                                     isBlocked={!!getScheduleBlock(dateStr, rowName, rowTimeslotId)}
-                                                    blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId)?.reason}
-                                                    infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId)?.reason}
+                                                    blockReason={getScheduleBlock(dateStr, rowName, rowTimeslotId as any)?.reason as any}
+                                                    infoReason={getScheduleInfo(dateStr, rowName, rowTimeslotId as any)?.reason as any}
                                                     isOccupied={isOccupied}
-                                                    onContextMenu={(e) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId)}
+                                                    onContextMenu={(e: any) => handleCellContextMenu(e, dateStr, rowName, rowTimeslotId as any)}
                                                     baseClassName={!customStyle && !rowStyle.backgroundColor ? section.rowColor : ''}
                                                     baseStyle={rowStyle.backgroundColor ? { backgroundColor: rowStyle.backgroundColor, color: rowStyle.color } : {}}
                                                     renderClone={renderShiftClone}
@@ -7658,7 +7665,7 @@ export default function ScheduleBoard() {
                   return (
                       <div className="space-y-4">
                           <div className="space-y-3">
-                              {timeslotSelectionDialog.options.map((timeslot) => (
+                              {timeslotSelectionDialog.options.map((timeslot: any) => (
                                   (() => {
                                       const customEndMinutes = timeslotSelectionDialog.customEndMinutesByOptionId?.[timeslot.id]
                                           ?? getDefaultCustomTimeslotEndMinutes(timeslot);
@@ -7729,7 +7736,7 @@ export default function ScheduleBoard() {
                                                           <Input
                                                               type="time"
                                                               step={300}
-                                                              value={Number.isFinite(customStartMinutes) ? formatMinutesAsTime(customStartMinutes) : ''}
+                                                              value={Number.isFinite(customStartMinutes) ? (formatMinutesAsTime(customStartMinutes) ?? '') : ''}
                                                               onChange={(event) => handleTimeslotCustomStartChange(timeslot.id, timeslot, event.target.value)}
                                                               className="h-8 w-[124px]"
                                                               data-testid={`schedule-timeslot-custom-start-${timeslot.id}`}
@@ -7740,7 +7747,7 @@ export default function ScheduleBoard() {
                                                           <Input
                                                               type="time"
                                                               step={300}
-                                                              value={Number.isFinite(customEndMinutes) ? formatMinutesAsTime(customEndMinutes) : ''}
+                                                              value={Number.isFinite(customEndMinutes) ? (formatMinutesAsTime(customEndMinutes) ?? '') : ''}
                                                               onChange={(event) => handleTimeslotCustomEndChange(timeslot.id, timeslot, event.target.value)}
                                                               className="h-8 w-[124px]"
                                                               data-testid={`schedule-timeslot-custom-end-${timeslot.id}`}
@@ -7873,22 +7880,23 @@ export default function ScheduleBoard() {
       {/* Cross-tenant (group/pool) shift editor */}
       <PoolShiftEditDialog
         open={poolEditDialog.open}
-        onOpenChange={(open) => setPoolEditDialog((prev) => ({ ...prev, open }))}
+        onOpenChange={(open) => setPoolEditDialog((prev: any) => ({ ...prev, open }))}
         workplace={poolEditDialog.workplace}
         date={poolEditDialog.date}
         shift={poolEditDialog.shift}
         busyEmployeeIds={poolEditDialog.date ? (busyCentralIdsByDate[poolEditDialog.date] || new Set()) : new Set()}
+        activeTenantId={undefined}
       />
 
       {/* Springerpool-Rotationen — assignment editor (pool planner) */}
       <RotationAssignmentDialog
         open={rotationAssignmentDialog.open}
         onOpenChange={(open) => {
-          setRotationAssignmentDialog((prev) => ({ ...prev, open, defaultEmployeeId: null }));
+          setRotationAssignmentDialog((prev: any) => ({ ...prev, open, defaultEmployeeId: null }));
         }}
-        workplace={rotationAssignmentDialog.workplace}
+        workplace={rotationAssignmentDialog.workplace as any}
         date={rotationAssignmentDialog.date}
-        assignment={rotationAssignmentDialog.assignment}
+        assignment={rotationAssignmentDialog.assignment as any}
         timeslotId={rotationAssignmentDialog.timeslotId}
         defaultEmployeeId={rotationAssignmentDialog.defaultEmployeeId}
       />
@@ -7896,7 +7904,7 @@ export default function ScheduleBoard() {
       {/* Springerpool-Rotationen — demand dialog (ward staff) */}
       <RotationDemandDialog
         open={rotationDemandDialog.open}
-        onOpenChange={(open) => setRotationDemandDialog((prev) => ({ ...prev, open }))}
+        onOpenChange={(open) => setRotationDemandDialog((prev: any) => ({ ...prev, open }))}
         workplace={rotationDemandDialog.workplace}
         dateStr={rotationDemandDialog.date}
         timeslot={rotationDemandDialog.timeslot}

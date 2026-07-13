@@ -9,6 +9,32 @@ import { de } from 'date-fns/locale';
 import VoiceTrainingDialog from './VoiceTrainingDialog';
 import { useElevenLabsConversation } from '@/components/useElevenLabsConversation';
 
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+  error?: string;
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: { new(): SpeechRecognition };
+    webkitSpeechRecognition?: { new(): SpeechRecognition };
+  }
+}
+
 // CONFIG: Set your Agent ID here or via Environment Variable if possible
 const ELEVENLABS_AGENT_ID = "agent_1901kb1v556ke8trk5g98xjaxrp4"; // <-- INSERT AGENT ID HERE
 
@@ -69,9 +95,9 @@ export default function VoiceControl({
             setIsListening(false);
             setTranscript("");
         },
-        onError: (err) => {
+        onError: (err: Error | Event) => {
             console.error("Agent Error", err);
-            setError("Agent Fehler: " + err.message);
+            setError("Agent Fehler: " + (err instanceof Error ? err.message : String(err)));
             setIsListening(false);
         },
         onMessage: (msg) => {
@@ -91,7 +117,7 @@ export default function VoiceControl({
     useEffect(() => {
         if (isWebSpeechSupported && !recognitionRef.current) {
             const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new (SpeechRecognitionCtor as typeof window.SpeechRecognition)();
+            const recognition = new (SpeechRecognitionCtor!)();
             
             recognition.continuous = false; // Stop after one sentence for immediate processing
             recognition.interimResults = true;
@@ -104,7 +130,7 @@ export default function VoiceControl({
                 setTranscript("");
             };
 
-            recognition.onresult = (event) => {
+            recognition.onresult = (event: SpeechRecognitionEvent) => {
                 let interimTranscript = '';
                 let finalTranscript = '';
 
@@ -126,7 +152,7 @@ export default function VoiceControl({
                 }
             };
 
-            recognition.onerror = (event) => {
+            recognition.onerror = (event: SpeechRecognitionEvent) => {
                 console.error("VoiceControl: Speech recognition error", event.error);
                 if (event.error === 'not-allowed') {
                     setError("Mikrofonzugriff verweigert.");
@@ -173,19 +199,19 @@ export default function VoiceControl({
                 console.log("VoiceControl: Sending audio to backend...");
 
                 try {
-                    const res = await api.transcribeAudio(audioBlob);
+                    const res = await api.transcribeAudio(audioBlob) as { text?: string };
 
                     const text = res.text;
                     console.log("VoiceControl: Transcription received:", text);
 
                     if (text) {
                         setTranscript(text);
-                        handleSendTextRef.current(text);
+                        handleSendTextRef.current!(text);
                     } else {
                         setError("Kein Text erkannt.");
                         setIsProcessing(false);
                     }
-                } catch (e) {
+                } catch (e: any) {
                     console.error("VoiceControl: Transcription failed", e);
                     setError("Transkriptionsfehler: " + (e.response?.data?.error || e.message));
                     setIsProcessing(false);
@@ -197,7 +223,7 @@ export default function VoiceControl({
             mediaRecorder.start();
             setIsListening(true);
             setError(null);
-        } catch (e) {
+        } catch (e: any) {
             console.error("VoiceControl: Error starting recording:", e);
             setError("Mikrofonfehler: " + e.message);
             setIsListening(false); // Ensure state reset
@@ -290,7 +316,7 @@ export default function VoiceControl({
                 body: JSON.stringify({ command: text, context }),
             });
             
-            const result = response;
+            const result = response as VoiceResult;
             console.log("Voice Result:", result);
             
             if (result.corrected_text) {
@@ -299,7 +325,7 @@ export default function VoiceControl({
             
             onVoiceCommand(result);
             
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error processing voice:", err);
             // Try to extract backend error message if available
             const msg = err.response?.data?.error || err.message || "Verarbeitungsfehler";

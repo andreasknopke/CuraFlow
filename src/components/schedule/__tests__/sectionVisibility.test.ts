@@ -31,8 +31,8 @@ describe('applyAlwaysVisibleRowsToSection', () => {
             { rowName: 'Spätdienst', targetSectionTitle: 'Rotationen' },
         ]);
 
-        expect(result.find((section) => section.title === 'Dienste').rows).toHaveLength(1);
-        expect(result.find((section) => section.title === 'Rotationen').rows).toEqual([
+        expect(result.find((section) => section.title === 'Dienste')!.rows).toHaveLength(1);
+        expect(result.find((section) => section.title === 'Rotationen')!.rows).toEqual([
             { name: 'CT', displayName: 'CT' },
             {
                 name: 'Spätdienst',
@@ -53,7 +53,7 @@ describe('applyAlwaysVisibleRowsToSection', () => {
             { rowName: 'Spätdienst', targetSectionTitle: 'Rotationen' },
         ]);
 
-        expect(result.find((section) => section.title === 'Rotationen').rows).toHaveLength(1);
+        expect(result.find((section) => section.title === 'Rotationen')!.rows).toHaveLength(1);
     });
 });
 
@@ -70,7 +70,7 @@ describe('applyAlwaysVisibleRowsToSections', () => {
             { rowName: 'Spätdienst', targetSectionTitle: 'Demonstrationen & Konsile' },
         ]);
 
-        expect(result.find((section) => section.title === 'Rotationen').rows.map((row) => row.name)).toEqual(['CT', 'Spätdienst']);
-        expect(result.find((section) => section.title === 'Demonstrationen & Konsile').rows.map((row) => row.name)).toEqual(['Konsil', 'Spätdienst']);
+        expect(result.find((section) => section.title === 'Rotationen')!.rows.map((row) => row.name)).toEqual(['CT', 'Spätdienst']);
+        expect(result.find((section) => section.title === 'Demonstrationen & Konsile')!.rows.map((row) => row.name)).toEqual(['Konsil', 'Spätdienst']);
     });
 });

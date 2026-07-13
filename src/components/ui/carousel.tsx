@@ -75,7 +75,7 @@ const Carousel = React.forwardRef<
   const [carouselRef, api] = useEmblaCarousel({
     ...opts,
     axis: orientation === "horizontal" ? "x" : "y",
-  }, plugins)
+  } as any, plugins as any)
   const [canScrollPrev, setCanScrollPrev] = React.useState(false)
   const [canScrollNext, setCanScrollNext] = React.useState(false)
 
@@ -84,8 +84,8 @@ const Carousel = React.forwardRef<
       return
     }
 
-    setCanScrollPrev(api.canScrollPrev())
-    setCanScrollNext(api.canScrollNext())
+    setCanScrollPrev((api as any).canScrollPrev?.())
+    setCanScrollNext((api as any).canScrollNext?.())
   }, [])
 
   const scrollPrev = React.useCallback(() => {
@@ -111,7 +111,7 @@ const Carousel = React.forwardRef<
       return
     }
 
-    setApi(api)
+    setApi(api as unknown as CarouselApi)
   }, [api, setApi])
 
   React.useEffect(() => {
@@ -119,19 +119,19 @@ const Carousel = React.forwardRef<
       return
     }
 
-    onSelect(api)
-    api.on("reInit", onSelect)
-    api.on("select", onSelect)
+    onSelect(api as unknown as CarouselApi)
+    api.on("reInit", onSelect as (...args: unknown[]) => void)
+    api.on("select", onSelect as (...args: unknown[]) => void)
 
     return () => {
-      api?.off("select", onSelect)
+      api?.off("select", onSelect as (...args: unknown[]) => void)
     };
   }, [api, onSelect])
 
   return (
     (<CarouselContext.Provider
       value={{
-        carouselRef,
+        carouselRef: carouselRef as unknown as React.RefObject<HTMLElement | null>,
         api: api as unknown as CarouselApi,
         opts,
         orientation:
@@ -161,7 +161,7 @@ const CarouselContent = React.forwardRef<
   const { carouselRef, orientation } = useCarousel()
 
   return (
-    (<div ref={carouselRef} className="overflow-hidden">
+    (<div ref={carouselRef as any} className="overflow-hidden">
       <div
         ref={ref}
         className={cn(

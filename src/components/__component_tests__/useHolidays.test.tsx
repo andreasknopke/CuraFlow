@@ -15,7 +15,7 @@ const mockQueryData = {
 };
 
 vi.mock('@tanstack/react-query', () => ({
-  useQuery: ({ queryKey }) => {
+  useQuery: ({ queryKey }: any) => {
     if (queryKey[0] === 'systemSettings') {
       return { data: mockQueryData.systemSettings, isLoading: false };
     }
@@ -51,7 +51,7 @@ describe('useHolidays', () => {
     // 2026-05-01 is Tag der Arbeit — a fixed public holiday in all German states
     const holiday = result.current.isPublicHoliday(new Date('2026-05-01'));
     expect(holiday).not.toBeNull();
-    expect(holiday.name).toContain('Tag der Arbeit');
+    expect(holiday!.name).toContain('Tag der Arbeit');
   });
 
   it('isSchoolHoliday returns null for non-holiday date', () => {

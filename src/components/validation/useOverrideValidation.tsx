@@ -81,7 +81,7 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
     }: OverrideLogParams) => {
         const formattedDate = typeof date === 'string' 
             ? date 
-            : format(date, 'dd.MM.yyyy', { locale: de });
+            : (date !== undefined ? format(new Date(date), 'dd.MM.yyyy', { locale: de }) : '');
 
         const conflicts = [
             ...blockers.map(b => `[BLOCKER] ${b}`),
@@ -125,7 +125,7 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
         return new Promise<{ confirmed: boolean; reason?: string }>((resolve) => {
             const formattedDate = typeof date === 'string' 
                 ? date 
-                : format(new Date(date), 'dd.MM.yyyy', { locale: de });
+                : (date !== undefined ? format(new Date(date), 'dd.MM.yyyy', { locale: de }) : '');
 
             setOverrideDialog({
                 open: true,
@@ -146,7 +146,7 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
     /**
      * Bestätigt den Override
      */
-    const confirmOverride = useCallback(async (reason) => {
+    const confirmOverride = useCallback(async (reason: string) => {
         const { context, blockers, warnings, pendingAction, resolve } = overrideDialog;
 
         // Log the override

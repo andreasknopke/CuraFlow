@@ -107,7 +107,7 @@ export default function WorkingTimeReport() {
     const { data: doctors = [], isLoading: isLoadingDocs } = useQuery({
         queryKey: ['doctors', statisticsExcludedRoles],
         queryFn: () => db.Doctor.list(),
-        select: (data) => data.filter(d => !statisticsExcludedRoles.includes(d.role)).sort((a, b) => (a.order || 0) - (b.order || 0)),
+        select: (data: any[]) => data.filter((d: any) => !(statisticsExcludedRoles as string[]).includes(d.role)).sort((a: any, b: any) => (a.order || 0) - (b.order || 0)),
     });
 
     const { data: workplaces = [], isLoading: isLoadingWorkplaces } = useQuery({
@@ -129,7 +129,7 @@ export default function WorkingTimeReport() {
                 }) || [];
             } catch {
                 const all = await db.ShiftEntry.list();
-                return all.filter(s => s.date.startsWith(year));
+                return all.filter((s: any) => s.date.startsWith(year));
             }
         },
     });
@@ -138,7 +138,7 @@ export default function WorkingTimeReport() {
 
     // Check if any workplace has timeslots enabled
     const hasTimeslotsEnabled = useMemo(() => {
-        return workplaces.some(w => w.timeslots_enabled) && timeslots.length > 0;
+        return workplaces.some((w: any) => w.timeslots_enabled) && timeslots.length > 0;
     }, [workplaces, timeslots]);
 
     // Calculate date range based on view mode
@@ -165,17 +165,17 @@ export default function WorkingTimeReport() {
     const workingTimeStats: DoctorWorkStats[] = useMemo(() => {
         if (isLoading || !doctors.length) return [];
 
-        const stats = doctors.map(doctor => {
+        const stats = (doctors as any[]).map((doctor: any) => {
             // Filter shifts for this doctor in date range
-            const doctorShifts = shifts.filter(s => {
+            const doctorShifts = (shifts as any[]).filter((s: any) => {
                 if (s.doctor_id !== doctor.id) return false;
                 const shiftDate = parseISO(s.date);
                 return isWithinInterval(shiftDate, { start: dateRange.start, end: dateRange.end });
             });
 
             // Group shifts by date
-            const shiftsByDate: Record<string, ShiftEntry[]> = {};
-            doctorShifts.forEach(shift => {
+            const shiftsByDate: Record<string, any[]> = {};
+            (doctorShifts as any[]).forEach((shift: any) => {
                 if (!shiftsByDate[shift.date]) {
                     shiftsByDate[shift.date] = [];
                 }
@@ -188,17 +188,17 @@ export default function WorkingTimeReport() {
 
             // Process each day
             Object.entries(shiftsByDate).forEach(([date, dayShifts]) => {
-                const intervals = [];
+                const intervals: { start: number; end: number; rawDuration: number; adjustedDuration: number }[] = [];
 
-                dayShifts.forEach(shift => {
-                    const workplace = workplaces.find(w => w.name === shift.position);
+                (dayShifts as any[]).forEach((shift: any) => {
+                    const workplace = (workplaces as any[]).find((w: any) => w.name === shift.position);
                     
                     if (isNonWorkingShiftPosition(shift.position)) {
                         return;
                     }
 
                     const timeslot = shift.timeslot_id 
-                        ? timeslots.find(t => t.id === shift.timeslot_id)
+                        ? (timeslots as any[]).find((t: any) => t.id === shift.timeslot_id)
                         : null;
 
                     const interval = shiftToInterval(shift, timeslot, workplace);
@@ -232,7 +232,7 @@ export default function WorkingTimeReport() {
             };
         });
 
-        return stats.sort((a, b) => b.totalMinutes - a.totalMinutes);
+        return stats.sort((a: any, b: any) => b.totalMinutes - a.totalMinutes);
     }, [doctors, shifts, workplaces, timeslots, dateRange, isLoading]);
 
     // Summary statistics
@@ -304,7 +304,7 @@ export default function WorkingTimeReport() {
                         </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
-                        <Tabs value={viewMode} onValueChange={setViewMode}>
+                        <Tabs value={viewMode} onValueChange={(v: string) => setViewMode(v as "day" | "week" | "month" | "year")}>
                             <TabsList className="h-8">
                                 <TabsTrigger value="day" className="text-xs px-2">Tag</TabsTrigger>
                                 <TabsTrigger value="week" className="text-xs px-2">Woche</TabsTrigger>

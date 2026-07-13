@@ -29,6 +29,7 @@ export interface Doctor extends Auditable {
   receive_email_notifications?: boolean;
   central_employee_id?: string | null;
   work_time_model_id?: string | null;
+  part_time_model?: string | null;
   order: number;
   is_active: boolean;
 }
@@ -74,6 +75,7 @@ export interface ShiftEntry extends Auditable {
   break_minutes?: number | null;
   is_free_text: boolean;
   free_text_value?: string | null;
+  isPreview?: boolean;
   order: number;
 }
 
