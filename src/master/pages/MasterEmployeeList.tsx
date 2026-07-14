@@ -10,10 +10,12 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
 import { toast } from 'sonner';
 import {
   Users, Loader2, Building2, Search, ChevronRight, ArrowUpDown,
-  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff, RefreshCw, Scale,
+  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff, RefreshCw, Scale, Briefcase, Check,
 } from 'lucide-react';
 import type { CentralEmployee, StaffEntry, Tenant, PayscaleTariff } from '@/types/master';
 
@@ -35,6 +37,7 @@ export default function MasterEmployeeList() {
   const [sortField, setSortField] = useState('name');
   const [sortDir, setSortDir] = useState('asc');
   const [showInactive, setShowInactive] = useState(false);
+  const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [tariffDialogOpen, setTariffDialogOpen] = useState(false);
   const [selectedTariffId, setSelectedTariffId] = useState('');
 
@@ -92,6 +95,17 @@ export default function MasterEmployeeList() {
     return legacyStaff.filter(s => !s.central_employee_id);
   }, [legacyStaff]);
 
+  // Alle verfügbaren Positionen/Funktionen aus den zentralen Mitarbeitern extrahieren
+  const allPositions = useMemo(() => {
+    const posSet = new Set<string>();
+    centralEmployees.forEach(e => {
+      if (e.position && e.position.trim()) {
+        posSet.add(e.position.trim());
+      }
+    });
+    return Array.from(posSet).sort();
+  }, [centralEmployees]);
+
   // Sortier-Helfer
   const toggleSort = (field: string) => {
     if (sortField === field) {
@@ -140,7 +154,15 @@ export default function MasterEmployeeList() {
         e.first_name?.toLowerCase().includes(q) ||
         e.payroll_id?.toLowerCase().includes(q) ||
         e.work_time_model_name?.toLowerCase().includes(q) ||
+        e.position?.toLowerCase().includes(q) ||
         (e.assignments || []).some(a => a.tenant_name?.toLowerCase().includes(q))
+      );
+    }
+
+    // Positionen/Funktionen-Filter
+    if (selectedPositions.length > 0) {
+      list = list.filter(e =>
+        e.position != null && selectedPositions.includes(e.position.trim())
       );
     }
 
@@ -446,6 +468,58 @@ export default function MasterEmployeeList() {
           </SelectContent>
         </Select>
 
+        {viewMode === 'central' && allPositions.length > 0 && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="text-xs font-normal">
+                <Briefcase className="w-3.5 h-3.5 mr-1.5 text-slate-400" />
+                {selectedPositions.length === 0
+                  ? 'Alle Funktionen'
+                  : `${selectedPositions.length} Funktion${selectedPositions.length > 1 ? 'en' : ''}`
+                }
+                {selectedPositions.length > 0 && (
+                  <span className="ml-1.5 rounded-full bg-indigo-100 text-indigo-700 px-1.5 py-0.5 text-[10px] font-semibold">
+                    {selectedPositions.length}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Funktion suchen…" />
+                <CommandList>
+                  <CommandEmpty>Keine Funktionen gefunden</CommandEmpty>
+                  <CommandGroup>
+                    {allPositions.map((pos) => {
+                      const isSelected = selectedPositions.includes(pos);
+                      return (
+                        <CommandItem
+                          key={pos}
+                          value={pos}
+                          onSelect={() => {
+                            setSelectedPositions(prev =>
+                              prev.includes(pos)
+                                ? prev.filter(p => p !== pos)
+                                : [...prev, pos]
+                            );
+                          }}
+                        >
+                          <div className={`w-4 h-4 rounded border flex items-center justify-center mr-2 transition-colors ${
+                            isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300'
+                          }`}>
+                            {isSelected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <span>{pos}</span>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+        )}
+
         {viewMode === 'central' && (
           <Button
             variant="ghost"
@@ -738,6 +812,7 @@ export default function MasterEmployeeList() {
                   <p className="text-xs text-slate-500 mt-2">
                     Betrifft: <strong>{activeDisplayedCentralEmployees.length} aktive Mitarbeiter</strong>
                     {selectedTenant !== 'all' ? ` (gefiltert nach Mandant)` : ''}
+                    {selectedPositions.length > 0 ? ` (gefiltert nach ${selectedPositions.length} Funktion${selectedPositions.length > 1 ? 'en' : ''})` : ''}
                   </p>
                 </div>
               );
