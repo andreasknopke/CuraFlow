@@ -193,7 +193,7 @@ export default function MasterEmployeeList() {
       return sortDir === 'asc' ? r : -r;
     };
     return [...list].sort(cmp);
-  }, [centralEmployees, showInactive, selectedTenant, searchQuery, sortField, sortDir]);
+  }, [centralEmployees, showInactive, selectedTenant, searchQuery, selectedPositions, sortField, sortDir]);
 
   // Gefilterte + sortierte Legacy-Mitarbeiter
   const filteredLegacy = useMemo(() => {
