@@ -1231,7 +1231,14 @@ router.post('/', async (req, res, next) => {
         if (centralRouting.mode === 'central') {
           await deleteCentralAbsenceById(db, id);
           const localPayload = { ...nextPayload, doctor_id: nextDoctorId };
-          const keys = Object.keys(localPayload).filter((key) => key !== 'id');
+          const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+          let keys = Object.keys(localPayload).filter((key) => key !== 'id');
+          if (validColumns) {
+            keys = keys.filter((k) => validColumns.includes(k));
+          }
+          if (keys.length === 0) {
+            return res.json({ success: true });
+          }
           const values = keys.map((key) => toSqlValue(localPayload[key]));
           await dbPool.execute(
             `INSERT INTO \`ShiftEntry\` (\`id\`, ${keys.map((key) => `\`${key}\``).join(', ')}) VALUES (?, ${keys.map(() => '?').join(', ')})`,
