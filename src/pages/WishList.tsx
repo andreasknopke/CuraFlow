@@ -10,7 +10,6 @@ import EmployeeSelect from '@/components/staff/EmployeeSelect';
 import WishYearView from '@/components/wishlist/WishYearView';
 import WishRequestDialog from '@/components/wishlist/WishRequestDialog';
 import WishMonthOverview from '@/components/wishlist/WishMonthOverview';
-import WishReminderStatus from '@/components/wishlist/WishReminderStatus';
 import { useHolidays } from '@/components/useHolidays';
 import { trackDbChange } from '@/components/utils/dbTracker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -1075,13 +1074,6 @@ export default function WishListPage() {
               <span>Abwesenheit</span>
           </div>
       </div>
-
-      {/* Wish Reminder Status (Admin with approval permission only) */}
-      {canApproveWishes && (() => {
-        // Show reminder status for the current month being viewed
-        const targetMonth = `${selectedYear}-${String(viewDate.getMonth() + 1).padStart(2, '0')}`;
-        return <WishReminderStatus targetMonth={targetMonth} />;
-      })()}
 
       {/* Tabs for Service Types */}
       <div className="mb-6 overflow-x-auto pb-2">

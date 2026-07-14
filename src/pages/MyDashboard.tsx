@@ -10,7 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import EmployeeSelect from '@/components/staff/EmployeeSelect';
-import WishReminderStatus from '@/components/wishlist/WishReminderStatus';
 import { LayoutDashboard, CalendarDays, User, Clock, AlertCircle, CheckCircle2, XCircle, Loader2, Check, X, ClipboardList, Mail, Trash2, ChevronDown } from "lucide-react";
 import CertificateExpiryWidget from '@/components/dashboard/CertificateExpiryWidget';
 import { Switch } from "@/components/ui/switch";
@@ -826,23 +825,6 @@ export default function MyDashboardPage() {
                     doctors={doctors}
                 />
             )}
-
-            {/* Wish Reminder Status (Admin, compact) */}
-            {isAdmin && (() => {
-                // Show status for next 3 months
-                const now = new Date();
-                const months = [0, 1, 2].map(i => {
-                    const d = addMonths(now, i + 1);
-                    return format(d, 'yyyy-MM');
-                });
-                return (
-                    <div className="space-y-1">
-                        {months.map(m => (
-                            <WishReminderStatus key={m} targetMonth={m} compact />
-                        ))}
-                    </div>
-                );
-            })()}
 
             {/* Certificate expiry warnings (admins: all; users: own) */}
             <CertificateExpiryWidget doctors={doctors} isAdmin={isAdmin} />
