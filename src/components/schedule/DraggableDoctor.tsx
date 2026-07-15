@@ -22,11 +22,12 @@ interface DraggableDoctorProps {
   showTimeAccount?: boolean;
   hintRingClass?: string | null;
   hintKind?: 'preferred' | 'discouraged' | null;
+  onDoubleClick?: (doctorId: string) => void;
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null }: DraggableDoctorProps) {
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null, onDoubleClick }: DraggableDoctorProps) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
   const targetWeekly = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
   const planned = plannedHours || 0;
@@ -70,6 +71,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
             className={containerClass}
             style={containerStyle}
             title={!isCompact ? (hintTitle as string | undefined) : undefined}
+            onDoubleClick={onDoubleClick ? (e) => { e.stopPropagation(); onDoubleClick(doctor.id); } : undefined}
           >
             {isCompact ? (
               <div

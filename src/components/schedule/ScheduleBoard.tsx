@@ -459,6 +459,13 @@ export default function ScheduleBoard() {
         } catch { return false; }
     });
 
+    // Admin feature: double-click a doctor in sidebar to highlight their shifts in the week plan
+    const [selectedDoctorId, setSelectedDoctorId] = useState<string | null>(null);
+    const isAdmin = user?.role === 'admin';
+    const handleDoctorDoubleClick = useCallback((doctorId: string) => {
+        setSelectedDoctorId(prev => prev === doctorId ? null : doctorId);
+    }, []);
+
     const [selectedQualificationIds, setSelectedQualificationIds] = useState<string[]>([]);
     const [scheduleFilterOpen, setScheduleFilterOpen] = useState(false);
     // Single active row-scoped qualification filter. Replacing it on a different
@@ -3119,6 +3126,7 @@ export default function ScheduleBoard() {
     isCtrlPressed,
     draggingShiftId,
     highlightMyName,
+    selectedDoctorId,
     showInitialsOnly,
     isSplitViewEnabled,
     isMonthView,
@@ -4115,6 +4123,7 @@ export default function ScheduleBoard() {
                                         showTimeAccount={showSidebarTimeAccount}
                                         hintRingClass={doctorHintRingClass}
                                         hintKind={doctorHint}
+                                        onDoubleClick={isAdmin ? handleDoctorDoubleClick : undefined}
                                     />
                                 );
                             })}
@@ -4554,7 +4563,9 @@ export default function ScheduleBoard() {
                                                                         const { style, wishClass: baseWishClass, tooltipText } = getAvailableDoctorWishPresentation(doc, dateStr);
                                                                         let wishClass = "";
                                                                         const isCurrentUser = user?.doctor_id && doc.id === user.doctor_id;
+                                                                        const isSelectedDoctor = selectedDoctorId != null && doc.id === selectedDoctorId;
                                                                         if (isCurrentUser && highlightMyName) wishClass = "ring-2 ring-red-500 ring-offset-1 z-10";
+                                                                        if (isSelectedDoctor) wishClass = "ring-2 ring-red-500 ring-offset-1 z-10";
                                                                         if (!wishClass) {
                                                                             wishClass = baseWishClass;
                                                                         }
