@@ -72,6 +72,21 @@ export function resolveDoctorTargetWeeklyHours(
   return scaleByFte(DEFAULT_FULLTIME_HOURS, doctor) ?? DEFAULT_FULLTIME_HOURS;
 }
 
+export function resolveDoctorTargetHoursForWeekdays(
+    doctor: Doctor | null | undefined,
+    weekdayCount: number,
+    workTimeModel: WorkTimeModel | null = null,
+    centralEmployee: CentralEmployee | null = null,
+): number {
+  const safeWeekdayCount = Math.max(0, Math.round(Number(weekdayCount) || 0));
+  if (safeWeekdayCount === 0) {
+    return 0;
+  }
+
+  const weeklyTargetHours = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
+  return Math.round(((weeklyTargetHours / 5) * safeWeekdayCount) * 10) / 10;
+}
+
 export function resolveDoctorTargetDailyHours(
     doctor: Doctor | null | undefined,
     workTimeModel: WorkTimeModel | null = null,

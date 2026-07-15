@@ -19,6 +19,7 @@ interface DraggableDoctorProps {
   workTimeModel?: WorkTimeModel | null;
   centralEmployee?: CentralEmployee | null;
   plannedHours?: number | undefined;
+  targetHours?: number | undefined;
   showTimeAccount?: boolean;
   hintRingClass?: string | null;
   hintKind?: 'preferred' | 'discouraged' | null;
@@ -27,11 +28,11 @@ interface DraggableDoctorProps {
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, showTimeAccount = false, hintRingClass = null, hintKind = null, onDoubleClick }: DraggableDoctorProps) {
+export default function DraggableDoctor({ doctor, index, style, isDragDisabled, isBeingDragged, compactLabel, isCompactMode = false, workTimeModel, centralEmployee = null, plannedHours, targetHours, showTimeAccount = false, hintRingClass = null, hintKind = null, onDoubleClick }: DraggableDoctorProps) {
   const chipLabel = compactLabel || doctor.initials || doctor.name.substring(0, 3);
-  const targetWeekly = resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
+  const resolvedTargetHours = targetHours ?? resolveDoctorTargetWeeklyHours(doctor, workTimeModel, centralEmployee);
   const planned = plannedHours || 0;
-  const pct = targetWeekly ? (planned / targetWeekly) * 100 : null;
+  const pct = resolvedTargetHours ? (planned / resolvedTargetHours) * 100 : null;
 
   const hintTitle = hintKind === 'preferred'
     ? 'Sollte (bevorzugt)'
@@ -96,7 +97,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                 </div>
                 <div className="flex-1 min-w-0 px-2 py-1.5">
                   <span className="text-sm font-medium truncate block">{doctor.name}</span>
-                  {showTimeAccount && targetWeekly !== null && (
+                  {showTimeAccount && resolvedTargetHours !== null && (
                     <div className="flex items-center gap-1 text-[10px] leading-tight mt-0.5">
                       <Clock size={9} className="text-slate-400 flex-shrink-0" />
                       <span className={
@@ -106,7 +107,7 @@ export default function DraggableDoctor({ doctor, index, style, isDragDisabled, 
                       }>
                         {planned > 0 ? `${planned.toFixed(1)}` : '0'}
                       </span>
-                      <span className="text-slate-400">/ {targetWeekly}h</span>
+                      <span className="text-slate-400">/ {resolvedTargetHours}h</span>
                       {(pct ?? 0) > 100 && <span className="text-red-500" title="Überplanung!">⚠</span>}
                     </div>
                   )}

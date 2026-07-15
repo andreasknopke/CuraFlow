@@ -4,6 +4,7 @@ import {
   getPartTimeWorkDaysPerWeek,
   isFullDaysOffModel,
   resolveDoctorTargetDailyHours,
+  resolveDoctorTargetHoursForWeekdays,
   resolveDoctorTargetWeeklyHours,
 } from '@/components/schedule/doctorWorkTime';
 
@@ -37,6 +38,21 @@ describe('doctorWorkTime', () => {
 
     expect(resolveDoctorTargetWeeklyHours(doctor, null, null)).toBe(20);
     expect(resolveDoctorTargetDailyHours(doctor, null, null)).toBe(4);
+  });
+
+  it('converts weekly target hours to visible weekday target hours', () => {
+    const doctor = { fte: 0.8, target_weekly_hours: null, central_employee_id: 'employee-1' } as any;
+    const centralEmployee = { id: 'employee-1', target_hours_per_week: 40, model_hours_per_week: null } as any;
+
+    expect(resolveDoctorTargetHoursForWeekdays(doctor, 5, null, centralEmployee)).toBe(32);
+    expect(resolveDoctorTargetHoursForWeekdays(doctor, 20, null, centralEmployee)).toBe(128);
+    expect(resolveDoctorTargetHoursForWeekdays(doctor, 23, null, centralEmployee)).toBe(147.2);
+  });
+
+  it('returns zero target hours when no weekdays are visible', () => {
+    const doctor = { fte: 1, target_weekly_hours: 40, central_employee_id: null } as any;
+
+    expect(resolveDoctorTargetHoursForWeekdays(doctor, 0, null, null)).toBe(0);
   });
 
   describe('full_days_off part-time model', () => {

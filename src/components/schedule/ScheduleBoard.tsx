@@ -57,6 +57,7 @@ import { useConflictScan } from '@/components/validation/useConflictScan';
 // trackDbChange removed - MySQL mode doesn't use auto-backup
 import { useHolidays } from '@/components/useHolidays';
 import { getAvailabilityBlockingDoctorIdsByDate, getDoctorEffectiveFte, isDoctorAvailable } from './staffingUtils';
+import { resolveDoctorTargetHoursForWeekdays, resolveDoctorTargetWeeklyHours } from './doctorWorkTime';
 import { getAvailabilityWarnings } from '@/utils/staffingUtils';
 import SectionConfigDialog, { useSectionConfig } from '@/components/settings/SectionConfigDialog';
 import MobileScheduleView from './MobileScheduleView';
@@ -2545,8 +2546,8 @@ export default function ScheduleBoard() {
         return indicatorMap;
     }, [currentWeekShifts, workplaces, workplaceTimeslots]);
 
-  // Pro Arzt: Geplante Stunden in der aktuellen Woche berechnen
-  const weeklyPlannedHours = useMemo(() => {
+    // Pro Arzt: Geplante Stunden im aktuell sichtbaren Zeitraum berechnen
+    const visiblePlannedHours = useMemo(() => {
     if (!weekDays.length || !currentWeekShifts.length) return new Map();
     const map = new Map();
     const weekStart = format(weekDays[0], 'yyyy-MM-dd');
@@ -2592,6 +2593,31 @@ export default function ScheduleBoard() {
 
     return map;
     }, [currentWeekShifts, weekDays, doctors, workplaces, workplaceTimeslots, workTimeModelMap, centralEmployeesById]);
+
+    const visibleTargetHours = useMemo(() => {
+        if (!weekDays.length || !doctors.length) return new Map();
+
+        const weekdayCount = weekDays.filter((day) => {
+            const dayIndex = day.getDay();
+            return dayIndex !== 0 && dayIndex !== 6;
+        }).length;
+        const referenceDate = viewMode === 'month' ? currentDate : weekDays[0];
+        const map = new Map();
+
+        doctors.forEach((doctor) => {
+            const effectiveDoctor = getDoctorWithEffectiveFte(doctor, referenceDate);
+            const workTimeModel = doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null;
+            const centralEmployee = doctor.central_employee_id ? centralEmployeesById.get(String(doctor.central_employee_id)) : null;
+
+            const targetHours = viewMode === 'week'
+                ? resolveDoctorTargetWeeklyHours(effectiveDoctor, workTimeModel, centralEmployee)
+                : resolveDoctorTargetHoursForWeekdays(effectiveDoctor, weekdayCount, workTimeModel, centralEmployee);
+
+            map.set(doctor.id, targetHours);
+        });
+
+        return map;
+    }, [weekDays, doctors, viewMode, currentDate, workTimeModelMap, centralEmployeesById, staffingPlanEntries]);
 
   const cleanupAutoFreiOnly = (doctorId: any, dateStr: any, position: any) => {
       const autoFreiShift = findAutoFreiToCleanup(doctorId, dateStr, position);
@@ -4119,7 +4145,8 @@ export default function ScheduleBoard() {
                                         isBeingDragged={draggingDoctorId === doctor.id}
                                         workTimeModel={doctor.work_time_model_id ? workTimeModelMap.get(doctor.work_time_model_id) : null}
                                         centralEmployee={doctor.central_employee_id ? centralEmployeesById.get(String(doctor.central_employee_id)) : null}
-                                        plannedHours={weeklyPlannedHours.get(doctor.id) || 0}
+                                        plannedHours={visiblePlannedHours.get(doctor.id) || 0}
+                                        targetHours={visibleTargetHours.get(doctor.id)}
                                         showTimeAccount={showSidebarTimeAccount}
                                         hintRingClass={doctorHintRingClass}
                                         hintKind={doctorHint}
