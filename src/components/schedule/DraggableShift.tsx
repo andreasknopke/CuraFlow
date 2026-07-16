@@ -40,6 +40,7 @@ interface DraggableShiftProps extends DraggableShiftStyleProps {
   boxSize?: number;
   currentUserDoctorId?: string;
   highlightMyName?: boolean;
+  selectedDoctorId?: string | null;
   isBeingDragged?: boolean;
   qualificationStatus?: 'excluded' | 'unqualified' | null;
   fairnessInfo?: FairnessInfo | null;
@@ -107,9 +108,10 @@ function LateStartIndicator({ tooltip, compact = false }: LateStartIndicatorProp
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, selectedDoctorId = null, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId != null && doctor.id === currentUserDoctorId;
+  const isSelectedDoctor = selectedDoctorId != null && doctor.id === selectedDoctorId;
   const isFullWidth = displayMode === 'full';
   const chipLabel = compactLabel || getDoctorShortLabel(doctor);
   const displayText = isFullWidth ? doctor.name : chipLabel;
@@ -247,7 +249,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
 
         const containerClass = isDragging 
             ? `flex items-center justify-center cursor-none` // Center the badge
-          : `relative flex items-center ${isFullWidth ? 'justify-start overflow-hidden' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'opacity-50 border-dashed border-indigo-400 cursor-grab hover:opacity-80 hover:border-indigo-600' : ''} ${!isDragging && isCurrentUser && highlightMyName ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
+          : `relative flex items-center ${isFullWidth ? 'justify-start overflow-hidden' : 'justify-center'} rounded-md font-bold border shadow-sm transition-colors ${isPreview ? 'opacity-50 border-dashed border-indigo-400 cursor-grab hover:opacity-80 hover:border-indigo-600' : ''} ${!isDragging && (isCurrentUser && highlightMyName || isSelectedDoctor) ? 'ring-2 ring-red-500 ring-offset-1 z-10' : ''} ${isFullWidth ? '' : 'cursor-grab active:cursor-grabbing'}`;
 
         return (
           <div
