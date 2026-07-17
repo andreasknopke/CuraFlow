@@ -37,6 +37,9 @@ e2e/.auth/
 # PHP legacy frontend (must NEVER appear on GitHub)
 PHP/
 
+# Tisoware PHP proxy (credentials only via ENV, never hardcoded)
+server/php-proxy/tisowareHttpProxy.php
+
 # Excel files
 *.xlsx
 *.xls
