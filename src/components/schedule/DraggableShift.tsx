@@ -50,6 +50,7 @@ interface DraggableShiftProps extends DraggableShiftStyleProps {
   timeslotLabelTone?: 'default' | 'warning';
   timeLabelOverride?: string | null;
   onTimeLabelClick?: ((event: MouseEvent) => void) | null;
+  onDoubleClick?: ((event: MouseEvent) => void) | null;
   showLateStartIndicator?: boolean;
   lateStartTooltip?: string;
   hideTimeLabel?: boolean;
@@ -108,7 +109,7 @@ function LateStartIndicator({ tooltip, compact = false }: LateStartIndicatorProp
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, selectedDoctorId = null, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, selectedDoctorId = null, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, onDoubleClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId != null && doctor.id === currentUserDoctorId;
   const isSelectedDoctor = selectedDoctorId != null && doctor.id === selectedDoctorId;
@@ -260,6 +261,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
             className={containerClass}
             style={containerStyle}
             title={combinedTooltip || (isPreview ? 'Vorschlag — per Drag & Drop verschieben' : undefined)}
+            onDoubleClick={!isDragging && onDoubleClick ? (e) => { e.stopPropagation(); onDoubleClick(e); } : undefined}
           >
             {isDragging ? (
                 // The visual badge - square like small chips

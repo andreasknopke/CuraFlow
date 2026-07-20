@@ -911,6 +911,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                     timeslotLabel={null}
                     timeLabelOverride={effectiveTimeLabel}
                     onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || (workplace)?.timeslots_enabled) ? () => { handleShiftTimeslotEdit(shift, doctor, workplace); } : null}
+                    onDoubleClick={!shift.isPreview && !isReadOnly && (workplace)?.timeslots_enabled ? () => { handleShiftTimeslotEdit(shift, doctor, workplace); } : null}
                     hideTimeLabel={isReadOnly && !isOwnShift || !showSidebarTimeAccount}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
