@@ -511,27 +511,11 @@ export function useDragHandlers(deps: DragHandlersDeps) {
         return;
     }
 
-    // If dropped outside any droppable and was from grid -> delete
+    // Dropped outside any droppable (e.g. locked/blocked cell, or empty area).
+    // The chip should snap back to its original position — never delete it.
+    // Users can remove a shift by dragging it to the sidebar/available area,
+    // which is handled separately.
     if (!destination) {
-        if (isDraggingFromGrid && normalizedDraggableId.startsWith('shift-')) {
-            const shiftId = normalizedDraggableId.replace('shift-', '');
-            // Skip temp IDs (optimistic updates not yet persisted)
-            if (shiftId.startsWith('temp-')) {
-                return;
-            }
-            const shift = currentWeekShifts.find((s: any) => s.id === shiftId) || allShifts.find((s: any) => s.id === shiftId);
-            if (shift) {
-                const springerDoc = springerDoctorById.get(shift.doctor_id);
-                if (springerDoc?._isSpringer) {
-                    setHiddenSpringerChipIds((prev) => {
-                        const next = new Set(prev);
-                        next.delete(springerDoc._assignmentId);
-                        return next;
-                    });
-                }
-                deleteShiftWithCleanup(shift);
-            }
-        }
         return;
     }
 
