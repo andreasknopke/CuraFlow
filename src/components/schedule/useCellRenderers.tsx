@@ -79,6 +79,7 @@ export interface CellRenderersDeps {
   getDoctorQualIds: (...args: any[]) => any;
   getWpRequiredQualIds: (...args: any[]) => any;
   getWpExcludedQualIds: (...args: any[]) => any;
+  showSidebarTimeAccount: boolean;
 }
 
 export function useCellRenderers(deps: CellRenderersDeps) {
@@ -128,6 +129,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
     getFairnessInfo,
     getShiftWishMarker,
     getDoctorQualIds,
+    showSidebarTimeAccount,
     getWpRequiredQualIds,
     getWpExcludedQualIds,
   } = deps;
@@ -909,14 +911,14 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                     timeslotLabel={null}
                     timeLabelOverride={effectiveTimeLabel}
                     onTimeLabelClick={!shift.isPreview && !isReadOnly && (effectiveTimeLabel || (workplace)?.timeslots_enabled) ? () => { handleShiftTimeslotEdit(shift, doctor, workplace); } : null}
-                    hideTimeLabel={isReadOnly && !isOwnShift}
+                    hideTimeLabel={isReadOnly && !isOwnShift || !showSidebarTimeAccount}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
                 />
             </div>
         );
     });
-    }, [currentWeekShiftLookup, doctorById, springerDoctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, selectedDoctorId, showInitialsOnly, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
+    }, [currentWeekShiftLookup, doctorById, springerDoctorById, draggingShiftId, isCtrlPressed, shiftBoxSize, effectiveGridFontSize, isReadOnly, user, highlightMyName, selectedDoctorId, showInitialsOnly, showSidebarTimeAccount, colorSettings, isLoadingColors, getRoleColor, workplaceByName, workplaceTimeslots, getDoctorQualIds, getWpRequiredQualIds, getWpExcludedQualIds, getFairnessInfo, getShiftWishMarker, isEmbeddedSchedule, isSplitViewEnabled, isMonthView, getDoctorChipLabel, lateRotationIndicatorByDoctorDay, currentWeekShifts, systemSettings, updateShiftMutation, workTimeModelMap]);
 
   // Render clone for shift drags from cells - matches sidebar behavior
   const renderShiftClone = useMemo(() => (provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric): ReactNode => {

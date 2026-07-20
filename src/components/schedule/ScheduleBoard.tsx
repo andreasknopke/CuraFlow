@@ -3194,6 +3194,7 @@ export default function ScheduleBoard() {
     getDoctorQualIds,
     getWpRequiredQualIds,
     getWpExcludedQualIds,
+    showSidebarTimeAccount,
   });
 
   const renderSplitMatrix = () => {
@@ -3853,7 +3854,7 @@ export default function ScheduleBoard() {
                            checked={showSidebarTimeAccount}
                            onCheckedChange={setShowSidebarTimeAccount}
                        >
-                           Seitenleiste mit Zeitkonto
+                           Zeitkonten-Information
                        </DropdownMenuCheckboxItem>
                        <DropdownMenuSeparator />
 
