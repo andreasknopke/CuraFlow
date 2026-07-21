@@ -321,8 +321,16 @@ export async function fetchTisowareAbsences(psPersNrList, dateFrom, dateTo) {
 
   sql += ' ORDER BY PSPERSNR, ABWDATVON';
 
+  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSPERSNR(s)`);
+
   const result = await queryTisoware(sql, 50000); // Higher limit for bulk import
-  return result.rows || [];
+  const rows = result.rows || [];
+  console.log(`[Tisoware import] fetchTisowareAbsences: returned ${rows.length} row(s)`);
+  if (rows.length === 0 && unique.length > 0) {
+    // Log the first PSPERSNR and a sample to help debug
+    console.log(`[Tisoware import] fetchTisowareAbsences: sample PSPERSNRs: [${unique.slice(0, 5).join(', ')}]`);
+  }
+  return rows;
 }
 
 // ─── Date Parsing ────────────────────────────────────────────────────────────
@@ -411,13 +419,27 @@ function expandDateRange(fromDate, toDate) {
 export async function previewTisowareImport(masterDb, psPersNrList, options = {}) {
   const { dateFrom, dateTo, resolveConflicts = false } = options;
 
-  // 1. Fetch matched employees
-  const tisowareRows = await searchTisowareEmployees({ q: '', limit: 500 });
-  const filtered = psPersNrList.length > 0
-    ? tisowareRows.filter(r => psPersNrList.includes(String(r.PSPERSNR || '').trim()))
-    : tisowareRows;
+  // 1. Fetch Tisoware employee data directly for the requested PSPERSNR values
+  //    (avoid TOP-500 limitation of searchTisowareEmployees with empty q)
+  const cleanList = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
 
-  const matched = await matchTisowareEmployees(masterDb, filtered);
+  let tisowareRows = [];
+  if (cleanList.length > 0) {
+    const inClause = cleanList.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+    const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
+                 FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause})
+                 ORDER BY PSNACHNA, PSVORNA`;
+    const result = await queryTisoware(sql);
+    tisowareRows = result.rows || [];
+  } else {
+    // No PSPERSNR list provided — fetch all (for full-org import)
+    tisowareRows = await searchTisowareEmployees({ q: '', limit: 500 });
+  }
+
+  console.log(`[Tisoware import] preview: requested ${cleanList.length} PSPERSNR(s), found ${tisowareRows.length} PERSTAMM row(s)`);
+  console.log(`[Tisoware import] preview: PSPERSNRs found: [${tisowareRows.map(r => r.PSPERSNR).join(', ')}]`);
+
+  const matched = await matchTisowareEmployees(masterDb, tisowareRows);
 
   const matchedEmployees = matched.filter(e => e.match_status === 'matched');
   const unmatchedEmployees = matched.filter(e => e.match_status !== 'matched');
@@ -425,7 +447,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
   if (matchedPsPersNr.length === 0) {
     return {
-      total_source_employees: filtered.length,
+      total_source_employees: tisowareRows.length,
       matched_employees: 0,
       unmatched_employees: unmatchedEmployees.length,
       total_absence_rows: 0,
@@ -458,6 +480,11 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
   // 3. Fetch absences
   const absenceRows = await fetchTisowareAbsences(matchedPsPersNr, dateFrom, dateTo);
+  console.log(`[Tisoware import] preview: fetched ${absenceRows.length} ABWKAL row(s) for ${matchedPsPersNr.length} employee(s)`);
+  if (absenceRows.length === 0) {
+    const sqlInClause = matchedPsPersNr.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+    console.log(`[Tisoware import] preview: ABWKAL query: SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSPERSNR IN (${sqlInClause})`);
+  }
 
   await ensureCentralAbsenceTables(masterDb);
 
@@ -565,7 +592,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   return {
-    total_source_employees: filtered.length,
+    total_source_employees: tisowareRows.length,
     matched_employees: matchedEmployees.length,
     unmatched_employees: unmatchedEmployees.length,
     total_absence_rows: absenceRows.length,
@@ -598,13 +625,22 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 export async function executeTisowareImport(masterDb, psPersNrList, options = {}) {
   const { dateFrom, dateTo, resolveConflicts = false, createdBy = null } = options;
 
-  // 1. Match employees
-  const tisowareRows = await searchTisowareEmployees({ q: '', limit: 500 });
-  const filtered = psPersNrList.length > 0
-    ? tisowareRows.filter(r => psPersNrList.includes(String(r.PSPERSNR || '').trim()))
-    : tisowareRows;
+  // 1. Match employees — query PERSTAMM directly by PSPERSNR
+  const cleanList = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
 
-  const matched = await matchTisowareEmployees(masterDb, filtered);
+  let tisowareRows = [];
+  if (cleanList.length > 0) {
+    const inClause = cleanList.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+    const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
+                 FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause})
+                 ORDER BY PSNACHNA, PSVORNA`;
+    const result = await queryTisoware(sql);
+    tisowareRows = result.rows || [];
+  }
+
+  console.log(`[Tisoware import] execute: requested ${cleanList.length} PSPERSNR(s), found ${tisowareRows.length} PERSTAMM row(s)`);
+
+  const matched = await matchTisowareEmployees(masterDb, tisowareRows);
   const matchedEmployees = matched.filter(e => e.match_status === 'matched');
   const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
 
@@ -615,6 +651,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
       resolved_conflicts: 0,
       unresolved_conflicts: 0,
       unparseable_dates: 0,
+      errors_count: 0,
       errors: [],
     };
   }
