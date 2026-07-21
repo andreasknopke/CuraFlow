@@ -306,13 +306,29 @@ export async function fetchLoanrDescriptions(loanrCodes) {
  * @param {string[]} keys - Column names from a sample ABWKAL row
  * @returns {{ fromCol: string|null, toCol: string|null }}
  */
-function discoverAbwkalDateColumns(keys) {
+export function discoverAbwkalDateColumns(keys) {
+  const upperKeys = keys.map(k => k.toUpperCase());
+
+  // Canonical Tisoware column names: ABWDATE = single date column (int, YYYYMMDD).
+  // ABWKAL stores one date per row — use it for both from/to.
+  const dateIdx = upperKeys.indexOf('ABWDATE');
+  if (dateIdx !== -1) {
+    return { fromCol: keys[dateIdx], toCol: keys[dateIdx] };
+  }
+  // Some older Tisoware installations may use ABWDATUM instead
+  const datumIdx = upperKeys.indexOf('ABWDATUM');
+  if (datumIdx !== -1) {
+    return { fromCol: keys[datumIdx], toCol: keys[datumIdx] };
+  }
+
   const candidates = keys.filter(k => {
     const u = k.toUpperCase();
     // Look for columns that contain date-like German terms
     return (u.includes('VON') || u.includes('BIS') || u.includes('BEGINN')
       || u.includes('ENDE') || u.includes('ANFANG') || u.includes('DAT'))
-      && !u.includes('ZEIT'); // Exclude time columns (ZEITVON, ZEITBIS)
+      && !u.includes('ZEIT')  // Exclude time columns (ZEITVON, ZEITBIS)
+      && !u.includes('STD')   // Exclude hours (Stunden): VONSTD, BISSTD
+      && !u.includes('MIN');  // Exclude minutes: VONMIN, BISMIN
   });
 
   // Sort: "VON/BEGINN/ANFANG"-like first, then "BIS/ENDE"-like
@@ -387,10 +403,32 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   // Discover actual date column names from the first row
   const keys = Object.keys(rawRows[0] || {});
   const { fromCol, toCol } = discoverAbwkalDateColumns(keys);
-  console.log(`[Tisoware import] fetchTisowareAbsences: ABWKAL columns detected: keys=${keys.slice(0, 10).join(',')}, fromCol=${fromCol}, toCol=${toCol}`);
+  console.log(`[Tisoware import] fetchTisowareAbsences: ALL ABWKAL columns: [${keys.join(', ')}]`);
+  console.log(`[Tisoware import] fetchTisowareAbsences: detected fromCol=${fromCol}, toCol=${toCol}`);
+  // Log sample values from detected columns to diagnose wrong-field mapping
+  if (fromCol) {
+    const sampleFromVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[fromCol] ?? '').trim()))];
+    console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${fromCol}': [${sampleFromVals.join(', ')}]`);
+  }
+  if (toCol && toCol !== fromCol) {
+    const sampleToVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[toCol] ?? '').trim()))];
+    console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${toCol}': [${sampleToVals.join(', ')}]`);
+  }
 
   // Normalize: add ABWDATVON/ABWDATBIS aliases for downstream compatibility
   const rows = normalizeAbwkalRows(rawRows, fromCol, toCol);
+
+  // Debug: log sample of raw rows and unique dates/PNSRs to diagnose mismatches
+  if (rows.length > 0) {
+    const samplePsnrs = [...new Set(rows.slice(0, 200).map(r => String(r.PSNR || '').trim()))];
+    const sampleDates = [...new Set(rows.slice(0, 200).map(r => String(r.ABWDATVON || '').trim()))];
+    const sampleRow = rows[0];
+    const allKeys = Object.keys(sampleRow).join(',');
+    console.log(`[Tisoware import] fetchTisowareAbsences: debug sample — PSNRs=[${samplePsnrs.slice(0, 10).join(',')}], dates=[${sampleDates.slice(0, 10).join(',')}], columns=${allKeys}`);
+    if (sampleDates.length < 3) {
+      console.log(`[Tisoware import] fetchTisowareAbsences: WARNING — only ${sampleDates.length} unique date(s) across ${rows.length} rows!`);
+    }
+  }
 
   // Client-side date filtering (since we can't use SQL WHERE with unknown column names)
   if (dateFrom || dateTo) {
