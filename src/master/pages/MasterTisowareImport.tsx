@@ -311,7 +311,7 @@ export default function MasterTisowareImport() {
           <div className="flex gap-3">
             <div className="flex-1">
               <Input
-                placeholder="Name oder PSPERSNR suchen..."
+                placeholder="Name, PSPERSNR oder Mitarbeiter-ID suchen..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleSearch(); }}

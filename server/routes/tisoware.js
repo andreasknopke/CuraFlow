@@ -368,7 +368,30 @@ import { db } from '../index.js';
  */
 router.post('/import/employee-search', async (req, res, next) => {
   try {
-    const { q, kstnr } = req.body || {};
+    let { q, kstnr } = req.body || {};
+
+    // If q looks like a CuraFlow employee UUID, resolve it to payroll_id first
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (q && uuidPattern.test(String(q).trim())) {
+      try {
+        const trimmedUuid = String(q).trim();
+        const [employees] = await db.execute(
+          'SELECT id, payroll_id, last_name, first_name FROM Employee WHERE id = ?',
+          [trimmedUuid]
+        );
+        if (employees.length > 0 && employees[0].payroll_id) {
+          const emp = employees[0];
+          console.log(`[Tisoware employee-search] UUID ${trimmedUuid} → payroll_id=${emp.payroll_id} (${emp.last_name}, ${emp.first_name})`);
+          q = emp.payroll_id;
+        } else {
+          // UUID not found or has no payroll_id
+          return res.json({ employees: [], stats: { total: 0, matched: 0, unmatched: 0, no_pspersnr: 0 } });
+        }
+      } catch (lookupErr) {
+        console.warn('[Tisoware employee-search] UUID lookup failed:', lookupErr.message);
+        // Fall through to normal search with original q
+      }
+    }
 
     const tisowareRows = await searchTisowareEmployees({ q, kstnr, limit: 200 });
     const matched = await matchTisowareEmployees(db, tisowareRows);
