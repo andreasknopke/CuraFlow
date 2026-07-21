@@ -15,7 +15,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { toast } from 'sonner';
 import {
   Users, Loader2, Building2, Search, ChevronRight, ArrowUpDown,
-  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff, RefreshCw, Scale, Briefcase, Check,
+  Clock, UserCheck, UserX, Plus, Upload, ArrowUpRight, Trash2, Eye, EyeOff, RefreshCw, Scale, Briefcase, Check, Database,
 } from 'lucide-react';
 import type { CentralEmployee, StaffEntry, Tenant, PayscaleTariff } from '@/types/master';
 
@@ -40,6 +40,7 @@ export default function MasterEmployeeList() {
   const [selectedPositions, setSelectedPositions] = useState<string[]>([]);
   const [tariffDialogOpen, setTariffDialogOpen] = useState(false);
   const [selectedTariffId, setSelectedTariffId] = useState('');
+  const [dumpLoading, setDumpLoading] = useState(false);
 
   // URL-Suchparameter synchron halten (überlebt Navigation)
   useEffect(() => {
@@ -390,6 +391,41 @@ export default function MasterEmployeeList() {
     if (emp.first_name && emp.last_name) return `${emp.first_name} ${emp.last_name}`;
     if (emp.last_name) return emp.last_name;
     return emp.name || '–';
+  };
+
+  // MasterDB SQL-Dump herunterladen
+  const handleDownloadDump = async () => {
+    setDumpLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        toast.error('Nicht eingeloggt');
+        return;
+      }
+      const res = await fetch('/api/master/database/dump', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        toast.error('Fehler beim Erstellen des Dumps');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      a.download = match?.[1] || 'curaflow_masterdb_dump.sql';
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('Dump erfolgreich heruntergeladen');
+    } catch {
+      toast.error('Fehler beim Download');
+    } finally {
+      setDumpLoading(false);
+    }
   };
 
   return (
@@ -834,6 +870,17 @@ export default function MasterEmployeeList() {
           </div>
         </DialogContent>
       </Dialog>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleDownloadDump}
+        disabled={dumpLoading}
+      >
+        {dumpLoading
+          ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          : <Database className="w-4 h-4 mr-2" />}
+        MasterDB Dump
+      </Button>
     </div>
   );
 }

@@ -33,6 +33,7 @@ import workplaceLinksRouter from './routes/workplaceLinks.js';
 import vacationRouter from './routes/vacation.js';
 import absenceRequestsRouter from './routes/absenceRequests.js';
 import tisowareRouter from './routes/tisoware.js';
+import masterDbDumpRouter from './routes/masterDbDump.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
 import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
 import { ensureDefaultWorkplaceTimeslots } from './utils/ensureDefaultWorkplaceTimeslots.js';
@@ -589,6 +590,7 @@ app.use('/api/master', masterRouter);
 app.use('/api/certificates', certificatesRouter);
 app.use('/api/groups', groupsRouter);
 app.use('/api/master/tisoware', tisowareRouter);
+app.use('/api/master/database', masterDbDumpRouter);
 app.use('/api/rotations', rotationsRouter);
 app.use('/api/workplace-links', workplaceLinksRouter);
 
