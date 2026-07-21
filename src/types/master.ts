@@ -297,7 +297,18 @@ export interface TisowareConnectionStatus {
 export interface TisowareTable {
   schema_name: string;
   table_name: string;
+  full_name: string;
+  row_count: number;
   [key: string]: unknown;
+}
+
+export interface TisowareSampleResult {
+  rows: Record<string, unknown>[];
+  columns: Array<{ name: string }>;
+  rowCount: number;
+  totalCount: number;
+  offset: number;
+  limit: number;
 }
 
 export interface TisowareColumn {

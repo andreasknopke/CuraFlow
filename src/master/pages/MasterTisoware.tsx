@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { api } from '@/api/client';
-import type { TisowareConnectionStatus, TisowareTable, TisowareColumn } from '@/types/master';
+import type { TisowareConnectionStatus, TisowareTable, TisowareColumn, TisowareSampleResult } from '@/types/master';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,7 @@ import {
   Loader2,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   FileText,
   Terminal,
@@ -36,17 +37,12 @@ import {
   Wifi,
 } from 'lucide-react';
 
-const MAX_PREVIEW_ROWS = 50;
+const PAGE_SIZE = 50;
 
 type QueryResultData = {
   rowCount: number;
   columns: Array<{ name: string; type: string }>;
   rows: Record<string, unknown>[];
-};
-
-type SampleResultData = {
-  rows: Record<string, unknown>[];
-  columns: Array<{ name: string }>;
 };
 
 type PhpCheckData = {
@@ -60,6 +56,7 @@ export default function MasterTisoware() {
   const [sqlQuery, setSqlQuery] = useState('SELECT TOP 50 * FROM dbo.PERSTAMM');
   const [expandedTable, setExpandedTable] = useState<TisowareTable | null>(null);
   const [previewTable, setPreviewTable] = useState<TisowareTable | null>(null);
+  const [samplePage, setSamplePage] = useState(0);
 
   // ── Connection status ──
   const { data: status, isLoading: statusLoading, isError: statusError, error: statusFetchError } = useQuery({
@@ -91,10 +88,10 @@ export default function MasterTisoware() {
 
   // ── Sample preview ──
   const { data: sampleData, isLoading: sampleLoading, refetch: refetchSample } = useQuery({
-    queryKey: ['tisoware-sample', previewTable],
+    queryKey: ['tisoware-sample', previewTable?.full_name, samplePage],
     queryFn: () => {
-      if (!previewTable) return { rows: [] as Record<string, unknown>[], columns: [] as Array<{ name: string }> };
-      return api.request(`/api/master/tisoware/tables/${previewTable.schema_name}/${previewTable.table_name}/sample`, { skipDbToken: true }) as Promise<SampleResultData>;
+      if (!previewTable) return { rows: [] as Record<string, unknown>[], columns: [] as Array<{ name: string }>, rowCount: 0, totalCount: 0, offset: 0, limit: PAGE_SIZE } as TisowareSampleResult;
+      return api.request(`/api/master/tisoware/tables/${previewTable.schema_name}/${previewTable.table_name}/sample?offset=${samplePage * PAGE_SIZE}&limit=${PAGE_SIZE}`, { skipDbToken: true }) as Promise<TisowareSampleResult>;
     },
     enabled: !!previewTable,
   });
@@ -131,6 +128,7 @@ export default function MasterTisoware() {
 
   const handlePreview = useCallback((table: TisowareTable) => {
     setPreviewTable(table);
+    setSamplePage(0);
     setActiveTab('preview');
   }, []);
 
@@ -393,7 +391,7 @@ export default function MasterTisoware() {
               </div>
               <CardDescription>
                 {tables.length > 0
-                  ? `${tables.length} Tabellen in der Tisoware-Datenbank`
+                  ? `${tables.length} Tabellen mit Daten (leere ausgeblendet)`
                   : 'Lade Tabellen…'}
               </CardDescription>
             </CardHeader>
@@ -445,6 +443,9 @@ export default function MasterTisoware() {
                         <span className="text-sm font-mono flex-1">
                           <span className="text-slate-400">{t.schema_name}.</span>
                           <span className="font-semibold">{t.table_name}</span>
+                          <span className="ml-2 text-xs text-slate-400">
+                            ({t.row_count?.toLocaleString() ?? '?'} Zeilen)
+                          </span>
                         </span>
                         <Button
                           variant="ghost"
@@ -620,7 +621,9 @@ export default function MasterTisoware() {
                   </Button>
                 </div>
                 <CardDescription>
-                  Die ersten {MAX_PREVIEW_ROWS} Zeilen der Tabelle
+                  {sampleData
+                    ? `Zeile ${sampleData.offset + 1}–${Math.min(sampleData.offset + sampleData.limit, sampleData.totalCount)} von ${sampleData.totalCount.toLocaleString()}`
+                    : `Lade Daten…`}
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -630,40 +633,70 @@ export default function MasterTisoware() {
                     Lade Daten…
                   </div>
                 ) : (
-                  <ScrollArea className="max-h-[600px]">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {sampleData?.columns?.map((col: { name: string }) => (
-                            <TableHead key={col.name} className="font-mono text-xs whitespace-nowrap">
-                              {col.name}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sampleData?.rows?.length === 0 ? (
+                  <>
+                    <ScrollArea className="max-h-[600px]">
+                      <Table>
+                        <TableHeader>
                           <TableRow>
-                            <TableCell colSpan={sampleData?.columns?.length || 1} className="text-center text-slate-400 py-8 italic">
-                              Tabelle ist leer
-                            </TableCell>
+                            {sampleData?.columns?.map((col: { name: string }) => (
+                              <TableHead key={col.name} className="font-mono text-xs whitespace-nowrap">
+                                {col.name}
+                              </TableHead>
+                            ))}
                           </TableRow>
-                        ) : (
-                          sampleData?.rows?.map((row: Record<string, unknown>, idx: number) => (
-                            <TableRow key={idx}>
-                              {sampleData.columns?.map((col: { name: string }) => (
-                                <TableCell key={col.name} className="font-mono text-xs max-w-xs truncate">
-                                  {row[col.name] === null || row[col.name] === undefined
-                                    ? <span className="text-slate-300 italic">NULL</span>
-                                    : String(row[col.name])}
-                                </TableCell>
-                              ))}
+                        </TableHeader>
+                        <TableBody>
+                          {sampleData?.rows?.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={sampleData?.columns?.length || 1} className="text-center text-slate-400 py-8 italic">
+                                Tabelle ist leer
+                              </TableCell>
                             </TableRow>
-                          ))
-                        )}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
+                          ) : (
+                            sampleData?.rows?.map((row: Record<string, unknown>, idx: number) => (
+                              <TableRow key={idx}>
+                                {sampleData.columns?.map((col: { name: string }) => (
+                                  <TableCell key={col.name} className="font-mono text-xs max-w-xs truncate">
+                                    {row[col.name] === null || row[col.name] === undefined
+                                      ? <span className="text-slate-300 italic">NULL</span>
+                                      : String(row[col.name])}
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                    {/* Pagination */}
+                    {sampleData && sampleData.totalCount > PAGE_SIZE && (
+                      <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
+                        <span className="text-xs text-slate-500">
+                          Seite {samplePage + 1} von {Math.ceil(sampleData.totalCount / PAGE_SIZE)}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={samplePage === 0}
+                            onClick={() => setSamplePage((p) => Math.max(0, p - 1))}
+                          >
+                            <ChevronLeft className="w-4 h-4 mr-1" />
+                            Zurück
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={(samplePage + 1) * PAGE_SIZE >= sampleData.totalCount}
+                            onClick={() => setSamplePage((p) => p + 1)}
+                          >
+                            Weiter
+                            <ChevronRight className="w-4 h-4 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </CardContent>
             </Card>

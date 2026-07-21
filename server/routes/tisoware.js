@@ -275,12 +275,14 @@ router.get('/tables/:schema/:table/columns', async (req, res, next) => {
 
 /**
  * GET /api/master/tisoware/tables/:schema/:table/sample
- * Erste 50 Zeilen einer Tabelle.
+ * Paginierte Datenvorschau. Query-Parameter: offset (Default 0), limit (Default 50).
  */
 router.get('/tables/:schema/:table/sample', async (req, res, next) => {
   try {
     const { schema, table } = req.params;
-    const result = await sampleTable(schema, table);
+    const offset = parseInt(req.query.offset, 10) || 0;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const result = await sampleTable(schema, table, offset, Math.min(limit, 500));
     return res.json(result);
   } catch (err) {
     return tisowareErrorHandler(err, req, res, next);

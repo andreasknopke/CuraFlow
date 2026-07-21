@@ -114,11 +114,15 @@ export async function getTisowareTables() {
     SELECT
       s.name AS schema_name,
       t.name AS table_name,
-      CONCAT(s.name, '.', t.name) AS full_name
+      CONCAT(s.name, '.', t.name) AS full_name,
+      COALESCE(SUM(p.rows), 0) AS row_count
     FROM sys.tables t
     JOIN sys.schemas s ON t.schema_id = s.schema_id
+    LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
     WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
       AND t.is_ms_shipped = 0
+    GROUP BY s.name, t.name
+    HAVING COALESCE(SUM(p.rows), 0) > 0
     ORDER BY s.name, t.name
   `);
 
@@ -151,29 +155,56 @@ export async function getTisowareTableColumns(schema, table) {
 }
 
 /**
- * Get sample rows from a table (first 50).
+ * Get sample rows from a table with pagination.
+ *
+ * @param {string} schema - Table schema
+ * @param {string} table - Table name
+ * @param {number} [offset=0] - Row offset for pagination
+ * @param {number} [limit=50] - Max rows per page
+ * @returns {Promise<{rows: object[], columns: object[], rowCount: number, totalCount: number, offset: number, limit: number}>}
  */
-export async function getTisowareTableSample(schema, table) {
+export async function getTisowareTableSample(schema, table, offset = 0, limit = 50) {
   const safeSchema = schema.replace(/[^a-zA-Z0-9_]/g, '');
   const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
-  return queryTisoware(`SELECT TOP 50 * FROM [${safeSchema}].[${safeTable}]`);
+
+  // Clamp limit to a reasonable range
+  const safeLimit = Math.min(Math.max(1, limit), 500);
+  const safeOffset = Math.max(0, offset);
+
+  // Get total count
+  const countResult = await queryTisoware(`SELECT COUNT(*) AS total FROM [${safeSchema}].[${safeTable}]`);
+  const totalCount = countResult.rows?.[0]?.total ?? 0;
+
+  // Get paginated data
+  const dataResult = await queryTisoware(
+    `SELECT * FROM [${safeSchema}].[${safeTable}] ORDER BY (SELECT NULL) OFFSET ${safeOffset} ROWS FETCH NEXT ${safeLimit} ROWS ONLY`
+  );
+
+  return {
+    rows: dataResult.rows || [],
+    columns: dataResult.columns || [],
+    rowCount: dataResult.rowCount || 0,
+    totalCount,
+    offset: safeOffset,
+    limit: safeLimit,
+  };
 }
 
 // ============ MOCK DATA ============
 
 const MOCK_TABLES = [
-  { schema_name: 'dbo', table_name: 'PERSTAMM', full_name: 'dbo.PERSTAMM' },
-  { schema_name: 'dbo', table_name: 'BUCHEINZ', full_name: 'dbo.BUCHEINZ' },
-  { schema_name: 'dbo', table_name: 'DPLAEND1', full_name: 'dbo.DPLAEND1' },
-  { schema_name: 'dbo', table_name: 'PNZUORDNUNG', full_name: 'dbo.PNZUORDNUNG' },
-  { schema_name: 'dbo', table_name: 'PNDIENSTPLA', full_name: 'dbo.PNDIENSTPLA' },
-  { schema_name: 'dbo', table_name: 'KSTSTELL', full_name: 'dbo.KSTSTELL' },
-  { schema_name: 'dbo', table_name: 'ABWKAL', full_name: 'dbo.ABWKAL' },
-  { schema_name: 'dbo', table_name: 'LOASTAMM', full_name: 'dbo.LOASTAMM' },
-  { schema_name: 'dbo', table_name: 'LOAGRUPP', full_name: 'dbo.LOAGRUPP' },
-  { schema_name: 'dbo', table_name: 'PERSGRUP', full_name: 'dbo.PERSGRUP' },
-  { schema_name: 'dbo', table_name: 'ZMTAGE', full_name: 'dbo.ZMTAGE' },
-  { schema_name: 'dbo', table_name: 'DPLVERTR', full_name: 'dbo.DPLVERTR' },
+  { schema_name: 'dbo', table_name: 'PERSTAMM', full_name: 'dbo.PERSTAMM', row_count: 248 },
+  { schema_name: 'dbo', table_name: 'BUCHEINZ', full_name: 'dbo.BUCHEINZ', row_count: 12580 },
+  { schema_name: 'dbo', table_name: 'DPLAEND1', full_name: 'dbo.DPLAEND1', row_count: 350 },
+  { schema_name: 'dbo', table_name: 'PNZUORDNUNG', full_name: 'dbo.PNZUORDNUNG', row_count: 42 },
+  { schema_name: 'dbo', table_name: 'PNDIENSTPLA', full_name: 'dbo.PNDIENSTPLA', row_count: 890 },
+  { schema_name: 'dbo', table_name: 'KSTSTELL', full_name: 'dbo.KSTSTELL', row_count: 15 },
+  { schema_name: 'dbo', table_name: 'ABWKAL', full_name: 'dbo.ABWKAL', row_count: 0 },
+  { schema_name: 'dbo', table_name: 'LOASTAMM', full_name: 'dbo.LOASTAMM', row_count: 64 },
+  { schema_name: 'dbo', table_name: 'LOAGRUPP', full_name: 'dbo.LOAGRUPP', row_count: 12 },
+  { schema_name: 'dbo', table_name: 'PERSGRUP', full_name: 'dbo.PERSGRUP', row_count: 8 },
+  { schema_name: 'dbo', table_name: 'ZMTAGE', full_name: 'dbo.ZMTAGE', row_count: 365 },
+  { schema_name: 'dbo', table_name: 'DPLVERTR', full_name: 'dbo.DPLVERTR', row_count: 72 },
 ];
 
 const MOCK_COLUMNS = {
@@ -202,7 +233,7 @@ const MOCK_COLUMNS = {
 };
 
 function mockGetTables() {
-  return [...MOCK_TABLES];
+  return MOCK_TABLES.filter(t => t.row_count > 0);
 }
 
 function mockGetColumns(schema, table) {
@@ -211,11 +242,14 @@ function mockGetColumns(schema, table) {
   ];
 }
 
-function mockGetSample(schema, table) {
+function mockGetSample(schema, table, offset = 0, limit = 50) {
   return {
     rows: [{ message: `Mock data: [${schema}].[${table}] — TISO_MOCK is active` }],
     columns: [{ name: 'message', type: 'varchar', nullable: true }],
     rowCount: 1,
+    totalCount: 1,
+    offset,
+    limit,
   };
 }
 
@@ -490,9 +524,9 @@ export async function listColumns(schema, table) {
   return getTisowareTableColumns(schema, table);
 }
 
-export async function sampleTable(schema, table) {
-  if (isMockMode()) return mockGetSample(schema, table);
-  return getTisowareTableSample(schema, table);
+export async function sampleTable(schema, table, offset = 0, limit = 50) {
+  if (isMockMode()) return mockGetSample(schema, table, offset, limit);
+  return getTisowareTableSample(schema, table, offset, limit);
 }
 
 export async function runQuery(query, maxRows = 1000) {

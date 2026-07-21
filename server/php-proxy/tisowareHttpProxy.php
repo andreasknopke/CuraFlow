@@ -1,5 +1,5 @@
-#!/usr/bin/env php
 <?php
+#!/usr/bin/env php
 /**
  * Tisoware HTTP Proxy — Standalone REST API für Tisoware-Datenbankabfragen
  *
@@ -289,11 +289,15 @@ function handleRequest() {
             SELECT
                 s.name AS schema_name,
                 t.name AS table_name,
-                CONCAT(s.name, '.', t.name) AS full_name
+                CONCAT(s.name, '.', t.name) AS full_name,
+                COALESCE(SUM(p.rows), 0) AS row_count
             FROM sys.tables t
             JOIN sys.schemas s ON t.schema_id = s.schema_id
+            LEFT JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
             WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
               AND t.is_ms_shipped = 0
+            GROUP BY s.name, t.name
+            HAVING COALESCE(SUM(p.rows), 0) > 0
             ORDER BY s.name, t.name
         ");
         odbc_close($conn);
@@ -328,10 +332,22 @@ function handleRequest() {
     if (preg_match('#^/tables/([a-zA-Z0-9_]+)/([a-zA-Z0-9_]+)/sample$#', $uri, $m) && $method === 'GET') {
         $schema = sanitizeIdentifier($m[1]);
         $table  = sanitizeIdentifier($m[2]);
+        $offset = isset($_GET['offset']) ? max(0, intval($_GET['offset'])) : 0;
+        $limit  = isset($_GET['limit']) ? min(max(1, intval($_GET['limit'])), 500) : 50;
 
         $conn = connectTisoware();
-        $result = queryTisoware($conn, "SELECT TOP 50 * FROM [$schema].[$table]");
+
+        // Total count
+        $countResult = queryTisoware($conn, "SELECT COUNT(*) AS total FROM [$schema].[$table]");
+        $totalCount = $countResult['rows'][0]['total'] ?? 0;
+
+        // Paginated data
+        $result = queryTisoware($conn, "SELECT * FROM [$schema].[$table] ORDER BY (SELECT NULL) OFFSET $offset ROWS FETCH NEXT $limit ROWS ONLY");
         odbc_close($conn);
+
+        $result['totalCount'] = (int)$totalCount;
+        $result['offset'] = $offset;
+        $result['limit'] = $limit;
         jsonResponse($result);
     }
 
