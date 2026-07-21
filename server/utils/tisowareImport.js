@@ -299,13 +299,71 @@ export async function fetchLoanrDescriptions(loanrCodes) {
 // ─── Absence Fetching ────────────────────────────────────────────────────────
 
 /**
+ * Discover date column names from ABWKAL row keys.
+ * ABWKAL columns vary across Tisoware versions; we can't hardcode them.
+ * Returns { fromCol, toCol } with the best-guess column names.
+ *
+ * @param {string[]} keys - Column names from a sample ABWKAL row
+ * @returns {{ fromCol: string|null, toCol: string|null }}
+ */
+function discoverAbwkalDateColumns(keys) {
+  const candidates = keys.filter(k => {
+    const u = k.toUpperCase();
+    // Look for columns that contain date-like German terms
+    return (u.includes('VON') || u.includes('BIS') || u.includes('BEGINN')
+      || u.includes('ENDE') || u.includes('ANFANG') || u.includes('DAT'))
+      && !u.includes('ZEIT'); // Exclude time columns (ZEITVON, ZEITBIS)
+  });
+
+  // Sort: "VON/BEGINN/ANFANG"-like first, then "BIS/ENDE"-like
+  const fromCandidates = candidates.filter(c => {
+    const u = c.toUpperCase();
+    return u.includes('VON') || u.includes('BEGINN') || u.includes('ANFANG');
+  });
+  const toCandidates = candidates.filter(c => {
+    const u = c.toUpperCase();
+    return u.includes('BIS') || u.includes('ENDE');
+  });
+
+  // If we have a single date column (e.g., ABWDATUM), use it for both
+  if (candidates.length === 1 && fromCandidates.length === 0 && toCandidates.length === 0) {
+    return { fromCol: candidates[0], toCol: candidates[0] };
+  }
+
+  return {
+    fromCol: fromCandidates[0] || null,
+    toCol: toCandidates[0] || fromCandidates[0] || null, // fallback
+  };
+}
+
+/**
+ * Normalize ABWKAL rows: remap discovered date columns to canonical ABWDATVON / ABWDATBIS.
+ *
+ * @param {object[]} rows - Raw ABWKAL rows
+ * @param {string} fromCol - Actual "from date" column name
+ * @param {string} toCol - Actual "to date" column name
+ * @returns {object[]} Rows with ABWDATVON and ABWDATBIS properties added
+ */
+function normalizeAbwkalRows(rows, fromCol, toCol) {
+  if (!fromCol || rows.length === 0) return rows;
+  for (const row of rows) {
+    row.ABWDATVON = row[fromCol];
+    row.ABWDATBIS = row[toCol];
+  }
+  return rows;
+}
+
+/**
  * Fetch absence entries from Tisoware ABWKAL for a list of PSNR (integer) values.
  * ABWKAL links to PERSTAMM via PSNR, not PSPERSNR.
  *
+ * Column names vary across Tisoware versions — we discover date columns dynamically
+ * and normalize them to ABWDATVON / ABWDATBIS for downstream consumers.
+ *
  * @param {(string|number)[]} psnrList - PERSTAMM.PSNR values to fetch absences for
- * @param {string} [dateFrom] - Optional start date (YYYYMMDD format for Tisoware)
- * @param {string} [dateTo] - Optional end date (YYYYMMDD format for Tisoware)
- * @returns {Promise<Array>} ABWKAL rows (each row has .PSNR as the employee link)
+ * @param {string} [dateFrom] - Optional start date (YYYYMMDD) — applied client-side after fetch
+ * @param {string} [dateTo] - Optional end date (YYYYMMDD) — applied client-side after fetch
+ * @returns {Promise<Array>} ABWKAL rows with normalized ABWDATVON/ABWDATBIS properties
  */
 export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   const unique = [...new Set(psnrList.map(p => String(p || '').trim()).filter(Boolean))];
@@ -313,22 +371,39 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
 
   const inClause = unique.join(','); // PSNR is numeric, no quoting needed
 
-  let sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause})`;
-
-  if (dateFrom && dateTo) {
-    sql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
-  }
-
-  sql += ' ORDER BY PSNR, ABWDATVON';
+  // No date filter in SQL — column names are unknown until we fetch
+  const sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause}) ORDER BY PSNR`;
 
   console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSNR(s)`);
 
   const result = await queryTisoware(sql, 50000); // Higher limit for bulk import
-  const rows = result.rows || [];
-  console.log(`[Tisoware import] fetchTisowareAbsences: returned ${rows.length} row(s)`);
-  if (rows.length === 0 && unique.length > 0) {
+  const rawRows = result.rows || [];
+  console.log(`[Tisoware import] fetchTisowareAbsences: returned ${rawRows.length} raw row(s)`);
+  if (rawRows.length === 0 && unique.length > 0) {
     console.log(`[Tisoware import] fetchTisowareAbsences: sample PSNRs: [${unique.slice(0, 5).join(', ')}]`);
+    return [];
   }
+
+  // Discover actual date column names from the first row
+  const keys = Object.keys(rawRows[0] || {});
+  const { fromCol, toCol } = discoverAbwkalDateColumns(keys);
+  console.log(`[Tisoware import] fetchTisowareAbsences: ABWKAL columns detected: keys=${keys.slice(0, 10).join(',')}, fromCol=${fromCol}, toCol=${toCol}`);
+
+  // Normalize: add ABWDATVON/ABWDATBIS aliases for downstream compatibility
+  const rows = normalizeAbwkalRows(rawRows, fromCol, toCol);
+
+  // Client-side date filtering (since we can't use SQL WHERE with unknown column names)
+  if (dateFrom || dateTo) {
+    return rows.filter(row => {
+      const fromVal = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
+      const toVal = row.ABWDATBIS ? String(row.ABWDATBIS).trim() : '';
+      if (!fromVal) return false;
+      if (dateFrom && fromVal < dateFrom) return false;
+      if (dateTo && toVal > dateTo) return false;
+      return true;
+    });
+  }
+
   return rows;
 }
 
@@ -475,12 +550,9 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   let loanrMap = new Map();
   try {
     const allLoanrCodes = new Set();
-    // Peek at ABWKAL to get the LOANR codes — query by PSNR
+    // Peek at ABWKAL to get the LOANR codes — query by PSNR, no date filter
     const peekInClause = matchedPsnr.join(',');
-    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
-    if (dateFrom && dateTo) {
-      peekSql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
-    }
+    const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
     const peekResult = await queryTisoware(peekSql);
     for (const row of (peekResult.rows || [])) {
       if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
@@ -684,10 +756,8 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   let loanrMap = new Map();
   try {
     const peekInClause = matchedPsnr.join(',');
-    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
-    if (dateFrom && dateTo) {
-      peekSql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
-    }
+    // No date filter — column names are unknown until we actually fetch ABWKAL
+    const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
     const peekResult = await queryTisoware(peekSql);
     const allLoanrCodes = new Set();
     for (const row of (peekResult.rows || [])) {
