@@ -7,7 +7,8 @@
  *
  * ─── ID Bridge ───────────────────────────────────────────────────────────
  * PERSTAMM.PSPERSNR (nvarchar) → Employee.payroll_id (VARCHAR(50))
- * PERSTAMM.PSPERSNR is also used in ABWKAL.PSPERSNR for linking.
+ * PERSTAMM.PSNR (int, PK) → used in ABWKAL.PSNR for linking.
+ * Workflow: PSPERSNR → query PERSTAMM → get PSNR → query ABWKAL by PSNR.
  *
  * ─── LOANR → Canonical Position Mapping ────────────────────────────────
  * Tisoware uses LOANR (Abwesenheitsgrund-Nummer) linked to LOASTAMM.
@@ -298,37 +299,35 @@ export async function fetchLoanrDescriptions(loanrCodes) {
 // ─── Absence Fetching ────────────────────────────────────────────────────────
 
 /**
- * Fetch absence entries from Tisoware ABWKAL for a list of PSPERSNR values.
+ * Fetch absence entries from Tisoware ABWKAL for a list of PSNR (integer) values.
+ * ABWKAL links to PERSTAMM via PSNR, not PSPERSNR.
  *
- * @param {string[]} psPersNrList - PSPERSNR values to fetch absences for
+ * @param {(string|number)[]} psnrList - PERSTAMM.PSNR values to fetch absences for
  * @param {string} [dateFrom] - Optional start date (YYYYMMDD format for Tisoware)
  * @param {string} [dateTo] - Optional end date (YYYYMMDD format for Tisoware)
- * @returns {Promise<Array>} ABWKAL rows
+ * @returns {Promise<Array>} ABWKAL rows (each row has .PSNR as the employee link)
  */
-export async function fetchTisowareAbsences(psPersNrList, dateFrom, dateTo) {
-  const unique = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
+export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
+  const unique = [...new Set(psnrList.map(p => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
-  const inClause = unique.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+  const inClause = unique.join(','); // PSNR is numeric, no quoting needed
 
-  let sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSPERSNR IN (${inClause})`;
+  let sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause})`;
 
   if (dateFrom && dateTo) {
-    // Tisoware dates are often stored as varchar YYYYMMDD or YYYY-MM-DD
-    // We try both formats
     sql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
   }
 
-  sql += ' ORDER BY PSPERSNR, ABWDATVON';
+  sql += ' ORDER BY PSNR, ABWDATVON';
 
-  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSPERSNR(s)`);
+  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSNR(s)`);
 
   const result = await queryTisoware(sql, 50000); // Higher limit for bulk import
   const rows = result.rows || [];
   console.log(`[Tisoware import] fetchTisowareAbsences: returned ${rows.length} row(s)`);
   if (rows.length === 0 && unique.length > 0) {
-    // Log the first PSPERSNR and a sample to help debug
-    console.log(`[Tisoware import] fetchTisowareAbsences: sample PSPERSNRs: [${unique.slice(0, 5).join(', ')}]`);
+    console.log(`[Tisoware import] fetchTisowareAbsences: sample PSNRs: [${unique.slice(0, 5).join(', ')}]`);
   }
   return rows;
 }
@@ -445,6 +444,19 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   const unmatchedEmployees = matched.filter(e => e.match_status !== 'matched');
   const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
 
+  // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
+  const psnrToPsPersNr = new Map();
+  const psPersNrToPsnr = new Map();
+  for (const e of matchedEmployees) {
+    const psnr = String(e.PSNR || '').trim();
+    const psp = String(e.PSPERSNR || '').trim();
+    if (psnr && psp) {
+      psnrToPsPersNr.set(psnr, psp);
+      psPersNrToPsnr.set(psp, psnr);
+    }
+  }
+  const matchedPsnr = [...psnrToPsPersNr.keys()];
+
   if (matchedPsPersNr.length === 0) {
     return {
       total_source_employees: tisowareRows.length,
@@ -463,9 +475,9 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   let loanrMap = new Map();
   try {
     const allLoanrCodes = new Set();
-    // We need to peek at ABWKAL to get the LOANR codes — do a targeted query
-    const inClause = matchedPsPersNr.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSPERSNR IN (${inClause})`;
+    // Peek at ABWKAL to get the LOANR codes — query by PSNR
+    const peekInClause = matchedPsnr.join(',');
+    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
     if (dateFrom && dateTo) {
       peekSql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
     }
@@ -478,12 +490,11 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
     console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
   }
 
-  // 3. Fetch absences
-  const absenceRows = await fetchTisowareAbsences(matchedPsPersNr, dateFrom, dateTo);
-  console.log(`[Tisoware import] preview: fetched ${absenceRows.length} ABWKAL row(s) for ${matchedPsPersNr.length} employee(s)`);
+  // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
+  const absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
+  console.log(`[Tisoware import] preview: fetched ${absenceRows.length} ABWKAL row(s) for ${matchedPsnr.length} employee PSNR(s)`);
   if (absenceRows.length === 0) {
-    const sqlInClause = matchedPsPersNr.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-    console.log(`[Tisoware import] preview: ABWKAL query: SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSPERSNR IN (${sqlInClause})`);
+    console.log(`[Tisoware import] preview: ABWKAL query returned 0 rows for PSNRs: [${matchedPsnr.slice(0, 10).join(', ')}]`);
   }
 
   await ensureCentralAbsenceTables(masterDb);
@@ -499,8 +510,10 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   const unparseableDates = [];
 
   for (const row of absenceRows) {
-    const psPersNr = String(row.PSPERSNR || '').trim();
-    const employeeId = employeeIdByPsPersNr.get(psPersNr);
+    // ABWKAL has PSNR, map back to PSPERSNR to find the CuraFlow employee
+    const psnr = String(row.PSNR || '').trim();
+    const psPersNr = psnrToPsPersNr.get(psnr) || '';
+    const employeeId = psPersNr ? employeeIdByPsPersNr.get(psPersNr) : undefined;
     if (!employeeId) continue; // Shouldn't happen, but safety
 
     const fromDate = parseTisowareDate(row.ABWDATVON);
@@ -644,6 +657,17 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   const matchedEmployees = matched.filter(e => e.match_status === 'matched');
   const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
 
+  // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
+  const psnrToPsPersNr = new Map();
+  for (const e of matchedEmployees) {
+    const psnr = String(e.PSNR || '').trim();
+    const psp = String(e.PSPERSNR || '').trim();
+    if (psnr && psp) {
+      psnrToPsPersNr.set(psnr, psp);
+    }
+  }
+  const matchedPsnr = [...psnrToPsPersNr.keys()];
+
   if (matchedPsPersNr.length === 0) {
     return {
       imported: 0,
@@ -659,8 +683,8 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   // 2. Fetch LOASTAMM descriptions
   let loanrMap = new Map();
   try {
-    const inClause = matchedPsPersNr.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSPERSNR IN (${inClause})`;
+    const peekInClause = matchedPsnr.join(',');
+    let peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
     if (dateFrom && dateTo) {
       peekSql += ` AND (ABWDATVON >= '${dateFrom.replace(/'/g, "''")}' AND ABWDATBIS <= '${dateTo.replace(/'/g, "''")}')`;
     }
@@ -674,8 +698,8 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
     console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
   }
 
-  // 3. Fetch absences
-  const absenceRows = await fetchTisowareAbsences(matchedPsPersNr, dateFrom, dateTo);
+  // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
+  const absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
 
   await ensureCentralAbsenceTables(masterDb);
 
@@ -693,8 +717,10 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   const { absencePriority, updateCentralAbsencePosition } = await import('./centralAbsences.js');
 
   for (const row of absenceRows) {
-    const psPersNr = String(row.PSPERSNR || '').trim();
-    const employeeId = employeeIdByPsPersNr.get(psPersNr);
+    // ABWKAL has PSNR, map back to PSPERSNR to find the CuraFlow employee
+    const psnr = String(row.PSNR || '').trim();
+    const psPersNr = psnrToPsPersNr.get(psnr) || '';
+    const employeeId = psPersNr ? employeeIdByPsPersNr.get(psPersNr) : undefined;
     if (!employeeId) continue;
 
     const fromDate = parseTisowareDate(row.ABWDATVON);
