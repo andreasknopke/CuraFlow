@@ -21,6 +21,7 @@ import {
   sampleTable,
   runQuery,
   isMockMode,
+  generateDumpWrapper,
 } from '../utils/tisowareDataSource.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
@@ -323,6 +324,28 @@ router.post('/query', async (req, res, next) => {
         tisoware: true,
       });
     }
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+// ─── SQL Dump Download ────────────────────────────────────────────────────────
+
+/**
+ * GET /api/master/tisoware/dump
+ * Erzeugt einen SQL-Dump aller nicht-leeren Tabellen mit bis zu 300
+ * repräsentativen Zeilen aus der Tabellenmitte und lädt ihn als .sql-Datei herunter.
+ */
+router.get('/dump', async (req, res, next) => {
+  try {
+    const sql = await generateDumpWrapper();
+
+    const filename = `tisoware_dump_${new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)}.sql`;
+
+    res.setHeader('Content-Type', 'application/sql; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', Buffer.byteLength(sql, 'utf-8'));
+    res.send(sql);
+  } catch (err) {
     return tisowareErrorHandler(err, req, res, next);
   }
 });

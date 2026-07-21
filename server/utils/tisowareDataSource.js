@@ -538,3 +538,157 @@ export async function testConnection() {
   if (isMockMode()) return mockTestConnection();
   return testTisowareConnection();
 }
+
+/**
+ * Generate a SQL dump of all non-empty tables with representative rows
+ * from the middle of each table (up to 300 rows per table).
+ *
+ * @returns {Promise<string>} SQL dump as a string
+ */
+export async function generateDump() {
+  const tables = await listTables();
+  const dumpParts = [];
+
+  dumpParts.push('-- ============================================================');
+  dumpParts.push('-- Tisoware SQL Dump');
+  dumpParts.push(`-- Generated: ${new Date().toISOString()}`);
+  dumpParts.push(`-- Tables: ${tables.length} (non-empty only)`);
+  dumpParts.push('-- Max rows per table: 300 (latest rows from the end)');
+  dumpParts.push('-- ============================================================');
+  dumpParts.push('');
+
+  for (const table of tables) {
+    const { schema_name, table_name, row_count } = table;
+    const totalRows = row_count || 0;
+
+    // Calculate offset: take the LAST 300 rows (most recent data)
+    const maxSample = 300;
+    let offset;
+    let limit;
+    if (totalRows <= maxSample) {
+      offset = 0;
+      limit = totalRows;
+    } else {
+      offset = totalRows - maxSample;
+      limit = maxSample;
+    }
+
+    // Get columns
+    let columns;
+    try {
+      columns = await listColumns(schema_name, table_name);
+    } catch (err) {
+      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${err.message}`);
+      dumpParts.push('');
+      continue;
+    }
+
+    // Get sample rows from the middle
+    let sample;
+    try {
+      sample = await sampleTable(schema_name, table_name, offset, limit);
+    } catch (err) {
+      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${err.message}`);
+      dumpParts.push('');
+      continue;
+    }
+
+    dumpParts.push(`-- ============================================================`);
+    dumpParts.push(`-- Table: [${schema_name}].[${table_name}]`);
+    dumpParts.push(`-- Total rows: ${totalRows.toLocaleString()}`);
+    dumpParts.push(`-- Sample: ${sample.rows.length} rows (last ${maxSample} from offset ${offset})`);
+    dumpParts.push(`-- ============================================================`);
+
+    // CREATE TABLE
+    const colDefs = columns.map((col) => {
+      let def = `  [${col.column_name}] ${col.data_type}`;
+      if (col.max_length && col.max_length > 0 && col.data_type.includes('char')) {
+        def += `(${col.max_length})`;
+      }
+      if (!col.is_nullable) {
+        def += ' NOT NULL';
+      }
+      return def;
+    });
+    dumpParts.push(`CREATE TABLE [${schema_name}].[${table_name}] (`);
+    dumpParts.push(colDefs.join(',\n'));
+    dumpParts.push(');');
+    dumpParts.push('');
+
+    // INSERT statements (batch of 50 rows per INSERT for readability)
+    if (sample.rows.length > 0) {
+      const colNames = columns.map((c) => `[${c.column_name}]`).join(', ');
+      const BATCH_SIZE = 50;
+
+      for (let i = 0; i < sample.rows.length; i += BATCH_SIZE) {
+        const batch = sample.rows.slice(i, i + BATCH_SIZE);
+        const valueRows = batch.map((row) => {
+          const vals = columns.map((col) => escapeSqlValue(row[col.column_name]));
+          return `  (${vals.join(', ')})`;
+        });
+        dumpParts.push(`INSERT INTO [${schema_name}].[${table_name}] (${colNames}) VALUES`);
+        dumpParts.push(valueRows.join(',\n') + ';');
+        dumpParts.push('');
+      }
+    } else {
+      dumpParts.push(`-- (empty table — no rows to dump)`);
+      dumpParts.push('');
+    }
+  }
+
+  dumpParts.push('-- ============================================================');
+  dumpParts.push('-- End of dump');
+  dumpParts.push('-- ============================================================');
+
+  return dumpParts.join('\n');
+}
+
+/**
+ * Escape a value for SQL INSERT statement.
+ * @param {unknown} val
+ * @returns {string}
+ */
+function escapeSqlValue(val) {
+  if (val === null || val === undefined) return 'NULL';
+  // Numbers: output as-is
+  if (typeof val === 'number') {
+    if (Number.isNaN(val)) return 'NULL';
+    if (!Number.isFinite(val)) return 'NULL';
+    return String(val);
+  }
+  const str = String(val);
+  // Escape single quotes by doubling them
+  return `'${str.replace(/'/g, "''")}'`;
+}
+
+function mockGetDump() {
+  return [
+    '-- ============================================================',
+    '-- Tisoware SQL Dump (MOCK MODE)',
+    `-- Generated: ${new Date().toISOString()}`,
+    '-- WARNING: This is mock data — TISO_MOCK=true is active',
+    '-- ============================================================',
+    '',
+    '-- [dbo].[PERSTAMM] (mock)',
+    'CREATE TABLE [dbo].[PERSTAMM] (',
+    '  [PSNR] int NOT NULL,',
+    '  [PSPERSNR] varchar(20) NOT NULL,',
+    '  [PSVORNA] varchar(50),',
+    '  [PSNACHNA] varchar(50)',
+    ');',
+    '',
+    "INSERT INTO [dbo].[PERSTAMM] ([PSNR], [PSPERSNR], [PSVORNA], [PSNACHNA]) VALUES",
+    "  (1, '00001', 'Maria', 'Schmidt'),",
+    "  (2, '00002', 'Thomas', 'Müller');",
+    '',
+    '-- ============================================================',
+    '-- End of dump (mock)',
+    '-- ============================================================',
+  ].join('\n');
+}
+
+// Update the export wrapper
+export async function generateDumpWrapper() {
+  if (isMockMode()) return mockGetDump();
+  return generateDump();
+}

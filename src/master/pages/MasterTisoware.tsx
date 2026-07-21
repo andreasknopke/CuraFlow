@@ -35,6 +35,7 @@ import {
   RefreshCw,
   Unplug,
   Wifi,
+  Download,
 } from 'lucide-react';
 
 const PAGE_SIZE = 50;
@@ -139,6 +140,33 @@ export default function MasterTisoware() {
     }
   }, [handleRunQuery]);
 
+  const [dumpLoading, setDumpLoading] = useState(false);
+  const handleDownloadDump = useCallback(async () => {
+    setDumpLoading(true);
+    try {
+      const token = localStorage.getItem('radioplan_jwt_token');
+      const response = await fetch('/api/master/tisoware/dump', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `tisoware_dump_${new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19)}.sql`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Dump download failed:', err);
+    } finally {
+      setDumpLoading(false);
+    }
+  }, []);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -151,6 +179,20 @@ export default function MasterTisoware() {
 
         {/* Connection status badge */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDownloadDump}
+            disabled={dumpLoading || !status?.connected}
+            title="SQL Dump aller nicht-leeren Tabellen herunterladen (letzte 300 Zeilen pro Tabelle)"
+          >
+            {dumpLoading ? (
+              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-1" />
+            )}
+            SQL Dump
+          </Button>
           {statusLoading ? (
             <Badge variant="outline" className="text-slate-400">
               <Loader2 className="w-3 h-3 mr-1 animate-spin" />
