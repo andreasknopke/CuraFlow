@@ -522,12 +522,14 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
   const psnrToPsPersNr = new Map();
   const psPersNrToPsnr = new Map();
+  const psnrToEindat = new Map(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
   for (const e of matchedEmployees) {
     const psnr = String(e.PSNR || '').trim();
     const psp = String(e.PSPERSNR || '').trim();
     if (psnr && psp) {
       psnrToPsPersNr.set(psnr, psp);
       psPersNrToPsnr.set(psp, psnr);
+      if (e.PSEINDAT) psnrToEindat.set(psnr, String(e.PSEINDAT).trim());
     }
   }
   const matchedPsnr = [...psnrToPsPersNr.keys()];
@@ -563,7 +565,27 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
-  const absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
+  let absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
+
+  // Filter out abwesenheits that predate the employee's PSEINDAT (PSNR reuse)
+  let filteredByEindat = 0;
+  absenceRows = absenceRows.filter(row => {
+    const psnr = String(row.PSNR || '').trim();
+    const eindat = psnrToEindat.get(psnr);
+    if (!eindat) return true; // no PSEINDAT, keep it
+    const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
+    if (!rawFrom) return true; // no date, keep it — will be caught as unparseable later
+    // Simple string comparison works if both are YYYYMMDD
+    if (rawFrom < eindat) {
+      filteredByEindat++;
+      return false;
+    }
+    return true;
+  });
+  if (filteredByEindat > 0) {
+    console.log(`[Tisoware import] preview: filtered ${filteredByEindat} ABWKAL row(s) before PSEINDAT (PSNR reuse)`);
+  }
+
   console.log(`[Tisoware import] preview: fetched ${absenceRows.length} ABWKAL row(s) for ${matchedPsnr.length} employee PSNR(s)`);
   if (absenceRows.length === 0) {
     console.log(`[Tisoware import] preview: ABWKAL query returned 0 rows for PSNRs: [${matchedPsnr.slice(0, 10).join(', ')}]`);
@@ -731,11 +753,13 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
   // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
   const psnrToPsPersNr = new Map();
+  const psnrToEindat = new Map(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
   for (const e of matchedEmployees) {
     const psnr = String(e.PSNR || '').trim();
     const psp = String(e.PSPERSNR || '').trim();
     if (psnr && psp) {
       psnrToPsPersNr.set(psnr, psp);
+      if (e.PSEINDAT) psnrToEindat.set(psnr, String(e.PSEINDAT).trim());
     }
   }
   const matchedPsnr = [...psnrToPsPersNr.keys()];
@@ -769,7 +793,25 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
-  const absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
+  let absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
+
+  // Filter out abwesenheits that predate the employee's PSEINDAT (PSNR reuse)
+  let filteredByEindat = 0;
+  absenceRows = absenceRows.filter(row => {
+    const psnr = String(row.PSNR || '').trim();
+    const eindat = psnrToEindat.get(psnr);
+    if (!eindat) return true;
+    const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
+    if (!rawFrom) return true;
+    if (rawFrom < eindat) {
+      filteredByEindat++;
+      return false;
+    }
+    return true;
+  });
+  if (filteredByEindat > 0) {
+    console.log(`[Tisoware import] execute: filtered ${filteredByEindat} ABWKAL row(s) before PSEINDAT (PSNR reuse)`);
+  }
 
   await ensureCentralAbsenceTables(masterDb);
 
