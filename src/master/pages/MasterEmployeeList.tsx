@@ -397,7 +397,7 @@ export default function MasterEmployeeList() {
   const handleDownloadDump = async () => {
     setDumpLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('radioplan_jwt_token');
       if (!token) {
         toast.error('Nicht eingeloggt');
         return;
