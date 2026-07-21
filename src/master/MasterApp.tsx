@@ -18,6 +18,7 @@ import MasterPPUGV from '@/master/pages/MasterPPUGV';
 import MasterStammdatImport from '@/master/pages/MasterStammdatImport';
 import MasterCostCenters from '@/master/pages/MasterCostCenters';
 import MasterTisoware from '@/master/pages/MasterTisoware';
+import MasterTisowareImport from '@/master/pages/MasterTisowareImport';
 import MasterAdminPermissions from '@/master/pages/MasterAdminPermissions';
 
 const queryClient = new QueryClient({
@@ -89,6 +90,7 @@ export default function MasterApp() {
                       <Route path="/stammdat-import" element={<MasterStammdatImport />} />
                       <Route path="/kostenstellen" element={<MasterCostCenters />} />
                       <Route path="/tisoware" element={<MasterTisoware />} />
+                      <Route path="/tisoware-import" element={<MasterTisowareImport />} />
                       <Route path="/admin-rechte" element={<MasterAdminPermissions />} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

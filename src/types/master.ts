@@ -317,6 +317,107 @@ export interface TisowareColumn {
   [key: string]: unknown;
 }
 
+// ── Tisoware Import ───────────────────────────────────────────────────────
+
+/** A raw PERSTAMM row enriched with CuraFlow match status. */
+export interface TisowareImportEmployee {
+  PSNR: number;
+  PSPERSNR: string;
+  PSVORNA: string;
+  PSNACHNA: string;
+  PSEINDAT?: string;
+  PSAUSDAT?: string;
+  PGNR?: string;
+  QALNR?: string;
+  KSTNR?: string;
+  match_status: 'matched' | 'unmatched' | 'no_pspersnr';
+  employee_id: string | null;
+  employee_name: string | null;
+  employee_active?: boolean;
+}
+
+/** Result of the employee-search endpoint. */
+export interface TisowareEmployeeSearchResult {
+  employees: TisowareImportEmployee[];
+  stats: {
+    total: number;
+    matched: number;
+    unmatched: number;
+    no_pspersnr: number;
+  };
+}
+
+/** A single new absence entry in the preview. */
+export interface TisowareNewAbsence {
+  employee_id: string;
+  psPersNr: string;
+  date: string;
+  position: string;
+  notePrefix: string;
+  loanr: string;
+  note: string | null;
+}
+
+/** A conflict entry in the preview. */
+export interface TisowareConflict {
+  employee_id: string;
+  psPersNr: string;
+  date: string;
+  tisoware_position: string;
+  existing_position: string;
+  resolution: 'tisoware_wins' | 'central_wins' | 'unresolved';
+  local_priority: number | null;
+  central_priority: number | null;
+  loanr: string;
+}
+
+/** Result of the preview endpoint. */
+export interface TisowareImportPreview {
+  total_source_employees: number;
+  matched_employees: number;
+  unmatched_employees: number;
+  total_absence_rows: number;
+  new_absences: TisowareNewAbsence[];
+  conflicts: TisowareConflict[];
+  already_exists: Array<{
+    employee_id: string;
+    psPersNr: string;
+    date: string;
+    position: string;
+    loanr: string;
+  }>;
+  unparseable_dates: Array<{
+    psPersNr: string;
+    loanr: string;
+    rawFrom: string;
+    rawTo?: string;
+    reason: string;
+  }>;
+  unmatched_details: Array<{
+    PSPERSNR: string;
+    PSVORNA: string;
+    PSNACHNA: string;
+    match_status: string;
+  }>;
+}
+
+/** Result of the run endpoint. */
+export interface TisowareImportResult {
+  imported: number;
+  skipped_existing: number;
+  resolved_conflicts: number;
+  unresolved_conflicts: number;
+  unparseable_dates: number;
+  errors_count: number;
+  errors: Array<{
+    psPersNr: string;
+    date?: string;
+    loanr?: string;
+    position?: string;
+    error: string;
+  }>;
+}
+
 // ── Stammdat import ───────────────────────────────────────────────────────
 
 export interface StammdatEmployee {

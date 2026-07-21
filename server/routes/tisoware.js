@@ -350,6 +350,108 @@ router.get('/dump', async (req, res, next) => {
   }
 });
 
+// ─── Tisoware Import Endpoints ────────────────────────────────────────────────
+
+import {
+  searchTisowareEmployees,
+  matchTisowareEmployees,
+  previewTisowareImport,
+  executeTisowareImport,
+} from '../utils/tisowareImport.js';
+import { db } from '../index.js';
+
+/**
+ * POST /api/master/tisoware/import/employee-search
+ * Search for employees in Tisoware by name or PSPERSNR.
+ * Body: { q?: string, kstnr?: string }
+ * Returns PERSTAMM rows with CuraFlow match status.
+ */
+router.post('/import/employee-search', async (req, res, next) => {
+  try {
+    const { q, kstnr } = req.body || {};
+
+    const tisowareRows = await searchTisowareEmployees({ q, kstnr, limit: 200 });
+    const matched = await matchTisowareEmployees(db, tisowareRows);
+
+    const stats = {
+      total: matched.length,
+      matched: matched.filter(e => e.match_status === 'matched').length,
+      unmatched: matched.filter(e => e.match_status === 'unmatched').length,
+      no_pspersnr: matched.filter(e => e.match_status === 'no_pspersnr').length,
+    };
+
+    res.json({ employees: matched, stats });
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+/**
+ * POST /api/master/tisoware/import/preview
+ * Dry-run preview of the Tisoware absence import.
+ * Body: { psPersNr?: string[] | null, dateFrom?: string, dateTo?: string, resolveConflicts?: boolean }
+ * If psPersNr is empty/null, fetches ALL employees from Tisoware (up to 500).
+ */
+router.post('/import/preview', async (req, res, next) => {
+  try {
+    const { psPersNr = null, dateFrom, dateTo, resolveConflicts = false } = req.body || {};
+
+    const psPersNrList = Array.isArray(psPersNr) && psPersNr.length > 0
+      ? psPersNr.map(p => String(p).trim()).filter(Boolean)
+      : [];
+
+    const result = await previewTisowareImport(db, psPersNrList, {
+      dateFrom,
+      dateTo,
+      resolveConflicts: Boolean(resolveConflicts),
+    });
+
+    res.json(result);
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+/**
+ * POST /api/master/tisoware/import/run
+ * Execute the Tisoware absence import.
+ * Body: { psPersNr: string[], dateFrom?: string, dateTo?: string, resolveConflicts?: boolean }
+ */
+router.post('/import/run', async (req, res, next) => {
+  try {
+    const { psPersNr, dateFrom, dateTo, resolveConflicts = false } = req.body || {};
+
+    if (!Array.isArray(psPersNr) || psPersNr.length === 0) {
+      return res.status(400).json({ error: 'psPersNr muss ein nicht-leeres Array sein' });
+    }
+
+    const psPersNrList = psPersNr.map(p => String(p).trim()).filter(Boolean);
+    if (psPersNrList.length === 0) {
+      return res.status(400).json({ error: 'Keine gültigen PSPERSNR Werte' });
+    }
+
+    const masterDb = db;
+    const createdBy = req.user?.email || req.user?.sub || null;
+
+    const result = await executeTisowareImport(masterDb, psPersNrList, {
+      dateFrom,
+      dateTo,
+      resolveConflicts: Boolean(resolveConflicts),
+      createdBy,
+    });
+
+    console.log(
+      `[Tisoware import] Imported ${result.imported} absence(s) for ${psPersNrList.length} employee(s) by ${createdBy || 'unknown'}` +
+      (result.resolved_conflicts > 0 ? ` (resolved ${result.resolved_conflicts} conflicts)` : '') +
+      (result.unresolved_conflicts > 0 ? ` (${result.unresolved_conflicts} unresolved conflicts)` : '')
+    );
+
+    res.json(result);
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
 // ─── Fallback for unknown routes ──────────────────────────────────────────────
 
 router.use('*', (req, res) => {

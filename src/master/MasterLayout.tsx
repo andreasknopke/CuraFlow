@@ -4,7 +4,7 @@ import { useMasterAuth } from '@/master/MasterAuthProvider';
 import {
   LayoutDashboard, LogOut,
   Menu, ChevronLeft, Shield,
-  Users, CalendarX2, Clock, CalendarDays, Timer, Scale, BarChart3, Database, Building2,
+  Users, CalendarX2, Clock, CalendarDays, Timer, Scale, BarChart3, Database, Building2, Upload,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import CoWorkWidget from '@/components/CoWorkWidget';
@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { path: '/stammdat-import', label: 'Stammdaten-Import', icon: Database },
   { path: '/kostenstellen', label: 'Kostenstellen', icon: Building2 },
   { path: '/tisoware', label: 'Tisoware DB', icon: Database },
+  { path: '/tisoware-import', label: 'Tisoware-Import', icon: Upload },
   { path: '/admin-rechte', label: 'Admin-Rechte', icon: Shield },
 ];
 
