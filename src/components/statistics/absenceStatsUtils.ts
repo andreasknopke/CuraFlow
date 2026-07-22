@@ -23,10 +23,6 @@ export interface AbsenceRow {
   isSickOutlier: boolean;
   /** True when this doctor's businessTripDays is an IQR outlier among all doctors. */
   isTripOutlier: boolean;
-  /** Sick days with no corresponding central (Tisoware) entry. */
-  curaflowOnlySick: number;
-  /** Business trip days with no corresponding central (Tisoware) entry. */
-  curaflowOnlyTrip: number;
 }
 
 export interface AbsenceStats {
@@ -92,15 +88,10 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
   // Per-doctor distinct-date sets for Krank and Dienstreise
   const sickByDoctor = new Map<string, Set<string>>();
   const tripByDoctor = new Map<string, Set<string>>();
-  // Same but only counting entries where source_tenant_id is absent (CuraFlow-only)
-  const cfSickByDoctor = new Map<string, Set<string>>();
-  const cfTripByDoctor = new Map<string, Set<string>>();
 
   for (const doctor of doctors) {
     sickByDoctor.set(doctor.id, new Set());
     tripByDoctor.set(doctor.id, new Set());
-    cfSickByDoctor.set(doctor.id, new Set());
-    cfTripByDoctor.set(doctor.id, new Set());
   }
 
   for (const shift of shifts) {
@@ -113,26 +104,14 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
     // Skip shifts not tied to a doctor in our list
     if (!sickByDoctor.has(doctorId)) continue;
 
-    // A shift is "CuraFlow-only" when source_tenant_id is NOT null:
-    // - string (uuid)   = CuraFlow-created entry for linked doctor → CuraFlow-only
-    // - undefined        = local entry for unlinked doctor → CuraFlow-only
-    // - null             = Tisoware import → has Tisoware origin → NOT CuraFlow-only
-    const isCuraFlowOnly = shift.source_tenant_id !== null;
-
     if (norm === 'krank') {
       // Krank: count only working days (Mon–Fri and not a public holiday)
       if (!isWeekend(shift.date) && !isPublicHoliday(shift.date)) {
         sickByDoctor.get(doctorId)!.add(shift.date);
-        if (isCuraFlowOnly) {
-          cfSickByDoctor.get(doctorId)!.add(shift.date);
-        }
       }
     } else if (norm === 'dienstreise') {
       // Dienstreise: count every calendar day
       tripByDoctor.get(doctorId)!.add(shift.date);
-      if (isCuraFlowOnly) {
-        cfTripByDoctor.get(doctorId)!.add(shift.date);
-      }
     }
   }
 
@@ -140,8 +119,6 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
   const baseRows = doctors.map((doctor) => {
     const sickDays = sickByDoctor.get(doctor.id)?.size ?? 0;
     const businessTripDays = tripByDoctor.get(doctor.id)?.size ?? 0;
-    const curaflowOnlySick = cfSickByDoctor.get(doctor.id)?.size ?? 0;
-    const curaflowOnlyTrip = cfTripByDoctor.get(doctor.id)?.size ?? 0;
     return {
       doctorId: doctor.id,
       name: doctor.name,
@@ -149,8 +126,6 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
       sickDays,
       businessTripDays,
       totalDays: sickDays + businessTripDays,
-      curaflowOnlySick,
-      curaflowOnlyTrip,
     };
   });
 

@@ -231,17 +231,4 @@ describe('AbsenceReport', () => {
     const alerts = document.querySelectorAll('.lucide-triangle-alert');
     expect(alerts.length).toBe(0);
   });
-
-  it('shows AlertCircle icon in sickDays/businessTripDays cells for CuraFlow-only absences', async () => {
-    renderAbsenceReport();
-
-    await waitFor(() => {
-      const table = getByTestIdOnce('absence-report-table');
-      expect(table.textContent).toContain('Dr. Anna Adler');
-    });
-
-    // All mock shifts lack source_tenant_id, so AlertCircle should appear in affected cells
-    const alertIcons = screen.getAllByTestId('absence-report-cf-only-icon');
-    expect(alertIcons.length).toBeGreaterThan(0);
-  });
 });

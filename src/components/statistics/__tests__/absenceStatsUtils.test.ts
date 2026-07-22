@@ -44,8 +44,6 @@ function makeShift(overrides: Partial<ShiftEntry> = {}): ShiftEntry {
     isPreview: false,
     section: null,
     note: null,
-    source_tenant_id: overrides.source_tenant_id,
-    source_tenant_doctor_id: overrides.source_tenant_doctor_id,
     created_date: '2026-01-01T00:00:00.000Z',
     updated_date: '2026-01-01T00:00:00.000Z',
   };
@@ -345,47 +343,6 @@ describe('computeAbsenceStats', () => {
 
     expect(stats.tenantAvgSick).toBe(1);
     expect(stats.tenantAvgSickNoOutliers).toBe(1);
-  });
-
-  it('counts curaflowOnlySick for CuraFlow-created entries (local or linked)', () => {
-    const doctors = [makeDoctor({ id: 'd1', name: 'Dr. CuraFlowOnly' })];
-    const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02', source_tenant_id: undefined }), // local unlinked
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // linked, CuraFlow-created
-    ];
-
-    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
-
-    expect(stats.rows[0].sickDays).toBe(2);
-    expect(stats.rows[0].curaflowOnlySick).toBe(2);
-    expect(stats.rows[0].curaflowOnlyTrip).toBe(0);
-  });
-
-  it('does not count curaflowOnlySick for Tisoware-imported shifts', () => {
-    const doctors = [makeDoctor({ id: 'd1', name: 'Dr. Mixed' })];
-    const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02', source_tenant_id: null }), // Tisoware-imported, null
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // CuraFlow-created
-    ];
-
-    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
-
-    expect(stats.rows[0].sickDays).toBe(2);
-    expect(stats.rows[0].curaflowOnlySick).toBe(1); // Only s2 (CuraFlow-created)
-  });
-
-  it('tracks curaflowOnlyTrip for Dienstreise shifts created in CuraFlow', () => {
-    const doctors = [makeDoctor({ id: 'd1', name: 'Dr. Travel' })];
-    const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-02', source_tenant_id: null }), // Tisoware
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // CuraFlow-created
-      makeShift({ id: 's3', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-07', source_tenant_id: undefined }), // Sat, local unlinked
-    ];
-
-    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
-
-    expect(stats.rows[0].businessTripDays).toBe(3); // Sat counts for Dienstreise
-    expect(stats.rows[0].curaflowOnlyTrip).toBe(2); // Only s2 + s3 are CuraFlow-only
   });
 });
 

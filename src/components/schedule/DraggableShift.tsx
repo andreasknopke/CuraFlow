@@ -1,6 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import type { ReactNode, CSSProperties, MouseEvent } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
+import { AlertCircle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { Doctor, ShiftEntry } from '@/types';
 
@@ -62,6 +63,9 @@ interface LateStartIndicatorProps {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/** Positions that represent absences (not services or wishes). */
+const ABSENCE_POSITIONS = new Set(['Frei', 'Krank', 'Urlaub', 'Dienstreise', 'Nicht verfügbar']);
 
 const getDoctorShortLabel = (doctor: Doctor | undefined | null): string =>
   doctor?.initials || doctor?.name?.substring(0, 3) || '';
@@ -157,6 +161,23 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
       title="Fehlende Pflicht-Qualifikation (Override)"
     >
       ⚠
+    </div>
+  ) : null;
+
+  // CuraFlow-only absence warning (no Tisoware counterpart).
+  // Only fires when source_tenant_id is an actual UUID string — NULL means
+  // Tisoware-imported, undefined means non-linked local employee (no Tisoware at all).
+  const isCuraFlowOnly = !isPreview
+    && ABSENCE_POSITIONS.has(shift.position)
+    && typeof shift.source_tenant_id === 'string'
+    && shift.source_tenant_id.length > 0;
+
+  const CuraFlowOnlyWarning = isCuraFlowOnly ? (
+    <div
+      className="absolute -bottom-0.5 -right-0.5 z-20"
+      title="Nur in CuraFlow vorhanden — bitte in Tisoware nachtragen"
+    >
+      <AlertCircle className="w-3.5 h-3.5 text-orange-500" />
     </div>
   ) : null;
 
@@ -284,6 +305,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
             ) : isFullWidth ? (
                 <>
                     {QualWarning}
+                    {CuraFlowOnlyWarning}
                     <div 
                         {...provided.dragHandleProps}
                         className="flex-shrink-0 font-bold flex items-center justify-center cursor-grab active:cursor-grabbing rounded-l-md h-full bg-white/50 hover:bg-black/10 transition-colors"
@@ -346,6 +368,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
             {!isDragging && !isFullWidth && (
                 <>
                 {QualWarning}
+                {CuraFlowOnlyWarning}
                 <div className="flex flex-col items-center justify-center w-full relative z-10">
                   <span 
                     className="px-0.5 leading-none text-center whitespace-nowrap" 
