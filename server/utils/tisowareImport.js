@@ -710,9 +710,6 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   const unparseableDates = [];
   let totalAbsenceRows = 0;
 
-  // Resolve absencePriority once (used in conflict resolution below)
-  const { absencePriority } = await import('./centralAbsences.js');
-
   const employeeCount = matchedEmployees.length;
   for (let empIdx = 0; empIdx < employeeCount; empIdx++) {
     const emp = matchedEmployees[empIdx];
@@ -738,22 +735,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
       console.log(`[Tisoware import] preview: employee ${empIdx + 1}/${employeeCount} done, ${totalAbsenceRows} total ABWKAL rows so far — ${newAbsences.length} new, ${conflicts.length} conflicts, ${alreadyExists.length} already_exist`);
     }
 
-    // Preload all existing CentralAbsenceEntry records for this employee (1 query, not N)
-    const [centralEntries] = await masterDb.execute(
-      'SELECT date, position FROM CentralAbsenceEntry WHERE employee_id = ?',
-      [employeeId]
-    );
-    // Build a Map keyed by date string for O(1) lookup
-    const centralByDate = new Map();
-    for (const ce of centralEntries) {
-      // mySQL2 returns dates as JS Date objects; normalize to YYYY-MM-DD
-      const d = ce.date instanceof Date
-        ? ce.date.toISOString().slice(0, 10)
-        : String(ce.date).slice(0, 10);
-      centralByDate.set(d, { position: ce.position });
-    }
-
-    // Analyze each absence row for this employee (pure in-memory lookups)
+    // Analyze each absence row for this employee
     for (const row of filtered) {
       const fromDate = parseTisowareDate(row.ABWDATVON);
       const toDate = parseTisowareDate(row.ABWDATBIS);
@@ -767,9 +749,14 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
       const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
 
       for (const date of dates) {
-        const existing = centralByDate.get(date);
+        // Check if already exists in CentralAbsenceEntry
+        const [existingRows] = await masterDb.execute(
+          'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+          [employeeId, date]
+        );
 
-        if (existing) {
+        if (existingRows.length > 0) {
+          const existing = existingRows[0];
           const samePosition = existing.position === position;
 
           if (samePosition) {
@@ -782,6 +769,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
             });
           } else {
             // Conflict
+            const { absencePriority } = await import('./centralAbsences.js');
             const localPrio = absencePriority(position);
             const centralPrio = absencePriority(existing.position);
 
@@ -974,20 +962,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
       console.log(`[Tisoware import] execute: employee ${empIdx + 1}/${employeeCount} done — ${imported} imported, ${skippedExisting} skipped, ${resolvedConflicts} resolved, ${unresolvedConflicts} unresolved, ${unparseableDates} unparseable`);
     }
 
-    // Preload all existing CentralAbsenceEntry records for this employee (1 query, not N)
-    const [centralEntries] = await masterDb.execute(
-      'SELECT id, date, position, note FROM CentralAbsenceEntry WHERE employee_id = ?',
-      [employeeId]
-    );
-    const centralByDate = new Map();
-    for (const ce of centralEntries) {
-      const d = ce.date instanceof Date
-        ? ce.date.toISOString().slice(0, 10)
-        : String(ce.date).slice(0, 10);
-      centralByDate.set(d, { id: ce.id, position: ce.position, note: ce.note });
-    }
-
-    // Write each absence row for this employee (bulk lookup in RAM, only writes hit DB)
+    // Write each absence row for this employee
     for (const row of filtered) {
       const fromDate = parseTisowareDate(row.ABWDATVON);
       const toDate = parseTisowareDate(row.ABWDATBIS);
@@ -1003,9 +978,13 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
       for (const date of dates) {
         try {
-          const existing = centralByDate.get(date);
+          const [existingRows] = await masterDb.execute(
+            'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+            [employeeId, date]
+          );
 
-          if (existing) {
+          if (existingRows.length > 0) {
+            const existing = existingRows[0];
             const samePosition = existing.position === position;
 
             if (samePosition) {
