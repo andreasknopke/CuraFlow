@@ -393,7 +393,9 @@ router.post('/import/employee-search', async (req, res, next) => {
       }
     }
 
-    const tisowareRows = await searchTisowareEmployees({ q, kstnr, allActive: Boolean(allActive), limit: 200 });
+    // No cap for unfiltered "all active" search; 200 is plenty for name searches
+    const limit = (allActive && !q && !kstnr) ? 0 : 200;
+    const tisowareRows = await searchTisowareEmployees({ q, kstnr, allActive: Boolean(allActive), limit });
     const matched = await matchTisowareEmployees(db, tisowareRows);
 
     const stats = {

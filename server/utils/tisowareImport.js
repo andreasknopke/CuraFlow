@@ -168,7 +168,7 @@ function mergeNote(existingNote, notePrefix) {
  * @param {string} [params.q] - Search query (name or PSPERSNR)
  * @param {string} [params.kstnr] - Cost center filter
  * @param {boolean} [params.allActive=false] - If true, filter to currently active employees (PSAUSDAT >= today or NULL/0)
- * @param {number} [params.limit=200] - Max results
+ * @param {number} [params.limit=200] - Max results (0 = no cap)
  * @returns {Promise<Array>} PERSTAMM rows
  */
 export async function searchTisowareEmployees({ q, kstnr, allActive = false, limit = 200 } = {}) {
@@ -198,8 +198,10 @@ export async function searchTisowareEmployees({ q, kstnr, allActive = false, lim
   }
 
   sql += ` ORDER BY PSNACHNA, PSVORNA`;
-  // TOP for MSSQL
-  sql = sql.replace('SELECT', `SELECT TOP ${Math.min(limit, 500)}`);
+  // TOP for MSSQL; limit=0 means no cap
+  if (limit > 0) {
+    sql = sql.replace('SELECT', `SELECT TOP ${Math.min(limit, 500)}`);
+  }
 
   const result = await queryTisoware(sql);
   return result.rows || [];

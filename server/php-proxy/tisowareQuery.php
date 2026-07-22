@@ -109,8 +109,8 @@ for ($i = 1; $i <= $colCount; $i++) {
     ];
 }
 
-// Fetch rows (max 1000 to prevent OOM)
-$maxRows = 1000;
+// Fetch rows (max 5000 to prevent OOM)
+$maxRows = 5000;
 $rowCount = 0;
 while (($row = odbc_fetch_array($result)) && $rowCount < $maxRows) {
     // Convert all values to string/null for JSON consistency

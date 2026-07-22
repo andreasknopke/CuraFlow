@@ -180,7 +180,7 @@ function queryTisoware($conn, $sql) {
         ];
     }
 
-    $maxRows = 1000;
+    $maxRows = 5000;
     $rowCount = 0;
     while (($row = odbc_fetch_array($result)) && $rowCount < $maxRows) {
         $clean = [];
