@@ -354,6 +354,7 @@ router.get('/dump', async (req, res, next) => {
 
 import {
   searchTisowareEmployees,
+  searchTisowareByPsPersNr,
   matchTisowareEmployees,
   previewTisowareImport,
   executeTisowareImport,
@@ -393,7 +394,43 @@ router.post('/import/employee-search', async (req, res, next) => {
       }
     }
 
-    // No cap for unfiltered "all active" search; 200 is plenty for name searches
+    // Unfiltered "all active": query MasterDB first for all active payroll_ids,
+    // then batch-lookup Tisoware by PSPERSNR to bypass proxy row limits.
+    if (allActive && !q && !kstnr) {
+      const [activeEmployees] = await db.execute(
+        `SELECT payroll_id FROM Employee WHERE is_active = 1 AND payroll_id IS NOT NULL AND payroll_id != ''`
+      );
+      const allPayrollIds = [...new Set(activeEmployees.map(e => String(e.payroll_id).trim()).filter(Boolean))];
+      console.log(`[Tisoware employee-search] allActive: found ${allPayrollIds.length} active employees in MasterDB with payroll_id`);
+
+      const BATCH_SIZE = 100;
+      let allTisowareRows = [];
+      for (let i = 0; i < allPayrollIds.length; i += BATCH_SIZE) {
+        const batch = allPayrollIds.slice(i, i + BATCH_SIZE);
+        const batchRows = await searchTisowareByPsPersNr(batch);
+        allTisowareRows = allTisowareRows.concat(batchRows);
+        console.log(`[Tisoware employee-search] allActive: batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${batchRows.length} row(s)`);
+      }
+
+      // Deduplicate by PSNR (integer primary key).
+      const seen = new Set();
+      const tisowareRows = allTisowareRows.filter(r => {
+        const key = String(r.PSNR || '');
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      const matched = await matchTisowareEmployees(db, tisowareRows);
+      const stats = {
+        total: matched.length,
+        matched: matched.filter(e => e.match_status === 'matched').length,
+        unmatched: matched.filter(e => e.match_status === 'unmatched').length,
+        no_pspersnr: matched.filter(e => e.match_status === 'no_pspersnr').length,
+      };
+      return res.json({ employees: matched, stats });
+    }
+
     const limit = (allActive && !q && !kstnr) ? 0 : 200;
     const tisowareRows = await searchTisowareEmployees({ q, kstnr, allActive: Boolean(allActive), limit });
     const matched = await matchTisowareEmployees(db, tisowareRows);

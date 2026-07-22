@@ -208,6 +208,26 @@ export async function searchTisowareEmployees({ q, kstnr, allActive = false, lim
 }
 
 /**
+ * Search Tisoware PERSTAMM by exact PSPERSNR values (batch lookup).
+ * Used for MasterDB-first workflows: get payroll_ids from CuraFlow, then
+ * look up the matching Tisoware rows in batches.
+ *
+ * @param {string[]} psPersNrList - PSPERSNR values to look up
+ * @returns {Promise<Array>} PERSTAMM rows
+ */
+export async function searchTisowareByPsPersNr(psPersNrList) {
+  const unique = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  const inClause = unique.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+  const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
+               FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause}) ORDER BY PSNACHNA, PSVORNA`;
+
+  const result = await queryTisoware(sql);
+  return result.rows || [];
+}
+
+/**
  * Match Tisoware employees against CuraFlow MasterDB Employee table.
  * Uses PSPERSNR → payroll_id bridge.
  *
