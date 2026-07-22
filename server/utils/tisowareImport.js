@@ -449,6 +449,11 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
     const rawRows = result.rows || [];
     console.log(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${rawRows.length} row(s)`);
 
+    // PHP proxy caps at 5000 rows — warn if we hit that limit
+    if (rawRows.length === 5000) {
+      console.warn(`[Tisoware import] fetchTisowareAbsences: WARNING batch ${Math.floor(i / BATCH_SIZE) + 1} returned exactly 5000 rows — may be truncated by PHP proxy! Consider reducing BATCH_SIZE further.`);
+    }
+
     // Discover date column names from the first non-empty batch
     if (!fromCol && rawRows.length > 0) {
       const keys = Object.keys(rawRows[0] || {});
@@ -614,12 +619,14 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   console.log(`[Tisoware import] preview: requested ${cleanList.length} PSPERSNR(s), found ${tisowareRows.length} PERSTAMM row(s)`);
-  console.log(`[Tisoware import] preview: PSPERSNRs found: [${tisowareRows.map(r => r.PSPERSNR).join(', ')}]`);
 
   const matched = await matchTisowareEmployees(masterDb, tisowareRows);
 
   const matchedEmployees = matched.filter(e => e.match_status === 'matched');
   const unmatchedEmployees = matched.filter(e => e.match_status !== 'matched');
+
+  console.log(`[Tisoware import] preview: match stats — ${matchedEmployees.length} matched, ${unmatchedEmployees.length} unmatched (total ${matched.length})`);
+
   const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
 
   // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
@@ -709,12 +716,23 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   const alreadyExists = [];
   const unparseableDates = [];
 
+  let skippedNoEmployeeId = 0;
+  let skippedNoEmployeeIdSample = [];
+  let centralDbHits = 0;
+  let centralDbMisses = 0;
+
   for (const row of absenceRows) {
     // ABWKAL has PSNR, map back to PSPERSNR to find the CuraFlow employee
     const psnr = String(row.PSNR || '').trim();
     const psPersNr = psnrToPsPersNr.get(psnr) || '';
     const employeeId = psPersNr ? employeeIdByPsPersNr.get(psPersNr) : undefined;
-    if (!employeeId) continue; // Shouldn't happen, but safety
+    if (!employeeId) {
+      skippedNoEmployeeId++;
+      if (skippedNoEmployeeIdSample.length < 5) {
+        skippedNoEmployeeIdSample.push({ psnr, psPersNr: psPersNr || '(not in psnrToPsPersNr)', rawRow: row });
+      }
+      continue;
+    }
 
     const fromDate = parseTisowareDate(row.ABWDATVON);
     const toDate = parseTisowareDate(row.ABWDATBIS);
@@ -735,6 +753,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
       );
 
       if (existingRows.length > 0) {
+        centralDbHits++;
         const existing = existingRows[0];
         const samePosition = existing.position === position;
 
@@ -791,6 +810,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
           }
         }
       } else {
+        centralDbMisses++;
         newAbsences.push({
           employee_id: employeeId,
           psPersNr,
@@ -803,6 +823,15 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
       }
     }
   }
+
+  console.log(`[Tisoware import] preview: analysis complete — ${newAbsences.length} new, ${conflicts.length} conflicts, ${alreadyExists.length} already_exist`);
+  console.log(`[Tisoware import] preview: CentralAbsenceEntry lookup stats — ${centralDbHits} hits, ${centralDbMisses} misses`);
+  console.log(`[Tisoware import] preview: skipped ${skippedNoEmployeeId} ABWKAL rows (no employeeId mapping)`);
+  if (skippedNoEmployeeId > 0) {
+    console.warn(`[Tisoware import] preview: sample of skipped rows:`, JSON.stringify(skippedNoEmployeeIdSample, null, 2));
+  }
+  console.log(`[Tisoware import] preview: maps — psnrToPsPersNr has ${psnrToPsPersNr.size} entries, employeeIdByPsPersNr has ${employeeIdByPsPersNr.size} entries`);
+  console.log(`[Tisoware import] preview: matchedPsnr has ${matchedPsnr.length} PSNRs, absenceRows has ${absenceRows.length} rows`);
 
   return {
     total_source_employees: tisowareRows.length,
