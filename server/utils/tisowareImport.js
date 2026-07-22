@@ -237,19 +237,52 @@ export async function searchTisowareByPsPersNr(psPersNrList) {
   const now = new Date();
   const todayInt = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
 
-  // Deduplicate by PSNR (integer primary key) and exclude past-exited employees
-  const seen = new Set();
-  return allRows.filter(r => {
-    const key = String(r.PSNR || '');
-    if (!key || seen.has(key)) return false;
+  // Group by PSPERSNR and pick the best (active) row per PSPERSNR.
+  // PSPERSNR can be reused across employees. We want exactly one PSNR per PSPERSNR,
+  // preferring the currently active employee (PSAUSDAT = 0) over future-exited ones,
+  // and preferring the highest PSNR (most recently created) as tiebreaker.
+  // This ensures N PSPERSNRs → N PERSTAMM rows → N ABWKAL queries.
+  const byPsPersNr = new Map();
+  for (const r of allRows) {
+    const psp = String(r.PSPERSNR || '').trim();
+    if (!psp) continue;
 
-    // Exclude employees whose exit date is in the past
     const ausdatRaw = parseInt(String(r.PSAUSDAT || '0'), 10) || 0;
-    if (ausdatRaw > 0 && ausdatRaw < todayInt) return false;
 
-    seen.add(key);
-    return true;
-  });
+    // Exclude past-exited employees
+    if (ausdatRaw > 0 && ausdatRaw < todayInt) continue;
+
+    const existing = byPsPersNr.get(psp);
+    if (!existing) {
+      byPsPersNr.set(psp, r);
+      continue;
+    }
+
+    const existingAus = parseInt(String(existing.PSAUSDAT || '0'), 10) || 0;
+    const existingActive = existingAus === 0;
+    const currentActive = ausdatRaw === 0;
+
+    // Prefer active (no exit date) over future exit date
+    if (currentActive && !existingActive) {
+      byPsPersNr.set(psp, r);
+    } else if (existingActive && !currentActive) {
+      // keep existing
+    } else {
+      // Same status – prefer higher PSNR (more recently created)
+      const currentPsnr = parseInt(String(r.PSNR || '0'), 10) || 0;
+      const existingPsnr = parseInt(String(existing.PSNR || '0'), 10) || 0;
+      if (currentPsnr > existingPsnr) {
+        byPsPersNr.set(psp, r);
+      }
+    }
+  }
+
+  const duplicateCount = allRows.length - byPsPersNr.size;
+  if (duplicateCount > 0) {
+    console.log(`[Tisoware import] searchTisowareByPsPersNr: ${allRows.length} raw PERSTAMM rows → ${byPsPersNr.size} unique PSPERSNR (${duplicateCount} duplicates/past-exited removed)`);
+  }
+
+  return [...byPsPersNr.values()];
 }
 
 /**
@@ -447,8 +480,6 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   let fromCol = null;
   let toCol = null;
 
-  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSNR(s) in batches of ${BATCH_SIZE}`);
-
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
     const inClause = batch.join(','); // PSNR is numeric, no quoting needed
@@ -457,7 +488,6 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
 
     const result = await queryTisoware(sql, 50000);
     const rawRows = result.rows || [];
-    console.log(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${rawRows.length} row(s)`);
 
     // PHP proxy caps at 5000 rows — warn if we hit that limit
     if (rawRows.length === 5000) {
@@ -470,38 +500,16 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
       const discovered = discoverAbwkalDateColumns(keys);
       fromCol = discovered.fromCol;
       toCol = discovered.toCol;
-      console.log(`[Tisoware import] fetchTisowareAbsences: ALL ABWKAL columns: [${keys.join(', ')}]`);
-      console.log(`[Tisoware import] fetchTisowareAbsences: detected fromCol=${fromCol}, toCol=${toCol}`);
-      if (fromCol) {
-        const sampleFromVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[fromCol] ?? '').trim()))];
-        console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${fromCol}': [${sampleFromVals.join(', ')}]`);
-      }
-      if (toCol && toCol !== fromCol) {
-        const sampleToVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[toCol] ?? '').trim()))];
-        console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${toCol}': [${sampleToVals.join(', ')}]`);
-      }
     }
 
     // Normalize this batch
     const normalized = normalizeAbwkalRows(rawRows, fromCol, toCol);
     allRows = allRows.concat(normalized);
-
-    // Log per-batch PSNR coverage to detect truncation
-    const batchPsnrs = [...new Set(normalized.map(r => String(r.PSNR || '').trim()))];
-    const batchPsnrRange = batch.length > 0 ? `${batch[0]}..${batch[batch.length-1]}` : 'empty';
-    console.log(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} PSNR range [${batchPsnrRange}] → ${batchPsnrs.length}/${batch.length} unique PSNRs returned (${normalized.length} rows)`);
-    if (batchPsnrs.length < batch.length) {
-      const missing = batch.filter(p => !batchPsnrs.includes(p));
-      console.warn(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} MISSING PSNRs: [${missing.slice(0, 10).join(',')}]${missing.length > 10 ? '...' : ''}`);
-    }
   }
 
   if (allRows.length === 0 && unique.length > 0) {
-    console.log(`[Tisoware import] fetchTisowareAbsences: sample PSNRs: [${unique.slice(0, 5).join(', ')}]`);
     return [];
   }
-
-  console.log(`[Tisoware import] fetchTisowareAbsences: total ${allRows.length} row(s) across all batches`);
 
   // Deduplicate by PSNR + ABWDATVON + LOANR (paranoid safety net)
   const seen = new Set();
@@ -512,24 +520,11 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
     return true;
   });
 
-  // Log unique PSNR coverage vs requested
+  // Log unique PSNR coverage vs requested — only warn on missing
   const uniquePsnrsInResult = [...new Set(rows.map(r => String(r.PSNR || '').trim()))];
-  console.log(`[Tisoware import] fetchTisowareAbsences: ${uniquePsnrsInResult.length}/${unique.length} unique PSNRs in results (requested ${unique.length})`);
   if (uniquePsnrsInResult.length < unique.length) {
     const missingPsnrs = unique.filter(p => !uniquePsnrsInResult.includes(p));
     console.warn(`[Tisoware import] fetchTisowareAbsences: ${missingPsnrs.length} PSNRs have ZERO rows! First 20: [${missingPsnrs.slice(0, 20).join(',')}]`);
-  }
-
-  // Debug: log sample of raw rows and unique dates/PSNRs to diagnose mismatches
-  if (rows.length > 0) {
-    const samplePsnrs = [...new Set(rows.slice(0, 200).map(r => String(r.PSNR || '').trim()))];
-    const sampleDates = [...new Set(rows.slice(0, 200).map(r => String(r.ABWDATVON || '').trim()))];
-    const sampleRow = rows[0];
-    const allKeys = Object.keys(sampleRow).join(',');
-    console.log(`[Tisoware import] fetchTisowareAbsences: debug sample — PSNRs=[${samplePsnrs.slice(0, 10).join(',')}], dates=[${sampleDates.slice(0, 10).join(',')}], columns=${allKeys}`);
-    if (sampleDates.length < 3) {
-      console.log(`[Tisoware import] fetchTisowareAbsences: WARNING — only ${sampleDates.length} unique date(s) across ${rows.length} rows!`);
-    }
   }
 
   // Client-side date filtering (since we can't use SQL WHERE with unknown column names)
