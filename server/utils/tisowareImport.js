@@ -475,6 +475,15 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
     // Normalize this batch
     const normalized = normalizeAbwkalRows(rawRows, fromCol, toCol);
     allRows = allRows.concat(normalized);
+
+    // Log per-batch PSNR coverage to detect truncation
+    const batchPsnrs = [...new Set(normalized.map(r => String(r.PSNR || '').trim()))];
+    const batchPsnrRange = batch.length > 0 ? `${batch[0]}..${batch[batch.length-1]}` : 'empty';
+    console.log(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} PSNR range [${batchPsnrRange}] → ${batchPsnrs.length}/${batch.length} unique PSNRs returned (${normalized.length} rows)`);
+    if (batchPsnrs.length < batch.length) {
+      const missing = batch.filter(p => !batchPsnrs.includes(p));
+      console.warn(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} MISSING PSNRs: [${missing.slice(0, 10).join(',')}]${missing.length > 10 ? '...' : ''}`);
+    }
   }
 
   if (allRows.length === 0 && unique.length > 0) {
@@ -492,6 +501,14 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
     seen.add(key);
     return true;
   });
+
+  // Log unique PSNR coverage vs requested
+  const uniquePsnrsInResult = [...new Set(rows.map(r => String(r.PSNR || '').trim()))];
+  console.log(`[Tisoware import] fetchTisowareAbsences: ${uniquePsnrsInResult.length}/${unique.length} unique PSNRs in results (requested ${unique.length})`);
+  if (uniquePsnrsInResult.length < unique.length) {
+    const missingPsnrs = unique.filter(p => !uniquePsnrsInResult.includes(p));
+    console.warn(`[Tisoware import] fetchTisowareAbsences: ${missingPsnrs.length} PSNRs have ZERO rows! First 20: [${missingPsnrs.slice(0, 20).join(',')}]`);
+  }
 
   // Debug: log sample of raw rows and unique dates/PSNRs to diagnose mismatches
   if (rows.length > 0) {
@@ -677,36 +694,12 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
     console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
   }
 
-  // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
-  let absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
-
-  // Filter out abwesenheits that predate the employee's PSEINDAT (PSNR reuse)
-  let filteredByEindat = 0;
-  absenceRows = absenceRows.filter(row => {
-    const psnr = String(row.PSNR || '').trim();
-    const eindat = psnrToEindat.get(psnr);
-    if (!eindat) return true; // no PSEINDAT, keep it
-    const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
-    if (!rawFrom) return true; // no date, keep it — will be caught as unparseable later
-    // Simple string comparison works if both are YYYYMMDD
-    if (rawFrom < eindat) {
-      filteredByEindat++;
-      return false;
-    }
-    return true;
-  });
-  if (filteredByEindat > 0) {
-    console.log(`[Tisoware import] preview: filtered ${filteredByEindat} ABWKAL row(s) before PSEINDAT (PSNR reuse)`);
-  }
-
-  console.log(`[Tisoware import] preview: fetched ${absenceRows.length} ABWKAL row(s) for ${matchedPsnr.length} employee PSNR(s)`);
-  if (absenceRows.length === 0) {
-    console.log(`[Tisoware import] preview: ABWKAL query returned 0 rows for PSNRs: [${matchedPsnr.slice(0, 10).join(', ')}]`);
-  }
+  // 3. Process each employee one-by-one to avoid PHP proxy row limits.
+  //    Each individual employee has <1000 ABWKAL rows — well within all limits.
 
   await ensureCentralAbsenceTables(masterDb);
 
-  // 4. Analyze each absence row
+  // Build employeeId map
   const employeeIdByPsPersNr = new Map(
     matchedEmployees.map(e => [String(e.PSPERSNR).trim(), e.employee_id])
   );
@@ -715,129 +708,132 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   const conflicts = [];
   const alreadyExists = [];
   const unparseableDates = [];
+  let totalAbsenceRows = 0;
 
-  let skippedNoEmployeeId = 0;
-  let skippedNoEmployeeIdSample = [];
-  let centralDbHits = 0;
-  let centralDbMisses = 0;
+  const employeeCount = matchedEmployees.length;
+  for (let empIdx = 0; empIdx < employeeCount; empIdx++) {
+    const emp = matchedEmployees[empIdx];
+    const psnr = String(emp.PSNR || '').trim();
+    const psPersNr = String(emp.PSPERSNR || '').trim();
+    const employeeId = emp.employee_id;
+    const eindat = psnrToEindat.get(psnr);
 
-  for (const row of absenceRows) {
-    // ABWKAL has PSNR, map back to PSPERSNR to find the CuraFlow employee
-    const psnr = String(row.PSNR || '').trim();
-    const psPersNr = psnrToPsPersNr.get(psnr) || '';
-    const employeeId = psPersNr ? employeeIdByPsPersNr.get(psPersNr) : undefined;
-    if (!employeeId) {
-      skippedNoEmployeeId++;
-      if (skippedNoEmployeeIdSample.length < 5) {
-        skippedNoEmployeeIdSample.push({ psnr, psPersNr: psPersNr || '(not in psnrToPsPersNr)', rawRow: row });
+    // Fetch absences for this single employee
+    const employeeRows = await fetchTisowareAbsences([psnr], dateFrom, dateTo);
+
+    // Filter by PSEINDAT
+    const filtered = eindat
+      ? employeeRows.filter(row => {
+          const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
+          return !rawFrom || rawFrom >= eindat;
+        })
+      : employeeRows;
+
+    totalAbsenceRows += filtered.length;
+
+    if ((empIdx + 1) % 100 === 0 || empIdx === employeeCount - 1) {
+      console.log(`[Tisoware import] preview: employee ${empIdx + 1}/${employeeCount} done, ${totalAbsenceRows} total ABWKAL rows so far — ${newAbsences.length} new, ${conflicts.length} conflicts, ${alreadyExists.length} already_exist`);
+    }
+
+    // Analyze each absence row for this employee
+    for (const row of filtered) {
+      const fromDate = parseTisowareDate(row.ABWDATVON);
+      const toDate = parseTisowareDate(row.ABWDATBIS);
+      if (!fromDate) {
+        unparseableDates.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, rawTo: row.ABWDATBIS, reason: 'invalid_from_date' });
+        continue;
       }
-      continue;
-    }
 
-    const fromDate = parseTisowareDate(row.ABWDATVON);
-    const toDate = parseTisowareDate(row.ABWDATBIS);
-    if (!fromDate) {
-      unparseableDates.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, rawTo: row.ABWDATBIS, reason: 'invalid_from_date' });
-      continue;
-    }
+      const dates = expandDateRange(fromDate, toDate || fromDate);
+      const loanr = String(row.LOANR || '').trim();
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
 
-    const dates = expandDateRange(fromDate, toDate || fromDate);
-    const loanr = String(row.LOANR || '').trim();
-    const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
+      for (const date of dates) {
+        // Check if already exists in CentralAbsenceEntry
+        const [existingRows] = await masterDb.execute(
+          'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+          [employeeId, date]
+        );
 
-    for (const date of dates) {
-      // Check if already exists in CentralAbsenceEntry
-      const [existingRows] = await masterDb.execute(
-        'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
-        [employeeId, date]
-      );
+        if (existingRows.length > 0) {
+          const existing = existingRows[0];
+          const samePosition = existing.position === position;
 
-      if (existingRows.length > 0) {
-        centralDbHits++;
-        const existing = existingRows[0];
-        const samePosition = existing.position === position;
+          if (samePosition) {
+            alreadyExists.push({
+              employee_id: employeeId,
+              psPersNr,
+              date,
+              position,
+              loanr,
+            });
+          } else {
+            // Conflict
+            const { absencePriority } = await import('./centralAbsences.js');
+            const localPrio = absencePriority(position);
+            const centralPrio = absencePriority(existing.position);
 
-        if (samePosition) {
-          alreadyExists.push({
+            if (resolveConflicts && localPrio > centralPrio) {
+              conflicts.push({
+                employee_id: employeeId,
+                psPersNr,
+                date,
+                tisoware_position: position,
+                existing_position: existing.position,
+                resolution: 'tisoware_wins',
+                local_priority: localPrio,
+                central_priority: centralPrio,
+                loanr,
+              });
+            } else if (resolveConflicts && centralPrio > localPrio) {
+              conflicts.push({
+                employee_id: employeeId,
+                psPersNr,
+                date,
+                tisoware_position: position,
+                existing_position: existing.position,
+                resolution: 'central_wins',
+                local_priority: localPrio,
+                central_priority: centralPrio,
+                loanr,
+              });
+            } else {
+              conflicts.push({
+                employee_id: employeeId,
+                psPersNr,
+                date,
+                tisoware_position: position,
+                existing_position: existing.position,
+                resolution: 'unresolved',
+                local_priority: localPrio,
+                central_priority: centralPrio,
+                loanr,
+              });
+            }
+          }
+        } else {
+          newAbsences.push({
             employee_id: employeeId,
             psPersNr,
             date,
             position,
+            notePrefix,
             loanr,
+            note: row.LOATEXT1 || null,
           });
-        } else {
-          // Conflict
-          const { absencePriority } = await import('./centralAbsences.js');
-          const localPrio = absencePriority(position);
-          const centralPrio = absencePriority(existing.position);
-
-          if (resolveConflicts && localPrio > centralPrio) {
-            conflicts.push({
-              employee_id: employeeId,
-              psPersNr,
-              date,
-              tisoware_position: position,
-              existing_position: existing.position,
-              resolution: 'tisoware_wins',
-              local_priority: localPrio,
-              central_priority: centralPrio,
-              loanr,
-            });
-          } else if (resolveConflicts && centralPrio > localPrio) {
-            conflicts.push({
-              employee_id: employeeId,
-              psPersNr,
-              date,
-              tisoware_position: position,
-              existing_position: existing.position,
-              resolution: 'central_wins',
-              local_priority: localPrio,
-              central_priority: centralPrio,
-              loanr,
-            });
-          } else {
-            conflicts.push({
-              employee_id: employeeId,
-              psPersNr,
-              date,
-              tisoware_position: position,
-              existing_position: existing.position,
-              resolution: 'unresolved',
-              local_priority: localPrio,
-              central_priority: centralPrio,
-              loanr,
-            });
-          }
         }
-      } else {
-        centralDbMisses++;
-        newAbsences.push({
-          employee_id: employeeId,
-          psPersNr,
-          date,
-          position,
-          notePrefix,
-          loanr,
-          note: row.LOATEXT1 || null,
-        });
       }
     }
   }
 
   console.log(`[Tisoware import] preview: analysis complete — ${newAbsences.length} new, ${conflicts.length} conflicts, ${alreadyExists.length} already_exist`);
-  console.log(`[Tisoware import] preview: CentralAbsenceEntry lookup stats — ${centralDbHits} hits, ${centralDbMisses} misses`);
-  console.log(`[Tisoware import] preview: skipped ${skippedNoEmployeeId} ABWKAL rows (no employeeId mapping)`);
-  if (skippedNoEmployeeId > 0) {
-    console.warn(`[Tisoware import] preview: sample of skipped rows:`, JSON.stringify(skippedNoEmployeeIdSample, null, 2));
-  }
-  console.log(`[Tisoware import] preview: maps — psnrToPsPersNr has ${psnrToPsPersNr.size} entries, employeeIdByPsPersNr has ${employeeIdByPsPersNr.size} entries`);
-  console.log(`[Tisoware import] preview: matchedPsnr has ${matchedPsnr.length} PSNRs, absenceRows has ${absenceRows.length} rows`);
+  console.log(`[Tisoware import] preview: processed ${employeeCount} employees one-by-one, ${totalAbsenceRows} total ABWKAL rows`);
 
   return {
     total_source_employees: tisowareRows.length,
     matched_employees: matchedEmployees.length,
     unmatched_employees: unmatchedEmployees.length,
-    total_absence_rows: absenceRows.length,
+    total_absence_rows: totalAbsenceRows,
     new_absences: newAbsences,
     conflicts,
     already_exists: alreadyExists,
@@ -925,32 +921,16 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
     console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
   }
 
-  // 3. Fetch absences by PSNR (ABWKAL links to PERSTAMM via PSNR)
-  let absenceRows = await fetchTisowareAbsences(matchedPsnr, dateFrom, dateTo);
-
-  // Filter out abwesenheits that predate the employee's PSEINDAT (PSNR reuse)
-  let filteredByEindat = 0;
-  absenceRows = absenceRows.filter(row => {
-    const psnr = String(row.PSNR || '').trim();
-    const eindat = psnrToEindat.get(psnr);
-    if (!eindat) return true;
-    const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
-    if (!rawFrom) return true;
-    if (rawFrom < eindat) {
-      filteredByEindat++;
-      return false;
-    }
-    return true;
-  });
-  if (filteredByEindat > 0) {
-    console.log(`[Tisoware import] execute: filtered ${filteredByEindat} ABWKAL row(s) before PSEINDAT (PSNR reuse)`);
-  }
+  // 3. Process each employee one-by-one to avoid PHP proxy row limits.
+  //    Each individual employee has <1000 ABWKAL rows — well within all limits.
 
   await ensureCentralAbsenceTables(masterDb);
 
   const employeeIdByPsPersNr = new Map(
     matchedEmployees.map(e => [String(e.PSPERSNR).trim(), e.employee_id])
   );
+
+  const { absencePriority, updateCentralAbsencePosition } = await import('./centralAbsences.js');
 
   let imported = 0;
   let skippedExisting = 0;
@@ -959,95 +939,114 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   let unparseableDates = 0;
   const errors = [];
 
-  const { absencePriority, updateCentralAbsencePosition } = await import('./centralAbsences.js');
+  const employeeCount = matchedEmployees.length;
+  for (let empIdx = 0; empIdx < employeeCount; empIdx++) {
+    const emp = matchedEmployees[empIdx];
+    const psnr = String(emp.PSNR || '').trim();
+    const psPersNr = String(emp.PSPERSNR || '').trim();
+    const employeeId = emp.employee_id;
+    const eindat = psnrToEindat.get(psnr);
 
-  for (const row of absenceRows) {
-    // ABWKAL has PSNR, map back to PSPERSNR to find the CuraFlow employee
-    const psnr = String(row.PSNR || '').trim();
-    const psPersNr = psnrToPsPersNr.get(psnr) || '';
-    const employeeId = psPersNr ? employeeIdByPsPersNr.get(psPersNr) : undefined;
-    if (!employeeId) continue;
+    // Fetch absences for this single employee
+    const employeeRows = await fetchTisowareAbsences([psnr], dateFrom, dateTo);
 
-    const fromDate = parseTisowareDate(row.ABWDATVON);
-    const toDate = parseTisowareDate(row.ABWDATBIS);
-    if (!fromDate) {
-      unparseableDates++;
-      errors.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, error: 'invalid_from_date' });
-      continue;
+    // Filter by PSEINDAT
+    const filtered = eindat
+      ? employeeRows.filter(row => {
+          const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
+          return !rawFrom || rawFrom >= eindat;
+        })
+      : employeeRows;
+
+    if ((empIdx + 1) % 100 === 0 || empIdx === employeeCount - 1) {
+      console.log(`[Tisoware import] execute: employee ${empIdx + 1}/${employeeCount} done — ${imported} imported, ${skippedExisting} skipped, ${resolvedConflicts} resolved, ${unresolvedConflicts} unresolved, ${unparseableDates} unparseable`);
     }
 
-    const dates = expandDateRange(fromDate, toDate || fromDate);
-    const loanr = String(row.LOANR || '').trim();
-    const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
+    // Write each absence row for this employee
+    for (const row of filtered) {
+      const fromDate = parseTisowareDate(row.ABWDATVON);
+      const toDate = parseTisowareDate(row.ABWDATBIS);
+      if (!fromDate) {
+        unparseableDates++;
+        errors.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, error: 'invalid_from_date' });
+        continue;
+      }
 
-    for (const date of dates) {
-      try {
-        const [existingRows] = await masterDb.execute(
-          'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
-          [employeeId, date]
-        );
+      const dates = expandDateRange(fromDate, toDate || fromDate);
+      const loanr = String(row.LOANR || '').trim();
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
 
-        if (existingRows.length > 0) {
-          const existing = existingRows[0];
-          const samePosition = existing.position === position;
-
-          if (samePosition) {
-            // Already exists with same position — skip
-            skippedExisting++;
-            continue;
-          }
-
-          // Conflict resolution
-          const localPrio = absencePriority(position);
-          const centralPrio = absencePriority(existing.position);
-
-          if (resolveConflicts && localPrio > centralPrio) {
-            // Tisoware has higher priority — update central
-            const mergedNote = mergeNote(existing.note, notePrefix);
-            await masterDb.execute(
-              'UPDATE CentralAbsenceEntry SET position = ?, note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
-              [position, mergedNote, existing.id]
-            );
-            resolvedConflicts++;
-          } else if (resolveConflicts && centralPrio > localPrio) {
-            // Central has higher priority — keep it, skip Tisoware
-            skippedExisting++;
-          } else {
-            // Tie or resolveConflicts=false — leave unresolved
-            unresolvedConflicts++;
-          }
-        } else {
-          // New entry — insert
-          const id = crypto.randomUUID();
-          const fullNote = row.LOATEXT1 && row.LOATEXT1 !== notePrefix
-            ? `${notePrefix} | ${String(row.LOATEXT1 || '').trim()}`
-            : notePrefix;
-
-          await masterDb.execute(
-            `INSERT INTO CentralAbsenceEntry (
-              id, employee_id, date, position, note,
-              created_date, updated_date, created_by,
-              source_tenant_id, source_tenant_doctor_id
-            ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL)
-            ON DUPLICATE KEY UPDATE
-              position = VALUES(position),
-              note = VALUES(note),
-              updated_date = CURRENT_TIMESTAMP`,
-            [id, employeeId, date, position, fullNote, createdBy]
+      for (const date of dates) {
+        try {
+          const [existingRows] = await masterDb.execute(
+            'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+            [employeeId, date]
           );
-          imported++;
+
+          if (existingRows.length > 0) {
+            const existing = existingRows[0];
+            const samePosition = existing.position === position;
+
+            if (samePosition) {
+              // Already exists with same position — skip
+              skippedExisting++;
+              continue;
+            }
+
+            // Conflict resolution
+            const localPrio = absencePriority(position);
+            const centralPrio = absencePriority(existing.position);
+
+            if (resolveConflicts && localPrio > centralPrio) {
+              // Tisoware has higher priority — update central
+              const mergedNote = mergeNote(existing.note, notePrefix);
+              await masterDb.execute(
+                'UPDATE CentralAbsenceEntry SET position = ?, note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
+                [position, mergedNote, existing.id]
+              );
+              resolvedConflicts++;
+            } else if (resolveConflicts && centralPrio > localPrio) {
+              // Central has higher priority — keep it, skip Tisoware
+              skippedExisting++;
+            } else {
+              // Tie or resolveConflicts=false — leave unresolved
+              unresolvedConflicts++;
+            }
+          } else {
+            // New entry — insert
+            const id = crypto.randomUUID();
+            const fullNote = row.LOATEXT1 && row.LOATEXT1 !== notePrefix
+              ? `${notePrefix} | ${String(row.LOATEXT1 || '').trim()}`
+              : notePrefix;
+
+            await masterDb.execute(
+              `INSERT INTO CentralAbsenceEntry (
+                id, employee_id, date, position, note,
+                created_date, updated_date, created_by,
+                source_tenant_id, source_tenant_doctor_id
+              ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL)
+              ON DUPLICATE KEY UPDATE
+                position = VALUES(position),
+                note = VALUES(note),
+                updated_date = CURRENT_TIMESTAMP`,
+              [id, employeeId, date, position, fullNote, createdBy]
+            );
+            imported++;
+          }
+        } catch (err) {
+          errors.push({
+            psPersNr,
+            date,
+            loanr,
+            position,
+            error: err.message,
+          });
         }
-      } catch (err) {
-        errors.push({
-          psPersNr,
-          date,
-          loanr,
-          position,
-          error: err.message,
-        });
       }
     }
   }
+
+  console.log(`[Tisoware import] execute: complete — ${imported} imported, ${skippedExisting} skipped, ${resolvedConflicts} resolved, ${unresolvedConflicts} unresolved`);
 
   return {
     imported,
