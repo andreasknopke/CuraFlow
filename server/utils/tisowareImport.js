@@ -232,11 +232,21 @@ export async function searchTisowareByPsPersNr(psPersNrList) {
     allRows = allRows.concat(result.rows || []);
   }
 
-  // Deduplicate by PSNR (integer primary key)
+  // Compute today in YYYYMMDD format for PSAUSDAT comparison (PSAUSDAT is INT YYYYMMDD).
+  // PSAUSDAT = Austrittsdatum; if set to a past date, the employee has left.
+  const now = new Date();
+  const todayInt = now.getFullYear() * 10000 + (now.getMonth() + 1) * 100 + now.getDate();
+
+  // Deduplicate by PSNR (integer primary key) and exclude past-exited employees
   const seen = new Set();
   return allRows.filter(r => {
     const key = String(r.PSNR || '');
     if (!key || seen.has(key)) return false;
+
+    // Exclude employees whose exit date is in the past
+    const ausdatRaw = parseInt(String(r.PSAUSDAT || '0'), 10) || 0;
+    if (ausdatRaw > 0 && ausdatRaw < todayInt) return false;
+
     seen.add(key);
     return true;
   });
