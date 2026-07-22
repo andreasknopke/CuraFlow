@@ -44,8 +44,8 @@ function makeShift(overrides: Partial<ShiftEntry> = {}): ShiftEntry {
     isPreview: false,
     section: null,
     note: null,
-    source_tenant_id: overrides.source_tenant_id ?? null,
-    source_tenant_doctor_id: overrides.source_tenant_doctor_id ?? null,
+    source_tenant_id: overrides.source_tenant_id,
+    source_tenant_doctor_id: overrides.source_tenant_doctor_id,
     created_date: '2026-01-01T00:00:00.000Z',
     updated_date: '2026-01-01T00:00:00.000Z',
   };
@@ -347,14 +347,12 @@ describe('computeAbsenceStats', () => {
     expect(stats.tenantAvgSickNoOutliers).toBe(1);
   });
 
-  it('counts curaflowOnlySick when shifts lack source_tenant_id', () => {
+  it('counts curaflowOnlySick for CuraFlow-created entries (local or linked)', () => {
     const doctors = [makeDoctor({ id: 'd1', name: 'Dr. CuraFlowOnly' })];
     const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02' }), // Mon
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03' }), // Tue
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02', source_tenant_id: undefined }), // local unlinked
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // linked, CuraFlow-created
     ];
-    // No source_tenant_id on either → both are CuraFlow-only
-    expect(shifts[0].source_tenant_id).toBeNull();
 
     const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
 
@@ -364,30 +362,30 @@ describe('computeAbsenceStats', () => {
   });
 
   it('does not count curaflowOnlySick for Tisoware-imported shifts', () => {
-    const doctors = [makeDoctor({ id: 'd1', name: 'Dr. Tisoware' })];
+    const doctors = [makeDoctor({ id: 'd1', name: 'Dr. Mixed' })];
     const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02', source_tenant_id: 'tisoware-01' }), // Mon, from Tisoware
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03' }), // Tue, CuraFlow-only
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02', source_tenant_id: null }), // Tisoware-imported, null
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // CuraFlow-created
     ];
 
     const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
 
     expect(stats.rows[0].sickDays).toBe(2);
-    expect(stats.rows[0].curaflowOnlySick).toBe(1); // Only the one without source_tenant_id
+    expect(stats.rows[0].curaflowOnlySick).toBe(1); // Only s2 (CuraFlow-created)
   });
 
-  it('tracks curaflowOnlyTrip for Dienstreise shifts without source_tenant_id', () => {
+  it('tracks curaflowOnlyTrip for Dienstreise shifts created in CuraFlow', () => {
     const doctors = [makeDoctor({ id: 'd1', name: 'Dr. Travel' })];
     const shifts = [
-      makeShift({ id: 's1', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-02', source_tenant_id: 'tisoware-01' }),
-      makeShift({ id: 's2', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-03' }), // CuraFlow-only
-      makeShift({ id: 's3', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-07' }), // Sat, CuraFlow-only
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-02', source_tenant_id: null }), // Tisoware
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-03', source_tenant_id: 'cf-tenant-1' }), // CuraFlow-created
+      makeShift({ id: 's3', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-07', source_tenant_id: undefined }), // Sat, local unlinked
     ];
 
     const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
 
     expect(stats.rows[0].businessTripDays).toBe(3); // Sat counts for Dienstreise
-    expect(stats.rows[0].curaflowOnlyTrip).toBe(2); // Only s2 + s3 lack source_tenant_id
+    expect(stats.rows[0].curaflowOnlyTrip).toBe(2); // Only s2 + s3 are CuraFlow-only
   });
 });
 

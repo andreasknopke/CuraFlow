@@ -113,8 +113,11 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
     // Skip shifts not tied to a doctor in our list
     if (!sickByDoctor.has(doctorId)) continue;
 
-    // A shift is "CuraFlow-only" when source_tenant_id is absent (not imported from Tisoware or central)
-    const isCuraFlowOnly = !shift.source_tenant_id;
+    // A shift is "CuraFlow-only" when source_tenant_id is NOT null:
+    // - string (uuid)   = CuraFlow-created entry for linked doctor → CuraFlow-only
+    // - undefined        = local entry for unlinked doctor → CuraFlow-only
+    // - null             = Tisoware import → has Tisoware origin → NOT CuraFlow-only
+    const isCuraFlowOnly = shift.source_tenant_id !== null;
 
     if (norm === 'krank') {
       // Krank: count only working days (Mon–Fri and not a public holiday)
