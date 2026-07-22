@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CalendarX2, ArrowUpDown, ArrowUp, ArrowDown, Loader2, TriangleAlert } from 'lucide-react';
+import { CalendarX2, ArrowUpDown, ArrowUp, ArrowDown, Loader2, TriangleAlert, AlertCircle } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -159,7 +159,8 @@ export default function AbsenceReport({ year, month }: { year: string; month: st
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir('desc'); // Numeric columns default descending
+      // Numeric columns default descending; text defaults ascending
+      setSortDir(key === 'name' || key === 'role' ? 'asc' : 'desc');
     }
   };
 
@@ -367,6 +368,7 @@ export default function AbsenceReport({ year, month }: { year: string; month: st
               ) : (
                 sortedRows.map((row) => {
                   const roleAvg = stats.roleAverages[row.role || '(ohne Funktion)'];
+
                   return (
                     <TableRow key={row.doctorId}>
                       <TableCell className="font-medium">{row.name}</TableCell>
@@ -380,6 +382,13 @@ export default function AbsenceReport({ year, month }: { year: string; month: st
                           {row.isSickOutlier && (
                             <TriangleAlert className="w-3.5 h-3.5 text-amber-500" title="Ausreißer" />
                           )}
+                          {row.curaflowOnlySick > 0 && (
+                            <AlertCircle
+                              className="w-3.5 h-3.5 text-orange-500 cursor-help"
+                              title="Diese Kranktage existieren nur in CuraFlow (kein Tisoware-Eintrag)"
+                              data-testid="absence-report-cf-only-icon"
+                            />
+                          )}
                           {row.sickDays}
                         </span>
                         <br />
@@ -392,6 +401,13 @@ export default function AbsenceReport({ year, month }: { year: string; month: st
                         <span className={`font-semibold inline-flex items-center gap-1 ${row.isTripOutlier ? 'text-amber-700' : ''}`}>
                           {row.isTripOutlier && (
                             <TriangleAlert className="w-3.5 h-3.5 text-amber-500" title="Ausreißer" />
+                          )}
+                          {row.curaflowOnlyTrip > 0 && (
+                            <AlertCircle
+                              className="w-3.5 h-3.5 text-orange-500 cursor-help"
+                              title="Diese Dienstreisetage existieren nur in CuraFlow (kein Tisoware-Eintrag)"
+                              data-testid="absence-report-cf-only-icon"
+                            />
                           )}
                           {row.businessTripDays}
                         </span>

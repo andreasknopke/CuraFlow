@@ -79,6 +79,10 @@ export interface ShiftEntry extends Auditable {
   free_text_value?: string | null;
   isPreview?: boolean;
   order: number;
+  /** Set on central-absence entries imported from Tisoware or other tenants. Absent on local-only entries. */
+  source_tenant_id?: string | null;
+  /** Internal use only, set on central-absence entries. */
+  source_tenant_doctor_id?: string | null;
 }
 
 // ── Wish ───────────────────────────────────────────────────────────────────
