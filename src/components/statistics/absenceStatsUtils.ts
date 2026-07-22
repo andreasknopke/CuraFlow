@@ -37,6 +37,16 @@ export interface AbsenceStatsInput {
   isPublicHoliday: (dateStr: string) => boolean;
 }
 
+/** A single data point on the monthly-line chart. */
+export interface MonthlyStatsPoint {
+  month: number;        // 0–11
+  label: string;        // "Jan", "Feb", ...
+  avgSick: number;
+  avgTrip: number;
+  avgSickNoOutliers: number;
+  avgTripNoOutliers: number;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 /** Inclusive start/end ISO dates for a year or month filter. */
@@ -139,4 +149,85 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
   }
 
   return { rows, tenantAvgSick, tenantAvgTrip, roleAverages };
+}
+
+// ── Outlier helpers (IQR method) ──────────────────────────────────────────
+
+/** Compute Q1, median, Q3 from a sorted numeric array. */
+export function quartiles(sorted: number[]): { q1: number; q3: number; iqr: number } {
+  if (sorted.length === 0) return { q1: 0, q3: 0, iqr: 0 };
+  if (sorted.length === 1) return { q1: sorted[0], q3: sorted[0], iqr: 0 };
+  const mid = Math.floor(sorted.length / 2);
+  const lowerHalf = sorted.slice(0, mid);
+  const upperHalf = sorted.length % 2 === 0 ? sorted.slice(mid) : sorted.slice(mid + 1);
+  const medianOf = (arr: number[]) => {
+    if (arr.length === 0) return 0;
+    const m = Math.floor(arr.length / 2);
+    return arr.length % 2 === 0 ? (arr[m - 1] + arr[m]) / 2 : arr[m];
+  };
+  const q1 = medianOf(lowerHalf);
+  const q3 = medianOf(upperHalf);
+  return { q1, q3, iqr: q3 - q1 };
+}
+
+/**
+ * Returns the average of `values` after removing outliers via the IQR rule
+ * (< Q1 − 1.5×IQR or > Q3 + 1.5×IQR). Returns the original average if there are ≤ 2 values.
+ */
+export function averageWithoutOutliers(values: number[]): number {
+  if (values.length <= 2) {
+    return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+  }
+  const sorted = [...values].sort((a, b) => a - b);
+  const { q1, q3, iqr } = quartiles(sorted);
+  const lower = q1 - 1.5 * iqr;
+  const upper = q3 + 1.5 * iqr;
+  const kept = sorted.filter((v) => v >= lower && v <= upper);
+  return kept.length > 0 ? kept.reduce((a, b) => a + b, 0) / kept.length : 0;
+}
+
+// ── Monthly stats ─────────────────────────────────────────────────────────
+
+const MONTH_LABELS = [
+  'Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez',
+];
+
+/**
+ * Computes per-month average sick & trip days across all doctors,
+ * both with and without outlier exclusion (IQR).
+ *
+ * Returns 12 entries (months 0–11) — even months with zero data.
+ */
+export function computeMonthlyStats(
+  doctors: Doctor[],
+  shifts: ShiftEntry[],
+  year: number,
+  isPublicHoliday: (dateStr: string) => boolean,
+): MonthlyStatsPoint[] {
+  // Pre-group shifts by month
+  const shiftsByMonth = new Map<number, ShiftEntry[]>();
+  for (let m = 0; m < 12; m++) shiftsByMonth.set(m, []);
+
+  for (const shift of shifts) {
+    if (!shift.date.startsWith(String(year))) continue;
+    const m = parseInt(shift.date.slice(5, 7), 10) - 1; // month 0–11
+    if (m >= 0 && m < 12) shiftsByMonth.get(m)!.push(shift);
+  }
+
+  return Array.from({ length: 12 }, (_, month) => {
+    // Reuse computeAbsenceStats per month
+    const stats = computeAbsenceStats({ doctors, shifts, year, month: month as number, isPublicHoliday });
+    const sickValues = stats.rows.map((r) => r.sickDays);
+    const tripValues = stats.rows.map((r) => r.businessTripDays);
+
+    return {
+      month,
+      label: MONTH_LABELS[month],
+      avgSick: stats.tenantAvgSick,
+      avgTrip: stats.tenantAvgTrip,
+      avgSickNoOutliers: averageWithoutOutliers(sickValues),
+      avgTripNoOutliers: averageWithoutOutliers(tripValues),
+    };
+  });
 }

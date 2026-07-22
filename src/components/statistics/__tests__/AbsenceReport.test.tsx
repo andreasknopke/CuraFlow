@@ -186,4 +186,32 @@ describe('AbsenceReport', () => {
     expect(table.textContent).toMatch(/\+1\.0/);
     expect(table.textContent).toMatch(/-1\.0/);
   });
+
+  it('renders monthly trend charts when data is loaded', async () => {
+    renderAbsenceReport();
+
+    await waitFor(() => {
+      const table = getByTestIdOnce('absence-report-table');
+      expect(table.textContent).toContain('Dr. Anna Adler');
+    });
+
+    // Both chart panels should be visible
+    const krankChart = document.querySelector('.recharts-responsive-container');
+    expect(krankChart).toBeTruthy();
+  });
+
+  it('shows chart headings for Krank and Dienstreise', async () => {
+    renderAbsenceReport();
+
+    await waitFor(() => {
+      const table = getByTestIdOnce('absence-report-table');
+      expect(table).toBeTruthy();
+    });
+
+    // Chart headings
+    const krankHeadings = screen.getAllByText(/Ø Kranktage pro Person/);
+    expect(krankHeadings.length).toBeGreaterThan(0);
+    const tripHeadings = screen.getAllByText(/Ø Dienstreisetage pro Person/);
+    expect(tripHeadings.length).toBeGreaterThan(0);
+  });
 });

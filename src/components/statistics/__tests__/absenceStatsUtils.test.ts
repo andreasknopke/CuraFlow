@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeAbsenceStats } from '../absenceStatsUtils';
+import { computeAbsenceStats, computeMonthlyStats, averageWithoutOutliers, quartiles } from '../absenceStatsUtils';
 import type { Doctor, ShiftEntry } from '@/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -262,5 +262,214 @@ describe('computeAbsenceStats', () => {
     const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
 
     expect(stats.rows[0].totalDays).toBe(3);
+  });
+});
+
+// ── quartiles ──────────────────────────────────────────────────────────────
+
+describe('quartiles', () => {
+  it('returns correct Q1 and Q3 for an odd-length sorted array', () => {
+    const result = quartiles([1, 2, 3, 4, 5, 6, 7]);
+    expect(result.q1).toBe(2);
+    expect(result.q3).toBe(6);
+    expect(result.iqr).toBe(4);
+  });
+
+  it('returns correct Q1 and Q3 for an even-length sorted array', () => {
+    const result = quartiles([1, 2, 3, 4, 5, 6]);
+    expect(result.q1).toBe(2);
+    expect(result.q3).toBe(5);
+    expect(result.iqr).toBe(3);
+  });
+
+  it('handles array with two values', () => {
+    const result = quartiles([10, 20]);
+    expect(result.q1).toBe(10);
+    expect(result.q3).toBe(20);
+    expect(result.iqr).toBe(10);
+  });
+
+  it('handles array with one value', () => {
+    const result = quartiles([42]);
+    expect(result.q1).toBe(42);
+    expect(result.q3).toBe(42);
+    expect(result.iqr).toBe(0);
+  });
+});
+
+// ── averageWithoutOutliers ─────────────────────────────────────────────────
+
+describe('averageWithoutOutliers', () => {
+  it('returns the regular average when there are 2 or fewer values', () => {
+    expect(averageWithoutOutliers([5])).toBe(5);
+    expect(averageWithoutOutliers([5, 15])).toBe(10);
+  });
+
+  it('returns the regular average when there are no outliers', () => {
+    expect(averageWithoutOutliers([1, 2, 3, 4, 5])).toBe(3);
+  });
+
+  it('excludes outlier values beyond 1.5×IQR', () => {
+    // 1, 2, 3, 4, 5, 100 → Q1=2, Q3=5, IQR=3, upper=9.5 → 100 excluded
+    const result = averageWithoutOutliers([1, 2, 3, 4, 5, 100]);
+    expect(result).toBe(3); // avg of 1,2,3,4,5
+  });
+
+  it('handles all-identical values', () => {
+    expect(averageWithoutOutliers([7, 7, 7, 7])).toBe(7);
+  });
+
+  it('handles empty array gracefully', () => {
+    expect(averageWithoutOutliers([])).toBe(0);
+  });
+});
+
+// ── computeMonthlyStats ────────────────────────────────────────────────────
+
+describe('computeMonthlyStats', () => {
+  const isPublicHoliday = () => false; // simplify — no holidays in test
+
+  it('returns 12 entries (Jan–Dec)', () => {
+    const doctors: Doctor[] = [makeDoctor()];
+    const shifts: ShiftEntry[] = [];
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    expect(result).toHaveLength(12);
+    expect(result[0].label).toBe('Jan');
+    expect(result[11].label).toBe('Dez');
+    expect(result[0].month).toBe(0);
+    expect(result[11].month).toBe(11);
+  });
+
+  it('computes correct avgSick per month', () => {
+    const doctors = [makeDoctor({ id: 'd1' }), makeDoctor({ id: 'd2' })];
+    const shifts = [
+      // Jan: d1 has 2 Krank, d2 has 0 → avg = 1
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-01-05' }),
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-01-06' }),
+      // Feb: d1 has 1 Krank, d2 has 1 → avg = 1
+      makeShift({ id: 's3', doctor_id: 'd1', position: 'Krank', date: '2026-02-02' }),
+      makeShift({ id: 's4', doctor_id: 'd2', position: 'Krank', date: '2026-02-03' }),
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    expect(result[0].avgSick).toBe(1);   // Jan
+    expect(result[1].avgSick).toBe(1);   // Feb
+    expect(result[2].avgSick).toBe(0);   // Mar
+  });
+
+  it('computes correct avgTrip per month (incl. weekends)', () => {
+    const doctors = [makeDoctor({ id: 'd1' })];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-07' }), // Sat
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Dienstreise', date: '2026-03-08' }), // Sun
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    expect(result[2].avgTrip).toBe(2);   // Mar (index 2); weekends count
+  });
+
+  it('excludes public holidays from Krank in monthly stats', () => {
+    const isHoliday = (dateStr: string) =>
+      dateStr === '2026-01-01';
+
+    const doctors = [makeDoctor({ id: 'd1' })];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-01-01' }), // holiday
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-01-02' }), // Fri — counts
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isHoliday);
+
+    expect(result[0].avgSick).toBe(1); // only Jan 2 counted
+  });
+
+  it('excludes Krank on weekends from monthly stats', () => {
+    const doctors = [makeDoctor({ id: 'd1' })];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-01-03' }), // Sat
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-01-04' }), // Sun
+      makeShift({ id: 's3', doctor_id: 'd1', position: 'Krank', date: '2026-01-05' }), // Mon — counts
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    expect(result[0].avgSick).toBe(1); // only Mon counted
+  });
+
+  it('avgSickNoOutliers and avgTripNoOutliers exclude outliers', () => {
+    // Need ≥6 doctors for IQR outlier detection to work (Q3 omits the maximum)
+    const doctors = [
+      makeDoctor({ id: 'd1' }),
+      makeDoctor({ id: 'd2' }),
+      makeDoctor({ id: 'd3' }),
+      makeDoctor({ id: 'd4' }),
+      makeDoctor({ id: 'd5' }),
+      makeDoctor({ id: 'd6' }),
+    ];
+    const shifts = [
+      // Jan: all 6 have 1 Krank day → avg=1, no outliers
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-01-05' }),
+      makeShift({ id: 's2', doctor_id: 'd2', position: 'Krank', date: '2026-01-06' }),
+      makeShift({ id: 's3', doctor_id: 'd3', position: 'Krank', date: '2026-01-07' }),
+      makeShift({ id: 's4', doctor_id: 'd4', position: 'Krank', date: '2026-01-08' }),
+      makeShift({ id: 's5', doctor_id: 'd5', position: 'Krank', date: '2026-01-09' }),
+      makeShift({ id: 's6', doctor_id: 'd6', position: 'Krank', date: '2026-01-12' }),
+      // Feb: d1 spread high (15 Krank), others 0–1 → d1 is outlier
+      makeShift({ id: 's10', doctor_id: 'd1', position: 'Krank', date: '2026-02-02' }),
+      makeShift({ id: 's11', doctor_id: 'd1', position: 'Krank', date: '2026-02-03' }),
+      makeShift({ id: 's12', doctor_id: 'd1', position: 'Krank', date: '2026-02-04' }),
+      makeShift({ id: 's13', doctor_id: 'd1', position: 'Krank', date: '2026-02-05' }),
+      makeShift({ id: 's14', doctor_id: 'd1', position: 'Krank', date: '2026-02-06' }),
+      makeShift({ id: 's15', doctor_id: 'd1', position: 'Krank', date: '2026-02-09' }),
+      makeShift({ id: 's16', doctor_id: 'd1', position: 'Krank', date: '2026-02-10' }),
+      makeShift({ id: 's17', doctor_id: 'd1', position: 'Krank', date: '2026-02-11' }),
+      makeShift({ id: 's18', doctor_id: 'd1', position: 'Krank', date: '2026-02-12' }),
+      makeShift({ id: 's19', doctor_id: 'd1', position: 'Krank', date: '2026-02-13' }),
+      makeShift({ id: 's20', doctor_id: 'd1', position: 'Krank', date: '2026-02-16' }),
+      makeShift({ id: 's21', doctor_id: 'd1', position: 'Krank', date: '2026-02-17' }),
+      makeShift({ id: 's22', doctor_id: 'd1', position: 'Krank', date: '2026-02-18' }),
+      makeShift({ id: 's23', doctor_id: 'd1', position: 'Krank', date: '2026-02-19' }),
+      makeShift({ id: 's24', doctor_id: 'd1', position: 'Krank', date: '2026-02-20' }),
+      makeShift({ id: 's25', doctor_id: 'd2', position: 'Krank', date: '2026-02-02' }),
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    // Jan: all 6 have 1 → avg=1, no outliers → same
+    expect(result[0].avgSick).toBe(1);
+    expect(result[0].avgSickNoOutliers).toBe(1);
+
+    // Feb: d1=15, d2=1, d3..d6=0 → avg=16/6≈2.667, d1 is outlier
+    expect(result[1].avgSick).toBeCloseTo(2.667, 2);
+    expect(result[1].avgSickNoOutliers).toBeLessThan(result[1].avgSick);
+    // without d1: (1+0+0+0+0)/5 = 0.2
+    expect(result[1].avgSickNoOutliers).toBeCloseTo(0.2, 2);
+  });
+
+  it('returns zeros when there are no doctors', () => {
+    const result = computeMonthlyStats([], [], 2026, isPublicHoliday);
+
+    expect(result).toHaveLength(12);
+    for (const point of result) {
+      expect(point.avgSick).toBe(0);
+      expect(point.avgTrip).toBe(0);
+      expect(point.avgSickNoOutliers).toBe(0);
+      expect(point.avgTripNoOutliers).toBe(0);
+    }
+  });
+
+  it('deduplicates same-day entries', () => {
+    const doctors = [makeDoctor({ id: 'd1' })];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-01-05' }),
+      makeShift({ id: 's2', doctor_id: 'd1', position: 'Krank', date: '2026-01-05' }), // duplicate day
+    ];
+
+    const result = computeMonthlyStats(doctors, shifts, 2026, isPublicHoliday);
+
+    expect(result[0].avgSick).toBe(1); // only 1 day counted
   });
 });

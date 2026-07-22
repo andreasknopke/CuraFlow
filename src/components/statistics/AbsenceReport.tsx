@@ -7,10 +7,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { CalendarX2, ArrowUpDown, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { useHolidays } from '@/components/useHolidays';
-import { computeAbsenceStats } from '@/components/statistics/absenceStatsUtils';
-import type { AbsenceRow, AbsenceStats } from '@/components/statistics/absenceStatsUtils';
+import { computeAbsenceStats, computeMonthlyStats } from '@/components/statistics/absenceStatsUtils';
+import type { AbsenceRow, AbsenceStats, MonthlyStatsPoint } from '@/components/statistics/absenceStatsUtils';
 import type { Doctor, ShiftEntry } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -125,6 +135,13 @@ export default function AbsenceReport() {
     });
   }, [doctors, shifts, yearNum, monthNum, isPublicHoliday, isLoading]);
 
+  // ── Monthly chart data ─────────────────────────────────────────────────
+
+  const monthlyStats: MonthlyStatsPoint[] = useMemo(() => {
+    if (isLoading) return [];
+    return computeMonthlyStats(doctors, shifts, yearNum, isPublicHoliday);
+  }, [doctors, shifts, yearNum, isPublicHoliday, isLoading]);
+
   // ── Sorting ────────────────────────────────────────────────────────────
 
   const sortedRows: AbsenceRow[] = useMemo(() => {
@@ -229,6 +246,93 @@ export default function AbsenceReport() {
             </div>
           </div>
         </div>
+
+        {/* Monthly trend charts */}
+        {!isLoading && monthlyStats.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            {/* Krank chart */}
+            <div className="rounded-lg border bg-white p-4">
+              <h3 className="text-sm font-semibold text-red-700 mb-3">
+                Ø Kranktage pro Person — Monatsverlauf {year}
+              </h3>
+              <div className="h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyStats} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend
+                      wrapperStyle={{ fontSize: '12px' }}
+                      payload={[
+                        { value: 'Ø Krank', type: 'line', color: '#dc2626' },
+                        { value: 'Ø Krank (ohne Ausreißer)', type: 'line', color: '#f87171' },
+                      ]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgSick"
+                      stroke="#dc2626"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: '#dc2626' }}
+                      name="Ø Krank"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgSickNoOutliers"
+                      stroke="#f87171"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={{ r: 3, fill: '#f87171' }}
+                      name="Ø Krank (ohne Ausreißer)"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Dienstreise chart */}
+            <div className="rounded-lg border bg-white p-4">
+              <h3 className="text-sm font-semibold text-blue-700 mb-3">
+                Ø Dienstreisetage pro Person — Monatsverlauf {year}
+              </h3>
+              <div className="h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={monthlyStats} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend
+                      wrapperStyle={{ fontSize: '12px' }}
+                      payload={[
+                        { value: 'Ø Dienstreise', type: 'line', color: '#2563eb' },
+                        { value: 'Ø Dienstreise (ohne Ausreißer)', type: 'line', color: '#60a5fa' },
+                      ]}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgTrip"
+                      stroke="#2563eb"
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: '#2563eb' }}
+                      name="Ø Dienstreise"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="avgTripNoOutliers"
+                      stroke="#60a5fa"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={{ r: 3, fill: '#60a5fa' }}
+                      name="Ø Dienstreise (ohne Ausreißer)"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Table */}
         <ScrollArea className="h-[600px] rounded-md border">
