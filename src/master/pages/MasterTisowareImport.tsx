@@ -201,7 +201,7 @@ export default function MasterTisowareImport() {
         '/api/master/tisoware/import/employee-search',
         {
           method: 'POST',
-          body: JSON.stringify({ allActive: true }),
+          body: JSON.stringify({ q: searchQuery || undefined, allActive: true }),
         },
       ) as { employees: TisowareImportEmployee[]; stats: { total: number; matched: number; unmatched: number; no_pspersnr: number } };
 
@@ -223,9 +223,7 @@ export default function MasterTisowareImport() {
     } finally {
       setSearching(false);
     }
-  }, []);
-
-  // ============ PREVIEW ============
+  }, [searchQuery]);
 
   const handlePreview = useCallback(async () => {
     const selectedPsPersNr = Array.from(checkedIds);
