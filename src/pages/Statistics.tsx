@@ -8,12 +8,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Download, Loader2, BarChart3, Table as TableIcon, User, Clock } from "lucide-react";
+import { Download, Loader2, BarChart3, Table as TableIcon, User, Clock, CalendarX2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import ChartCard from "@/components/statistics/ChartCard";
 import WishFulfillmentReport from "@/components/statistics/WishFulfillmentReport";
 import ComplianceReport from "@/components/statistics/ComplianceReport";
 import WorkingTimeReport from "@/components/statistics/WorkingTimeReport";
+import AbsenceReport from "@/components/statistics/AbsenceReport";
 import { useToast } from '@/components/ui/use-toast';
 import { exportStatisticsCsv, exportStatisticsExcel, exportStatisticsPdf } from '@/components/statistics/exportUtils';
 
@@ -302,6 +303,7 @@ export default function StatisticsPage() {
                         <TabsTrigger value="workingtime" className="flex items-center gap-2" data-testid="statistics-tab-workingtime"><Clock className="w-4 h-4 shrink-0" /> Arbeitszeit</TabsTrigger>
                         <TabsTrigger value="compliance" className="flex items-center gap-2" data-testid="statistics-tab-compliance">Regel-Compliance</TabsTrigger>
                         <TabsTrigger value="wishes" className="flex items-center gap-2" data-testid="statistics-tab-wishes">Wunscherfüllung</TabsTrigger>
+                        <TabsTrigger value="absences" className="flex items-center gap-2" data-testid="statistics-tab-absences"><CalendarX2 className="w-4 h-4 shrink-0" /> Fehlzeiten</TabsTrigger>
                         <TabsTrigger value="details" className="flex items-center gap-2" data-testid="statistics-tab-details"><TableIcon className="w-4 h-4 shrink-0" /> Detaillierte Tabelle</TabsTrigger>
                     </TabsList>
                 </div>
@@ -398,6 +400,10 @@ export default function StatisticsPage() {
 
                 <TabsContent value="wishes">
                     <WishFulfillmentReport doctors={doctors} wishes={wishes} shifts={shifts} />
+                </TabsContent>
+
+                <TabsContent value="absences">
+                    <AbsenceReport />
                 </TabsContent>
 
                 <TabsContent value="details">
