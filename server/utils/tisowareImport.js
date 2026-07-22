@@ -167,7 +167,7 @@ function mergeNote(existingNote, notePrefix) {
  * @param {object} params
  * @param {string} [params.q] - Search query (name or PSPERSNR)
  * @param {string} [params.kstnr] - Cost center filter
- * @param {boolean} [params.allActive=false] - If true, filter to employees without exit date (PSAUSDAT IS NULL/0)
+ * @param {boolean} [params.allActive=false] - If true, filter to currently active employees (PSAUSDAT >= today or NULL/0)
  * @param {number} [params.limit=200] - Max results
  * @returns {Promise<Array>} PERSTAMM rows
  */
@@ -177,8 +177,11 @@ export async function searchTisowareEmployees({ q, kstnr, allActive = false, lim
   const conditions = [];
 
   if (allActive) {
-    // PSAUSDAT is an int (YYYYMMDD); 0 or NULL means no exit date → still active
-    conditions.push('(PSAUSDAT IS NULL OR PSAUSDAT = 0)');
+    // PSAUSDAT is an int (YYYYMMDD). NULL/0 means no exit date set.
+    // A past date means the employee has left; a future date (or the
+    // far-future sentinel 20991231) means they are still active.
+    // Use MSSQL GETDATE() to compare against today.
+    conditions.push(`(PSAUSDAT IS NULL OR PSAUSDAT = 0 OR PSAUSDAT >= CAST(CONVERT(varchar(8), GETDATE(), 112) AS int))`);
   }
 
   if (q) {
