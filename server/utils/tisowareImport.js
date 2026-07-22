@@ -219,12 +219,27 @@ export async function searchTisowareByPsPersNr(psPersNrList) {
   const unique = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
-  const inClause = unique.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-  const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
-               FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause}) ORDER BY PSNACHNA, PSVORNA`;
+  const BATCH_SIZE = 200; // Keep IN clause well under 10 000 char proxy limit
+  let allRows = [];
 
-  const result = await queryTisoware(sql);
-  return result.rows || [];
+  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+    const batch = unique.slice(i, i + BATCH_SIZE);
+    const inClause = batch.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+    const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
+                 FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause}) ORDER BY PSNACHNA, PSVORNA`;
+
+    const result = await queryTisoware(sql);
+    allRows = allRows.concat(result.rows || []);
+  }
+
+  // Deduplicate by PSNR (integer primary key)
+  const seen = new Set();
+  return allRows.filter(r => {
+    const key = String(r.PSNR || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /**
@@ -416,40 +431,63 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   const unique = [...new Set(psnrList.map(p => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
-  const inClause = unique.join(','); // PSNR is numeric, no quoting needed
+  const BATCH_SIZE = 200; // Keep IN clause well under 10 000 char proxy limit
+  let allRows = [];
+  let fromCol = null;
+  let toCol = null;
 
-  // No date filter in SQL — column names are unknown until we fetch
-  const sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause}) ORDER BY PSNR`;
+  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSNR(s) in batches of ${BATCH_SIZE}`);
 
-  console.log(`[Tisoware import] fetchTisowareAbsences: querying ABWKAL for ${unique.length} PSNR(s)`);
+  for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+    const batch = unique.slice(i, i + BATCH_SIZE);
+    const inClause = batch.join(','); // PSNR is numeric, no quoting needed
 
-  const result = await queryTisoware(sql, 50000); // Higher limit for bulk import
-  const rawRows = result.rows || [];
-  console.log(`[Tisoware import] fetchTisowareAbsences: returned ${rawRows.length} raw row(s)`);
-  if (rawRows.length === 0 && unique.length > 0) {
+    const sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause}) ORDER BY PSNR`;
+
+    const result = await queryTisoware(sql, 50000);
+    const rawRows = result.rows || [];
+    console.log(`[Tisoware import] fetchTisowareAbsences: batch ${Math.floor(i / BATCH_SIZE) + 1} returned ${rawRows.length} row(s)`);
+
+    // Discover date column names from the first non-empty batch
+    if (!fromCol && rawRows.length > 0) {
+      const keys = Object.keys(rawRows[0] || {});
+      const discovered = discoverAbwkalDateColumns(keys);
+      fromCol = discovered.fromCol;
+      toCol = discovered.toCol;
+      console.log(`[Tisoware import] fetchTisowareAbsences: ALL ABWKAL columns: [${keys.join(', ')}]`);
+      console.log(`[Tisoware import] fetchTisowareAbsences: detected fromCol=${fromCol}, toCol=${toCol}`);
+      if (fromCol) {
+        const sampleFromVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[fromCol] ?? '').trim()))];
+        console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${fromCol}': [${sampleFromVals.join(', ')}]`);
+      }
+      if (toCol && toCol !== fromCol) {
+        const sampleToVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[toCol] ?? '').trim()))];
+        console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${toCol}': [${sampleToVals.join(', ')}]`);
+      }
+    }
+
+    // Normalize this batch
+    const normalized = normalizeAbwkalRows(rawRows, fromCol, toCol);
+    allRows = allRows.concat(normalized);
+  }
+
+  if (allRows.length === 0 && unique.length > 0) {
     console.log(`[Tisoware import] fetchTisowareAbsences: sample PSNRs: [${unique.slice(0, 5).join(', ')}]`);
     return [];
   }
 
-  // Discover actual date column names from the first row
-  const keys = Object.keys(rawRows[0] || {});
-  const { fromCol, toCol } = discoverAbwkalDateColumns(keys);
-  console.log(`[Tisoware import] fetchTisowareAbsences: ALL ABWKAL columns: [${keys.join(', ')}]`);
-  console.log(`[Tisoware import] fetchTisowareAbsences: detected fromCol=${fromCol}, toCol=${toCol}`);
-  // Log sample values from detected columns to diagnose wrong-field mapping
-  if (fromCol) {
-    const sampleFromVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[fromCol] ?? '').trim()))];
-    console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${fromCol}': [${sampleFromVals.join(', ')}]`);
-  }
-  if (toCol && toCol !== fromCol) {
-    const sampleToVals = [...new Set(rawRows.slice(0, 20).map(r => String(r[toCol] ?? '').trim()))];
-    console.log(`[Tisoware import] fetchTisowareAbsences: sample values for '${toCol}': [${sampleToVals.join(', ')}]`);
-  }
+  console.log(`[Tisoware import] fetchTisowareAbsences: total ${allRows.length} row(s) across all batches`);
 
-  // Normalize: add ABWDATVON/ABWDATBIS aliases for downstream compatibility
-  const rows = normalizeAbwkalRows(rawRows, fromCol, toCol);
+  // Deduplicate by PSNR + ABWDATVON + LOANR (paranoid safety net)
+  const seen = new Set();
+  const rows = allRows.filter(r => {
+    const key = `${r.PSNR || ''}|${r.ABWDATVON || ''}|${r.LOANR || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  // Debug: log sample of raw rows and unique dates/PNSRs to diagnose mismatches
+  // Debug: log sample of raw rows and unique dates/PSNRs to diagnose mismatches
   if (rows.length > 0) {
     const samplePsnrs = [...new Set(rows.slice(0, 200).map(r => String(r.PSNR || '').trim()))];
     const sampleDates = [...new Set(rows.slice(0, 200).map(r => String(r.ABWDATVON || '').trim()))];
@@ -568,12 +606,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
   let tisowareRows = [];
   if (cleanList.length > 0) {
-    const inClause = cleanList.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-    const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
-                 FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause})
-                 ORDER BY PSNACHNA, PSVORNA`;
-    const result = await queryTisoware(sql);
-    tisowareRows = result.rows || [];
+    tisowareRows = await searchTisowareByPsPersNr(cleanList);
   } else {
     // No PSPERSNR list provided — fetch all (for full-org import)
     tisowareRows = await searchTisowareEmployees({ q: '', limit: 500 });
@@ -621,12 +654,15 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   let loanrMap = new Map();
   try {
     const allLoanrCodes = new Set();
-    // Peek at ABWKAL to get the LOANR codes — query by PSNR, no date filter
-    const peekInClause = matchedPsnr.join(',');
-    const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
-    const peekResult = await queryTisoware(peekSql);
-    for (const row of (peekResult.rows || [])) {
-      if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+    // Peek at ABWKAL to get the LOANR codes — batched by PSNR
+    const PEEK_BATCH = 200;
+    for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
+      const batch = matchedPsnr.slice(i, i + PEEK_BATCH);
+      const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${batch.join(',')})`;
+      const peekResult = await queryTisoware(peekSql);
+      for (const row of (peekResult.rows || [])) {
+        if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+      }
     }
     loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
   } catch (e) {
@@ -806,12 +842,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
   let tisowareRows = [];
   if (cleanList.length > 0) {
-    const inClause = cleanList.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
-    const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
-                 FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause})
-                 ORDER BY PSNACHNA, PSVORNA`;
-    const result = await queryTisoware(sql);
-    tisowareRows = result.rows || [];
+    tisowareRows = await searchTisowareByPsPersNr(cleanList);
   }
 
   console.log(`[Tisoware import] execute: requested ${cleanList.length} PSPERSNR(s), found ${tisowareRows.length} PERSTAMM row(s)`);
@@ -848,13 +879,16 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   // 2. Fetch LOASTAMM descriptions
   let loanrMap = new Map();
   try {
-    const peekInClause = matchedPsnr.join(',');
-    // No date filter — column names are unknown until we actually fetch ABWKAL
-    const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${peekInClause})`;
-    const peekResult = await queryTisoware(peekSql);
     const allLoanrCodes = new Set();
-    for (const row of (peekResult.rows || [])) {
-      if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+    // Peek at ABWKAL to get the LOANR codes — batched by PSNR
+    const PEEK_BATCH = 200;
+    for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
+      const batch = matchedPsnr.slice(i, i + PEEK_BATCH);
+      const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${batch.join(',')})`;
+      const peekResult = await queryTisoware(peekSql);
+      for (const row of (peekResult.rows || [])) {
+        if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+      }
     }
     loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
   } catch (e) {
