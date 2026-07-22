@@ -1006,7 +1006,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
               // Tisoware has higher priority — update central
               const mergedNote = mergeNote(existing.note, notePrefix);
               await masterDb.execute(
-                'UPDATE CentralAbsenceEntry SET position = ?, note = ?, updated_date = CURRENT_TIMESTAMP, source_tenant_id = NULL, source_tenant_doctor_id = NULL WHERE id = ?',
+                'UPDATE CentralAbsenceEntry SET position = ?, note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
                 [position, mergedNote, existing.id]
               );
               resolvedConflicts++;
@@ -1033,9 +1033,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
               ON DUPLICATE KEY UPDATE
                 position = VALUES(position),
                 note = VALUES(note),
-                updated_date = CURRENT_TIMESTAMP,
-                source_tenant_id = NULL,
-                source_tenant_doctor_id = NULL`,
+                updated_date = CURRENT_TIMESTAMP`,
               [id, employeeId, date, position, fullNote, createdBy]
             );
             imported++;
