@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { db } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -24,11 +23,6 @@ import type { AbsenceRow, AbsenceStats, MonthlyStatsPoint } from '@/components/s
 import type { Doctor, ShiftEntry } from '@/types';
 
 // ── Constants ──────────────────────────────────────────────────────────────
-
-const MONTHS = [
-  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-  'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
-];
 
 type SortKey = 'name' | 'role' | 'sickDays' | 'businessTripDays' | 'totalDays';
 type SortDir = 'asc' | 'desc';
@@ -70,10 +64,7 @@ function SortIcon({ column, activeKey, dir }: { column: SortKey; activeKey: Sort
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function AbsenceReport() {
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear.toString());
-  const [month, setMonth] = useState('all');
+export default function AbsenceReport({ year, month }: { year: string; month: string }) {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
 
@@ -197,35 +188,7 @@ export default function AbsenceReport() {
               Krank (nur Arbeitstage) und Dienstreise (alle Kalendertage)
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2">
-            <Select value={year} onValueChange={setYear}>
-              <SelectTrigger className="w-[100px]" data-testid="absence-report-year-trigger">
-                <SelectValue placeholder="Jahr" />
-              </SelectTrigger>
-              <SelectContent>
-                {Array.from({ length: currentYear - 2023 + 1 }, (_, i) => currentYear - i).map(
-                  (y) => (
-                    <SelectItem key={y} value={y.toString()}>
-                      {y}
-                    </SelectItem>
-                  ),
-                )}
-              </SelectContent>
-            </Select>
-            <Select value={month} onValueChange={setMonth}>
-              <SelectTrigger className="w-[140px]" data-testid="absence-report-month-trigger">
-                <SelectValue placeholder="Monat" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Ganzes Jahr</SelectItem>
-                {MONTHS.map((m, i) => (
-                  <SelectItem key={i} value={i.toString()}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+
         </div>
       </CardHeader>
 

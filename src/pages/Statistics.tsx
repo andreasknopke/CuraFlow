@@ -403,7 +403,7 @@ export default function StatisticsPage() {
                 </TabsContent>
 
                 <TabsContent value="absences">
-                    <AbsenceReport />
+                    <AbsenceReport year={year} month={month} />
                 </TabsContent>
 
                 <TabsContent value="details">

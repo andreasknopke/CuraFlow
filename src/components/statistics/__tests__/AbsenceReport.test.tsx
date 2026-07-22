@@ -88,13 +88,13 @@ vi.mock('@/api/client', () => ({
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function renderAbsenceReport() {
+function renderAbsenceReport({ year = '2026', month = 'all' }: { year?: string; month?: string } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <AbsenceReport />
+      <AbsenceReport year={year} month={month} />
     </QueryClientProvider>,
   );
 }
