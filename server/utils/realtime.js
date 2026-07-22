@@ -181,9 +181,6 @@ export function broadcastUserEvent({ eventName, payload, userIds = [] }) {
 
   const userIdArray = Array.from(targetUserIds);
   console.log('[Realtime] Sende User-Event event=' + eventName + ' targets=' + userIdArray.length + ' delivered=' + deliveredCount);
-  if (userIdArray.length > 0) {
-    console.log('[Realtime]   erste 3 targets: ' + userIdArray.slice(0, 3).join(',') + (userIdArray.length > 3 ? '...' : ''));
-  }
 }
 
 setInterval(() => {
