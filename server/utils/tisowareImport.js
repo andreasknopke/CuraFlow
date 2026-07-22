@@ -993,7 +993,16 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
             const samePosition = existing.position === position;
 
             if (samePosition) {
-              // Already exists with same position — skip
+              // Already exists with same position — ensure note confirms Tisoware match
+              if (!existing.note || !existing.note.includes('[TISO:')) {
+                const matchNote = existing.note
+                  ? `${notePrefix} match | ${existing.note}`
+                  : `${notePrefix} match`;
+                await masterDb.execute(
+                  'UPDATE CentralAbsenceEntry SET note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
+                  [matchNote, existing.id]
+                );
+              }
               skippedExisting++;
               continue;
             }

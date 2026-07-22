@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { format, startOfYear, endOfYear, eachMonthOfInterval, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, isWithinInterval, startOfDay } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { Loader2, Mail, AlertTriangle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil, ChevronDown, ChevronRight, CalendarX } from 'lucide-react';
+import { Loader2, Mail, AlertTriangle, AlertCircle, Sun, CalendarCheck, CalendarDays, RotateCw, Pencil, ChevronDown, ChevronRight, CalendarX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from "@/lib/utils";
@@ -59,6 +59,7 @@ interface DoctorYearViewProps {
 interface MonthCalendarProps {
   month: Date;
   getShiftStatus: (date: Date) => string | null;
+  hasTisowareNote: (date: Date) => boolean;
   onDateClick: (date: Date, e: React.MouseEvent) => void;
   onMouseDown: (date: Date) => void;
   onMouseEnter: (date: Date) => void;
@@ -468,6 +469,17 @@ export default function DoctorYearView({
     return shift ? shift.position : null;
   };
 
+  // Tisoware cross-check: the Tisoware import writes a "[TISO:...]" marker into
+  // the note field for every entry it confirms (a "match" when the type agrees,
+  // or the resolved Tisoware reason on conflict). An absence whose note lacks
+  // this marker is CuraFlow-only and not yet in Tisoware → needs a warning.
+  const hasTisowareNote = (date: Date): boolean => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const shift = shifts.find(s => s.date === dateStr);
+    if (!shift) return false;
+    return Boolean(shift.note && shift.note.includes('[TISO:'));
+  };
+
     const isDateDisabled = (date: Date): boolean => !isDateWithinContract(date, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
 
   return (
@@ -617,6 +629,7 @@ export default function DoctorYearView({
             key={month.toString()} 
             month={month} 
             getShiftStatus={getShiftStatus}
+            hasTisowareNote={hasTisowareNote}
             onDateClick={(date, e) => {
                 // If we were dragging a range, don't trigger click toggle
                 if (isDateDisabled(date) || (isDragging && dragStart && dragCurrent && !isSameDay(dragStart, dragCurrent))) {
@@ -651,7 +664,7 @@ export default function DoctorYearView({
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix, pendingRequestsByDate = {}, rejectedRequestsByDate = {} }: MonthCalendarProps) {
+function MonthCalendar({ month, getShiftStatus, hasTisowareNote, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix, pendingRequestsByDate = {}, rejectedRequestsByDate = {} }: MonthCalendarProps) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -778,6 +791,10 @@ function MonthCalendar({ month, getShiftStatus, onDateClick, onMouseDown, onMous
                     request.position === 'Dienstreise' ? 'bg-blue-400' :
                     'bg-amber-400';
                   return <span className={`pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 ${dotColor} rounded-full animate-pulse`} title={`Antrag: ${request.position} (ausstehend)`} aria-hidden="true" />;
+                }
+                // Tisoware cross-check: absence exists but has no note → not yet in Tisoware
+                if (status && !hasTisowareNote(date)) {
+                  return <AlertCircle className="pointer-events-none absolute -bottom-0.5 -right-0.5 w-3 h-3 text-orange-500" title="Noch nicht in Tisoware eingetragen" aria-label="Nicht in Tisoware" />;
                 }
                 return null;
               })()}
