@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { CalendarX2, ArrowUpDown, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { CalendarX2, ArrowUpDown, ArrowUp, ArrowDown, Loader2, TriangleAlert } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -125,7 +125,7 @@ export default function AbsenceReport() {
   // ── Aggregation ────────────────────────────────────────────────────────
 
   const stats: AbsenceStats = useMemo(() => {
-    if (isLoading) return { rows: [], tenantAvgSick: 0, tenantAvgTrip: 0, roleAverages: {} };
+    if (isLoading) return { rows: [], tenantAvgSick: 0, tenantAvgTrip: 0, tenantAvgSickNoOutliers: 0, tenantAvgTripNoOutliers: 0, roleAverages: {} };
     return computeAbsenceStats({
       doctors,
       shifts,
@@ -176,6 +176,13 @@ export default function AbsenceReport() {
 
   const totalSick = stats.rows.reduce((s, r) => s + r.sickDays, 0);
   const totalTrip = stats.rows.reduce((s, r) => s + r.businessTripDays, 0);
+  const totalSickNoOutliers = stats.rows
+    .filter((r) => !r.isSickOutlier)
+    .reduce((s, r) => s + r.sickDays, 0);
+  const totalTripNoOutliers = stats.rows
+    .filter((r) => !r.isTripOutlier)
+    .reduce((s, r) => s + r.businessTripDays, 0);
+  const hasOutliers = stats.rows.some((r) => r.isSickOutlier || r.isTripOutlier);
 
   return (
     <Card data-testid="absence-report">
@@ -228,22 +235,42 @@ export default function AbsenceReport() {
           <div className="p-4 bg-red-50 rounded-lg">
             <div className="text-sm text-red-600">Kranktage gesamt</div>
             <div className="text-2xl font-bold text-red-900">{totalSick}</div>
+            {hasOutliers && (
+              <div className="text-xs text-red-500/70 mt-0.5">
+                ohne Ausreißer: {totalSickNoOutliers}
+              </div>
+            )}
           </div>
           <div className="p-4 bg-blue-50 rounded-lg">
             <div className="text-sm text-blue-600">Dienstreisetage gesamt</div>
             <div className="text-2xl font-bold text-blue-900">{totalTrip}</div>
+            {hasOutliers && (
+              <div className="text-xs text-blue-500/70 mt-0.5">
+                ohne Ausreißer: {totalTripNoOutliers}
+              </div>
+            )}
           </div>
           <div className="p-4 bg-red-50/50 rounded-lg">
             <div className="text-sm text-red-600/80">Ø Krank / Person</div>
             <div className="text-2xl font-bold text-red-900/80">
               {stats.tenantAvgSick.toFixed(1)}
             </div>
+            {hasOutliers && stats.tenantAvgSickNoOutliers !== stats.tenantAvgSick && (
+              <div className="text-xs text-red-500/70 mt-0.5">
+                ohne Ausreißer: {stats.tenantAvgSickNoOutliers.toFixed(1)}
+              </div>
+            )}
           </div>
           <div className="p-4 bg-blue-50/50 rounded-lg">
             <div className="text-sm text-blue-600/80">Ø Dienstreise / Person</div>
             <div className="text-2xl font-bold text-blue-900/80">
               {stats.tenantAvgTrip.toFixed(1)}
             </div>
+            {hasOutliers && stats.tenantAvgTripNoOutliers !== stats.tenantAvgTrip && (
+              <div className="text-xs text-blue-500/70 mt-0.5">
+                ohne Ausreißer: {stats.tenantAvgTripNoOutliers.toFixed(1)}
+              </div>
+            )}
           </div>
         </div>
 
@@ -386,7 +413,12 @@ export default function AbsenceReport() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="font-semibold">{row.sickDays}</span>
+                        <span className={`font-semibold inline-flex items-center gap-1 ${row.isSickOutlier ? 'text-amber-700' : ''}`}>
+                          {row.isSickOutlier && (
+                            <TriangleAlert className="w-3.5 h-3.5 text-amber-500" title="Ausreißer" />
+                          )}
+                          {row.sickDays}
+                        </span>
                         <br />
                         <DeviationBadge value={row.sickDays} avg={stats.tenantAvgSick} label="Ø Abt" />
                         {roleAvg && (
@@ -394,7 +426,12 @@ export default function AbsenceReport() {
                         )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className="font-semibold">{row.businessTripDays}</span>
+                        <span className={`font-semibold inline-flex items-center gap-1 ${row.isTripOutlier ? 'text-amber-700' : ''}`}>
+                          {row.isTripOutlier && (
+                            <TriangleAlert className="w-3.5 h-3.5 text-amber-500" title="Ausreißer" />
+                          )}
+                          {row.businessTripDays}
+                        </span>
                         <br />
                         <DeviationBadge
                           value={row.businessTripDays}
@@ -425,6 +462,12 @@ export default function AbsenceReport() {
               Ø Abteilung: Krank {stats.tenantAvgSick.toFixed(1)} · Dienstreise{' '}
               {stats.tenantAvgTrip.toFixed(1)}
             </span>
+            {hasOutliers && (
+              <span className="text-slate-400">
+                ohne Ausreißer: Krank {stats.tenantAvgSickNoOutliers.toFixed(1)} · Dienstreise{' '}
+                {stats.tenantAvgTripNoOutliers.toFixed(1)}
+              </span>
+            )}
           </div>
         )}
       </CardContent>

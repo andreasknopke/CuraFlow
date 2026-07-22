@@ -19,12 +19,18 @@ export interface AbsenceRow {
   sickDays: number;
   businessTripDays: number;
   totalDays: number;
+  /** True when this doctor's sickDays is an IQR outlier among all doctors. */
+  isSickOutlier: boolean;
+  /** True when this doctor's businessTripDays is an IQR outlier among all doctors. */
+  isTripOutlier: boolean;
 }
 
 export interface AbsenceStats {
   rows: AbsenceRow[];
   tenantAvgSick: number;
   tenantAvgTrip: number;
+  tenantAvgSickNoOutliers: number;
+  tenantAvgTripNoOutliers: number;
   roleAverages: Record<string, { sick: number; trip: number }>;
 }
 
@@ -109,8 +115,8 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
     }
   }
 
-  // Build rows
-  const rows: AbsenceRow[] = doctors.map((doctor) => {
+  // Build rows (without outlier flags yet)
+  const baseRows = doctors.map((doctor) => {
     const sickDays = sickByDoctor.get(doctor.id)?.size ?? 0;
     const businessTripDays = tripByDoctor.get(doctor.id)?.size ?? 0;
     return {
@@ -123,6 +129,18 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
     };
   });
 
+  // Outlier detection (IQR method) — only when >2 doctors
+  const sickValues = baseRows.map((r) => r.sickDays);
+  const tripValues = baseRows.map((r) => r.businessTripDays);
+  const sickOutlier = outlierThresholds(sickValues);
+  const tripOutlier = outlierThresholds(tripValues);
+
+  const rows: AbsenceRow[] = baseRows.map((r) => ({
+    ...r,
+    isSickOutlier: sickOutlier !== null && (r.sickDays < sickOutlier.lower || r.sickDays > sickOutlier.upper),
+    isTripOutlier: tripOutlier !== null && (r.businessTripDays < tripOutlier.lower || r.businessTripDays > tripOutlier.upper),
+  }));
+
   // Averages across all doctors (including zeros)
   const tenantAvgSick = rows.length > 0
     ? rows.reduce((sum, r) => sum + r.sickDays, 0) / rows.length
@@ -130,6 +148,10 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
   const tenantAvgTrip = rows.length > 0
     ? rows.reduce((sum, r) => sum + r.businessTripDays, 0) / rows.length
     : 0;
+
+  // Outlier-excluded averages
+  const tenantAvgSickNoOutliers = averageWithoutOutliers(sickValues);
+  const tenantAvgTripNoOutliers = averageWithoutOutliers(tripValues);
 
   // Averages per role
   const roleBuckets = new Map<string, AbsenceRow[]>();
@@ -148,7 +170,20 @@ export function computeAbsenceStats(input: AbsenceStatsInput): AbsenceStats {
     };
   }
 
-  return { rows, tenantAvgSick, tenantAvgTrip, roleAverages };
+  return { rows, tenantAvgSick, tenantAvgTrip, tenantAvgSickNoOutliers, tenantAvgTripNoOutliers, roleAverages };
+}
+
+// ── Outlier helpers (IQR method) ──────────────────────────────────────────
+
+/**
+ * Returns the IQR outlier bounds for a set of values, or null if ≤2 values
+ * (outlier detection is meaningless with so few data points).
+ */
+export function outlierThresholds(values: number[]): { lower: number; upper: number } | null {
+  if (values.length <= 2) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const { q1, q3, iqr } = quartiles(sorted);
+  return { lower: q1 - 1.5 * iqr, upper: q3 + 1.5 * iqr };
 }
 
 // ── Outlier helpers (IQR method) ──────────────────────────────────────────

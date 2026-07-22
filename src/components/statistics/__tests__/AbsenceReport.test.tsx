@@ -214,4 +214,21 @@ describe('AbsenceReport', () => {
     const tripHeadings = screen.getAllByText(/Ø Dienstreisetage pro Person/);
     expect(tripHeadings.length).toBeGreaterThan(0);
   });
+
+  it('does not show outlier markers when no outliers exist', async () => {
+    renderAbsenceReport();
+
+    await waitFor(() => {
+      const table = getByTestIdOnce('absence-report-table');
+      expect(table).toBeTruthy();
+    });
+
+    // "ohne Ausreißer" should not appear anywhere (only 2 doctors, ≤2 disables IQR)
+    const outlierTexts = screen.queryAllByText(/ohne Ausreißer/);
+    expect(outlierTexts.length).toBe(0);
+
+    // No triangle alert icons should be visible
+    const alerts = document.querySelectorAll('.lucide-triangle-alert');
+    expect(alerts.length).toBe(0);
+  });
 });

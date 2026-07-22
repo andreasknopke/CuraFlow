@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeAbsenceStats, computeMonthlyStats, averageWithoutOutliers, quartiles } from '../absenceStatsUtils';
+import { computeAbsenceStats, computeMonthlyStats, averageWithoutOutliers, quartiles, outlierThresholds } from '../absenceStatsUtils';
 import type { Doctor, ShiftEntry } from '@/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -262,6 +262,114 @@ describe('computeAbsenceStats', () => {
     const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
 
     expect(stats.rows[0].totalDays).toBe(3);
+  });
+
+  it('marks outlier doctor in sickDays when value exceeds IQR bounds', () => {
+    // 6 doctors: 5 have 0-1 sick days, 1 has 10 → outlier
+    const doctors = [
+      makeDoctor({ id: 'd1' }), makeDoctor({ id: 'd2' }),
+      makeDoctor({ id: 'd3' }), makeDoctor({ id: 'd4' }),
+      makeDoctor({ id: 'd5' }), makeDoctor({ id: 'd6' }),
+    ];
+    const shifts = [
+      // d1: 10 sick days (outlier), d2: 1, rest: 0
+      ...[...Array(10)].map((_, i) =>
+        makeShift({ id: `s${i}`, doctor_id: 'd1', position: 'Krank', date: `2026-03-0${i + 2}` }),
+      ),
+      makeShift({ id: 's99', doctor_id: 'd2', position: 'Krank', date: '2026-03-02' }),
+    ];
+
+    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
+
+    const d1 = stats.rows.find((r) => r.doctorId === 'd1')!;
+    const d2 = stats.rows.find((r) => r.doctorId === 'd2')!;
+    expect(d1.isSickOutlier).toBe(true);
+    expect(d2.isSickOutlier).toBe(false);
+  });
+
+  it('does not mark outliers when ≤2 doctors', () => {
+    const doctors = [makeDoctor({ id: 'd1' }), makeDoctor({ id: 'd2' })];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02' }),
+    ];
+
+    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
+
+    expect(stats.rows[0].isSickOutlier).toBe(false);
+    expect(stats.rows[1].isSickOutlier).toBe(false);
+  });
+
+  it('returns outlier-excluded averages in AbsenceStats', () => {
+    const doctors = [
+      makeDoctor({ id: 'd1' }), makeDoctor({ id: 'd2' }),
+      makeDoctor({ id: 'd3' }), makeDoctor({ id: 'd4' }),
+      makeDoctor({ id: 'd5' }), makeDoctor({ id: 'd6' }),
+    ];
+    // d1: 10 sick days (weekdays only), d2: 1, rest: 0 → avg=11/6≈1.833, no-outliers avg=1/5=0.2
+    const d1Dates: ReturnType<typeof makeShift>[] = [];
+    let day = 2; // Mar 2 = Monday
+    for (let i = 0; i < 10; i++) {
+      // Skip Sat (6) and Sun (0/7) — but we're just counting weekdays
+      // Mar 2-6 = Mon-Fri (5 days), Mar 9-13 = Mon-Fri (5 days) = 10 weekdays
+      if (day === 7) day = 9; // skip weekend Mar 7-8
+      const dayStr = String(day).padStart(2, '0');
+      d1Dates.push(makeShift({ id: `sa${i}`, doctor_id: 'd1', position: 'Krank', date: `2026-03-${dayStr}` }));
+      day++;
+    }
+    const shifts: ReturnType<typeof makeShift>[] = [
+      ...d1Dates,
+      makeShift({ id: 's99', doctor_id: 'd2', position: 'Krank', date: '2026-03-12' }),
+    ];
+
+    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
+
+    expect(stats.tenantAvgSick).toBeCloseTo(1.833, 2);
+    expect(stats.tenantAvgSickNoOutliers).toBeCloseTo(0.2, 2);
+    expect(stats.tenantAvgTripNoOutliers).toBe(0);
+  });
+
+  it('returns same avg and avgNoOutliers when no outliers exist', () => {
+    const doctors = [
+      makeDoctor({ id: 'd1' }), makeDoctor({ id: 'd2' }),
+      makeDoctor({ id: 'd3' }),
+    ];
+    const shifts = [
+      makeShift({ id: 's1', doctor_id: 'd1', position: 'Krank', date: '2026-03-02' }),
+      makeShift({ id: 's2', doctor_id: 'd2', position: 'Krank', date: '2026-03-03' }),
+      makeShift({ id: 's3', doctor_id: 'd3', position: 'Krank', date: '2026-03-04' }),
+    ];
+
+    const stats = computeAbsenceStats({ doctors, shifts, year: 2026, month: 2, isPublicHoliday });
+
+    expect(stats.tenantAvgSick).toBe(1);
+    expect(stats.tenantAvgSickNoOutliers).toBe(1);
+  });
+});
+
+// ── outlierThresholds ─────────────────────────────────────────────────────
+
+describe('outlierThresholds', () => {
+  it('returns null for ≤2 values', () => {
+    expect(outlierThresholds([5])).toBeNull();
+    expect(outlierThresholds([5, 15])).toBeNull();
+  });
+
+  it('returns bounds for ≥3 values', () => {
+    const bounds = outlierThresholds([1, 2, 3, 4, 5]);
+    expect(bounds).not.toBeNull();
+    expect(bounds!.lower).toBeLessThan(2);  // Q1=2, IQR=3, lower=2-4.5=-2.5
+    expect(bounds!.upper).toBeGreaterThan(4); // Q3=4, upper=4+4.5=8.5
+  });
+
+  it('detects high outlier', () => {
+    const bounds = outlierThresholds([1, 2, 3, 4, 5, 100])!;
+    expect(bounds.upper).toBeLessThan(100); // 100 > upper
+  });
+
+  it('detects low outlier', () => {
+    const bounds = outlierThresholds([100, 101, 102, 103, 104, 1])!;
+    expect(bounds.lower).toBeGreaterThan(1); // 1 is outlier
+    expect(bounds.lower).toBeLessThan(100); // lower is around 95.5
   });
 });
 
