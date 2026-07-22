@@ -167,13 +167,19 @@ function mergeNote(existingNote, notePrefix) {
  * @param {object} params
  * @param {string} [params.q] - Search query (name or PSPERSNR)
  * @param {string} [params.kstnr] - Cost center filter
+ * @param {boolean} [params.allActive=false] - If true, filter to employees without exit date (PSAUSDAT IS NULL/0)
  * @param {number} [params.limit=200] - Max results
  * @returns {Promise<Array>} PERSTAMM rows
  */
-export async function searchTisowareEmployees({ q, kstnr, limit = 200 } = {}) {
+export async function searchTisowareEmployees({ q, kstnr, allActive = false, limit = 200 } = {}) {
   let sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
              FROM dbo.PERSTAMM WHERE 1=1`;
   const conditions = [];
+
+  if (allActive) {
+    // PSAUSDAT is an int (YYYYMMDD); 0 or NULL means no exit date → still active
+    conditions.push('(PSAUSDAT IS NULL OR PSAUSDAT = 0)');
+  }
 
   if (q) {
     const safeQ = q.replace(/'/g, "''");

@@ -368,7 +368,7 @@ import { db } from '../index.js';
  */
 router.post('/import/employee-search', async (req, res, next) => {
   try {
-    let { q, kstnr } = req.body || {};
+    let { q, kstnr, allActive } = req.body || {};
 
     // If q looks like a CuraFlow employee UUID, resolve it to payroll_id first
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -393,7 +393,7 @@ router.post('/import/employee-search', async (req, res, next) => {
       }
     }
 
-    const tisowareRows = await searchTisowareEmployees({ q, kstnr, limit: 200 });
+    const tisowareRows = await searchTisowareEmployees({ q, kstnr, allActive: Boolean(allActive), limit: 200 });
     const matched = await matchTisowareEmployees(db, tisowareRows);
 
     const stats = {

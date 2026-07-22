@@ -187,6 +187,44 @@ export default function MasterTisowareImport() {
     }
   }, [searchQuery]);
 
+  // ============ SEARCH ALL ACTIVE ============
+
+  const handleSearchAllActive = useCallback(async () => {
+    setSearching(true);
+    setError(null);
+    setPreview(null);
+    setImportResult(null);
+    setCheckedIds(new Set());
+
+    try {
+      const { employees: empList, stats } = await api.request(
+        '/api/master/tisoware/import/employee-search',
+        {
+          method: 'POST',
+          body: JSON.stringify({ allActive: true }),
+        },
+      ) as { employees: TisowareImportEmployee[]; stats: { total: number; matched: number; unmatched: number; no_pspersnr: number } };
+
+      setEmployees(empList);
+      setSearchStats(stats);
+
+      // Auto-check all matched employees
+      const autoChecked = new Set<string>();
+      for (const e of empList) {
+        if (e.match_status === 'matched') autoChecked.add(e.PSPERSNR);
+      }
+      setCheckedIds(autoChecked);
+
+      toast.success(`${stats.total} aktive Mitarbeiter gefunden, ${stats.matched} verknüpft`);
+    } catch (err) {
+      const message = (err as Error)?.message || 'Unbekannter Fehler';
+      setError(message);
+      toast.error(`Suche fehlgeschlagen: ${message}`);
+    } finally {
+      setSearching(false);
+    }
+  }, []);
+
   // ============ PREVIEW ============
 
   const handlePreview = useCallback(async () => {
@@ -320,6 +358,10 @@ export default function MasterTisowareImport() {
             <Button onClick={handleSearch} disabled={searching}>
               {searching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
               Suchen
+            </Button>
+            <Button onClick={handleSearchAllActive} disabled={searching} variant="outline">
+              {searching ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Users className="w-4 h-4 mr-2" />}
+              Alle aktiven
             </Button>
           </div>
         </CardContent>
