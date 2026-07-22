@@ -431,7 +431,8 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   const unique = [...new Set(psnrList.map(p => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
-  const BATCH_SIZE = 200; // Keep IN clause well under 10 000 char proxy limit
+  const BATCH_SIZE = 25; // Each PSNR can have 50–200 ABWKAL rows; PHP proxy caps at 5000 rows.
+                          // 25 PSNRs × ~200 absences = 5000 rows max. For avg 100: 2500 rows.
   let allRows = [];
   let fromCol = null;
   let toCol = null;
