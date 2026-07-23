@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/command';
 import { Check, ChevronsUpDown, Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { getActiveTokenId } from '@/components/dbTokenStorage';
 
 interface BulkLoginDialogProps {
   open: boolean;
@@ -67,13 +68,22 @@ export default function BulkLoginDialog({ open, onOpenChange, doctors }: BulkLog
 
       for (const doctor of selected) {
         try {
-          await api.register({
+          const result = await api.register({
             email: doctor.email!.trim(),
             password,
             full_name: doctor.name,
             role: 'user',
             doctor_id: doctor.id,
-          });
+          }) as { user: { id: string } };
+
+          // Scope the new login to the active tenant only
+          const activeTokenId = getActiveTokenId();
+          if (activeTokenId && result?.user?.id) {
+            await api.updateUser(result.user.id, {
+              allowed_tenants: [activeTokenId],
+            });
+          }
+
           results.push({ name: doctor.name, success: true });
         } catch (err: unknown) {
           const message = err instanceof Error ? err.message : 'Unbekannter Fehler';
@@ -95,7 +105,7 @@ export default function BulkLoginDialog({ open, onOpenChange, doctors }: BulkLog
         );
       }
 
-      queryClient.invalidateQueries({ queryKey: ['users'] });
+      void queryClient.invalidateQueries({ queryKey: ['users'] });
       handleOpenChange(false);
     },
     onError: (err: Error) => {
