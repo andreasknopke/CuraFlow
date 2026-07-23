@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useMemo } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import type { Doctor } from '@/types';
 import { Button } from '@/components/ui/button';
@@ -41,8 +41,23 @@ export default function BulkLoginDialog({ open, onOpenChange, doctors }: BulkLog
   const [password, setPassword] = useState('');
   const [popoverOpen, setPopoverOpen] = useState(false);
 
-  // Only doctors with a notification email are eligible
-  const eligibleDoctors = doctors.filter((d) => d.email && d.email.trim().length > 0);
+  // Fetch existing users to exclude already-registered emails
+  const { data: existingUsers = [] } = useQuery({
+    queryKey: ['users'],
+    queryFn: () => api.listUsers() as Promise<{ email: string }[]>,
+    enabled: open,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const existingEmails = useMemo(
+    () => new Set(existingUsers.map((u) => (u.email ?? '').toLowerCase().trim()).filter(Boolean)),
+    [existingUsers],
+  );
+
+  // Only doctors with a notification email that is NOT already a registered account
+  const eligibleDoctors = doctors.filter(
+    (d) => d.email && d.email.trim().length > 0 && !existingEmails.has(d.email.trim().toLowerCase()),
+  );
 
   const toggleDoctor = (id: string) => {
     setSelectedIds((prev) =>
