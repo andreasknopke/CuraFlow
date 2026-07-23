@@ -35,6 +35,7 @@ import absenceRequestsRouter from './routes/absenceRequests.js';
 import tisowareRouter from './routes/tisoware.js';
 import masterDbDumpRouter from './routes/masterDbDump.js';
 import { checkAndSendWishReminders } from './utils/wishReminder.js';
+import { startTisowareCron } from './utils/tisowareCron.js';
 import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
 import { ensureDefaultWorkplaceTimeslots } from './utils/ensureDefaultWorkplaceTimeslots.js';
 
@@ -694,6 +695,10 @@ app.listen(PORT, async () => {
     }
   }, WISH_REMINDER_INTERVAL);
   console.log('⏰ Wish reminder cron enabled (hourly check, sends between 7-9 UTC)');
+
+  // Nightly Tisoware import cron (01:30 local time, all active employees, auto-resolve conflicts)
+  startTisowareCron(db);
+  console.log('⏰ Tisoware nightly import cron enabled (01:30 daily, resolveConflicts=true)');
 });
 
 // Auto-create essential tables if missing
