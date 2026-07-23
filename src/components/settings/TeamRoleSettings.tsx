@@ -90,8 +90,10 @@ export function useTeamRoles(): TeamRolesResult {
     const { data: teamRoles = [], isLoading, refetch } = useQuery<TeamRoleData[]>({
         queryKey: ['teamRoles'],
         queryFn: async () => {
-            // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
-            const roles = await initializeDefaultRoles();
+            // Only read from DB — no auto-(re)seeding of defaults here.
+            // Initial seeding of default roles happens once at tenant setup
+            // in the backend (server/routes/dbProxy.js / seed-runtime-shared.js).
+            const roles = (await db.TeamRole.list()) as unknown as TeamRoleData[];
             return roles.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
         },
     });
@@ -156,30 +158,6 @@ export function useTeamRoles(): TeamRolesResult {
         isLoading, 
         refetch 
     };
-}
-
-// Initialisiert Standard-Rollen in der Datenbank — ergänzt fehlende, löscht keine bestehenden
-export async function initializeDefaultRoles(): Promise<TeamRoleData[]> {
-    try {
-        const existing = await db.TeamRole.list();
-        const existingCasted = existing as unknown as TeamRoleData[];
-        const existingNames = new Set((existingCasted || []).map((r: TeamRoleData) => r.name));
-        const missingRoles = DEFAULT_TEAM_ROLES.filter(r => !existingNames.has(r.name));
-
-        if (missingRoles.length === 0) {
-            return existingCasted;
-        }
-
-        console.log(`Adding ${missingRoles.length} missing default team roles...`);
-        for (const role of missingRoles) {
-            await db.TeamRole.create(role);
-        }
-        console.log('Missing default team roles created');
-        return [...(existingCasted || []), ...missingRoles];
-    } catch (error) {
-        console.error('Failed to initialize team roles:', error);
-        return DEFAULT_TEAM_ROLES;
-    }
 }
 
 interface RoleEditFormData {
@@ -346,8 +324,8 @@ export default function TeamRoleSettings() {
     const { data: teamRoles = [] } = useQuery<TeamRoleData[]>({
         queryKey: ['teamRoles'],
         queryFn: async () => {
-            // Stellt sicher, dass alle Default-Rollen existieren (ergänzt nur fehlende)
-            const roles = await initializeDefaultRoles();
+            // Only read from DB — no auto-(re)seeding of defaults here.
+            const roles = (await db.TeamRole.list()) as unknown as TeamRoleData[];
             return roles.sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99));
         },
     });
