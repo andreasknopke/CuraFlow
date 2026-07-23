@@ -163,6 +163,22 @@ export interface AbsenceData {
   summary: AbsenceSummary;
 }
 
+// ── Absence statistics (yearly, for charts) ───────────────────────────────
+
+/** One month of aggregated absence days, keyed by absence type. */
+export interface AbsenceMonthlyPoint {
+  month: number; // 1–12
+  label: string; // 'Jan', 'Feb', …
+  days: { [absenceType: string]: number };
+}
+
+/** Response of GET /api/master/absence-stats?year=…&tenantId=… */
+export interface AbsenceStatsData {
+  monthly: AbsenceMonthlyPoint[];
+  byType: { [absenceType: string]: number };
+  staffCount: number;
+}
+
 // ── Time tracking entry ───────────────────────────────────────────────────
 
 export interface TimeTrackingEntry {

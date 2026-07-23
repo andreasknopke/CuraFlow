@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -7,17 +7,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CalendarX2, Loader2 } from 'lucide-react';
-import type { Tenant, AbsenceEntry, AbsenceSummary } from '@/types/master';
-
-const ABSENCE_TYPES = {
-  'Urlaub': { color: 'bg-emerald-100 text-emerald-800', icon: '🏖️' },
-  'Krank': { color: 'bg-red-100 text-red-800', icon: '🤒' },
-  'Frei': { color: 'bg-slate-100 text-slate-800', icon: '📅' },
-  'Dienstreise': { color: 'bg-blue-100 text-blue-800', icon: '✈️' },
-  'Nicht verfügbar': { color: 'bg-amber-100 text-amber-800', icon: '⛔' },
-  'Fortbildung': { color: 'bg-purple-100 text-purple-800', icon: '📚' },
-  'Kongress': { color: 'bg-violet-100 text-violet-800', icon: '🎓' },
-};
+import MasterAbsenceCharts from '@/master/components/MasterAbsenceCharts';
+import { ABSENCE_TYPES } from '@/master/utils/absenceTypes';
+import type { Tenant, AbsenceEntry, AbsenceSummary, AbsenceStatsData } from '@/types/master';
 
 const MONTHS = [
   'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
@@ -28,6 +20,12 @@ export default function MasterAbsences() {
   const [selectedTenant, setSelectedTenant] = useState('all');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   const [selectedMonth, setSelectedMonth] = useState((new Date().getMonth() + 1).toString().padStart(2, '0'));
+
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = new Set<number>([2024, currentYear - 1, currentYear, currentYear + 1]);
+    return [...years].sort((a, b) => a - b);
+  }, []);
 
   const { data: tenants = [] } = useQuery<Tenant[]>({
     queryKey: ['master-tenants'],
@@ -40,14 +38,16 @@ export default function MasterAbsences() {
     },
   });
 
+  const isFullYear = selectedMonth === 'all';
+
   const { data: absenceData, isLoading } = useQuery<{ entries: AbsenceEntry[]; summary: AbsenceSummary }>({
     queryKey: ['master-absences', selectedTenant, selectedYear, selectedMonth],
     queryFn: async () => {
       try {
         const params = new URLSearchParams({
           year: selectedYear,
-          month: selectedMonth,
           ...(selectedTenant !== 'all' && { tenantId: selectedTenant }),
+          ...(!isFullYear && { month: selectedMonth }),
         });
         return (await api.request(`/api/master/absences?${params}`)) as { entries: AbsenceEntry[]; summary: AbsenceSummary };
       } catch {
@@ -56,8 +56,25 @@ export default function MasterAbsences() {
     },
   });
 
+  // Yearly aggregated stats for the charts (analogous to tenant statistics)
+  const { data: absenceStats, isLoading: isLoadingStats } = useQuery<AbsenceStatsData>({
+    queryKey: ['master-absence-stats', selectedTenant, selectedYear],
+    queryFn: async () => {
+      try {
+        const params = new URLSearchParams({
+          year: selectedYear,
+          ...(selectedTenant !== 'all' && { tenantId: selectedTenant }),
+        });
+        return (await api.request(`/api/master/absence-stats?${params}`)) as AbsenceStatsData;
+      } catch {
+        return { monthly: [], byType: {}, staffCount: 0 };
+      }
+    },
+  });
+
   const entries = absenceData?.entries ?? [];
   const summary = absenceData?.summary ?? {};
+  const periodLabel = isFullYear ? `Gesamtjahr ${selectedYear}` : `${MONTHS[parseInt(selectedMonth) - 1]} ${selectedYear}`;
 
   return (
     <div className="space-y-6">
@@ -87,7 +104,7 @@ export default function MasterAbsences() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {[2024, 2025, 2026, 2027].map((y) => (
+            {yearOptions.map((y) => (
               <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
             ))}
           </SelectContent>
@@ -98,12 +115,21 @@ export default function MasterAbsences() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">Ganzes Jahr</SelectItem>
             {MONTHS.map((name, i) => (
               <SelectItem key={i} value={(i + 1).toString().padStart(2, '0')}>{name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
+
+      {/* Diagramme (Jahresverlauf, analog zum Statistikbereich der Mandanten) */}
+      <MasterAbsenceCharts
+        stats={absenceStats}
+        isLoading={isLoadingStats}
+        year={selectedYear}
+        month={selectedMonth}
+      />
 
       {/* Zusammenfassung nach Typ */}
       {Object.keys(summary).length > 0 && (
@@ -123,7 +149,7 @@ export default function MasterAbsences() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CalendarX2 className="w-5 h-5" />
-            Fehlzeiten {MONTHS[parseInt(selectedMonth) - 1]} {selectedYear}
+            Fehlzeiten {periodLabel}
           </CardTitle>
           <CardDescription>
             Detaillierte Auflistung aller Abwesenheiten

@@ -959,7 +959,8 @@ router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async 
 
 /**
  * GET /api/master/absences?year=2026&month=02&tenantId=xxx
- * Absences across all tenants for a given month.
+ * Absences across all tenants for a given month, or for the whole year
+ * when `month` is omitted (or 'all').
  *
  * Primary source: CentralAbsenceEntry (master DB).
  * Fallback: tenant ShiftEntry for doctors not yet linked to a central employee.
@@ -969,9 +970,11 @@ router.get('/absences', async (req, res, next) => {
     const { year, month, tenantId } = req.query;
     const y = parseInt(year) || new Date().getFullYear();
     const m = parseInt(month) || (new Date().getMonth() + 1);
-    const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
-    const daysInMonth = getDaysInMonth(new Date(y, m - 1));
-    const endDate = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    const isFullYear = month === undefined || month === '' || month === 'all';
+    const startDate = isFullYear ? `${y}-01-01` : `${y}-${String(m).padStart(2, '0')}-01`;
+    const endDate = isFullYear
+      ? `${y}-12-31`
+      : `${y}-${String(m).padStart(2, '0')}-${String(getDaysInMonth(new Date(y, m - 1))).padStart(2, '0')}`;
 
     const absenceTypes = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress'];
 
@@ -1058,6 +1061,126 @@ router.get('/absences', async (req, res, next) => {
     });
 
     res.json({ entries: allEntries, summary });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/master/absence-stats?year=2026&tenantId=xxx
+ * Aggregated absence statistics across all tenants for a full year,
+ * powering the master absence charts (analogous to the tenant statistics
+ * AbsenceReport): monthly trend of days per type and per-type totals.
+ *
+ * Counting rules mirror the tenant statistics:
+ *  - "Krank" counts working days only (Mon–Fri, excluding public holidays)
+ *  - all other types count calendar days
+ *
+ * Response: {
+ *   monthly: [{ month: 1..12, label: 'Jan'.., days: { [type]: number } }],
+ *   byType:  { [type]: number },
+ *   staffCount: number
+ * }
+ *
+ * Primary source: CentralAbsenceEntry (master DB).
+ * Fallback: tenant ShiftEntry for doctors not yet linked to a central employee.
+ */
+router.get('/absence-stats', async (req, res, next) => {
+  try {
+    const { year, tenantId } = req.query;
+    const y = parseInt(year) || new Date().getFullYear();
+    const startDate = `${y}-01-01`;
+    const endDate = `${y}-12-31`;
+
+    const absenceTypes = ['Urlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress'];
+
+    // Working-day filter for "Krank" (mirrors tenant AbsenceReport logic)
+    const publicHolidays = await getPublicHolidayDatesForYear(y);
+    const isWorkingDay = (dateStr) => {
+      const dow = new Date(dateStr + 'T12:00:00').getDay();
+      if (dow === 0 || dow === 6) return false;
+      return !publicHolidays.has(dateStr);
+    };
+
+    // Raw day rows: { date, type, staffName }
+    const dayRows = [];
+    // Distinct staff names (headcount for the selected scope)
+    const staffNames = new Set();
+
+    // ── 1) Primary source: CentralAbsenceEntry in master DB ──────────────
+    try {
+      await ensureCentralAbsenceTables(db);
+
+      let centralSql = `
+        SELECT cae.date, cae.position,
+               CONCAT(COALESCE(e.last_name,''), ', ', COALESCE(e.first_name,'')) AS employee_name
+        FROM CentralAbsenceEntry cae
+        LEFT JOIN Employee e ON cae.employee_id = e.id
+        WHERE cae.date >= ? AND cae.date <= ?
+      `;
+      const centralParams = [startDate, endDate];
+
+      if (tenantId && tenantId !== 'all') {
+        centralSql += ' AND cae.source_tenant_id = ?';
+        centralParams.push(tenantId);
+      }
+
+      const [centralRows] = await db.execute(centralSql, centralParams);
+
+      for (const r of centralRows) {
+        const date = typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd');
+        dayRows.push({ date, type: r.position, staffName: r.employee_name });
+        staffNames.add(r.employee_name);
+      }
+    } catch (e) {
+      console.warn('[Master absence-stats] CentralAbsenceEntry query failed:', e.message);
+    }
+
+    // ── 2) Fallback: unlinked doctors still store absences in tenant DB ──
+    await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+      try {
+        const placeholders = absenceTypes.map(() => '?').join(',');
+        const [rows] = await pool.execute(
+          `SELECT se.date, se.position, d.name AS doctor_name
+           FROM ShiftEntry se
+           JOIN Doctor d ON se.doctor_id = d.id
+           WHERE se.date >= ? AND se.date <= ?
+             AND se.position IN (${placeholders})
+             AND (d.central_employee_id IS NULL OR d.central_employee_id = '')`,
+          [startDate, endDate, ...absenceTypes]
+        );
+        for (const r of rows) {
+          const date = typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd');
+          dayRows.push({ date, type: r.position, staffName: r.doctor_name });
+          staffNames.add(r.doctor_name);
+        }
+        return [];
+      } catch (e) {
+        console.warn(`[Master absence-stats] Tenant "${token.name}":`, e.message);
+        return [];
+      }
+    });
+
+    // ── 3) Aggregate: monthly per-type counts + yearly totals ────────────
+    const byType = {};
+    absenceTypes.forEach(t => { byType[t] = 0; });
+
+    const monthly = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      label: format(new Date(y, i, 1), 'MMM'),
+      days: Object.fromEntries(absenceTypes.map(t => [t, 0])),
+    }));
+
+    for (const row of dayRows) {
+      if (!absenceTypes.includes(row.type)) continue;
+      if (row.type === 'Krank' && !isWorkingDay(row.date)) continue;
+      const m = parseInt(row.date.slice(5, 7), 10);
+      if (m < 1 || m > 12) continue;
+      monthly[m - 1].days[row.type]++;
+      byType[row.type]++;
+    }
+
+    res.json({ monthly, byType, staffCount: staffNames.size });
   } catch (error) {
     next(error);
   }
