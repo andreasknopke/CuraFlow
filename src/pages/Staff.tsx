@@ -34,15 +34,17 @@ import QualificationOverview from '@/components/staff/QualificationOverview';
 import { toast } from 'sonner';
 import { getActiveTokenId } from '@/components/dbTokenStorage';
 import { syncTenantDoctorCentralLink } from '@/components/staff/centralLinkSync';
+import BulkLoginDialog from '@/components/staff/BulkLoginDialog';
 
 export default function StaffPage() {
-  const { isReadOnly, user } = useAuth();
+  const { isReadOnly, user, can } = useAuth();
   const isAdmin = user?.role === 'admin';
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState<Doctor | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedQualificationIds, setSelectedQualificationIds] = useState<string[]>([]);
+  const [isBulkLoginOpen, setIsBulkLoginOpen] = useState(false);
   const queryClient = useQueryClient();
 
   // Dynamische Rollenprioritäten aus DB laden
@@ -252,6 +254,12 @@ export default function StaffPage() {
         <div className="flex gap-2">
           {!isReadOnly && <QualificationManagement />}
           {!isReadOnly && <TeamRoleSettings />}
+          {!isReadOnly && can('can_manage_users') && (
+            <Button variant="outline" onClick={() => { setIsBulkLoginOpen(true); }} data-testid="staff-bulk-login-button">
+              <User className="w-4 h-4 mr-2" />
+              Logins anlegen
+            </Button>
+          )}
           {!isReadOnly && (
             <Button onClick={handleAddNew} className="bg-indigo-600 hover:bg-indigo-700" data-testid="staff-add-button">
               <Plus className="w-4 h-4 mr-2" />
@@ -525,6 +533,12 @@ export default function StaffPage() {
           onSubmit={handleSave}
         />
       )}
+
+      <BulkLoginDialog
+        open={isBulkLoginOpen}
+        onOpenChange={setIsBulkLoginOpen}
+        doctors={doctors}
+      />
     </div>
   );
 }
