@@ -3,15 +3,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { api } from '@/api/client';
 import {
   Search, Upload, Eye, Play, Loader2, Users, Link2,
-  CalendarClock, AlertTriangle, CheckCircle2, XCircle,
-  Download, Clock, UserCheck,
+  AlertTriangle, CheckCircle2, XCircle,
 } from 'lucide-react';
 import type {
   TisowareImportEmployee,
