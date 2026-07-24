@@ -466,7 +466,15 @@ export default function DoctorYearView({
   const getShiftStatus = (date: Date): string | null => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const shift = shifts.find(s => s.date === dateStr);
-    return shift ? shift.position : null;
+    if (!shift) return null;
+    // For past/today dates: only show absences confirmed by Tisoware ([TISO:] note).
+    // Future dates remain unchanged (show all absences).
+    const today = startOfDay(new Date());
+    if (date <= today) {
+      const hasTiso = Boolean(shift.note && shift.note.includes('[TISO:'));
+      return hasTiso ? shift.position : null;
+    }
+    return shift.position;
   };
 
   // Tisoware cross-check: the Tisoware import writes a "[TISO:...]" marker into
@@ -793,7 +801,8 @@ function MonthCalendar({ month, getShiftStatus, hasTisowareNote, onDateClick, on
                   return <span className={`pointer-events-none absolute -top-0.5 -right-0.5 w-2.5 h-2.5 ${dotColor} rounded-full animate-pulse`} title={`Antrag: ${request.position} (ausstehend)`} aria-hidden="true" />;
                 }
                 // Tisoware cross-check: absence exists but has no note → not yet in Tisoware
-                if (status && !hasTisowareNote(date)) {
+                // Suppress warning on weekends and public holidays (no Tisoware entry expected).
+                if (status && !hasTisowareNote(date) && !isWeekendDay && !isHoliday) {
                   return <AlertCircle className="pointer-events-none absolute -bottom-0.5 -right-0.5 w-3 h-3 text-orange-500" title="Noch nicht in Tisoware eingetragen" aria-label="Nicht in Tisoware" />;
                 }
                 return null;
