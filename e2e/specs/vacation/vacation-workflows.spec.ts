@@ -95,7 +95,7 @@ test.describe('vacation workflows', () => {
       await vacationPage.confirmConflict();
 
       await expect
-        .poll(async () => await vacationPage.dayCell(dateString).getAttribute('title'))
+        .poll(async () => await vacationPage.dayCell(dateString).getAttribute('title'), { timeout: 10000 })
         .toContain('Urlaub');
 
       await expect

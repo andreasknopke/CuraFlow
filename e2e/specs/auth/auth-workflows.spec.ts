@@ -45,6 +45,8 @@ test.describe('auth workflows', () => {
     await appShell.logout();
     await loginPage.expectLoaded();
 
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('db_token_enabled'))).toBe('false');
+
     const clearedState = await page.evaluate(() => ({
       jwtToken: localStorage.getItem('radioplan_jwt_token'),
       dbTokenEnabled: localStorage.getItem('db_token_enabled'),
