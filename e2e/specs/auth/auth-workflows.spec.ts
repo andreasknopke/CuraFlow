@@ -32,7 +32,9 @@ test.describe('auth workflows', () => {
     await appShell.expectReady();
     await expect(appShell.accountMenuTrigger).toBeVisible();
 
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem('db_token_enabled'))).toBe('true');
+    // Use waitForFunction instead of expect.poll + page.evaluate to survive
+    // late client-side navigations that destroy the execution context.
+    await page.waitForFunction(() => localStorage.getItem('db_token_enabled') === 'true', undefined, { timeout: 10_000 });
 
     const authState = await page.evaluate(() => ({
       jwtToken: localStorage.getItem('radioplan_jwt_token'),
@@ -45,7 +47,7 @@ test.describe('auth workflows', () => {
     await appShell.logout();
     await loginPage.expectLoaded();
 
-    await expect.poll(async () => page.evaluate(() => localStorage.getItem('db_token_enabled'))).toBe('false');
+    await page.waitForFunction(() => localStorage.getItem('db_token_enabled') === 'false', undefined, { timeout: 10_000 });
 
     const clearedState = await page.evaluate(() => ({
       jwtToken: localStorage.getItem('radioplan_jwt_token'),

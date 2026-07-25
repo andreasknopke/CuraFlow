@@ -1,4 +1,4 @@
-import { format, parseISO } from 'date-fns';
+import { addMonths, format, startOfMonth } from 'date-fns';
 import type { Page } from '@playwright/test';
 
 import { expect, test } from '../../fixtures/auth';
@@ -9,7 +9,7 @@ import {
   getAuthHeaders,
   type DbAuthHeaders,
 } from '../../support/api';
-import { seededSchedule, storageStatePaths } from '../../support/config';
+import { storageStatePaths } from '../../support/config';
 
 type ShiftEntry = {
   id: string;
@@ -60,7 +60,11 @@ test.describe('vacation workflows', () => {
     test.skip(browserName !== 'chromium', 'This flow mutates shared seeded vacation state across browser projects.');
 
     const doctorId = 'doctor-anna';
-    const date = parseISO(`${seededSchedule.targetMonth}-08`);
+    // Use a future date (first day of the month after the current month).
+    // The vacation calendar hides non-Tisoware-confirmed absences on past/today
+    // dates, so we must always pick a date that is guaranteed to be in the future
+    // regardless of when the test suite runs.
+    const date = addMonths(startOfMonth(new Date()), 1);
     const dateString = format(date, 'yyyy-MM-dd');
     const pageErrors = capturePageErrors(page);
 
