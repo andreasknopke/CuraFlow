@@ -1188,19 +1188,13 @@ export function useDragHandlers(deps: DragHandlersDeps) {
             if (sourceDroppableId === destinationDroppableId) {
                 if (source.index === destination.index) return;
 
-                const targetWorkplace = workplaceByName.get(newPosition) as any;
-                const targetAllTimeslotIds = targetWorkplace?.timeslots_enabled
-                    ? ((workplaceTimeslotsByWorkplaceId as any).get(targetWorkplace.id) || []).map((timeslot: any) => timeslot.id)
-                    : [];
+                // Same-cell reorder: the cell renders ALL shifts in ONE droppable
+                // (all timeslots merged), so source.index / destination.index are
+                // global indices across all shifts in the cell regardless of timeslot.
+                // Filter by date+position only — no timeslot filter — so the indices
+                // match the rendered order.
                 const cellShifts = currentWeekShifts
-                    .filter((s: any) => {
-                        if (s.date !== newDateStr || s.position !== newPosition) return false;
-                        if (!newTimeslotId && targetAllTimeslotIds.length > 1) {
-                            return targetAllTimeslotIds.includes(s.timeslot_id) || !s.timeslot_id;
-                        }
-                        if (newTimeslotId) return s.timeslot_id === newTimeslotId;
-                        return !s.timeslot_id;
-                    })
+                    .filter((s: any) => s.date === newDateStr && s.position === newPosition)
                     .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
 
                 const newShifts = Array.from(cellShifts);
