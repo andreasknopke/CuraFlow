@@ -358,6 +358,7 @@ import {
   matchTisowareEmployees,
   previewTisowareImport,
   executeTisowareImport,
+  repairTisowareStatusMappings,
 } from '../utils/tisowareImport.js';
 import { db } from '../index.js';
 
@@ -508,6 +509,31 @@ router.post('/import/run', async (req, res, next) => {
       (result.unresolved_conflicts > 0 ? ` (${result.unresolved_conflicts} unresolved conflicts)` : '')
     );
 
+    res.json(result);
+  } catch (err) {
+    return tisowareErrorHandler(err, req, res, next);
+  }
+});
+
+/**
+ * POST /api/master/tisoware/import/repair-status-mappings
+ *
+ * Rewrites CentralAbsenceEntry rows imported from Tisoware whose position is
+ * still "Mutterschutz" or "Elternzeit" back to "Frei", so those absences stop
+ * spilling into the tenant scheduler's "Archiv / Unbekannt" section. Only rows
+ * whose note carries a [TISO:CODE] prefix for one of the remapped status codes
+ * (550/551/5511/552) are touched; tenant-migrated rows are preserved.
+ *
+ * Body: { dryRun?: boolean }
+ */
+router.post('/import/repair-status-mappings', async (req, res, next) => {
+  try {
+    const dryRun = req.body?.dryRun === true;
+    const result = await repairTisowareStatusMappings(db, { dryRun });
+    console.log(
+      `[Tisoware import] repair-status-mappings (dryRun=${dryRun}) by ${req.user?.email || req.user?.sub || 'unknown'}: ` +
+      `scanned=${result.scanned} repaired=${result.repaired}`
+    );
     res.json(result);
   } catch (err) {
     return tisowareErrorHandler(err, req, res, next);

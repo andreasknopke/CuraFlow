@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { api } from '@/api/client';
 import {
   Search, Upload, Eye, Play, Loader2, Users, Link2,
-  AlertTriangle, CheckCircle2, XCircle,
+  AlertTriangle, CheckCircle2, XCircle, Wrench,
 } from 'lucide-react';
 import type {
   TisowareImportEmployee,
@@ -138,6 +138,10 @@ export default function MasterTisowareImport() {
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [resolveConflicts, setResolveConflicts] = useState(false);
+
+  // Repair state — backfills Mutterschutz/Elternzeit rows to Frei.
+  const [repairing, setRepairing] = useState(false);
+  const [repairDryRunResult, setRepairDryRunResult] = useState<{ scanned: number; sample: Array<{ id: string; employee_id: string; date: string; old_position: string; note: string | null }> } | null>(null);
 
   const [employees, setEmployees] = useState<TisowareImportEmployee[]>([]);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
@@ -299,6 +303,47 @@ export default function MasterTisowareImport() {
     }
   }, [checkedIds, resolveConflicts, handlePreview]);
 
+  // ============ REPAIR STATUS MAPPINGS ============
+
+  const handleRepairDryRun = useCallback(async () => {
+    setRepairing(true);
+    setRepairDryRunResult(null);
+    try {
+      const result = await api.request('/api/master/tisoware/import/repair-status-mappings', {
+        method: 'POST',
+        body: JSON.stringify({ dryRun: true }),
+      }) as { scanned: number; sample: Array<{ id: string; employee_id: string; date: string; old_position: string; note: string | null }> };
+      setRepairDryRunResult(result);
+      if (result.scanned === 0) {
+        toast.success('Keine reparaturbedürftigen Einträge gefunden.');
+      } else {
+        toast.info(`${result.scanned} Einträge würden auf „Frei" umgeschrieben werden.`);
+      }
+    } catch (err) {
+      const message = (err as Error)?.message || 'Unbekannter Fehler';
+      toast.error(`Prüfung fehlgeschlagen: ${message}`);
+    } finally {
+      setRepairing(false);
+    }
+  }, []);
+
+  const handleRepairRun = useCallback(async () => {
+    setRepairing(true);
+    try {
+      const result = await api.request('/api/master/tisoware/import/repair-status-mappings', {
+        method: 'POST',
+        body: JSON.stringify({ dryRun: false }),
+      }) as { scanned: number; repaired: number };
+      setRepairDryRunResult(null);
+      toast.success(`Reparatur abgeschlossen — ${result.repaired} von ${result.scanned} Einträgen auf „Frei" umgeschrieben.`);
+    } catch (err) {
+      const message = (err as Error)?.message || 'Unbekannter Fehler';
+      toast.error(`Reparatur fehlgeschlagen: ${message}`);
+    } finally {
+      setRepairing(false);
+    }
+  }, []);
+
   // ============ HELPERS ============
 
   const toggleEmployee = useCallback((psPersNr: string, _checked: boolean) => {
@@ -360,6 +405,84 @@ export default function MasterTisowareImport() {
               Alle aktiven
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Repair: Mutterschutz/Elternzeit → Frei */}
+      <Card className="border-amber-200 bg-amber-50/40">
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                <Wrench className="w-4 h-4 text-amber-600" />
+                Status-Mappings reparieren (Mutterschutz/Elternzeit → Frei)
+              </h2>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                Bereits importierte Tisoware-Abwesenheiten, die ursprünglich als
+                „Mutterschutz" oder „Elternzeit" in der zentralen Tabelle stehen,
+                werden im Mandanten-Scheduler fälschlich in der Sektion
+                „Archiv / Unbekannt" angezeigt. Diese Funktion schreibt die
+                betroffenen Zeilen auf „Frei" zurück und belässt den
+                Ursprungsgrund (z.B. <code className="font-mono">[TISO:550]</code>) im Notizfeld.
+                Mandanten-seitig angelegte Einträge bleiben unangetastet.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRepairDryRun}
+                disabled={repairing}
+              >
+                {repairing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Eye className="w-4 h-4 mr-2" />}
+                Prüfen
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleRepairRun}
+                disabled={repairing}
+              >
+                {repairing ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wrench className="w-4 h-4 mr-2" />}
+                Reparieren
+              </Button>
+            </div>
+          </div>
+          {repairDryRunResult && (
+            <div className="border border-amber-200 bg-white rounded-md p-3 text-xs text-slate-700">
+              <p className="mb-1">
+                <strong>{repairDryRunResult.scanned}</strong> Einträge würden umgeschrieben werden.
+              </p>
+              {repairDryRunResult.sample.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-slate-400 uppercase">
+                        <th className="p-1 text-left">Mitarbeiter</th>
+                        <th className="p-1 text-left">Datum</th>
+                        <th className="p-1 text-left">Position</th>
+                        <th className="p-1 text-left">Notiz</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {repairDryRunResult.sample.map((row) => (
+                        <tr key={row.id} className="border-t border-slate-100">
+                          <td className="p-1 font-mono">{row.employee_id}</td>
+                          <td className="p-1 font-mono">{row.date}</td>
+                          <td className="p-1 font-medium">{row.old_position}</td>
+                          <td className="p-1 max-w-xs truncate text-slate-500">{row.note}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {repairDryRunResult.scanned > repairDryRunResult.sample.length && (
+                    <p className="mt-1 text-slate-400">
+                      …und {repairDryRunResult.scanned - repairDryRunResult.sample.length} weitere.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
