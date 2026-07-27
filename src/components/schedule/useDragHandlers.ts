@@ -1389,6 +1389,13 @@ export function useDragHandlers(deps: DragHandlersDeps) {
             executeMove();
         };
 
+        // Same-cell reorder: if the shift already has a timeslot, skip the
+        // redundant timeslot dialog — the time window info is already known.
+        if (sourceDroppableId === destinationDroppableId && movingShift?.timeslot_id) {
+            executeGridDrop(movingShift.timeslot_id);
+            return;
+        }
+
         if (!resolveTimeslotSelection({
             positionName: newPosition,
             dateStr: newDateStr,
