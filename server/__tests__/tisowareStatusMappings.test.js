@@ -25,14 +25,14 @@ vi.mock('../utils/tisowareDataSource.js', () => ({
 import { mapLoanrToPosition, repairTisowareStatusMappings } from '../utils/tisowareImport.js';
 
 describe('mapLoanrToPosition', () => {
-  it('maps Mutterschutz LOANRs to Frei (not Mutterschutz) to keep scheduler rows clean', () => {
-    expect(mapLoanrToPosition('550').position).toBe('Frei');
-    expect(mapLoanrToPosition('551').position).toBe('Frei');
-    expect(mapLoanrToPosition('5511').position).toBe('Frei');
+  it('maps Mutterschutz LOANRs to Nicht verfügbar (not Mutterschutz) to keep scheduler rows clean', () => {
+    expect(mapLoanrToPosition('550').position).toBe('Nicht verfügbar');
+    expect(mapLoanrToPosition('551').position).toBe('Nicht verfügbar');
+    expect(mapLoanrToPosition('5511').position).toBe('Nicht verfügbar');
   });
 
-  it('maps Elternzeit LOANR 552 to Frei (not Elternzeit)', () => {
-    expect(mapLoanrToPosition('552').position).toBe('Frei');
+  it('maps Elternzeit LOANR 552 to Nicht verfügbar (not Elternzeit)', () => {
+    expect(mapLoanrToPosition('552').position).toBe('Nicht verfügbar');
   });
 
   it('preserves the original Tisoware reason in the note prefix', () => {
@@ -97,7 +97,7 @@ describe('repairTisowareStatusMappings', () => {
     // One SELECT + one UPDATE per row
     expect(executeMock).toHaveBeenCalledTimes(2);
     const updateCall = executeMock.mock.calls[1];
-    expect(updateCall[0]).toContain("SET position = 'Frei'");
+    expect(updateCall[0]).toContain("SET position = 'Nicht verfügbar'");
     expect(updateCall[0]).toContain("WHERE id = ?");
     expect(updateCall[1]).toEqual(['a']);
   });

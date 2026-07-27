@@ -42,9 +42,9 @@ import {
 // as "Nicht verfügbar" (the safest fallback).
 //
 // Mutterschutz / Elternzeit (and similar long-running status codes such as
-// KO) are INTENTIONALLY mapped to "Frei" rather than to their own canonical
-// positions. CuraFlow's tenant scheduler only renders a fixed set of
-// absence rows (Frei/Krank/Urlaub/Dienstreise/Nicht verfügbar); writing
+// KO) are INTENTIONALLY mapped to "Nicht verfügbar" rather than to their own
+// canonical positions. CuraFlow's tenant scheduler only renders a fixed set
+// of absence rows (Frei/Krank/Urlaub/Dienstreise/Nicht verfügbar); writing
 // "Mutterschutz"/"Elternzeit" causes these absences to spill into the
 // "Archiv / Unbekannt" section. The original Tisoware reason is preserved
 // in the note via the [TISO:CODE] prefix so the audit trail is not lost.
@@ -74,12 +74,12 @@ const LOANR_TO_POSITION = {
   '571': 'Krank',
   '572': 'Krank',
 
-  // Mutterschutz / Elternzeit — mapped to "Frei" (see note above).
+  // Mutterschutz / Elternzeit — mapped to "Nicht verfügbar" (see note above).
   // The [TISO:CODE] note retains the original reason for the absence.
-  '550': 'Frei',
-  '551': 'Frei',
-  '5511': 'Frei',
-  '552': 'Frei',
+  '550': 'Nicht verfügbar',
+  '551': 'Nicht verfügbar',
+  '5511': 'Nicht verfügbar',
+  '552': 'Nicht verfügbar',
 
   // Dienstreise / Business trip
   '555': 'Dienstreise',
@@ -141,8 +141,8 @@ const LOANR_TO_NOTE = {
  * Returns the position and a [TISO:CODE] note prefix.
  *
  * Mutterschutz/Elternzeit LOANRs (550/551/5511/552) deliberately map to
- * the "Frei" position so they land in a known scheduler row; the original
- * reason stays in notePrefix (e.g. "[TISO:550] Mutterschutz").
+ * the "Nicht verfügbar" position so they land in a known scheduler row; the
+ * original reason stays in notePrefix (e.g. "[TISO:550] Mutterschutz").
  *
  * @param {string} loanr - The LOANR code from ABWKAL
  * @param {string|null} loatext1 - LOATEXT1 from LOASTAMM (human-readable name)
@@ -161,8 +161,9 @@ export function mapLoanrToPosition(loanr, loatext1 = null) {
 
 /**
  * LOANR codes whose original Tisoware reason (Mutterschutz/Elternzeit) was
- * remapped to "Frei". Used by repairTisowareStatusMappings() to detect rows
- * that pre-date the remap and still carry position="Mutterschutz"/"Elternzeit".
+ * remapped to "Nicht verfügbar". Used by repairTisowareStatusMappings() to
+ * detect rows that pre-date the remap and still carry position="Mutterschutz"/
+ * "Elternzeit" (or the earlier "Frei" interim mapping).
  */
 const STATUS_CODE_LOANRS = new Set(['550', '551', '5511', '552']);
 
@@ -180,13 +181,14 @@ function extractTisoCodeFromNote(note) {
 
 /**
  * Repair CentralAbsenceEntry rows that were imported from Tisoware before
- * Mutterschutz/Elternzeit LOANRs were remapped to "Frei". Rows whose note
- * carries a [TISO:CODE] prefix for one of STATUS_CODE_LOANRS AND whose
- * position is "Mutterschutz" or "Elternzeit" are rewritten to position="Frei",
- * keeping the original note (audit trail). Runs idempotently: calling it again
- * is a no-op once all rows are repaired. Rows without the [TISO:] marker are
- * left untouched (they may originate from the tenant-side migration that
- * legitimately produced Mutterschutz/Elternzeit positions).
+ * Mutterschutz/Elternzeit LOANRs were remapped to "Nicht verfügbar". Rows
+ * whose note carries a [TISO:CODE] prefix for one of STATUS_CODE_LOANRS AND
+ * whose position is "Mutterschutz" or "Elternzeit" are rewritten to
+ * position="Nicht verfügbar", keeping the original note (audit trail). Runs
+ * idempotently: calling it again is a no-op once all rows are repaired. Rows
+ * without the [TISO:] marker are left untouched (they may originate from the
+ * tenant-side migration that legitimately produced Mutterschutz/Elternzeit
+ * positions).
  *
  * @param {object} masterDb - MasterDB pool
  * @param {object} [options]
@@ -235,14 +237,14 @@ export async function repairTisowareStatusMappings(masterDb, options = {}) {
     if (!code || !STATUS_CODE_LOANRS.has(code)) continue;
     await masterDb.execute(
       `UPDATE CentralAbsenceEntry
-          SET position = 'Frei', updated_date = CURRENT_TIMESTAMP
+          SET position = 'Nicht verfügbar', updated_date = CURRENT_TIMESTAMP
         WHERE id = ? AND position IN ('Mutterschutz', 'Elternzeit')`,
       [row.id]
     );
     repaired++;
   }
 
-  console.log(`[Tisoware import] repairTisowareStatusMappings: rewrote ${repaired} of ${rows.length} Mutterschutz/Elternzeit rows to Frei`);
+  console.log(`[Tisoware import] repairTisowareStatusMappings: rewrote ${repaired} of ${rows.length} Mutterschutz/Elternzeit rows to Nicht verfügbar`);
 
   return {
     dryRun: false,

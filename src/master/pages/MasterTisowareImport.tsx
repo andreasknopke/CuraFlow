@@ -139,7 +139,7 @@ export default function MasterTisowareImport() {
   const [importing, setImporting] = useState(false);
   const [resolveConflicts, setResolveConflicts] = useState(false);
 
-  // Repair state — backfills Mutterschutz/Elternzeit rows to Frei.
+  // Repair state — backfills Mutterschutz/Elternzeit rows to Nicht verfügbar.
   const [repairing, setRepairing] = useState(false);
   const [repairDryRunResult, setRepairDryRunResult] = useState<{ scanned: number; sample: Array<{ id: string; employee_id: string; date: string; old_position: string; note: string | null }> } | null>(null);
 
@@ -317,7 +317,7 @@ export default function MasterTisowareImport() {
       if (result.scanned === 0) {
         toast.success('Keine reparaturbedürftigen Einträge gefunden.');
       } else {
-        toast.info(`${result.scanned} Einträge würden auf „Frei" umgeschrieben werden.`);
+        toast.info(`${result.scanned} Einträge würden auf „Nicht verfügbar" umgeschrieben werden.`);
       }
     } catch (err) {
       const message = (err as Error)?.message || 'Unbekannter Fehler';
@@ -335,7 +335,7 @@ export default function MasterTisowareImport() {
         body: JSON.stringify({ dryRun: false }),
       }) as { scanned: number; repaired: number };
       setRepairDryRunResult(null);
-      toast.success(`Reparatur abgeschlossen — ${result.repaired} von ${result.scanned} Einträgen auf „Frei" umgeschrieben.`);
+      toast.success(`Reparatur abgeschlossen — ${result.repaired} von ${result.scanned} Einträgen auf „Nicht verfügbar" umgeschrieben.`);
     } catch (err) {
       const message = (err as Error)?.message || 'Unbekannter Fehler';
       toast.error(`Reparatur fehlgeschlagen: ${message}`);
@@ -408,21 +408,21 @@ export default function MasterTisowareImport() {
         </CardContent>
       </Card>
 
-      {/* Repair: Mutterschutz/Elternzeit → Frei */}
+      {/* Repair: Mutterschutz/Elternzeit → Nicht verfügbar */}
       <Card className="border-amber-200 bg-amber-50/40">
         <CardContent className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div className="space-y-1">
               <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                 <Wrench className="w-4 h-4 text-amber-600" />
-                Status-Mappings reparieren (Mutterschutz/Elternzeit → Frei)
+                Status-Mappings reparieren (Mutterschutz/Elternzeit → Nicht verfügbar)
               </h2>
               <p className="text-xs text-slate-600 leading-relaxed">
                 Bereits importierte Tisoware-Abwesenheiten, die ursprünglich als
                 „Mutterschutz" oder „Elternzeit" in der zentralen Tabelle stehen,
                 werden im Mandanten-Scheduler fälschlich in der Sektion
                 „Archiv / Unbekannt" angezeigt. Diese Funktion schreibt die
-                betroffenen Zeilen auf „Frei" zurück und belässt den
+                betroffenen Zeilen auf „Nicht verfügbar" zurück und belässt den
                 Ursprungsgrund (z.B. <code className="font-mono">[TISO:550]</code>) im Notizfeld.
                 Mandanten-seitig angelegte Einträge bleiben unangetastet.
               </p>
