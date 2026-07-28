@@ -63,6 +63,16 @@ const parseSectionConfig = (rawValue: string | null | undefined): ParsedSectionC
     return null;
 };
 
+// Positions the drag ghost centered on the pointer. The draggable offset
+// refers to the un-centered dialog position while the dialog itself is
+// positioned via translate(-50%, -50%) — this adjustment corrects the gap.
+const getDraggingStyle = (style: React.CSSProperties | undefined): React.CSSProperties => ({
+    ...style,
+    left: 'auto',
+    top: 'auto',
+    transform: `${style?.transform ?? ''} translate(-50%, -50%)`,
+});
+
 export function useSectionConfig(): { config: ParsedSectionConfig | null; getSectionName: (defaultName: string) => string; getSectionOrder: () => string[] } {
     const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
         queryKey: ['systemSettings'],
@@ -303,7 +313,7 @@ export default function SectionConfigDialog() {
                     <Settings2 className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 p-0 max-w-3xl max-sm:max-w-[95vw]">
+            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 !grid-rows-none p-0 max-w-3xl max-sm:max-w-[95vw]">
                 <DialogHeader className="shrink-0 px-4 sm:px-6 pt-6 pb-0">
                     <DialogTitle>Panel-Konfiguration</DialogTitle>
                 </DialogHeader>
@@ -323,20 +333,13 @@ export default function SectionConfigDialog() {
                                 >
                                     {sections.map((section, index) => (
                                         <Draggable key={section.id} draggableId={section.id} index={index}>
-                                            {(provided, snapshot) => {
-                                                // Fix: Dialog translate offset korrigieren für Drag-Drop
-                                                const style = provided.draggableProps.style;
-                                                const fixedStyle = snapshot.isDragging ? {
-                                                    ...style,
-                                                    left: 'auto',
-                                                    top: 'auto',
-                                                } : style;
-                                                
-                                                return (
+                                            {(provided, snapshot) => (
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
-                                                    style={fixedStyle}
+                                                    style={snapshot.isDragging
+                                                        ? getDraggingStyle(provided.draggableProps.style)
+                                                        : provided.draggableProps.style}
                                                     className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-300' : ''}`}
                                                 >
                                                     <div 
@@ -357,8 +360,7 @@ export default function SectionConfigDialog() {
                                                         />
                                                     </div>
                                                 </div>
-                                                );
-                                            }}
+                                            )}
                                         </Draggable>
                                     ))}
                                     {provided.placeholder}
