@@ -1,20 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
 import { api } from '@/api/client';
-import { saveDbToken, enableDbToken, disableDbToken, getActiveTokenId } from '@/components/dbTokenStorage';
+import { saveDbToken, enableDbToken, getActiveTokenId } from '@/components/dbTokenStorage';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Database, Building2 } from 'lucide-react';
+import { Loader2, Building2 } from 'lucide-react';
 import type { TenantWithStatus } from '@/types/master';
 
 interface TenantSelectionDialogProps {
     open: boolean;
     onComplete: () => void;
+    onClose?: () => void;
     tenants?: TenantWithStatus[];
     hasFullAccess?: boolean;
 }
 
-export default function TenantSelectionDialog({ open, onComplete, tenants = [], hasFullAccess = false }: TenantSelectionDialogProps) {
+export default function TenantSelectionDialog({ open, onComplete, onClose, tenants = [], hasFullAccess = false }: TenantSelectionDialogProps) {
     const [isActivating, setIsActivating] = useState(false);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [error, setError] = useState('');
@@ -72,7 +73,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
         setSelectedId('default');
         
         try {
-            await disableDbToken();
+            localStorage.setItem('db_token_enabled', 'false');
             localStorage.removeItem('active_token_id');
             
             onComplete();
@@ -88,7 +89,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
 
     if (open && tenants.length === 1 && !hasFullAccess) {
         return (
-            <Dialog open={open}>
+            <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) { onClose?.(); } }}>
                 <DialogContent className="sm:max-w-md" data-testid="tenant-selection-dialog">
                     <div className="flex flex-col items-center justify-center py-8" data-testid="tenant-selection-auto-activating">
                         <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-4" />
@@ -101,7 +102,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
     }
 
     return (
-        <Dialog open={open}>
+        <Dialog open={open} onOpenChange={(isOpen) => { if (!isOpen) { onClose?.(); } }}>
             <DialogContent className="sm:max-w-lg" data-testid="tenant-selection-dialog">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
@@ -120,32 +121,6 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                 )}
 
                 <div className="space-y-3 max-h-80 overflow-y-auto py-2">
-                    {hasFullAccess && (
-                        <Card 
-                            className={`p-4 cursor-pointer transition-all hover:border-indigo-300 hover:shadow-sm ${
-                                selectedId === 'default' ? 'border-indigo-500 bg-indigo-50' : ''
-                            }`}
-                            onClick={() => !isActivating && handleUseDefaultDatabase()}
-                        >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                                        <Database className="w-5 h-5 text-slate-600" />
-                                    </div>
-                                    <div>
-                                        <p className="font-medium text-slate-900">Standard-Datenbank</p>
-                                        <p className="text-sm text-slate-500">Zentrale Datenbank verwenden</p>
-                                    </div>
-                                </div>
-                                {isActivating && selectedId === 'default' ? (
-                                    <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
-                                ) : (
-                                    <Badge variant="outline" className="text-slate-600">Standard</Badge>
-                                )}
-                            </div>
-                        </Card>
-                    )}
-
                     {sortedTenants.map((tenant: TenantWithStatus) => {
                         const lastActiveTokenId = getActiveTokenId();
                         const wasLastActive = tenant.id === lastActiveTokenId;
@@ -156,8 +131,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
                             className={`p-4 cursor-pointer transition-all hover:border-indigo-300 hover:shadow-sm ${
                                 selectedId === tenant.id ? 'border-indigo-500 bg-indigo-50' : ''
                             } ${wasLastActive ? 'border-indigo-300' : ''}`}
-                            onClick={() => !isActivating && handleActivateTenant(tenant.id)}
-                        >
+                            onClick={() => !isActivating && handleActivateTenant(tenant.id)}>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -185,7 +159,7 @@ export default function TenantSelectionDialog({ open, onComplete, tenants = [], 
 
                     {tenants.length === 0 && !hasFullAccess && (
                         <div className="text-center py-8 text-slate-500">
-                            <Database className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                            <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                             <p>Keine Mandanten verfügbar</p>
                             <p className="text-sm">Bitte kontaktieren Sie Ihren Administrator</p>
                         </div>

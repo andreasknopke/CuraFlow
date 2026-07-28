@@ -180,6 +180,7 @@ export default function AuthLoginPage() {
             <TenantSelectionDialog
                 open={needsTenantSelection}
                 onComplete={completeTenantSelection}
+                onClose={() => { navigate('/authlogin', { replace: true }); }}
                 tenants={allowedTenants as unknown as TenantWithStatus[]}
                 hasFullAccess={hasFullTenantAccess}
                 isAdmin={user?.role === 'admin'}
