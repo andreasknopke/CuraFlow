@@ -10,7 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Palette, RefreshCcw } from 'lucide-react';
 import { useTeamRoles, DEFAULT_TEAM_ROLES } from './TeamRoleSettings';
-import type { ColorSetting, Workplace } from '@/types';
+import { getWorkplaceCategoryNames } from '@/utils/workplaceCategoryUtils';
+import type { ColorSetting, Workplace, SystemSetting } from '@/types';
 
 interface ColorValue {
   bg: string;
@@ -174,7 +175,15 @@ export default function ColorSettingsDialog() {
         }
     };
 
-    const sectionsList = Object.keys(DEFAULT_COLORS.sections);
+    const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
+        queryKey: ['color-settings-systemSettings'],
+        queryFn: () => db.SystemSetting.list(),
+        staleTime: 5 * 60 * 1000,
+    });
+
+    // Kombiniere Standard-Bereiche mit dynamisch hinzugefügten Custom-Kategorien
+    const customCategoryNames = getWorkplaceCategoryNames(systemSettings);
+    const sectionsList = Array.from(new Set([...Object.keys(DEFAULT_COLORS.sections), ...customCategoryNames]));
     // Dynamisch Rollen aus DB laden statt hardcoded
     const { roleNames: dynamicRoles } = useTeamRoles();
     const rolesList = dynamicRoles.length > 0 ? dynamicRoles : DEFAULT_TEAM_ROLES.map(r => r.name);
