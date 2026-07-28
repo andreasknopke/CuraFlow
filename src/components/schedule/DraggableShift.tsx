@@ -92,8 +92,8 @@ function LateStartIndicator({ tooltip, compact = false }: LateStartIndicatorProp
         <TooltipTrigger asChild>
           <span
             className={compact
-              ? 'absolute -top-1 -left-1 z-20 flex h-4 w-4 items-center justify-center rounded-full bg-slate-900/80 text-[10px] leading-none text-white cursor-help'
-              : 'inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-slate-900/80 text-xs leading-none text-white cursor-help'}
+              ? 'absolute -top-1 -left-1 z-20 flex h-3 w-3 items-center justify-center rounded-full bg-slate-900/60 text-[8px] leading-none text-white cursor-help opacity-70'
+              : 'inline-flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-slate-900/60 text-[10px] leading-none text-white cursor-help opacity-70'}
             aria-label={tooltip}
           >
             🌙
