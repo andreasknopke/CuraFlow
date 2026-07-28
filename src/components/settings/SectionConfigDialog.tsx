@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Settings2, GripVertical, RotateCcw } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import type { DropResult } from '@hello-pangea/dnd';
+import type { DraggableProvided, DraggableRubric, DraggableStateSnapshot, DropResult } from '@hello-pangea/dnd';
 import { db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -63,15 +63,9 @@ const parseSectionConfig = (rawValue: string | null | undefined): ParsedSectionC
     return null;
 };
 
-// Positions the drag ghost centered on the pointer. The draggable offset
-// refers to the un-centered dialog position while the dialog itself is
-// positioned via translate(-50%, -50%) — this adjustment corrects the gap.
-const getDraggingStyle = (style: React.CSSProperties | undefined): React.CSSProperties => ({
-    ...style,
-    left: 'auto',
-    top: 'auto',
-    transform: `${style?.transform ?? ''} translate(-50%, -50%)`,
-});
+// Clone is portaled to document.body so dialog translate(-50%, -50%) does not
+// offset the drag ghost relative to the pointer.
+const getCloneContainer = (): HTMLElement => document.body;
 
 export function useSectionConfig(): { config: ParsedSectionConfig | null; getSectionName: (defaultName: string) => string; getSectionOrder: () => string[] } {
     const { data: systemSettings = [] } = useQuery<SystemSetting[]>({
@@ -313,18 +307,50 @@ export default function SectionConfigDialog() {
                     <Settings2 className="h-4 w-4" />
                 </Button>
             </DialogTrigger>
-            <DialogContent className="flex flex-col max-h-[85vh] !gap-0 !grid-rows-none p-0 max-w-3xl max-sm:max-w-[95vw]">
+            <DialogContent className="flex flex-col h-[85vh] max-h-[85vh] overflow-hidden !gap-0 p-0 max-w-3xl max-sm:max-w-[95vw]">
                 <DialogHeader className="shrink-0 px-4 sm:px-6 pt-6 pb-0">
                     <DialogTitle>Panel-Konfiguration</DialogTitle>
                 </DialogHeader>
                 
-                <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4 min-w-0">
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-4 min-w-0">
                     <p className="text-sm text-slate-500">
                         Passen Sie die Bezeichnungen und Reihenfolge der Bereiche an. Ziehen Sie die Einträge, um die Reihenfolge zu ändern.
                     </p>
 
                     <DragDropContext onDragEnd={handleDragEnd}>
-                        <Droppable droppableId="sections">
+                        <Droppable
+                            droppableId="sections"
+                            getContainerForClone={getCloneContainer}
+                            renderClone={(provided: DraggableProvided, snapshot: DraggableStateSnapshot, rubric: DraggableRubric) => {
+                                const section = sections[rubric.source.index];
+                                if (!section) return null;
+
+                                return (
+                                    <div
+                                        ref={provided.innerRef}
+                                        {...provided.draggableProps}
+                                        {...provided.dragHandleProps}
+                                        style={provided.draggableProps.style}
+                                        className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-300' : ''}`}
+                                    >
+                                        <div className="text-slate-400 cursor-grabbing">
+                                            <GripVertical className="h-5 w-5" />
+                                        </div>
+                                        <div className="flex-1 space-y-1">
+                                            <Label className="text-xs text-slate-500">
+                                                {section.defaultName}
+                                            </Label>
+                                            <Input
+                                                readOnly
+                                                placeholder={section.defaultName}
+                                                value={section.customName ?? ''}
+                                                className="h-8 pointer-events-none"
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            }}
+                        >
                             {(provided) => (
                                 <div 
                                     ref={provided.innerRef} 
@@ -337,10 +363,8 @@ export default function SectionConfigDialog() {
                                                 <div
                                                     ref={provided.innerRef}
                                                     {...provided.draggableProps}
-                                                    style={snapshot.isDragging
-                                                        ? getDraggingStyle(provided.draggableProps.style)
-                                                        : provided.draggableProps.style}
-                                                    className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-300' : ''}`}
+                                                    style={provided.draggableProps.style}
+                                                    className={`flex items-center gap-3 p-3 bg-white border rounded-lg ${snapshot.isDragging ? 'opacity-40' : ''}`}
                                                 >
                                                     <div 
                                                         {...provided.dragHandleProps}
@@ -419,7 +443,7 @@ export default function SectionConfigDialog() {
                     </div>
                 </div>
 
-                <DialogFooter className="sticky bottom-0 bg-white border-t shrink-0 px-6 py-4 flex justify-between">
+                <DialogFooter className="bg-white border-t shrink-0 px-6 py-4 flex !flex-row justify-between sm:justify-between">
                     <Button variant="ghost" onClick={handleReset} className="text-slate-500">
                         <RotateCcw className="h-4 w-4 mr-2" />
                         Zurücksetzen
