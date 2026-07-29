@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
 import { format, addDays, startOfWeek, isSameDay, isSameWeek, isWeekend } from 'date-fns';
 import { de } from 'date-fns/locale';
-import { ChevronLeft, ChevronRight, Calendar, User, Clock, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar, User, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Doctor, ShiftEntry, Workplace } from '@/types';
+import { getWorkplaceCategoriesFromSettings } from '@/utils/workplaceCategoryUtils';
 
 // ── Local types ────────────────────────────────────────────────────────────
 
@@ -20,21 +21,40 @@ interface MobileScheduleViewProps {
   shifts: ShiftEntry[];
   doctors: Doctor[];
   workplaces: Workplace[];
+  systemSettings: { key: string; value?: string | null }[];
   isPublicHoliday: (date: Date) => HolidayResult | null;
   isSchoolHoliday: (date: Date) => HolidayResult | null;
 }
 
-interface GroupedShifts {
-  absences: ShiftEntry[];
-  services: ShiftEntry[];
-  rotations: ShiftEntry[];
-  demos: ShiftEntry[];
-  other: ShiftEntry[];
+interface CategoryStyle {
+  headerColor: string;
+  cardColor: string;
+}
+
+interface CategoryGroup {
+  categoryName: string;
+  shifts: ShiftEntry[];
+  style: CategoryStyle;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const ABSENCE_POSITIONS = ["Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar"];
+
+const BUILT_IN_CATEGORY_STYLES: Record<string, CategoryStyle> = {
+  'Dienste': { headerColor: 'text-blue-600', cardColor: 'bg-blue-50' },
+  'Rotationen': { headerColor: 'text-emerald-600', cardColor: 'bg-emerald-50' },
+  'Demonstrationen & Konsile': { headerColor: 'text-amber-600', cardColor: 'bg-amber-50' },
+};
+
+const CUSTOM_CATEGORY_STYLES: CategoryStyle[] = [
+  { headerColor: 'text-indigo-600', cardColor: 'bg-indigo-50' },
+  { headerColor: 'text-teal-600', cardColor: 'bg-teal-50' },
+  { headerColor: 'text-rose-600', cardColor: 'bg-rose-50' },
+  { headerColor: 'text-cyan-600', cardColor: 'bg-cyan-50' },
+  { headerColor: 'text-violet-600', cardColor: 'bg-violet-50' },
+  { headerColor: 'text-orange-600', cardColor: 'bg-orange-50' },
+];
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -44,6 +64,7 @@ export default function MobileScheduleView({
     shifts, 
     doctors, 
     workplaces,
+    systemSettings,
     isPublicHoliday,
     isSchoolHoliday 
 }: MobileScheduleViewProps) {
@@ -73,28 +94,53 @@ export default function MobileScheduleView({
         return shifts.filter(s => s.date === selectedDateStr);
     }, [shifts, selectedDateStr]);
 
-    // Group shifts by category (dynamically from workplaces)
-    const groupedShifts = useMemo((): GroupedShifts => {
-        const absences = dayShifts.filter(s => ABSENCE_POSITIONS.includes(s.position));
-        const services = dayShifts.filter(s => {
-            const wp = workplaces.find(w => w.name === s.position);
-            return wp?.category === 'Dienste';
-        });
-        const rotations = dayShifts.filter(s => {
-            const wp = workplaces.find(w => w.name === s.position);
-            return wp?.category === 'Rotationen';
-        });
-        const demos = dayShifts.filter(s => {
-            const wp = workplaces.find(w => w.name === s.position);
-            return wp?.category === 'Demonstrationen & Konsile';
-        });
-        const other = dayShifts.filter(s => 
-            !ABSENCE_POSITIONS.includes(s.position) &&
-            !workplaces.find(w => w.name === s.position && ['Dienste', 'Rotationen', 'Demonstrationen & Konsile'].includes(w.category))
-        );
+    // Group shifts by category (dynamically from workplaces + custom categories)
+    const absenceShifts = useMemo(() =>
+        dayShifts.filter(s => ABSENCE_POSITIONS.includes(s.position)),
+        [dayShifts]
+    );
 
-        return { absences, services, rotations, demos, other };
-    }, [dayShifts, workplaces]);
+    const categoryGroups = useMemo((): CategoryGroup[] => {
+        const customCategories = getWorkplaceCategoriesFromSettings(systemSettings);
+        const builtInNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile'];
+        const allCategoryNames = [...new Set([...builtInNames, ...customCategories.map(c => c.name)])];
+
+        const groups: CategoryGroup[] = [];
+
+        for (let i = 0; i < allCategoryNames.length; i++) {
+            const categoryName = allCategoryNames[i];
+            const categoryShifts = dayShifts.filter(s => {
+                const wp = workplaces.find(w => w.name === s.position);
+                return wp?.category === categoryName;
+            });
+            if (categoryShifts.length === 0) continue;
+
+            // Sort by workplace name to group employees by workplace, then by doctor order
+            const sorted = [...categoryShifts].sort((a, b) => {
+                const posDiff = a.position.localeCompare(b.position, 'de', { sensitivity: 'base' });
+                if (posDiff !== 0) return posDiff;
+                const docA = doctors.find(d => d.id === a.doctor_id);
+                const docB = doctors.find(d => d.id === b.doctor_id);
+                return (docA?.order ?? 0) - (docB?.order ?? 0);
+            });
+
+            const style = BUILT_IN_CATEGORY_STYLES[categoryName]
+                ?? CUSTOM_CATEGORY_STYLES[(i - builtInNames.length) % CUSTOM_CATEGORY_STYLES.length];
+
+            groups.push({ categoryName, shifts: sorted, style });
+        }
+
+        return groups;
+    }, [dayShifts, workplaces, doctors, systemSettings]);
+
+    const otherShifts = useMemo(() =>
+        dayShifts.filter(s =>
+            !ABSENCE_POSITIONS.includes(s.position) &&
+            !s.position.startsWith('__') &&
+            !workplaces.some(w => w.name === s.position)
+        ),
+        [dayShifts, workplaces]
+    );
 
     const getDoctor = (id: string | undefined | null): Doctor | undefined => doctors.find(d => d.id === id);
 
@@ -189,53 +235,41 @@ export default function MobileScheduleView({
             {/* Content */}
             <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
-                    {/* Services */}
-                    {groupedShifts.services.length > 0 && (
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-blue-600" />
-                                    Dienste
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {groupedShifts.services.map(s => renderShiftCard(s, "bg-blue-50"))}
-                            </CardContent>
-                        </Card>
-                    )}
+                    {/* Dynamic category sections (Dienste, Rotationen, custom areas, …) */}
+                    {categoryGroups.map(group => {
+                        const byPosition = new Map<string, ShiftEntry[]>();
+                        for (const shift of group.shifts) {
+                            const existing = byPosition.get(shift.position) ?? [];
+                            existing.push(shift);
+                            byPosition.set(shift.position, existing);
+                        }
 
-                    {/* Rotations */}
-                    {groupedShifts.rotations.length > 0 && (
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm flex items-center gap-2">
-                                    <MapPin className="w-4 h-4 text-emerald-600" />
-                                    Rotationen
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {groupedShifts.rotations.map(s => renderShiftCard(s, "bg-emerald-50"))}
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Demos */}
-                    {groupedShifts.demos.length > 0 && (
-                        <Card>
-                            <CardHeader className="pb-2">
-                                <CardTitle className="text-sm flex items-center gap-2">
-                                    <Calendar className="w-4 h-4 text-amber-600" />
-                                    Demos & Konsile
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {groupedShifts.demos.map(s => renderShiftCard(s, "bg-amber-50"))}
-                            </CardContent>
-                        </Card>
-                    )}
+                        return (
+                            <Card key={group.categoryName}>
+                                <CardHeader className="pb-2">
+                                    <CardTitle className={`text-sm flex items-center gap-2 ${group.style.headerColor}`}>
+                                        <MapPin className="w-4 h-4" />
+                                        {group.categoryName}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="space-y-3">
+                                    {Array.from(byPosition.entries()).map(([position, posShifts]) => (
+                                        <div key={position}>
+                                            {byPosition.size > 1 && (
+                                                <div className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wide">{position}</div>
+                                            )}
+                                            <div className="space-y-2">
+                                                {posShifts.map(s => renderShiftCard(s, group.style.cardColor))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
 
                     {/* Absences */}
-                    {groupedShifts.absences.length > 0 && (
+                    {absenceShifts.length > 0 && (
                         <Card>
                             <CardHeader className="pb-2">
                                 <CardTitle className="text-sm flex items-center gap-2">
@@ -244,13 +278,28 @@ export default function MobileScheduleView({
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="space-y-2">
-                                {groupedShifts.absences.map(s => {
+                                {absenceShifts.map(s => {
                                     let color = "bg-slate-100";
                                     if (s.position === "Urlaub") color = "bg-green-50";
                                     else if (s.position === "Krank") color = "bg-red-50";
                                     else if (s.position === "Frei") color = "bg-yellow-50";
                                     return renderShiftCard(s, color);
                                 })}
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Other / Sonstiges */}
+                    {otherShifts.length > 0 && (
+                        <Card>
+                            <CardHeader className="pb-2">
+                                <CardTitle className="text-sm flex items-center gap-2 text-purple-600">
+                                    <Calendar className="w-4 h-4" />
+                                    Sonstiges
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {otherShifts.map(s => renderShiftCard(s, "bg-purple-50"))}
                             </CardContent>
                         </Card>
                     )}

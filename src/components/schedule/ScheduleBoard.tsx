@@ -3582,6 +3582,7 @@ export default function ScheduleBoard() {
               shifts={currentWeekShifts}
               doctors={doctors}
               workplaces={workplaces}
+              systemSettings={systemSettings}
               isPublicHoliday={isPublicHoliday}
               isSchoolHoliday={isSchoolHoliday}
           />
