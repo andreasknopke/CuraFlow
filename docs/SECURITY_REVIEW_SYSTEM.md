@@ -18,7 +18,8 @@ Severity legend: **HIGH** (exploitable, real-world impact), **MEDIUM** (exploita
 
 ## Finding S1 — SQL injection via unsanitized table identifier in `/api/db`
 
-**Severity:** HIGH
+**Severity:** HIGH — **partially mitigated (2026-07-29); full structural fix in progress (Phase 1)**
+> The structural primitive is now in place: a Kysely adapter (`server/utils/db.js`, `createKysely`) routes identifiers through central `sql.id()` escaping, and one site (`getValidColumns`) is migrated as the Phase 1 PR 1.0 spike. The remaining generic-CRUD interpolation sites (create/update/delete/list-filter in `dbProxy.js`, plus `atomic.js`) still hand-build backtick strings and are migrated in Phase 1 PRs 1.1–1.4; until then `assertValidIdentifier` at the route entry remains the live guard. S1 is closed only when the per-PR grep gate shows zero residual hand-interpolated identifiers.
 **Location:** `server/routes/dbProxy.js` — `tableName = entity || table` (line 681), interpolated into backtick-quoted SQL at lines ~844, 915, 1042/1056, 1189/1202, 1216, 1258, 1261; `getValidColumns` `SHOW COLUMNS FROM \`{tableName}\`` (line 111).
 
 ### Root cause
@@ -410,6 +411,7 @@ These defensive measures are present and active in the codebase (not numbered fi
 - ✅ **File upload hardening** — `server/routes/certificates.js:35–53`: multer with a MIME allowlist, size limit, and filename sanitization on the certificate upload path.
 - ✅ **CORS origin policy (Finding S5)** — `server/index.js` now rejects unknown origins (`callback(null, false)`).
 - ✅ **Sort-field identifier validation (related to S1 class)** — `server/routes/dbProxy.js` now calls `assertValidIdentifier()` on the sort field before `ORDER BY` interpolation.
+- 🔧 **S1 structural primitive (Phase 1 PR 1.0)** — Kysely adapter `server/utils/db.js` (`createKysely` + `mysql2/promise` callback bridge) routes identifiers through central `sql.id()` escaping; `getValidColumns` migrated as the spike. S1 itself stays open until the generic-CRUD sites migrate in Phase 1 PRs 1.1–1.4 (per-PR grep gate).
 - ✅ **Encryption key no longer logged** — `server/utils/crypto.js` no longer prints the `JWT_SECRET` SHA-256 hash prefix.
 - ✅ **`dbName` identifier validation (Finding S10)** — `admin.js` `create-database` and `check-database` routes now reject non-identifier database names before `CREATE DATABASE`/`USE` interpolation.
 - ✅ **Generic client error messages (Finding S12)** — `admin.js` no longer returns raw `err.message`/`connErr.message` to the client on the four error paths (`check`, `db-tokens/test`, `check-database`, `create-database`); technical detail is server-log-only.

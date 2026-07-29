@@ -109,13 +109,15 @@ Load the granter's permissions from the DB (by `req.user.sub`) in `POST /registe
 
 ### Phase 1 — Introduce the query builder, off dynamic `/api/db` (closes S1 structurally)
 
-#### PR 1.0 — Bring in Kysely (spike + wiring)
+#### PR 1.0 — Bring in Kysely (spike + wiring) — ✅ DONE
 
 Add `kysely` to `server/package.json`. Add a thin adapter: a `createKysely(dbPool)` factory wrapping an existing mysql2 pool (Kysely's `mysql2` dialect accepts a pool instance). Prove it on one read path — e.g. the `getValidColumns` `SHOW COLUMNS FROM` in `dbProxy.js` (the exact line that was the injection vector) — rewritten through Kysely.
 
 Deliverable: a running spike PR, merged, with zero behavior change on that one path and a passing identifier test. This de-risks the tenant-pool coupling (Decision "Tenant-pool coupling") before touching write paths.
 
 **Risk: Low.** One read path, fully covered by existing tests. Establishes the pattern + the `createKysely(req.db)` convention.
+
+> **Status (2026-07-29):** ✅ Complete. Adapter at `server/utils/db.js` (`createKysely`), `getValidColumns` (`dbProxy.js`) now routes `SHOW COLUMNS FROM ${sql.id(tableName)}` through Kysely — generated SQL byte-identical, identifier escaped centrally. **Spike finding (important for PRs 1.1+):** Kysely's `MysqlDialect` expects the *callback-style* `mysql2` module, but CuraFlow uses `mysql2/promise` (promise-only) — passing a promise pool straight to Kysely **hangs** (the callback never fires). The adapter therefore includes a `bridgePool` that adapts `getConnection`/`connection.query` to callback form and extracts `rows` from mysql2/promise's `[rows, fields]` resolution. This bridge is reused by every later Phase 1 PR. Verified: 858 unit/component tests pass, 8 new `server/__tests__/db.test.js` tests cover the adapter/escaping/bridge parity, and the full e2e suite (55 passed / 0 failed) confirms zero behavior change on the live backend. **Open follow-up:** Kysely-issued queries bypass `wrapPoolWithRetry` (that wraps pool `.execute`/`.query`, not the bridged connection); revisit when migrating write paths that need transient-error retry.
 
 #### PR 1.1 — `dbProxy` create path through the builder
 
