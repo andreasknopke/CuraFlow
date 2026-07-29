@@ -116,6 +116,52 @@ describe('mysql2/promise ↔ callback bridge — result extraction parity', () =
   });
 });
 
+describe('insertInto — create path through Kysely (PR 1.1)', () => {
+  // dbProxy's generic create path now uses insertRow → kysely.insertInto.
+  // insertRow lives in dbProxy.js (un-importable here), so these tests pin the
+  // underlying primitive: the generated INSERT escapes the table + column
+  // identifiers and binds values in insertion order. Parity with the old
+  // hand-built `INSERT INTO \`t\` (\`k\`,...) VALUES (?,...)`.
+  it('generates a backtick-escaped INSERT with values in insertion order', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.insertInto('Doctor').values({
+      id: 'd1',
+      name: 'Dr A',
+      is_active: 1,
+      created_date: '2026-07-29',
+    }).executeTakeFirst();
+
+    expect(executed[0].sql).toBe('insert into `Doctor` (`id`, `name`, `is_active`, `created_date`) values (?, ?, ?, ?)');
+    expect(executed[0].params).toEqual(['d1', 'Dr A', 1, '2026-07-29']);
+  });
+
+  it('escapes a malicious table name (doubled backtick) instead of breaking out', async () => {
+    // assertValidIdentifier rejects this upstream; this pins the builder's own
+    // escaping as the primary control. The injected backtick is doubled (``)
+    // so "values (1)" becomes inert text INSIDE the table-name identifier — the
+    // real VALUES clause is separate and has a single placeholder.
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.insertInto('evil` values (1)').values({ id: 'x' }).executeTakeFirst();
+    // The whole malicious name is one backtick-quoted identifier with the
+    // inner backtick doubled:
+    expect(executed[0].sql).toBe('insert into `evil`` values (1)` (`id`) values (?)');
+    // ...and there is exactly ONE real VALUES clause (one placeholder), so the
+    // injected "values (1)" did not create a second clause / inject a row.
+    expect(executed[0].params).toEqual(['x']);
+  });
+
+  it('propagates ER_DUP_ENTRY with .code intact (Workplace-retry / Doctor-conflict rely on it)', async () => {
+    const dupErr = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    const { pool } = recordingPool([], { throwError: dupErr });
+    const kysely = createKysely(pool);
+    await expect(
+      kysely.insertInto('Workplace').values({ id: 'w1', name: 'X' }).executeTakeFirst(),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+  });
+});
+
 describe('assertValidIdentifier — defence-in-depth still gates the builder', () => {
   // The primary control is now Kysely's escaping, but assertValidIdentifier at
   // the route entry still rejects invalid names first (cleaner 400 vs. a weird

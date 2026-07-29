@@ -182,6 +182,24 @@ const getValidColumns = async (dbPool, tableName, cacheKey) => {
   }
 };
 
+// Insert a single row through Kysely so the table identifier and column names
+// are escaped centrally (Phase 1, PR 1.1 — structural S1 control for the create
+// path). `keys` must already be filtered to valid columns (via getValidColumns)
+// and `data` is the source object; each value passes through toSqlValue, matching
+// the previous hand-built INSERT INTO `t` (`k`,...) VALUES (?,...) behavior.
+// assertValidIdentifier(tableName) at the route entry remains as defence-in-depth.
+// Errors (e.g. ER_DUP_ENTRY) propagate with their .code intact for the caller's
+// duplicate-handling logic.
+const insertRow = async (dbPool, tableName, keys, data) => {
+  const kysely = createKysely(dbPool);
+  const row = {};
+  for (const k of keys) {
+    const v = toSqlValue(data[k]);
+    row[k] = v === undefined ? null : v;
+  }
+  await kysely.insertInto(tableName).values(row).executeTakeFirst();
+};
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
 const WORKPLACE_CACHE = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
@@ -1139,14 +1157,13 @@ router.post('/', async (req, res, next) => {
         console.error(`CREATE failed: No valid columns for ${tableName}. Data keys:`, Object.keys(data), "Valid columns:", validColumns);
         return res.status(500).json({ error: `No valid columns found for table ${tableName}` });
       }
-      
-      const values = keys.map(k => toSqlValue(data[k]));
-      const placeholders = keys.map(() => '?').join(',');
-      const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
-      
+
       try {
-        const safeValues = values.map(v => v === undefined ? null : v);
-        await dbPool.execute(sql, safeValues);
+        // INSERT through Kysely so the table + column identifiers are escaped
+        // centrally (Phase 1, PR 1.1). Behavior matches the previous hand-built
+        // `INSERT INTO \`t\` (\`k\`,...) VALUES (?,...)` — same columns, same
+        // toSqlValue marshaling, ER_DUP_ENTRY propagates with .code intact.
+        await insertRow(dbPool, tableName, keys, data);
         if (isPlanSyncEntity(tableName)) {
           broadcastPlanUpdate({
             scope: realtimeScope,
@@ -1159,21 +1176,17 @@ router.post('/', async (req, res, next) => {
         await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
         return res.json(data);
       } catch (err) {
-        console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
+        console.error(`CREATE error for ${tableName}:`, err.message, "keys:", keys);
 
         // Bei Workplace: Duplikat (Name bereits vergeben) → Name hochzählen und nochmal versuchen
         if (tableName === 'Workplace' && err.code === 'ER_DUP_ENTRY' && data.name) {
           const baseName = data.name;
-          let retryName = baseName;
           let counter = 2;
           while (counter <= 20) {
-            retryName = `${baseName} ${counter}`;
+            const retryName = `${baseName} ${counter}`;
             data.name = retryName;
-            values[keys.indexOf('name')] = toSqlValue(retryName);
-            const safeValuesRetry = values.map(v => v === undefined ? null : v);
             try {
-              await dbPool.execute(sql, safeValuesRetry);
-              data.name = retryName;
+              await insertRow(dbPool, tableName, keys, data);
               if (isPlanSyncEntity(tableName)) {
                 broadcastPlanUpdate({
                   scope: realtimeScope,
@@ -1201,7 +1214,7 @@ router.post('/', async (req, res, next) => {
         throw err;
       }
     }
-    
+
     // ===== UPDATE =====
     if (effectiveAction === 'update') {
       if (!id) return res.status(400).json({ error: "ID required for update" });
