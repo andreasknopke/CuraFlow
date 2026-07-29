@@ -6,6 +6,13 @@
 **Method:** Source review of the affected files; manual trace of data flow from request to SQL / FS / subprocess / network. No dynamic exploitation performed.
 **Overall:** The high-risk mechanisms are sound in shape (parameterized values, MIME allowlists, subprocess-via-stdin with no shell, static-file safety). The systemic weaknesses are **trust boundaries**: the server trusts client-supplied identifiers, client-supplied tenant tokens, and the JWT's `role` field in places where authoritative DB state should be consulted. Several of these chain with the permission-model findings into end-to-end exploit paths.
 
+> **Status (updated 2026-07-29):** Items marked ✅ Fixed below have been remediated in code. Items still listed without ✅ remain open as of this date. See "Status legend" at the end of this document.
+
+> **Credential logging in `crypto.js` (not a numbered finding):** ✅ Fixed — `server/utils/crypto.js` no longer logs sensitive material to server logs:
+> - the `JWT_SECRET` SHA-256 hash prefix (removed from `getEncryptionKey()` and `encryptToken()`); and
+> - the **full raw `db_token`** on parse failure (removed from `parseDbToken()` — a `db_token` decrypts to DB connection credentials, so `console.error('Token was (full):', token)` was a full-credential leak, strictly worse than the hash-prefix case).
+> Both keep their safe diagnostics (the error `.message` and the legacy-token warning).
+
 Severity legend: **HIGH** (exploitable, real-world impact), **MEDIUM** (exploitable under conditions / defence-in-depth gap), **LOW** (hardening / accepted risk worth recording).
 
 ---
@@ -150,7 +157,10 @@ This is the canonical way to authenticate `EventSource` (which cannot set header
 
 ## Finding S5 — CORS reflects any origin with credentials (debug gate shipped)
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM — ✅ **Fixed (2026-07-29)**
+
+### Fix applied
+`server/index.js` CORS origin callback now rejects unknown origins (`callback(null, false)`) instead of the debug gate that allowed them through (`callback(null, true)`). The `console.warn` for blocked origins is retained. Known/allowed origins and `.railway.app` subdomains continue to pass.
 **Location:** `server/index.js` CORS middleware (lines 427–447).
 
 ### Root cause
@@ -247,6 +257,107 @@ Either enforce `maxRows` (wrap the query or pass `TOP N` for SQL Server) or drop
 
 ---
 
+## Finding S10 — SQL injection via unvalidated `dbName` in `CREATE DATABASE` / `USE`
+
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
+**Location:** `server/routes/admin.js`, `POST /db-tokens/create-database` (`CREATE DATABASE IF NOT EXISTS \`${dbName}\``) **and** `POST /db-tokens/check-database` (`USE \`${dbName}\``). Both interpolate the request-supplied database name into a backtick-quoted identifier.
+
+### Fix applied
+Both routes now validate `dbName` with the existing `isValidIdentifier()` guard (already imported in `admin.js`) immediately after the non-empty check, returning a `400 'Ungültiger Datenbank-Name'` for any name containing backticks/quotes/semicolons/spaces. Behaviour for all legitimate database names is unchanged; only injection-shaped input is rejected. This is the same guard already used elsewhere in the file (e.g. the `repair` duplicate-delete path).
+
+### Root cause
+The handler derives a database name from the request body and interpolates it verbatim into a backtick-quoted SQL identifier:
+
+```js
+const dbName = (database || credentials.database || '').trim();   // user-controlled
+if (!dbName) { return res.status(400).json({ error: '...' }); }
+...
+await adminPool.execute(
+  `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+);
+```
+
+`dbName` is only checked for non-emptiness (a `.trim()`). It is **never** validated against an identifier regex, so a backtick (or quote) in `dbName` breaks out of the identifier context. mysql2 prepared statements parameterize **values**, not identifiers — and here `dbName` is interpolated as an identifier on a DDL statement against the admin-targeted server (which may itself be the master or a shared host). This is the same class of bug as S1.
+
+### Mitigating factors
+- The endpoint is gated by `authMiddleware` + an admin permission check, so exploitation requires an authenticated admin, not anonymity.
+- `multipleStatements` is not enabled on the `adminPool`, so classic `; DROP` multi-statement payloads are blocked by the driver — but the breakout still allows arbitrary DDL within the single statement (e.g. naming/overwriting identifiers, or piggybacking via the collation/charset tail).
+
+### Failure scenario
+1. Authenticated admin sends `POST /api/.../create-database` with `database: "evil\` /* */` (or a payload that closes the backtick context and injects extra DDL).
+2. The interpolated `CREATE DATABASE IF NOT EXISTS \`evil\`...\`` runs attacker-influenced SQL against the target MySQL server's admin connection.
+3. Result: arbitrary DDL on a privileged connection reachable by any admin.
+
+### Proposed remedy
+Validate `dbName` with the shared identifier guard before interpolation:
+
+```js
+import { assertValidIdentifier } from '../utils/schema.js';
+// ...
+assertValidIdentifier(dbName, 'Datenbankname');   // throws 400 on backtick/quote/semicolon/space
+await adminPool.execute(
+  `CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+);
+```
+
+---
+
+## Finding S11 — Hardcoded default credentials in seed/admin route
+
+**Severity:** HIGH — **OPEN** (not fixed: every remediation option changes operator workflow and/or requires rotating live accounts; deferred pending an explicit business decision)
+
+### Scope (expanded after closer review)
+The fixed password `CuraFlow2026!` appears in **two** files, not one:
+
+1. **`server/routes/admin.js`** (`POST /migrate-users`, lines ~530–596) — a **live route** mounted behind `authMiddleware` + `requirePermission('can_manage_system')`, so it is reachable in any deployed environment. Holds `defaultPassword = 'CuraFlow2026!'`, bcrypt-hashes it (`bcrypt.hash(defaultPassword, 10)`), and inserts **19 accounts** (3 admins, 16 users), returning `defaultPassword` in the JSON response.
+2. **`server/migrateUsers.js`** (lines ~20–296) — a standalone one-off script (`node migrateUsers.js`) that carries the same 19-account list with `password: 'CuraFlow2026!'` per row **and prints the password to stdout** at line 295 (`console.log('... Default password for all users: CuraFlow2026!')`).
+
+The seeded accounts include 3 real admin emails (`andreasknopke@gmail.com`, `radiologie@kliniksued-rostock.de`, `teresa.loebsin@kliniksued-rostock.de`).
+
+### Root cause
+A fixed plaintext password and its bcrypt hash are embedded directly in source, violating the project rule: *"Never hardcode passwords (including demo/test/seed passwords) in source files, scripts, fixtures, Docker/compose files, tests, or docs."* Anyone with source access authenticates as an admin on any environment where these accounts exist.
+
+### Why not fixed yet
+There is no behaviour-preserving code fix. Every option is a business-rule change:
+- Moving the literal to an env var (`SEED_DEFAULT_PASSWORD`, fail if unset) **breaks the migration tooling** operators use today unless the env var is set everywhere.
+- The secret is already in **git history**, so removing it from the working tree does not rotate anything — the 19 accounts still authenticate with `CuraFlow2026!` until they are individually rotated.
+- Removing the `/migrate-users` route changes functionality (it is a legacy Base44 one-time migration that may or may not still be needed).
+
+### Required remediation (owner: product/ops decision)
+- Decide whether `/migrate-users` and `migrateUsers.js` are still needed; if not, remove them.
+- If still needed: source the password from a required env var; derive the bcrypt hash at runtime.
+- **Rotate / force-password-reset** all 19 accounts (3 admins first) and purge the secret from git history (or accept that history retains it).
+- Audit production for any account still authenticating with `CuraFlow2026!`.
+
+---
+
+## Finding S12 — Internal error message leaked to client
+
+**Severity:** MEDIUM — ✅ **Fixed (2026-07-29)**
+**Location:** `server/routes/admin.js` — four sites: `case 'check'` error branch, and the `POST /db-tokens/test`, `/check-database`, `/create-database` connection-error branches. Each previously concatenated raw `err.message`/`connErr.message` into the client-facing JSON error body.
+
+### Root cause
+Raw `err.message` (which may contain SQL errors, file paths, or internal detail depending on the failing operation) is concatenated into the client-facing JSON error body. This violates the rule: *"Never expose internal system details (stack traces, SQL errors, file paths) in API responses outside of development mode."*
+
+```js
+return res.status(500).json({ error: 'Fehler bei Integritätsprüfung: ' + err.message });
+```
+
+### Fix applied (2026-07-29)
+All four raw-error bubbles that returned `err.message`/`connErr.message` directly to the client are now generic, with the technical detail retained in a `console.error` server log instead:
+
+- `case 'check'` → `'Fehler bei Integritätsprüfung'`
+- `POST /db-tokens/test` → `'Verbindung fehlgeschlagen'`
+- `POST /db-tokens/check-database` → `'Verbindung fehlgeschlagen'`
+- `POST /db-tokens/create-database` → `'Fehler beim Anlegen der Datenbank'`
+
+User-visible change is limited to the error toast text; success-path behaviour is unchanged.
+
+### Residual (intentional, left as-is)
+`/timeslot-migration-status` (lines ~807–976) pushes `error: err.message` into a **diagnostic migration-status array** shown only to `can_manage_system` admins troubleshooting schema state. This is intentional admin diagnostic output, not a raw error bubble. Changing it would alter the admin migration-status UI (a business-rule change), so it was left untouched. Flag it for review if that route is ever exposed to lower-privileged roles.
+
+---
+
 ## Lower-severity / accepted-risk observations
 
 - **`express.json` limit 10 MB globally** (`server/index.js:467`) is large for a scheduling API and raises the DoS floor for authenticated endpoints; consider a smaller global limit with per-route overrides for upload routes (the certificate route already uses its own 5 MB multer limit).
@@ -281,9 +392,28 @@ A single remediation posture covers all three: at every enforcement boundary, re
 - Certificates upload/download: parameterized SQL, tenant-key scoping, MIME allowlist, `Content-Disposition` sanitization (`server/routes/certificates.js`).
 - `getTisowareTableColumns`/`getTisowareTableSample` sanitize schema/table via whitelist regex (`server/utils/tisowareDataSource.js:95–97,120–122`) — contrast with dbProxy, which does not.
 
+## Status legend — ✅ Fixed items (verified 2026-07-29)
+
+These defensive measures are present and active in the codebase (not numbered findings, but verified baseline controls):
+
+- ✅ **Rate limiting** — `server/index.js:486–517`: general API limiter (800/min), stricter `authLimiter` (30/15min, `skipSuccessfulRequests`), plus an `internalAuthLimiter` for high-frequency `/me`/`/presence`/`/jitsi-token`/`/cowork` routes.
+- ✅ **Password hashing** — `server/routes/auth.js`: `bcryptjs` with cost factor 12 on both registration and password-change paths.
+- ✅ **Response sanitization** — `sanitizeUser` in `auth.js:217` strips `password_hash`/sensitive fields before returning user objects to the client.
+- ✅ **Admin API protection** — `adminMiddleware` + `requirePermission(key)` enforce per-request permission checks against DB-loaded `app_users.permissions` (see the separate permission-model review for enforcement-site caveats).
+- ✅ **Bulk operations auth** — tenant scoping via `allowed_tenants`; bulk write handlers operate on `req.db` resolved per-tenant.
+- ✅ **Error handling / centralized error handler** — `server/index.js:610–648`: a single structured error handler returns generic messages to clients and logs structured context server-side.
+- ✅ **File upload hardening** — `server/routes/certificates.js:35–53`: multer with a MIME allowlist, size limit, and filename sanitization on the certificate upload path.
+- ✅ **CORS origin policy (Finding S5)** — `server/index.js` now rejects unknown origins (`callback(null, false)`).
+- ✅ **Sort-field identifier validation (related to S1 class)** — `server/routes/dbProxy.js` now calls `assertValidIdentifier()` on the sort field before `ORDER BY` interpolation.
+- ✅ **Encryption key no longer logged** — `server/utils/crypto.js` no longer prints the `JWT_SECRET` SHA-256 hash prefix.
+- ✅ **`dbName` identifier validation (Finding S10)** — `admin.js` `create-database` and `check-database` routes now reject non-identifier database names before `CREATE DATABASE`/`USE` interpolation.
+- ✅ **Generic client error messages (Finding S12)** — `admin.js` no longer returns raw `err.message`/`connErr.message` to the client on the four error paths (`check`, `db-tokens/test`, `check-database`, `create-database`); technical detail is server-log-only.
+
+> Note: Items above marked ✅ are *present and verified* controls / fixed findings. The remaining numbered findings S1–S4, S6–S9, and S11 are still **open**. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
+
 ## Scope and limits
 
 - Static review only; no runtime exploitation, no fuzzing, no dependency-CVE database scan (versions were spot-checked against known-bad ranges but not formally audited).
 - Frontend (`src/`) reviewed only where it shapes request payloads (e.g. reorder `{order}` bypass, dialog granting) — see the permission-model review.
 - Secrets management, infrastructure, and deployment hardening (Coolify/Traefik/Railway) are out of scope except where they touch app code.
-- No fixes have been applied — this document is a report only, per request.
+- Originally a report-only document; the ✅ Fixed entries above reflect fixes applied on 2026-07-29.

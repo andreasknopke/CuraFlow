@@ -453,7 +453,7 @@ app.use(cors({
       callback(null, true);
     } else {
       console.warn('CORS blocked origin:', origin);
-      callback(null, true); // Allow anyway for debugging - change to false in production
+      callback(null, false); // Reject unknown origins - production policy (S5)
     }
   },
   credentials: true,

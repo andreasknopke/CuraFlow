@@ -221,7 +221,7 @@ router.post('/tools', async (req, res, next) => {
           });
         } catch (err) {
           console.error('[check] Error:', err.message);
-          return res.status(500).json({ error: 'Fehler bei Integritätsprüfung: ' + err.message });
+          return res.status(500).json({ error: 'Fehler bei Integritätsprüfung' });
         }
       }
 
@@ -1385,9 +1385,10 @@ router.post('/db-tokens/test', async (req, res, next) => {
       });
     } catch (connErr) {
       await testPool.end().catch(() => {});
+      console.error('[db-tokens/test] connection failed:', connErr.message);
       res.status(400).json({
         success: false,
-        error: 'Verbindung fehlgeschlagen: ' + connErr.message
+        error: 'Verbindung fehlgeschlagen'
       });
     }
   } catch (error) {
@@ -1405,6 +1406,12 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
     const dbName = (database || credentials.database || '').trim();
     if (!dbName) {
       return res.status(400).json({ error: 'Datenbank-Name erforderlich' });
+    }
+    // `dbName` is interpolated into a backtick-quoted identifier via
+    // `USE \`{dbName}\`` below (counting tables after a schema switch).
+    // Validate it for the same injection reason as create-database above.
+    if (!isValidIdentifier(dbName)) {
+      return res.status(400).json({ error: 'Ungültiger Datenbank-Name' });
     }
 
     // Connect to mysql server without specifying a database,
@@ -1450,8 +1457,9 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
       });
     } catch (connErr) {
       await checkPool.end().catch(() => {});
+      console.error('[db-tokens/check-database] connection failed:', connErr.message);
       return res.status(400).json({
-        error: 'Verbindung fehlgeschlagen: ' + connErr.message,
+        error: 'Verbindung fehlgeschlagen',
       });
     }
   } catch (error) {
@@ -1469,6 +1477,14 @@ router.post('/db-tokens/create-database', async (req, res, next) => {
     const dbName = (database || credentials.database || '').trim();
     if (!dbName) {
       return res.status(400).json({ error: 'Datenbank-Name erforderlich' });
+    }
+    // `dbName` is interpolated into a backtick-quoted identifier in the
+    // CREATE DATABASE statement below; a backtick/quote in it would break out
+    // of the identifier context (SQL injection). mysql2 parameterizes values,
+    // not identifiers, so the name must be validated here. Mirrors the
+    // identifier guard already used elsewhere in this file.
+    if (!isValidIdentifier(dbName)) {
+      return res.status(400).json({ error: 'Ungültiger Datenbank-Name' });
     }
 
     const { createPool } = await import('mysql2/promise');
@@ -1496,8 +1512,9 @@ router.post('/db-tokens/create-database', async (req, res, next) => {
       });
     } catch (connErr) {
       await adminPool.end().catch(() => {});
+      console.error('[db-tokens/create-database] failed:', connErr.message);
       return res.status(400).json({
-        error: 'Fehler beim Anlegen der Datenbank: ' + connErr.message,
+        error: 'Fehler beim Anlegen der Datenbank',
       });
     }
   } catch (error) {

@@ -20,8 +20,6 @@ const getEncryptionKey = () => {
   }
   // Use SHA-256 to derive a 32-byte key from the secret
   const key = crypto.createHash('sha256').update(secret).digest();
-  // Log first 8 chars of key hash for debugging (safe to log)
-  console.log('[crypto] JWT_SECRET hash prefix:', key.toString('hex').substring(0, 16));
   return key;
 };
 
@@ -32,7 +30,6 @@ const getEncryptionKey = () => {
  */
 export const encryptToken = (plaintext) => {
   const key = getEncryptionKey();
-  console.log('[encryptToken] JWT_SECRET hash prefix:', key.toString('hex').substring(0, 16));
   const iv = crypto.randomBytes(IV_LENGTH);
   
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv, {
@@ -118,7 +115,6 @@ export const parseDbToken = (token) => {
     return JSON.parse(decrypted);
   } catch (error) {
     console.error('Failed to parse DB token:', error.message);
-    console.error('Token was (full):', token);
     return null;
   }
 };
