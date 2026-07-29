@@ -176,9 +176,21 @@ Alle Endpunkte unter `/api/rotations`, alle mit `authMiddleware`.
 | Methode | Pfad | Berechtigung | Beschreibung |
 |---------|------|--------------|--------------|
 | GET | `/visible-rotations` | auth | Pool sieht alle, Ward sieht nur eigene Zeile |
-| POST | `/:groupId/assignments` | write access | Springer zuweisen (erfüllt automatisch offenen Bedarf) |
-| PATCH | `/:groupId/assignments/:assignmentId` | write access | Zuweisung aktualisieren |
+| POST | `/:groupId/assignments` | write access | Springer zuweisen (erfüllt automatisch offenen Bedarf; erbt Pool-Qualifikationen in den Ward-Mandanten) |
+| PATCH | `/:groupId/assignments/:assignmentId` | write access | Zuweisung aktualisieren (bei Mitarbeiterwechsel: Qualifikations-Vererbung erneut) |
 | DELETE | `/:groupId/assignments/:assignmentId` | write access | Zuweisung löschen (öffnet Bedarf wieder) |
+
+### Qualifikations-Vererbung (Pool → Ward)
+
+Bei jeder Springer-Zuweisung (`POST`/`PATCH` Assignment) kopiert das Backend passende Qualifikationen aus dem **Pool-Mandanten** in den **Ward-Mandanten** der Rotation:
+
+1. Qualifikationsnamen des Springers im Pool-Tenant lesen (`DoctorQualification` → `Qualification.name`).
+2. Im Ward-Tenant Qualifikationen **gleichen Namens** (case-insensitive) finden.
+3. Fehlende `DoctorQualification`-Zeilen anlegen für:
+   - die `employee_id` der Zuweisung (wird im Ward oft als `ShiftEntry.doctor_id` / Springer-Chip-ID genutzt),
+   - verknüpfte lokale `Doctor`-Datensätze (`central_employee_id` / `EmployeeTenantAssignment`).
+
+Es werden **keine** neuen Qualifikations-Definitionen im Ward angelegt — nur Zuordnungen zu bereits existierenden Qualifikationen mit gleichem Namen. Implementierung: `server/utils/rotationQualificationSync.js`.
 
 ### Bedarf
 

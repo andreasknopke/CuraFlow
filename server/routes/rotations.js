@@ -41,7 +41,8 @@ import {
   markDemandFulfilledForCell,
   reopenDemandOnAssignmentDelete,
 } from '../utils/rotationDemand.js';
-import { broadcastUserEvent } from '../utils/realtime.js';
+import { syncRotationAssignmentQualifications } from '../utils/rotationQualificationSync.js';
+import { broadcastUserEvent, broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 
 const router = express.Router();
 
@@ -628,6 +629,21 @@ router.post('/:groupId/assignments', async (req, res) => {
       console.error('[rotations] markDemandFulfilledForCell error:', demandErr.message);
     }
 
+    // Inherit matching qualifications from the pool tenant into the ward tenant
+    try {
+      await syncRotationAssignmentQualifications({
+        masterDb: db,
+        groupId: req.params.groupId,
+        rotationWorkplaceId: String(rotation_workplace_id),
+        employeeId: String(employee_id),
+        actor: req.user || null,
+        buildRealtimeScope,
+        broadcastPlanUpdate,
+      });
+    } catch (qualErr) {
+      console.error('[rotations] syncRotationAssignmentQualifications error:', qualErr.message);
+    }
+
     res.status(201).json({
       id,
       ...(fulfilledDemandId ? { fulfilled_demand_id: fulfilledDemandId } : {}),
@@ -660,6 +676,34 @@ router.patch('/:groupId/assignments/:assignmentId', async (req, res) => {
         WHERE a.id = ? AND w.group_id = ?`,
       values
     );
+
+    // When the assigned Springer changes, re-inherit pool qualifications
+    if (req.body.employee_id !== undefined) {
+      try {
+        const [aRows] = await db.execute(
+          `SELECT a.employee_id, a.rotation_workplace_id
+             FROM rotation_assignment a
+             JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
+            WHERE a.id = ? AND w.group_id = ?
+            LIMIT 1`,
+          [req.params.assignmentId, req.params.groupId]
+        );
+        if (aRows.length > 0) {
+          await syncRotationAssignmentQualifications({
+            masterDb: db,
+            groupId: req.params.groupId,
+            rotationWorkplaceId: String(aRows[0].rotation_workplace_id),
+            employeeId: String(aRows[0].employee_id),
+            actor: req.user || null,
+            buildRealtimeScope,
+            broadcastPlanUpdate,
+          });
+        }
+      } catch (qualErr) {
+        console.error('[rotations] syncRotationAssignmentQualifications (patch) error:', qualErr.message);
+      }
+    }
+
     res.json({ success: true });
   } catch (err) {
     handleError(res, err);
