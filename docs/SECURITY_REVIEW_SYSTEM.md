@@ -63,8 +63,11 @@ Apply the same identifier check everywhere a name is interpolated (`server/route
 
 ## Finding S2 — Multi-tenant isolation trusts the `X-DB-Token` header with no per-user authorization
 
-**Severity:** HIGH
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
 **Location:** `server/index.js` `tenantDbMiddleware` (lines 342–398) and `getTenantDb` (lines 290–333); token list / authorization in `server/routes/auth.js` `/my-tenants` (lines 664–714).
+
+### Fix applied
+`tenantDbMiddleware` now re-checks tenant authorization server-side on every per-tenant (custom-pool) request. After resolving `req.db`, it resolves the presented token to its `db_tokens.id` via the existing `resolveTenantIdFromToken` helper, loads the authenticated user's `allowed_tenants`, and returns **403** when the tenant id is not in that list. Semantics mirror `/my-tenants` exactly: empty/null `allowed_tenants` ⇒ full access; the master pool (no token) is bypassed. The check is **fail-open on lookup error** — because this middleware runs on every tenant request, a transient master-DB error must not lock out all tenant traffic.
 
 ### Root cause
 `tenantDbMiddleware` resolves the tenant connection pool purely from the request's `X-DB-Token` header:
@@ -209,9 +212,12 @@ SMTP (Brevo fallback / direct SMTP) and admin-configured external MySQL connecti
 
 ## Finding S7 — Permission gates trust JWT `role` instead of DB state (compounds the permission-model review)
 
-**Severity:** high (see [`SECURITY_REVIEW_ADMIN_PERMISSIONS.md`](./SECURITY_REVIEW_ADMIN_PERMISSIONS.md) Finding 4) — restated here because it is a *system-wide* pattern.
+**Severity:** high — ✅ **Fixed (2026-07-29)** (see [`SECURITY_REVIEW_ADMIN_PERMISSIONS.md`](./SECURITY_REVIEW_ADMIN_PERMISSIONS.md) Finding 4) — restated here because it is a *system-wide* pattern.
 
 **Location:** `server/routes/dbProxy.js` (lines ~788–801) and `server/routes/atomic.js` (guards around lines 258–275, 311–327) write-gate `ShiftEntry`/`WishRequest`/`AbsenceRequest`.
+
+### Fix applied
+All three inline write guards (dbProxy, and the two `atomic.js` `ShiftEntry` guards) now delegate to a new `checkAdminPermission(masterDb, userId, key)` helper in `server/utils/permissions.js`, which re-reads `email`, `role`, `is_active`, and `permissions` from the DB row — **not** the JWT — and checks `is_active` in code (dropping the `is_active = 1` *filter* that previously made a deactivated user return no row and fall through to the lockout-safe `ALL_PERMISSIONS_TRUE`). A deactivated/demoted admin is now denied (`reason: 'inactive'` / `'not_admin'`) on their next protected write. The helper is fail-closed (DB error ⇒ deny). `TOKEN_EXPIRY` was deliberately **not** changed (business-rule constraint).
 
 ### Root cause (system view)
 Every permission guard computes `role`/`is_active`/`is_super_admin` from `req.user` (the JWT, see `SECURITY_REVIEW_ADMIN_PERMISSIONS.md` "Critical invariant"), and loads only `permissions` from the DB. A deactivated or demoted admin (`is_active=0` or `role`≠`'admin'` in the DB) is still treated as an active admin until the 24h JWT expires. `hasPermission` is lockout-safe (null permissions ⇒ all-true), so `SELECT ... WHERE is_active=1` returning no rows yields **full** write access rather than denial.
@@ -407,8 +413,11 @@ These defensive measures are present and active in the codebase (not numbered fi
 - ✅ **Encryption key no longer logged** — `server/utils/crypto.js` no longer prints the `JWT_SECRET` SHA-256 hash prefix.
 - ✅ **`dbName` identifier validation (Finding S10)** — `admin.js` `create-database` and `check-database` routes now reject non-identifier database names before `CREATE DATABASE`/`USE` interpolation.
 - ✅ **Generic client error messages (Finding S12)** — `admin.js` no longer returns raw `err.message`/`connErr.message` to the client on the four error paths (`check`, `db-tokens/test`, `check-database`, `create-database`); technical detail is server-log-only.
+- ✅ **Per-user tenant authorization (Finding S2)** — `tenantDbMiddleware` now resolves the presented `X-DB-Token` to a tenant id and rejects (403) when it is not in the user's `allowed_tenants`; master pool bypassed, fail-open on lookup error.
+- ✅ **DB-backed permission gates (Finding S7)** — dbProxy + both atomic write guards re-read `role`/`is_active`/`permissions` from the DB row via `checkAdminPermission`; deactivated/demoted admins are denied immediately instead of for up to `TOKEN_EXPIRY`.
+- ✅ **`isServicePosition` fail-closed (ADMIN F6)** — dbProxy + atomic `isServicePosition` now treat a DB lookup error as "protected", so a transient error can no longer bypass the `can_edit_schedule` check.
 
-> Note: Items above marked ✅ are *present and verified* controls / fixed findings. The remaining numbered findings S1–S4, S6–S9, and S11 are still **open**. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
+> Note: Items above marked ✅ are *present and verified* controls / fixed findings. The remaining open numbered findings are **S1, S3, S4, S6, S8, S9, and S11**. S1 (table-identifier injection) and ADMIN F5 are closed structurally by the upcoming Phase 1 query-builder migration. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
 
 ## Scope and limits
 

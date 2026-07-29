@@ -45,3 +45,5 @@ server/php-proxy/tisowareHttpProxy.php
 *.xlsx
 *.xls
 Excel/
+
+.zcode/

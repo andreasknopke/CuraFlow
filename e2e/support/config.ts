@@ -5,6 +5,8 @@ import { loadOptionalTestEnv } from '../../scripts/load-test-env.js';
 
 export type SeededRole = 'admin' | 'user' | 'readonly';
 
+export type SeededSecurityRole = keyof typeof seededSecurityUsers;
+
 loadOptionalTestEnv();
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +32,10 @@ export const storageStatePaths = {
   readonly: path.join(authStateDir, 'readonly.json'),
 } as const;
 
+// Users whose storageState is built by global-setup. The restricted admin is
+// intentionally NOT in this map: it has full tenant access, so the default
+// "pick tenants[0]" logic would select the wrong (alphabetically-first) tenant.
+// The security/authorization spec authenticates it itself (see seededSecurityUsers).
 export const seededUsers = {
   admin: {
     email: 'admin@test.local',
@@ -46,6 +52,26 @@ export const seededUsers = {
     passwordEnv: 'SEED_READONLY_PASSWORD',
     storageStatePath: storageStatePaths.readonly,
   },
+} as const;
+
+// Credentials for users used only by the security/authorization spec. These
+// are NOT auto-processed by global-setup; the spec logs in via the API and
+// activates a specific tenant itself.
+export const seededSecurityUsers = {
+  // Restricted admin: full tenant access, but only the can_manage_users
+  // permission. Used as the granter in the F1/F2/F3 clamp tests, and to
+  // activate the isolated tenant-other to obtain its raw token (S2).
+  restrictedAdmin: {
+    email: 'restricted-admin@test.local',
+    passwordEnv: 'SEED_RESTRICTED_ADMIN_PASSWORD',
+    fallbackPasswordEnv: 'SEED_ADMIN_PASSWORD',
+  },
+} as const;
+
+// The isolated second tenant used only by the security/authorization spec (S2).
+export const otherTenant = {
+  id: process.env.TEST_OTHER_TENANT_ID || 'tenant-other',
+  name: process.env.TEST_OTHER_TENANT_NAME || 'CuraFlow Other Tenant',
 } as const;
 
 const seededTargetMonth = process.env.TEST_TARGET_MONTH || '2026-05';
@@ -97,6 +123,17 @@ export function getUserPassword(role: SeededRole) {
 
   if (!password) {
     throw new Error(`${envName} is required to run the Playwright smoke tests`);
+  }
+
+  return password;
+}
+
+export function getSecurityUserPassword(role: SeededSecurityRole) {
+  const entry = seededSecurityUsers[role];
+  const password = process.env[entry.passwordEnv] ?? process.env[entry.fallbackPasswordEnv ?? ''];
+
+  if (!password) {
+    throw new Error(`${entry.passwordEnv} is required to run the security e2e spec`);
   }
 
   return password;

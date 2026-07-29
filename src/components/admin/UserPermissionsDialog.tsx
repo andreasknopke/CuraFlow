@@ -41,7 +41,10 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
     if (user) {
       const perms: Record<string, boolean> = {};
       for (const key of PERMISSION_KEYS) {
-        if (user.permissions?.[key] === false) {
+        // A restricted granter may not grant a capability they lack (F3):
+        // force such keys unchecked up front, matching the backend clamp.
+        const granterLacks = currentUser ? !hasPermission(currentUser, key) : false;
+        if (granterLacks || user.permissions?.[key] === false) {
           perms[key] = false;
         } else {
           perms[key] = true;
@@ -50,7 +53,7 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
       setLocalPerms(perms);
       setHasChanges(false);
     }
-  }, [user]);
+  }, [user, currentUser]);
 
   function togglePermission(key: string) {
     setLocalPerms((prev) => {
@@ -102,8 +105,12 @@ export default function UserPermissionsDialog({ open, onOpenChange, user, curren
           </p>
 
           {PERMISSION_KEYS.map((key) => {
+            // Disable checkboxes for permissions the granter themselves lack
+            // (F3). The backend clamp is authoritative; this is UX guidance so
+            // a restricted granter cannot even offer capabilities they lack.
+            const granterLacks = currentUser ? !hasPermission(currentUser, key) : false;
             const checked = localPerms[key] !== false;
-            const disabled = !canEdit || isSuperAdmin;
+            const disabled = !canEdit || isSuperAdmin || granterLacks;
 
             return (
               <div key={key} className="flex items-start gap-3">
