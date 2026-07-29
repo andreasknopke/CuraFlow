@@ -8,10 +8,9 @@
 
 > **Status (updated 2026-07-29):** Items marked ✅ Fixed below have been remediated in code. Items still listed without ✅ remain open as of this date. See "Status legend" at the end of this document.
 
-> **Credential logging in `crypto.js` (not a numbered finding):** ✅ Fixed — `server/utils/crypto.js` no longer logs sensitive material to server logs:
-> - the `JWT_SECRET` SHA-256 hash prefix (removed from `getEncryptionKey()` and `encryptToken()`); and
-> - the **full raw `db_token`** on parse failure (removed from `parseDbToken()` — a `db_token` decrypts to DB connection credentials, so `console.error('Token was (full):', token)` was a full-credential leak, strictly worse than the hash-prefix case).
-> Both keep their safe diagnostics (the error `.message` and the legacy-token warning).
+> **Credential logging (not a numbered finding):** ✅ Fixed — server code no longer prints secrets to stdout/logs:
+> - `server/utils/crypto.js` no longer logs the `JWT_SECRET` SHA-256 hash prefix (`getEncryptionKey()`/`encryptToken()`), and no longer logs the **full raw `db_token`** on parse failure (`parseDbToken()` — a `db_token` decrypts to DB connection credentials, so `console.error('Token was (full):', token)` was a full-credential leak). Safe diagnostics (the error `.message` and the legacy-token warning) are retained.
+> - `server/migrateUsers.js` no longer `console.log`s the plaintext default password `CuraFlow2026!` to stdout at the end of the migration. (The password literal itself remains in source under S11, pending the credential-rotation/env-var decision — this change only stops it from being emitted into logs. `server/runMigration.js` carries the same leak but is a pre-existing truncated/broken script on `master` and is left untouched.)
 
 Severity legend: **HIGH** (exploitable, real-world impact), **MEDIUM** (exploitable under conditions / defence-in-depth gap), **LOW** (hardening / accepted risk worth recording).
 

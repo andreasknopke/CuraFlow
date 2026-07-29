@@ -292,7 +292,8 @@ async function migrate() {
     console.log(`   ✅ Inserted: ${inserted}`);
     console.log(`   ⏭️  Skipped: ${skipped}`);
     console.log(`   ❌ Errors: ${errors}`);
-    console.log('\n🔐 Default password for all users: CuraFlow2026!');
+    // Do not print the default password to stdout/logs — it is a credential
+    // (see S11). Operators who need it must read it from the configured source.
     console.log('   ⚠️  Users should change their password after first login!');
 
   } catch (err) {
