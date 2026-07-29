@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Settings2, GripVertical, RotateCcw } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DraggableProvided, DraggableRubric, DraggableStateSnapshot, DropResult } from '@hello-pangea/dnd';
-import { db } from "@/api/client";
+import { api, db } from "@/api/client";
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { getWorkplaceCategoryNames } from '@/utils/workplaceCategoryUtils';
@@ -31,14 +31,31 @@ interface ParsedSectionConfig {
   sections: SectionConfigItem[];
 }
 
+interface VerbundWorkplace {
+  id?: string | number;
+  canWrite?: boolean;
+}
+
+interface VisiblePoolShiftsResponse {
+  workplaces?: VerbundWorkplace[];
+}
+
+interface VisibleRotationsResponse {
+  workplaces?: VerbundWorkplace[];
+}
+
 const DEFAULT_SECTIONS: SectionConfigItem[] = [
     { id: 'absences', defaultName: 'Abwesenheiten', order: 0 },
     { id: 'services', defaultName: 'Dienste', order: 1 },
     { id: 'rotations', defaultName: 'Rotationen', order: 2 },
     { id: 'available', defaultName: 'Anwesenheiten', order: 3 },
     { id: 'demos', defaultName: 'Demonstrationen & Konsile', order: 4 },
-    { id: 'misc', defaultName: 'Sonstiges', order: 5 }
+    { id: 'pool_rotations', defaultName: 'Pool-Rotationen', order: 5 },
+    { id: 'misc', defaultName: 'Sonstiges', order: 6 },
 ];
+
+/** Sections that only appear when local workplaces (or Verbund rows) exist. */
+const DYNAMIC_SECTION_IDS = new Set(['services', 'rotations', 'demos', 'pool_rotations']);
 
 const SECTION_CONFIG_KEY = 'section_config';
 const STATIC_ROW_OPTIONS: AlwaysVisibleRow[] = [
@@ -115,6 +132,25 @@ export default function SectionConfigDialog() {
         staleTime: 5 * 60 * 1000,
     });
 
+    // Verbund rows (cross-tenant Dienste / Pool-Rotationen) are not local workplaces.
+    // Load them so Panel-Konfiguration can list and reorder those sections too.
+    const { data: visiblePoolData } = useQuery<VisiblePoolShiftsResponse>({
+        queryKey: ['pool', 'visible-shifts', 'section-config'],
+        queryFn: () => api.getVisiblePoolShifts() as Promise<VisiblePoolShiftsResponse>,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+
+    const { data: visibleRotationData } = useQuery<VisibleRotationsResponse>({
+        queryKey: ['rotations', 'visible-rotations', 'section-config'],
+        queryFn: () => api.getVisibleRotations() as Promise<VisibleRotationsResponse>,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+    });
+
+    const crossTenantWorkplaces = visiblePoolData?.workplaces || [];
+    const rotationWorkplaces = visibleRotationData?.workplaces || [];
+
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }: { key: string; value: string }) => {
             const existing = systemSettings.find((s: SystemSetting) => s.key === key);
@@ -128,42 +164,55 @@ export default function SectionConfigDialog() {
         }
     });
 
-    // Alle verfügbaren Sections berechnen (Default + Custom), leere dynamische ausblenden
+    // Alle verfügbaren Sections berechnen (Default + Custom + Verbünde), leere dynamische ausblenden
     const allAvailableSections: SectionConfigItem[] = useMemo(() => {
         const customCategoryNames = getWorkplaceCategoryNames(systemSettings);
 
-        // Prüfe welche dynamischen Kategorien tatsächlich Workplaces haben
+        // Local workplace categories
         const categoriesWithWorkplaces = new Set(workplaces.map((w: Workplace) => w.category));
 
-        // Dynamische Kategorien (die nur angezeigt werden wenn Workplaces vorhanden)
-        const dynamicCategoryNames = ['Dienste', 'Rotationen', 'Demonstrationen & Konsile', ...customCategoryNames];
+        // Verbund-sourced sections (same placement rules as ScheduleBoard):
+        // - cross-tenant group workplaces append to "Dienste"
+        // - pool-admin rotation workplaces append to "Rotationen"
+        // - ward rotation workplaces form "Pool-Rotationen"
+        const hasCrossTenantDienste = crossTenantWorkplaces.length > 0;
+        const hasPoolAdminRotations = rotationWorkplaces.some((wp) => wp.canWrite === true);
+        const hasWardPoolRotations = rotationWorkplaces.some((wp) => wp.canWrite === false);
+
+        if (hasCrossTenantDienste) categoriesWithWorkplaces.add('Dienste');
+        if (hasPoolAdminRotations) categoriesWithWorkplaces.add('Rotationen');
+        if (hasWardPoolRotations) categoriesWithWorkplaces.add('Pool-Rotationen');
+
+        const dynamicCategoryNames = [
+            'Dienste',
+            'Rotationen',
+            'Demonstrationen & Konsile',
+            'Pool-Rotationen',
+            ...customCategoryNames,
+        ];
 
         // Statische Sections die immer angezeigt werden
-        const staticSections = DEFAULT_SECTIONS.filter(s => 
-            !['services', 'rotations', 'demos'].includes(s.id)
-        );
+        const staticSections = DEFAULT_SECTIONS.filter((s) => !DYNAMIC_SECTION_IDS.has(s.id));
 
-        // Dynamische Sections nur anzeigen, wenn sie Workplaces haben
+        // Dynamische Sections nur anzeigen, wenn sie Workplaces/Verbund-Zeilen haben
         const dynamicSections: SectionConfigItem[] = [];
         for (const catName of dynamicCategoryNames) {
             if (categoriesWithWorkplaces.has(catName)) {
-                // Prüfe ob es schon in DEFAULT_SECTIONS ist
-                const existing = DEFAULT_SECTIONS.find(s => s.defaultName === catName);
+                const existing = DEFAULT_SECTIONS.find((s) => s.defaultName === catName);
                 if (existing) {
                     dynamicSections.push(existing);
                 } else {
-                    // Custom Kategorie
                     dynamicSections.push({
                         id: `custom_${catName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
                         defaultName: catName,
-                        order: DEFAULT_SECTIONS.length + dynamicSections.length
+                        order: DEFAULT_SECTIONS.length + dynamicSections.length,
                     });
                 }
             }
         }
 
         return [...staticSections, ...dynamicSections];
-    }, [systemSettings, workplaces]);
+    }, [systemSettings, workplaces, crossTenantWorkplaces, rotationWorkplaces]);
 
     const savedConfig = useMemo(() => {
         const savedSetting = systemSettings.find((s: SystemSetting) => s.key === SECTION_CONFIG_KEY);

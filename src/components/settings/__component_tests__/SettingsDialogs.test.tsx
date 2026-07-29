@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   colorSettingCreate: vi.fn(),
   colorSettingDelete: vi.fn(),
   renamePosition: vi.fn(),
+  getVisiblePoolShifts: vi.fn(),
+  getVisibleRotations: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
   toastInfo: vi.fn(),
@@ -37,6 +39,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/api/client', () => ({
   api: {
     renamePosition: mocks.renamePosition,
+    getVisiblePoolShifts: mocks.getVisiblePoolShifts,
+    getVisibleRotations: mocks.getVisibleRotations,
   },
   db: {
     Workplace: {
@@ -143,6 +147,8 @@ describe('SettingsDialogs smoke tests', () => {
       { id: 1, name: 'CT', category: 'Rotationen', order: 1, active_days: [1, 2, 3, 4, 5] },
     ]);
     (mocks.systemSettingList as any).mockResolvedValue([]);
+    (mocks.getVisiblePoolShifts as any).mockResolvedValue({ workplaces: [] });
+    (mocks.getVisibleRotations as any).mockResolvedValue({ workplaces: [] });
     (mocks.teamRoleList as any).mockResolvedValue([
       { id: 1, name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
       { id: 2, name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: '' },
@@ -269,5 +275,39 @@ describe('SettingsDialogs smoke tests', () => {
     expect(screen.getByTitle('Panel-Konfiguration')).toBeInTheDocument();
     expect(screen.getByText('Speichern')).toBeInTheDocument();
     expect(screen.getByText('Zurücksetzen')).toBeInTheDocument();
+  });
+
+  it('SectionConfigDialog — shows Pool-Rotationen when ward rotation workplaces exist', async () => {
+    const user = userEvent.setup();
+    (mocks.getVisibleRotations as any).mockResolvedValue({
+      workplaces: [{ id: 'rw-1', name: 'Springerpool', canWrite: false }],
+    });
+
+    renderWithProviders(<SectionConfigDialog />, {
+      withAuthProvider: false,
+      withToaster: false,
+    });
+
+    // Sections are loaded only after the dialog is opened
+    await user.click(screen.getByTitle('Panel-Konfiguration'));
+
+    expect(await screen.findByText('Pool-Rotationen')).toBeInTheDocument();
+  });
+
+  it('SectionConfigDialog — shows Dienste when only cross-tenant group workplaces exist', async () => {
+    const user = userEvent.setup();
+    (mocks.workplaceList as any).mockResolvedValue([]);
+    (mocks.getVisiblePoolShifts as any).mockResolvedValue({
+      workplaces: [{ id: 'gwp-1', name: 'Nachtdienst Verbund' }],
+    });
+
+    renderWithProviders(<SectionConfigDialog />, {
+      withAuthProvider: false,
+      withToaster: false,
+    });
+
+    await user.click(screen.getByTitle('Panel-Konfiguration'));
+
+    expect(await screen.findByText('Dienste')).toBeInTheDocument();
   });
 });
