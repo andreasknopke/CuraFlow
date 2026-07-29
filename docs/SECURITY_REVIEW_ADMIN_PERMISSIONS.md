@@ -2,9 +2,9 @@
 
 **Reviewed scope:** The admin role-scoping / permission system.
 **Date:** 2026-07-08
-**Overall verdict:** The permission *data model* and *enforcement wiring* are sound in design, but several enforcement sites trust the JWT payload or the client request body where they must not, producing privilege-escalation and bypass paths. **Findings 1–3 are HIGH and should be fixed before this permission model is treated as a security boundary.**
+**Overall verdict:** The permission *data model* and *enforcement wiring* are sound in design, but several enforcement sites trusted the JWT payload or the client request body where they must not, producing privilege-escalation and bypass paths. **Findings 1–6 are now ✅ Fixed (2026-07-29)** via a backend DB-backed clamp (F1–F3), a DB-backed permission resolver (F4), and fail-closed lookups (F6). See each finding's "Fix applied" section.
 
-> **Status (updated 2026-07-29):** Findings 1–6 below describe enforcement-site weaknesses (JWT-role trust, fail-open behavior) and remain **open** unless individually marked ✅. The *baseline* permission infrastructure that these findings build on has been verified present and active — see the "Verified baseline controls" list at the end of this document, and the ✅ Fixed items in [`SECURITY_REVIEW_SYSTEM.md`](./SECURITY_REVIEW_SYSTEM.md).
+> **Status (updated 2026-07-29):** Findings 1, 2, 3, 4, and 6 are ✅ Fixed. Finding 5 (ShiftEntry partial-position update bypass) remains **open** — it is closed structurally by the upcoming Phase 1 query-builder migration (see `BACKEND_MODERNIZATION_PLAN.md`). The *baseline* permission infrastructure these findings build on is verified present and active — see the "Verified baseline controls" list at the end of this document, and the ✅ Fixed items in [`SECURITY_REVIEW_SYSTEM.md`](./SECURITY_REVIEW_SYSTEM.md).
 
 ---
 
@@ -34,9 +34,12 @@ const token = createToken({
 
 ## Finding 1 — Privilege escalation on user registration
 
-**Severity:** HIGH
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
 **Likelihood:** High (single API call, authenticated admin)
 **Impact:** A restricted admin (e.g. only `can_manage_users`) can create a new admin account with **all 13 permissions**.
+
+### Fix applied
+`POST /register` now loads the granter's **authoritative** permissions from the DB via `loadGranterPermissions(req.user)` (by `req.user.sub`, not from the JWT, which carries no `permissions`). A new admin is stored with exactly the granter's effective permissions — never `ALL_PERMISSIONS_TRUE` from the lockout-safe branch. A restricted granter can no longer mint a full admin.
 
 ### Location
 `server/routes/auth.js`, `POST /register` handler, lines ~332–389.
@@ -95,9 +98,12 @@ permissions = JSON.stringify(newPerms);
 
 ## Finding 2 — Privilege escalation on promote-to-admin (PATCH /users/:userId)
 
-**Severity:** HIGH
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
 **Likelihood:** High
 **Impact:** A restricted admin can promote an existing user to admin with full permissions, the same escalation as Finding 1 via a different endpoint.
+
+### Fix applied
+`PATCH /users/:userId` now loads the granter's DB-backed permissions and applies `clampPermissionsToGranter` (in `server/utils/permissions.js`) in **both** branches: when no explicit permissions are sent it inherits the granter's, and when explicit permissions are sent (the dialog path) any key the granter lacks is force-revoked to `false` regardless of the incoming value. The clamp is the authoritative control; the dialog disable (F3) is UX.
 
 ### Location
 `server/routes/auth.js`, `PATCH /users/:userId`, lines ~533–569.
@@ -152,9 +158,12 @@ if (data.role === 'admin') {
 
 ## Finding 3 — Client-side dialog grants permissions the granter lacks
 
-**Severity:** HIGH
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
 **Likelihood:** Medium (requires `can_manage_users` admin; UI-mediated)
 **Impact:** A restricted admin can grant any permission to other admins via the permissions dialog, independent of their own assigned permissions.
+
+### Fix applied
+The authoritative control is the backend clamp in Finding 2. Additionally, `UserPermissionsDialog.tsx` now disables (and renders unchecked) any checkbox for a permission the **current user** lacks (`hasPermission(currentUser, key)`), so a restricted granter cannot even offer capabilities they do not hold.
 
 ### Location
 `src/components/admin/UserPermissionsDialog.tsx` (dialog) + `server/routes/auth.js` `PATCH /users/:userId` (storage).
@@ -189,9 +198,12 @@ So a granter who themselves lacks `can_manage_system` can nonetheless open the d
 
 ## Finding 4 — Deactivated / demoted admins retain write access until token expiry (24h)
 
-**Severity:** HIGH
+**Severity:** HIGH — ✅ **Fixed (2026-07-29)**
 **Likelihood:** Medium (requires an admin to be deactivated/demoted while holding a live token)
 **Impact:** Revocation of an admin (set `is_active=0` or `role`≠`'admin'`) does not take effect on protected writes for up to 24 hours.
+
+### Fix applied
+All inline write guards (`dbProxy.js`, both `atomic.js` ShiftEntry guards) now use `checkAdminPermission(masterDb, userId, key)` from `server/utils/permissions.js`, which re-reads `role`/`is_active`/`permissions` from the DB row — not the JWT — and checks `is_active` in code (the previous `WHERE is_active = 1` filter made a deactivated user return no row and fall through to the lockout-safe `ALL_PERMISSIONS_TRUE`). A deactivated/demoted admin is now denied on their next protected write. `TOKEN_EXPIRY` was deliberately left at 24h (business-rule constraint); revocation now takes effect without shortening sessions.
 
 ### Location
 `server/utils/permissions.js` `loadPermissions` (lines ~84–108) and `server/utils/permissions.js` `hasPermission` (lines ~122–128), as invoked from `server/routes/dbProxy.js` (lines ~788–801) and `server/routes/atomic.js` (guards around lines ~258–275, ~311–327).
@@ -234,7 +246,7 @@ hasPerm = hasPermission(effectiveUser, requiredPerm);
 
 ## Finding 5 — ShiftEntry permission guard bypassed by partial-position updates
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM — **OPEN** (deferred: closed structurally by the Phase 1 query-builder migration, see `BACKEND_MODERNIZATION_PLAN.md` PR 1.2)
 **Likelihood:** Medium (the bypass is reachable through a normal UI operation; impact limited to schedule edits)
 **Impact:** An admin without `can_edit_schedule` can modify Dienste shifts by sending an update that omits the `position` field, because the guard inspects only `data.position`.
 
@@ -283,9 +295,12 @@ Better: treat "could not determine whether this is a Dienste write" as **deny-by
 
 ## Finding 6 — Permission guard fails open on DB lookup errors
 
-**Severity:** MEDIUM
+**Severity:** MEDIUM — ✅ **Fixed (2026-07-29)**
 **Likelihood:** Low (requires a transient DB error in the Workplace/admin lookup during a protected write)
 **Impact:** If `isServicePosition` or the `app_users` lookup throws, the guard silently skips the permission check, allowing the write.
+
+### Fix applied
+`isServicePosition` in both `dbProxy.js` and `atomic.js` is now **fail-closed**: on a DB lookup error it logs and returns `true` (treat the write as protected), so the guard then requires `can_edit_schedule` rather than skipping the check. The `app_users` lookup side was already deny-by-default; the new `checkAdminPermission` (F4 fix) is fail-closed too (DB error ⇒ `allowed: false`).
 
 ### Location
 `server/routes/dbProxy.js` `isServicePosition` (lines ~595–606), the `app_users` permission lookup (lines ~788–795); `server/routes/atomic.js` `isServicePosition` (lines ~57–70) and the same lookup at ~266–275 / ~311–327.
@@ -338,6 +353,8 @@ For the `app_users` permission lookup, on `catch` today the code falls through t
 - Confirmed the reorder code path sends `{ order: index }` with no `position` (`src/components/schedule/ScheduleBoard.jsx:4575–4579`).
 - Confirmed both `WishRequest` and `AbsenceRequest` carry a `status` column (so the approval-gating lookup is not vacuous): `server/scripts/seed-runtime-shared.js:144`, `server/utils/masterMigrations.js` `AbsenceRequest` definition.
 - Confirmed `requirePermission` does NOT mutate `req.user`, so the inheritance paths in Findings 1–2 see the bare JWT.
+- **Unit tests:** `server/__tests__/permissions.test.js` covers `checkAdminPermission` (F4: inactive/demoted/missing-user denial, super-admin bypass, fail-closed-on-error) and `clampPermissionsToGranter` (F1/F2: granter-lacking keys force-revoked). `src/components/admin/__tests__/UserPermissionsDialog.test.tsx` covers the F3 dialog disable.
+- **Integration tests:** `e2e/specs/security/authorization.spec.ts` (requires the Docker harness: `npm run test:db:up && npm run test:e2e`) covers the request-level behavior: S2 (cross-tenant `X-DB-Token` → 403), S7/F4 (deactivated admin's still-valid JWT → 403 on a protected write), F1 (restricted granter cannot mint a full-permission admin), F2 (restricted granter cannot grant a permission they lack via PATCH). Seed support added in `server/scripts/seed-test-data.js` (restricted admin + isolated `tenant-other`).
 
 ## Scope and limits
 

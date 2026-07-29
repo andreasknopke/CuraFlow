@@ -6,7 +6,7 @@ import { db } from '../index.js';
 import { broadcastUserEvent, buildRealtimeScope, registerRealtimeClient } from '../utils/realtime.js';
 import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
 import { loadUserGroupContext, listUserGroups } from '../utils/tenantGroups.js';
-import { requirePermission, isSuperAdmin, loadPermissions } from '../utils/permissions.js';
+import { requirePermission, isSuperAdmin, loadPermissions, clampPermissionsToGranter, ALL_PERMISSIONS_TRUE } from '../utils/permissions.js';
 
 const router = express.Router();
 
@@ -244,6 +244,21 @@ function generateTemporaryPassword() {
   return `CF-${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}!`;
 }
 
+// Load the requesting admin's ("granter's") authoritative permissions from the
+// master DB by their user id — NOT from `req.user` (the JWT carries no
+// `permissions`, so `loadPermissions(req.user)` would hit the lockout-safe
+// branch and return ALL_PERMISSIONS_TRUE, enabling privilege escalation).
+// Returns null for a non-existent / inactive / non-admin granter.
+async function loadGranterPermissions(granterUser) {
+  const [rows] = await db.execute(
+    'SELECT email, role, is_active, permissions FROM app_users WHERE id = ?',
+    [granterUser?.sub],
+  );
+  const row = rows[0];
+  if (!row || !row.is_active || row.role !== 'admin') return null;
+  return loadPermissions({ ...row, role: row.role, permissions: row.permissions });
+}
+
 async function sendTemporaryPasswordEmail({ email, fullName, tempPassword }) {
   const providerInfo = getEmailProviderInfo();
   if (!providerInfo.configured) {
@@ -337,12 +352,15 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
       return res.status(400).json({ error: 'Email und Passwort erforderlich' });
     }
     
-    // Permission inheritance: if the new user is an admin, copy the requesting
-    // admin's permissions (so the granter cannot give more than they have).
+    // Permission inheritance (F1): if the new user is an admin, load the
+    // granter's AUTHORITATIVE permissions from the DB (not the JWT — the JWT
+    // has no `permissions`, so the old `loadPermissions(req.user)` returned
+    // ALL_PERMISSIONS_TRUE and let a restricted granter create a full admin).
+    // A new admin can never hold a permission the granter lacks.
     let permissions = null;
     if (role === 'admin') {
-      const granterPerms = loadPermissions(req.user);
-      permissions = JSON.stringify(granterPerms);
+      const granterPerms = await loadGranterPermissions(req.user);
+      permissions = JSON.stringify(granterPerms ?? ALL_PERMISSIONS_TRUE);
     }
     
     // Check if user exists
@@ -563,11 +581,24 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
       }
     }
     
-    // Permission inheritance: if the role is being changed to admin and no
-    // explicit permissions were sent, copy the granter's permissions.
-    if (data.role === 'admin' && data.permissions === undefined) {
-      const granterPerms = loadPermissions(req.user);
-      data.permissions = granterPerms;
+    // Permission inheritance + clamp (F2/F3): for an admin target, load the
+    // granter's AUTHORITATIVE permissions from the DB (the JWT has none, so the
+    // old `loadPermissions(req.user)` returned ALL_PERMISSIONS_TRUE and enabled
+    // escalation). If no explicit permissions were sent, inherit the granter's.
+    // If explicit permissions were sent (the dialog path), force-revoke any key
+    // the granter lacks — the granter can never grant a capability they do not
+    // hold. The clamp is the authoritative control; the dialog disabling (F3)
+    // is UX.
+    if (data.role === 'admin') {
+      const granterPerms = await loadGranterPermissions(req.user);
+      if (data.permissions === undefined) {
+        data.permissions = granterPerms ?? ALL_PERMISSIONS_TRUE;
+      } else {
+        const incoming = typeof data.permissions === 'string'
+          ? JSON.parse(data.permissions)
+          : data.permissions;
+        data.permissions = clampPermissionsToGranter(incoming, granterPerms ?? ALL_PERMISSIONS_TRUE);
+      }
     }
     
     for (const [key, value] of Object.entries(data)) {

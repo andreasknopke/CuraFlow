@@ -1,7 +1,7 @@
 import express from 'express';
 import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
-import { hasPermission } from '../utils/permissions.js';
+import { checkAdminPermission } from '../utils/permissions.js';
 import crypto from 'crypto';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { COLUMNS_CACHE, clearColumnsCache, ensureColumns, assertValidIdentifier } from '../utils/schema.js';
@@ -645,7 +645,11 @@ export const writeAuditLog = async (dbPool, { level = 'audit', source, message, 
   }
 };
 
-// Helper: check if a position name belongs to a "Dienste"-category workplace
+// Helper: check if a position name belongs to a "Dienste"-category workplace.
+// Fail-closed (F6): on DB error we cannot determine the category, so treat the
+// write as protected (return true) — the caller then requires can_edit_schedule.
+// The previous fail-open `return false` let a transient lookup error bypass the
+// permission check on a Dienste shift.
 async function isServicePosition(dbPool, positionName) {
   if (!positionName) return false;
   try {
@@ -654,8 +658,9 @@ async function isServicePosition(dbPool, positionName) {
       [positionName],
     );
     return rows.length > 0 && rows[0].category === 'Dienste';
-  } catch {
-    return false;
+  } catch (err) {
+    console.error('[isServicePosition] lookup failed, treating as protected:', err.message);
+    return true;
   }
 }
 
@@ -847,14 +852,14 @@ router.post('/', async (req, res, next) => {
         });
       }
       if (shouldCheckPermission) {
+        // Authoritative check: resolve role/is_active from the master DB row,
+        // not the JWT. A deactivated or demoted admin is denied immediately
+        // (S7 / F4), instead of for up to TOKEN_EXPIRY via the lockout-safe
+        // branch. checkAdminPermission is fail-closed (DB error ⇒ deny).
         let hasPerm = false;
         try {
-          const [permRows] = await db.execute(
-            'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-            [req.user?.sub || ''],
-          );
-          const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-          hasPerm = req.user?.role === 'admin' && hasPermission(effectiveUser, requiredPerm);
+          const result = await checkAdminPermission(db, req.user?.sub, requiredPerm);
+          hasPerm = result.allowed;
         } catch { /* fall through to deny */ }
         if (!hasPerm) {
           return res.status(403).json({

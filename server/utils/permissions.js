@@ -38,6 +38,28 @@ export const ALL_PERMISSIONS_TRUE = Object.fromEntries(
   PERMISSION_KEYS.map((key) => [key, true]),
 );
 
+/**
+ * Force-revoke any permission key the granter themselves lacks (F1/F2/F3).
+ *
+ * Used by the register / promote-to-admin paths to guarantee a granter can
+ * never grant a capability they do not hold: for every key where the granter's
+ * effective permissions are `false`, the clamped result is `false` regardless
+ * of the incoming value. For keys the granter has, the incoming explicit choice
+ * is honored. Missing keys default to `true` (lockout-safe).
+ *
+ * @param {object|null|undefined} incoming - Requested permissions object.
+ * @param {object} granterPerms - The granter's effective permissions (from
+ *   `loadPermissions`).
+ * @returns {object} A flat record of `{ permission_key: boolean }`.
+ */
+export function clampPermissionsToGranter(incoming, granterPerms) {
+  const clamped = { ...ALL_PERMISSIONS_TRUE, ...(incoming || {}) };
+  for (const key of PERMISSION_KEYS) {
+    if (granterPerms[key] === false) clamped[key] = false;
+  }
+  return clamped;
+}
+
 // ─── Super-Admin helpers ─────────────────────────────────────────────────────
 
 /**
@@ -206,4 +228,53 @@ export function requirePermission(permissionKey) {
     console.debug('[permissions] GRANTED:', req.user.email, 'key:', permissionKey);
     next();
   };
+}
+
+// ─── DB-backed enforcement helper ────────────────────────────────────────────
+
+/**
+ * Resolve the authoritative admin state for a user from the master DB and
+ * check a single permission.
+ *
+ * This is the security-critical counterpart to `requirePermission` for inline
+ * write guards (dbProxy/atomic). Unlike the older inline pattern, it reads
+ * `role` and `is_active` from the DB row — **not** the JWT — so a deactivated
+ * or demoted admin is denied immediately rather than for up to `TOKEN_EXPIRY`
+ * (see SECURITY_REVIEW_SYSTEM.md Finding S7 / ADMIN_PERMISSIONS Finding 4).
+ *
+ * The query deliberately omits the `is_active = 1` *filter* and checks
+ * `is_active` in code: with the filter, a deactivated user returns no row,
+ * which made `loadPermissions` hit its lockout-safe branch
+ * (`null` → `ALL_PERMISSIONS_TRUE`) and silently grant full access. Here a
+ * missing/inactive/non-admin row is an explicit denial.
+ *
+ * Fail-closed: a DB error rejects (`allowed: false, reason: 'error'`) — the
+ * caller's surrounding try/catch already denies on false.
+ *
+ * @param {object} masterDb - Master mysql2 pool.
+ * @param {string} userId - `app_users.id` (JWT `sub`).
+ * @param {string} permissionKey - One of `PERMISSION_KEYS`.
+ * @returns {Promise<{ allowed: boolean, reason: string }>}
+ */
+export async function checkAdminPermission(masterDb, userId, permissionKey) {
+  let rows;
+  try {
+    [rows] = await masterDb.execute(
+      'SELECT email, role, is_active, permissions FROM app_users WHERE id = ?',
+      [userId],
+    );
+  } catch (err) {
+    console.error('[permissions] checkAdminPermission DB error:', err.message);
+    return { allowed: false, reason: 'error' };
+  }
+
+  const row = rows?.[0];
+  if (!row) return { allowed: false, reason: 'no_user' };
+  if (!row.is_active) return { allowed: false, reason: 'inactive' };
+  if (isSuperAdmin(row.email)) return { allowed: true, reason: 'super_admin' };
+  if (row.role !== 'admin') return { allowed: false, reason: 'not_admin' };
+
+  // role from the DB row, not the JWT
+  const effectiveUser = { ...row, role: row.role, permissions: row.permissions };
+  return { allowed: hasPermission(effectiveUser, permissionKey), reason: 'checked' };
 }

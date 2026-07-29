@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import { authMiddleware } from './auth.js';
-import { requirePermission, hasPermission } from '../utils/permissions.js';
+import { requirePermission, checkAdminPermission } from '../utils/permissions.js';
 import { writeAuditLog } from './dbProxy.js';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { db } from '../index.js';
@@ -55,7 +55,9 @@ const shiftIsoDate = (dateString, days) => {
   return date.toISOString().slice(0, 10);
 };
 
-// Helper: check if a position belongs to a "Dienste"-category workplace
+// Helper: check if a position belongs to a "Dienste"-category workplace.
+// Fail-closed (F6): on DB error we cannot determine the category, so treat the
+// write as protected (return true) — the caller then requires can_edit_schedule.
 async function isServicePosition(dbPool, positionName) {
   if (!positionName) return false;
   try {
@@ -64,8 +66,9 @@ async function isServicePosition(dbPool, positionName) {
       [positionName],
     );
     return rows.length > 0 && rows[0].category === 'Dienste';
-  } catch {
-    return false;
+  } catch (err) {
+    console.error('[isServicePosition] lookup failed, treating as protected:', err.message);
+    return true;
   }
 }
 
@@ -255,14 +258,11 @@ router.post('/', async (req, res, next) => {
         const position = data?.position || current.position;
         const isDienste = position ? await isServicePosition(pool, position) : false;
         if (isDienste) {
+          // Authoritative check: role/is_active from the DB row, not the JWT
+          // (S7 / F4). checkAdminPermission is fail-closed.
           let canEdit = false;
           try {
-            const [permRows] = await db.execute(
-              'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-              [req.user?.sub || ''],
-            );
-            const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-            canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+            canEdit = (await checkAdminPermission(db, req.user?.sub, 'can_edit_schedule')).allowed;
           } catch { /* deny */ }
           if (!canEdit) {
             return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung f\u00fcr diese Aktion', missingPermission: 'can_edit_schedule' });
@@ -306,14 +306,11 @@ router.post('/', async (req, res, next) => {
         const position = data?.position;
         const isDienste = position ? await isServicePosition(pool, position) : false;
         if (isDienste) {
+          // Authoritative check: role/is_active from the DB row, not the JWT
+          // (S7 / F4). checkAdminPermission is fail-closed.
           let canEdit = false;
           try {
-            const [permRows] = await db.execute(
-              'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-              [req.user?.sub || ''],
-            );
-            const effectiveUser = { ...req.user, permissions: permRows[0]?.permissions ?? null };
-            canEdit = req.user?.role === 'admin' && hasPermission(effectiveUser, 'can_edit_schedule');
+            canEdit = (await checkAdminPermission(db, req.user?.sub, 'can_edit_schedule')).allowed;
           } catch { /* deny */ }
           if (!canEdit) {
             return res.status(403).json({ error: 'Ihnen fehlt die Berechtigung f\u00fcr diese Aktion', missingPermission: 'can_edit_schedule' });

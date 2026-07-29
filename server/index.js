@@ -1,4 +1,5 @@
 import express from 'express';
+import jwtLib from 'jsonwebtoken';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -13,6 +14,7 @@ import { parseDbToken } from './utils/crypto.js';
 import { runMasterMigrations } from './utils/masterMigrations.js';
 import { ensureColumns } from './utils/schema.js';
 import { resolveMasterDbConfig } from './utils/mysqlConfig.js';
+import { resolveTenantIdFromToken } from './utils/tenantGroups.js';
 
 // Import routes
 import authRouter from './routes/auth.js';
@@ -406,6 +408,54 @@ export const tenantDbMiddleware = async (req, res, next) => {
       }
     } catch (e) {
       console.warn('[Default-Timeslot] Backfill warning:', e.message);
+    }
+  }
+
+  // Per-user tenant authorization (S2): for a custom (per-tenant) pool, verify
+  // the resolved token's tenant id is in the authenticated user's
+  // allowed_tenants. Mirrors the filtering /my-tenants already does client-side.
+  // - Master pool (no token) is bypassed (matches /my-tenants: empty/null
+  //   allowed_tenants ⇒ full access, and the default pool needs no gating).
+  // - Fail-open on lookup error: this runs on every tenant request, so a
+  //   transient master-DB error must not lock out all tenant traffic.
+  //
+  // NOTE on timing: this is a global middleware that runs BEFORE the route
+  // handlers apply authMiddleware, so req.user is NOT populated here yet. We
+  // therefore decode the Bearer JWT directly (read-only) to obtain the user id.
+  // The route handler still does its own authoritative verification afterward.
+  if (req.isCustomDb) {
+    try {
+      const authHeader = req.headers.authorization;
+      const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      // query-string ?access_token= fallback (SSE-style), same as resolveAuthPayload.
+      const queryToken = !bearer && typeof req.query?.access_token === 'string'
+        ? req.query.access_token : null;
+      const token = bearer || queryToken;
+      const decoded = token ? jwtLib.verify(token, process.env.JWT_SECRET) : null;
+      const userId = decoded?.sub;
+      if (userId) {
+        const tenantId = await resolveTenantIdFromToken(db, dbToken);
+        if (tenantId) {
+          const [u] = await db.execute(
+            'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+            [userId],
+          );
+          const allowedRaw = u[0]?.allowed_tenants;
+          const allowedList = allowedRaw
+            ? (typeof allowedRaw === 'string' ? JSON.parse(allowedRaw) : allowedRaw)
+            : null;
+          const hasFullAccess = !Array.isArray(allowedList) || allowedList.length === 0;
+          if (!hasFullAccess && !allowedList.map(String).includes(tenantId)) {
+            return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+          }
+        }
+      }
+    } catch (err) {
+      // Invalid/expired token here is fine — the route handler's authMiddleware
+      // will reject it with 401. Only log unexpected (non-JWT) errors.
+      if (err.name !== 'JsonWebTokenError' && err.name !== 'TokenExpiredError') {
+        console.error('[tenantDbMiddleware] tenant authz check skipped:', err.message);
+      }
     }
   }
 

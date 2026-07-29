@@ -13,6 +13,12 @@ const MASTER_DB_NAME = process.env.MYSQL_DATABASE || 'curaflow_test_master';
 const TENANT_DB_NAME = process.env.TEST_TENANT_DATABASE || 'curaflow_test_tenant';
 const TENANT_ID = process.env.TEST_TENANT_ID || 'tenant-main';
 const TENANT_NAME = process.env.TEST_TENANT_NAME || 'CuraFlow Test Tenant';
+// A second, isolated tenant used only by the security/authorization e2e spec
+// to assert cross-tenant isolation (S2). Distinct DB + token id; no user is
+// granted access to it by default.
+const OTHER_TENANT_DB_NAME = process.env.TEST_OTHER_TENANT_DATABASE || 'curaflow_test_tenant_other';
+const OTHER_TENANT_ID = process.env.TEST_OTHER_TENANT_ID || 'tenant-other';
+const OTHER_TENANT_NAME = process.env.TEST_OTHER_TENANT_NAME || 'CuraFlow Other Tenant';
 const TARGET_MONTH = process.env.TEST_TARGET_MONTH || '2026-05';
 const MYSQL_HOST = process.env.MYSQL_HOST || '127.0.0.1';
 const MYSQL_PORT = Number(process.env.MYSQL_PORT || '3306');
@@ -31,7 +37,24 @@ const USER_PASSWORDS = {
   admin: requiredEnv('SEED_ADMIN_PASSWORD'),
   user: requiredEnv('SEED_USER_PASSWORD'),
   readonly: requiredEnv('SEED_READONLY_PASSWORD'),
+  // Restricted admin: holds only can_manage_users. Used by the F1/F2/F3 e2e
+  // spec to prove a granter cannot grant capabilities they lack. Optional env:
+  // falls back to the admin password so the seed runs unchanged when unset.
+  restrictedAdmin: process.env.SEED_RESTRICTED_ADMIN_PASSWORD || requiredEnv('SEED_ADMIN_PASSWORD'),
 };
+
+// Effective permissions for the restricted admin: everything false except
+// can_manage_users (the one capability they hold). Matches the keys in
+// server/utils/permissions.js PERMISSION_KEYS.
+const RESTRICTED_ADMIN_PERMISSIONS = Object.fromEntries(
+  [
+    'can_manage_users', 'can_approve_absence', 'can_manage_master_data',
+    'can_link_employees', 'can_manage_groups', 'can_manage_workplace_links',
+    'can_manage_shift_vacation', 'can_manage_system', 'can_manage_cowork',
+    'can_approve_wishes', 'can_send_schedule_emails', 'can_assign_pool_shifts',
+    'can_edit_schedule',
+  ].map((key) => [key, key === 'can_manage_users']),
+);
 
 const teamRoles = [
   ['role-chief', 'Chefarzt', 0, true, false, true, false, 'Oberste Führungsebene'],
@@ -183,6 +206,17 @@ async function ensureTenantDatabase(rootPool) {
 
   await rootPool.execute(`CREATE DATABASE IF NOT EXISTS \`${TENANT_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   await rootPool.query(`GRANT ALL PRIVILEGES ON \`${TENANT_DB_NAME}\`.* TO '${MYSQL_USER}'@'%'`);
+  await rootPool.query('FLUSH PRIVILEGES');
+}
+
+// Create the isolated second tenant DB used only by the security/authorization
+// e2e spec (S2 cross-tenant isolation). Mirrors ensureTenantDatabase.
+async function ensureOtherTenantDatabase(rootPool) {
+  assertSafeIdentifier(OTHER_TENANT_DB_NAME, 'TEST_OTHER_TENANT_DATABASE');
+  assertSafeIdentifier(MYSQL_USER, 'MYSQL_USER');
+
+  await rootPool.execute(`CREATE DATABASE IF NOT EXISTS \`${OTHER_TENANT_DB_NAME}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  await rootPool.query(`GRANT ALL PRIVILEGES ON \`${OTHER_TENANT_DB_NAME}\`.* TO '${MYSQL_USER}'@'%'`);
   await rootPool.query('FLUSH PRIVILEGES');
 }
 
@@ -482,15 +516,21 @@ async function upsertRows(pool, tableName, columns, rows) {
 
 async function upsertMasterUsers(masterPool) {
   const users = [
-    ['user-admin', 'admin@test.local', await bcrypt.hash(USER_PASSWORDS.admin, 10), 'Test Admin', 'admin', 'doctor-anna', 1, JSON.stringify([TENANT_ID]), 0, 1],
-    ['user-standard', 'user@test.local', await bcrypt.hash(USER_PASSWORDS.user, 10), 'Test User', 'user', 'doctor-clara', 1, JSON.stringify([TENANT_ID]), 0, 1],
-    ['user-readonly', 'readonly@test.local', await bcrypt.hash(USER_PASSWORDS.readonly, 10), 'Test Readonly', 'readonly', 'doctor-emma', 1, JSON.stringify([TENANT_ID]), 1, 1],
+    // permissions = null → full access (lockout-safe default)
+    ['user-admin', 'admin@test.local', await bcrypt.hash(USER_PASSWORDS.admin, 10), 'Test Admin', 'admin', 'doctor-anna', 1, JSON.stringify([TENANT_ID]), 0, 1, null],
+    ['user-standard', 'user@test.local', await bcrypt.hash(USER_PASSWORDS.user, 10), 'Test User', 'user', 'doctor-clara', 1, JSON.stringify([TENANT_ID]), 0, 1, null],
+    ['user-readonly', 'readonly@test.local', await bcrypt.hash(USER_PASSWORDS.readonly, 10), 'Test Readonly', 'readonly', 'doctor-emma', 1, JSON.stringify([TENANT_ID]), 1, 1, null],
+    // Restricted admin: full tenant access (allowed_tenants = null ⇒ all
+    // tenants, so the S2 spec can activate tenant-other to obtain its raw
+    // token) but restricted PERMISSIONS (only can_manage_users) — these are
+    // orthogonal axes. The F1/F2/F3 spec uses this user as a granter.
+    ['user-restricted-admin', 'restricted-admin@test.local', await bcrypt.hash(USER_PASSWORDS.restrictedAdmin, 10), 'Test Restricted Admin', 'admin', 'doctor-anna', 1, null, 0, 1, JSON.stringify(RESTRICTED_ADMIN_PERMISSIONS)],
   ];
 
   await upsertRows(
     masterPool,
     'app_users',
-    ['id', 'email', 'password_hash', 'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants', 'must_change_password', 'email_verified'],
+    ['id', 'email', 'password_hash', 'full_name', 'role', 'doctor_id', 'is_active', 'allowed_tenants', 'must_change_password', 'email_verified', 'permissions'],
     users
   );
 }
@@ -506,12 +546,29 @@ async function upsertDbToken(masterPool) {
     })
   );
 
+  // Second tenant token — points at the isolated OTHER_TENANT_DB_NAME. Seeded
+  // but NOT granted to any user by default, so the S2 e2e spec can present it
+  // with a restricted user's JWT and expect a 403. is_active is left 0 so it
+  // does not interfere with the default active-tenant resolution.
+  const otherEncryptedToken = encryptToken(
+    JSON.stringify({
+      host: MYSQL_HOST,
+      port: MYSQL_PORT,
+      user: MYSQL_USER,
+      password: MYSQL_PASSWORD,
+      database: OTHER_TENANT_DB_NAME,
+    })
+  );
+
   await masterPool.execute('UPDATE db_tokens SET is_active = 0 WHERE id != ? AND is_active = 1', [TENANT_ID]);
   await upsertRows(
     masterPool,
     'db_tokens',
     ['id', 'name', 'token', 'host', 'db_name', 'description', 'is_active', 'created_by'],
-    [[TENANT_ID, TENANT_NAME, encryptedToken, MYSQL_HOST, TENANT_DB_NAME, 'Seeded deterministic tenant for UI tests', 1, 'seed-script']]
+    [
+      [TENANT_ID, TENANT_NAME, encryptedToken, MYSQL_HOST, TENANT_DB_NAME, 'Seeded deterministic tenant for UI tests', 1, 'seed-script'],
+      [OTHER_TENANT_ID, OTHER_TENANT_NAME, otherEncryptedToken, MYSQL_HOST, OTHER_TENANT_DB_NAME, 'Isolated tenant for the security/authorization e2e spec', 0, 'seed-script'],
+    ]
   );
 }
 
@@ -612,15 +669,18 @@ async function main() {
   console.log('[seed] Starting deterministic test data seed');
   console.log(`[seed] Master DB: ${MASTER_DB_NAME}`);
   console.log(`[seed] Tenant DB: ${TENANT_DB_NAME}`);
+  console.log(`[seed] Other tenant DB: ${OTHER_TENANT_DB_NAME} (security spec only)`);
   assertSafeTestEnvironment();
 
   let rootPool;
   let masterPool;
   let tenantPool;
+  let otherTenantPool;
 
   try {
     rootPool = await waitForPool('mysql root', () => createPool({ user: 'root', password: MYSQL_ROOT_PASSWORD }));
     await ensureTenantDatabase(rootPool);
+    await ensureOtherTenantDatabase(rootPool);
 
     masterPool = await waitForPool('master database', () => createPool({ database: MASTER_DB_NAME, user: MYSQL_USER, password: MYSQL_PASSWORD }));
     await ensureMasterBaseTables(masterPool);
@@ -630,16 +690,23 @@ async function main() {
     await ensureTenantBaseTables(tenantPool);
     await runTenantMigrations(tenantPool, TENANT_ID);
 
+    // The other tenant only needs base tables + migrations (no seed rows).
+    otherTenantPool = await waitForPool('other tenant database', () => createPool({ database: OTHER_TENANT_DB_NAME, user: MYSQL_USER, password: MYSQL_PASSWORD }));
+    await ensureTenantBaseTables(otherTenantPool);
+    await runTenantMigrations(otherTenantPool, OTHER_TENANT_ID);
+
     await upsertDbToken(masterPool);
     await upsertMasterUsers(masterPool);
     await seedTenantData(tenantPool);
 
     console.log('[seed] Done');
-    console.log('  test users seeded: 3 (roles: admin, user, readonly)');
+    console.log('  test users seeded: 4 (roles: admin, restricted-admin, user, readonly)');
     console.log(`[seed] Tenant token id: ${TENANT_ID}`);
+    console.log(`[seed] Other tenant token id: ${OTHER_TENANT_ID} (security spec only)`);
   } finally {
     await Promise.all([
       tenantPool?.end().catch(() => {}),
+      otherTenantPool?.end().catch(() => {}),
       masterPool?.end().catch(() => {}),
       rootPool?.end().catch(() => {}),
     ]);
