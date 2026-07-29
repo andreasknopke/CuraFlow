@@ -14,6 +14,8 @@ import {
   writeShiftEntryToCentralAbsence,
 } from '../utils/centralAbsences.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
+import { createKysely } from '../utils/db.js';
+import { sql } from 'kysely';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -149,14 +151,26 @@ const fromSqlRow = (row) => {
   return res;
 };
 
-// HELPER: Get valid columns for entity (multi-tenant aware)
+// HELPER: Get valid columns for entity (multi-tenant aware).
+//
+// Routed through Kysely (Phase 1, PR 1.0) so the table identifier is escaped
+// centrally via sql.id() instead of hand-interpolated into a backtick string.
+// This is the structural fix for the S1 injection class: a backtick in
+// tableName can no longer break out of the identifier context. The generated
+// SQL is identical to the previous `SHOW COLUMNS FROM \`{tableName}\`` — only
+// the escaping path changed, so behavior (cache, error handling, return shape)
+// is preserved.
+//
+// assertValidIdentifier(tableName) at the route entry (dbProxy.js ~786)
+// remains as defence-in-depth; Kysely is now the primary control.
 const getValidColumns = async (dbPool, tableName, cacheKey) => {
   const fullCacheKey = `${cacheKey}:${tableName}`;
   if (COLUMNS_CACHE[fullCacheKey]) return COLUMNS_CACHE[fullCacheKey];
-  
+
   try {
-    const [rows] = await dbPool.execute(`SHOW COLUMNS FROM \`${tableName}\``);
-    const columns = rows.map(r => r.Field);
+    const kysely = createKysely(dbPool);
+    const { rows } = await sql`SHOW COLUMNS FROM ${sql.id(tableName)}`.execute(kysely);
+    const columns = rows.map(r => r.Field ?? r.field ?? r.COLUMN_NAME);
     COLUMNS_CACHE[fullCacheKey] = columns;
     return columns;
   } catch (e) {

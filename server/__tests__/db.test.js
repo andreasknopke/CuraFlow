@@ -1,0 +1,136 @@
+import { describe, expect, it } from 'vitest';
+
+import { createKysely } from '../utils/db.js';
+import { sql } from 'kysely';
+import { assertValidIdentifier } from '../utils/schema.js';
+
+/**
+ * Phase 1, PR 1.0 — Kysely adapter + identifier-escaping spike.
+ *
+ * These tests prove the two goals of the spike without a live DB:
+ *   1. createKysely borrows connections from an existing mysql2 pool (tenant
+ *      isolation preserved — the pool is never recreated).
+ *   2. Routing a SQL statement through Kysely centralizes identifier escaping
+ *      (sql.id() backtick-wraps the name), so the S1 injection class is closed
+ *      structurally even though the generated SQL is byte-identical for valid
+ *      names.
+ *
+ * getValidColumns itself lives in dbProxy.js, which can't be imported in the
+ * unit suite (it pulls in express). Its behavior is verified end-to-end by the
+ * e2e specs that depend on it (staff / schedule / wishlist workflows). Here we
+ * verify the primitive it is built on.
+ */
+
+/**
+ * Build a mock mysql2/PROMISE pool that records the SQL it is asked to run and
+ * returns the given rows. This mirrors the real mysql2/promise shape the
+ * createKysely bridge expects: getConnection() returns a Promise<conn>, and
+ * conn.query/conn.execute return a Promise<[rows, fields]>.
+ *
+ * (The bridge then adapts these promise methods to the callback form Kysely's
+ * MysqlDialect requires — see server/utils/db.js.)
+ */
+function recordingPool(rows, { throwError } = {}) {
+  const executed = [];
+  const connection = {
+    async query(sqlText, params) {
+      executed.push({ sql: sqlText, params });
+      if (throwError) throw throwError;
+      // mysql2/promise resolves to [rows, fields].
+      return [rows, []];
+    },
+    async execute(sqlText, params) {
+      executed.push({ sql: sqlText, params });
+      if (throwError) throw throwError;
+      return [rows, []];
+    },
+    release() {},
+  };
+  return {
+    pool: {
+      async getConnection() { return connection; },
+    },
+    executed,
+  };
+}
+
+describe('createKysely — wraps an existing pool (tenant isolation preserved)', () => {
+  it('throws if no pool is provided (never silently falls back to a default)', () => {
+    expect(() => createKysely(null)).toThrow(/pool is required/);
+    expect(() => createKysely(undefined)).toThrow(/pool is required/);
+  });
+
+  it('routes queries through the provided pool (does not create its own)', async () => {
+    const { pool, executed } = recordingPool([{ Field: 'id' }]);
+    const kysely = createKysely(pool);
+    await sql`SHOW COLUMNS FROM ${sql.id('Doctor')}`.execute(kysely);
+    expect(executed.length, 'exactly one query against the provided pool').toBe(1);
+    expect(executed[0].sql).toContain('SHOW COLUMNS FROM');
+  });
+});
+
+describe('identifier escaping — central S1 control (sql.id)', () => {
+  it('backtick-wraps a valid table name (byte-identical to the old SQL)', async () => {
+    const { pool, executed } = recordingPool([{ Field: 'id' }]);
+    const kysely = createKysely(pool);
+    await sql`SHOW COLUMNS FROM ${sql.id('Doctor')}`.execute(kysely);
+    expect(executed[0].sql).toBe('SHOW COLUMNS FROM `Doctor`');
+  });
+
+  it('escapes a name containing a backtick instead of breaking out of the identifier', async () => {
+    // The S1 attack: a backtick in the table name used to close the identifier
+    // context and inject SQL. Kysely's sql.id() doubles the backtick so it
+    // stays a literal part of the name — no breakout. (In production this name
+    // never reaches Kysely because assertValidIdentifier rejects it first; this
+    // test pins the builder's own escaping as the primary control.)
+    const { pool, executed } = recordingPool([{ Field: 'id' }]);
+    const kysely = createKysely(pool);
+    await sql`SHOW COLUMNS FROM ${sql.id('evil` WHERE 1=1')}`.execute(kysely);
+    // The whole thing is ONE identifier: the injected backtick is doubled (``)
+    // so "WHERE 1=1" becomes inert text INSIDE the name, not a SQL clause.
+    expect(executed[0].sql).toBe('SHOW COLUMNS FROM `evil`` WHERE 1=1`');
+    // Only a single statement: no semicolon, and "WHERE" is inside backticks
+    // (i.e. there is no unquoted WHERE that the DB would parse as a clause).
+    expect(executed[0].sql).not.toMatch(/;\s/); // no statement separator
+  });
+});
+
+describe('mysql2/promise ↔ callback bridge — result extraction parity', () => {
+  // The bridge must extract just `rows` from mysql2/promise's [rows, fields]
+  // resolution and pass them to Kysely's callback, else Kysely sees the whole
+  // tuple as the result (breaking the row shape). This pins that contract.
+  it('returns the rows array (not the [rows, fields] tuple) so Field is preserved', async () => {
+    const columns = [{ Field: 'id' }, { Field: 'name' }, { Field: 'is_active' }];
+    const { pool } = recordingPool(columns);
+    const kysely = createKysely(pool);
+    const result = await sql`SHOW COLUMNS FROM ${sql.id('Doctor')}`.execute(kysely);
+    expect(result.rows, 'rows is the column list, not a 2-element tuple').toHaveLength(3);
+    expect(result.rows[0].Field, 'SHOW COLUMNS Field property preserved').toBe('id');
+    expect(result.rows.map((r) => r.Field)).toEqual(['id', 'name', 'is_active']);
+  });
+
+  it('propagates a query error through the bridge (no silent hang)', async () => {
+    const { pool } = recordingPool([], { throwError: new Error('boom') });
+    const kysely = createKysely(pool);
+    await expect(sql`SHOW COLUMNS FROM ${sql.id('Doctor')}`.execute(kysely)).rejects.toThrow('boom');
+  });
+});
+
+describe('assertValidIdentifier — defence-in-depth still gates the builder', () => {
+  // The primary control is now Kysely's escaping, but assertValidIdentifier at
+  // the route entry still rejects invalid names first (cleaner 400 vs. a weird
+  // SQL error). This test pins that the two layers compose as designed.
+  it('accepts a normal table name', () => {
+    expect(assertValidIdentifier('Doctor', 'Tabellenname')).toBe('Doctor');
+  });
+
+  it('rejects a backtick-breakout name with an HTTP 400 before it reaches the builder', () => {
+    try {
+      assertValidIdentifier('Doctor` WHERE 1=1', 'Tabellenname');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err.status).toBe(400);
+      expect(err.message).toMatch(/Bezeichner/);
+    }
+  });
+});
