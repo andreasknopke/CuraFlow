@@ -4,6 +4,8 @@
 **Date:** 2026-07-08
 **Overall verdict:** The permission *data model* and *enforcement wiring* are sound in design, but several enforcement sites trust the JWT payload or the client request body where they must not, producing privilege-escalation and bypass paths. **Findings 1–3 are HIGH and should be fixed before this permission model is treated as a security boundary.**
 
+> **Status (updated 2026-07-29):** Findings 1–6 below describe enforcement-site weaknesses (JWT-role trust, fail-open behavior) and remain **open** unless individually marked ✅. The *baseline* permission infrastructure that these findings build on has been verified present and active — see the "Verified baseline controls" list at the end of this document, and the ✅ Fixed items in [`SECURITY_REVIEW_SYSTEM.md`](./SECURITY_REVIEW_SYSTEM.md).
+
 ---
 
 ## Background — how the permission model is supposed to work
@@ -341,4 +343,16 @@ For the `app_users` permission lookup, on `catch` today the code falls through t
 
 - This review covers the **permission enforcement** code paths. It does not audit the broader auth/JWT rotation, tenant isolation, or rate-limiting surface.
 - The findings are static-analysis-verifed against the code as of the reviewed commit. "Likelihood" reflects reachability under realistic operator workflows, not active exploitation evidence.
-- No fixes have been applied; this document is a report only, per request.
+- Originally a report-only document; the ✅ entries below reflect controls verified present on 2026-07-29.
+
+## Verified baseline controls (✅, checked 2026-07-29)
+
+These are the *infrastructure* pieces the findings above assume or build on. They are present and active — their presence is what makes the findings "escalation/bypass" rather than "open hole":
+
+- ✅ **Admin API protection** — `adminMiddleware` + `requirePermission(key)` are mounted on admin route handlers; `requirePermission` reloads `app_users.permissions` from the master DB on every request so permission changes take effect immediately (the *caveat* is that `role`/`is_active` still come from the JWT — see Finding 4).
+- ✅ **Bulk operations auth** — bulk write handlers operate on `req.db` resolved per-tenant via `tenantDbMiddleware`; tenant scoping uses `allowed_tenants`.
+- ✅ **Password hashing** — `bcryptjs` cost factor 12 on registration and password change.
+- ✅ **Response sanitization** — `sanitizeUser` strips `password_hash` before returning user objects.
+- ✅ **Centralized error handling** — a single structured error handler returns generic client messages and logs structured context server-side (see `SECURITY_REVIEW_SYSTEM.md`).
+
+> None of the numbered Findings 1–6 are remediated by these baselines; they describe where enforcement *on top of* this infrastructure trusts the wrong source of truth. They remain open.

@@ -935,8 +935,15 @@ router.post('/', async (req, res, next) => {
         if (typeof sort === 'string') {
           const desc = sort.startsWith('-');
           const field = desc ? sort.substring(1) : sort;
+          // `field` is interpolated into a backtick-quoted identifier in the
+          // ORDER BY clause below; validate it before interpolation to prevent
+          // a backtick/quote in the sort field breaking out of the identifier
+          // context (SQL injection). Prepared statements parameterize values,
+          // not identifiers, so this check is mandatory. Throws a 400 that the
+          // surrounding try/catch forwards via next(error).
+          assertValidIdentifier(field, 'Sortierfeld');
           sql += ` ORDER BY \`${field}\` ${desc ? 'DESC' : 'ASC'}`;
-          
+
           if (field !== 'id') {
             sql += `, \`id\` ASC`;
           }
