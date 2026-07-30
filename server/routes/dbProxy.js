@@ -18,6 +18,13 @@ import { createKysely } from '../utils/db.js';
 import { sql } from 'kysely';
 import { toSqlValue, fromSqlRow } from '../utils/sqlMarshal.js';
 import { insertRow, updateRow, deleteRow, selectRow, filterRows, bulkInsert } from '../utils/queryHelpers.js';
+import {
+  createQualification,
+  updateQualification,
+  deleteQualification,
+  getQualification,
+  listQualifications,
+} from '../repos/qualificationRepo.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -842,7 +849,68 @@ router.post('/', async (req, res, next) => {
         }
       }
     }
-    
+
+    // ===== Qualification repo dispatch (Phase 2, PR 2.1) =====
+    // Qualification is the first entity repo-ified: it short-circuits the
+    // generic dispatch to a dedicated module (table name is a constant, not
+    // user input). Behavior is preserved exactly from the generic path:
+    // auto-inject id/dates/created_by, column filtering, realtime broadcast,
+    // delete audit. Sibling tables (DoctorQualification, WorkplaceQualification)
+    // remain on the generic dispatch.
+    if (tableName === 'Qualification') {
+      if (effectiveAction === 'list' || effectiveAction === 'filter') {
+        const rows = await listQualifications(dbPool, {
+          filters: query || req.body.filters || {},
+          sort,
+          limit,
+          skip,
+        });
+        return res.json(rows);
+      }
+      if (effectiveAction === 'get') {
+        if (!id) return res.json(null);
+        return res.json(await getQualification(dbPool, id));
+      }
+      if (effectiveAction === 'create') {
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        const created = await createQualification({
+          dbPool,
+          data,
+          validColumns,
+          actorEmail: req.user?.email || 'system',
+        });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+        }
+        return res.json(created);
+      }
+      if (effectiveAction === 'update') {
+        if (!id) return res.status(400).json({ error: 'ID required for update' });
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        const updated = await updateQualification({ dbPool, id, data, validColumns });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'update', recordId: id, actor });
+        }
+        return res.json(updated);
+      }
+      if (effectiveAction === 'delete') {
+        if (!id) return res.status(400).json({ error: 'ID required for delete' });
+        const deletedRecord = await deleteQualification({ dbPool, id });
+        await writeAuditLog(dbPool, {
+          level: 'audit',
+          source: 'Löschung',
+          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
+          userEmail: req.user?.email || 'unknown',
+        });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
+        }
+        return res.json({ success: true });
+      }
+      // bulkCreate + unknown actions fall through to the generic dispatch.
+    }
+
     // ===== LIST / FILTER =====
     if (effectiveAction === 'list' || effectiveAction === 'filter') {
       if (tableName === 'ShiftEntry' && req.db) {

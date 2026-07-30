@@ -193,6 +193,12 @@ The prerequisite dedup that makes per-entity repositories clean. Before this PR,
 >
 > **Repo-ification order (informed by the Phase 2 research):** Qualification (simplest: plain CRUD, no guards) → AbsenceRequest (already a repo in `utils/absenceRequests.js`; deprecate the generic path) → WishRequest (two-table design decision) → Doctor (wide blast radius: ~6 files touch it directly) → ShiftEntry (already a de-facto repo in `centralAbsences.js`; consolidation). QualificationCertificate needs no `/api/db` work (already dedicated in `certificates.js`).
 
+#### PR 2.1 — Qualification repository — ✅ DONE
+
+The first per-entity repository. **Test-first:** wrote `e2e/specs/qualifications/qualification-workflows.spec.ts` (4 tests: create/list/update/delete, public read auth-bypass, duplicate-name rejection, auto-inject id/dates) and confirmed green against the generic code before any repo work (Qualification entity CRUD previously had zero e2e coverage).
+
+> **Status (2026-07-29):** ✅ Complete. New `server/repos/qualificationRepo.js` exposes `createQualification` / `updateQualification` / `deleteQualification` / `getQualification` / `listQualifications` (table name is now the constant `QUALIFICATION_TABLE`, not user input), built on the PR 2.0 shared helpers. `dbProxy.js` short-circuits `tableName === 'Qualification'` to the repo before the generic dispatch, preserving EXACTLY the generic path's behavior: auto-inject id/dates/created_by, `getValidColumns` column filtering, realtime `broadcastPlanUpdate`, delete `writeAuditLog` audit entry. The 4 e2e tests pass against the repo'd code. Sibling tables (`DoctorQualification`, `WorkplaceQualification`) remain on the generic dispatch — they have cross-table coordination (rotationQualificationSync, certificates recompute) that warrants separate per-entity treatment. 877 unit/component tests pass; full e2e **74 passed / 0 failed** (one pre-existing firefox auth-logout flake — client-side navigation race, passes on retry, unrelated to this change).
+
 ---
 
 ### Phase 3 — TypeScript port (ride-along, long tail)
