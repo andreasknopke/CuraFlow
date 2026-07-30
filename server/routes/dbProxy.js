@@ -39,6 +39,13 @@ import {
   getDoctor,
   listDoctors,
 } from '../repos/doctorRepo.js';
+import {
+  createShiftEntry,
+  updateShiftEntry,
+  deleteShiftEntry,
+  getShiftEntry,
+  listShiftEntries,
+} from '../repos/shiftEntryRepo.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -1019,45 +1026,109 @@ router.post('/', async (req, res, next) => {
       // bulkCreate + unknown actions fall through to the generic dispatch.
     }
 
-    // ===== LIST / FILTER =====
-    if (effectiveAction === 'list' || effectiveAction === 'filter') {
-      if (tableName === 'ShiftEntry' && req.db) {
+    // ===== ShiftEntry repo dispatch (Phase 2, PR 2.5) =====
+    // ShiftEntry is the most complex entity: central-absence routing, sentinels,
+    // auto-time, central/tenant transitions. All that logic now lives in
+    // shiftEntryRepo.js (moved from inline dbProxy branches). centralAbsences.js
+    // stays as the central-store engine (the repo calls it). The can_edit_schedule
+    // permission guard already ran in the pre-action block. bulkCreate falls
+    // through to the generic dispatch (complex central-split, no direct e2e).
+    if (tableName === 'ShiftEntry') {
+      if (effectiveAction === 'list' || effectiveAction === 'filter') {
+        if (req.db) {
+          try {
+            const rows = await listShiftEntries({
+              tenantDb: dbPool,
+              masterDb: db,
+              filters: query || req.body.filters || {},
+              sort,
+              limit,
+              skip,
+            });
+            return res.json(rows);
+          } catch (err) {
+            console.error('[dbProxy] ShiftEntry central-merge failed', {
+              action: effectiveAction, table: tableName,
+              query: query || req.body.filters || {}, sort, limit, skip,
+              actor: actor?.id, tenantToken: cacheKey,
+              message: err.message, code: err.code, errno: err.errno,
+              sqlState: err.sqlState, sqlMessage: err.sqlMessage, stack: err.stack,
+            });
+            throw err;
+          }
+        }
+        // No req.db → fall through to generic filterRows (master pool)
+      }
+      if (effectiveAction === 'get') {
+        if (!id) return res.json(null);
+        if (req.db) {
+          return res.json(await getShiftEntry({ tenantDb: dbPool, masterDb: db, id }));
+        }
+        // No req.db → fall through to generic selectRow
+      }
+      if (effectiveAction === 'create') {
         try {
-          const rows = await listShiftEntriesWithCentralAbsences({
-            tenantDb: dbPool,
-            masterDb: db,
-            filters: query || req.body.filters || {},
-            sort,
-            limit,
-            skip,
+          const { result, central } = await createShiftEntry({
+            dbPool, masterDb: db, req, data, cacheKey,
+            getValidColumns, WORKPLACE_CACHE, WORKPLACE_CACHE_TTL, ensureScheduleBlockTable,
           });
-          return res.json(rows);
+          if (isPlanSyncEntity(tableName)) {
+            broadcastPlanUpdate({
+              scope: realtimeScope, entity: tableName, action: 'create',
+              recordId: result?.id || data.id, actor,
+            });
+          }
+          return res.json(result);
         } catch (err) {
-          // Verbose server-side log: tells us exactly which request shape
-          // failed and which SQL step blew up (tenant ShiftEntry, linked
-          // doctors, ensureCentralAbsenceTables, central SELECT, sort/limit).
-          // The client only sees the generic "Datenbankfehler" toast, so the
-          // server log is the only place to see the real cause.
-          console.error('[dbProxy] ShiftEntry central-merge failed', {
-            action: effectiveAction,
-            table: tableName,
-            query: query || req.body.filters || {},
-            sort,
-            limit,
-            skip,
-            actor: actor?.id,
-            tenantToken: cacheKey,
-            message: err.message,
-            code: err.code,
-            errno: err.errno,
-            sqlState: err.sqlState,
-            sqlMessage: err.sqlMessage,
-            stack: err.stack,
-          });
+          if (err.status === 409 && err.body) {
+            return res.status(409).json(err.body);
+          }
           throw err;
         }
       }
+      if (effectiveAction === 'update') {
+        if (!id) return res.status(400).json({ error: 'ID required for update' });
+        try {
+          const { result, central } = await updateShiftEntry({
+            dbPool, masterDb: db, req, id, data, cacheKey, getValidColumns,
+          });
+          if (isPlanSyncEntity(tableName)) {
+            broadcastPlanUpdate({
+              scope: realtimeScope, entity: tableName, action: 'update', recordId: id, actor,
+            });
+          }
+          return res.json(result);
+        } catch (err) {
+          if (err.status === 409 && err.body) {
+            return res.status(409).json(err.body);
+          }
+          throw err;
+        }
+      }
+      if (effectiveAction === 'delete') {
+        if (!id) return res.status(400).json({ error: 'ID required for delete' });
+        const { central, deletedRecord } = await deleteShiftEntry({ dbPool, masterDb: db, req, id });
+        if (!central) {
+          // Tenant delete: write audit log (central deletes don't audit here)
+          await writeAuditLog(dbPool, {
+            level: 'audit', source: 'Löschung',
+            message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+            details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
+            userEmail: req.user?.email || 'unknown',
+          });
+        }
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({
+            scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor,
+          });
+        }
+        return res.json({ success: true });
+      }
+      // bulkCreate + unknown actions fall through to the generic dispatch.
+    }
 
+    // ===== LIST / FILTER =====
+    if (effectiveAction === 'list' || effectiveAction === 'filter') {
       // SELECT through Kysely (PR 1.3) so the table name, sort field, AND every
       // filter key are escaped centrally (closes the previously-unvalidated
       // filter-key interpolation). Behavior matches the old hand-built SQL:
