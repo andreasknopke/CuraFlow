@@ -287,6 +287,7 @@ interface RotationWorkplace {
   name: string;
   group_id: number | string;
   canWrite: boolean;
+  canDemand?: boolean;
   timeslots_enabled?: boolean;
   timeslots?: Array<{ id: string; label: string; start_time: string; end_time: string }>;
 }

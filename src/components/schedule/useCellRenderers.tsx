@@ -364,7 +364,9 @@ export function useCellRenderers(deps: CellRenderersDeps) {
             }
         }
 
+        const canDemand = !!(workplace as any).canDemand;
         const openDemandFor = (timeslot: any = null) => {
+            if (!canDemand) return;
             const demandKey = `${workplace.id}|${dateStr}|${timeslot?.id || ''}`;
             const existing = rotationDemandsByCell.get(demandKey);
             setRotationDemandDialog({
@@ -667,7 +669,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                             >
                                 {() => (
                                     <div
-                                        className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors cursor-pointer hover:bg-amber-50/40 w-full ${isCovered ? 'bg-teal-50/30' : ''}`}
+                                        className={`flex items-center gap-1 text-[10px] rounded px-1 py-0.5 transition-colors w-full ${canDemand ? 'cursor-pointer hover:bg-amber-50/40' : ''} ${isCovered ? 'bg-teal-50/30' : ''}`}
                                         onClick={() => { openDemandFor(ts); }}
                                         title={`${ts.label}${tsDemand ? ` · ${hasReturnRequest ? 'Rückgabe angefordert' : tsDemand.status === 'open' ? 'Bedarf offen' : 'Bedarf erfüllt'}` : ''}`}
                                     >
@@ -704,7 +706,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                                                 Rückgabe
                                             </span>
                                         )}
-                                        {!isCovered && !tsDemand && (
+                                        {!isCovered && !tsDemand && canDemand && (
                                             <span className="text-[9px] text-amber-500 shrink-0">+Bedarf</span>
                                         )}
                                     </div>
@@ -732,14 +734,14 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                 baseStyle={baseStyle}
                 isTrainingHighlight={false}
                 isBlocked={false}
-                onContextMenu={demand?.status !== 'fulfilled' ? (e: any) => {
+                onContextMenu={canDemand && demand?.status !== 'fulfilled' ? (e: any) => {
                     e.preventDefault();
                     openDemandFor(null);
                 } : undefined}
             >
                 {() => (
                     <div
-                        className={`min-h-[40px] p-1 w-full ${demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
+                        className={`min-h-[40px] p-1 w-full ${canDemand && demand?.status !== 'fulfilled' ? 'cursor-pointer hover:bg-amber-50/40' : ''}`}
                         onClick={() => { openDemandFor(null); }}
                     >
                         <div className="flex flex-wrap gap-1">
@@ -782,7 +784,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                                     Erfüllt
                                 </span>
                             )}
-                            {!demand && (
+                            {!demand && canDemand && (
                                 <span className="text-[10px] text-amber-500 inline-flex items-center gap-0.5">+Bedarf</span>
                             )}
                         </div>

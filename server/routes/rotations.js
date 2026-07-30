@@ -490,6 +490,7 @@ router.get('/visible-rotations', async (req, res) => {
       timeslots_enabled: Boolean(r.timeslots_enabled),
       timeslots: timeslotsByWpId.get(r.id) || [],
       canWrite: poolGroupIds.has(Number(r.group_id)) && canWriteRotationGroup(ctx, Number(r.group_id)),
+      canDemand: canReadRotationGroupForDemand(ctx, Number(r.group_id)),
     }));
 
     // Load assignments for these workplaces in date range
@@ -1101,17 +1102,14 @@ router.patch('/demands/:id', async (req, res) => {
   }
 });
 
-// Helper: check read access for demand creation (ward users may not have
-// allowed_rotation_groups set — they just need to be a member of the group
-// via their tenant). This is more permissive than canReadRotationGroup.
+// Helper: check write-level access for demand creation (Bedarf anmelden,
+// Joker-Übergabe, Rückgabe anfordern). Viewing rotations is membership-based
+// (any user in a participating tenant can see springer chips read-only), but
+// creating demands requires explicit allowed_rotation_groups or master admin.
 function canReadRotationGroupForDemand(ctx, groupId) {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
-  // Ward users: allowed if they are a member of the group (checked via tenant
-  // membership in the route) — here we accept if allowedGroups includes it
-  // OR if allowedGroups is null (membership-only access, no explicit allow list).
   const list = ctx.allowedGroups;
-  if (list === null) return true; // no explicit allow list → membership suffices
   return Array.isArray(list) && list.includes(Number(groupId));
 }
 
