@@ -161,6 +161,16 @@ Move reads through the builder. The `filter` query operators (`$gte`/`$lte`/`$gt
 
 ---
 
+#### PR 1.5 — `dbProxy` bulkCreate + residual sites (closes S1 fully) — ✅ DONE
+
+The bulkCreate branches deferred from PR 1.1, plus the last residual hand-built interpolation site (`loadStatusForId`).
+
+> **Status (2026-07-29):** ✅ Complete — **this closes S1**. **Test-first:** wrote `e2e/specs/bulk/bulk-create-workflows.spec.ts` (3 tests: atomic batch insert, mid-batch rollback, empty-array short-circuit) and confirmed them green against the *un-migrated* code before touching anything. Then migrated both bulkCreate branches (ShiftEntry-local + generic) to a new `bulkInsert(dbPool, tableName, keys, rows)` helper that runs `kysely.transaction().execute(trx => { for each row: trx.insertInto(...) })` — table + column identifiers escaped centrally, whole batch atomic (Kysely issues BEGIN/COMMIT/ROLLBACK via `executeQuery`, handled by the bridge). Also migrated `loadStatusForId` (the last `${table}` site). The ShiftEntry-local branch's pre-existing no-`getValidColumns` behavior is preserved exactly (not a regression-introducing fix). **Grep gate: zero `${tableName}`/`${table}`/`${key}` interpolation remains in dbProxy** — only constant-SQL helpers (`WorkplaceTimeslot`, `SystemLog`) with literal columns. 868 unit/component tests pass; full e2e **67 passed / 0 failed** (the bulkCreate rollback test proves the Kysely transaction preserves atomicity).
+>
+> **Key risk resolved:** the bridge supports Kysely transactions — confirmed by the rollback e2e test (a mid-batch PK collision rolls back the whole batch, exactly as before).
+
+---
+
 ### Phase 2 — Typed repositories for the core entities (kills the gateway smell)
 
 Replace generic-proxy entries for the highest-traffic/highest-risk entities with concrete repo functions. After this, those table names are **constants in code**, not user input that must be validated.

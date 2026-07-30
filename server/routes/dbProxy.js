@@ -288,6 +288,28 @@ const filterRows = async (dbPool, tableName, { filters = {}, sort, limit, skip }
   return query.execute();
 };
 
+// Insert multiple rows in a single transaction through Kysely (Phase 1, PR 1.5
+// — structural S1 control for the bulkCreate path). All rows share the same
+// `keys` (column set, already filtered to valid columns by the caller); each
+// row's values pass through toSqlValue. Kysely issues BEGIN/COMMIT/ROLLBACK via
+// executeQuery (handled by the bridge), so the whole batch is atomic — a
+// mid-batch failure rolls back every row, matching the previous hand-built
+// raw-connection beginTransaction/commit/rollback loop. Identifiers (table +
+// every column) are escaped centrally.
+const bulkInsert = async (dbPool, tableName, keys, rows) => {
+  const kysely = createKysely(dbPool);
+  await kysely.transaction().execute(async (trx) => {
+    for (const data of rows) {
+      const row = {};
+      for (const k of keys) {
+        const v = toSqlValue(data[k]);
+        row[k] = v === undefined ? null : v;
+      }
+      await trx.insertInto(tableName).values(row).executeTakeFirst();
+    }
+  });
+};
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
 const WORKPLACE_CACHE = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
@@ -810,10 +832,11 @@ const APPROVAL_DECISION_STATUSES = ['approved', 'rejected'];
 async function loadStatusForId(dbPool, table, id) {
   if (!id) return null;
   try {
-    const [rows] = await dbPool.execute(
-      `SELECT status FROM \`${table}\` WHERE id = ? LIMIT 1`,
-      [id],
-    );
+    // SELECT through Kysely so the table identifier is escaped centrally
+    // (PR 1.5 — completes the S1 grep gate). `table` is the route-validated
+    // tableName; behavior unchanged (status column, id lookup, fail-null).
+    const kysely = createKysely(dbPool);
+    const rows = await kysely.selectFrom(table).select('status').where('id', '=', id).limit(1).execute();
     return rows[0]?.status ?? null;
   } catch {
     return null;
@@ -1481,25 +1504,12 @@ router.post('/', async (req, res, next) => {
           const allKeys = new Set();
           processed.forEach((item) => Object.keys(item).forEach((key) => allKeys.add(key)));
           const keys = Array.from(allKeys);
-          const bulkConn = await dbPool.getConnection();
-          try {
-            await bulkConn.beginTransaction();
-            for (const item of processed) {
-              const values = keys.map((key) => toSqlValue(item[key]));
-              await bulkConn.execute(
-                `INSERT INTO \`ShiftEntry\` (\`${keys.join('`,`')}\`) VALUES (${keys.map(() => '?').join(',')})`,
-                values
-              );
-            }
-            await bulkConn.commit();
-          } catch (bulkErr) {
-            try { await bulkConn.rollback(); } catch (rollbackErr) {
-              console.error('[DB Proxy] bulkCreate rollback failed:', rollbackErr.message);
-            }
-            throw bulkErr;
-          } finally {
-            bulkConn.release();
-          }
+          // Bulk INSERT through Kysely in a single transaction (PR 1.5) — table
+          // + column identifiers escaped centrally, whole batch atomic. NOTE:
+          // this ShiftEntry-local branch intentionally does NOT filter keys via
+          // getValidColumns (pre-existing behavior preserved); the generic
+          // branch below does.
+          await bulkInsert(dbPool, 'ShiftEntry', keys, processed);
           createdRows.push(...processed);
         }
 
@@ -1591,25 +1601,12 @@ router.post('/', async (req, res, next) => {
       // Insert each item individually inside a transaction so that a mid-batch
       // failure leaves no partial data. This prevents the UI from rolling back
       // an optimistic update while the server has already persisted some rows.
-      const bulkConn = await dbPool.getConnection();
-      try {
-        await bulkConn.beginTransaction();
-        for (const item of processed) {
-          const values = keys.map(k => toSqlValue(item[k]));
-          const placeholders = keys.map(() => '?').join(',');
-          const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
-          const safeValues = values.map(v => v === undefined ? null : v);
-          await bulkConn.execute(sql, safeValues);
-        }
-        await bulkConn.commit();
-      } catch (bulkErr) {
-        try { await bulkConn.rollback(); } catch (rollbackErr) {
-          console.error('[DB Proxy] bulkCreate rollback failed:', rollbackErr.message);
-        }
-        throw bulkErr;
-      } finally {
-        bulkConn.release();
-      }
+      // Bulk INSERT through Kysely in a single transaction (PR 1.5) — table +
+      // column identifiers escaped centrally, whole batch atomic (a mid-batch
+      // failure rolls back every row, matching the previous raw-connection
+      // beginTransaction/commit/rollback loop). `keys` are already filtered via
+      // getValidColumns above.
+      await bulkInsert(dbPool, tableName, keys, processed);
 
       if (isPlanSyncEntity(tableName)) {
         broadcastPlanUpdate({
