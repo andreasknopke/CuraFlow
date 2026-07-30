@@ -16,40 +16,14 @@ import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { assertValidIdentifier } from '../utils/schema.js';
 import { createKysely } from '../utils/db.js';
 import { sql } from 'kysely';
+// atomic's marshal variant: keeps '' (no ''→null), 9 bool fields, no JSON parse.
+// Aliased to the local names the closures already use, so behavior is identical.
+import { toSqlValueStrict as toSqlValue, fromSqlRowBasic as fromSqlRow } from '../utils/sqlMarshal.js';
 
 const router = express.Router();
 
 // All atomic operations require authentication
 router.use(authMiddleware);
-
-// Helper: Convert JS value to MySQL value
-const toSqlValue = (val) => {
-  if (val === undefined) return null;
-  if (typeof val === 'number' && isNaN(val)) return null;
-  if (typeof val === 'object' && val !== null && !(val instanceof Date)) {
-    return JSON.stringify(val);
-  }
-  if (val instanceof Date) {
-    return val.toISOString().slice(0, 19).replace('T', ' ');
-  }
-  return val;
-};
-
-// Helper: Parse MySQL row
-const fromSqlRow = (row) => {
-  if (!row) return null;
-  const res = { ...row };
-  const boolFields = [
-    'receive_email_notifications', 'exclude_from_staffing_plan', 
-    'user_viewed', 'auto_off', 'show_in_service_plan', 
-    'allows_rotation_concurrently', 'allows_absence_overlap',
-    'acknowledged', 'is_active'
-  ];
-  for (const key in res) {
-    if (boolFields.includes(key)) res[key] = !!res[key];
-  }
-  return res;
-};
 
 const shiftIsoDate = (dateString, days) => {
   const date = new Date(`${dateString}T00:00:00.000Z`);
