@@ -7,16 +7,13 @@ import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../ut
 import { COLUMNS_CACHE, clearColumnsCache, ensureColumns, assertValidIdentifier } from '../utils/schema.js';
 import { ensureTenantBaseTables } from '../scripts/seed-runtime-shared.js';
 import {
-  deleteCentralAbsenceById,
-  getShiftEntryWithCentralAbsence,
   isCentralAbsencePosition,
-  listShiftEntriesWithCentralAbsences,
   writeShiftEntryToCentralAbsence,
 } from '../utils/centralAbsences.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { createKysely } from '../utils/db.js';
 import { sql } from 'kysely';
-import { toSqlValue, fromSqlRow } from '../utils/sqlMarshal.js';
+import { fromSqlRow } from '../utils/sqlMarshal.js';
 import { insertRow, updateRow, deleteRow, selectRow, filterRows, bulkInsert } from '../utils/queryHelpers.js';
 import {
   createQualification,
@@ -280,40 +277,6 @@ const loadDoctorLink = async (dbPool, doctorId) => {
     doctorId: String(rows[0].id),
     employeeId: String(rows[0].central_employee_id),
   };
-};
-
-const resolveCentralShiftRouting = async ({ dbPool, masterDb, req, tableName, action, id, data }) => {
-  if (tableName !== 'ShiftEntry') return null;
-
-  const tenantId = req.dbToken ? await resolveTenantIdFromToken(masterDb, req.dbToken) : null;
-
-  if (['list', 'filter'].includes(action)) {
-    return { tenantId };
-  }
-
-  if (action === 'create') {
-    const doctorLink = await loadDoctorLink(dbPool, data?.doctor_id);
-    if (doctorLink && isCentralAbsencePosition(data?.position)) {
-      return { tenantId, doctorLink, mode: 'central' };
-    }
-    return { tenantId, doctorLink, mode: 'tenant' };
-  }
-
-  if (action === 'bulkCreate') {
-    return { tenantId };
-  }
-
-  if (action === 'get' || action === 'delete' || action === 'update') {
-    const existing = await getShiftEntryWithCentralAbsence({ tenantDb: dbPool, masterDb, id });
-    if (!existing) {
-      return { tenantId, existing: null, mode: 'tenant' };
-    }
-    const doctorLink = await loadDoctorLink(dbPool, existing.doctor_id);
-    const isCentral = !!doctorLink && isCentralAbsencePosition(existing.position);
-    return { tenantId, existing, doctorLink, mode: isCentral ? 'central' : 'tenant' };
-  }
-
-  return { tenantId };
 };
 
 // Handle GET requests with helpful error
@@ -813,13 +776,22 @@ router.post('/', async (req, res, next) => {
     // remain on the generic dispatch.
     if (tableName === 'Qualification') {
       if (effectiveAction === 'list' || effectiveAction === 'filter') {
-        const rows = await listQualifications(dbPool, {
-          filters: query || req.body.filters || {},
-          sort,
-          limit,
-          skip,
-        });
-        return res.json(rows);
+        try {
+          const rows = await listQualifications(dbPool, {
+            filters: query || req.body.filters || {},
+            sort,
+            limit,
+            skip,
+          });
+          return res.json(rows);
+        } catch (err) {
+          console.error("List Execute Error:", err.message, "table:", tableName);
+          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+            console.warn(`Table ${tableName} doesn't exist, returning empty array`);
+            return res.json([]);
+          }
+          throw err;
+        }
       }
       if (effectiveAction === 'get') {
         if (!id) return res.json(null);
@@ -886,13 +858,22 @@ router.post('/', async (req, res, next) => {
     // (master, cross-tenant) is a separate entity with dedicated routes in groups.js.
     if (tableName === 'WishRequest') {
       if (effectiveAction === 'list' || effectiveAction === 'filter') {
-        const rows = await listWishRequests(dbPool, {
-          filters: query || req.body.filters || {},
-          sort,
-          limit,
-          skip,
-        });
-        return res.json(rows);
+        try {
+          const rows = await listWishRequests(dbPool, {
+            filters: query || req.body.filters || {},
+            sort,
+            limit,
+            skip,
+          });
+          return res.json(rows);
+        } catch (err) {
+          console.error("List Execute Error:", err.message, "table:", tableName);
+          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+            console.warn(`Table ${tableName} doesn't exist, returning empty array`);
+            return res.json([]);
+          }
+          throw err;
+        }
       }
       if (effectiveAction === 'get') {
         if (!id) return res.json(null);
@@ -945,13 +926,22 @@ router.post('/', async (req, res, next) => {
     // management + read projections) are a different layer — untouched.
     if (tableName === 'Doctor') {
       if (effectiveAction === 'list' || effectiveAction === 'filter') {
-        const rows = await listDoctors(dbPool, {
-          filters: query || req.body.filters || {},
-          sort,
-          limit,
-          skip,
-        });
-        return res.json(rows);
+        try {
+          const rows = await listDoctors(dbPool, {
+            filters: query || req.body.filters || {},
+            sort,
+            limit,
+            skip,
+          });
+          return res.json(rows);
+        } catch (err) {
+          console.error("List Execute Error:", err.message, "table:", tableName);
+          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+            console.warn(`Table ${tableName} doesn't exist, returning empty array`);
+            return res.json([]);
+          }
+          throw err;
+        }
       }
       if (effectiveAction === 'get') {
         if (!id) return res.json(null);
@@ -1068,7 +1058,7 @@ router.post('/', async (req, res, next) => {
       }
       if (effectiveAction === 'create') {
         try {
-          const { result, central } = await createShiftEntry({
+          const { result } = await createShiftEntry({
             dbPool, masterDb: db, req, data, cacheKey,
             getValidColumns, WORKPLACE_CACHE, WORKPLACE_CACHE_TTL, ensureScheduleBlockTable,
           });
@@ -1089,7 +1079,7 @@ router.post('/', async (req, res, next) => {
       if (effectiveAction === 'update') {
         if (!id) return res.status(400).json({ error: 'ID required for update' });
         try {
-          const { result, central } = await updateShiftEntry({
+          const { result } = await updateShiftEntry({
             dbPool, masterDb: db, req, id, data, cacheKey, getValidColumns,
           });
           if (isPlanSyncEntity(tableName)) {
@@ -1156,138 +1146,17 @@ router.post('/', async (req, res, next) => {
     if (effectiveAction === 'get') {
       if (!id) return res.json(null);
 
-      if (tableName === 'ShiftEntry' && req.db) {
-        const record = await getShiftEntryWithCentralAbsence({ tenantDb: dbPool, masterDb: db, id });
-        return res.json(record);
-      }
-      
       const row = await selectRow(dbPool, tableName, id);
       return res.json(row ? fromSqlRow(row) : null);
     }
     
     // ===== CREATE =====
     if (effectiveAction === 'create') {
-      const centralRouting = await resolveCentralShiftRouting({
-        dbPool,
-        masterDb: db,
-        req,
-        tableName,
-        action: effectiveAction,
-        data,
-      });
-
       if (!data.id) data.id = crypto.randomUUID();
       data.created_date = new Date();
       data.updated_date = new Date();
       data.created_by = req.user?.email || 'system';
 
-      if (tableName === 'ShiftEntry' && req.db && centralRouting?.mode === 'central') {
-        const created = await writeShiftEntryToCentralAbsence({
-          tenantDb: dbPool,
-          masterDb: db,
-          tenantId: centralRouting.tenantId,
-          shiftEntry: data,
-          doctorId: centralRouting.doctorLink.doctorId,
-          preserveId: true,
-        });
-        if (isPlanSyncEntity(tableName)) {
-          broadcastPlanUpdate({
-            scope: realtimeScope,
-            entity: tableName,
-            action: 'create',
-            recordId: created?.id || data.id,
-            actor,
-          });
-        }
-        return res.json(created || data);
-      }
-
-      if (tableName === 'Doctor') {
-        const conflictResponse = await buildDoctorConflictResponse(dbPool, data);
-        if (conflictResponse) {
-          return res.status(conflictResponse.status).json(conflictResponse.payload);
-        }
-      }
-      
-      // --- ShiftEntry Sentinel: prevent duplicates for single-assignment positions ---
-      if (tableName === 'ShiftEntry' && data.date && data.position) {
-        // Check ScheduleBlock first (ensure table exists for tenant DBs)
-        await ensureScheduleBlockTable(dbPool, cacheKey);
-        try {
-          let blockSql, blockParams;
-          if (data.timeslot_id) {
-            blockSql = 'SELECT id, reason FROM ScheduleBlock WHERE date = ? AND position = ? AND (timeslot_id = ? OR timeslot_id IS NULL) LIMIT 1';
-            blockParams = [data.date, data.position, data.timeslot_id];
-          } else {
-            blockSql = 'SELECT id, reason FROM ScheduleBlock WHERE date = ? AND position = ? AND timeslot_id IS NULL LIMIT 1';
-            blockParams = [data.date, data.position];
-          }
-          const [blockRows] = await dbPool.execute(blockSql, blockParams);
-          if (blockRows.length > 0) {
-            console.warn(`[Sentinel] Blocked ShiftEntry on locked cell: ${data.position} on ${data.date} (reason: ${blockRows[0].reason})`);
-            return res.status(409).json({
-              error: 'Zelle gesperrt' + (blockRows[0].reason ? `: ${blockRows[0].reason}` : ''),
-              blocked: true,
-              block_id: blockRows[0].id,
-              reason: blockRows[0].reason
-            });
-          }
-        } catch (e) {
-          // ScheduleBlock table may not exist yet — skip silently
-        }
-
-        const conflict = await checkShiftConflict(dbPool, data, cacheKey);
-        if (conflict) {
-          console.warn(`[Sentinel] Blocked duplicate ShiftEntry: ${data.position} on ${data.date} (existing: ${conflict.id})`);
-          return res.status(409).json({ 
-            error: 'Position bereits besetzt',
-            conflict: true,
-            existing_id: conflict.id,
-            existing_doctor_id: conflict.doctor_id
-          });
-        }
-      }
-      
-      // --- ShiftEntry Auto-Time: calculate start_time/end_time from ShiftTimeRule ---
-      if (tableName === 'ShiftEntry' && data.doctor_id && data.position && !data.start_time) {
-        try {
-          // 1. Get doctor's work_time_model_id
-          const [docRows] = await dbPool.execute(
-            `SELECT work_time_model_id FROM Doctor WHERE id = ? LIMIT 1`,
-            [data.doctor_id]
-          );
-          const modelId = docRows[0]?.work_time_model_id;
-          
-          if (modelId) {
-            // 2. Find workplace_id by position name
-            const [wpRows] = await dbPool.execute(
-              `SELECT id FROM Workplace WHERE name = ? LIMIT 1`,
-              [data.position]
-            );
-            const workplaceId = wpRows[0]?.id;
-            
-            if (workplaceId) {
-              // 3. Look up ShiftTimeRule for this workplace + model
-              const [ruleRows] = await dbPool.execute(
-                `SELECT start_time, end_time, break_minutes FROM ShiftTimeRule WHERE workplace_id = ? AND work_time_model_id = ? LIMIT 1`,
-                [workplaceId, modelId]
-              );
-              
-              if (ruleRows[0]) {
-                data.start_time = ruleRows[0].start_time;
-                data.end_time = ruleRows[0].end_time;
-                if (ruleRows[0].break_minutes) {
-                  data.break_minutes = ruleRows[0].break_minutes;
-                }
-              }
-            }
-          }
-        } catch (e) {
-          // Non-critical: if auto-time fails, create shift without times
-          console.warn(`[AutoTime] Failed to calculate shift times: ${e.message}`);
-        }
-      }
-      
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data);
       
@@ -1347,12 +1216,6 @@ router.post('/', async (req, res, next) => {
           }
         }
 
-        if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
-          const conflictResponse = await buildDoctorConflictResponse(dbPool, data);
-          if (conflictResponse) {
-            return res.status(conflictResponse.status).json(conflictResponse.payload);
-          }
-        }
         throw err;
       }
     }
@@ -1361,83 +1224,8 @@ router.post('/', async (req, res, next) => {
     if (effectiveAction === 'update') {
       if (!id) return res.status(400).json({ error: "ID required for update" });
 
-      const centralRouting = await resolveCentralShiftRouting({
-        dbPool,
-        masterDb: db,
-        req,
-        tableName,
-        action: effectiveAction,
-        id,
-      });
-      
       data.updated_date = new Date();
 
-      if (tableName === 'ShiftEntry' && req.db && centralRouting?.existing) {
-        const nextDoctorId = data.doctor_id || centralRouting.existing.doctor_id;
-        const nextDoctorLink = await loadDoctorLink(dbPool, nextDoctorId);
-        const nextPosition = data.position || centralRouting.existing.position;
-        const nextPayload = { ...centralRouting.existing, ...data, id, doctor_id: nextDoctorId };
-
-        if (nextDoctorLink && isCentralAbsencePosition(nextPosition)) {
-          if (centralRouting.mode !== 'central') {
-            await dbPool.execute('DELETE FROM ShiftEntry WHERE id = ?', [id]);
-          }
-          const updated = await writeShiftEntryToCentralAbsence({
-            tenantDb: dbPool,
-            masterDb: db,
-            tenantId: centralRouting.tenantId,
-            shiftEntry: nextPayload,
-            doctorId: nextDoctorLink.doctorId,
-            preserveId: true,
-          });
-          if (isPlanSyncEntity(tableName)) {
-            broadcastPlanUpdate({
-              scope: realtimeScope,
-              entity: tableName,
-              action: 'update',
-              recordId: id,
-              actor,
-            });
-          }
-          return res.json(updated);
-        }
-
-        if (centralRouting.mode === 'central') {
-          await deleteCentralAbsenceById(db, id);
-          const localPayload = { ...nextPayload, doctor_id: nextDoctorId, id };
-          const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
-          let keys = Object.keys(localPayload).filter((key) => key !== 'id');
-          if (validColumns) {
-            keys = keys.filter((k) => validColumns.includes(k));
-          }
-          if (keys.length === 0) {
-            return res.json({ success: true });
-          }
-          // INSERT through Kysely (PR 1.2) — id + filtered keys, identifiers
-          // escaped centrally. Behavior matches the previous hand-built
-          // `INSERT INTO \`ShiftEntry\` (\`id\`, ...) VALUES (?, ...)`.
-          await insertRow(dbPool, 'ShiftEntry', ['id', ...keys], localPayload);
-          const row = await selectRow(dbPool, 'ShiftEntry', id);
-          if (isPlanSyncEntity(tableName)) {
-            broadcastPlanUpdate({
-              scope: realtimeScope,
-              entity: tableName,
-              action: 'update',
-              recordId: id,
-              actor,
-            });
-          }
-          return res.json(row ? fromSqlRow(row) : null);
-        }
-      }
-
-      if (tableName === 'Doctor') {
-        const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
-        if (conflictResponse) {
-          return res.status(conflictResponse.status).json(conflictResponse.payload);
-        }
-      }
-      
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data).filter(k => k !== 'id');
       
@@ -1449,19 +1237,8 @@ router.post('/', async (req, res, next) => {
 
       // UPDATE through Kysely (PR 1.2) so the table + column identifiers are
       // escaped centrally. Behavior matches the previous hand-built
-      // `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`; ER_DUP_ENTRY propagates with
-      // .code intact for the Doctor-conflict handling below.
-      try {
-        await updateRow(dbPool, tableName, keys, data, id);
-      } catch (err) {
-        if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
-          const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
-          if (conflictResponse) {
-            return res.status(conflictResponse.status).json(conflictResponse.payload);
-          }
-        }
-        throw err;
-      }
+      // `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`.
+      await updateRow(dbPool, tableName, keys, data, id);
 
       const row = await selectRow(dbPool, tableName, id);
       if (isPlanSyncEntity(tableName)) {
@@ -1480,30 +1257,6 @@ router.post('/', async (req, res, next) => {
     if (effectiveAction === 'delete') {
       if (!id) return res.status(400).json({ error: "ID required for delete" });
 
-      if (tableName === 'ShiftEntry' && req.db) {
-        const centralRouting = await resolveCentralShiftRouting({
-          dbPool,
-          masterDb: db,
-          req,
-          tableName,
-          action: effectiveAction,
-          id,
-        });
-        if (centralRouting?.mode === 'central') {
-          await deleteCentralAbsenceById(db, id);
-          if (isPlanSyncEntity(tableName)) {
-            broadcastPlanUpdate({
-              scope: realtimeScope,
-              entity: tableName,
-              action: 'delete',
-              recordId: id,
-              actor,
-            });
-          }
-          return res.json({ success: true });
-        }
-      }
-      
       // Fetch record before deletion for logging, then DELETE — both through
       // Kysely (PR 1.2) so the table identifier is escaped centrally. Behavior
       // matches the previous hand-built `SELECT * FROM \`t\` WHERE id = ?` /
