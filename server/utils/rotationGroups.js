@@ -70,11 +70,14 @@ export async function loadUserRotationContext(masterDb, userId) {
 /**
  * Check whether the user may read a given rotation group.
  * Master admins always have access.
+ * Users without an explicit allowed_rotation_groups list get membership-based
+ * access (same behaviour as canReadRotationGroupForDemand in the routes).
  */
 export function canReadRotationGroup(ctx, groupId) {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   const list = ctx.allowedGroups;
+  if (list === null) return true; // no explicit allow list → membership suffices
   return Array.isArray(list) && list.includes(Number(groupId));
 }
 
@@ -168,6 +171,10 @@ export async function resolvePoolTenantId(masterDb, groupId) {
  * a given tenant. Intersection of:
  *   - groups the tenant participates in (rotation_group_member.tenant_id)
  *   - groups the user is allowed to read (ctx.allowedGroups or master admin)
+ *
+ * Users without an explicit allowed_rotation_groups list get membership-based
+ * access: they see all groups their tenant participates in (read-only unless
+ * they also have rotation_admin_groups set).
  */
 export async function loadVisibleRotationGroupIdsForTenant(masterDb, ctx, tenantId) {
   if (!ctx || !tenantId) return [];
@@ -177,6 +184,8 @@ export async function loadVisibleRotationGroupIdsForTenant(masterDb, ctx, tenant
   );
   const groupIds = rows.map((r) => Number(r.group_id));
   if (ctx.isMasterAdmin) return groupIds;
+  // No explicit allow list → membership-based access (same as canReadRotationGroupForDemand)
+  if (ctx.allowedGroups === null) return groupIds;
   if (!Array.isArray(ctx.allowedGroups)) return [];
   return groupIds.filter((id) => ctx.allowedGroups.includes(id));
 }

@@ -64,9 +64,9 @@ describe('canReadRotationGroup', () => {
     expect(canReadRotationGroup(ctx, 99)).toBe(false);
   });
 
-  it('denies access when allowedGroups is null (non-admin)', () => {
+  it('allows membership-based access when allowedGroups is null (non-admin)', () => {
     const ctx = { isMasterAdmin: false, allowedGroups: null };
-    expect(canReadRotationGroup(ctx, 1)).toBe(false);
+    expect(canReadRotationGroup(ctx, 1)).toBe(true);
   });
 
   it('denies access when ctx is null', () => {
