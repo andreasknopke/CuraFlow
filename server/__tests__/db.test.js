@@ -203,6 +203,50 @@ describe('updateTable / deleteFrom / selectFrom — update & delete paths (PR 1.
   });
 });
 
+describe('selectFrom with dynamic WHERE — list/filter path (PR 1.3)', () => {
+  // dbProxy's list/filter path now builds a Kysely query where EVERY filter key
+  // is escaped via sql.ref(key). This closes the previously-unvalidated
+  // filter-key interpolation hole (a backtick in a filter key could break out
+  // of the `\`{key}\`` identifier context). These pin the generated SQL.
+
+  it('builds a WHERE with escaped equality + range operators ($gte/$lte)', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    let q = kysely.selectFrom('ShiftEntry').selectAll();
+    const filters = { doctor_id: 'd1', date: { $gte: '2026-05-01', $lte: '2026-05-31' } };
+    for (const [key, val] of Object.entries(filters)) {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        if (val.$gte !== undefined) q = q.where(sql.ref(key), '>=', val.$gte);
+        if (val.$lte !== undefined) q = q.where(sql.ref(key), '<=', val.$lte);
+      } else {
+        q = q.where(sql.ref(key), '=', val);
+      }
+    }
+    await q.execute();
+    expect(executed[0].sql).toBe('select * from `ShiftEntry` where `doctor_id` = ? and `date` >= ? and `date` <= ?');
+    expect(executed[0].params).toEqual(['d1', '2026-05-01', '2026-05-31']);
+  });
+
+  it('escapes a malicious filter key (doubled backtick, no breakout)', async () => {
+    // The injection that was possible before PR 1.3: a filter key like
+    // "evil`=1 OR 1" used to close the identifier and inject a tautology.
+    // sql.ref doubles the backtick so it stays one identifier.
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.selectFrom('Doctor').selectAll().where(sql.ref('evil`=1 OR 1'), '=', 'x').execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` where `evil``=1 OR 1` = ?');
+    expect(executed[0].params).toEqual(['x']);
+  });
+
+  it('applies sort (desc) + secondary id, and limit/offset as parameters', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.selectFrom('Doctor').selectAll().orderBy('name', 'desc').orderBy('id', 'asc').limit(100).offset(10).execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` order by `name` desc, `id` asc limit ? offset ?');
+    expect(executed[0].params).toEqual([100, 10]);
+  });
+});
+
 describe('assertValidIdentifier — defence-in-depth still gates the builder', () => {
   // The primary control is now Kysely's escaping, but assertValidIdentifier at
   // the route entry still rejects invalid names first (cleaner 400 vs. a weird

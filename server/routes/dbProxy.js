@@ -234,6 +234,60 @@ const selectRow = async (dbPool, tableName, id) => {
   return rows[0] ?? null;
 };
 
+// List/filter rows through Kysely (Phase 1, PR 1.3 — structural S1 control for
+// the read path). The table name and EVERY filter key are escaped centrally:
+// table + ORDER BY via selectFrom/orderBy, filter keys via sql.ref(key). This
+// closes the previously-unvalidated filter-key interpolation hole (a backtick
+// in a filter key could break out of the `\`{key}\`` identifier context).
+//
+// Supports the same operators as the old hand-built SQL: equality, $gte, $lte.
+// Sort is a string like "field" or "-field" (desc); defaults to `id` ASC. The
+// `limit`/`skip` are integers (the old code parseInt'd them; Kysely binds them
+// as parameters, which is equivalent and safer). Returns the raw rows; the
+// caller maps them through fromSqlRow.
+//
+// assertValidIdentifier(tableName) at the route entry stays as defence-in-depth;
+// the sort field is validated with assertValidIdentifier at the call site too.
+const filterRows = async (dbPool, tableName, { filters = {}, sort, limit, skip } = {}) => {
+  const kysely = createKysely(dbPool);
+  let query = kysely.selectFrom(tableName).selectAll();
+
+  if (filters && Object.keys(filters).length > 0) {
+    for (const [key, val] of Object.entries(filters)) {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        // sql.ref escapes the column identifier; values are bound as params.
+        if (val.$gte !== undefined) query = query.where(sql.ref(key), '>=', toSqlValue(val.$gte));
+        if (val.$lte !== undefined) query = query.where(sql.ref(key), '<=', toSqlValue(val.$lte));
+      } else {
+        query = query.where(sql.ref(key), '=', toSqlValue(val));
+      }
+    }
+  }
+
+  if (typeof sort === 'string' && sort) {
+    const desc = sort.startsWith('-');
+    const field = desc ? sort.substring(1) : sort;
+    // Defence-in-depth: validate the sort identifier (Kysely would escape it
+    // too, but assertValidIdentifier gives a clean 400 on a bad name).
+    assertValidIdentifier(field, 'Sortierfeld');
+    query = query.orderBy(field, desc ? 'desc' : 'asc');
+    if (field !== 'id') query = query.orderBy('id', 'asc');
+  } else {
+    query = query.orderBy('id', 'asc');
+  }
+
+  const parsedLimit = parseInt(limit);
+  if (limit && !isNaN(parsedLimit)) {
+    query = query.limit(parsedLimit);
+    const parsedSkip = parseInt(skip);
+    if (skip && !isNaN(parsedSkip)) {
+      query = query.offset(parsedSkip);
+    }
+  }
+
+  return query.execute();
+};
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
 const WORKPLACE_CACHE = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
@@ -975,67 +1029,21 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      let sql = `SELECT * FROM \`${tableName}\``;
-      const params = [];
-      
-      const filters = query || req.body.filters || {};
-      
-      if (filters && Object.keys(filters).length > 0) {
-        const clauses = [];
-        for (const [key, val] of Object.entries(filters)) {
-          if (val && typeof val === 'object' && !Array.isArray(val)) {
-            if (val.$gte !== undefined) {
-              clauses.push(`\`${key}\` >= ?`);
-              params.push(toSqlValue(val.$gte));
-            }
-            if (val.$lte !== undefined) {
-              clauses.push(`\`${key}\` <= ?`);
-              params.push(toSqlValue(val.$lte));
-            }
-          } else {
-            clauses.push(`\`${key}\` = ?`);
-            params.push(toSqlValue(val));
-          }
-        }
-        if (clauses.length > 0) {
-          sql += ` WHERE ${clauses.join(' AND ')}`;
-        }
-      }
-      
-      if (sort) {
-        if (typeof sort === 'string') {
-          const desc = sort.startsWith('-');
-          const field = desc ? sort.substring(1) : sort;
-          // `field` is interpolated into a backtick-quoted identifier in the
-          // ORDER BY clause below; validate it before interpolation to prevent
-          // a backtick/quote in the sort field breaking out of the identifier
-          // context (SQL injection). Prepared statements parameterize values,
-          // not identifiers, so this check is mandatory. Throws a 400 that the
-          // surrounding try/catch forwards via next(error).
-          assertValidIdentifier(field, 'Sortierfeld');
-          sql += ` ORDER BY \`${field}\` ${desc ? 'DESC' : 'ASC'}`;
-
-          if (field !== 'id') {
-            sql += `, \`id\` ASC`;
-          }
-        }
-      } else {
-        sql += ` ORDER BY \`id\` ASC`;
-      }
-      
-      if (limit && !isNaN(parseInt(limit))) {
-        sql += ` LIMIT ${parseInt(limit)}`;
-        if (skip && !isNaN(parseInt(skip))) {
-          sql += ` OFFSET ${parseInt(skip)}`;
-        }
-      }
-      
+      // SELECT through Kysely (PR 1.3) so the table name, sort field, AND every
+      // filter key are escaped centrally (closes the previously-unvalidated
+      // filter-key interpolation). Behavior matches the old hand-built SQL:
+      // equality / $gte / $lte filters, `id`-ASC default sort, optional
+      // limit/skip. The table-not-exist fallback is preserved below.
       try {
-        const safeParams = params.map(p => p === undefined ? null : p);
-        const [rows] = await dbPool.execute(sql, safeParams);
+        const rows = await filterRows(dbPool, tableName, {
+          filters: query || req.body.filters || {},
+          sort,
+          limit,
+          skip,
+        });
         return res.json(rows.map(fromSqlRow));
       } catch (err) {
-        console.error("List Execute Error:", err.message, "SQL:", sql);
+        console.error("List Execute Error:", err.message, "table:", tableName);
         if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
           console.warn(`Table ${tableName} doesn't exist, returning empty array`);
           return res.json([]);
@@ -1053,8 +1061,8 @@ router.post('/', async (req, res, next) => {
         return res.json(record);
       }
       
-      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
-      return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+      const row = await selectRow(dbPool, tableName, id);
+      return res.json(row ? fromSqlRow(row) : null);
     }
     
     // ===== CREATE =====

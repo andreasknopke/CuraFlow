@@ -139,11 +139,15 @@ Same as 1.1 for `update` (`UPDATE \`{tableName}\` SET ...`) and `delete`. These 
 >
 > **Deviation from the plan (recorded):** the plan called for folding in the **S5 ShiftEntry partial-position bypass fix** here. This PR deliberately did **not** change the position-lookup logic — it is a behavior change (a guard that currently allows would now deny), not a SQL-construction change, and folding a behavior change into a refactor PR risks conflating the two. S5 remains open and should be a focused, separately-reviewed fix (the e2e security spec already pins the current guard behavior).
 
-#### PR 1.3 — `dbProxy` list / filter / get paths
+#### PR 1.3 — `dbProxy` list / filter / get paths — ✅ DONE
 
 Move reads through the builder. The `filter` query operators (`$gte`/`$lte`/`$gt`/`$lt`/`$in`/`$ne`) move into the builder's `where` builder, where Kysely escapes the column identifier (the `$ne`-short-circuits-range edge case noted in the review is naturally resolved by a per-condition `where` chain).
 
 **Risk: Low.** Read-only. Good place to add the tenant-pool-isolation test (Decision "Tenant-pool coupling").
+
+> **Status (2026-07-29):** ✅ Complete. New `filterRows` helper in `dbProxy.js` builds `kysely.selectFrom(tableName).selectAll()` with a dynamic WHERE where **every filter key is escaped via `sql.ref(key)`** — closing the previously-unvalidated filter-key interpolation hole (the one read-path site `getValidColumns`-style filtering did not cover). The generic `get` path now uses the existing `selectRow`. Supports the same operators as before: equality, `$gte`, `$lte`. Sort field validated by `assertValidIdentifier` (defence-in-depth; Kysely escapes it too). `limit`/`offset` now bind as parameters (was `parseInt` interpolation — equivalent and safer). The `ER_NO_SUCH_TABLE` → empty-array fallback is preserved. 868 unit/component tests pass; 3 new list/filter parity tests in `server/__tests__/db.test.js` (incl. malicious-filter-key escaping); full e2e **55 passed / 0 failed** (`schedule-core` exercises `$gte`/`$lte` date ranges on ShiftEntry; training/admin/realtime/staff all use `dbFilter`).
+>
+> **Note:** the plan mentioned `$gt`/`$lt`/`$in`/`$ne` operators, but the original code only ever implemented `$gte`/`$lte`/equality (the others were never wired — confirmed in the Phase 1.0 exploration). This PR preserves exact behavior: those four operators remain unimplemented as before; adding them would be a net-new feature, not a migration.
 
 #### PR 1.4 — `atomic.js` through the builder
 
