@@ -104,7 +104,7 @@ const TENANT_BASE_TABLES = [
 ];
 const TENANT_BASE_TABLE_SET = new Set(TENANT_BASE_TABLES);
 
-export { clearColumnsCache };
+export { clearColumnsCache, approvalWriteRequiresPermission };
 
 // HELPER: Convert JS value to MySQL value
 const toSqlValue = (val) => {
@@ -772,6 +772,46 @@ const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
 };
 
 // ============ AUDIT LOG HELPER ============
+
+/**
+ * Resolve a doctor_id to a human-readable name.
+ * Returns null if the doctor cannot be found.
+ */
+const resolveDoctorName = async (dbPool, doctorId) => {
+  if (!doctorId) return null;
+  try {
+    const [rows] = await dbPool.execute('SELECT name FROM Doctor WHERE id = ? LIMIT 1', [doctorId]);
+    return rows[0]?.name ?? null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Enrich audit log details with human-readable context (doctor name, date, position)
+ * so that admins can understand audit entries without looking up cryptic IDs.
+ */
+export const enrichAuditDetails = async (dbPool, details) => {
+  if (!details || typeof details !== 'object') return details;
+  const enriched = { ...details };
+  const record = details.deleted_data || details.data;
+  if (record && record.doctor_id) {
+    const doctorName = await resolveDoctorName(dbPool, record.doctor_id);
+    if (doctorName) {
+      enriched.doctor_name = doctorName;
+    }
+  }
+  // Build a human-readable summary for ShiftEntry records
+  if (details.table === 'ShiftEntry' && record) {
+    const parts = [];
+    if (enriched.doctor_name) parts.push(enriched.doctor_name);
+    if (record.date) parts.push(`am ${record.date}`);
+    if (record.position) parts.push(`(${record.position})`);
+    if (parts.length > 0) enriched.summary = parts.join(' ');
+  }
+  return enriched;
+};
+
 // Writes an audit entry to the SystemLog table for UI visibility
 export const writeAuditLog = async (dbPool, { level = 'audit', source, message, details, userEmail }) => {
   try {
@@ -845,11 +885,16 @@ async function loadStatusForId(dbPool, table, id) {
 
 // Decide whether a WishRequest/AbsenceRequest write is an approval-affecting
 // change that must be gated by can_approve_wishes / can_approve_absence.
-function approvalWriteRequiresPermission({ action, data, existingStatus }) {
+function approvalWriteRequiresPermission({ action, data, existingStatus, noServiceRequiresApproval = true }) {
   const newDataStatus = typeof data?.status === 'string' ? data.status.toLowerCase() : null;
   if (action === 'create') {
     // Creating an already-decided record (e.g. directly approved) needs the perm;
     // a plain pending submission does not.
+    // Exception: if no_service wishes don't require approval, users may create
+    // them with status 'approved' directly (auto-approve).
+    if (!noServiceRequiresApproval && data?.type === 'no_service' && newDataStatus === 'approved') {
+      return false;
+    }
     return APPROVAL_DECISION_STATUSES.includes(newDataStatus);
   }
   if (action === 'update') {
@@ -988,10 +1033,25 @@ router.post('/', async (req, res, next) => {
         if ((effectiveAction === 'update' || effectiveAction === 'delete') && id) {
           existingStatus = await loadStatusForId(dbPool, tableName, id);
         }
+        // Load no_service_requires_approval from tenant SystemSetting so that
+        // auto-approved "kein Dienst" wishes don't require can_approve_wishes.
+        let noServiceRequiresApproval = true;
+        if (tableName === 'WishRequest') {
+          try {
+            const [settingRows] = await dbPool.execute(
+              "SELECT `value` FROM SystemSetting WHERE `key` = 'wish_approval_rules' LIMIT 1",
+            );
+            if (settingRows.length > 0) {
+              const rules = JSON.parse(settingRows[0].value);
+              noServiceRequiresApproval = rules.no_service_requires_approval ?? true;
+            }
+          } catch { /* default: require approval */ }
+        }
         shouldCheckPermission = approvalWriteRequiresPermission({
           action: effectiveAction,
           data,
           existingStatus,
+          noServiceRequiresApproval,
         });
       }
       if (shouldCheckPermission) {
@@ -1439,11 +1499,17 @@ router.post('/', async (req, res, next) => {
       // Write audit to SystemLog table
       const userEmail = req.user?.email || 'unknown';
       const timestamp = new Date().toISOString();
+      const auditDetails = await enrichAuditDetails(dbPool, {
+        table: tableName, record_id: id, deleted_data: deletedRecord, timestamp,
+      });
+      const auditMessage = auditDetails.summary
+        ? `${tableName} gelöscht: ${auditDetails.summary} von ${userEmail}`
+        : `${tableName} gelöscht von ${userEmail} (ID: ${id})`;
       await writeAuditLog(dbPool, {
         level: 'audit',
         source: 'Löschung',
-        message: `${tableName} gelöscht von ${userEmail} (ID: ${id})`,
-        details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp },
+        message: auditMessage,
+        details: auditDetails,
         userEmail
       });
 

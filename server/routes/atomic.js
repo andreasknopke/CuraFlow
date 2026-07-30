@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { authMiddleware } from './auth.js';
 import { requirePermission, checkAdminPermission } from '../utils/permissions.js';
-import { writeAuditLog } from './dbProxy.js';
+import { writeAuditLog, enrichAuditDetails } from './dbProxy.js';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { db } from '../index.js';
 import {
@@ -231,11 +231,17 @@ router.post('/', async (req, res, next) => {
       
       // Write audit to SystemLog table
       const timestamp = new Date().toISOString();
+      const auditDetails = await enrichAuditDetails(dbPool, {
+        table: tableName, record_id: recordId, deleted_data: deletedRecord, timestamp,
+      });
+      const auditMessage = auditDetails.summary
+        ? `${tableName} gelöscht: ${auditDetails.summary} von ${userEmail}`
+        : `${tableName} gelöscht von ${userEmail} (ID: ${recordId})`;
       await writeAuditLog(dbPool, {
         level: 'audit',
         source: 'Löschung',
-        message: `${tableName} gelöscht von ${userEmail} (ID: ${recordId})`,
-        details: { table: tableName, record_id: recordId, deleted_data: deletedRecord, timestamp },
+        message: auditMessage,
+        details: auditDetails,
         userEmail
       });
       
