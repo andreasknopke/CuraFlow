@@ -32,6 +32,13 @@ import {
   getWishRequest,
   listWishRequests,
 } from '../repos/wishRequestRepo.js';
+import {
+  createDoctor,
+  updateDoctor,
+  deleteDoctor,
+  getDoctor,
+  listDoctors,
+} from '../repos/doctorRepo.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -224,73 +231,6 @@ const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
     console.warn('[Sentinel] Conflict check failed:', e.message);
     return null; // On error, allow the create (don't block operations)
   }
-};
-
-const findDoctorConflicts = async (dbPool, data, excludeId = null) => {
-  const name = data?.name?.trim();
-  const initials = data?.initials?.trim();
-
-  if (!name && !initials) {
-    return null;
-  }
-
-  const conditions = [];
-  const params = [];
-
-  if (name) {
-    conditions.push('name = ?');
-    params.push(name);
-  }
-
-  if (initials) {
-    conditions.push('initials = ?');
-    params.push(initials);
-  }
-
-  let sql = `SELECT id, name, initials FROM Doctor WHERE (${conditions.join(' OR ')})`;
-  if (excludeId) {
-    sql += ' AND id != ?';
-    params.push(excludeId);
-  }
-  sql += ' LIMIT 20';
-
-  const [rows] = await dbPool.execute(sql, params);
-  const nameConflict = name ? rows.find((row) => row.name === name) : null;
-  const initialsConflict = initials ? rows.find((row) => row.initials === initials) : null;
-
-  return {
-    nameConflict,
-    initialsConflict,
-  };
-};
-
-const buildDoctorConflictResponse = async (dbPool, data, excludeId = null) => {
-  const conflicts = await findDoctorConflicts(dbPool, data, excludeId);
-  if (!conflicts) {
-    return null;
-  }
-
-  if (conflicts.nameConflict) {
-    return {
-      status: 409,
-      payload: {
-        error: `Ein Mitarbeiter mit dem Namen "${data.name.trim()}" existiert bereits. Bitte wählen Sie einen anderen Namen.`,
-        field: 'name'
-      }
-    };
-  }
-
-  if (conflicts.initialsConflict) {
-    return {
-      status: 409,
-      payload: {
-        error: `Das Kürzel "${data.initials.trim()}" wird bereits verwendet. Bitte wählen Sie ein anderes Kürzel.`,
-        field: 'initials'
-      }
-    };
-  }
-
-  return null;
 };
 
 const ensureTenantBaseSchema = async (dbPool, cacheKey) => {
@@ -976,6 +916,94 @@ router.post('/', async (req, res, next) => {
       if (effectiveAction === 'delete') {
         if (!id) return res.status(400).json({ error: 'ID required for delete' });
         const deletedRecord = await deleteWishRequest({ dbPool, id });
+        await writeAuditLog(dbPool, {
+          level: 'audit',
+          source: 'Löschung',
+          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
+          userEmail: req.user?.email || 'unknown',
+        });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
+        }
+        return res.json({ success: true });
+      }
+      // bulkCreate + unknown actions fall through to the generic dispatch.
+    }
+
+    // ===== Doctor repo dispatch (Phase 2, PR 2.4) =====
+    // Doctor is a tenant table (correct pool). The repo handles name/initials
+    // conflict detection (pre-check returns 409; ER_DUP_ENTRY fallback below).
+    // Direct-SQL sites in staff.js/master.js/etc (central_employee_id link
+    // management + read projections) are a different layer — untouched.
+    if (tableName === 'Doctor') {
+      if (effectiveAction === 'list' || effectiveAction === 'filter') {
+        const rows = await listDoctors(dbPool, {
+          filters: query || req.body.filters || {},
+          sort,
+          limit,
+          skip,
+        });
+        return res.json(rows);
+      }
+      if (effectiveAction === 'get') {
+        if (!id) return res.json(null);
+        return res.json(await getDoctor(dbPool, id));
+      }
+      if (effectiveAction === 'create') {
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        try {
+          const created = await createDoctor({
+            dbPool,
+            data,
+            validColumns,
+            actorEmail: req.user?.email || 'system',
+          });
+          if (isPlanSyncEntity(tableName)) {
+            broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+          }
+          return res.json(created);
+        } catch (err) {
+          if (err.status === 409 && err.conflictPayload) {
+            return res.status(409).json(err.conflictPayload);
+          }
+          // ER_DUP_ENTRY fallback (race / unique index the pre-check missed)
+          if (err.code === 'ER_DUP_ENTRY') {
+            const { buildDoctorConflictResponse } = await import('../repos/doctorRepo.js');
+            const conflict = await buildDoctorConflictResponse(dbPool, data);
+            if (conflict) {
+              return res.status(conflict.status).json(conflict.payload);
+            }
+          }
+          throw err;
+        }
+      }
+      if (effectiveAction === 'update') {
+        if (!id) return res.status(400).json({ error: 'ID required for update' });
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        try {
+          const updated = await updateDoctor({ dbPool, id, data, validColumns });
+          if (isPlanSyncEntity(tableName)) {
+            broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'update', recordId: id, actor });
+          }
+          return res.json(updated);
+        } catch (err) {
+          if (err.status === 409 && err.conflictPayload) {
+            return res.status(409).json(err.conflictPayload);
+          }
+          if (err.code === 'ER_DUP_ENTRY') {
+            const { buildDoctorConflictResponse } = await import('../repos/doctorRepo.js');
+            const conflict = await buildDoctorConflictResponse(dbPool, data, id);
+            if (conflict) {
+              return res.status(conflict.status).json(conflict.payload);
+            }
+          }
+          throw err;
+        }
+      }
+      if (effectiveAction === 'delete') {
+        if (!id) return res.status(400).json({ error: 'ID required for delete' });
+        const deletedRecord = await deleteDoctor({ dbPool, id });
         await writeAuditLog(dbPool, {
           level: 'audit',
           source: 'Löschung',
