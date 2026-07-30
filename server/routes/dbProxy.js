@@ -911,6 +911,20 @@ router.post('/', async (req, res, next) => {
       // bulkCreate + unknown actions fall through to the generic dispatch.
     }
 
+    // AbsenceRequest is a MASTER-DB entity with a dedicated route
+    // (/api/absence-requests) + util (utils/absenceRequests.js) that enforces
+    // future-date validation, position whitelist, employee-link resolution,
+    // pending-only enforcement, and the approve→CentralAbsenceEntry transaction.
+    // The generic /api/db path cannot serve it correctly: it resolves dbPool to
+    // the TENANT pool (req.db) when a token is present → ER_NO_SUCH_TABLE, and
+    // to master without a token → bypasses all that validation. Reject it here
+    // so the dedicated route is the only surface. (Phase 2, PR 2.2.)
+    if (tableName === 'AbsenceRequest') {
+      return res.status(400).json({
+        error: 'AbsenceRequest wird über /api/absence-requests verwaltet, nicht über /api/db.',
+      });
+    }
+
     // ===== LIST / FILTER =====
     if (effectiveAction === 'list' || effectiveAction === 'filter') {
       if (tableName === 'ShiftEntry' && req.db) {
