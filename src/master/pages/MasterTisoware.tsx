@@ -19,7 +19,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import {
   Database,
   Table2,
@@ -603,7 +603,7 @@ export default function MasterTisoware() {
               {/* Results */}
               {queryMutation.data && (
                 <div className="border rounded-lg overflow-hidden">
-                  <ScrollArea className="max-h-[500px]">
+                  <div className="overflow-x-auto max-h-[500px]">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -629,7 +629,7 @@ export default function MasterTisoware() {
                           queryMutation.data.rows?.map((row: Record<string, unknown>, idx: number) => (
                             <TableRow key={idx}>
                               {queryMutation.data.columns?.map((col: { name: string; type: string }) => (
-                                <TableCell key={col.name} className="font-mono text-xs max-w-xs truncate">
+                                <TableCell key={col.name} className="font-mono text-xs whitespace-nowrap">
                                   {row[col.name] === null || row[col.name] === undefined
                                     ? <span className="text-slate-300 italic">NULL</span>
                                     : String(row[col.name])}
@@ -640,7 +640,7 @@ export default function MasterTisoware() {
                         )}
                       </TableBody>
                     </Table>
-                  </ScrollArea>
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -676,7 +676,7 @@ export default function MasterTisoware() {
                   </div>
                 ) : (
                   <>
-                    <ScrollArea className="max-h-[600px]">
+                    <div className="overflow-x-auto max-h-[600px]">
                       <Table>
                         <TableHeader>
                           <TableRow>
@@ -698,7 +698,7 @@ export default function MasterTisoware() {
                             sampleData?.rows?.map((row: Record<string, unknown>, idx: number) => (
                               <TableRow key={idx}>
                                 {sampleData.columns?.map((col: { name: string }) => (
-                                  <TableCell key={col.name} className="font-mono text-xs max-w-xs truncate">
+                                  <TableCell key={col.name} className="font-mono text-xs whitespace-nowrap">
                                     {row[col.name] === null || row[col.name] === undefined
                                       ? <span className="text-slate-300 italic">NULL</span>
                                       : String(row[col.name])}
@@ -709,7 +709,7 @@ export default function MasterTisoware() {
                           )}
                         </TableBody>
                       </Table>
-                    </ScrollArea>
+                    </div>
                     {/* Pagination */}
                     {sampleData && sampleData.totalCount > PAGE_SIZE && (
                       <div className="flex items-center justify-between px-4 py-3 border-t border-slate-200">
