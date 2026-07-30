@@ -149,11 +149,15 @@ Move reads through the builder. The `filter` query operators (`$gte`/`$lte`/`$gt
 >
 > **Note:** the plan mentioned `$gt`/`$lt`/`$in`/`$ne` operators, but the original code only ever implemented `$gte`/`$lte`/equality (the others were never wired — confirmed in the Phase 1.0 exploration). This PR preserves exact behavior: those four operators remain unimplemented as before; adding them would be a net-new feature, not a migration.
 
-#### PR 1.4 — `atomic.js` through the builder
+#### PR 1.4 — `atomic.js` through the builder — ✅ DONE
 
 `atomic.js` interpolates `entity` into `SELECT * FROM`/`UPDATE`/`DELETE FROM` in its `getRecord`/`updateRecord`/`createRecord`/`deleteRecord` helpers. Route them through the same builder helpers 1.1–1.3 introduced. `assertValidIdentifier(entity)` stays as defence-in-depth at the operation entry.
 
 **Risk: Medium.** `atomic` handles optimistic locking (`check.updated_date`); preserve that check exactly — type annotations + builder, **zero logic changes** in the compare-and-set path.
+
+> **Status (2026-07-29):** ✅ Complete. All 5 closure helpers in `atomic.js` (`getRecord`, `filterRecords`, `createRecord`, `updateRecord`, `deleteRecord`) now route SQL through Kysely via the shared `createKysely` adapter — table + column identifiers escaped centrally; `filterRecords`' previously-unvalidated filter keys are now escaped via `sql.ref(key)` (same hole dbProxy's list/filter had). The helpers stay closures (capturing `dbPool`/`tenantId`/`req`) — no shared-util extraction (atomic's helpers have genuine differences: no `getValidColumns` filtering, equality-only filters); deduplication is deferred to Phase 2 (typed repositories). `assertValidIdentifier(entity)` at the operation entry stays as defence-in-depth. The optimistic-locking compare-and-set logic is unchanged. 868 unit/component tests pass; **new dedicated e2e spec** `e2e/specs/atomic/atomic-workflows.spec.ts` (3 tests, covering checkAndCreate + duplicate rejection, checkAndUpdate + concurrency detection, upsertStaffing create→update→delete) — `/api/atomic` previously had NO direct e2e coverage; full e2e **61 passed / 0 failed**.
+>
+> **Out of scope (correctly):** `replaceTrainingRotationRange` uses constant `TrainingRotation` literals (no user-input identifiers) and is transactional with `FOR UPDATE` row-locking — left as-is, like bulkCreate.
 
 ---
 
