@@ -1,5 +1,6 @@
 {
   "name": "curaflow",
+  "description": "CuraFlow frontend (Vite + React + TypeScript). Backend dependencies live in server/package.json — do NOT add server deps here.",
   "private": true,
   "version": "1.0.0",
   "license": "MIT",
@@ -73,7 +74,6 @@
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
     "jspdf": "^4.2.1",
-    "kysely": "^0.28.17",
     "lodash": "^4.17.21",
     "lucide-react": "^0.475.0",
     "moment": "^2.30.1",
