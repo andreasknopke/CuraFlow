@@ -25,6 +25,13 @@ import {
   getQualification,
   listQualifications,
 } from '../repos/qualificationRepo.js';
+import {
+  createWishRequest,
+  updateWishRequest,
+  deleteWishRequest,
+  getWishRequest,
+  listWishRequests,
+} from '../repos/wishRequestRepo.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -923,6 +930,65 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({
         error: 'AbsenceRequest wird über /api/absence-requests verwaltet, nicht über /api/db.',
       });
+    }
+
+    // ===== WishRequest repo dispatch (Phase 2, PR 2.3) =====
+    // WishRequest is a tenant table (correct pool via req.db). The approval-
+    // permission guard (can_approve_wishes) already ran in the pre-action block
+    // above — this repo only executes for writes that passed it. CentralWishRequest
+    // (master, cross-tenant) is a separate entity with dedicated routes in groups.js.
+    if (tableName === 'WishRequest') {
+      if (effectiveAction === 'list' || effectiveAction === 'filter') {
+        const rows = await listWishRequests(dbPool, {
+          filters: query || req.body.filters || {},
+          sort,
+          limit,
+          skip,
+        });
+        return res.json(rows);
+      }
+      if (effectiveAction === 'get') {
+        if (!id) return res.json(null);
+        return res.json(await getWishRequest(dbPool, id));
+      }
+      if (effectiveAction === 'create') {
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        const created = await createWishRequest({
+          dbPool,
+          data,
+          validColumns,
+          actorEmail: req.user?.email || 'system',
+        });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+        }
+        return res.json(created);
+      }
+      if (effectiveAction === 'update') {
+        if (!id) return res.status(400).json({ error: 'ID required for update' });
+        const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
+        const updated = await updateWishRequest({ dbPool, id, data, validColumns });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'update', recordId: id, actor });
+        }
+        return res.json(updated);
+      }
+      if (effectiveAction === 'delete') {
+        if (!id) return res.status(400).json({ error: 'ID required for delete' });
+        const deletedRecord = await deleteWishRequest({ dbPool, id });
+        await writeAuditLog(dbPool, {
+          level: 'audit',
+          source: 'Löschung',
+          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
+          userEmail: req.user?.email || 'unknown',
+        });
+        if (isPlanSyncEntity(tableName)) {
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
+        }
+        return res.json({ success: true });
+      }
+      // bulkCreate + unknown actions fall through to the generic dispatch.
     }
 
     // ===== LIST / FILTER =====
