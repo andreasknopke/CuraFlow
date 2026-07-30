@@ -16,6 +16,8 @@ import {
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { createKysely } from '../utils/db.js';
 import { sql } from 'kysely';
+import { toSqlValue, fromSqlRow } from '../utils/sqlMarshal.js';
+import { insertRow, updateRow, deleteRow, selectRow, filterRows, bulkInsert } from '../utils/queryHelpers.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
 const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstrationen & Konsile']);
@@ -106,50 +108,6 @@ const TENANT_BASE_TABLE_SET = new Set(TENANT_BASE_TABLES);
 
 export { clearColumnsCache };
 
-// HELPER: Convert JS value to MySQL value
-const toSqlValue = (val) => {
-  if (val === undefined) return null;
-  if (val === '') return null; // Empty strings become NULL (important for date fields)
-  if (typeof val === 'number' && isNaN(val)) return null;
-  if (typeof val === 'object' && val !== null && !(val instanceof Date)) {
-    return JSON.stringify(val);
-  }
-  if (val instanceof Date) {
-    return val.toISOString().slice(0, 19).replace('T', ' ');
-  }
-  return val;
-};
-
-// HELPER: Parse MySQL row to JS object
-const fromSqlRow = (row) => {
-  if (!row) return null;
-  const res = { ...row };
-  
-  const jsonFields = ['active_days'];
-  
-  for (const key in res) {
-    if (jsonFields.includes(key) && typeof res[key] === 'string') {
-      try {
-        res[key] = JSON.parse(res[key]);
-      } catch (e) {}
-    }
-    
-    const boolFields = [
-      'receive_email_notifications', 'exclude_from_staffing_plan', 
-      'user_viewed', 'auto_off', 'show_in_service_plan', 
-      'allows_rotation_concurrently', 'allows_absence_overlap',
-      'allows_multiple',
-      'acknowledged', 'is_active', 'is_specialist',
-      'timeslots_enabled', 'spans_midnight', 'affects_availability',
-      'can_do_foreground_duty', 'can_do_background_duty', 'excluded_from_statistics',
-      'is_mandatory', 'requires_certificate'
-    ];
-    if (boolFields.includes(key)) {
-      res[key] = !!res[key];
-    }
-  }
-  return res;
-};
 
 // HELPER: Get valid columns for entity (multi-tenant aware).
 //
@@ -180,134 +138,6 @@ const getValidColumns = async (dbPool, tableName, cacheKey) => {
     }
     return null;
   }
-};
-
-// Insert a single row through Kysely so the table identifier and column names
-// are escaped centrally (Phase 1, PR 1.1 — structural S1 control for the create
-// path). `keys` must already be filtered to valid columns (via getValidColumns)
-// and `data` is the source object; each value passes through toSqlValue, matching
-// the previous hand-built INSERT INTO `t` (`k`,...) VALUES (?,...) behavior.
-// assertValidIdentifier(tableName) at the route entry remains as defence-in-depth.
-// Errors (e.g. ER_DUP_ENTRY) propagate with their .code intact for the caller's
-// duplicate-handling logic.
-const insertRow = async (dbPool, tableName, keys, data) => {
-  const kysely = createKysely(dbPool);
-  const row = {};
-  for (const k of keys) {
-    const v = toSqlValue(data[k]);
-    row[k] = v === undefined ? null : v;
-  }
-  await kysely.insertInto(tableName).values(row).executeTakeFirst();
-};
-
-// Update a single row by id through Kysely so the table + column identifiers
-// are escaped centrally (Phase 1, PR 1.2 — structural S1 control for the
-// update path). `keys` must already be filtered to valid columns (excludes
-// `id`); values pass through toSqlValue, matching the previous hand-built
-// `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`. ER_DUP_ENTRY propagates with
-// .code intact. assertValidIdentifier(tableName) at the route entry stays as
-// defence-in-depth.
-const updateRow = async (dbPool, tableName, keys, data, id) => {
-  const kysely = createKysely(dbPool);
-  const set = {};
-  for (const k of keys) {
-    const v = toSqlValue(data[k]);
-    set[k] = v === undefined ? null : v;
-  }
-  await kysely.updateTable(tableName).set(set).where('id', '=', id).executeTakeFirst();
-};
-
-// Delete a single row by id through Kysely (Phase 1, PR 1.2 — structural S1
-// control for the delete path). Equivalent to the previous hand-built
-// `DELETE FROM \`t\` WHERE id = ?`.
-const deleteRow = async (dbPool, tableName, id) => {
-  const kysely = createKysely(dbPool);
-  await kysely.deleteFrom(tableName).where('id', '=', id).executeTakeFirst();
-};
-
-// Fetch a single row by id (SELECT * ... WHERE id = ?) through Kysely (Phase 1,
-// PR 1.2). Returns the raw row (caller runs fromSqlRow) or null if not found.
-// Used for the update read-back and the delete pre-fetch.
-const selectRow = async (dbPool, tableName, id) => {
-  const kysely = createKysely(dbPool);
-  const rows = await kysely.selectFrom(tableName).selectAll().where('id', '=', id).limit(1).execute();
-  return rows[0] ?? null;
-};
-
-// List/filter rows through Kysely (Phase 1, PR 1.3 — structural S1 control for
-// the read path). The table name and EVERY filter key are escaped centrally:
-// table + ORDER BY via selectFrom/orderBy, filter keys via sql.ref(key). This
-// closes the previously-unvalidated filter-key interpolation hole (a backtick
-// in a filter key could break out of the `\`{key}\`` identifier context).
-//
-// Supports the same operators as the old hand-built SQL: equality, $gte, $lte.
-// Sort is a string like "field" or "-field" (desc); defaults to `id` ASC. The
-// `limit`/`skip` are integers (the old code parseInt'd them; Kysely binds them
-// as parameters, which is equivalent and safer). Returns the raw rows; the
-// caller maps them through fromSqlRow.
-//
-// assertValidIdentifier(tableName) at the route entry stays as defence-in-depth;
-// the sort field is validated with assertValidIdentifier at the call site too.
-const filterRows = async (dbPool, tableName, { filters = {}, sort, limit, skip } = {}) => {
-  const kysely = createKysely(dbPool);
-  let query = kysely.selectFrom(tableName).selectAll();
-
-  if (filters && Object.keys(filters).length > 0) {
-    for (const [key, val] of Object.entries(filters)) {
-      if (val && typeof val === 'object' && !Array.isArray(val)) {
-        // sql.ref escapes the column identifier; values are bound as params.
-        if (val.$gte !== undefined) query = query.where(sql.ref(key), '>=', toSqlValue(val.$gte));
-        if (val.$lte !== undefined) query = query.where(sql.ref(key), '<=', toSqlValue(val.$lte));
-      } else {
-        query = query.where(sql.ref(key), '=', toSqlValue(val));
-      }
-    }
-  }
-
-  if (typeof sort === 'string' && sort) {
-    const desc = sort.startsWith('-');
-    const field = desc ? sort.substring(1) : sort;
-    // Defence-in-depth: validate the sort identifier (Kysely would escape it
-    // too, but assertValidIdentifier gives a clean 400 on a bad name).
-    assertValidIdentifier(field, 'Sortierfeld');
-    query = query.orderBy(field, desc ? 'desc' : 'asc');
-    if (field !== 'id') query = query.orderBy('id', 'asc');
-  } else {
-    query = query.orderBy('id', 'asc');
-  }
-
-  const parsedLimit = parseInt(limit);
-  if (limit && !isNaN(parsedLimit)) {
-    query = query.limit(parsedLimit);
-    const parsedSkip = parseInt(skip);
-    if (skip && !isNaN(parsedSkip)) {
-      query = query.offset(parsedSkip);
-    }
-  }
-
-  return query.execute();
-};
-
-// Insert multiple rows in a single transaction through Kysely (Phase 1, PR 1.5
-// — structural S1 control for the bulkCreate path). All rows share the same
-// `keys` (column set, already filtered to valid columns by the caller); each
-// row's values pass through toSqlValue. Kysely issues BEGIN/COMMIT/ROLLBACK via
-// executeQuery (handled by the bridge), so the whole batch is atomic — a
-// mid-batch failure rolls back every row, matching the previous hand-built
-// raw-connection beginTransaction/commit/rollback loop. Identifiers (table +
-// every column) are escaped centrally.
-const bulkInsert = async (dbPool, tableName, keys, rows) => {
-  const kysely = createKysely(dbPool);
-  await kysely.transaction().execute(async (trx) => {
-    for (const data of rows) {
-      const row = {};
-      for (const k of keys) {
-        const v = toSqlValue(data[k]);
-        row[k] = v === undefined ? null : v;
-      }
-      await trx.insertInto(tableName).values(row).executeTakeFirst();
-    }
-  });
 };
 
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)

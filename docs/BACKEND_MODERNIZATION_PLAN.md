@@ -181,6 +181,18 @@ Each entity gets a small repo module (`server/repos/shiftEntryRepo.ts`) with typ
 
 **Risk per entity: Medium.** Behavioral parity is the contract; E2E + unit suites cover it. Do not refactor logic during the move — same columns, same where-clauses, same order-by.
 
+#### PR 2.0 — Foundation: extract shared query helpers + marshaling — ✅ DONE
+
+The prerequisite dedup that makes per-entity repositories clean. Before this PR, the CRUD helpers (`insertRow`/`updateRow`/`deleteRow`/`selectRow`/`filterRows`/`bulkInsert`) were module-local in `dbProxy.js`, and `toSqlValue`/`fromSqlRow` were duplicated across `dbProxy.js` + `atomic.js` with **load-bearing differences**.
+
+> **Status (2026-07-29):** ✅ Complete. Two new shared modules under `server/utils/`:
+> - **`sqlMarshal.js`** — exports BOTH marshal variants verbatim (NOT unified): `toSqlValue`/`fromSqlRow` (dbProxy: `''→null`, `active_days` JSON parse, 19 bool fields) and `toSqlValueStrict`/`fromSqlRowBasic` (atomic: keeps `''`, no JSON parse, 9 bool fields). `dbProxy.js` imports the former; `atomic.js` imports the latter aliased to its existing local names so its 8 call sites are untouched.
+> - **`queryHelpers.js`** — exports the 6 CRUD helpers verbatim; `dbProxy.js` imports them back. `atomic.js`'s closures are intentionally **NOT** migrated to these helpers this PR (they have genuine behavioral differences: no `getValidColumns` filtering, equality-only filter, audit-logging, read-back) — that reconciliation is deferred to the per-entity repos (PR 2.x) where each entity's access pattern is examined individually. `getValidColumns` stays in `dbProxy.js` (tightly coupled to the cache scheme).
+>
+> 877 unit/component tests pass (+9 new `sqlMarshal.test.js` pinning the variant differences); full e2e **67 passed / 0 failed**. Language: `.js` + JSDoc (the TS port is Phase 3 — pulling it forward would require `server/tsconfig.json` + Docker Node-version verification for type stripping).
+>
+> **Repo-ification order (informed by the Phase 2 research):** Qualification (simplest: plain CRUD, no guards) → AbsenceRequest (already a repo in `utils/absenceRequests.js`; deprecate the generic path) → WishRequest (two-table design decision) → Doctor (wide blast radius: ~6 files touch it directly) → ShiftEntry (already a de-facto repo in `centralAbsences.js`; consolidation). QualificationCertificate needs no `/api/db` work (already dedicated in `certificates.js`).
+
 ---
 
 ### Phase 3 — TypeScript port (ride-along, long tail)
