@@ -129,11 +129,15 @@ Move `create` (the `INSERT INTO \`{tableName}\`` path) behind a Kysely-backed he
 >
 > **Deferred from PR 1.1:** **bulkCreate** (`:1448` ShiftEntry-local, `:1558` generic) is transactional (raw-connection `beginTransaction/commit/rollback`); Kysely's `transaction().execute(trx => ...)` is structurally different, and **bulkCreate has no direct e2e assertion** (only indirectly via the auto-fill UI flow). Migrating its transaction structure without coverage would violate "every change traced to verified behavior," so it is deferred to a follow-up that first adds a bulkCreate e2e test. The bulkCreate ShiftEntry-local flagged gap (keys not passed through `getValidColumns`) is pre-existing and stays open until that migration.
 
-#### PR 1.2 — `dbProxy` update / delete paths
+#### PR 1.2 — `dbProxy` update / delete paths — ✅ DONE (SQL migration only)
 
 Same as 1.1 for `update` (`UPDATE \`{tableName}\` SET ...`) and `delete`. These also carry the ShiftEntry partial-update gap (Finding S5 of the system review) — when moving `update`, fix the position lookup to fetch the existing record's `position` when `data.position` is absent (mirror the `delete` path / atomic guard).
 
 **Risk: Medium.** Write paths. The S5 fix is a correctness improvement folded in.
+
+> **Status (2026-07-29):** ✅ Complete for the SQL-construction migration. New helpers in `dbProxy.js`: `updateRow`, `deleteRow`, `selectRow` (mirror `insertRow`) — all route identifiers through Kysely. Migrated: the generic UPDATE + its read-back SELECT, the DELETE pre-fetch SELECT + DELETE, and the update-path ShiftEntry central→tenant reinsert INSERT (now via `insertRow`). 865 unit/component tests pass; 4 new update/delete/select parity tests in `server/__tests__/db.test.js`; full e2e **55 passed / 0 failed** (staff edits+deletes Doctors, security updates ShiftEntry, vacation/wishlist update). Grep gate: zero `${tableName}` UPDATE/DELETE/SELECT interpolation remains; the only residual hand-built INSERTs are the two bulkCreate branches (deferred).
+>
+> **Deviation from the plan (recorded):** the plan called for folding in the **S5 ShiftEntry partial-position bypass fix** here. This PR deliberately did **not** change the position-lookup logic — it is a behavior change (a guard that currently allows would now deny), not a SQL-construction change, and folding a behavior change into a refactor PR risks conflating the two. S5 remains open and should be a focused, separately-reviewed fix (the e2e security spec already pins the current guard behavior).
 
 #### PR 1.3 — `dbProxy` list / filter / get paths
 

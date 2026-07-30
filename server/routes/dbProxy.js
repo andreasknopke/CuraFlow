@@ -200,6 +200,40 @@ const insertRow = async (dbPool, tableName, keys, data) => {
   await kysely.insertInto(tableName).values(row).executeTakeFirst();
 };
 
+// Update a single row by id through Kysely so the table + column identifiers
+// are escaped centrally (Phase 1, PR 1.2 — structural S1 control for the
+// update path). `keys` must already be filtered to valid columns (excludes
+// `id`); values pass through toSqlValue, matching the previous hand-built
+// `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`. ER_DUP_ENTRY propagates with
+// .code intact. assertValidIdentifier(tableName) at the route entry stays as
+// defence-in-depth.
+const updateRow = async (dbPool, tableName, keys, data, id) => {
+  const kysely = createKysely(dbPool);
+  const set = {};
+  for (const k of keys) {
+    const v = toSqlValue(data[k]);
+    set[k] = v === undefined ? null : v;
+  }
+  await kysely.updateTable(tableName).set(set).where('id', '=', id).executeTakeFirst();
+};
+
+// Delete a single row by id through Kysely (Phase 1, PR 1.2 — structural S1
+// control for the delete path). Equivalent to the previous hand-built
+// `DELETE FROM \`t\` WHERE id = ?`.
+const deleteRow = async (dbPool, tableName, id) => {
+  const kysely = createKysely(dbPool);
+  await kysely.deleteFrom(tableName).where('id', '=', id).executeTakeFirst();
+};
+
+// Fetch a single row by id (SELECT * ... WHERE id = ?) through Kysely (Phase 1,
+// PR 1.2). Returns the raw row (caller runs fromSqlRow) or null if not found.
+// Used for the update read-back and the delete pre-fetch.
+const selectRow = async (dbPool, tableName, id) => {
+  const kysely = createKysely(dbPool);
+  const rows = await kysely.selectFrom(tableName).selectAll().where('id', '=', id).limit(1).execute();
+  return rows[0] ?? null;
+};
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
 const WORKPLACE_CACHE = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
@@ -1262,7 +1296,7 @@ router.post('/', async (req, res, next) => {
 
         if (centralRouting.mode === 'central') {
           await deleteCentralAbsenceById(db, id);
-          const localPayload = { ...nextPayload, doctor_id: nextDoctorId };
+          const localPayload = { ...nextPayload, doctor_id: nextDoctorId, id };
           const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
           let keys = Object.keys(localPayload).filter((key) => key !== 'id');
           if (validColumns) {
@@ -1271,12 +1305,11 @@ router.post('/', async (req, res, next) => {
           if (keys.length === 0) {
             return res.json({ success: true });
           }
-          const values = keys.map((key) => toSqlValue(localPayload[key]));
-          await dbPool.execute(
-            `INSERT INTO \`ShiftEntry\` (\`id\`, ${keys.map((key) => `\`${key}\``).join(', ')}) VALUES (?, ${keys.map(() => '?').join(', ')})`,
-            [id, ...values]
-          );
-          const [rows] = await dbPool.execute('SELECT * FROM `ShiftEntry` WHERE id = ?', [id]);
+          // INSERT through Kysely (PR 1.2) — id + filtered keys, identifiers
+          // escaped centrally. Behavior matches the previous hand-built
+          // `INSERT INTO \`ShiftEntry\` (\`id\`, ...) VALUES (?, ...)`.
+          await insertRow(dbPool, 'ShiftEntry', ['id', ...keys], localPayload);
+          const row = await selectRow(dbPool, 'ShiftEntry', id);
           if (isPlanSyncEntity(tableName)) {
             broadcastPlanUpdate({
               scope: realtimeScope,
@@ -1286,7 +1319,7 @@ router.post('/', async (req, res, next) => {
               actor,
             });
           }
-          return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+          return res.json(row ? fromSqlRow(row) : null);
         }
       }
 
@@ -1305,15 +1338,13 @@ router.post('/', async (req, res, next) => {
       }
       
       if (keys.length === 0) return res.json({ success: true });
-      
-      const sets = keys.map(k => `\`${k}\` = ?`).join(',');
-      const values = keys.map(k => toSqlValue(data[k]));
-      values.push(id);
-      
-      const sql = `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`;
-      const safeValues = values.map(v => v === undefined ? null : v);
+
+      // UPDATE through Kysely (PR 1.2) so the table + column identifiers are
+      // escaped centrally. Behavior matches the previous hand-built
+      // `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`; ER_DUP_ENTRY propagates with
+      // .code intact for the Doctor-conflict handling below.
       try {
-        await dbPool.execute(sql, safeValues);
+        await updateRow(dbPool, tableName, keys, data, id);
       } catch (err) {
         if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
           const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
@@ -1323,8 +1354,8 @@ router.post('/', async (req, res, next) => {
         }
         throw err;
       }
-      
-      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
+
+      const row = await selectRow(dbPool, tableName, id);
       if (isPlanSyncEntity(tableName)) {
         broadcastPlanUpdate({
           scope: realtimeScope,
@@ -1334,7 +1365,7 @@ router.post('/', async (req, res, next) => {
           actor,
         });
       }
-      return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+      return res.json(row ? fromSqlRow(row) : null);
     }
     
     // ===== DELETE =====
@@ -1365,11 +1396,14 @@ router.post('/', async (req, res, next) => {
         }
       }
       
-      // Fetch record before deletion for logging
-      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
-      const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
-      
-      await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
+      // Fetch record before deletion for logging, then DELETE — both through
+      // Kysely (PR 1.2) so the table identifier is escaped centrally. Behavior
+      // matches the previous hand-built `SELECT * FROM \`t\` WHERE id = ?` /
+      // `DELETE FROM \`t\` WHERE id = ?`.
+      const existing = await selectRow(dbPool, tableName, id);
+      const deletedRecord = existing ? fromSqlRow(existing) : null;
+
+      await deleteRow(dbPool, tableName, id);
       
       // Write audit to SystemLog table
       const userEmail = req.user?.email || 'unknown';

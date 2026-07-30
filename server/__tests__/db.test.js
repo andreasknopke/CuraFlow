@@ -162,6 +162,47 @@ describe('insertInto — create path through Kysely (PR 1.1)', () => {
   });
 });
 
+describe('updateTable / deleteFrom / selectFrom — update & delete paths (PR 1.2)', () => {
+  // dbProxy's update/delete paths now use updateRow/deleteRow/selectRow (which
+  // call kysely.updateTable/deleteFrom/selectFrom). These pin the generated SQL
+  // shapes — identifiers backtick-escaped, values bound, ER_DUP_ENTRY preserved.
+
+  it('updateTable generates backtick-escaped UPDATE ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.updateTable('Doctor').set({ name: 'Dr B', is_active: 0 }).where('id', '=', 'd1').executeTakeFirst();
+    expect(executed[0].sql).toBe('update `Doctor` set `name` = ?, `is_active` = ? where `id` = ?');
+    expect(executed[0].params).toEqual(['Dr B', 0, 'd1']);
+  });
+
+  it('deleteFrom generates backtick-escaped DELETE ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.deleteFrom('Doctor').where('id', '=', 'd1').executeTakeFirst();
+    expect(executed[0].sql).toBe('delete from `Doctor` where `id` = ?');
+    expect(executed[0].params).toEqual(['d1']);
+  });
+
+  it('selectFrom generates backtick-escaped SELECT * ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([{ id: 'd1', name: 'Dr A' }]);
+    const kysely = createKysely(pool);
+    const rows = await kysely.selectFrom('Doctor').selectAll().where('id', '=', 'd1').limit(1).execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` where `id` = ? limit ?');
+    expect(executed[0].params).toEqual(['d1', 1]);
+    expect(rows[0].name, 'select returns the row').toBe('Dr A');
+  });
+
+  it('updateTable escapes a malicious table name (doubled backtick, no breakout)', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.updateTable('evil` WHERE 1=1').set({ name: 'x' }).where('id', '=', 'd1').executeTakeFirst();
+    // The injected backtick is doubled → "WHERE 1=1" is inert text inside the
+    // table identifier; the real WHERE is the legitimate `id = ?`.
+    expect(executed[0].sql).toBe('update `evil`` WHERE 1=1` set `name` = ? where `id` = ?');
+    expect(executed[0].params).toEqual(['x', 'd1']);
+  });
+});
+
 describe('assertValidIdentifier — defence-in-depth still gates the builder', () => {
   // The primary control is now Kysely's escaping, but assertValidIdentifier at
   // the route entry still rejects invalid names first (cleaner 400 vs. a weird
