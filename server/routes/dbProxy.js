@@ -182,6 +182,134 @@ const getValidColumns = async (dbPool, tableName, cacheKey) => {
   }
 };
 
+// Insert a single row through Kysely so the table identifier and column names
+// are escaped centrally (Phase 1, PR 1.1 — structural S1 control for the create
+// path). `keys` must already be filtered to valid columns (via getValidColumns)
+// and `data` is the source object; each value passes through toSqlValue, matching
+// the previous hand-built INSERT INTO `t` (`k`,...) VALUES (?,...) behavior.
+// assertValidIdentifier(tableName) at the route entry remains as defence-in-depth.
+// Errors (e.g. ER_DUP_ENTRY) propagate with their .code intact for the caller's
+// duplicate-handling logic.
+const insertRow = async (dbPool, tableName, keys, data) => {
+  const kysely = createKysely(dbPool);
+  const row = {};
+  for (const k of keys) {
+    const v = toSqlValue(data[k]);
+    row[k] = v === undefined ? null : v;
+  }
+  await kysely.insertInto(tableName).values(row).executeTakeFirst();
+};
+
+// Update a single row by id through Kysely so the table + column identifiers
+// are escaped centrally (Phase 1, PR 1.2 — structural S1 control for the
+// update path). `keys` must already be filtered to valid columns (excludes
+// `id`); values pass through toSqlValue, matching the previous hand-built
+// `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`. ER_DUP_ENTRY propagates with
+// .code intact. assertValidIdentifier(tableName) at the route entry stays as
+// defence-in-depth.
+const updateRow = async (dbPool, tableName, keys, data, id) => {
+  const kysely = createKysely(dbPool);
+  const set = {};
+  for (const k of keys) {
+    const v = toSqlValue(data[k]);
+    set[k] = v === undefined ? null : v;
+  }
+  await kysely.updateTable(tableName).set(set).where('id', '=', id).executeTakeFirst();
+};
+
+// Delete a single row by id through Kysely (Phase 1, PR 1.2 — structural S1
+// control for the delete path). Equivalent to the previous hand-built
+// `DELETE FROM \`t\` WHERE id = ?`.
+const deleteRow = async (dbPool, tableName, id) => {
+  const kysely = createKysely(dbPool);
+  await kysely.deleteFrom(tableName).where('id', '=', id).executeTakeFirst();
+};
+
+// Fetch a single row by id (SELECT * ... WHERE id = ?) through Kysely (Phase 1,
+// PR 1.2). Returns the raw row (caller runs fromSqlRow) or null if not found.
+// Used for the update read-back and the delete pre-fetch.
+const selectRow = async (dbPool, tableName, id) => {
+  const kysely = createKysely(dbPool);
+  const rows = await kysely.selectFrom(tableName).selectAll().where('id', '=', id).limit(1).execute();
+  return rows[0] ?? null;
+};
+
+// List/filter rows through Kysely (Phase 1, PR 1.3 — structural S1 control for
+// the read path). The table name and EVERY filter key are escaped centrally:
+// table + ORDER BY via selectFrom/orderBy, filter keys via sql.ref(key). This
+// closes the previously-unvalidated filter-key interpolation hole (a backtick
+// in a filter key could break out of the `\`{key}\`` identifier context).
+//
+// Supports the same operators as the old hand-built SQL: equality, $gte, $lte.
+// Sort is a string like "field" or "-field" (desc); defaults to `id` ASC. The
+// `limit`/`skip` are integers (the old code parseInt'd them; Kysely binds them
+// as parameters, which is equivalent and safer). Returns the raw rows; the
+// caller maps them through fromSqlRow.
+//
+// assertValidIdentifier(tableName) at the route entry stays as defence-in-depth;
+// the sort field is validated with assertValidIdentifier at the call site too.
+const filterRows = async (dbPool, tableName, { filters = {}, sort, limit, skip } = {}) => {
+  const kysely = createKysely(dbPool);
+  let query = kysely.selectFrom(tableName).selectAll();
+
+  if (filters && Object.keys(filters).length > 0) {
+    for (const [key, val] of Object.entries(filters)) {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        // sql.ref escapes the column identifier; values are bound as params.
+        if (val.$gte !== undefined) query = query.where(sql.ref(key), '>=', toSqlValue(val.$gte));
+        if (val.$lte !== undefined) query = query.where(sql.ref(key), '<=', toSqlValue(val.$lte));
+      } else {
+        query = query.where(sql.ref(key), '=', toSqlValue(val));
+      }
+    }
+  }
+
+  if (typeof sort === 'string' && sort) {
+    const desc = sort.startsWith('-');
+    const field = desc ? sort.substring(1) : sort;
+    // Defence-in-depth: validate the sort identifier (Kysely would escape it
+    // too, but assertValidIdentifier gives a clean 400 on a bad name).
+    assertValidIdentifier(field, 'Sortierfeld');
+    query = query.orderBy(field, desc ? 'desc' : 'asc');
+    if (field !== 'id') query = query.orderBy('id', 'asc');
+  } else {
+    query = query.orderBy('id', 'asc');
+  }
+
+  const parsedLimit = parseInt(limit);
+  if (limit && !isNaN(parsedLimit)) {
+    query = query.limit(parsedLimit);
+    const parsedSkip = parseInt(skip);
+    if (skip && !isNaN(parsedSkip)) {
+      query = query.offset(parsedSkip);
+    }
+  }
+
+  return query.execute();
+};
+
+// Insert multiple rows in a single transaction through Kysely (Phase 1, PR 1.5
+// — structural S1 control for the bulkCreate path). All rows share the same
+// `keys` (column set, already filtered to valid columns by the caller); each
+// row's values pass through toSqlValue. Kysely issues BEGIN/COMMIT/ROLLBACK via
+// executeQuery (handled by the bridge), so the whole batch is atomic — a
+// mid-batch failure rolls back every row, matching the previous hand-built
+// raw-connection beginTransaction/commit/rollback loop. Identifiers (table +
+// every column) are escaped centrally.
+const bulkInsert = async (dbPool, tableName, keys, rows) => {
+  const kysely = createKysely(dbPool);
+  await kysely.transaction().execute(async (trx) => {
+    for (const data of rows) {
+      const row = {};
+      for (const k of keys) {
+        const v = toSqlValue(data[k]);
+        row[k] = v === undefined ? null : v;
+      }
+      await trx.insertInto(tableName).values(row).executeTakeFirst();
+    }
+  });
+};
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
 const WORKPLACE_CACHE = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
@@ -704,10 +832,11 @@ const APPROVAL_DECISION_STATUSES = ['approved', 'rejected'];
 async function loadStatusForId(dbPool, table, id) {
   if (!id) return null;
   try {
-    const [rows] = await dbPool.execute(
-      `SELECT status FROM \`${table}\` WHERE id = ? LIMIT 1`,
-      [id],
-    );
+    // SELECT through Kysely so the table identifier is escaped centrally
+    // (PR 1.5 — completes the S1 grep gate). `table` is the route-validated
+    // tableName; behavior unchanged (status column, id lookup, fail-null).
+    const kysely = createKysely(dbPool);
+    const rows = await kysely.selectFrom(table).select('status').where('id', '=', id).limit(1).execute();
     return rows[0]?.status ?? null;
   } catch {
     return null;
@@ -923,67 +1052,21 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      let sql = `SELECT * FROM \`${tableName}\``;
-      const params = [];
-      
-      const filters = query || req.body.filters || {};
-      
-      if (filters && Object.keys(filters).length > 0) {
-        const clauses = [];
-        for (const [key, val] of Object.entries(filters)) {
-          if (val && typeof val === 'object' && !Array.isArray(val)) {
-            if (val.$gte !== undefined) {
-              clauses.push(`\`${key}\` >= ?`);
-              params.push(toSqlValue(val.$gte));
-            }
-            if (val.$lte !== undefined) {
-              clauses.push(`\`${key}\` <= ?`);
-              params.push(toSqlValue(val.$lte));
-            }
-          } else {
-            clauses.push(`\`${key}\` = ?`);
-            params.push(toSqlValue(val));
-          }
-        }
-        if (clauses.length > 0) {
-          sql += ` WHERE ${clauses.join(' AND ')}`;
-        }
-      }
-      
-      if (sort) {
-        if (typeof sort === 'string') {
-          const desc = sort.startsWith('-');
-          const field = desc ? sort.substring(1) : sort;
-          // `field` is interpolated into a backtick-quoted identifier in the
-          // ORDER BY clause below; validate it before interpolation to prevent
-          // a backtick/quote in the sort field breaking out of the identifier
-          // context (SQL injection). Prepared statements parameterize values,
-          // not identifiers, so this check is mandatory. Throws a 400 that the
-          // surrounding try/catch forwards via next(error).
-          assertValidIdentifier(field, 'Sortierfeld');
-          sql += ` ORDER BY \`${field}\` ${desc ? 'DESC' : 'ASC'}`;
-
-          if (field !== 'id') {
-            sql += `, \`id\` ASC`;
-          }
-        }
-      } else {
-        sql += ` ORDER BY \`id\` ASC`;
-      }
-      
-      if (limit && !isNaN(parseInt(limit))) {
-        sql += ` LIMIT ${parseInt(limit)}`;
-        if (skip && !isNaN(parseInt(skip))) {
-          sql += ` OFFSET ${parseInt(skip)}`;
-        }
-      }
-      
+      // SELECT through Kysely (PR 1.3) so the table name, sort field, AND every
+      // filter key are escaped centrally (closes the previously-unvalidated
+      // filter-key interpolation). Behavior matches the old hand-built SQL:
+      // equality / $gte / $lte filters, `id`-ASC default sort, optional
+      // limit/skip. The table-not-exist fallback is preserved below.
       try {
-        const safeParams = params.map(p => p === undefined ? null : p);
-        const [rows] = await dbPool.execute(sql, safeParams);
+        const rows = await filterRows(dbPool, tableName, {
+          filters: query || req.body.filters || {},
+          sort,
+          limit,
+          skip,
+        });
         return res.json(rows.map(fromSqlRow));
       } catch (err) {
-        console.error("List Execute Error:", err.message, "SQL:", sql);
+        console.error("List Execute Error:", err.message, "table:", tableName);
         if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
           console.warn(`Table ${tableName} doesn't exist, returning empty array`);
           return res.json([]);
@@ -1001,8 +1084,8 @@ router.post('/', async (req, res, next) => {
         return res.json(record);
       }
       
-      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
-      return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+      const row = await selectRow(dbPool, tableName, id);
+      return res.json(row ? fromSqlRow(row) : null);
     }
     
     // ===== CREATE =====
@@ -1139,14 +1222,13 @@ router.post('/', async (req, res, next) => {
         console.error(`CREATE failed: No valid columns for ${tableName}. Data keys:`, Object.keys(data), "Valid columns:", validColumns);
         return res.status(500).json({ error: `No valid columns found for table ${tableName}` });
       }
-      
-      const values = keys.map(k => toSqlValue(data[k]));
-      const placeholders = keys.map(() => '?').join(',');
-      const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
-      
+
       try {
-        const safeValues = values.map(v => v === undefined ? null : v);
-        await dbPool.execute(sql, safeValues);
+        // INSERT through Kysely so the table + column identifiers are escaped
+        // centrally (Phase 1, PR 1.1). Behavior matches the previous hand-built
+        // `INSERT INTO \`t\` (\`k\`,...) VALUES (?,...)` — same columns, same
+        // toSqlValue marshaling, ER_DUP_ENTRY propagates with .code intact.
+        await insertRow(dbPool, tableName, keys, data);
         if (isPlanSyncEntity(tableName)) {
           broadcastPlanUpdate({
             scope: realtimeScope,
@@ -1159,21 +1241,17 @@ router.post('/', async (req, res, next) => {
         await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
         return res.json(data);
       } catch (err) {
-        console.error(`CREATE error for ${tableName}:`, err.message, "SQL:", sql);
+        console.error(`CREATE error for ${tableName}:`, err.message, "keys:", keys);
 
         // Bei Workplace: Duplikat (Name bereits vergeben) → Name hochzählen und nochmal versuchen
         if (tableName === 'Workplace' && err.code === 'ER_DUP_ENTRY' && data.name) {
           const baseName = data.name;
-          let retryName = baseName;
           let counter = 2;
           while (counter <= 20) {
-            retryName = `${baseName} ${counter}`;
+            const retryName = `${baseName} ${counter}`;
             data.name = retryName;
-            values[keys.indexOf('name')] = toSqlValue(retryName);
-            const safeValuesRetry = values.map(v => v === undefined ? null : v);
             try {
-              await dbPool.execute(sql, safeValuesRetry);
-              data.name = retryName;
+              await insertRow(dbPool, tableName, keys, data);
               if (isPlanSyncEntity(tableName)) {
                 broadcastPlanUpdate({
                   scope: realtimeScope,
@@ -1201,7 +1279,7 @@ router.post('/', async (req, res, next) => {
         throw err;
       }
     }
-    
+
     // ===== UPDATE =====
     if (effectiveAction === 'update') {
       if (!id) return res.status(400).json({ error: "ID required for update" });
@@ -1249,7 +1327,7 @@ router.post('/', async (req, res, next) => {
 
         if (centralRouting.mode === 'central') {
           await deleteCentralAbsenceById(db, id);
-          const localPayload = { ...nextPayload, doctor_id: nextDoctorId };
+          const localPayload = { ...nextPayload, doctor_id: nextDoctorId, id };
           const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
           let keys = Object.keys(localPayload).filter((key) => key !== 'id');
           if (validColumns) {
@@ -1258,12 +1336,11 @@ router.post('/', async (req, res, next) => {
           if (keys.length === 0) {
             return res.json({ success: true });
           }
-          const values = keys.map((key) => toSqlValue(localPayload[key]));
-          await dbPool.execute(
-            `INSERT INTO \`ShiftEntry\` (\`id\`, ${keys.map((key) => `\`${key}\``).join(', ')}) VALUES (?, ${keys.map(() => '?').join(', ')})`,
-            [id, ...values]
-          );
-          const [rows] = await dbPool.execute('SELECT * FROM `ShiftEntry` WHERE id = ?', [id]);
+          // INSERT through Kysely (PR 1.2) — id + filtered keys, identifiers
+          // escaped centrally. Behavior matches the previous hand-built
+          // `INSERT INTO \`ShiftEntry\` (\`id\`, ...) VALUES (?, ...)`.
+          await insertRow(dbPool, 'ShiftEntry', ['id', ...keys], localPayload);
+          const row = await selectRow(dbPool, 'ShiftEntry', id);
           if (isPlanSyncEntity(tableName)) {
             broadcastPlanUpdate({
               scope: realtimeScope,
@@ -1273,7 +1350,7 @@ router.post('/', async (req, res, next) => {
               actor,
             });
           }
-          return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+          return res.json(row ? fromSqlRow(row) : null);
         }
       }
 
@@ -1292,15 +1369,13 @@ router.post('/', async (req, res, next) => {
       }
       
       if (keys.length === 0) return res.json({ success: true });
-      
-      const sets = keys.map(k => `\`${k}\` = ?`).join(',');
-      const values = keys.map(k => toSqlValue(data[k]));
-      values.push(id);
-      
-      const sql = `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`;
-      const safeValues = values.map(v => v === undefined ? null : v);
+
+      // UPDATE through Kysely (PR 1.2) so the table + column identifiers are
+      // escaped centrally. Behavior matches the previous hand-built
+      // `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`; ER_DUP_ENTRY propagates with
+      // .code intact for the Doctor-conflict handling below.
       try {
-        await dbPool.execute(sql, safeValues);
+        await updateRow(dbPool, tableName, keys, data, id);
       } catch (err) {
         if (tableName === 'Doctor' && err.code === 'ER_DUP_ENTRY') {
           const conflictResponse = await buildDoctorConflictResponse(dbPool, data, id);
@@ -1310,8 +1385,8 @@ router.post('/', async (req, res, next) => {
         }
         throw err;
       }
-      
-      const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
+
+      const row = await selectRow(dbPool, tableName, id);
       if (isPlanSyncEntity(tableName)) {
         broadcastPlanUpdate({
           scope: realtimeScope,
@@ -1321,7 +1396,7 @@ router.post('/', async (req, res, next) => {
           actor,
         });
       }
-      return res.json(rows[0] ? fromSqlRow(rows[0]) : null);
+      return res.json(row ? fromSqlRow(row) : null);
     }
     
     // ===== DELETE =====
@@ -1352,11 +1427,14 @@ router.post('/', async (req, res, next) => {
         }
       }
       
-      // Fetch record before deletion for logging
-      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [id]);
-      const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
-      
-      await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [id]);
+      // Fetch record before deletion for logging, then DELETE — both through
+      // Kysely (PR 1.2) so the table identifier is escaped centrally. Behavior
+      // matches the previous hand-built `SELECT * FROM \`t\` WHERE id = ?` /
+      // `DELETE FROM \`t\` WHERE id = ?`.
+      const existing = await selectRow(dbPool, tableName, id);
+      const deletedRecord = existing ? fromSqlRow(existing) : null;
+
+      await deleteRow(dbPool, tableName, id);
       
       // Write audit to SystemLog table
       const userEmail = req.user?.email || 'unknown';
@@ -1426,25 +1504,12 @@ router.post('/', async (req, res, next) => {
           const allKeys = new Set();
           processed.forEach((item) => Object.keys(item).forEach((key) => allKeys.add(key)));
           const keys = Array.from(allKeys);
-          const bulkConn = await dbPool.getConnection();
-          try {
-            await bulkConn.beginTransaction();
-            for (const item of processed) {
-              const values = keys.map((key) => toSqlValue(item[key]));
-              await bulkConn.execute(
-                `INSERT INTO \`ShiftEntry\` (\`${keys.join('`,`')}\`) VALUES (${keys.map(() => '?').join(',')})`,
-                values
-              );
-            }
-            await bulkConn.commit();
-          } catch (bulkErr) {
-            try { await bulkConn.rollback(); } catch (rollbackErr) {
-              console.error('[DB Proxy] bulkCreate rollback failed:', rollbackErr.message);
-            }
-            throw bulkErr;
-          } finally {
-            bulkConn.release();
-          }
+          // Bulk INSERT through Kysely in a single transaction (PR 1.5) — table
+          // + column identifiers escaped centrally, whole batch atomic. NOTE:
+          // this ShiftEntry-local branch intentionally does NOT filter keys via
+          // getValidColumns (pre-existing behavior preserved); the generic
+          // branch below does.
+          await bulkInsert(dbPool, 'ShiftEntry', keys, processed);
           createdRows.push(...processed);
         }
 
@@ -1536,25 +1601,12 @@ router.post('/', async (req, res, next) => {
       // Insert each item individually inside a transaction so that a mid-batch
       // failure leaves no partial data. This prevents the UI from rolling back
       // an optimistic update while the server has already persisted some rows.
-      const bulkConn = await dbPool.getConnection();
-      try {
-        await bulkConn.beginTransaction();
-        for (const item of processed) {
-          const values = keys.map(k => toSqlValue(item[k]));
-          const placeholders = keys.map(() => '?').join(',');
-          const sql = `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`;
-          const safeValues = values.map(v => v === undefined ? null : v);
-          await bulkConn.execute(sql, safeValues);
-        }
-        await bulkConn.commit();
-      } catch (bulkErr) {
-        try { await bulkConn.rollback(); } catch (rollbackErr) {
-          console.error('[DB Proxy] bulkCreate rollback failed:', rollbackErr.message);
-        }
-        throw bulkErr;
-      } finally {
-        bulkConn.release();
-      }
+      // Bulk INSERT through Kysely in a single transaction (PR 1.5) — table +
+      // column identifiers escaped centrally, whole batch atomic (a mid-batch
+      // failure rolls back every row, matching the previous raw-connection
+      // beginTransaction/commit/rollback loop). `keys` are already filtered via
+      // getValidColumns above.
+      await bulkInsert(dbPool, tableName, keys, processed);
 
       if (isPlanSyncEntity(tableName)) {
         broadcastPlanUpdate({

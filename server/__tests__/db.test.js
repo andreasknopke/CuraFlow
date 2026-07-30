@@ -116,6 +116,137 @@ describe('mysql2/promise ↔ callback bridge — result extraction parity', () =
   });
 });
 
+describe('insertInto — create path through Kysely (PR 1.1)', () => {
+  // dbProxy's generic create path now uses insertRow → kysely.insertInto.
+  // insertRow lives in dbProxy.js (un-importable here), so these tests pin the
+  // underlying primitive: the generated INSERT escapes the table + column
+  // identifiers and binds values in insertion order. Parity with the old
+  // hand-built `INSERT INTO \`t\` (\`k\`,...) VALUES (?,...)`.
+  it('generates a backtick-escaped INSERT with values in insertion order', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.insertInto('Doctor').values({
+      id: 'd1',
+      name: 'Dr A',
+      is_active: 1,
+      created_date: '2026-07-29',
+    }).executeTakeFirst();
+
+    expect(executed[0].sql).toBe('insert into `Doctor` (`id`, `name`, `is_active`, `created_date`) values (?, ?, ?, ?)');
+    expect(executed[0].params).toEqual(['d1', 'Dr A', 1, '2026-07-29']);
+  });
+
+  it('escapes a malicious table name (doubled backtick) instead of breaking out', async () => {
+    // assertValidIdentifier rejects this upstream; this pins the builder's own
+    // escaping as the primary control. The injected backtick is doubled (``)
+    // so "values (1)" becomes inert text INSIDE the table-name identifier — the
+    // real VALUES clause is separate and has a single placeholder.
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.insertInto('evil` values (1)').values({ id: 'x' }).executeTakeFirst();
+    // The whole malicious name is one backtick-quoted identifier with the
+    // inner backtick doubled:
+    expect(executed[0].sql).toBe('insert into `evil`` values (1)` (`id`) values (?)');
+    // ...and there is exactly ONE real VALUES clause (one placeholder), so the
+    // injected "values (1)" did not create a second clause / inject a row.
+    expect(executed[0].params).toEqual(['x']);
+  });
+
+  it('propagates ER_DUP_ENTRY with .code intact (Workplace-retry / Doctor-conflict rely on it)', async () => {
+    const dupErr = Object.assign(new Error('Duplicate entry'), { code: 'ER_DUP_ENTRY' });
+    const { pool } = recordingPool([], { throwError: dupErr });
+    const kysely = createKysely(pool);
+    await expect(
+      kysely.insertInto('Workplace').values({ id: 'w1', name: 'X' }).executeTakeFirst(),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+  });
+});
+
+describe('updateTable / deleteFrom / selectFrom — update & delete paths (PR 1.2)', () => {
+  // dbProxy's update/delete paths now use updateRow/deleteRow/selectRow (which
+  // call kysely.updateTable/deleteFrom/selectFrom). These pin the generated SQL
+  // shapes — identifiers backtick-escaped, values bound, ER_DUP_ENTRY preserved.
+
+  it('updateTable generates backtick-escaped UPDATE ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.updateTable('Doctor').set({ name: 'Dr B', is_active: 0 }).where('id', '=', 'd1').executeTakeFirst();
+    expect(executed[0].sql).toBe('update `Doctor` set `name` = ?, `is_active` = ? where `id` = ?');
+    expect(executed[0].params).toEqual(['Dr B', 0, 'd1']);
+  });
+
+  it('deleteFrom generates backtick-escaped DELETE ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.deleteFrom('Doctor').where('id', '=', 'd1').executeTakeFirst();
+    expect(executed[0].sql).toBe('delete from `Doctor` where `id` = ?');
+    expect(executed[0].params).toEqual(['d1']);
+  });
+
+  it('selectFrom generates backtick-escaped SELECT * ... WHERE id = ?', async () => {
+    const { pool, executed } = recordingPool([{ id: 'd1', name: 'Dr A' }]);
+    const kysely = createKysely(pool);
+    const rows = await kysely.selectFrom('Doctor').selectAll().where('id', '=', 'd1').limit(1).execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` where `id` = ? limit ?');
+    expect(executed[0].params).toEqual(['d1', 1]);
+    expect(rows[0].name, 'select returns the row').toBe('Dr A');
+  });
+
+  it('updateTable escapes a malicious table name (doubled backtick, no breakout)', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.updateTable('evil` WHERE 1=1').set({ name: 'x' }).where('id', '=', 'd1').executeTakeFirst();
+    // The injected backtick is doubled → "WHERE 1=1" is inert text inside the
+    // table identifier; the real WHERE is the legitimate `id = ?`.
+    expect(executed[0].sql).toBe('update `evil`` WHERE 1=1` set `name` = ? where `id` = ?');
+    expect(executed[0].params).toEqual(['x', 'd1']);
+  });
+});
+
+describe('selectFrom with dynamic WHERE — list/filter path (PR 1.3)', () => {
+  // dbProxy's list/filter path now builds a Kysely query where EVERY filter key
+  // is escaped via sql.ref(key). This closes the previously-unvalidated
+  // filter-key interpolation hole (a backtick in a filter key could break out
+  // of the `\`{key}\`` identifier context). These pin the generated SQL.
+
+  it('builds a WHERE with escaped equality + range operators ($gte/$lte)', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    let q = kysely.selectFrom('ShiftEntry').selectAll();
+    const filters = { doctor_id: 'd1', date: { $gte: '2026-05-01', $lte: '2026-05-31' } };
+    for (const [key, val] of Object.entries(filters)) {
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        if (val.$gte !== undefined) q = q.where(sql.ref(key), '>=', val.$gte);
+        if (val.$lte !== undefined) q = q.where(sql.ref(key), '<=', val.$lte);
+      } else {
+        q = q.where(sql.ref(key), '=', val);
+      }
+    }
+    await q.execute();
+    expect(executed[0].sql).toBe('select * from `ShiftEntry` where `doctor_id` = ? and `date` >= ? and `date` <= ?');
+    expect(executed[0].params).toEqual(['d1', '2026-05-01', '2026-05-31']);
+  });
+
+  it('escapes a malicious filter key (doubled backtick, no breakout)', async () => {
+    // The injection that was possible before PR 1.3: a filter key like
+    // "evil`=1 OR 1" used to close the identifier and inject a tautology.
+    // sql.ref doubles the backtick so it stays one identifier.
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.selectFrom('Doctor').selectAll().where(sql.ref('evil`=1 OR 1'), '=', 'x').execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` where `evil``=1 OR 1` = ?');
+    expect(executed[0].params).toEqual(['x']);
+  });
+
+  it('applies sort (desc) + secondary id, and limit/offset as parameters', async () => {
+    const { pool, executed } = recordingPool([]);
+    const kysely = createKysely(pool);
+    await kysely.selectFrom('Doctor').selectAll().orderBy('name', 'desc').orderBy('id', 'asc').limit(100).offset(10).execute();
+    expect(executed[0].sql).toBe('select * from `Doctor` order by `name` desc, `id` asc limit ? offset ?');
+    expect(executed[0].params).toEqual([100, 10]);
+  });
+});
+
 describe('assertValidIdentifier — defence-in-depth still gates the builder', () => {
   // The primary control is now Kysely's escaping, but assertValidIdentifier at
   // the route entry still rejects invalid names first (cleaner 400 vs. a weird

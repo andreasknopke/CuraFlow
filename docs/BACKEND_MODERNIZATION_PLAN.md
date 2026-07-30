@@ -119,29 +119,55 @@ Deliverable: a running spike PR, merged, with zero behavior change on that one p
 
 > **Status (2026-07-29):** ✅ Complete. Adapter at `server/utils/db.js` (`createKysely`), `getValidColumns` (`dbProxy.js`) now routes `SHOW COLUMNS FROM ${sql.id(tableName)}` through Kysely — generated SQL byte-identical, identifier escaped centrally. **Spike finding (important for PRs 1.1+):** Kysely's `MysqlDialect` expects the *callback-style* `mysql2` module, but CuraFlow uses `mysql2/promise` (promise-only) — passing a promise pool straight to Kysely **hangs** (the callback never fires). The adapter therefore includes a `bridgePool` that adapts `getConnection`/`connection.query` to callback form and extracts `rows` from mysql2/promise's `[rows, fields]` resolution. This bridge is reused by every later Phase 1 PR. Verified: 858 unit/component tests pass, 8 new `server/__tests__/db.test.js` tests cover the adapter/escaping/bridge parity, and the full e2e suite (55 passed / 0 failed) confirms zero behavior change on the live backend. **Open follow-up:** Kysely-issued queries bypass `wrapPoolWithRetry` (that wraps pool `.execute`/`.query`, not the bridged connection); revisit when migrating write paths that need transient-error retry.
 
-#### PR 1.1 — `dbProxy` create path through the builder
+#### PR 1.1 — `dbProxy` create path through the builder — ✅ DONE (generic create only)
 
 Move `create` (the `INSERT INTO \`{tableName}\`` path) behind a Kysely-backed helper. Keep `assertValidIdentifier` as defence-in-depth; the builder is now the primary control. The grep gate fires for the first time here: `grep -n '${tableName}' server/routes/dbProxy.js` must show only the builder-asserted entry, no raw interpolation.
 
 **Risk: Medium.** Write path, exercised by E2E + unit tests. Run the full `unit` suite (643 tests) + the renamePosition / atomic / tenant suites.
 
-#### PR 1.2 — `dbProxy` update / delete paths
+> **Status (2026-07-29):** ✅ Complete for the **generic create** INSERT. New `insertRow(dbPool, tableName, keys, data)` helper in `dbProxy.js` runs `kysely.insertInto(tableName).values(row)` — table + column identifiers escaped centrally, `toSqlValue` marshaling preserved, `ER_DUP_ENTRY` propagates with `.code` intact (so Workplace name-increment retry + Doctor-conflict handling work unchanged). 861 unit/component tests pass; 3 new insert-parity tests in `server/__tests__/db.test.js`; full e2e suite **55 passed / 0 failed** (vacation creates a ShiftEntry, staff creates/edits/deletes Doctors — both exercise the migrated create path). Grep gate: the generic-create hand-built INSERT is gone; remaining hand-built INSERT sites are `:1276` (the update-path ShiftEntry reinsert → PR 1.2), `:1448`/`:1558` (bulkCreate → deferred), and the constant-SQL helpers (`:46`, `:671`).
+>
+> **Deferred from PR 1.1:** **bulkCreate** (`:1448` ShiftEntry-local, `:1558` generic) is transactional (raw-connection `beginTransaction/commit/rollback`); Kysely's `transaction().execute(trx => ...)` is structurally different, and **bulkCreate has no direct e2e assertion** (only indirectly via the auto-fill UI flow). Migrating its transaction structure without coverage would violate "every change traced to verified behavior," so it is deferred to a follow-up that first adds a bulkCreate e2e test. The bulkCreate ShiftEntry-local flagged gap (keys not passed through `getValidColumns`) is pre-existing and stays open until that migration.
+
+#### PR 1.2 — `dbProxy` update / delete paths — ✅ DONE (SQL migration only)
 
 Same as 1.1 for `update` (`UPDATE \`{tableName}\` SET ...`) and `delete`. These also carry the ShiftEntry partial-update gap (Finding S5 of the system review) — when moving `update`, fix the position lookup to fetch the existing record's `position` when `data.position` is absent (mirror the `delete` path / atomic guard).
 
 **Risk: Medium.** Write paths. The S5 fix is a correctness improvement folded in.
 
-#### PR 1.3 — `dbProxy` list / filter / get paths
+> **Status (2026-07-29):** ✅ Complete for the SQL-construction migration. New helpers in `dbProxy.js`: `updateRow`, `deleteRow`, `selectRow` (mirror `insertRow`) — all route identifiers through Kysely. Migrated: the generic UPDATE + its read-back SELECT, the DELETE pre-fetch SELECT + DELETE, and the update-path ShiftEntry central→tenant reinsert INSERT (now via `insertRow`). 865 unit/component tests pass; 4 new update/delete/select parity tests in `server/__tests__/db.test.js`; full e2e **55 passed / 0 failed** (staff edits+deletes Doctors, security updates ShiftEntry, vacation/wishlist update). Grep gate: zero `${tableName}` UPDATE/DELETE/SELECT interpolation remains; the only residual hand-built INSERTs are the two bulkCreate branches (deferred).
+>
+> **Deviation from the plan (recorded):** the plan called for folding in the **S5 ShiftEntry partial-position bypass fix** here. This PR deliberately did **not** change the position-lookup logic — it is a behavior change (a guard that currently allows would now deny), not a SQL-construction change, and folding a behavior change into a refactor PR risks conflating the two. S5 remains open and should be a focused, separately-reviewed fix (the e2e security spec already pins the current guard behavior).
+
+#### PR 1.3 — `dbProxy` list / filter / get paths — ✅ DONE
 
 Move reads through the builder. The `filter` query operators (`$gte`/`$lte`/`$gt`/`$lt`/`$in`/`$ne`) move into the builder's `where` builder, where Kysely escapes the column identifier (the `$ne`-short-circuits-range edge case noted in the review is naturally resolved by a per-condition `where` chain).
 
 **Risk: Low.** Read-only. Good place to add the tenant-pool-isolation test (Decision "Tenant-pool coupling").
 
-#### PR 1.4 — `atomic.js` through the builder
+> **Status (2026-07-29):** ✅ Complete. New `filterRows` helper in `dbProxy.js` builds `kysely.selectFrom(tableName).selectAll()` with a dynamic WHERE where **every filter key is escaped via `sql.ref(key)`** — closing the previously-unvalidated filter-key interpolation hole (the one read-path site `getValidColumns`-style filtering did not cover). The generic `get` path now uses the existing `selectRow`. Supports the same operators as before: equality, `$gte`, `$lte`. Sort field validated by `assertValidIdentifier` (defence-in-depth; Kysely escapes it too). `limit`/`offset` now bind as parameters (was `parseInt` interpolation — equivalent and safer). The `ER_NO_SUCH_TABLE` → empty-array fallback is preserved. 868 unit/component tests pass; 3 new list/filter parity tests in `server/__tests__/db.test.js` (incl. malicious-filter-key escaping); full e2e **55 passed / 0 failed** (`schedule-core` exercises `$gte`/`$lte` date ranges on ShiftEntry; training/admin/realtime/staff all use `dbFilter`).
+>
+> **Note:** the plan mentioned `$gt`/`$lt`/`$in`/`$ne` operators, but the original code only ever implemented `$gte`/`$lte`/equality (the others were never wired — confirmed in the Phase 1.0 exploration). This PR preserves exact behavior: those four operators remain unimplemented as before; adding them would be a net-new feature, not a migration.
+
+#### PR 1.4 — `atomic.js` through the builder — ✅ DONE
 
 `atomic.js` interpolates `entity` into `SELECT * FROM`/`UPDATE`/`DELETE FROM` in its `getRecord`/`updateRecord`/`createRecord`/`deleteRecord` helpers. Route them through the same builder helpers 1.1–1.3 introduced. `assertValidIdentifier(entity)` stays as defence-in-depth at the operation entry.
 
 **Risk: Medium.** `atomic` handles optimistic locking (`check.updated_date`); preserve that check exactly — type annotations + builder, **zero logic changes** in the compare-and-set path.
+
+> **Status (2026-07-29):** ✅ Complete. All 5 closure helpers in `atomic.js` (`getRecord`, `filterRecords`, `createRecord`, `updateRecord`, `deleteRecord`) now route SQL through Kysely via the shared `createKysely` adapter — table + column identifiers escaped centrally; `filterRecords`' previously-unvalidated filter keys are now escaped via `sql.ref(key)` (same hole dbProxy's list/filter had). The helpers stay closures (capturing `dbPool`/`tenantId`/`req`) — no shared-util extraction (atomic's helpers have genuine differences: no `getValidColumns` filtering, equality-only filters); deduplication is deferred to Phase 2 (typed repositories). `assertValidIdentifier(entity)` at the operation entry stays as defence-in-depth. The optimistic-locking compare-and-set logic is unchanged. 868 unit/component tests pass; **new dedicated e2e spec** `e2e/specs/atomic/atomic-workflows.spec.ts` (3 tests, covering checkAndCreate + duplicate rejection, checkAndUpdate + concurrency detection, upsertStaffing create→update→delete) — `/api/atomic` previously had NO direct e2e coverage; full e2e **61 passed / 0 failed**.
+>
+> **Out of scope (correctly):** `replaceTrainingRotationRange` uses constant `TrainingRotation` literals (no user-input identifiers) and is transactional with `FOR UPDATE` row-locking — left as-is, like bulkCreate.
+
+---
+
+#### PR 1.5 — `dbProxy` bulkCreate + residual sites (closes S1 fully) — ✅ DONE
+
+The bulkCreate branches deferred from PR 1.1, plus the last residual hand-built interpolation site (`loadStatusForId`).
+
+> **Status (2026-07-29):** ✅ Complete — **this closes S1**. **Test-first:** wrote `e2e/specs/bulk/bulk-create-workflows.spec.ts` (3 tests: atomic batch insert, mid-batch rollback, empty-array short-circuit) and confirmed them green against the *un-migrated* code before touching anything. Then migrated both bulkCreate branches (ShiftEntry-local + generic) to a new `bulkInsert(dbPool, tableName, keys, rows)` helper that runs `kysely.transaction().execute(trx => { for each row: trx.insertInto(...) })` — table + column identifiers escaped centrally, whole batch atomic (Kysely issues BEGIN/COMMIT/ROLLBACK via `executeQuery`, handled by the bridge). Also migrated `loadStatusForId` (the last `${table}` site). The ShiftEntry-local branch's pre-existing no-`getValidColumns` behavior is preserved exactly (not a regression-introducing fix). **Grep gate: zero `${tableName}`/`${table}`/`${key}` interpolation remains in dbProxy** — only constant-SQL helpers (`WorkplaceTimeslot`, `SystemLog`) with literal columns. 868 unit/component tests pass; full e2e **67 passed / 0 failed** (the bulkCreate rollback test proves the Kysely transaction preserves atomicity).
+>
+> **Key risk resolved:** the bridge supports Kysely transactions — confirmed by the rollback e2e test (a mid-batch PK collision rolls back the whole batch, exactly as before).
 
 ---
 

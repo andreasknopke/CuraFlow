@@ -14,6 +14,8 @@ import {
 } from '../utils/centralAbsences.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { assertValidIdentifier } from '../utils/schema.js';
+import { createKysely } from '../utils/db.js';
+import { sql } from 'kysely';
 
 const router = express.Router();
 
@@ -87,10 +89,9 @@ router.post('/', async (req, res, next) => {
 
     // Helper: Get single record
     const getRecord = async (tableName, recordId) => {
-      const [rows] = await dbPool.execute(
-        `SELECT * FROM \`${tableName}\` WHERE id = ?`, 
-        [recordId]
-      );
+      // SELECT through Kysely (PR 1.4) — table identifier escaped centrally.
+      const kysely = createKysely(dbPool);
+      const rows = await kysely.selectFrom(tableName).selectAll().where('id', '=', recordId).limit(1).execute();
       return rows[0] ? fromSqlRow(rows[0]) : null;
     };
 
@@ -111,17 +112,16 @@ router.post('/', async (req, res, next) => {
         });
       }
 
-      const clauses = [];
-      const params = [];
+      // SELECT through Kysely (PR 1.4) — table + EVERY filter key escaped
+      // centrally via sql.ref(key). This closes the previously-unvalidated
+      // filter-key interpolation (atomic's filterRecords was equality-only and
+      // interpolated `\`${key}\`` with no escaping). Values bound as params.
+      const kysely = createKysely(dbPool);
+      let query = kysely.selectFrom(tableName).selectAll();
       for (const [key, val] of Object.entries(filter)) {
-        clauses.push(`\`${key}\` = ?`);
-        params.push(toSqlValue(val));
+        query = query.where(sql.ref(key), '=', toSqlValue(val));
       }
-      const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
-      const [rows] = await dbPool.execute(
-        `SELECT * FROM \`${tableName}\`${whereClause}`, 
-        params
-      );
+      const rows = await query.execute();
       return rows.map(fromSqlRow);
     };
 
@@ -146,14 +146,16 @@ router.post('/', async (req, res, next) => {
       createData.updated_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
       createData.created_by = userEmail;
 
-      const keys = Object.keys(createData);
-      const values = keys.map(k => toSqlValue(createData[k]));
-      const placeholders = keys.map(() => '?').join(',');
-      
-      await dbPool.execute(
-        `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`, 
-        values
-      );
+      // INSERT through Kysely (PR 1.4) — table + column identifiers escaped
+      // centrally. Behavior matches the previous hand-built
+      // `INSERT INTO \`t\` (\`k\`,...) VALUES (?,...)`.
+      const kysely = createKysely(dbPool);
+      const row = {};
+      for (const k of Object.keys(createData)) {
+        const v = toSqlValue(createData[k]);
+        row[k] = v === undefined ? null : v;
+      }
+      await kysely.insertInto(tableName).values(row).executeTakeFirst();
       return createData;
     };
 
@@ -178,27 +180,29 @@ router.post('/', async (req, res, next) => {
         if (current && isCentralAbsencePosition(current.position) && !isCentralAbsencePosition(nextPosition)) {
           await deleteCentralAbsenceById(db, recordId);
           const replacement = { ...current, ...updateData, id: recordId };
-          const keys = Object.keys(replacement);
-          const values = keys.map((key) => toSqlValue(replacement[key]));
-          const placeholders = keys.map(() => '?').join(',');
-          await dbPool.execute(
-            `INSERT INTO \`${tableName}\` (\`${keys.join('`,`')}\`) VALUES (${placeholders})`,
-            values
-          );
+          // INSERT through Kysely (PR 1.4) — identifiers escaped centrally.
+          const kyselyIns = createKysely(dbPool);
+          const insRow = {};
+          for (const key of Object.keys(replacement)) {
+            const v = toSqlValue(replacement[key]);
+            insRow[key] = v === undefined ? null : v;
+          }
+          await kyselyIns.insertInto(tableName).values(insRow).executeTakeFirst();
           return await getShiftAwareRecord(tableName, recordId);
         }
       }
 
       updateData.updated_date = new Date().toISOString().slice(0, 19).replace('T', ' ');
-      const keys = Object.keys(updateData).filter(k => k !== 'id');
-      const sets = keys.map(k => `\`${k}\` = ?`).join(',');
-      const values = keys.map(k => toSqlValue(updateData[k]));
-      values.push(recordId);
-      
-      await dbPool.execute(
-        `UPDATE \`${tableName}\` SET ${sets} WHERE id = ?`, 
-        values
-      );
+      // UPDATE through Kysely (PR 1.4) — table + column identifiers escaped
+      // centrally. Behavior matches the previous hand-built
+      // `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`.
+      const kysely = createKysely(dbPool);
+      const setObj = {};
+      for (const k of Object.keys(updateData).filter(k => k !== 'id')) {
+        const v = toSqlValue(updateData[k]);
+        setObj[k] = v === undefined ? null : v;
+      }
+      await kysely.updateTable(tableName).set(setObj).where('id', '=', recordId).executeTakeFirst();
       return await getShiftAwareRecord(tableName, recordId);
     };
 
@@ -215,11 +219,15 @@ router.post('/', async (req, res, next) => {
         }
       }
 
-      // Fetch record before deletion for audit log
-      const [existingRows] = await dbPool.execute(`SELECT * FROM \`${tableName}\` WHERE id = ?`, [recordId]);
+      // Fetch record before deletion for audit log, then DELETE — both through
+      // Kysely (PR 1.4) so the table identifier is escaped centrally. Behavior
+      // matches the previous hand-built `SELECT * FROM \`t\` WHERE id = ?` /
+      // `DELETE FROM \`t\` WHERE id = ?`.
+      const kysely = createKysely(dbPool);
+      const existingRows = await kysely.selectFrom(tableName).selectAll().where('id', '=', recordId).limit(1).execute();
       const deletedRecord = existingRows[0] ? fromSqlRow(existingRows[0]) : null;
-      
-      await dbPool.execute(`DELETE FROM \`${tableName}\` WHERE id = ?`, [recordId]);
+
+      await kysely.deleteFrom(tableName).where('id', '=', recordId).executeTakeFirst();
       
       // Write audit to SystemLog table
       const timestamp = new Date().toISOString();

@@ -18,8 +18,8 @@ Severity legend: **HIGH** (exploitable, real-world impact), **MEDIUM** (exploita
 
 ## Finding S1 — SQL injection via unsanitized table identifier in `/api/db`
 
-**Severity:** HIGH — **partially mitigated (2026-07-29); full structural fix in progress (Phase 1)**
-> The structural primitive is now in place: a Kysely adapter (`server/utils/db.js`, `createKysely`) routes identifiers through central `sql.id()` escaping, and one site (`getValidColumns`) is migrated as the Phase 1 PR 1.0 spike. The remaining generic-CRUD interpolation sites (create/update/delete/list-filter in `dbProxy.js`, plus `atomic.js`) still hand-build backtick strings and are migrated in Phase 1 PRs 1.1–1.4; until then `assertValidIdentifier` at the route entry remains the live guard. S1 is closed only when the per-PR grep gate shows zero residual hand-interpolated identifiers.
+**Severity:** HIGH — ✅ **Closed (2026-07-29) — structural fix complete (Phase 1)**
+> S1 is structurally closed. Every dynamic-identifier SQL site in `dbProxy.js` and `atomic.js` now routes through the Kysely adapter (`server/utils/db.js`, `createKysely` + mysql2/promise callback bridge), so table names, column names, sort fields, and **filter keys** are escaped centrally — a backtick in any of them can no longer break out of the identifier context. `assertValidIdentifier` at the route entries remains as defence-in-depth. Migrated across Phase 1 PRs 1.0–1.5: `getValidColumns`, generic create (`insertRow`), update/delete/read-back (`updateRow`/`deleteRow`/`selectRow`), list/filter/get (`filterRows` — closed the filter-key hole), `atomic.js`'s 5 helpers (closed atomic's filter-key hole), and `bulkCreate` (`bulkInsert` via `kysely.transaction().execute`). The per-PR grep gate now shows **zero** `${tableName}`/`${key}` interpolation in either route.
 **Location:** `server/routes/dbProxy.js` — `tableName = entity || table` (line 681), interpolated into backtick-quoted SQL at lines ~844, 915, 1042/1056, 1189/1202, 1216, 1258, 1261; `getValidColumns` `SHOW COLUMNS FROM \`{tableName}\`` (line 111).
 
 ### Root cause
@@ -411,7 +411,7 @@ These defensive measures are present and active in the codebase (not numbered fi
 - ✅ **File upload hardening** — `server/routes/certificates.js:35–53`: multer with a MIME allowlist, size limit, and filename sanitization on the certificate upload path.
 - ✅ **CORS origin policy (Finding S5)** — `server/index.js` now rejects unknown origins (`callback(null, false)`).
 - ✅ **Sort-field identifier validation (related to S1 class)** — `server/routes/dbProxy.js` now calls `assertValidIdentifier()` on the sort field before `ORDER BY` interpolation.
-- 🔧 **S1 structural primitive (Phase 1 PR 1.0)** — Kysely adapter `server/utils/db.js` (`createKysely` + `mysql2/promise` callback bridge) routes identifiers through central `sql.id()` escaping; `getValidColumns` migrated as the spike. S1 itself stays open until the generic-CRUD sites migrate in Phase 1 PRs 1.1–1.4 (per-PR grep gate).
+- ✅ **S1 closed (Phase 1 PRs 1.0–1.5)** — Kysely adapter `server/utils/db.js` (`createKysely` + `mysql2/promise` callback bridge) routes all dynamic-identifier SQL through central escaping. Every site in `dbProxy.js` (create/update/delete/list/filter/get/bulkCreate/loadStatusForId) and `atomic.js` (all 5 helpers) is migrated. **Both filter-key injection holes closed** via `sql.ref`; **bulkCreate** migrated via `kysely.transaction().execute` (atomicity verified by a new e2e rollback test). Per-PR grep gate shows zero residual hand-built identifier interpolation. `assertValidIdentifier` remains as defence-in-depth.
 - ✅ **Encryption key no longer logged** — `server/utils/crypto.js` no longer prints the `JWT_SECRET` SHA-256 hash prefix.
 - ✅ **`dbName` identifier validation (Finding S10)** — `admin.js` `create-database` and `check-database` routes now reject non-identifier database names before `CREATE DATABASE`/`USE` interpolation.
 - ✅ **Generic client error messages (Finding S12)** — `admin.js` no longer returns raw `err.message`/`connErr.message` to the client on the four error paths (`check`, `db-tokens/test`, `check-database`, `create-database`); technical detail is server-log-only.
@@ -419,7 +419,7 @@ These defensive measures are present and active in the codebase (not numbered fi
 - ✅ **DB-backed permission gates (Finding S7)** — dbProxy + both atomic write guards re-read `role`/`is_active`/`permissions` from the DB row via `checkAdminPermission`; deactivated/demoted admins are denied immediately instead of for up to `TOKEN_EXPIRY`.
 - ✅ **`isServicePosition` fail-closed (ADMIN F6)** — dbProxy + atomic `isServicePosition` now treat a DB lookup error as "protected", so a transient error can no longer bypass the `can_edit_schedule` check.
 
-> Note: Items above marked ✅ are *present and verified* controls / fixed findings. The remaining open numbered findings are **S1, S3, S4, S6, S8, S9, and S11**. S1 (table-identifier injection) and ADMIN F5 are closed structurally by the upcoming Phase 1 query-builder migration. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
+> Note: Items above marked ✅ are *present and verified* controls / fixed findings. **S1 is now closed** (Phase 1 query-builder migration complete). The remaining open numbered findings are **S3, S4, S6, S8, S9, S11, and ADMIN F5**. ADMIN F5 (ShiftEntry partial-position bypass) is a behavior change deferred to a focused fix. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
 
 ## Scope and limits
 
