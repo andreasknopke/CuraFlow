@@ -1,40 +1,58 @@
 import express from 'express';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import ical from 'ical-generator';
+import ical, { ICalCalendarMethod } from 'ical-generator';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
+import type { EmailAttachment } from '../utils/email.js';
 import { sendEmail, getTransporter, getEmailProviderInfo } from '../utils/email.js';
 import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
+import type { Employee } from '../utils/masterEmployeeWorkSettings.js';
 import { resolveEmployeeTargetWeeklyHours } from '../utils/masterEmployeeWorkSettings.js';
 import {
   migrateTenantDoctorAbsencesToCentral,
   seedTenantDoctorAbsencesFromCentral,
 } from '../utils/centralAbsences.js';
 
+interface CuraRequest extends Request {
+  db: Pool;
+  dbToken?: string;
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    [key: string]: unknown;
+  };
+}
+
 const router = express.Router();
 router.use(authMiddleware);
 
 // ===== GET STAFF LIST =====
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const dbPool = req.db || db;
-    const [rows] = await dbPool.execute('SELECT * FROM Doctor ORDER BY name');
+    const curaReq = req as unknown as CuraRequest;
+    const dbPool = curaReq.db || db;
+    const [rows] = await dbPool.execute('SELECT * FROM Doctor ORDER BY name') as [RowDataPacket[], unknown];
     res.json(rows);
   } catch (error) {
     next(error);
   }
 });
 
-router.get('/central-employees', async (req, res, next) => {
+router.get('/central-employees', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    const curaReq = req as unknown as CuraRequest;
+    const tenantId = await resolveTenantIdFromToken(db, curaReq.dbToken);
     if (!tenantId) {
-      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      return;
     }
 
     // Tenant-verknüpfte Kostenstellen abrufen
-    let tenantCostCenters = [];
+    let tenantCostCenters: RowDataPacket[] = [];
     try {
       const [ccRows] = await db.execute(
         `SELECT cc.code, cc.name
@@ -43,13 +61,13 @@ router.get('/central-employees', async (req, res, next) => {
           WHERE tcc.tenant_id = ?
           ORDER BY cc.code`,
         [tenantId]
-      );
+      ) as [RowDataPacket[], unknown];
       tenantCostCenters = ccRows;
     } catch {
       // Tabellen existieren ggf. noch nicht
     }
 
-    const { cost_center } = req.query;
+    const cost_center = req.query.cost_center as string | undefined;
 
     let sql = `
       SELECT e.id, e.first_name, e.last_name, e.target_hours_per_week, e.work_time_model_id,
@@ -65,7 +83,7 @@ router.get('/central-employees', async (req, res, next) => {
          AND eta.tenant_id = ?
        WHERE e.is_active = 1
     `;
-    const params = [tenantId];
+    const params: unknown[] = [tenantId];
 
     if (cost_center) {
       sql += ' AND e.cost_center = ?';
@@ -74,12 +92,12 @@ router.get('/central-employees', async (req, res, next) => {
 
     sql += ' ORDER BY e.last_name ASC, e.first_name ASC';
 
-    const [rows] = await db.execute(sql, params);
+    const [rows] = await db.execute(sql, params) as [RowDataPacket[], unknown];
 
     res.json({
-      employees: rows.map((row) => ({
+      employees: rows.map((row: RowDataPacket) => ({
         ...row,
-        target_hours_per_week: resolveEmployeeTargetWeeklyHours(row),
+        target_hours_per_week: resolveEmployeeTargetWeeklyHours(row as unknown as Employee),
         is_linked_to_current_tenant: !!row.tenant_doctor_id,
       })),
       tenantCostCenters,
@@ -89,18 +107,21 @@ router.get('/central-employees', async (req, res, next) => {
   }
 });
 
-router.post('/central-link', requirePermission('can_link_employees'), async (req, res, next) => {
+router.post('/central-link', requirePermission('can_link_employees'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    const curaReq = req as unknown as CuraRequest;
+    const tenantId = await resolveTenantIdFromToken(db, curaReq.dbToken);
     if (!tenantId) {
-      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      return;
     }
 
-    const dbPool = req.db || db;
+    const dbPool = curaReq.db || db;
     const { employee_id, doctor_id } = req.body || {};
 
     if (!employee_id || !doctor_id) {
-      return res.status(400).json({ error: 'employee_id und doctor_id sind erforderlich' });
+      res.status(400).json({ error: 'employee_id und doctor_id sind erforderlich' });
+      return;
     }
 
     const [employeeRows] = await db.execute(
@@ -109,17 +130,19 @@ router.post('/central-link', requirePermission('can_link_employees'), async (req
          LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
         WHERE e.id = ? AND e.is_active = 1`,
       [employee_id]
-    );
+    ) as [RowDataPacket[], unknown];
     if (employeeRows.length === 0) {
-      return res.status(404).json({ error: 'Zentraler Mitarbeiter nicht gefunden' });
+      res.status(404).json({ error: 'Zentraler Mitarbeiter nicht gefunden' });
+      return;
     }
 
     const employee = employeeRows[0];
-    const resolvedWeeklyHours = resolveEmployeeTargetWeeklyHours(employee);
+    const resolvedWeeklyHours = resolveEmployeeTargetWeeklyHours(employee as unknown as Employee);
 
-    const [doctorRows] = await dbPool.execute('SELECT id FROM Doctor WHERE id = ? LIMIT 1', [doctor_id]);
+    const [doctorRows] = await dbPool.execute('SELECT id FROM Doctor WHERE id = ? LIMIT 1', [doctor_id]) as [RowDataPacket[], unknown];
     if (doctorRows.length === 0) {
-      return res.status(404).json({ error: 'Teammitglied nicht gefunden' });
+      res.status(404).json({ error: 'Teammitglied nicht gefunden' });
+      return;
     }
 
     await dbPool.execute(
@@ -135,7 +158,7 @@ router.post('/central-link', requirePermission('can_link_employees'), async (req
     const [existingAssign] = await db.execute(
       'SELECT id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ? LIMIT 1',
       [employee_id, tenantId]
-    );
+    ) as [RowDataPacket[], unknown];
     if (existingAssign.length > 0) {
       await db.execute(
         'UPDATE EmployeeTenantAssignment SET tenant_doctor_id = ? WHERE id = ?',
@@ -162,24 +185,27 @@ router.post('/central-link', requirePermission('can_link_employees'), async (req
   }
 });
 
-router.post('/central-unlink', requirePermission('can_link_employees'), async (req, res, next) => {
+router.post('/central-unlink', requirePermission('can_link_employees'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+    const curaReq = req as unknown as CuraRequest;
+    const tenantId = await resolveTenantIdFromToken(db, curaReq.dbToken);
     if (!tenantId) {
-      return res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      res.status(400).json({ error: 'Aktiver Mandant konnte nicht aufgelöst werden' });
+      return;
     }
 
-    const dbPool = req.db || db;
+    const dbPool = curaReq.db || db;
     const { doctor_id } = req.body || {};
 
     if (!doctor_id) {
-      return res.status(400).json({ error: 'doctor_id ist erforderlich' });
+      res.status(400).json({ error: 'doctor_id ist erforderlich' });
+      return;
     }
 
     const [doctorRows] = await dbPool.execute(
       'SELECT central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
       [doctor_id]
-    );
+    ) as [RowDataPacket[], unknown];
     const employeeId = doctorRows[0]?.central_employee_id || null;
 
     if (employeeId) {
@@ -188,7 +214,7 @@ router.post('/central-unlink', requirePermission('can_link_employees'), async (r
         masterDb: db,
         doctorId: doctor_id,
         employeeId,
-        createdBy: req.user?.email || 'system',
+        createdBy: curaReq.user?.email || 'system',
       });
     }
 
@@ -209,12 +235,13 @@ router.post('/central-unlink', requirePermission('can_link_employees'), async (r
 });
 
 // ===== NOTIFY STAFF =====
-router.post('/notify', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
+router.post('/notify', requirePermission('can_send_schedule_emails'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { staffIds, message, type } = req.body;
     
     if (!staffIds || !message) {
-      return res.status(400).json({ error: 'Missing required parameters' });
+      res.status(400).json({ error: 'Missing required parameters' });
+      return;
     }
     
     console.log(`Sending ${type} notification to ${staffIds.length} staff members`);
@@ -225,19 +252,21 @@ router.post('/notify', requirePermission('can_send_schedule_emails'), async (req
 });
 
 // ===== SEND GENERIC EMAIL (replaces base44.integrations.Core.SendEmail) =====
-router.post('/send-email', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
+router.post('/send-email', requirePermission('can_send_schedule_emails'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { to, subject, body: textBody, html } = req.body;
 
     if (!to || !subject) {
-      return res.status(400).json({ error: 'Empfänger (to) und Betreff (subject) erforderlich' });
+      res.status(400).json({ error: 'Empfänger (to) und Betreff (subject) erforderlich' });
+      return;
     }
 
     // Check email configuration (Brevo or SMTP)
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({ 
+      res.status(503).json({ 
         error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
       });
+      return;
     }
 
     await sendEmail({
@@ -249,25 +278,27 @@ router.post('/send-email', requirePermission('can_send_schedule_emails'), async 
 
     res.json({ success: true, message: `E-Mail an ${to} gesendet` });
   } catch (error) {
-    console.error('[send-email] Fehler:', error.message);
+    console.error('[send-email] Fehler:', (error as Error).message);
     next(error);
   }
 });
 
 // ===== SEND TEST EMAIL =====
-router.post('/send-test-email', async (req, res, next) => {
+router.post('/send-test-email', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { to } = req.body;
 
     if (!to) {
-      return res.status(400).json({ error: 'Empfänger (to) erforderlich' });
+      res.status(400).json({ error: 'Empfänger (to) erforderlich' });
+      return;
     }
 
     const providerInfo = getEmailProviderInfo();
     if (!providerInfo.configured) {
-      return res.status(503).json({ 
+      res.status(503).json({ 
         error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
       });
+      return;
     }
 
     await sendEmail({
@@ -279,42 +310,45 @@ router.post('/send-test-email', async (req, res, next) => {
 
     res.json({ success: true, message: `Testmail an ${to} gesendet`, provider: providerInfo.provider });
   } catch (error) {
-    console.error('[send-test-email] Fehler:', error.message);
+    console.error('[send-test-email] Fehler:', (error as Error).message);
     next(error);
   }
 });
 
 // ===== SEND SCHEDULE NOTIFICATIONS (replaces sendShiftEmails function) =====
-router.post('/schedule-notifications', requirePermission('can_send_schedule_emails'), async (req, res, next) => {
+router.post('/schedule-notifications', requirePermission('can_send_schedule_emails'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const curaReq = req as unknown as CuraRequest;
     const { year, month } = req.body;
-    const dbPool = req.db || db;
+    const dbPool = curaReq.db || db;
 
     // Check email configuration (Brevo or SMTP)
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({ 
+      res.status(503).json({ 
         error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.' 
       });
+      return;
     }
 
     // 1. Fetch doctors with email
     // Dienstplan-Kalender-Emails gehen an die Kalender-E-Mail-Adresse (google_email)
-    const [doctors] = await dbPool.execute("SELECT * FROM Doctor WHERE google_email IS NOT NULL AND google_email != ''");
+    const [doctors] = await dbPool.execute("SELECT * FROM Doctor WHERE google_email IS NOT NULL AND google_email != ''") as [RowDataPacket[], unknown];
     if (doctors.length === 0) {
-      return res.json({ success: true, count: 0, message: 'Keine Ärzte mit E-Mail gefunden', errors: [], debug: [] });
+      res.json({ success: true, count: 0, message: 'Keine Ärzte mit E-Mail gefunden', errors: [], debug: [] });
+      return;
     }
 
     // 2. Fetch workplaces (service category)
-    const [workplaces] = await dbPool.execute("SELECT * FROM Workplace");
-    const serviceNames = workplaces
-      .filter(w => w.category === 'Dienste')
-      .map(w => w.name);
+    const [workplaces] = await dbPool.execute("SELECT * FROM Workplace") as [RowDataPacket[], unknown];
+    const serviceNames: string[] = workplaces
+      .filter((w: RowDataPacket) => w.category === 'Dienste')
+      .map((w: RowDataPacket) => w.name as string);
     if (serviceNames.length === 0) {
       serviceNames.push('Dienst Vordergrund', 'Dienst Hintergrund', 'Spätdienst');
     }
 
     // 3. Determine date range
-    let startDate, endDate;
+    let startDate: string, endDate: string | null;
     if (month !== undefined && year !== undefined) {
       startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const lastDay = new Date(year, month + 1, 0).getDate();
@@ -326,33 +360,33 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
     }
 
     // 4. Fetch shifts
-    let shifts;
+    let shifts: RowDataPacket[];
     if (endDate) {
       const [rows] = await dbPool.execute(
         'SELECT * FROM ShiftEntry WHERE date >= ? AND date <= ? ORDER BY date',
         [startDate, endDate]
-      );
+      ) as [RowDataPacket[], unknown];
       shifts = rows;
     } else {
       const [rows] = await dbPool.execute(
         'SELECT * FROM ShiftEntry WHERE date >= ? ORDER BY date',
         [startDate]
-      );
+      ) as [RowDataPacket[], unknown];
       shifts = rows;
     }
 
     // 5. Group shifts by doctor
-    const shiftsByDoctor = {};
-    shifts.forEach(shift => {
-      if (!shiftsByDoctor[shift.doctor_id]) {
-        shiftsByDoctor[shift.doctor_id] = [];
+    const shiftsByDoctor: Record<string, RowDataPacket[]> = {};
+    shifts.forEach((shift: RowDataPacket) => {
+      if (!shiftsByDoctor[shift.doctor_id as string]) {
+        shiftsByDoctor[shift.doctor_id as string] = [];
       }
-      shiftsByDoctor[shift.doctor_id].push(shift);
+      shiftsByDoctor[shift.doctor_id as string].push(shift);
     });
 
     let sentCount = 0;
-    const errors = [];
-    const debugLog = [];
+    const errors: Record<string, unknown>[] = [];
+    const debugLog: string[] = [];
 
     debugLog.push(`Found ${doctors.length} doctors with email.`);
     debugLog.push(`Found ${shifts.length} shifts in range.`);
@@ -364,7 +398,7 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
       day: '2-digit'
     });
 
-    const generateICS = (docShifts) => {
+    const generateICS = (docShifts: RowDataPacket[]) => {
       const calendar = ical({
         name: 'CuraFlow Dienstplan',
         prodId: {
@@ -372,7 +406,7 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
           product: 'Dienstplan',
           language: 'DE'
         },
-        method: 'PUBLISH'
+        method: ICalCalendarMethod.PUBLISH,
       });
 
       for (const shift of docShifts) {
@@ -400,23 +434,23 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
     // 6. Send emails per doctor
     for (const doctor of doctors) {
       try {
-        const docShifts = shiftsByDoctor[doctor.id];
+        const docShifts = shiftsByDoctor[doctor.id as string];
         if (!docShifts || docShifts.length === 0) {
           debugLog.push(`${doctor.name}: Keine Schichten gefunden.`);
           continue;
         }
 
         // Only service shifts
-        const relevantShifts = docShifts.filter(s => serviceNames.includes(s.position));
+        const relevantShifts = docShifts.filter((s: RowDataPacket) => serviceNames.includes(s.position as string));
         if (relevantShifts.length === 0) {
           debugLog.push(`${doctor.name}: Keine relevanten Dienste.`);
           continue;
         }
 
-        relevantShifts.sort((a, b) => new Date(a.date) - new Date(b.date));
+        relevantShifts.sort((a: RowDataPacket, b: RowDataPacket) => new Date(a.date as string).getTime() - new Date(b.date as string).getTime());
 
-        const dateList = relevantShifts.map(s => {
-          const date = new Date(s.date);
+        const dateList = relevantShifts.map((s: RowDataPacket) => {
+          const date = new Date(s.date as string);
           if (isNaN(date.getTime())) return `- ${s.date} (Ungültiges Datum): ${s.position}`;
           return `- ${formatter.format(date)}: ${s.position}`;
         }).join('\n');
@@ -440,16 +474,16 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
           attachments: [{
             filename: `dienstplan_${doctor.initials || doctor.name.replace(/\s+/g, '_')}.ics`,
             content: icsContent,
-            contentType: 'text/calendar'
-          }]
+            type: 'text/calendar; method=PUBLISH',
+          } as EmailAttachment]
         });
 
         sentCount++;
         debugLog.push(`Erfolgreich gesendet an ${doctor.name} (${email})`);
       } catch (e) {
-        console.error(`[schedule-notifications] Fehler bei ${doctor.name}:`, e.message);
-        errors.push({ doctor: doctor.name, error: e.message });
-        debugLog.push(`Fehler bei ${doctor.name}: ${e.message}`);
+        console.error(`[schedule-notifications] Fehler bei ${doctor.name}:`, (e as Error).message);
+        errors.push({ doctor: doctor.name, error: (e as Error).message });
+        debugLog.push(`Fehler bei ${doctor.name}: ${(e as Error).message}`);
       }
     }
 
@@ -466,35 +500,40 @@ router.post('/schedule-notifications', requirePermission('can_send_schedule_emai
 
     res.json({ success: true, count: sentCount, errors, debug: debugLog });
   } catch (error) {
-    console.error('[schedule-notifications] Fehler:', error.message);
+    console.error('[schedule-notifications] Fehler:', (error as Error).message);
     next(error);
   }
 });
 
 // ===== SEND SHIFT NOTIFICATION (single shift change notification) =====
-router.post('/shift-notification', async (req, res, next) => {
+router.post('/shift-notification', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const curaReq = req as unknown as CuraRequest;
     const { doctor_id, date, position, type: notifType, message } = req.body;
-    const dbPool = req.db || db;
+    const dbPool = curaReq.db || db;
 
     if (!doctor_id) {
-      return res.status(400).json({ error: 'doctor_id erforderlich' });
+      res.status(400).json({ error: 'doctor_id erforderlich' });
+      return;
     }
 
     // Check email configuration (Brevo or SMTP)
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({ error: 'E-Mail nicht konfiguriert' });
+      res.status(503).json({ error: 'E-Mail nicht konfiguriert' });
+      return;
     }
 
     // Benachrichtigungen gehen an die Benachrichtigungs-E-Mail-Adresse (email)
-    const [doctors] = await dbPool.execute('SELECT * FROM Doctor WHERE id = ?', [doctor_id]);
+    const [doctors] = await dbPool.execute('SELECT * FROM Doctor WHERE id = ?', [doctor_id]) as [RowDataPacket[], unknown];
     if (doctors.length === 0) {
-      return res.status(404).json({ error: 'Arzt nicht gefunden' });
+      res.status(404).json({ error: 'Arzt nicht gefunden' });
+      return;
     }
 
     const doctor = doctors[0];
     if (!doctor.email) {
-      return res.json({ success: false, message: 'Keine Benachrichtigungs-E-Mail-Adresse hinterlegt' });
+      res.json({ success: false, message: 'Keine Benachrichtigungs-E-Mail-Adresse hinterlegt' });
+      return;
     }
 
     const formatter = new Intl.DateTimeFormat('de-DE', {
@@ -525,13 +564,13 @@ router.post('/shift-notification', async (req, res, next) => {
 
     res.json({ success: true, message: `Benachrichtigung an ${doctor.name} gesendet` });
   } catch (error) {
-    console.error('[shift-notification] Fehler:', error.message);
+    console.error('[shift-notification] Fehler:', (error as Error).message);
     next(error);
   }
 });
 
 // ===== SMTP STATUS CHECK =====
-router.get('/email-status', async (req, res) => {
+router.get('/email-status', async (req: Request, res: Response): Promise<void> => {
   const configured = !!getTransporter();
   res.json({ 
     smtp_configured: configured,
@@ -542,28 +581,30 @@ router.get('/email-status', async (req, res) => {
 
 // ===== WISH REMINDER ACK STATUS (Admin) =====
 // Returns per-doctor acknowledgment status for a given target month
-router.get('/wish-reminder-status', async (req, res, next) => {
+router.get('/wish-reminder-status', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { month } = req.query; // e.g. "2025-03"
-    const dbPool = req.db || db;
+    const curaReq = req as unknown as CuraRequest;
+    const month = req.query.month as string; // e.g. "2025-03"
+    const dbPool = curaReq.db || db;
 
     if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-      return res.status(400).json({ error: 'Parameter month im Format YYYY-MM erforderlich' });
+      res.status(400).json({ error: 'Parameter month im Format YYYY-MM erforderlich' });
+      return;
     }
 
     // 1. Get all doctors
     const [doctors] = await dbPool.execute(
       "SELECT id, name, initials, email FROM Doctor ORDER BY name"
-    );
+    ) as [RowDataPacket[], unknown];
 
     // 2. Get ack records for this target month
     const [acks] = await dbPool.execute(
       "SELECT doctor_id, status, acknowledged_date FROM WishReminderAck WHERE target_month = ?",
       [month]
-    );
-    const ackMap = {};
+    ) as [RowDataPacket[], unknown];
+    const ackMap: Record<string, Record<string, unknown>> = {};
     for (const a of acks) {
-      ackMap[a.doctor_id] = { status: a.status, acknowledged_date: a.acknowledged_date };
+      ackMap[a.doctor_id as string] = { status: a.status, acknowledged_date: a.acknowledged_date };
     }
 
     // 3. Get wish requests for this target month (to see who has actual wishes)
@@ -575,15 +616,15 @@ router.get('/wish-reminder-status', async (req, res, next) => {
     const [wishes] = await dbPool.execute(
       "SELECT DISTINCT doctor_id FROM WishRequest WHERE date >= ? AND date <= ?",
       [monthStart, monthEnd]
-    );
-    const hasWishes = new Set(wishes.map(w => w.doctor_id));
+    ) as [RowDataPacket[], unknown];
+    const hasWishes = new Set(wishes.map((w: RowDataPacket) => w.doctor_id as string));
 
     // 4. Build response
-    const result = doctors.map(doc => {
-      const ack = ackMap[doc.id];
-      let reminderStatus;
+    const result = doctors.map((doc: RowDataPacket) => {
+      const ack = ackMap[doc.id as string];
+      let reminderStatus: string;
       
-      if (hasWishes.has(doc.id)) {
+      if (hasWishes.has(doc.id as string)) {
         reminderStatus = 'has_wishes'; // Has submitted wishes → no ack needed
       } else if (ack?.status === 'acknowledged') {
         reminderStatus = 'acknowledged'; // Clicked "no wishes"
@@ -606,26 +647,26 @@ router.get('/wish-reminder-status', async (req, res, next) => {
     // 5. Summary stats
     const stats = {
       total: doctors.length,
-      has_wishes: result.filter(r => r.reminder_status === 'has_wishes').length,
-      acknowledged: result.filter(r => r.reminder_status === 'acknowledged').length,
-      sent: result.filter(r => r.reminder_status === 'sent').length,
-      no_reminder: result.filter(r => r.reminder_status === 'no_reminder').length,
+      has_wishes: result.filter((r) => r.reminder_status === 'has_wishes').length,
+      acknowledged: result.filter((r) => r.reminder_status === 'acknowledged').length,
+      sent: result.filter((r) => r.reminder_status === 'sent').length,
+      no_reminder: result.filter((r) => r.reminder_status === 'no_reminder').length,
     };
 
     res.json({ month, doctors: result, stats });
   } catch (error) {
-    console.error('[wish-reminder-status] Error:', error.message);
+    console.error('[wish-reminder-status] Error:', (error as Error).message);
     next(error);
   }
 });
 
 // ===== WORK TIME MODELS (from master DB) =====
-router.get('/work-time-models', async (req, res, next) => {
+router.get('/work-time-models', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const [models] = await db.execute('SELECT id, name, hours_per_week, hours_per_day FROM WorkTimeModel ORDER BY hours_per_week DESC');
+    const [models] = await db.execute('SELECT id, name, hours_per_week, hours_per_day FROM WorkTimeModel ORDER BY hours_per_week DESC') as [RowDataPacket[], unknown];
     res.json({ models });
   } catch (error) {
-    console.error('[work-time-models] Error:', error.message);
+    console.error('[work-time-models] Error:', (error as Error).message);
     res.json({ models: [] });
   }
 });

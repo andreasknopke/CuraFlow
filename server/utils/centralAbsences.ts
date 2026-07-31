@@ -1,4 +1,10 @@
 import crypto from 'crypto';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+type SqlRow = Record<string, unknown>;
+interface DbRow extends RowDataPacket {
+  [key: string]: unknown;
+}
 
 // Canonical PascalCase spellings used by the central absence storage.
 export const CENTRAL_ABSENCE_POSITIONS = new Set([
@@ -41,7 +47,7 @@ const CENTRAL_ABSENCE_POSITIONS_NORMALIZED = new Set([
 // reason wins; soft planning entries (Frei/Urlaub) yield to anything
 // stricter. Ties (same priority, different position) are NEVER auto-resolved
 // — the admin must fix them in the tenant.
-const ABSENCE_PRIORITY = {
+const ABSENCE_PRIORITY: Record<string, number> = {
   Mutterschutz: 100,
   Elternzeit: 90,
   Krank: 80,
@@ -54,12 +60,12 @@ const ABSENCE_PRIORITY = {
   Frei: 10,
 };
 
-const absencePriority = (position) => {
+const absencePriority = (position: unknown): number => {
   if (position === null || position === undefined) return 0;
   // Look up by canonical PascalCase first, then by the normalized form so
   // legacy lowercase/umlaut-stripped spellings resolve to the same priority.
-  if (Object.prototype.hasOwnProperty.call(ABSENCE_PRIORITY, position)) {
-    return ABSENCE_PRIORITY[position];
+  if (Object.prototype.hasOwnProperty.call(ABSENCE_PRIORITY, position as string)) {
+    return ABSENCE_PRIORITY[position as string];
   }
   const normalized = normalizeShiftPosition(position);
   for (const [key, value] of Object.entries(ABSENCE_PRIORITY)) {
@@ -72,7 +78,7 @@ const absencePriority = (position) => {
 
 export { ABSENCE_PRIORITY, absencePriority };
 
-const normalizeShiftPosition = (position) => {
+const normalizeShiftPosition = (position: unknown): string => {
   if (position === null || position === undefined) return '';
   return String(position)
     .trim()
@@ -81,7 +87,7 @@ const normalizeShiftPosition = (position) => {
     .toLowerCase();
 };
 
-const CENTRAL_ABSENCE_COLUMNS = [
+const CENTRAL_ABSENCE_COLUMNS: readonly string[] = [
   'id',
   'employee_id',
   'date',
@@ -99,14 +105,14 @@ const CENTRAL_ABSENCE_COLUMNS = [
   'source_tenant_doctor_id',
 ];
 
-const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj || {}, key);
+const hasOwn = (obj: unknown, key: string): boolean => Object.prototype.hasOwnProperty.call(obj || {}, key);
 
 // Ensures the CentralAbsenceEntry table is created at most once per process.
 // The table is also created by the startup master migration; this flag avoids
 // running CREATE TABLE IF NOT EXISTS on every ShiftEntry read.
 let centralAbsenceTableEnsured = false;
 
-const toDateString = (value) => {
+const toDateString = (value: unknown): string | null => {
   if (!value) return null;
   if (typeof value === 'string') return value.slice(0, 10);
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -117,7 +123,7 @@ const toDateString = (value) => {
 // row would fail to migrate so the admin can fix the source row. Returned to
 // the caller as `reason` and logged on the server so an offline re-run with
 // verbose logs gives an exact data map of what to fix.
-const classifyInvalidDate = (raw) => {
+const classifyInvalidDate = (raw: unknown): { reason: string | null; normalized: string | null } => {
   if (raw === null || raw === undefined) {
     return { reason: 'leer (null/undefined)', normalized: null };
   }
@@ -142,19 +148,19 @@ const classifyInvalidDate = (raw) => {
   return { reason: `unerwarteter Typ: ${typeof raw} (Wert: ${JSON.stringify(String(raw).slice(0, 40))})`, normalized: null };
 };
 
-const fromSqlRow = (row) => {
+const fromSqlRow = (row: DbRow | null | undefined): SqlRow | null => {
   if (!row) return null;
   return {
     ...row,
-    date: toDateString(row.date),
-    created_date: row.created_date instanceof Date ? row.created_date.toISOString() : row.created_date,
-    updated_date: row.updated_date instanceof Date ? row.updated_date.toISOString() : row.updated_date,
+    date: toDateString(row.date as unknown),
+    created_date: row.created_date instanceof Date ? row.created_date.toISOString() : (row.created_date as unknown),
+    updated_date: row.updated_date instanceof Date ? row.updated_date.toISOString() : (row.updated_date as unknown),
   };
 };
 
-const buildWhereClause = (filters = {}) => {
-  const clauses = [];
-  const params = [];
+const buildWhereClause = (filters: SqlRow = {}): { sql: string; params: unknown[] } => {
+  const clauses: string[] = [];
+  const params: unknown[] = [];
 
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined) continue;
@@ -162,11 +168,11 @@ const buildWhereClause = (filters = {}) => {
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       if (hasOwn(value, '$gte')) {
         clauses.push(`\`${key}\` >= ?`);
-        params.push(value.$gte);
+        params.push((value as SqlRow).$gte);
       }
       if (hasOwn(value, '$lte')) {
         clauses.push(`\`${key}\` <= ?`);
-        params.push(value.$lte);
+        params.push((value as SqlRow).$lte);
       }
       continue;
     }
@@ -181,7 +187,7 @@ const buildWhereClause = (filters = {}) => {
   };
 };
 
-const buildOrderClause = (sort) => {
+const buildOrderClause = (sort: string | undefined): string => {
   if (!sort || typeof sort !== 'string') {
     return ' ORDER BY `id` ASC';
   }
@@ -194,17 +200,17 @@ const buildOrderClause = (sort) => {
     : ` ORDER BY \`${field}\` ${direction}, \`id\` ASC`;
 };
 
-const buildLimitClause = (limit, skip) => {
-  if (!limit || Number.isNaN(Number.parseInt(limit, 10))) {
+const buildLimitClause = (limit: unknown, skip: unknown): string => {
+  if (!limit || Number.isNaN(Number.parseInt(String(limit), 10))) {
     return '';
   }
 
-  const parsedLimit = Number.parseInt(limit, 10);
-  const parsedSkip = skip && !Number.isNaN(Number.parseInt(skip, 10)) ? Number.parseInt(skip, 10) : null;
+  const parsedLimit = Number.parseInt(String(limit), 10);
+  const parsedSkip = skip && !Number.isNaN(Number.parseInt(String(skip), 10)) ? Number.parseInt(String(skip), 10) : null;
   return parsedSkip === null ? ` LIMIT ${parsedLimit}` : ` LIMIT ${parsedLimit} OFFSET ${parsedSkip}`;
 };
 
-const compareRows = (left, right, sort) => {
+const compareRows = (left: SqlRow | null | undefined, right: SqlRow | null | undefined, sort: string | undefined): number => {
   const sortField = typeof sort === 'string' && sort.length > 0 ? (sort.startsWith('-') ? sort.slice(1) : sort) : 'id';
   const sortDirection = typeof sort === 'string' && sort.startsWith('-') ? -1 : 1;
   const leftValue = left?.[sortField] ?? null;
@@ -218,15 +224,21 @@ const compareRows = (left, right, sort) => {
 
   if (leftValue === null) return 1;
   if (rightValue === null) return -1;
-  return leftValue > rightValue ? sortDirection : -sortDirection;
+  return (leftValue as string) > (rightValue as string) ? sortDirection : -sortDirection;
 };
 
-const mapCentralRowToShiftEntry = (row, doctorId) => ({
+const mapCentralRowToShiftEntry = (row: DbRow, doctorId: string | undefined): SqlRow => ({
   ...fromSqlRow(row),
   doctor_id: doctorId,
 });
 
-const mapShiftEntryToCentralRecord = ({ shift, employeeId, tenantId, tenantDoctorId, preserveId = true }) => ({
+const mapShiftEntryToCentralRecord = ({ shift, employeeId, tenantId, tenantDoctorId, preserveId = true }: {
+  shift: SqlRow;
+  employeeId: string;
+  tenantId: string | null;
+  tenantDoctorId: string | null;
+  preserveId?: boolean;
+}): SqlRow => ({
   id: preserveId && shift.id ? shift.id : crypto.randomUUID(),
   employee_id: employeeId,
   date: toDateString(shift.date),
@@ -244,9 +256,9 @@ const mapShiftEntryToCentralRecord = ({ shift, employeeId, tenantId, tenantDocto
   source_tenant_doctor_id: tenantDoctorId ?? null,
 });
 
-export async function loadLinkedDoctors(tenantDb, filters = {}) {
+export async function loadLinkedDoctors(tenantDb: Pool, filters: SqlRow = {}): Promise<Array<{ doctor_id: string; employee_id: string }>> {
   const clauses = ['central_employee_id IS NOT NULL', "central_employee_id != ''"];
-  const params = [];
+  const params: unknown[] = [];
 
   if (filters.doctor_id && typeof filters.doctor_id !== 'object') {
     clauses.push('id = ?');
@@ -258,18 +270,18 @@ export async function loadLinkedDoctors(tenantDb, filters = {}) {
     params
   );
 
-  return rows.map((row) => ({
+  return (rows as DbRow[]).map((row) => ({
     doctor_id: String(row.id),
     employee_id: String(row.central_employee_id),
   }));
 }
 
-export function isCentralAbsencePosition(position) {
-  if (CENTRAL_ABSENCE_POSITIONS.has(position)) return true;
+export function isCentralAbsencePosition(position: unknown): boolean {
+  if (CENTRAL_ABSENCE_POSITIONS.has(position as string)) return true;
   return CENTRAL_ABSENCE_POSITIONS_NORMALIZED.has(normalizeShiftPosition(position));
 }
 
-export async function ensureCentralAbsenceTables(masterDb) {
+export async function ensureCentralAbsenceTables(masterDb: Pool): Promise<void> {
   if (centralAbsenceTableEnsured) return;
   await masterDb.execute(`
     CREATE TABLE IF NOT EXISTS CentralAbsenceEntry (
@@ -303,7 +315,14 @@ export async function listShiftEntriesWithCentralAbsences({
   sort,
   limit,
   skip,
-}) {
+}: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  filters?: SqlRow;
+  sort?: string;
+  limit?: unknown;
+  skip?: unknown;
+}): Promise<SqlRow[]> {
   const where = buildWhereClause(filters);
   const [tenantRows] = await tenantDb.execute(
     `SELECT * FROM ShiftEntry${where.sql}`,
@@ -312,7 +331,7 @@ export async function listShiftEntriesWithCentralAbsences({
 
   const linkedDoctors = await loadLinkedDoctors(tenantDb, filters);
   if (linkedDoctors.length === 0) {
-    return tenantRows.map(fromSqlRow);
+    return (tenantRows as DbRow[]).map(fromSqlRow).filter((r): r is SqlRow => r !== null);
   }
 
   await ensureCentralAbsenceTables(masterDb);
@@ -324,7 +343,7 @@ export async function listShiftEntriesWithCentralAbsences({
   // Keep all local rows here. Local absence rows of linked doctors are only
   // hidden when an equivalent central row exists (dedup below). This keeps
   // not-yet-migrated absences visible after deploy and during partial migration.
-  const localRows = tenantRows.map(fromSqlRow);
+  const localRows = (tenantRows as DbRow[]).map(fromSqlRow).filter((r): r is SqlRow => r !== null);
 
   const employeeIds = Array.from(new Set(linkedDoctors.map((row) => row.employee_id)));
   if (employeeIds.length === 0) {
@@ -332,7 +351,7 @@ export async function listShiftEntriesWithCentralAbsences({
   }
 
   const centralClauses = [`employee_id IN (${employeeIds.map(() => '?').join(',')})`];
-  const centralParams = [...employeeIds];
+  const centralParams: unknown[] = [...employeeIds];
 
   if (filters.id && typeof filters.id !== 'object') {
     centralClauses.push('id = ?');
@@ -350,11 +369,11 @@ export async function listShiftEntriesWithCentralAbsences({
   if (filters.date && typeof filters.date === 'object') {
     if (hasOwn(filters.date, '$gte')) {
       centralClauses.push('date >= ?');
-      centralParams.push(filters.date.$gte);
+      centralParams.push((filters.date as SqlRow).$gte);
     }
     if (hasOwn(filters.date, '$lte')) {
       centralClauses.push('date <= ?');
-      centralParams.push(filters.date.$lte);
+      centralParams.push((filters.date as SqlRow).$lte);
     }
   } else if (filters.date) {
     centralClauses.push('date = ?');
@@ -387,7 +406,7 @@ export async function listShiftEntriesWithCentralAbsences({
   // Normalize the position on both sides so case/umlaut variants of the
   // same absence (e.g. 'Urlaub' vs 'urlaub') collapse to one entry.
   const centralKeys = new Set(
-    centralRows.map((row) => `${row.employee_id}|${toDateString(row.date)}|${normalizeShiftPosition(row.position)}`)
+    (centralRows as DbRow[]).map((row) => `${row.employee_id}|${toDateString(row.date as unknown)}|${normalizeShiftPosition(row.position)}`)
   );
   const dedupedLocalRows = localRows.filter((row) => {
     if (!linkedDoctorIds.has(String(row.doctor_id)) || !isCentralAbsencePosition(row.position)) {
@@ -400,7 +419,7 @@ export async function listShiftEntriesWithCentralAbsences({
 
   const combinedRows = [
     ...dedupedLocalRows,
-    ...centralRows
+    ...(centralRows as DbRow[])
       .map((row) => mapCentralRowToShiftEntry(row, doctorByEmployeeId.get(String(row.employee_id))))
       .filter((row) => !!row.doctor_id),
   ].sort((left, right) => compareRows(left, right, sort));
@@ -410,15 +429,19 @@ export async function listShiftEntriesWithCentralAbsences({
     return combinedRows;
   }
 
-  const parsedLimit = Number.parseInt(limit, 10);
-  const parsedSkip = skip && !Number.isNaN(Number.parseInt(skip, 10)) ? Number.parseInt(skip, 10) : 0;
+  const parsedLimit = Number.parseInt(String(limit), 10);
+  const parsedSkip = skip && !Number.isNaN(Number.parseInt(String(skip), 10)) ? Number.parseInt(String(skip), 10) : 0;
   return combinedRows.slice(parsedSkip, parsedSkip + parsedLimit);
 }
 
-export async function getShiftEntryWithCentralAbsence({ tenantDb, masterDb, id }) {
+export async function getShiftEntryWithCentralAbsence({ tenantDb, masterDb, id }: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  id: string;
+}): Promise<SqlRow | null> {
   const [tenantRows] = await tenantDb.execute('SELECT * FROM ShiftEntry WHERE id = ? LIMIT 1', [id]);
-  if (tenantRows.length > 0) {
-    return fromSqlRow(tenantRows[0]);
+  if ((tenantRows as DbRow[]).length > 0) {
+    return fromSqlRow((tenantRows as DbRow[])[0]);
   }
 
   await ensureCentralAbsenceTables(masterDb);
@@ -427,19 +450,19 @@ export async function getShiftEntryWithCentralAbsence({ tenantDb, masterDb, id }
     `SELECT ${CENTRAL_ABSENCE_COLUMNS.map((column) => `\`${column}\``).join(', ')} FROM CentralAbsenceEntry WHERE id = ? LIMIT 1`,
     [id]
   );
-  if (centralRows.length === 0) {
+  if ((centralRows as DbRow[]).length === 0) {
     return null;
   }
 
   const [doctorRows] = await tenantDb.execute(
     'SELECT id FROM Doctor WHERE central_employee_id = ? LIMIT 1',
-    [centralRows[0].employee_id]
+    [(centralRows as DbRow[])[0].employee_id]
   );
-  if (doctorRows.length === 0) {
+  if ((doctorRows as DbRow[]).length === 0) {
     return null;
   }
 
-  return mapCentralRowToShiftEntry(centralRows[0], doctorRows[0].id);
+  return mapCentralRowToShiftEntry((centralRows as DbRow[])[0], (doctorRows as DbRow[])[0].id as string | undefined);
 }
 
 export async function writeShiftEntryToCentralAbsence({
@@ -449,12 +472,19 @@ export async function writeShiftEntryToCentralAbsence({
   shiftEntry,
   doctorId,
   preserveId = true,
-}) {
+}: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  tenantId: string;
+  shiftEntry: SqlRow;
+  doctorId: string;
+  preserveId?: boolean;
+}): Promise<SqlRow | null> {
   const [doctorRows] = await tenantDb.execute(
     'SELECT central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
     [doctorId]
   );
-  const employeeId = doctorRows[0]?.central_employee_id ? String(doctorRows[0].central_employee_id) : null;
+  const employeeId = (doctorRows as DbRow[])[0]?.central_employee_id ? String((doctorRows as DbRow[])[0].central_employee_id) : null;
   if (!employeeId) {
     return null;
   }
@@ -472,7 +502,7 @@ export async function writeShiftEntryToCentralAbsence({
   const insertColumns = CENTRAL_ABSENCE_COLUMNS;
   const placeholders = insertColumns.map(() => '?').join(', ');
   const updateColumns = insertColumns.filter((column) => !['id', 'employee_id', 'date', 'created_date'].includes(column));
-  const values = insertColumns.map((column) => record[column] ?? null);
+  const values = insertColumns.map((column) => (record as SqlRow)[column] ?? null);
 
   await masterDb.execute(
     `INSERT INTO CentralAbsenceEntry (${insertColumns.map((column) => `\`${column}\``).join(', ')})
@@ -486,10 +516,10 @@ export async function writeShiftEntryToCentralAbsence({
     [employeeId, record.date]
   );
 
-  return rows[0] ? mapCentralRowToShiftEntry(rows[0], doctorId) : null;
+  return (rows as DbRow[])[0] ? mapCentralRowToShiftEntry((rows as DbRow[])[0], doctorId) : null;
 }
 
-export async function deleteCentralAbsenceById(masterDb, id) {
+export async function deleteCentralAbsenceById(masterDb: Pool, id: string): Promise<void> {
   await ensureCentralAbsenceTables(masterDb);
   await masterDb.execute('DELETE FROM CentralAbsenceEntry WHERE id = ?', [id]);
 }
@@ -498,7 +528,7 @@ export async function deleteCentralAbsenceById(masterDb, id) {
 // resolve-conflicts pass when a local absence has a higher priority than
 // the central one for the same (employee, date). The updated_date column
 // is bumped automatically by the table's ON UPDATE CURRENT_TIMESTAMP.
-export async function updateCentralAbsencePosition(masterDb, id, position) {
+export async function updateCentralAbsencePosition(masterDb: Pool, id: string, position: string): Promise<void> {
   await ensureCentralAbsenceTables(masterDb);
   await masterDb.execute(
     'UPDATE CentralAbsenceEntry SET position = ? WHERE id = ?',
@@ -513,12 +543,33 @@ export async function migrateTenantDoctorAbsencesToCentral({
   doctorId,
   employeeId: masterEmployeeId = null,
   resolveConflicts = false,
-}) {
+}: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  tenantId: string;
+  doctorId: string;
+  employeeId?: string | null;
+  resolveConflicts?: boolean;
+}): Promise<{
+  imported: number;
+  removedLocal: number;
+  skippedInvalidDate: Array<{ id: unknown; position: unknown; raw_date: unknown; reason: string | null }>;
+  localAbsences: number;
+  existingCentral: number;
+  centralTotal?: number;
+  conflicts?: number;
+  resolvedConflicts?: number;
+  unresolvedConflicts?: number;
+  conflictExamples?: Array<{ id: unknown; date: string; localPosition: unknown; centralPosition: unknown; resolution: string }>;
+  linkStatus: string;
+  linkRepaired?: boolean;
+  [key: string]: unknown;
+}> {
   const [doctorRows] = await tenantDb.execute(
     'SELECT central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
     [doctorId]
   );
-  if (doctorRows.length === 0) {
+  if ((doctorRows as DbRow[]).length === 0) {
     // The tenant_doctor_id stored in the master assignment does not match any
     // Doctor row in this tenant. We cannot migrate; surface the mismatch
     // instead of silently reporting an empty success.
@@ -532,8 +583,8 @@ export async function migrateTenantDoctorAbsencesToCentral({
     };
   }
 
-  const tenantEmployeeId = doctorRows[0].central_employee_id
-    ? String(doctorRows[0].central_employee_id)
+  const tenantEmployeeId = (doctorRows as DbRow[])[0].central_employee_id
+    ? String((doctorRows as DbRow[])[0].central_employee_id)
     : null;
   // The master EmployeeTenantAssignment is the authoritative link. When the
   // tenant Doctor row has no central_employee_id yet (master and tenant link
@@ -569,14 +620,14 @@ export async function migrateTenantDoctorAbsencesToCentral({
     'SELECT * FROM ShiftEntry WHERE doctor_id = ?',
     [doctorId]
   );
-  const absenceRows = tenantRows.filter((row) => isCentralAbsencePosition(row.position));
+  const absenceRows = (tenantRows as DbRow[]).filter((row) => isCentralAbsencePosition(row.position));
 
   let imported = 0;
   let existingCentral = 0;
-  const skippedInvalidDate = [];
-  const conflicts = [];
-  const migratedIds = [];
-  const redundantIds = [];
+  const skippedInvalidDate: Array<{ id: unknown; position: unknown; raw_date: unknown; reason: string | null }> = [];
+  const conflicts: Array<{ id: unknown; date: string; localPosition: unknown; centralPosition: unknown; resolution: string; resolvedByPriority: { local: number; central: number } }> = [];
+  const migratedIds: string[] = [];
+  const redundantIds: string[] = [];
   for (const row of absenceRows) {
     // CentralAbsenceEntry.date is NOT NULL DATE. Rows with missing/empty or
     // non-parseable dates are kept local and reported with the exact reason
@@ -597,15 +648,15 @@ export async function migrateTenantDoctorAbsencesToCentral({
       'SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
       [employeeId, date]
     );
-    if (existingRows.length > 0) {
-      const sameAbsence = normalizeShiftPosition(existingRows[0].position) === normalizeShiftPosition(row.position);
+    if ((existingRows as DbRow[]).length > 0) {
+      const sameAbsence = normalizeShiftPosition((existingRows as DbRow[])[0].position) === normalizeShiftPosition(row.position as string);
       if (sameAbsence) {
         // The central store already holds the exact same absence (employee +
         // date + normalized position). The read-merge already hides this local
         // row, so it is a redundant leftover from an earlier migration. Clean
         // it up so it stops lingering and inflating the local count.
         existingCentral += 1;
-        redundantIds.push(row.id);
+        redundantIds.push(String(row.id));
       } else {
         // A different absence already occupies this day. The central unique
         // key is (employee_id, date), so we cannot move ours without
@@ -615,17 +666,17 @@ export async function migrateTenantDoctorAbsencesToCentral({
         // — then update the central row in place and drop the local copy.
         // A tie is NEVER auto-resolved: the admin must fix the tenant.
         const localPrio = absencePriority(row.position);
-        const centralPrio = absencePriority(existingRows[0].position);
+        const centralPrio = absencePriority((existingRows as DbRow[])[0].position);
         if (resolveConflicts && localPrio > centralPrio) {
-          await updateCentralAbsencePosition(masterDb, existingRows[0].id, row.position);
+          await updateCentralAbsencePosition(masterDb, String((existingRows as DbRow[])[0].id), String(row.position));
           console.warn(
-            `[Master absences] Resolved conflict: doctor=${doctorId} employee=${employeeId} date=${date} central "${existingRows[0].position}" (prio ${centralPrio}) ← local "${row.position}" (prio ${localPrio})`
+            `[Master absences] Resolved conflict: doctor=${doctorId} employee=${employeeId} date=${date} central "${(existingRows as DbRow[])[0].position}" (prio ${centralPrio}) ← local "${row.position}" (prio ${localPrio})`
           );
           conflicts.push({
             id: row.id,
             date,
             localPosition: row.position,
-            centralPosition: existingRows[0].position,
+            centralPosition: (existingRows as DbRow[])[0].position,
             resolution: 'local_wins',
             resolvedByPriority: { local: localPrio, central: centralPrio },
           });
@@ -633,28 +684,28 @@ export async function migrateTenantDoctorAbsencesToCentral({
           // the higher-priority position and the read-merge keeps it visible.
           // We delete the local copy as part of the regular removableIds
           // batch so we do not need a separate DELETE here.
-          redundantIds.push(row.id);
+          redundantIds.push(String(row.id));
         } else if (resolveConflicts && centralPrio > localPrio) {
           // Central already has a stronger reason for this day. Drop the
           // local copy — the read-merge keeps the central row visible.
           console.warn(
-            `[Master absences] Resolved conflict: doctor=${doctorId} employee=${employeeId} date=${date} central "${existingRows[0].position}" (prio ${centralPrio}) kept, local "${row.position}" (prio ${localPrio}) dropped`
+            `[Master absences] Resolved conflict: doctor=${doctorId} employee=${employeeId} date=${date} central "${(existingRows as DbRow[])[0].position}" (prio ${centralPrio}) kept, local "${row.position}" (prio ${localPrio}) dropped`
           );
           conflicts.push({
             id: row.id,
             date,
             localPosition: row.position,
-            centralPosition: existingRows[0].position,
+            centralPosition: (existingRows as DbRow[])[0].position,
             resolution: 'central_wins',
             resolvedByPriority: { local: localPrio, central: centralPrio },
           });
-          redundantIds.push(row.id);
+          redundantIds.push(String(row.id));
         } else {
           conflicts.push({
             id: row.id,
             date,
             localPosition: row.position,
-            centralPosition: existingRows[0].position,
+            centralPosition: (existingRows as DbRow[])[0].position,
             resolution: 'unresolved',
             resolvedByPriority: { local: localPrio, central: centralPrio },
           });
@@ -667,11 +718,11 @@ export async function migrateTenantDoctorAbsencesToCentral({
       tenantDb,
       masterDb,
       tenantId,
-      shiftEntry: row,
+      shiftEntry: row as unknown as SqlRow,
       doctorId,
       preserveId: true,
     });
-    migratedIds.push(row.id);
+    migratedIds.push(String(row.id));
     imported += 1;
   }
 
@@ -713,7 +764,7 @@ export async function migrateTenantDoctorAbsencesToCentral({
     'SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?',
     [employeeId]
   );
-  const centralTotal = Number(centralCountRows[0]?.total || 0);
+  const centralTotal = Number((centralCountRows as DbRow[])[0]?.total || 0);
 
   const resolvedConflicts = conflicts.filter((entry) => entry.resolution === 'local_wins' || entry.resolution === 'central_wins').length;
   const unresolvedConflicts = conflicts.filter((entry) => entry.resolution === 'unresolved' || !entry.resolution).length;
@@ -764,15 +815,18 @@ const EMPTY_DATE_REASONS = new Set([
   'leerer String',
 ]);
 
-export async function purgeEmptyDateAbsences({ tenantDb, doctorId }) {
+export async function purgeEmptyDateAbsences({ tenantDb, doctorId }: {
+  tenantDb: Pool;
+  doctorId: string;
+}): Promise<{ purged: number; skipped: unknown[] }> {
   const [rows] = await tenantDb.execute(
     'SELECT id, doctor_id, position, date FROM ShiftEntry WHERE doctor_id = ?',
     [doctorId]
   );
 
-  const candidates = [];
-  const skipped = [];
-  for (const row of rows) {
+  const candidates: DbRow[] = [];
+  const skipped: unknown[] = [];
+  for (const row of rows as DbRow[]) {
     if (!isCentralAbsencePosition(row.position)) {
       continue;
     }
@@ -780,7 +834,7 @@ export async function purgeEmptyDateAbsences({ tenantDb, doctorId }) {
     if (classified.normalized) {
       continue;
     }
-    if (!EMPTY_DATE_REASONS.has(classified.reason)) {
+    if (!EMPTY_DATE_REASONS.has(classified.reason as string)) {
       skipped.push({
         id: row.id,
         position: row.position,
@@ -824,12 +878,31 @@ export async function previewTenantDoctorAbsenceMigration({
   masterDb,
   doctorId,
   employeeId: masterEmployeeId = null,
-}) {
+}: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  doctorId: string;
+  employeeId?: string | null;
+}): Promise<{
+  imported: number;
+  removedLocal: number;
+  localAbsences: number;
+  existingCentral: number;
+  centralTotal?: number;
+  conflicts?: number;
+  wouldResolveLocal?: number;
+  wouldResolveCentral?: number;
+  unresolvedConflicts?: number;
+  conflictExamples?: Array<{ id: unknown; date: string; localPosition: unknown; centralPosition: unknown; localPriority: number; centralPriority: number }>;
+  skippedInvalidDate?: Array<{ id: unknown; position: unknown; raw_date: unknown; reason: string | null }>;
+  linkStatus: string;
+  [key: string]: unknown;
+}> {
   const [doctorRows] = await tenantDb.execute(
     'SELECT central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
     [doctorId]
   );
-  if (doctorRows.length === 0) {
+  if ((doctorRows as DbRow[]).length === 0) {
     return {
       imported: 0,
       removedLocal: 0,
@@ -839,8 +912,8 @@ export async function previewTenantDoctorAbsenceMigration({
     };
   }
 
-  const tenantEmployeeId = doctorRows[0].central_employee_id
-    ? String(doctorRows[0].central_employee_id)
+  const tenantEmployeeId = (doctorRows as DbRow[])[0].central_employee_id
+    ? String((doctorRows as DbRow[])[0].central_employee_id)
     : null;
   // Mirror the real migration: the master assignment is authoritative, so fall
   // back to it when the tenant Doctor row has no central_employee_id yet.
@@ -866,13 +939,13 @@ export async function previewTenantDoctorAbsenceMigration({
     'SELECT COUNT(*) AS total FROM CentralAbsenceEntry WHERE employee_id = ?',
     [employeeId]
   );
-  const centralTotal = Number(centralCountRows[0]?.total || 0);
+  const centralTotal = Number((centralCountRows as DbRow[])[0]?.total || 0);
 
   const [tenantRows] = await tenantDb.execute(
     'SELECT * FROM ShiftEntry WHERE doctor_id = ?',
     [doctorId]
   );
-  const absenceRows = tenantRows.filter((row) => isCentralAbsencePosition(row.position));
+  const absenceRows = (tenantRows as DbRow[]).filter((row) => isCentralAbsencePosition(row.position));
   if (absenceRows.length === 0) {
     return {
       imported: 0,
@@ -886,12 +959,12 @@ export async function previewTenantDoctorAbsenceMigration({
 
   let imported = 0;
   let existingCentral = 0;
-  const skippedInvalidDate = [];
+  const skippedInvalidDate: Array<{ id: unknown; position: unknown; raw_date: unknown; reason: string | null }> = [];
   let conflicts = 0;
   let wouldResolveLocal = 0;
   let wouldResolveCentral = 0;
   let unresolvedConflicts = 0;
-  const conflictExamples = [];
+  const conflictExamples: Array<{ id: unknown; date: string; localPosition: unknown; centralPosition: unknown; localPriority: number; centralPriority: number }> = [];
   for (const row of absenceRows) {
     const classified = classifyInvalidDate(row.date);
     if (!classified.normalized) {
@@ -908,14 +981,14 @@ export async function previewTenantDoctorAbsenceMigration({
       'SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
       [employeeId, date]
     );
-    if (existingRows.length > 0) {
-      const sameAbsence = normalizeShiftPosition(existingRows[0].position) === normalizeShiftPosition(row.position);
+    if ((existingRows as DbRow[]).length > 0) {
+      const sameAbsence = normalizeShiftPosition((existingRows as DbRow[])[0].position) === normalizeShiftPosition(row.position as string);
       if (sameAbsence) {
         existingCentral += 1;
       } else {
         conflicts += 1;
         const localPrio = absencePriority(row.position);
-        const centralPrio = absencePriority(existingRows[0].position);
+        const centralPrio = absencePriority((existingRows as DbRow[])[0].position);
         if (localPrio > centralPrio) {
           wouldResolveLocal += 1;
         } else if (centralPrio > localPrio) {
@@ -928,7 +1001,7 @@ export async function previewTenantDoctorAbsenceMigration({
             id: row.id,
             date,
             localPosition: row.position,
-            centralPosition: existingRows[0].position,
+            centralPosition: (existingRows as DbRow[])[0].position,
             localPriority: localPrio,
             centralPriority: centralPrio,
           });
@@ -967,7 +1040,13 @@ export async function seedTenantDoctorAbsencesFromCentral({
   doctorId,
   employeeId,
   createdBy,
-}) {
+}: {
+  tenantDb: Pool;
+  masterDb: Pool;
+  doctorId: string;
+  employeeId: string | null;
+  createdBy: string | null;
+}): Promise<{ copied: number }> {
   if (!employeeId) {
     return { copied: 0 };
   }
@@ -986,9 +1065,9 @@ export async function seedTenantDoctorAbsencesFromCentral({
     'SELECT id, position FROM ShiftEntry WHERE doctor_id = ?',
     [doctorId]
   );
-  const absenceIdsToDelete = absenceLocalRows
+  const absenceIdsToDelete = (absenceLocalRows as DbRow[])
     .filter((row) => isCentralAbsencePosition(row.position))
-    .map((row) => row.id);
+    .map((row) => row.id as string);
   if (absenceIdsToDelete.length > 0) {
     await tenantDb.execute(
       `DELETE FROM ShiftEntry WHERE id IN (${absenceIdsToDelete.map(() => '?').join(', ')})`,
@@ -996,11 +1075,11 @@ export async function seedTenantDoctorAbsencesFromCentral({
     );
   }
 
-  for (const row of centralRows) {
-    const payload = {
+  for (const row of centralRows as DbRow[]) {
+    const payload: Record<string, unknown> = {
       id: row.id,
       doctor_id: doctorId,
-      date: toDateString(row.date),
+      date: toDateString(row.date as unknown),
       position: row.position,
       note: row.note ?? null,
       start_time: row.start_time ?? null,
@@ -1020,7 +1099,7 @@ export async function seedTenantDoctorAbsencesFromCentral({
     );
   }
 
-  return { copied: centralRows.length };
+  return { copied: (centralRows as DbRow[]).length };
 }
 
 export async function migrateLinkedAssignmentsToCentral({
@@ -1031,8 +1110,32 @@ export async function migrateLinkedAssignmentsToCentral({
   dryRun = false,
   purgeEmptyDates = false,
   resolveConflicts = false,
-}) {
-  const results = [];
+}: {
+  assignments: Array<{ tenant_id?: unknown; tenant_doctor_id?: unknown; employee_id?: unknown; employee_name?: unknown; tenant_name?: unknown; [key: string]: unknown }>;
+  tokensById: Map<string, string>;
+  withTenantDb: (token: string, callback: (tenantDb: Pool) => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>;
+  masterDb: Pool;
+  dryRun?: boolean;
+  purgeEmptyDates?: boolean;
+  resolveConflicts?: boolean;
+}): Promise<{
+  results: Array<Record<string, unknown>>;
+  migratedAssignments: number;
+  importedAbsences: number;
+  removedLocalAbsences: number;
+  purgedEmptyAbsences: number;
+  resolvedConflicts: number;
+  unresolvedConflicts: number;
+  existingCentralAbsences: number;
+  skippedAssignments: number;
+  failedAssignments: number;
+  assignmentsNeedingAction: number;
+  conflictAssignments: number;
+  totalAssignments: number;
+  dryRun: boolean;
+  [key: string]: unknown;
+}> {
+  const results: Array<Record<string, unknown>> = [];
   let migratedAssignments = 0;
   let importedAbsences = 0;
   let removedLocalAbsences = 0;
@@ -1045,7 +1148,7 @@ export async function migrateLinkedAssignmentsToCentral({
 
   for (const assignment of assignments || []) {
     const tenantId = String(assignment.tenant_id || '');
-    const doctorId = assignment.tenant_doctor_id || null;
+    const doctorId = (assignment.tenant_doctor_id as string) || null;
     const token = tokensById.get(tenantId);
 
     if (!tenantId || !doctorId || !token) {
@@ -1069,14 +1172,14 @@ export async function migrateLinkedAssignmentsToCentral({
               tenantDb,
               masterDb,
               doctorId,
-              employeeId: assignment.employee_id || null,
+              employeeId: assignment.employee_id as string | null || null,
             })
           : await migrateTenantDoctorAbsencesToCentral({
               tenantDb,
               masterDb,
               tenantId,
               doctorId,
-              employeeId: assignment.employee_id || null,
+              employeeId: assignment.employee_id as string | null || null,
               resolveConflicts,
             });
         // Opt-in second pass: delete tenant absence rows whose date is
@@ -1114,7 +1217,7 @@ export async function migrateLinkedAssignmentsToCentral({
       const conflicts = Number(migrationResult.conflicts || 0);
       const localAbsencesCount = Number(migrationResult.localAbsences || 0);
       const skippedInvalidDateList = Array.isArray(migrationResult.skippedInvalidDate)
-        ? migrationResult.skippedInvalidDate
+        ? (migrationResult.skippedInvalidDate as Array<Record<string, unknown>>)
         : [];
       const skippedInvalidDate = skippedInvalidDateList.length;
       // Compact summary "row_id: reason" so the report fits in a cell while
@@ -1123,7 +1226,7 @@ export async function migrateLinkedAssignmentsToCentral({
         .slice(0, 5)
         .map((entry) => `${entry.id}: ${entry.reason}`)
         .join('; ') + (skippedInvalidDateList.length > 5 ? ` (+${skippedInvalidDateList.length - 5} weitere)` : '');
-      const purgeResult = migrationResult.purgeResult || { purged: 0, skipped: [] };
+      const purgeResult = (migrationResult.purgeResult as { purged: number; skipped: unknown[] }) || { purged: 0, skipped: [] };
       const purgedForRow = Number(purgeResult.purged || 0);
       purgedEmptyAbsences += purgedForRow;
       // Conflict resolution accounting. In a real pass with resolveConflicts
@@ -1137,11 +1240,11 @@ export async function migrateLinkedAssignmentsToCentral({
       const unresolvedForRow = Number(migrationResult.unresolvedConflicts || 0);
       resolvedConflicts += resolvedForRow;
       unresolvedConflicts += unresolvedForRow;
-      const conflictExamples = Array.isArray(migrationResult.conflictExamples) ? migrationResult.conflictExamples : [];
+      const conflictExamples = Array.isArray(migrationResult.conflictExamples) ? (migrationResult.conflictExamples as Array<Record<string, unknown>>) : [];
       const conflictSummary = conflictExamples
         .slice(0, 5)
         .map((entry) => {
-          const resolution = entry.resolution || (entry.localPriority > entry.centralPriority ? 'lokal gewinnt' : entry.centralPriority > entry.localPriority ? 'zentral gewinnt' : 'unentschieden');
+          const resolution = entry.resolution || ((entry.localPriority as number) > (entry.centralPriority as number) ? 'lokal gewinnt' : (entry.centralPriority as number) > (entry.localPriority as number) ? 'zentral gewinnt' : 'unentschieden');
           return `${entry.date}: ${entry.localPosition} vs ${entry.centralPosition} → ${resolution}`;
         })
         .join('; ') + (conflicts > 5 ? ` (+${conflicts - 5} weitere)` : '');
@@ -1185,7 +1288,7 @@ export async function migrateLinkedAssignmentsToCentral({
         tenant_name: assignment.tenant_name || null,
         tenant_doctor_id: assignment.tenant_doctor_id,
         status: 'error',
-        error: error.message,
+        error: (error as Error).message,
       });
     }
   }

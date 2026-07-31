@@ -7,9 +7,15 @@
 // See Migration 023 for the canonical schema. This helper is a safety net
 // for fresh deploys and is idempotent (CREATE TABLE IF NOT EXISTS).
 
+import type { Pool } from 'mysql2/promise';
+
 let centralWishTableEnsured = false;
 
-export async function ensureCentralWishTables(masterDb) {
+/**
+ * Ensure the CentralWishRequest table exists in the master DB.
+ * Safe to call repeatedly — it is idempotent.
+ */
+export async function ensureCentralWishTables(masterDb: Pool): Promise<void> {
   if (centralWishTableEnsured) return;
   await masterDb.execute(`
     CREATE TABLE IF NOT EXISTS CentralWishRequest (

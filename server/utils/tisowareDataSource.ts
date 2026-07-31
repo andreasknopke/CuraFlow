@@ -42,17 +42,108 @@ import {
   checkProxyHealth,
 } from './tisowareHttpProxy.js';
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface TisowareColumn {
+  name: string;
+  type: string;
+  nullable?: boolean;
+}
+
+interface TisowareQueryResult<T = Record<string, unknown>> {
+  rows: T[];
+  columns: TisowareColumn[];
+  rowCount: number;
+}
+
+interface TisowareTableRow {
+  schema_name: string;
+  table_name: string;
+  full_name: string;
+  row_count: number;
+}
+
+interface TisowareColumnRow {
+  column_name: string;
+  data_type: string;
+  max_length: number | null;
+  precision?: number | null;
+  scale?: number | null;
+  is_nullable: boolean;
+  is_identity: boolean;
+}
+
+interface TisowareTableSample {
+  rows: Record<string, unknown>[];
+  columns: TisowareColumn[];
+  rowCount: number;
+  totalCount: number;
+  offset: number;
+  limit: number;
+}
+
+interface TisowareConnectionSuccess {
+  success: true;
+  serverVersion: unknown;
+  proxy?: boolean;
+  proxyUrl?: string;
+}
+
+interface TisowareConnectionFailure {
+  success: false;
+  error?: string;
+  code?: string | null;
+  detail?: unknown;
+  proxy?: boolean;
+}
+
+type TisowareConnectionResult = TisowareConnectionSuccess | TisowareConnectionFailure;
+
+interface ConnectionCache {
+  state: 'unknown' | 'ok' | 'error';
+  timestamp: number;
+  error: string | null;
+  code: string | null;
+  configHash: string;
+}
+
+interface PasswordDiagnostics {
+  rawLength: number;
+  hasLeadingQuote: boolean;
+  hasTrailingQuote: boolean;
+  surroundedByQuotes: boolean;
+  containsHash: boolean;
+  effectiveLength: number;
+  effectiveContainsHash: boolean;
+}
+
+interface ConnectionStatus {
+  connected: boolean;
+  mock: boolean;
+  proxy?: boolean;
+  proxyUrl?: string;
+  diagnosis?: string;
+  message: string;
+  detail?: unknown;
+  code?: string | null;
+  hint?: string;
+  serverVersion?: unknown;
+  passwordDiag?: PasswordDiagnostics | null;
+  odbcState?: string | null;
+  odbcNativeCode?: string | null;
+}
+
 // ─── Modus-Auswahl ───────────────────────────────────────────────────────────
 // Entscheidet zur Laufzeit, ob der HTTP-Proxy oder lokales PHP verwendet wird.
 
-function useHttpProxy() {
+function useHttpProxy(): boolean {
   return isProxyConfigured();
 }
 
 // ─── Connection state cache (avoids blocking on repeated failed attempts) ────
 
 const CONNECTION_CACHE_TTL = 8_000;
-const connectionCache = {
+const connectionCache: ConnectionCache = {
   state: 'unknown',
   timestamp: 0,
   error: null,
@@ -60,11 +151,11 @@ const connectionCache = {
   configHash: '',
 };
 
-function currentConfigHash() {
+function currentConfigHash(): string {
   return `${process.env.TISO_SERVER || ''}|${process.env.TISO_USER || ''}|${process.env.TISO_PASS || ''}`;
 }
 
-function resetConnectionCache() {
+function resetConnectionCache(): void {
   connectionCache.state = 'unknown';
   connectionCache.timestamp = 0;
   connectionCache.error = null;
@@ -72,9 +163,39 @@ function resetConnectionCache() {
   connectionCache.configHash = currentConfigHash();
 }
 
+// ─── Type guards ─────────────────────────────────────────────────────────────
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
+function isTisowareColumn(value: unknown): value is TisowareColumn {
+  return isRecord(value) && typeof value.name === 'string' && typeof value.type === 'string';
+}
+
+function toQueryResult<T = Record<string, unknown>>(raw: unknown): TisowareQueryResult<T> {
+  if (!isRecord(raw)) {
+    return { rows: [], columns: [], rowCount: 0 };
+  }
+
+  const rows = Array.isArray(raw.rows)
+    ? raw.rows.filter((row: unknown): row is Record<string, unknown> => isRecord(row))
+    : [];
+
+  const columns = Array.isArray(raw.columns)
+    ? raw.columns.filter((col: unknown): col is TisowareColumn => isTisowareColumn(col))
+    : [];
+
+  return {
+    rows: rows as T[],
+    columns,
+    rowCount: typeof raw.rowCount === 'number' ? raw.rowCount : 0,
+  };
+}
+
 // ─── Query functions ─────────────────────────────────────────────────────────
 
-export async function testTisowareConnection() {
+export async function testTisowareConnection(): Promise<TisowareConnectionResult> {
   if (useHttpProxy()) {
     // HTTP-Proxy: kurzer Timeout, da Netzwerk-Roundtrip
     const result = await testHttpConnection(30000);
@@ -90,18 +211,18 @@ export async function testTisowareConnection() {
     : { success: false, error: result.error, code: result.code, detail: result.detail };
 }
 
-export async function queryTisoware(query, maxRows = 1000) {
+export async function queryTisoware<T = Record<string, unknown>>(query: string, maxRows = 1000): Promise<TisowareQueryResult<T>> {
   const normalized = query.trim().toUpperCase();
   if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
     throw Object.assign(new Error('Only SELECT / WITH queries are allowed'), { status: 400 });
   }
   if (useHttpProxy()) {
-    return queryViaHttp(query);
+    return toQueryResult<T>(await queryViaHttp(query));
   }
-  return queryViaPhp(query);
+  return toQueryResult<T>(await queryViaPhp(query));
 }
 
-export async function closeTisowarePool() {
+export async function closeTisowarePool(): Promise<void> {
   // No persistent pool to close — PHP processes are ephemeral
   resetConnectionCache();
 }
@@ -109,8 +230,8 @@ export async function closeTisowarePool() {
 /**
  * List all user tables (schema + name) in the Tisoware database.
  */
-export async function getTisowareTables() {
-  const result = await queryTisoware(`
+export async function getTisowareTables(): Promise<TisowareTableRow[]> {
+  const result = await queryTisoware<TisowareTableRow>(`
     SELECT
       s.name AS schema_name,
       t.name AS table_name,
@@ -132,12 +253,12 @@ export async function getTisowareTables() {
 /**
  * Get columns for a given table.
  */
-export async function getTisowareTableColumns(schema, table) {
+export async function getTisowareTableColumns(schema: string, table: string): Promise<TisowareColumnRow[]> {
   const safeSchema = schema.replace(/[^a-zA-Z0-9_]/g, '');
   const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
   const safeObject = `[${safeSchema}].[${safeTable}]`;
 
-  const result = await queryTisoware(`
+  const result = await queryTisoware<TisowareColumnRow>(`
     SELECT
       c.name AS column_name,
       TYPE_NAME(c.user_type_id) AS data_type,
@@ -157,13 +278,13 @@ export async function getTisowareTableColumns(schema, table) {
 /**
  * Get sample rows from a table with pagination.
  *
- * @param {string} schema - Table schema
- * @param {string} table - Table name
- * @param {number} [offset=0] - Row offset for pagination
- * @param {number} [limit=50] - Max rows per page
- * @returns {Promise<{rows: object[], columns: object[], rowCount: number, totalCount: number, offset: number, limit: number}>}
+ * @param schema - Table schema
+ * @param table - Table name
+ * @param offset - Row offset for pagination
+ * @param limit - Max rows per page
+ * @returns SQL dump as a string
  */
-export async function getTisowareTableSample(schema, table, offset = 0, limit = 50) {
+export async function getTisowareTableSample(schema: string, table: string, offset = 0, limit = 50): Promise<TisowareTableSample> {
   const safeSchema = schema.replace(/[^a-zA-Z0-9_]/g, '');
   const safeTable = table.replace(/[^a-zA-Z0-9_]/g, '');
 
@@ -172,7 +293,7 @@ export async function getTisowareTableSample(schema, table, offset = 0, limit = 
   const safeOffset = Math.max(0, offset);
 
   // Get total count
-  const countResult = await queryTisoware(`SELECT COUNT(*) AS total FROM [${safeSchema}].[${safeTable}]`);
+  const countResult = await queryTisoware<{ total: number }>(`SELECT COUNT(*) AS total FROM [${safeSchema}].[${safeTable}]`);
   const totalCount = countResult.rows?.[0]?.total ?? 0;
 
   // Get paginated data
@@ -192,7 +313,7 @@ export async function getTisowareTableSample(schema, table, offset = 0, limit = 
 
 // ============ MOCK DATA ============
 
-const MOCK_TABLES = [
+const MOCK_TABLES: TisowareTableRow[] = [
   { schema_name: 'dbo', table_name: 'PERSTAMM', full_name: 'dbo.PERSTAMM', row_count: 248 },
   { schema_name: 'dbo', table_name: 'BUCHEINZ', full_name: 'dbo.BUCHEINZ', row_count: 12580 },
   { schema_name: 'dbo', table_name: 'DPLAEND1', full_name: 'dbo.DPLAEND1', row_count: 350 },
@@ -207,7 +328,7 @@ const MOCK_TABLES = [
   { schema_name: 'dbo', table_name: 'DPLVERTR', full_name: 'dbo.DPLVERTR', row_count: 72 },
 ];
 
-const MOCK_COLUMNS = {
+const MOCK_COLUMNS: Record<string, TisowareColumnRow[]> = {
   PERSTAMM: [
     { column_name: 'PSNR', data_type: 'int', max_length: 4, is_nullable: false, is_identity: true },
     { column_name: 'PSPERSNR', data_type: 'varchar', max_length: 20, is_nullable: false, is_identity: false },
@@ -232,17 +353,17 @@ const MOCK_COLUMNS = {
   ],
 };
 
-function mockGetTables() {
+function mockGetTables(): TisowareTableRow[] {
   return MOCK_TABLES.filter(t => t.row_count > 0);
 }
 
-function mockGetColumns(schema, table) {
+function mockGetColumns(schema: string, table: string): TisowareColumnRow[] {
   return MOCK_COLUMNS[table] || [
     { column_name: 'column_name', data_type: 'varchar', max_length: 255, is_nullable: true, is_identity: false },
   ];
 }
 
-function mockGetSample(schema, table, offset = 0, limit = 50) {
+function mockGetSample(schema: string, table: string, offset = 0, limit = 50): TisowareTableSample {
   return {
     rows: [{ message: `Mock data: [${schema}].[${table}] — TISO_MOCK is active` }],
     columns: [{ name: 'message', type: 'varchar', nullable: true }],
@@ -253,11 +374,11 @@ function mockGetSample(schema, table, offset = 0, limit = 50) {
   };
 }
 
-function mockTestConnection() {
-  return { success: true, serverVersion: { connected: 1 }, mock: true };
+function mockTestConnection(): TisowareConnectionResult {
+  return { success: true, serverVersion: { connected: 1 }, mock: true } as TisowareConnectionResult;
 }
 
-function mockQuery(query) {
+function mockQuery(query: string): TisowareQueryResult {
   return {
     rows: [
       { note: `Mock result for: ${query.substring(0, 80)}…` },
@@ -271,7 +392,7 @@ function mockQuery(query) {
 /**
  * Whether mock mode is active (TISO_MOCK=true in env).
  */
-export function isMockMode() {
+export function isMockMode(): boolean {
   return process.env.TISO_MOCK === 'true' || process.env.TISO_MOCK === '1';
 }
 
@@ -279,7 +400,7 @@ export function isMockMode() {
  * Connection status info — always succeeds, includes structured diagnosis.
  * Performs a fresh connection attempt.
  */
-export async function getConnectionStatus() {
+export async function getConnectionStatus(): Promise<ConnectionStatus> {
   if (isMockMode()) {
     return { connected: true, mock: true, message: 'Mock-Modus aktiv (TISO_MOCK=true)' };
   }
@@ -359,22 +480,21 @@ export async function getConnectionStatus() {
         effectiveLength: 0,
         containsHash: false,
         surroundedByQuotes: false,
-      },
+      } as unknown as PasswordDiagnostics,
     };
   }
 
   // Password diagnostics (for debugging)
-  const passDiag = {
+  const effectivePass = ((pass.startsWith('"') && pass.endsWith('"')) || (pass.startsWith("'") && pass.endsWith("'"))) ? pass.slice(1, -1) : pass;
+  const passDiag: PasswordDiagnostics = {
     rawLength: pass.length,
     hasLeadingQuote: pass.startsWith('"') || pass.startsWith("'"),
     hasTrailingQuote: pass.endsWith('"') || pass.endsWith("'"),
     surroundedByQuotes: (pass.startsWith('"') && pass.endsWith('"')) || (pass.startsWith("'") && pass.endsWith("'")),
     containsHash: pass.includes('#'),
+    effectiveLength: effectivePass.length,
+    effectiveContainsHash: effectivePass.includes('#'),
   };
-  // Calculate effective length (without surrounding quotes)
-  const effectivePass = passDiag.surroundedByQuotes ? pass.slice(1, -1) : pass;
-  passDiag.effectiveLength = effectivePass.length;
-  passDiag.effectiveContainsHash = effectivePass.includes('#');
 
   // Fresh connection attempt — uses forceFresh=true to bypass cache
   try {
@@ -398,23 +518,28 @@ export async function getConnectionStatus() {
       diagnosis: diagnoseError(result.error, result.code),
       detail: result.detail || result.error?.substring(0, 300) || null,
       code: result.code || null,
-      odbcState: result.odbcState || null,
-      odbcNativeCode: result.odbcNativeCode || null,
+      odbcState: (result as unknown as Record<string, unknown>).odbcState as string | null || null,
+      odbcNativeCode: (result as unknown as Record<string, unknown>).odbcNativeCode as string | null || null,
       hint: getHintForError(result.code),
       passwordDiag: passDiag,
     };
   } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    const code = 'code' in error && typeof error.code === 'string' ? error.code : null;
+    const odbcState = 'odbcState' in error && typeof error.odbcState === 'string' ? error.odbcState : null;
+    const odbcNativeCode = 'odbcNativeCode' in error && typeof error.odbcNativeCode === 'string' ? error.odbcNativeCode : null;
+
     return {
       connected: false,
       mock: false,
       proxy: false,
-      message: diagnoseError(err.message, err.code),
-      diagnosis: diagnoseError(err.message, err.code),
-      detail: err.message?.substring(0, 300) || 'Unbekannter Fehler',
-      code: err.code || null,
-      odbcState: err.odbcState || null,
-      odbcNativeCode: err.odbcNativeCode || null,
-      hint: getHintForError(err.code),
+      message: diagnoseError(error.message, code),
+      diagnosis: diagnoseError(error.message, code),
+      detail: error.message.substring(0, 300) || 'Unbekannter Fehler',
+      code,
+      odbcState,
+      odbcNativeCode,
+      hint: getHintForError(code),
       passwordDiag: passDiag,
     };
   }
@@ -423,7 +548,7 @@ export async function getConnectionStatus() {
 /**
  * Analyse a Tisoware connection error and return a human-readable diagnosis.
  */
-function diagnoseError(message, code) {
+function diagnoseError(message: string | null | undefined, code: string | null | undefined): string {
   const msg = (message || '').toLowerCase();
   const codeStr = (code || '').toUpperCase();
 
@@ -481,7 +606,7 @@ function diagnoseError(message, code) {
   return `${(message || 'Unbekannter Fehler').substring(0, 200)}`;
 }
 
-function getHintForError(code) {
+function getHintForError(code: string | null | undefined): string {
   const codeStr = (code || '').toUpperCase();
 
   if (codeStr === 'HYT00' || codeStr === 'ETIMEOUT' || codeStr === 'ESOCKET') {
@@ -514,27 +639,27 @@ function getHintForError(code) {
 
 // ============ EXPORT WRAPPERS (mock-aware) ============
 
-export async function listTables() {
+export async function listTables(): Promise<TisowareTableRow[]> {
   if (isMockMode()) return mockGetTables();
   return getTisowareTables();
 }
 
-export async function listColumns(schema, table) {
+export async function listColumns(schema: string, table: string): Promise<TisowareColumnRow[]> {
   if (isMockMode()) return mockGetColumns(schema, table);
   return getTisowareTableColumns(schema, table);
 }
 
-export async function sampleTable(schema, table, offset = 0, limit = 50) {
+export async function sampleTable(schema: string, table: string, offset = 0, limit = 50): Promise<TisowareTableSample> {
   if (isMockMode()) return mockGetSample(schema, table, offset, limit);
   return getTisowareTableSample(schema, table, offset, limit);
 }
 
-export async function runQuery(query, maxRows = 1000) {
+export async function runQuery(query: string, maxRows = 1000): Promise<TisowareQueryResult> {
   if (isMockMode()) return mockQuery(query);
   return queryTisoware(query, maxRows);
 }
 
-export async function testConnection() {
+export async function testConnection(): Promise<TisowareConnectionResult> {
   if (isMockMode()) return mockTestConnection();
   return testTisowareConnection();
 }
@@ -543,11 +668,11 @@ export async function testConnection() {
  * Generate a SQL dump of all non-empty tables with representative rows
  * from the middle of each table (up to 300 rows per table).
  *
- * @returns {Promise<string>} SQL dump as a string
+ * @returns SQL dump as a string
  */
-export async function generateDump() {
+export async function generateDump(): Promise<string> {
   const tables = await listTables();
-  const dumpParts = [];
+  const dumpParts: string[] = [];
 
   dumpParts.push('-- ============================================================');
   dumpParts.push('-- Tisoware SQL Dump');
@@ -563,8 +688,8 @@ export async function generateDump() {
 
     // Calculate offset: take the LAST 300 rows (most recent data)
     const maxSample = 300;
-    let offset;
-    let limit;
+    let offset: number;
+    let limit: number;
     if (totalRows <= maxSample) {
       offset = 0;
       limit = totalRows;
@@ -574,21 +699,23 @@ export async function generateDump() {
     }
 
     // Get columns
-    let columns;
+    let columns: TisowareColumnRow[];
     try {
       columns = await listColumns(schema_name, table_name);
     } catch (err) {
-      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${err.message}`);
+      const error = err instanceof Error ? err : new Error(String(err));
+      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${error.message}`);
       dumpParts.push('');
       continue;
     }
 
     // Get sample rows from the middle
-    let sample;
+    let sample: TisowareTableSample;
     try {
       sample = await sampleTable(schema_name, table_name, offset, limit);
     } catch (err) {
-      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${err.message}`);
+      const error = err instanceof Error ? err : new Error(String(err));
+      dumpParts.push(`-- SKIPPED [${schema_name}].[${table_name}]: ${error.message}`);
       dumpParts.push('');
       continue;
     }
@@ -645,10 +772,10 @@ export async function generateDump() {
 
 /**
  * Escape a value for SQL INSERT statement.
- * @param {unknown} val
- * @returns {string}
+ * @param val
+ * @returns escaped SQL string
  */
-function escapeSqlValue(val) {
+function escapeSqlValue(val: unknown): string {
   if (val === null || val === undefined) return 'NULL';
   // Numbers: output as-is
   if (typeof val === 'number') {
@@ -661,7 +788,7 @@ function escapeSqlValue(val) {
   return `'${str.replace(/'/g, "''")}'`;
 }
 
-function mockGetDump() {
+function mockGetDump(): string {
   return [
     '-- ============================================================',
     '-- Tisoware SQL Dump (MOCK MODE)',
@@ -688,7 +815,7 @@ function mockGetDump() {
 }
 
 // Update the export wrapper
-export async function generateDumpWrapper() {
+export async function generateDumpWrapper(): Promise<string> {
   if (isMockMode()) return mockGetDump();
   return generateDump();
 }

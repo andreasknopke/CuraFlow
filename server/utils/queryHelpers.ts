@@ -18,10 +18,20 @@
  * (PR 2.x) reconcile them individually.
  */
 
+import type { Pool } from 'mysql2/promise';
+import { Kysely } from 'kysely';
 import { createKysely } from './db.js';
 import { sql } from 'kysely';
 import { toSqlValue } from './sqlMarshal.js';
 import { assertValidIdentifier } from './schema.js';
+
+type SqlRow = Record<string, unknown>;
+
+// Kysely<unknown> doesn't accept `string` table names in strict mode (it wants
+// keys of a Database type). Cast to `any` at the query boundary — the escaping
+// is what matters, compile-time types come when we introduce a Database type.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const getKysely = (dbPool: Pool): any => createKysely(dbPool);
 
 // Insert a single row through Kysely so the table identifier and column names
 // are escaped centrally. `keys` must already be filtered to valid columns (via
@@ -30,9 +40,9 @@ import { assertValidIdentifier } from './schema.js';
 // (?,...) behavior. assertValidIdentifier(tableName) at the route entry remains
 // as defence-in-depth. Errors (e.g. ER_DUP_ENTRY) propagate with their .code
 // intact for the caller's duplicate-handling logic.
-export const insertRow = async (dbPool, tableName, keys, data) => {
-  const kysely = createKysely(dbPool);
-  const row = {};
+export const insertRow = async (dbPool: Pool, tableName: string, keys: string[], data: SqlRow): Promise<void> => {
+  const kysely = getKysely(dbPool);
+  const row: SqlRow = {};
   for (const k of keys) {
     const v = toSqlValue(data[k]);
     row[k] = v === undefined ? null : v;
@@ -46,9 +56,9 @@ export const insertRow = async (dbPool, tableName, keys, data) => {
 // hand-built `UPDATE \`t\` SET \`k\`=?,... WHERE id = ?`. ER_DUP_ENTRY
 // propagates with .code intact. assertValidIdentifier(tableName) at the route
 // entry stays as defence-in-depth.
-export const updateRow = async (dbPool, tableName, keys, data, id) => {
-  const kysely = createKysely(dbPool);
-  const set = {};
+export const updateRow = async (dbPool: Pool, tableName: string, keys: string[], data: SqlRow, id: string): Promise<void> => {
+  const kysely = getKysely(dbPool);
+  const set: SqlRow = {};
   for (const k of keys) {
     const v = toSqlValue(data[k]);
     set[k] = v === undefined ? null : v;
@@ -58,18 +68,18 @@ export const updateRow = async (dbPool, tableName, keys, data, id) => {
 
 // Delete a single row by id through Kysely. Equivalent to the previous
 // hand-built `DELETE FROM \`t\` WHERE id = ?`.
-export const deleteRow = async (dbPool, tableName, id) => {
-  const kysely = createKysely(dbPool);
+export const deleteRow = async (dbPool: Pool, tableName: string, id: string): Promise<void> => {
+  const kysely = getKysely(dbPool);
   await kysely.deleteFrom(tableName).where('id', '=', id).executeTakeFirst();
 };
 
 // Fetch a single row by id (SELECT * ... WHERE id = ?) through Kysely. Returns
 // the raw row (caller runs fromSqlRow) or null if not found. Used for the
 // update read-back and the delete pre-fetch.
-export const selectRow = async (dbPool, tableName, id) => {
-  const kysely = createKysely(dbPool);
+export const selectRow = async (dbPool: Pool, tableName: string, id: string): Promise<SqlRow | null> => {
+  const kysely = getKysely(dbPool);
   const rows = await kysely.selectFrom(tableName).selectAll().where('id', '=', id).limit(1).execute();
-  return rows[0] ?? null;
+  return (rows[0] as SqlRow) ?? null;
 };
 
 // List/filter rows through Kysely so the table name and EVERY filter key are
@@ -80,16 +90,16 @@ export const selectRow = async (dbPool, tableName, id) => {
 // caller maps them through fromSqlRow. assertValidIdentifier(tableName) at the
 // route entry stays as defence-in-depth; the sort field is validated with
 // assertValidIdentifier here too.
-export const filterRows = async (dbPool, tableName, { filters = {}, sort, limit, skip } = {}) => {
-  const kysely = createKysely(dbPool);
+export const filterRows = async (dbPool: Pool, tableName: string, { filters = {}, sort, limit, skip }: { filters?: SqlRow; sort?: string; limit?: string | number; skip?: string | number } = {}): Promise<SqlRow[]> => {
+  const kysely = getKysely(dbPool);
   let query = kysely.selectFrom(tableName).selectAll();
 
   if (filters && Object.keys(filters).length > 0) {
     for (const [key, val] of Object.entries(filters)) {
       if (val && typeof val === 'object' && !Array.isArray(val)) {
-        // sql.ref escapes the column identifier; values are bound as params.
-        if (val.$gte !== undefined) query = query.where(sql.ref(key), '>=', toSqlValue(val.$gte));
-        if (val.$lte !== undefined) query = query.where(sql.ref(key), '<=', toSqlValue(val.$lte));
+        const filterVal = val as { $gte?: unknown; $lte?: unknown };
+        if (filterVal.$gte !== undefined) query = query.where(sql.ref(key), '>=', toSqlValue(filterVal.$gte));
+        if (filterVal.$lte !== undefined) query = query.where(sql.ref(key), '<=', toSqlValue(filterVal.$lte));
       } else {
         query = query.where(sql.ref(key), '=', toSqlValue(val));
       }
@@ -99,8 +109,6 @@ export const filterRows = async (dbPool, tableName, { filters = {}, sort, limit,
   if (typeof sort === 'string' && sort) {
     const desc = sort.startsWith('-');
     const field = desc ? sort.substring(1) : sort;
-    // Defence-in-depth: validate the sort identifier (Kysely would escape it
-    // too, but assertValidIdentifier gives a clean 400 on a bad name).
     assertValidIdentifier(field, 'Sortierfeld');
     query = query.orderBy(field, desc ? 'desc' : 'asc');
     if (field !== 'id') query = query.orderBy('id', 'asc');
@@ -108,16 +116,16 @@ export const filterRows = async (dbPool, tableName, { filters = {}, sort, limit,
     query = query.orderBy('id', 'asc');
   }
 
-  const parsedLimit = parseInt(limit);
+  const parsedLimit = parseInt(String(limit));
   if (limit && !isNaN(parsedLimit)) {
     query = query.limit(parsedLimit);
-    const parsedSkip = parseInt(skip);
+    const parsedSkip = parseInt(String(skip));
     if (skip && !isNaN(parsedSkip)) {
       query = query.offset(parsedSkip);
     }
   }
 
-  return query.execute();
+  return query.execute() as Promise<SqlRow[]>;
 };
 
 // Insert multiple rows in a single transaction through Kysely. All rows share
@@ -126,16 +134,17 @@ export const filterRows = async (dbPool, tableName, { filters = {}, sort, limit,
 // BEGIN/COMMIT/ROLLBACK via executeQuery (handled by the bridge), so the whole
 // batch is atomic — a mid-batch failure rolls back every row. Identifiers
 // (table + every column) are escaped centrally.
-export const bulkInsert = async (dbPool, tableName, keys, rows) => {
-  const kysely = createKysely(dbPool);
-  await kysely.transaction().execute(async (trx) => {
+export const bulkInsert = async (dbPool: Pool, tableName: string, keys: string[], rows: SqlRow[]): Promise<void> => {
+  const kysely = getKysely(dbPool);
+  await kysely.transaction().execute(async (trx: unknown) => {
+    const t = trx as unknown as Kysely<Record<string, Record<string, unknown>>>;
     for (const data of rows) {
-      const row = {};
+      const row: SqlRow = {};
       for (const k of keys) {
         const v = toSqlValue(data[k]);
         row[k] = v === undefined ? null : v;
       }
-      await trx.insertInto(tableName).values(row).executeTakeFirst();
+      await t.insertInto(tableName).values(row).executeTakeFirst();
     }
   });
 };

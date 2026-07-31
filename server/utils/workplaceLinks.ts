@@ -17,19 +17,54 @@
  * only (no per-user JSON permission columns, unlike tenant_group/rotation_group).
  */
 
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+interface LinkGroup extends RowDataPacket {
+  id: string;
+  name: string;
+  description: string | null;
+  is_active: number | boolean;
+  created_at: Date | string | null;
+  updated_at: Date | string | null;
+}
+
+interface LinkMember extends RowDataPacket {
+  id: string;
+  link_group_id: string;
+  tenant_id: string;
+  workplace_name: string;
+  created_at: Date | string | null;
+  tenant_name: string;
+  own_workplace_name?: string;
+}
+
+interface LinkedWorkplace {
+  tenant_id: string;
+  tenant_name: string;
+  workplace_name: string;
+  link_group_id: string;
+}
+
+interface LinkedWorkplaceRow extends RowDataPacket, LinkedWorkplace {}
+
+interface LinkGroupWithMembers extends LinkGroup {
+  is_active: boolean;
+  members: LinkMember[];
+}
+
 /**
  * Load every active link group, each with its member workplaces
  * (tenant_id + workplace_name), joined with the tenant name for display.
  */
-export async function listWorkplaceLinkGroups(masterDb) {
-  const [groups] = await masterDb.execute(
+export async function listWorkplaceLinkGroups(masterDb: Pool): Promise<LinkGroupWithMembers[]> {
+  const [groups] = await masterDb.execute<LinkGroup[]>(
     `SELECT id, name, description, is_active, created_at, updated_at
        FROM workplace_link_group
       ORDER BY name ASC`
   );
   if (groups.length === 0) return [];
 
-  const [members] = await masterDb.execute(
+  const [members] = await masterDb.execute<LinkMember[]>(
     `SELECT m.id, m.link_group_id, m.tenant_id, m.workplace_name, m.created_at,
             t.name AS tenant_name
        FROM workplace_link_member m
@@ -37,7 +72,7 @@ export async function listWorkplaceLinkGroups(masterDb) {
       ORDER BY t.name ASC, m.workplace_name ASC`
   );
 
-  const membersByGroup = new Map();
+  const membersByGroup = new Map<string, LinkMember[]>();
   for (const member of members) {
     const list = membersByGroup.get(member.link_group_id) || [];
     list.push(member);
@@ -59,10 +94,10 @@ export async function listWorkplaceLinkGroups(masterDb) {
  * belong to more than one group, so we return a flat list of partner members
  * plus which group they came from.
  */
-export async function loadLinkedWorkplacesFor(masterDb, tenantId, workplaceName) {
+export async function loadLinkedWorkplacesFor(masterDb: Pool, tenantId: string | null | undefined, workplaceName: string | null | undefined): Promise<LinkedWorkplace[]> {
   if (!tenantId || !workplaceName) return [];
 
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<LinkedWorkplaceRow[]>(
     `SELECT m2.tenant_id, m2.workplace_name, m2.link_group_id, t.name AS tenant_name
        FROM workplace_link_member m1
        JOIN workplace_link_group g ON g.id = m1.link_group_id AND g.is_active = 1
@@ -81,10 +116,10 @@ export async function loadLinkedWorkplacesFor(masterDb, tenantId, workplaceName)
  * Returns a Map keyed by the tenant's own workplace_name -> array of partner
  * members ({ tenant_id, tenant_name, workplace_name, link_group_id }).
  */
-export async function loadLinkedWorkplacesForTenant(masterDb, tenantId) {
+export async function loadLinkedWorkplacesForTenant(masterDb: Pool, tenantId: string | null | undefined): Promise<Map<string, LinkedWorkplace[]>> {
   if (!tenantId) return new Map();
 
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<LinkMember[]>(
     `SELECT m1.workplace_name AS own_workplace_name,
             m2.tenant_id, m2.workplace_name, m2.link_group_id, t.name AS tenant_name
        FROM workplace_link_member m1
@@ -96,16 +131,16 @@ export async function loadLinkedWorkplacesForTenant(masterDb, tenantId) {
     [String(tenantId)]
   );
 
-  const map = new Map();
+  const map = new Map<string, LinkedWorkplace[]>();
   for (const row of rows) {
-    const list = map.get(row.own_workplace_name) || [];
+    const list = map.get(row.own_workplace_name || '') || [];
     list.push({
       tenant_id: row.tenant_id,
       tenant_name: row.tenant_name,
       workplace_name: row.workplace_name,
       link_group_id: row.link_group_id,
     });
-    map.set(row.own_workplace_name, list);
+    map.set(row.own_workplace_name || '', list);
   }
   return map;
 }

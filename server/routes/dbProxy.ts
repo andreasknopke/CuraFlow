@@ -1,7 +1,34 @@
 import express from 'express';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
+
+interface CuraDbError extends Error {
+  code?: string;
+  errno?: number;
+  sqlState?: string;
+  sqlMessage?: string;
+  status?: number;
+  conflictPayload?: Record<string, unknown>;
+  body?: Record<string, unknown>;
+}
+
+interface CuraRequest extends Request {
+  db: Pool;
+  dbToken?: string;
+  isCustomDb?: boolean;
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    permissions?: Record<string, boolean>;
+    [key: string]: unknown;
+  };
+}
+
+import type { Kysely } from 'kysely';
 import { db, removeTenantPool } from '../index.js';
 import { authMiddleware } from './auth.js';
-import { checkAdminPermission } from '../utils/permissions.js';
+import { checkAdminPermission, PermissionKey } from '../utils/permissions.js';
 import crypto from 'crypto';
 import { broadcastPlanUpdate, buildRealtimeScope, isPlanSyncEntity } from '../utils/realtime.js';
 import { COLUMNS_CACHE, clearColumnsCache, ensureColumns, assertValidIdentifier } from '../utils/schema.js';
@@ -42,6 +69,7 @@ import {
   deleteShiftEntry,
   getShiftEntry,
   listShiftEntries,
+  DbRow,
 } from '../repos/shiftEntryRepo.js';
 
 // Kategorien, die vom Default-Timeslot-Mechanismus ausgenommen sind
@@ -52,7 +80,7 @@ const EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES = new Set(['Dienste', 'Demonstratione
  * (07:00–15:30) existiert, sofern die Kategorie nicht ausgeschlossen ist.
  * Idempotent: Überspringt, wenn bereits ein Timeslot existiert.
  */
-async function ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, workplaceData) {
+async function ensureDefaultTimeslotAfterWorkplaceCreate(dbPool: any, workplaceData: any) {
   if (!workplaceData?.category || EXCLUDED_DEFAULT_TIMESLOT_CATEGORIES.has(workplaceData.category)) {
     return;
   }
@@ -61,7 +89,7 @@ async function ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, workplaceData) 
   const [existingSlots] = await dbPool.execute(
     `SELECT COUNT(*) AS cnt FROM WorkplaceTimeslot WHERE workplace_id = ?`,
     [workplaceData.id]
-  );
+  ) as unknown as [RowDataPacket[], RowDataPacket[]];
 
   if (existingSlots[0]?.cnt > 0) {
     return; // Bereits vorhanden → nichts tun
@@ -79,7 +107,7 @@ async function ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, workplaceData) 
   try {
     const [wpColumns] = await dbPool.execute(
       `SHOW COLUMNS FROM Workplace LIKE 'timeslots_enabled'`
-    );
+    ) as unknown as [RowDataPacket[], RowDataPacket[]];
     if (wpColumns.length > 0) {
       await dbPool.execute(
         `UPDATE Workplace SET timeslots_enabled = TRUE WHERE id = ? AND (timeslots_enabled IS NULL OR timeslots_enabled = FALSE)`,
@@ -146,27 +174,32 @@ export { clearColumnsCache, approvalWriteRequiresPermission };
 //
 // assertValidIdentifier(tableName) at the route entry (dbProxy.js ~786)
 // remains as defence-in-depth; Kysely is now the primary control.
-const getValidColumns = async (dbPool, tableName, cacheKey) => {
+const getValidColumns = async (dbPool: any, tableName: any, cacheKey: any) => {
   const fullCacheKey = `${cacheKey}:${tableName}`;
   if (COLUMNS_CACHE[fullCacheKey]) return COLUMNS_CACHE[fullCacheKey];
 
   try {
     const kysely = createKysely(dbPool);
     const { rows } = await sql`SHOW COLUMNS FROM ${sql.id(tableName)}`.execute(kysely);
-    const columns = rows.map(r => r.Field ?? r.field ?? r.COLUMN_NAME);
+    const columns = rows.map((r: any) => r.Field ?? r.field ?? r.COLUMN_NAME);
     COLUMNS_CACHE[fullCacheKey] = columns;
     return columns;
   } catch (e) {
-    console.error(`Failed to fetch columns for ${tableName}:`, e.message);
-    if (e.message.includes("doesn't exist") || e.code === 'ER_NO_SUCH_TABLE') {
+    console.error(`Failed to fetch columns for ${tableName}:`, (e as Error).message);
+    if ((e as Error).message.includes("doesn't exist") || (e as CuraDbError).code === 'ER_NO_SUCH_TABLE') {
       return [];
     }
     return null;
   }
 };
 
+interface WpCacheEntry {
+  data: DbRow | null;
+  ts: number;
+}
+
 // Cache for Workplace allows_multiple lookups (per tenant, refreshed periodically)
-const WORKPLACE_CACHE = {};
+const WORKPLACE_CACHE: Record<string, WpCacheEntry> = {};
 const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
 
 /**
@@ -176,7 +209,7 @@ const WORKPLACE_CACHE_TTL = 60_000; // 1 minute
  * 
  * @returns {object|null} The conflicting shift row, or null if no conflict
  */
-const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
+const checkShiftConflict = async (dbPool: any, shiftData: any, cacheKey = 'default') => {
   const { date, position, timeslot_id } = shiftData;
   if (!date || !position) return null;
 
@@ -191,13 +224,13 @@ const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
       const [rows] = await dbPool.execute(
         `SELECT ${selectColumns} FROM Workplace WHERE name = ? LIMIT 1`,
         [position]
-      );
+      ) as unknown as [RowDataPacket[], RowDataPacket[]];
       const wp = rows[0] || null;
       WORKPLACE_CACHE[wpCacheKey] = { data: wp, ts: Date.now() };
       wpEntry = WORKPLACE_CACHE[wpCacheKey];
     } catch (e) {
       // If Workplace table doesn't exist or query fails, skip sentinel
-      console.warn('[Sentinel] Workplace lookup failed:', e.message);
+      console.warn('[Sentinel] Workplace lookup failed:', (e as Error).message);
       return null;
     }
   }
@@ -229,15 +262,15 @@ const checkShiftConflict = async (dbPool, shiftData, cacheKey = 'default') => {
   }
 
   try {
-    const [existing] = await dbPool.execute(sql, params);
+    const [existing] = await dbPool.execute(sql, params) as unknown as [RowDataPacket[], RowDataPacket[]];
     return existing.length > 0 ? existing[0] : null;
   } catch (e) {
-    console.warn('[Sentinel] Conflict check failed:', e.message);
+    console.warn('[Sentinel] Conflict check failed:', (e as Error).message);
     return null; // On error, allow the create (don't block operations)
   }
 };
 
-const ensureTenantBaseSchema = async (dbPool, cacheKey) => {
+const ensureTenantBaseSchema = async (dbPool: any, cacheKey: any) => {
   const tableCheckKey = `${cacheKey}:tenant-base-schema:checked`;
   if (COLUMNS_CACHE[tableCheckKey]) return;
 
@@ -250,26 +283,26 @@ const ensureTenantBaseSchema = async (dbPool, cacheKey) => {
       try {
         await dbPool.execute('CREATE INDEX idx_doctor_central_employee ON Doctor(central_employee_id)');
       } catch (err) {
-        if (err.code !== 'ER_DUP_KEYNAME') {
-          console.warn('[dbProxy] ensureTenantBaseSchema doctor link index:', err.message);
+        if ((err as CuraDbError).code !== 'ER_DUP_KEYNAME') {
+          console.warn('[dbProxy] ensureTenantBaseSchema doctor link index:', (err as Error).message);
         }
       }
     }
     clearColumnsCache(TENANT_BASE_TABLES, cacheKey);
   } catch (err) {
-    console.error('Failed to ensure tenant base schema:', err.message);
+    console.error('Failed to ensure tenant base schema:', (err as Error).message);
     throw err;
   }
 
   COLUMNS_CACHE[tableCheckKey] = true;
 };
 
-const loadDoctorLink = async (dbPool, doctorId) => {
+const loadDoctorLink = async (dbPool: any, doctorId: any) => {
   if (!doctorId) return null;
   const [rows] = await dbPool.execute(
     'SELECT id, central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
     [doctorId]
-  );
+  ) as unknown as [RowDataPacket[], RowDataPacket[]];
   if (rows.length === 0 || !rows[0].central_employee_id) {
     return null;
   }
@@ -280,7 +313,7 @@ const loadDoctorLink = async (dbPool, doctorId) => {
 };
 
 // Handle GET requests with helpful error
-router.get('/', (req, res) => {
+router.get('/', (req: Request, res: Response) => {
   res.status(405).json({ 
     error: 'Method not allowed. Use POST with { action, entity, ... }',
     hint: 'GET requests are not supported on /api/db'
@@ -288,7 +321,7 @@ router.get('/', (req, res) => {
 });
 
 // Auto-create ScheduleBlock table if it doesn't exist (for multi-tenant support)
-const ensureScheduleBlockTable = async (dbPool, cacheKey) => {
+const ensureScheduleBlockTable = async (dbPool: any, cacheKey: any) => {
   const tableCheckKey = `${cacheKey}:ScheduleBlock:checked`;
   if (COLUMNS_CACHE[tableCheckKey]) return;
   
@@ -315,12 +348,12 @@ const ensureScheduleBlockTable = async (dbPool, cacheKey) => {
 
     COLUMNS_CACHE[tableCheckKey] = true;
   } catch (err) {
-    console.warn('ensureScheduleBlockTable error:', err.message);
+    console.warn('ensureScheduleBlockTable error:', (err as Error).message);
   }
 };
 
 // Auto-create TeamRole table if it doesn't exist (for multi-tenant support)
-const ensureTeamRoleTable = async (dbPool, cacheKey) => {
+const ensureTeamRoleTable = async (dbPool: any, cacheKey: any) => {
   const tableCheckKey = `${cacheKey}:TeamRole:checked`;
   if (COLUMNS_CACHE[tableCheckKey]) return; // Already checked this session
   
@@ -360,11 +393,11 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
       await dbPool.execute(`UPDATE TeamRole SET can_do_foreground_duty = FALSE WHERE name = 'Nicht-Radiologe' AND can_do_foreground_duty = TRUE`);
       await dbPool.execute(`UPDATE TeamRole SET excluded_from_statistics = TRUE WHERE name = 'Nicht-Radiologe' AND excluded_from_statistics = FALSE`);
     } catch (updateErr) {
-      console.warn('TeamRole defaults migration update skipped:', updateErr.message);
+      console.warn('TeamRole defaults migration update skipped:', (updateErr as Error).message);
     }
 
     // Seed defaults if empty
-    const [existing] = await dbPool.execute('SELECT COUNT(*) as cnt FROM TeamRole');
+    const [existing] = await dbPool.execute('SELECT COUNT(*) as cnt FROM TeamRole') as unknown as [RowDataPacket[], RowDataPacket[]];
     if (existing[0].cnt === 0) {
       const defaultRoles = [
         { name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
@@ -391,13 +424,13 @@ const ensureTeamRoleTable = async (dbPool, cacheKey) => {
     }
     COLUMNS_CACHE[tableCheckKey] = true;
   } catch (err) {
-    console.error('Failed to ensure TeamRole table:', err.message);
+    console.error('Failed to ensure TeamRole table:', (err as Error).message);
     COLUMNS_CACHE[tableCheckKey] = true; // Don't retry on error
   }
 };
 
 // Auto-create Qualification tables if they don't exist (for multi-tenant support)
-const ensureQualificationTables = async (dbPool, cacheKey) => {
+const ensureQualificationTables = async (dbPool: any, cacheKey: any) => {
   const tableCheckKey = `${cacheKey}:Qualification:checked`;
   if (COLUMNS_CACHE[tableCheckKey]) return;
   
@@ -494,13 +527,13 @@ const ensureQualificationTables = async (dbPool, cacheKey) => {
     COLUMNS_CACHE[tableCheckKey] = true;
     console.log('✅ Qualification tables ensured for tenant');
   } catch (err) {
-    console.error('Failed to ensure Qualification tables:', err.message);
+    console.error('Failed to ensure Qualification tables:', (err as Error).message);
     COLUMNS_CACHE[tableCheckKey] = true;
   }
 };
 
 // Auto-add min_staff and optimal_staff columns to Workplace if missing (for auto-fill engine)
-const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
+const ensureWorkplaceStaffColumns = async (dbPool: any, cacheKey: any) => {
   const checkKey = `${cacheKey}:Workplace:staff_cols_checked`;
   if (COLUMNS_CACHE[checkKey]) return;
 
@@ -518,8 +551,8 @@ const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
     }
   } catch (err) {
     // Columns might already exist or table might not exist yet — both are fine
-    if (err.code !== 'ER_DUP_FIELDNAME') {
-      console.warn('[dbProxy] ensureWorkplaceStaffColumns:', err.message);
+    if ((err as CuraDbError).code !== 'ER_DUP_FIELDNAME') {
+      console.warn('[dbProxy] ensureWorkplaceStaffColumns:', (err as Error).message);
     }
   }
   COLUMNS_CACHE[checkKey] = true;
@@ -531,10 +564,10 @@ const ensureWorkplaceStaffColumns = async (dbPool, cacheKey) => {
  * Resolve a doctor_id to a human-readable name.
  * Returns null if the doctor cannot be found.
  */
-const resolveDoctorName = async (dbPool, doctorId) => {
+const resolveDoctorName = async (dbPool: any, doctorId: any) => {
   if (!doctorId) return null;
   try {
-    const [rows] = await dbPool.execute('SELECT name FROM Doctor WHERE id = ? LIMIT 1', [doctorId]);
+    const [rows] = await dbPool.execute('SELECT name FROM Doctor WHERE id = ? LIMIT 1', [doctorId]) as unknown as [RowDataPacket[], RowDataPacket[]];
     return rows[0]?.name ?? null;
   } catch {
     return null;
@@ -545,7 +578,7 @@ const resolveDoctorName = async (dbPool, doctorId) => {
  * Enrich audit log details with human-readable context (doctor name, date, position)
  * so that admins can understand audit entries without looking up cryptic IDs.
  */
-export const enrichAuditDetails = async (dbPool, details) => {
+export const enrichAuditDetails = async (dbPool: any, details: any) => {
   if (!details || typeof details !== 'object') return details;
   const enriched = { ...details };
   const record = details.deleted_data || details.data;
@@ -567,7 +600,7 @@ export const enrichAuditDetails = async (dbPool, details) => {
 };
 
 // Writes an audit entry to the SystemLog table for UI visibility
-export const writeAuditLog = async (dbPool, { level = 'audit', source, message, details, userEmail }) => {
+export const writeAuditLog = async (dbPool: any, { level = 'audit', source, message, details, userEmail }: any) => {
   try {
     const id = crypto.randomUUID();
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
@@ -577,7 +610,7 @@ export const writeAuditLog = async (dbPool, { level = 'audit', source, message, 
     );
   } catch (err) {
     // Don't let audit logging failures break the main operation
-    console.error('[AUDIT] Failed to write audit log to SystemLog table:', err.message);
+    console.error('[AUDIT] Failed to write audit log to SystemLog table:', (err as Error).message);
   }
 };
 
@@ -586,22 +619,22 @@ export const writeAuditLog = async (dbPool, { level = 'audit', source, message, 
 // write as protected (return true) — the caller then requires can_edit_schedule.
 // The previous fail-open `return false` let a transient lookup error bypass the
 // permission check on a Dienste shift.
-async function isServicePosition(dbPool, positionName) {
+async function isServicePosition(dbPool: any, positionName: any) {
   if (!positionName) return false;
   try {
     const [rows] = await dbPool.execute(
       'SELECT category FROM Workplace WHERE name = ? LIMIT 1',
       [positionName],
-    );
+    ) as unknown as [RowDataPacket[], RowDataPacket[]];
     return rows.length > 0 && rows[0].category === 'Dienste';
   } catch (err) {
-    console.error('[isServicePosition] lookup failed, treating as protected:', err.message);
+    console.error('[isServicePosition] lookup failed, treating as protected:', (err as Error).message);
     return true;
   }
 }
 
 // Helper: extract position names from ShiftEntry request data
-function extractPositionNamesFromShiftData(requestBody) {
+function extractPositionNamesFromShiftData(requestBody: any) {
   const { action, operation, entity, table, data, id } = requestBody;
   const tableName = entity || table;
   if (tableName !== 'ShiftEntry') return [];
@@ -610,7 +643,7 @@ function extractPositionNamesFromShiftData(requestBody) {
     return data?.position ? [data.position] : [];
   }
   if (effAction === 'bulkCreate') {
-    return (Array.isArray(data) ? data : []).map((d) => d.position).filter(Boolean);
+    return (Array.isArray(data) ? data : []).map((d: any) => d.position).filter(Boolean);
   }
   // For delete: need to look up the record
   return [];
@@ -623,14 +656,14 @@ function extractPositionNamesFromShiftData(requestBody) {
 // open, otherwise no non-admin can submit wishes or absence requests at all.
 const APPROVAL_DECISION_STATUSES = ['approved', 'rejected'];
 
-async function loadStatusForId(dbPool, table, id) {
+async function loadStatusForId(dbPool: any, table: any, id: any) {
   if (!id) return null;
   try {
     // SELECT through Kysely so the table identifier is escaped centrally
     // (PR 1.5 — completes the S1 grep gate). `table` is the route-validated
     // tableName; behavior unchanged (status column, id lookup, fail-null).
     const kysely = createKysely(dbPool);
-    const rows = await kysely.selectFrom(table).select('status').where('id', '=', id).limit(1).execute();
+    const rows = await (kysely as unknown as Kysely<Record<string, Record<string, unknown>>>).selectFrom(table).select('status').where('id', '=', id).limit(1).execute();
     return rows[0]?.status ?? null;
   } catch {
     return null;
@@ -639,7 +672,7 @@ async function loadStatusForId(dbPool, table, id) {
 
 // Decide whether a WishRequest/AbsenceRequest write is an approval-affecting
 // change that must be gated by can_approve_wishes / can_approve_absence.
-function approvalWriteRequiresPermission({ action, data, existingStatus, noServiceRequiresApproval = true }) {
+function approvalWriteRequiresPermission({ action, data, existingStatus, noServiceRequiresApproval = true }: any) {
   const newDataStatus = typeof data?.status === 'string' ? data.status.toLowerCase() : null;
   if (action === 'create') {
     // Creating an already-decided record (e.g. directly approved) needs the perm;
@@ -654,18 +687,14 @@ function approvalWriteRequiresPermission({ action, data, existingStatus, noServi
   if (action === 'update') {
     // Promoting to a decision, or editing a record that is already decided.
     if (APPROVAL_DECISION_STATUSES.includes(newDataStatus)) return true;
-    return APPROVAL_DECISION_STATUSES.includes(
-      typeof existingStatus === 'string' ? existingStatus.toLowerCase() : null,
-    );
+    return APPROVAL_DECISION_STATUSES.includes(existingStatus as string);
   }
   if (action === 'delete') {
     // Users may cancel their own pending requests; only decided records are protected.
-    return APPROVAL_DECISION_STATUSES.includes(
-      typeof existingStatus === 'string' ? existingStatus.toLowerCase() : null,
-    );
+    return APPROVAL_DECISION_STATUSES.includes(existingStatus as string);
   }
   if (action === 'bulkCreate') {
-    return (Array.isArray(data) ? data : []).some((d) =>
+    return (Array.isArray(data) ? data : []).some((d: any) =>
       APPROVAL_DECISION_STATUSES.includes(
         typeof d?.status === 'string' ? d.status.toLowerCase() : null,
       ),
@@ -675,22 +704,23 @@ function approvalWriteRequiresPermission({ action, data, existingStatus, noServi
 }
 
 // ============ UNIFIED DB PROXY ENDPOINT ============
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
+  const creq = req as unknown as CuraRequest;
   try {
     const { action, operation, entity, table, data, id, query, sort, limit, skip } = req.body;
     const effectiveAction = action || operation; // Support both 'action' and 'operation' keys
     const tableName = entity || table;
     
     // Get the database pool (set by tenantDbMiddleware)
-    const dbPool = req.db || db;
-    const cacheKey = req.headers['x-db-token'] || 'default';
-    const realtimeScope = buildRealtimeScope(req.dbToken);
+    const dbPool = creq.db || db;
+    const cacheKey = String(req.headers['x-db-token'] || '') || 'default';
+    const realtimeScope = buildRealtimeScope(creq.dbToken);
     const actor = {
-      id: req.user?.sub || null,
-      email: req.user?.email || 'system',
+      id: creq.user?.sub ?? undefined,
+      email: creq.user?.email || 'system',
     };
 
-    if (req.isCustomDb && tableName && TENANT_BASE_TABLE_SET.has(tableName)) {
+    if (creq.isCustomDb && tableName && TENANT_BASE_TABLE_SET.has(tableName)) {
       await ensureTenantBaseSchema(dbPool, cacheKey);
     }
     
@@ -747,8 +777,8 @@ router.post('/', async (req, res, next) => {
       const token = authHeader.split(' ')[1];
       try {
         const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(token, process.env.JWT_SECRET);
-        req.user = decoded; // Set user from token
+        const decoded = jwt.default.verify(token, process.env.JWT_SECRET!);
+        creq.user = decoded as CuraRequest['user'];
       } catch (err) {
         return res.status(401).json({ error: 'Token ungültig' });
       }
@@ -761,7 +791,7 @@ router.post('/', async (req, res, next) => {
       AbsenceRequest: 'can_approve_absence',
     };
     const WRITE_ACTIONS = ['create', 'update', 'delete', 'bulkCreate'];
-    const requiredPerm = PROTECTED_WRITE_TABLES[tableName];
+    const requiredPerm = (PROTECTED_WRITE_TABLES as Record<string, string>)[tableName];
     if (requiredPerm && WRITE_ACTIONS.includes(effectiveAction)) {
       // For ShiftEntry: only block if the position is a "Dienste"-category workplace
       let shouldCheckPermission = true;
@@ -772,12 +802,12 @@ router.post('/', async (req, res, next) => {
             const [shiftRows] = await dbPool.execute(
               'SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1',
               [id],
-            );
+            ) as unknown as [RowDataPacket[], RowDataPacket[]];
             if (shiftRows.length > 0) positions.push(shiftRows[0].position);
           } catch { /* continue */ }
         }
         const isDienste = positions.length > 0
-          ? (await Promise.all(positions.map((p) => isServicePosition(dbPool, p)))).some(Boolean)
+          ? (await Promise.all(positions.map((p: any) => isServicePosition(dbPool, p)))).some(Boolean)
           : false;
         shouldCheckPermission = isDienste;
       } else if (tableName === 'WishRequest' || tableName === 'AbsenceRequest') {
@@ -794,7 +824,7 @@ router.post('/', async (req, res, next) => {
           try {
             const [settingRows] = await dbPool.execute(
               "SELECT `value` FROM SystemSetting WHERE `key` = 'wish_approval_rules' LIMIT 1",
-            );
+            ) as unknown as [RowDataPacket[], RowDataPacket[]];
             if (settingRows.length > 0) {
               const rules = JSON.parse(settingRows[0].value);
               noServiceRequiresApproval = rules.no_service_requires_approval ?? true;
@@ -815,7 +845,7 @@ router.post('/', async (req, res, next) => {
         // branch. checkAdminPermission is fail-closed (DB error ⇒ deny).
         let hasPerm = false;
         try {
-          const result = await checkAdminPermission(db, req.user?.sub, requiredPerm);
+          const result = await checkAdminPermission(db, creq.user?.sub ?? '', requiredPerm as PermissionKey);
           hasPerm = result.allowed;
         } catch { /* fall through to deny */ }
         if (!hasPerm) {
@@ -845,8 +875,8 @@ router.post('/', async (req, res, next) => {
           });
           return res.json(rows);
         } catch (err) {
-          console.error("List Execute Error:", err.message, "table:", tableName);
-          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+          console.error("List Execute Error:", (err as Error).message, "table:", tableName);
+          if ((err as Error).message.includes("doesn't exist") || (err as CuraDbError).code === 'ER_NO_SUCH_TABLE') {
             console.warn(`Table ${tableName} doesn't exist, returning empty array`);
             return res.json([]);
           }
@@ -863,10 +893,10 @@ router.post('/', async (req, res, next) => {
           dbPool,
           data,
           validColumns,
-          actorEmail: req.user?.email || 'system',
+          actorEmail: creq.user?.email || 'system',
         });
         if (isPlanSyncEntity(tableName)) {
-          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: (created as { id: string }).id, actor });
         }
         return res.json(created);
       }
@@ -885,9 +915,9 @@ router.post('/', async (req, res, next) => {
         await writeAuditLog(dbPool, {
           level: 'audit',
           source: 'Löschung',
-          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          message: `${tableName} gelöscht von ${creq.user?.email || 'unknown'} (ID: ${id})`,
           details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
-          userEmail: req.user?.email || 'unknown',
+          userEmail: creq.user?.email || 'unknown',
         });
         if (isPlanSyncEntity(tableName)) {
           broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
@@ -902,7 +932,7 @@ router.post('/', async (req, res, next) => {
     // future-date validation, position whitelist, employee-link resolution,
     // pending-only enforcement, and the approve→CentralAbsenceEntry transaction.
     // The generic /api/db path cannot serve it correctly: it resolves dbPool to
-    // the TENANT pool (req.db) when a token is present → ER_NO_SUCH_TABLE, and
+    // the TENANT pool (creq.db) when a token is present → ER_NO_SUCH_TABLE, and
     // to master without a token → bypasses all that validation. Reject it here
     // so the dedicated route is the only surface. (Phase 2, PR 2.2.)
     if (tableName === 'AbsenceRequest') {
@@ -912,7 +942,7 @@ router.post('/', async (req, res, next) => {
     }
 
     // ===== WishRequest repo dispatch (Phase 2, PR 2.3) =====
-    // WishRequest is a tenant table (correct pool via req.db). The approval-
+    // WishRequest is a tenant table (correct pool via creq.db). The approval-
     // permission guard (can_approve_wishes) already ran in the pre-action block
     // above — this repo only executes for writes that passed it. CentralWishRequest
     // (master, cross-tenant) is a separate entity with dedicated routes in groups.js.
@@ -927,8 +957,8 @@ router.post('/', async (req, res, next) => {
           });
           return res.json(rows);
         } catch (err) {
-          console.error("List Execute Error:", err.message, "table:", tableName);
-          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+          console.error("List Execute Error:", (err as Error).message, "table:", tableName);
+          if ((err as Error).message.includes("doesn't exist") || (err as CuraDbError).code === 'ER_NO_SUCH_TABLE') {
             console.warn(`Table ${tableName} doesn't exist, returning empty array`);
             return res.json([]);
           }
@@ -945,10 +975,10 @@ router.post('/', async (req, res, next) => {
           dbPool,
           data,
           validColumns,
-          actorEmail: req.user?.email || 'system',
+          actorEmail: creq.user?.email || 'system',
         });
         if (isPlanSyncEntity(tableName)) {
-          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: (created as { id: string }).id, actor });
         }
         return res.json(created);
       }
@@ -967,9 +997,9 @@ router.post('/', async (req, res, next) => {
         await writeAuditLog(dbPool, {
           level: 'audit',
           source: 'Löschung',
-          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          message: `${tableName} gelöscht von ${creq.user?.email || 'unknown'} (ID: ${id})`,
           details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
-          userEmail: req.user?.email || 'unknown',
+          userEmail: creq.user?.email || 'unknown',
         });
         if (isPlanSyncEntity(tableName)) {
           broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
@@ -995,8 +1025,8 @@ router.post('/', async (req, res, next) => {
           });
           return res.json(rows);
         } catch (err) {
-          console.error("List Execute Error:", err.message, "table:", tableName);
-          if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+          console.error("List Execute Error:", (err as Error).message, "table:", tableName);
+          if ((err as Error).message.includes("doesn't exist") || (err as CuraDbError).code === 'ER_NO_SUCH_TABLE') {
             console.warn(`Table ${tableName} doesn't exist, returning empty array`);
             return res.json([]);
           }
@@ -1014,18 +1044,18 @@ router.post('/', async (req, res, next) => {
             dbPool,
             data,
             validColumns,
-            actorEmail: req.user?.email || 'system',
+            actorEmail: creq.user?.email || 'system',
           });
           if (isPlanSyncEntity(tableName)) {
-            broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: created.id, actor });
+          broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: (created as { id: string }).id, actor });
           }
           return res.json(created);
         } catch (err) {
-          if (err.status === 409 && err.conflictPayload) {
-            return res.status(409).json(err.conflictPayload);
+          if ((err as CuraDbError).status === 409 && (err as CuraDbError).conflictPayload) {
+            return res.status(409).json((err as CuraDbError).conflictPayload);
           }
           // ER_DUP_ENTRY fallback (race / unique index the pre-check missed)
-          if (err.code === 'ER_DUP_ENTRY') {
+          if ((err as CuraDbError).code === 'ER_DUP_ENTRY') {
             const { buildDoctorConflictResponse } = await import('../repos/doctorRepo.js');
             const conflict = await buildDoctorConflictResponse(dbPool, data);
             if (conflict) {
@@ -1045,10 +1075,10 @@ router.post('/', async (req, res, next) => {
           }
           return res.json(updated);
         } catch (err) {
-          if (err.status === 409 && err.conflictPayload) {
-            return res.status(409).json(err.conflictPayload);
+          if ((err as CuraDbError).status === 409 && (err as CuraDbError).conflictPayload) {
+            return res.status(409).json((err as CuraDbError).conflictPayload);
           }
-          if (err.code === 'ER_DUP_ENTRY') {
+          if ((err as CuraDbError).code === 'ER_DUP_ENTRY') {
             const { buildDoctorConflictResponse } = await import('../repos/doctorRepo.js');
             const conflict = await buildDoctorConflictResponse(dbPool, data, id);
             if (conflict) {
@@ -1064,9 +1094,9 @@ router.post('/', async (req, res, next) => {
         await writeAuditLog(dbPool, {
           level: 'audit',
           source: 'Löschung',
-          message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+          message: `${tableName} gelöscht von ${creq.user?.email || 'unknown'} (ID: ${id})`,
           details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
-          userEmail: req.user?.email || 'unknown',
+          userEmail: creq.user?.email || 'unknown',
         });
         if (isPlanSyncEntity(tableName)) {
           broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'delete', recordId: id, actor });
@@ -1085,7 +1115,7 @@ router.post('/', async (req, res, next) => {
     // through to the generic dispatch (complex central-split, no direct e2e).
     if (tableName === 'ShiftEntry') {
       if (effectiveAction === 'list' || effectiveAction === 'filter') {
-        if (req.db) {
+        if (creq.db) {
           try {
             const rows = await listShiftEntries({
               tenantDb: dbPool,
@@ -1101,37 +1131,34 @@ router.post('/', async (req, res, next) => {
               action: effectiveAction, table: tableName,
               query: query || req.body.filters || {}, sort, limit, skip,
               actor: actor?.id, tenantToken: cacheKey,
-              message: err.message, code: err.code, errno: err.errno,
-              sqlState: err.sqlState, sqlMessage: err.sqlMessage, stack: err.stack,
+              message: (err as Error).message, code: (err as CuraDbError).code, errno: (err as CuraDbError).errno,
+              sqlState: (err as CuraDbError).sqlState, sqlMessage: (err as CuraDbError).sqlMessage, stack: (err as Error).stack,
             });
             throw err;
           }
         }
-        // No req.db → fall through to generic filterRows (master pool)
+        // No creq.db → fall through to generic filterRows (master pool)
       }
       if (effectiveAction === 'get') {
         if (!id) return res.json(null);
-        if (req.db) {
+        if (creq.db) {
           return res.json(await getShiftEntry({ tenantDb: dbPool, masterDb: db, id }));
         }
-        // No req.db → fall through to generic selectRow
+        // No creq.db → fall through to generic selectRow
       }
       if (effectiveAction === 'create') {
         try {
           const { result } = await createShiftEntry({
-            dbPool, masterDb: db, req, data, cacheKey,
+            dbPool, masterDb: db, req: creq, data, cacheKey,
             getValidColumns, WORKPLACE_CACHE, WORKPLACE_CACHE_TTL, ensureScheduleBlockTable,
           });
           if (isPlanSyncEntity(tableName)) {
-            broadcastPlanUpdate({
-              scope: realtimeScope, entity: tableName, action: 'create',
-              recordId: result?.id || data.id, actor,
-            });
+            broadcastPlanUpdate({ scope: realtimeScope, entity: tableName, action: 'create', recordId: (result as { id?: string })?.id || (data as { id: string }).id, actor });
           }
           return res.json(result);
         } catch (err) {
-          if (err.status === 409 && err.body) {
-            return res.status(409).json(err.body);
+          if ((err as CuraDbError).status === 409 && (err as CuraDbError).body) {
+            return res.status(409).json((err as CuraDbError).body);
           }
           throw err;
         }
@@ -1140,7 +1167,7 @@ router.post('/', async (req, res, next) => {
         if (!id) return res.status(400).json({ error: 'ID required for update' });
         try {
           const { result } = await updateShiftEntry({
-            dbPool, masterDb: db, req, id, data, cacheKey, getValidColumns,
+            dbPool, masterDb: db, req: creq, id, data, cacheKey, getValidColumns,
           });
           if (isPlanSyncEntity(tableName)) {
             broadcastPlanUpdate({
@@ -1149,22 +1176,22 @@ router.post('/', async (req, res, next) => {
           }
           return res.json(result);
         } catch (err) {
-          if (err.status === 409 && err.body) {
-            return res.status(409).json(err.body);
+          if ((err as CuraDbError).status === 409 && (err as CuraDbError).body) {
+            return res.status(409).json((err as CuraDbError).body);
           }
           throw err;
         }
       }
       if (effectiveAction === 'delete') {
         if (!id) return res.status(400).json({ error: 'ID required for delete' });
-        const { central, deletedRecord } = await deleteShiftEntry({ dbPool, masterDb: db, req, id });
+        const { central, deletedRecord } = await deleteShiftEntry({ dbPool, masterDb: db, req: creq, id });
         if (!central) {
           // Tenant delete: write audit log (central deletes don't audit here)
           await writeAuditLog(dbPool, {
             level: 'audit', source: 'Löschung',
-            message: `${tableName} gelöscht von ${req.user?.email || 'unknown'} (ID: ${id})`,
+            message: `${tableName} gelöscht von ${creq.user?.email || 'unknown'} (ID: ${id})`,
             details: { table: tableName, record_id: id, deleted_data: deletedRecord, timestamp: new Date().toISOString() },
-            userEmail: req.user?.email || 'unknown',
+            userEmail: creq.user?.email || 'unknown',
           });
         }
         if (isPlanSyncEntity(tableName)) {
@@ -1193,8 +1220,8 @@ router.post('/', async (req, res, next) => {
         });
         return res.json(rows.map(fromSqlRow));
       } catch (err) {
-        console.error("List Execute Error:", err.message, "table:", tableName);
-        if (err.message.includes("doesn't exist") || err.code === 'ER_NO_SUCH_TABLE') {
+        console.error("List Execute Error:", (err as Error).message, "table:", tableName);
+        if ((err as Error).message.includes("doesn't exist") || (err as CuraDbError).code === 'ER_NO_SUCH_TABLE') {
           console.warn(`Table ${tableName} doesn't exist, returning empty array`);
           return res.json([]);
         }
@@ -1215,13 +1242,13 @@ router.post('/', async (req, res, next) => {
       if (!data.id) data.id = crypto.randomUUID();
       data.created_date = new Date();
       data.updated_date = new Date();
-      data.created_by = req.user?.email || 'system';
+      data.created_by = creq.user?.email || 'system';
 
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       let keys = Object.keys(data);
       
       if (validColumns && validColumns.length > 0) {
-        keys = keys.filter(k => validColumns.includes(k));
+        keys = keys.filter((k: any) => validColumns.includes(k));
       }
       
       if (keys.length === 0) {
@@ -1247,10 +1274,10 @@ router.post('/', async (req, res, next) => {
         await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
         return res.json(data);
       } catch (err) {
-        console.error(`CREATE error for ${tableName}:`, err.message, "keys:", keys);
+        console.error(`CREATE error for ${tableName}:`, (err as Error).message, "keys:", keys);
 
         // Bei Workplace: Duplikat (Name bereits vergeben) → Name hochzählen und nochmal versuchen
-        if (tableName === 'Workplace' && err.code === 'ER_DUP_ENTRY' && data.name) {
+        if (tableName === 'Workplace' && (err as CuraDbError).code === 'ER_DUP_ENTRY' && data.name) {
           const baseName = data.name;
           let counter = 2;
           while (counter <= 20) {
@@ -1270,7 +1297,7 @@ router.post('/', async (req, res, next) => {
               await ensureDefaultTimeslotAfterWorkplaceCreate(dbPool, data);
               return res.json(data);
             } catch (retryErr) {
-              if (retryErr.code !== 'ER_DUP_ENTRY') throw retryErr;
+              if ((retryErr as CuraDbError).code !== 'ER_DUP_ENTRY') throw retryErr;
               counter++;
             }
           }
@@ -1287,10 +1314,10 @@ router.post('/', async (req, res, next) => {
       data.updated_date = new Date();
 
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
-      let keys = Object.keys(data).filter(k => k !== 'id');
+      let keys = Object.keys(data).filter((k: any) => k !== 'id');
       
       if (validColumns) {
-        keys = keys.filter(k => validColumns.includes(k));
+        keys = keys.filter((k: any) => validColumns.includes(k));
       }
       
       if (keys.length === 0) return res.json({ success: true });
@@ -1327,7 +1354,7 @@ router.post('/', async (req, res, next) => {
       await deleteRow(dbPool, tableName, id);
       
       // Write audit to SystemLog table
-      const userEmail = req.user?.email || 'unknown';
+      const userEmail = creq.user?.email || 'unknown';
       const timestamp = new Date().toISOString();
       const auditDetails = await enrichAuditDetails(dbPool, {
         table: tableName, record_id: id, deleted_data: deletedRecord, timestamp,
@@ -1360,8 +1387,8 @@ router.post('/', async (req, res, next) => {
     if (effectiveAction === 'bulkCreate') {
       if (!Array.isArray(data) || data.length === 0) return res.json([]);
 
-      if (tableName === 'ShiftEntry' && req.db) {
-        const tenantId = req.dbToken ? await resolveTenantIdFromToken(db, req.dbToken) : null;
+      if (tableName === 'ShiftEntry' && creq.db) {
+        const tenantId = creq.dbToken ? await resolveTenantIdFromToken(db, creq.dbToken) : null;
         const createdRows = [];
         const localRows = [];
 
@@ -1373,12 +1400,12 @@ router.post('/', async (req, res, next) => {
               id: item.id || crypto.randomUUID(),
               created_date: item.created_date || new Date(),
               updated_date: item.updated_date || new Date(),
-              created_by: item.created_by || req.user?.email || 'system',
+              created_by: item.created_by || creq.user?.email || 'system',
             };
             const created = await writeShiftEntryToCentralAbsence({
               tenantDb: dbPool,
               masterDb: db,
-              tenantId,
+              tenantId: tenantId as string,
               shiftEntry: prepared,
               doctorId: doctorLink.doctorId,
               preserveId: true,
@@ -1390,16 +1417,16 @@ router.post('/', async (req, res, next) => {
         }
 
         if (localRows.length > 0) {
-          const processed = localRows.map((item) => ({
+          const processed = localRows.map((item: any) => ({
             ...item,
             id: item.id || crypto.randomUUID(),
             created_date: item.created_date || new Date(),
             updated_date: item.updated_date || new Date(),
-            created_by: item.created_by || req.user?.email || 'system',
+            created_by: item.created_by || creq.user?.email || 'system',
           }));
           const allKeys = new Set();
           processed.forEach((item) => Object.keys(item).forEach((key) => allKeys.add(key)));
-          const keys = Array.from(allKeys);
+          const keys = Array.from(allKeys) as string[];
           // Bulk INSERT through Kysely in a single transaction (PR 1.5) — table
           // + column identifiers escaped centrally, whole batch atomic. NOTE:
           // this ShiftEntry-local branch intentionally does NOT filter keys via
@@ -1421,11 +1448,11 @@ router.post('/', async (req, res, next) => {
         return res.json(createdRows);
       }
       
-      const processed = data.map(item => {
+      const processed = data.map((item: any) => {
         if (!item.id) item.id = crypto.randomUUID();
         item.created_date = new Date();
         item.updated_date = new Date();
-        item.created_by = req.user?.email || 'system';
+        item.created_by = creq.user?.email || 'system';
         return item;
       });
       
@@ -1453,19 +1480,19 @@ router.post('/', async (req, res, next) => {
               const [docRows] = await dbPool.execute(
                 `SELECT work_time_model_id FROM Doctor WHERE id = ? LIMIT 1`,
                 [item.doctor_id]
-              );
+              ) as unknown as [RowDataPacket[], RowDataPacket[]];
               const modelId = docRows[0]?.work_time_model_id;
               if (modelId) {
                 const [wpRows] = await dbPool.execute(
                   `SELECT id FROM Workplace WHERE name = ? LIMIT 1`,
                   [item.position]
-                );
+                ) as unknown as [RowDataPacket[], RowDataPacket[]];
                 const workplaceId = wpRows[0]?.id;
                 if (workplaceId) {
                   const [ruleRows] = await dbPool.execute(
                     `SELECT start_time, end_time, break_minutes FROM ShiftTimeRule WHERE workplace_id = ? AND work_time_model_id = ? LIMIT 1`,
                     [workplaceId, modelId]
-                  );
+                  ) as unknown as [RowDataPacket[], RowDataPacket[]];
                   if (ruleRows[0]) {
                     item.start_time = ruleRows[0].start_time;
                     item.end_time = ruleRows[0].end_time;
@@ -1474,7 +1501,7 @@ router.post('/', async (req, res, next) => {
                 }
               }
             } catch (e) {
-              console.warn(`[AutoTime] Bulk: Failed for ${item.position}: ${e.message}`);
+              console.warn(`[AutoTime] Bulk: Failed for ${item.position}: ${(e as Error).message}`);
             }
           }
         }
@@ -1487,7 +1514,7 @@ router.post('/', async (req, res, next) => {
       
       const validColumns = await getValidColumns(dbPool, tableName, cacheKey);
       if (validColumns) {
-        keys = keys.filter(k => validColumns.includes(k));
+        keys = keys.filter((k: any) => validColumns.includes(k));
       }
       
       if (keys.length === 0) {
@@ -1502,7 +1529,7 @@ router.post('/', async (req, res, next) => {
       // failure rolls back every row, matching the previous raw-connection
       // beginTransaction/commit/rollback loop). `keys` are already filtered via
       // getValidColumns above.
-      await bulkInsert(dbPool, tableName, keys, processed);
+      await bulkInsert(dbPool, tableName, keys as string[], processed);
 
       if (isPlanSyncEntity(tableName)) {
         broadcastPlanUpdate({
@@ -1520,13 +1547,13 @@ router.post('/', async (req, res, next) => {
     return res.status(400).json({ error: 'Unknown action' });
     
   } catch (error) {
-    console.error("DB Proxy Error:", error.message, "Stack:", error.stack);
+    console.error("DB Proxy Error:", (error as Error).message, "Stack:", (error as Error).stack);
     console.error("Request body:", JSON.stringify(req.body || {}).substring(0, 500));
     
     // If this is an access denied error and we have a custom DB token, remove it from cache
-    if ((error.code === 'ER_ACCESS_DENIED_ERROR' || error.code === 'ER_DBACCESS_DENIED_ERROR') && req.dbToken) {
+    if (((error as CuraDbError).code === 'ER_ACCESS_DENIED_ERROR' || (error as CuraDbError).code === 'ER_DBACCESS_DENIED_ERROR') && creq.dbToken) {
       console.log("Removing invalid tenant pool from cache due to access denied error");
-      removeTenantPool(req.dbToken);
+      removeTenantPool(creq.dbToken);
     }
     
     next(error);

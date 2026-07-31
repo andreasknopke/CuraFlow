@@ -5,6 +5,15 @@
 
 import crypto from 'crypto';
 
+interface DbConfig {
+  host?: string;
+  port?: number | string;
+  user?: string;
+  password?: string;
+  database?: string;
+  ssl?: unknown;
+}
+
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16; // 128 bits
 const AUTH_TAG_LENGTH = 16; // 128 bits
@@ -13,7 +22,7 @@ const AUTH_TAG_LENGTH = 16; // 128 bits
  * Derive a 256-bit key from JWT_SECRET using SHA-256
  * @returns {Buffer} 32-byte key
  */
-const getEncryptionKey = () => {
+const getEncryptionKey = (): Buffer => {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     throw new Error('JWT_SECRET environment variable is required for encryption');
@@ -28,7 +37,7 @@ const getEncryptionKey = () => {
  * @param {string} plaintext - The data to encrypt
  * @returns {string} Base64-encoded encrypted data (iv:authTag:ciphertext)
  */
-export const encryptToken = (plaintext) => {
+export const encryptToken = (plaintext: string): string => {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
   
@@ -56,7 +65,7 @@ export const encryptToken = (plaintext) => {
  * @param {string} encryptedData - Base64-encoded encrypted data
  * @returns {string} Decrypted plaintext
  */
-export const decryptToken = (encryptedData) => {
+export const decryptToken = (encryptedData: string): string => {
   const key = getEncryptionKey();
   
   // Decode the combined buffer
@@ -85,7 +94,7 @@ export const decryptToken = (encryptedData) => {
  * @param {string} token - The token to check
  * @returns {boolean} True if it's an old unencrypted token
  */
-export const isLegacyToken = (token) => {
+export const isLegacyToken = (token: string): boolean => {
   try {
     const decoded = Buffer.from(token, 'base64').toString('utf-8');
     const parsed = JSON.parse(decoded);
@@ -101,7 +110,7 @@ export const isLegacyToken = (token) => {
  * @param {string} token - The token to parse
  * @returns {object|null} Parsed DB config or null if invalid
  */
-export const parseDbToken = (token) => {
+export const parseDbToken = (token: string): DbConfig | null => {
   try {
     // First, check if it's a legacy unencrypted token
     if (isLegacyToken(token)) {
@@ -114,7 +123,7 @@ export const parseDbToken = (token) => {
     const decrypted = decryptToken(token);
     return JSON.parse(decrypted);
   } catch (error) {
-    console.error('Failed to parse DB token:', error.message);
+    console.error('Failed to parse DB token:', (error as Error).message);
     return null;
   }
 };
@@ -126,7 +135,7 @@ export const parseDbToken = (token) => {
  *
  * Returns null if the input is missing required fields.
  */
-export const computeTenantKeyFromConfig = (config) => {
+export const computeTenantKeyFromConfig = (config: DbConfig | null): string | null => {
   if (!config || !config.host || !config.database) return null;
   return crypto
     .createHash('sha256')
@@ -138,7 +147,7 @@ export const computeTenantKeyFromConfig = (config) => {
  * Convenience: parse a DB token and compute its tenant key in one call.
  * Returns null on parse error or missing config.
  */
-export const computeTenantKeyFromToken = (token) => {
+export const computeTenantKeyFromToken = (token: string): string | null => {
   const config = parseDbToken(token);
   if (!config) return null;
   return computeTenantKeyFromConfig(config);

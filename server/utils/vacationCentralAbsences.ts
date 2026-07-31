@@ -6,6 +6,8 @@
  * The route in `routes/vacation.js` is a thin wrapper around this
  * helper; vitest targets this file directly.
  */
+
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { ensureCentralAbsenceTables, isCentralAbsencePosition } from './centralAbsences.js';
 
 export const VACATION_ABSENCE_POSITIONS = [
@@ -17,19 +19,59 @@ const VACATION_ABSENCE_POSITIONS_SET = new Set(VACATION_ABSENCE_POSITIONS);
 
 export { VACATION_ABSENCE_POSITIONS_SET };
 
+interface AssignmentRow extends RowDataPacket {
+  employee_id: string;
+}
+
+interface EmployeeRow extends RowDataPacket {
+  vacation_days_annual: number | string | null;
+}
+
+interface CentralAbsenceRow extends RowDataPacket {
+  id: string;
+  date: Date | string;
+  position: string;
+  note: string | null;
+}
+
+interface PendingRequestRow extends RowDataPacket {
+  id: string;
+  date: Date | string;
+  position: string;
+  note: string | null;
+}
+
+interface AbsenceRecord {
+  id: string;
+  date: string;
+  position: string;
+  note: string | null;
+  source: 'central' | 'request_pending';
+}
+
+interface FetchCentralAbsencesResult {
+  employee_id: string | null;
+  absences: AbsenceRecord[];
+  vacation_days_annual?: number | null;
+}
+
+interface FetchDeps {
+  db: Pool;
+  tenantId: string | null | undefined;
+  doctorId: string;
+  year: number;
+}
+
+function toDateString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+}
+
 /**
  * Resolves the central `employee_id` for a tenant doctor and returns the
  * central absence rows for the given year. Empty list (not 404) when
  * the doctor has no central link, so the frontend can render uniformly.
- *
- * @param {Object} deps
- * @param {import('mysql2/promise').Pool} deps.db      Master DB pool.
- * @param {string|null} deps.tenantId                   Already-resolved tenant UUID.
- * @param {string} deps.doctorId                        Tenant-local Doctor.id (string).
- * @param {number} deps.year                            Calendar year.
- * @returns {Promise<{ employee_id: string|null, absences: Array<{id:string,date:string,position:string,note:string|null,source:'central'}> }>}
  */
-export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, doctorId, year }) {
+export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, doctorId, year }: FetchDeps): Promise<FetchCentralAbsencesResult> {
   if (!tenantId) {
     return { employee_id: null, absences: [] };
   }
@@ -39,7 +81,7 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
   //    intentionally do NOT fall back to Doctor.central_employee_id,
   //    because the master-frontend path is the only place that column
   //    is authoritative, and a stale value there would leak data.
-  const [assignmentRows] = await masterDb.execute(
+  const [assignmentRows] = await masterDb.execute<AssignmentRow[]>(
     `SELECT employee_id
        FROM EmployeeTenantAssignment
       WHERE tenant_id = ?
@@ -54,9 +96,9 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
   const employeeId = String(assignmentRows[0].employee_id);
 
   // 2) Fetch the central employee's vacation entitlement.
-  let vacationDaysAnnual = null;
+  let vacationDaysAnnual: number | null = null;
   try {
-    const [empRows] = await masterDb.execute(
+    const [empRows] = await masterDb.execute<EmployeeRow[]>(
       `SELECT vacation_days_annual FROM Employee WHERE id = ? LIMIT 1`,
       [employeeId]
     );
@@ -73,7 +115,7 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
   await ensureCentralAbsenceTables(masterDb);
 
   const placeholders = VACATION_ABSENCE_POSITIONS.map(() => '?').join(',');
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<CentralAbsenceRow[]>(
     `SELECT id, date, position, note
        FROM CentralAbsenceEntry
       WHERE employee_id = ?
@@ -83,22 +125,20 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
     [employeeId, year, ...VACATION_ABSENCE_POSITIONS]
   );
 
-  const absences = rows
+  const absences: AbsenceRecord[] = rows
     // Defensive: even if the DB contains a non-tracked position string
     // (legacy data, manual edits), filter it out instead of leaking it.
     .filter((row) => isCentralAbsencePosition(row.position))
     .map((row) => {
       // Date comes back from mysql2 as a JS Date in local TZ; we want
       // the canonical YYYY-MM-DD string the rest of the app uses.
-      const dateStr = row.date instanceof Date
-        ? row.date.toISOString().slice(0, 10)
-        : String(row.date).slice(0, 10);
+      const dateStr = toDateString(row.date);
       return {
         id: String(row.id),
         date: dateStr,
         position: row.position,
         note: row.note ?? null,
-        source: 'central',
+        source: 'central' as const,
       };
     });
 
@@ -107,7 +147,7 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
   //    approved — they are NOT counted as real absences in the vacation balance
   //    but SHOULD be visually displayed as pending overlays in the UI.
   try {
-    const [pendingRows] = await masterDb.execute(
+    const [pendingRows] = await masterDb.execute<PendingRequestRow[]>(
       `SELECT id, date, position, reason AS note
          FROM AbsenceRequest
         WHERE employee_id = ?
@@ -119,22 +159,24 @@ export async function fetchCentralAbsencesForDoctor({ db: masterDb, tenantId, do
     );
 
     for (const row of pendingRows) {
-      const dateStr = row.date instanceof Date
-        ? row.date.toISOString().slice(0, 10)
-        : String(row.date).slice(0, 10);
+      const dateStr = toDateString(row.date);
       absences.push({
         id: `req_${row.id}`,
         date: dateStr,
         position: row.position,
         note: row.note ? `Antrag: ${row.note}` : 'Antrag ausstehend',
-        source: 'request_pending',
+        source: 'request_pending' as const,
       });
     }
   } catch (err) {
     // Graceful: if the AbsenceRequest table doesn't exist yet (no migration
     // has run), we just skip pending overlay — no error thrown to tenant.
-    if (err.code !== 'ER_NO_SUCH_TABLE') {
-      console.warn('[vacationCentralAbsences] Failed to fetch pending requests:', err.message);
+    const code = typeof err === 'object' && err !== null && 'code' in err
+      ? String((err as { code?: unknown }).code)
+      : '';
+    if (code !== 'ER_NO_SUCH_TABLE') {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[vacationCentralAbsences] Failed to fetch pending requests:', message);
     }
   }
 

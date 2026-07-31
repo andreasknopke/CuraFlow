@@ -15,6 +15,8 @@
  */
 
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+// @ts-expect-error — multer has no @types declaration installed
 import multer from 'multer';
 import crypto from 'crypto';
 import { db } from '../index.js';
@@ -22,6 +24,7 @@ import { authMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
 import { analyzeCertificate, isAnalyzerConfigured } from '../utils/certificateAnalyzer.js';
 import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
+import type { Certificate, Qualification } from '../utils/qualificationEvidence.js';
 import {
   computeQualificationEvidenceSummary,
   normalizeEvidenceRole,
@@ -30,6 +33,19 @@ import {
 
 const router = express.Router();
 router.use(authMiddleware);
+
+interface MulterFile {
+  buffer: Buffer;
+  mimetype: string;
+  originalname: string;
+  size: number;
+}
+type CuraRequest = Request & {
+  user?: Record<string, unknown>;
+  dbToken?: string;
+  db?: { execute: (sql: string, params?: unknown[]) => Promise<[unknown[], unknown]> };
+  file?: MulterFile;
+};
 
 const ALLOWED_MIME = new Set([
   'application/pdf',
@@ -43,7 +59,7 @@ const ANALYSIS_TOKEN_TTL_MS = 15 * 60 * 1000;
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_SIZE },
-  fileFilter: (_req, file, cb) => {
+  fileFilter: (_req: any, file: { mimetype?: string }, cb: (error: Error | null, acceptFile?: boolean) => void): void => {
     if (ALLOWED_MIME.has((file.mimetype || '').toLowerCase())) {
       cb(null, true);
     } else {
@@ -52,7 +68,7 @@ const upload = multer({
   },
 });
 
-function getTenantKey(req) {
+function getTenantKey(req: CuraRequest): string {
   const token = req.dbToken;
   if (!token) return 'default';
   try {
@@ -67,15 +83,15 @@ function getTenantKey(req) {
   }
 }
 
-function ensureCanAccessDoctor(req, doctorId) {
+function ensureCanAccessDoctor(req: CuraRequest, doctorId: string): void {
   if (req.user?.role === 'admin') return;
   if (req.user?.doctor_id && req.user.doctor_id === doctorId) return;
   const err = new Error('Kein Zugriff auf diese Zertifikate');
-  err.status = 403;
+  (err as unknown as Record<string, unknown>).status = 403;
   throw err;
 }
 
-function normalizeDateInput(value) {
+function normalizeDateInput(value: unknown): string | null {
   if (!value) return null;
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -85,23 +101,23 @@ function normalizeDateInput(value) {
   return trimmed;
 }
 
-function sha256Buffer(buffer) {
+function sha256Buffer(buffer: Buffer): string {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
-function getAnalysisSigningSecret() {
+function getAnalysisSigningSecret(): string {
   return process.env.JWT_SECRET || process.env.AUTH_SECRET || 'curaflow-certificate-analysis-dev';
 }
 
-function encodeBase64Url(value) {
+function encodeBase64Url(value: string): string {
   return Buffer.from(value).toString('base64url');
 }
 
-function decodeBase64Url(value) {
+function decodeBase64Url(value: string): string {
   return Buffer.from(value, 'base64url').toString('utf8');
 }
 
-function createAnalysisApprovalToken(payload) {
+function createAnalysisApprovalToken(payload: Record<string, unknown>): string {
   const encodedPayload = encodeBase64Url(JSON.stringify(payload));
   const signature = crypto
     .createHmac('sha256', getAnalysisSigningSecret())
@@ -110,7 +126,7 @@ function createAnalysisApprovalToken(payload) {
   return `${encodedPayload}.${signature}`;
 }
 
-function verifyAnalysisApprovalToken(token) {
+function verifyAnalysisApprovalToken(token: string): Record<string, unknown> | null {
   if (!token || typeof token !== 'string' || !token.includes('.')) {
     return null;
   }
@@ -129,7 +145,26 @@ function verifyAnalysisApprovalToken(token) {
   }
 }
 
-function buildApprovedAnalysisPayload({ result, buffer, mimeType, qualificationName, qualificationDescription }) {
+interface AnalysisResult {
+  status: 'skipped' | 'error' | 'failed' | 'warning' | 'passed';
+  is_certificate: boolean | null;
+  scope_match: boolean | null;
+  scope_detected: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  error: string | null;
+  granted_date: string | null;
+  expiry_date: string | null;
+  raw?: string | null;
+}
+
+function buildApprovedAnalysisPayload({ result, buffer, mimeType, qualificationName, qualificationDescription }: {
+  result: AnalysisResult;
+  buffer: Buffer;
+  mimeType: string;
+  qualificationName: string;
+  qualificationDescription: string;
+}): Record<string, unknown> {
   const now = Date.now();
   return {
     file_hash: sha256Buffer(buffer),
@@ -149,7 +184,7 @@ function buildApprovedAnalysisPayload({ result, buffer, mimeType, qualificationN
   };
 }
 
-function extractPersistedAnalysisFields(payload) {
+function extractPersistedAnalysisFields(payload: Record<string, unknown> | null): Record<string, unknown> {
   return {
     analysis_status: payload?.status || 'error',
     analysis_is_certificate: payload?.is_certificate === null ? null : (payload?.is_certificate ? 1 : 0),
@@ -162,11 +197,11 @@ function extractPersistedAnalysisFields(payload) {
   };
 }
 
-function normalizeEvidenceRoleInput(value, qualification = null) {
-  return normalizeEvidenceRole(value, normalizeRequirementMode(qualification?.certificate_requirement_mode));
+function normalizeEvidenceRoleInput(value: unknown, qualification: Record<string, unknown> | null): string {
+  return normalizeEvidenceRole(value, normalizeRequirementMode(qualification?.certificate_requirement_mode as string | undefined));
 }
 
-async function getQualificationConfig(req, qualificationId) {
+async function getQualificationConfig(req: CuraRequest, qualificationId: string): Promise<Record<string, unknown> | null> {
   if (!req.db || !qualificationId) return null;
   const [rows] = await req.db.execute(
     `SELECT id, name, description, requires_certificate,
@@ -177,18 +212,22 @@ async function getQualificationConfig(req, qualificationId) {
       WHERE id = ?
       LIMIT 1`,
     [qualificationId]
-  );
+  ) as [Record<string, unknown>[], unknown];
   return rows[0] || null;
 }
 
-async function listQualificationCertificates({ tenantKey, doctorId, qualificationId }) {
+async function listQualificationCertificates({ tenantKey, doctorId, qualificationId }: {
+  tenantKey: string;
+  doctorId: string;
+  qualificationId: string;
+}): Promise<Record<string, unknown>[]> {
   const [rows] = await db.execute(
     `SELECT id, evidence_role, granted_date, expiry_date, uploaded_at
        FROM QualificationCertificate
       WHERE tenant_key = ? AND doctor_id = ? AND qualification_id = ?
       ORDER BY uploaded_at ASC`,
     [tenantKey, doctorId, qualificationId]
-  );
+  ) as [Record<string, unknown>[], unknown];
   return rows;
 }
 
@@ -199,10 +238,17 @@ async function recomputeDoctorQualificationStatus({
   qualificationId,
   doctorQualificationId = null,
   qualificationConfig = null,
-}) {
+}: {
+  tenantDb: { execute: (sql: string, params?: unknown[]) => Promise<[unknown[], unknown]> };
+  tenantKey: string;
+  doctorId: string;
+  qualificationId: string;
+  doctorQualificationId?: string | null;
+  qualificationConfig?: Record<string, unknown> | null;
+}): Promise<any> {
   if (!tenantDb || !doctorId || !qualificationId) return null;
 
-  const qualification = qualificationConfig || await getQualificationConfig({ db: tenantDb }, qualificationId);
+  const qualification = qualificationConfig || await getQualificationConfig({ db: tenantDb } as unknown as CuraRequest, qualificationId);
   if (!qualification || qualification.requires_certificate !== 1 && qualification.requires_certificate !== true) {
     return null;
   }
@@ -212,15 +258,15 @@ async function recomputeDoctorQualificationStatus({
     const [dqRows] = await tenantDb.execute(
       `SELECT id FROM DoctorQualification WHERE doctor_id = ? AND qualification_id = ? LIMIT 1`,
       [doctorId, qualificationId]
-    );
-    targetDoctorQualificationId = dqRows[0]?.id || null;
+    ) as [Record<string, unknown>[], unknown];
+    targetDoctorQualificationId = (dqRows[0]?.id as string) || null;
   }
   if (!targetDoctorQualificationId) return null;
 
   const certificates = await listQualificationCertificates({ tenantKey, doctorId, qualificationId });
   const summary = computeQualificationEvidenceSummary({
-    qualification,
-    certificates,
+    qualification: qualification as unknown as Qualification,
+    certificates: certificates as unknown as Certificate[],
   });
 
   await tenantDb.execute(
@@ -247,9 +293,15 @@ async function recomputeDoctorQualificationStatus({
   return summary;
 }
 
-function isApprovedPayloadValidForUpload({ payload, buffer, mimeType, qualificationName, qualificationDescription }) {
+function isApprovedPayloadValidForUpload({ payload, buffer, mimeType, qualificationName, qualificationDescription }: {
+  payload: Record<string, unknown>;
+  buffer: Buffer;
+  mimeType: string;
+  qualificationName: string;
+  qualificationDescription: string;
+}): boolean {
   if (!payload || typeof payload !== 'object') return false;
-  if (!payload.exp || payload.exp < Date.now()) return false;
+  if (!payload.exp || (payload.exp as number) < Date.now()) return false;
   if (payload.file_hash !== sha256Buffer(buffer)) return false;
   if (payload.mime_type !== mimeType) return false;
   if (payload.qualification_name !== qualificationName) return false;
@@ -260,7 +312,7 @@ function isApprovedPayloadValidForUpload({ payload, buffer, mimeType, qualificat
   return true;
 }
 
-function buildAppBaseUrl(req) {
+function buildAppBaseUrl(req: Request): string {
   const configuredBase = (process.env.APP_URL || process.env.PUBLIC_APP_URL || '').trim();
   if (configuredBase) {
     return configuredBase.replace(/\/$/, '');
@@ -269,10 +321,10 @@ function buildAppBaseUrl(req) {
   return `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
 }
 
-function buildCertificateReminderLink(req, qualificationIds = []) {
+function buildCertificateReminderLink(req: CuraRequest, qualificationIds: Array<string | number> = []): string {
   const url = new URL('/certificate-upload', buildAppBaseUrl(req));
   if (qualificationIds.length === 1) {
-    url.searchParams.set('qualification_id', qualificationIds[0]);
+    url.searchParams.set('qualification_id', String(qualificationIds[0]));
   }
   if (req.dbToken) {
     url.searchParams.set('db_token', req.dbToken);
@@ -280,7 +332,11 @@ function buildCertificateReminderLink(req, qualificationIds = []) {
   return url.toString();
 }
 
-function formatReminderStatusLabel({ hasCertificates, summary, validUntil }) {
+function formatReminderStatusLabel({ hasCertificates, summary, validUntil }: {
+  hasCertificates: boolean;
+  summary: Record<string, unknown> | null;
+  validUntil: string | null;
+}): string {
   if (!hasCertificates) return 'kein Zertifikat hinterlegt';
   if (summary?.status === 'expired') {
     return validUntil ? `Nachweis abgelaufen seit ${validUntil}` : 'Nachweis abgelaufen';
@@ -289,15 +345,15 @@ function formatReminderStatusLabel({ hasCertificates, summary, validUntil }) {
   return 'Nachweis ungueltig';
 }
 
-function toIsoDateOnly(value) {
+function toIsoDateOnly(value: unknown): string | null {
   if (!value) return null;
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-  const parsed = new Date(value);
+  const parsed = new Date(value as string);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString().slice(0, 10);
 }
 
-function diffIsoDaysFromToday(value) {
+function diffIsoDaysFromToday(value: unknown): number | null {
   const iso = toIsoDateOnly(value);
   if (!iso) return null;
   const today = new Date().toISOString().slice(0, 10);
@@ -306,7 +362,7 @@ function diffIsoDaysFromToday(value) {
   return Math.round((targetMs - todayMs) / 86400000);
 }
 
-async function getReminderRecipientsForDoctor(doctorId) {
+async function getReminderRecipientsForDoctor(doctorId: string): Promise<Record<string, unknown>[]> {
   const [rows] = await db.execute(
     `SELECT id, email, full_name, doctor_id
        FROM app_users
@@ -316,23 +372,28 @@ async function getReminderRecipientsForDoctor(doctorId) {
         AND email != ''
       ORDER BY created_date ASC`,
     [doctorId]
-  );
+  ) as [Record<string, unknown>[], unknown];
   return rows;
 }
 
-async function computeReminderQualificationEntry({ req, tenantKey, doctorId, qualificationId }) {
+async function computeReminderQualificationEntry({ req, tenantKey, doctorId, qualificationId }: {
+  req: CuraRequest;
+  tenantKey: string;
+  doctorId: string;
+  qualificationId: string;
+}): Promise<Record<string, unknown> | null> {
   const qualification = await getQualificationConfig(req, qualificationId);
   if (!qualification || (qualification.requires_certificate !== 1 && qualification.requires_certificate !== true)) {
     return null;
   }
 
-  const [dqRows] = await req.db.execute(
+  const [dqRows] = await req.db!.execute(
     `SELECT id, certificate_status, certificate_valid_until, expiry_date
        FROM DoctorQualification
       WHERE doctor_id = ? AND qualification_id = ?
       LIMIT 1`,
     [doctorId, qualificationId]
-  );
+  ) as [Record<string, unknown>[], unknown];
   const doctorQualification = dqRows[0] || null;
   if (!doctorQualification) {
     return null;
@@ -345,7 +406,7 @@ async function computeReminderQualificationEntry({ req, tenantKey, doctorId, qua
   });
   const summary = computeQualificationEvidenceSummary({
     qualification,
-    certificates,
+    certificates: certificates as unknown as Certificate[],
   });
   const hasCertificates = certificates.length > 0;
   const isPending = !hasCertificates || summary.status !== 'valid';
@@ -354,13 +415,13 @@ async function computeReminderQualificationEntry({ req, tenantKey, doctorId, qua
     return null;
   }
 
-  const validUntil = summary.valid_until || doctorQualification.certificate_valid_until || doctorQualification.expiry_date || null;
+  const validUntil = (summary.valid_until || doctorQualification.certificate_valid_until || doctorQualification.expiry_date || null) as string | null;
 
   return {
     id: qualification.id,
     name: qualification.name,
     status: summary.status,
-    reason: formatReminderStatusLabel({ hasCertificates, summary, validUntil }),
+    reason: formatReminderStatusLabel({ hasCertificates, summary: summary as unknown as Record<string, unknown>, validUntil }),
   };
 }
 
@@ -377,7 +438,15 @@ async function runAnalysisAndPersist({
   qualificationName,
   qualificationDescription,
   fillDatesIfMissing,
-}) {
+}: {
+  certificateId: string;
+  tenantKey: string;
+  buffer: Buffer;
+  mimeType: string;
+  qualificationName: string;
+  qualificationDescription: string;
+  fillDatesIfMissing: boolean;
+}): Promise<void> {
   console.info('[certificates] Starte Analyse', { certificateId, qualificationName, mimeType, size: buffer?.length });
   try {
     const result = await analyzeCertificate({
@@ -407,7 +476,7 @@ async function runAnalysisAndPersist({
       'analysis_detected_expiry = ?',
       'analyzed_at = NOW()',
     ];
-    const params = [
+    const params: unknown[] = [
       result.status,
       result.is_certificate === null ? null : (result.is_certificate ? 1 : 0),
       result.scope_match === null ? null : (result.scope_match ? 1 : 0),
@@ -446,7 +515,7 @@ async function runAnalysisAndPersist({
                 analysis_reasoning = ?,
                 analyzed_at = NOW()
           WHERE id = ? AND tenant_key = ?`,
-        [err.message?.slice(0, 1000) || 'Unbekannter Fehler', certificateId, tenantKey]
+        [(err as Error).message?.slice(0, 1000) || 'Unbekannter Fehler', certificateId, tenantKey]
       );
     } catch (innerErr) {
       console.error('[certificates] Konnte Fehler-Status nicht persistieren', innerErr);
@@ -459,18 +528,21 @@ async function runAnalysisAndPersist({
 // Führt OCR/LLM synchron aus und liefert erkannte Daten zurück. Nur wenn der
 // Scope passt, wird ein signiertes approval_token für den späteren Upload
 // ausgegeben.
-router.post('/check', upload.single('file'), async (req, res, next) => {
+router.post('/check', upload.single('file'), async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: 'Keine Datei angegeben' });
+      res.status(400).json({ error: 'Keine Datei angegeben' });
+      return;
     }
     if (!isAnalyzerConfigured()) {
-      return res.status(503).json({ error: 'LLM nicht konfiguriert' });
+      res.status(503).json({ error: 'LLM nicht konfiguriert' });
+      return;
     }
 
     const { qualification_name, qualification_description } = req.body || {};
     if (!qualification_name) {
-      return res.status(400).json({ error: 'qualification_name erforderlich' });
+      res.status(400).json({ error: 'qualification_name erforderlich' });
+      return;
     }
 
     const result = await analyzeCertificate({
@@ -513,12 +585,14 @@ router.post('/check', upload.single('file'), async (req, res, next) => {
 
 // ============ POST /api/certificates/upload ============
 // multipart/form-data: file + doctor_id, qualification_id, granted_date?, expiry_date?, notes?, doctor_qualification_id?
-router.post('/upload', upload.single('file'), async (req, res, next) => {
+router.post('/upload', upload.single('file'), async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const curaReq = req as CuraRequest;
     if (!req.file) {
-      return res.status(400).json({ error: 'Keine Datei angegeben' });
+      res.status(400).json({ error: 'Keine Datei angegeben' });
+      return;
     }
-    const tenantKey = getTenantKey(req);
+    const tenantKey = getTenantKey(curaReq);
     const {
       doctor_id,
       qualification_id,
@@ -533,33 +607,36 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     } = req.body || {};
 
     if (!doctor_id || !qualification_id) {
-      return res
+      res
         .status(400)
         .json({ error: 'doctor_id und qualification_id sind erforderlich' });
+      return;
     }
 
-    ensureCanAccessDoctor(req, doctor_id);
+    ensureCanAccessDoctor(curaReq, doctor_id);
 
-  const qualificationConfig = await getQualificationConfig(req, qualification_id);
-  const requirementMode = normalizeRequirementMode(qualificationConfig?.certificate_requirement_mode);
+  const qualificationConfig = await getQualificationConfig(curaReq, qualification_id);
+  const requirementMode = normalizeRequirementMode(qualificationConfig?.certificate_requirement_mode as string | undefined);
   const normalizedEvidenceRole = normalizeEvidenceRoleInput(evidence_role, qualificationConfig);
 
-    let approvedAnalysis = null;
+    let approvedAnalysis: Record<string, unknown> | null = null;
     if (isAnalyzerConfigured()) {
       if (!qualification_name) {
-        return res.status(400).json({ error: 'qualification_name ist für die automatische Prüfung erforderlich' });
+        res.status(400).json({ error: 'qualification_name ist für die automatische Prüfung erforderlich' });
+        return;
       }
       approvedAnalysis = verifyAnalysisApprovalToken(approval_token);
       if (!isApprovedPayloadValidForUpload({
-        payload: approvedAnalysis,
+        payload: approvedAnalysis!,
         buffer: req.file.buffer,
         mimeType: req.file.mimetype,
         qualificationName: qualification_name,
         qualificationDescription: qualification_description,
       })) {
-        return res.status(422).json({
+        res.status(422).json({
           error: 'Upload verweigert: Dokument muss unmittelbar vor dem Upload erfolgreich geprüft werden und im Scope passen.',
         });
+        return;
       }
     }
 
@@ -575,9 +652,10 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       });
       const hasBaseCertificate = existingCertificates.some((certificate) => ['base', 'recertification', 'single'].includes(normalizeEvidenceRoleInput(certificate.evidence_role, qualificationConfig)));
       if (!hasBaseCertificate) {
-        return res.status(422).json({
+        res.status(422).json({
           error: `${qualificationConfig?.certificate_base_label || 'Grundnachweis'} muss vor einer Verlängerung hochgeladen werden.`,
         });
+        return;
       }
     }
 
@@ -606,7 +684,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
         finalGrantedDate,
         finalExpiryDate,
         notes ? String(notes).slice(0, 500) : null,
-        req.user?.sub || null,
+        curaReq.user?.sub || null,
         approvedAnalysis ? approvedFields.analysis_status : 'skipped',
         approvedAnalysis ? approvedFields.analysis_is_certificate : null,
         approvedAnalysis ? approvedFields.analysis_scope_match : null,
@@ -619,7 +697,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     );
 
     const summary = await recomputeDoctorQualificationStatus({
-      tenantDb: req.db,
+      tenantDb: curaReq.db!,
       tenantKey,
       doctorId: doctor_id,
       qualificationId: qualification_id,
@@ -639,7 +717,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       granted_date: finalGrantedDate,
       expiry_date: finalExpiryDate,
       notes: notes || null,
-      uploaded_by: req.user?.sub || null,
+      uploaded_by: curaReq.user?.sub || null,
       uploaded_at: new Date().toISOString(),
       analysis_status: approvedAnalysis ? approvedFields.analysis_status : 'skipped',
       analysis_is_certificate: approvedAnalysis ? approvedAnalysis.is_certificate : null,
@@ -659,19 +737,23 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 // ============ GET /api/certificates ============
 // Query: doctor_id?, qualification_id?
 // Liefert Metadaten ohne Dateiinhalt.
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
     const { doctor_id, qualification_id } = req.query;
 
-    let effectiveDoctorId = doctor_id || null;
-    if (req.user?.role !== 'admin') {
-      if (!req.user?.doctor_id) return res.json([]);
-      effectiveDoctorId = req.user.doctor_id;
+    let effectiveDoctorId = (doctor_id as string) || null;
+    if (curaReq.user?.role !== 'admin') {
+      if (!curaReq.user?.doctor_id) {
+        res.json([]);
+        return;
+      }
+      effectiveDoctorId = curaReq.user.doctor_id as string;
     }
 
     const conditions = ['tenant_key = ?'];
-    const params = [tenantKey];
+    const params: unknown[] = [tenantKey];
     if (effectiveDoctorId) {
       conditions.push('doctor_id = ?');
       params.push(effectiveDoctorId);
@@ -694,7 +776,7 @@ router.get('/', async (req, res, next) => {
         WHERE ${conditions.join(' AND ')}
         ORDER BY uploaded_at DESC`,
       params
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     res.json(rows);
   } catch (err) {
@@ -704,19 +786,23 @@ router.get('/', async (req, res, next) => {
 
 // ============ GET /api/certificates/expiring ============
 // Query: days? (default 60, max 365)
-router.get('/expiring', async (req, res, next) => {
+router.get('/expiring', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
-    const requested = parseInt(req.query.days, 10);
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
+    const requested = parseInt(req.query.days as string, 10);
     const days = Math.min(Math.max(Number.isFinite(requested) ? requested : 60, 1), 365);
 
     const conditions = ['tenant_key = ?'];
-    const params = [tenantKey];
+    const params: unknown[] = [tenantKey];
 
-    if (req.user?.role !== 'admin') {
-      if (!req.user?.doctor_id) return res.json([]);
+    if (curaReq.user?.role !== 'admin') {
+      if (!curaReq.user?.doctor_id) {
+        res.json([]);
+        return;
+      }
       conditions.push('doctor_id = ?');
-      params.push(req.user.doctor_id);
+      params.push(curaReq.user.doctor_id);
     }
 
     const [certificates] = await db.execute(
@@ -726,19 +812,21 @@ router.get('/expiring', async (req, res, next) => {
         WHERE ${conditions.join(' AND ')}
         ORDER BY doctor_id ASC, qualification_id ASC, uploaded_at ASC`,
       params
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     if (!certificates.length) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
     const qualificationIds = Array.from(new Set(certificates.map((certificate) => certificate.qualification_id).filter(Boolean)));
     if (!qualificationIds.length) {
-      return res.json([]);
+      res.json([]);
+      return;
     }
 
     const placeholders = qualificationIds.map(() => '?').join(', ');
-    const [qualificationRows] = await req.db.execute(
+    const [qualificationRows] = await curaReq.db!.execute(
       `SELECT id, name, description, requires_certificate,
               certificate_requirement_mode, certificate_validity_months,
               certificate_refresh_validity_months, certificate_base_label,
@@ -746,18 +834,18 @@ router.get('/expiring', async (req, res, next) => {
          FROM Qualification
         WHERE id IN (${placeholders})`,
       qualificationIds
-    );
+    ) as [Record<string, unknown>[], unknown];
     const qualificationById = new Map(qualificationRows.map((qualification) => [qualification.id, qualification]));
     const certificateById = new Map(certificates.map((certificate) => [certificate.id, certificate]));
 
-    const grouped = new Map();
+    const grouped = new Map<string, Record<string, unknown>[]>();
     for (const certificate of certificates) {
       const key = `${certificate.doctor_id}::${certificate.qualification_id}`;
       if (!grouped.has(key)) grouped.set(key, []);
-      grouped.get(key).push(certificate);
+      grouped.get(key)!.push(certificate);
     }
 
-    const rows = [];
+    const rows: Record<string, unknown>[] = [];
     for (const groupCertificates of grouped.values()) {
       const firstCertificate = groupCertificates[0];
       const qualification = qualificationById.get(firstCertificate.qualification_id);
@@ -765,13 +853,13 @@ router.get('/expiring', async (req, res, next) => {
         continue;
       }
 
-      const summary = computeQualificationEvidenceSummary({
-        qualification,
-        certificates: groupCertificates,
-      });
+  const summary = computeQualificationEvidenceSummary({
+    qualification,
+    certificates: certificates as unknown as Certificate[],
+  });
       const validUntil = toIsoDateOnly(summary.valid_until);
       const daysUntilExpiry = diffIsoDaysFromToday(validUntil);
-      if (!Number.isFinite(daysUntilExpiry) || daysUntilExpiry > days) {
+      if (!Number.isFinite(daysUntilExpiry) || (daysUntilExpiry as number) > days) {
         continue;
       }
 
@@ -787,7 +875,7 @@ router.get('/expiring', async (req, res, next) => {
         granted_date: representativeCertificate.granted_date,
         expiry_date: validUntil,
         uploaded_at: representativeCertificate.uploaded_at,
-        days_until_expiry: daysUntilExpiry,
+        days_until_expiry: daysUntilExpiry as number,
         certificate_status: summary.status,
         certificate_status_reason: summary.reason,
       });
@@ -795,12 +883,12 @@ router.get('/expiring', async (req, res, next) => {
 
     rows.sort((left, right) => {
       if (left.days_until_expiry !== right.days_until_expiry) {
-        return left.days_until_expiry - right.days_until_expiry;
+        return (left.days_until_expiry as number) - (right.days_until_expiry as number);
       }
       return String(left.qualification_id).localeCompare(String(right.qualification_id));
     });
 
-    return res.json(rows);
+    res.json(rows);
   } catch (err) {
     next(err);
   }
@@ -808,31 +896,36 @@ router.get('/expiring', async (req, res, next) => {
 
 // ============ POST /api/certificates/reminders/send ============
 // Body: { recipients: [{ doctor_id, qualification_ids: [] }] }
-router.post('/reminders/send', express.json(), async (req, res, next) => {
+router.post('/reminders/send', express.json(), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    if (req.user?.role !== 'admin') {
-      return res.status(403).json({ error: 'Nur Administratoren duerfen Erinnerungen senden' });
+    const curaReq = req as CuraRequest;
+    if (curaReq.user?.role !== 'admin') {
+      res.status(403).json({ error: 'Nur Administratoren duerfen Erinnerungen senden' });
+      return;
     }
 
     if (!getEmailProviderInfo().configured) {
-      return res.status(503).json({
+      res.status(503).json({
         error: 'E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.',
       });
+      return;
     }
 
-    const recipients = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+    const recipients = Array.isArray(req.body?.recipients) ? (req.body.recipients as unknown[]) : [];
     if (recipients.length === 0) {
-      return res.status(400).json({ error: 'Mindestens ein Empfaenger ist erforderlich' });
+      res.status(400).json({ error: 'Mindestens ein Empfaenger ist erforderlich' });
+      return;
     }
 
-    const tenantKey = getTenantKey(req);
-    const results = [];
+    const tenantKey = getTenantKey(curaReq);
+    const results: Record<string, unknown>[] = [];
     let sentCount = 0;
 
     for (const recipient of recipients) {
-      const doctorId = recipient?.doctor_id;
-      const requestedQualificationIds = Array.isArray(recipient?.qualification_ids)
-        ? Array.from(new Set(recipient.qualification_ids.filter(Boolean)))
+      const recipientObj = recipient as Record<string, unknown>;
+      const doctorId = recipientObj.doctor_id as string;
+      const requestedQualificationIds: string[] = Array.isArray(recipientObj.qualification_ids)
+        ? Array.from(new Set(recipientObj.qualification_ids.filter(Boolean))) as string[]
         : [];
 
       if (!doctorId || requestedQualificationIds.length === 0) {
@@ -840,13 +933,13 @@ router.post('/reminders/send', express.json(), async (req, res, next) => {
         continue;
       }
 
-      const [doctorRows] = await req.db.execute(
+      const [doctorRows] = await curaReq.db!.execute(
         `SELECT id, name, central_employee_id
            FROM Doctor
           WHERE id = ?
           LIMIT 1`,
         [doctorId]
-      );
+      ) as [Record<string, unknown>[], unknown];
       const doctor = doctorRows[0] || null;
       if (!doctor) {
         results.push({ doctor_id: doctorId, status: 'skipped', reason: 'Mitarbeiter nicht gefunden' });
@@ -864,12 +957,12 @@ router.post('/reminders/send', express.json(), async (req, res, next) => {
         continue;
       }
 
-      const pendingQualifications = [];
+      const pendingQualifications: Record<string, unknown>[] = [];
       for (const qualificationId of requestedQualificationIds) {
         const entry = await computeReminderQualificationEntry({
-          req,
+          req: curaReq,
           tenantKey,
-          doctorId,
+          doctorId: doctorId,
           qualificationId,
         });
         if (entry) {
@@ -882,7 +975,7 @@ router.post('/reminders/send', express.json(), async (req, res, next) => {
         continue;
       }
 
-      const reminderLink = buildCertificateReminderLink(req, pendingQualifications.map((item) => item.id));
+      const reminderLink = buildCertificateReminderLink(curaReq, pendingQualifications.map((item) => item.id as string | number));
       const qualificationLines = pendingQualifications
         .map((item) => `<li><strong>${item.name}</strong>: ${item.reason}</li>`)
         .join('');
@@ -892,7 +985,7 @@ router.post('/reminders/send', express.json(), async (req, res, next) => {
 
       for (const linkedUser of linkedUsers) {
         await sendEmail({
-          to: linkedUser.email,
+          to: linkedUser.email as string,
           subject: 'CuraFlow: Zertifikatsnachweise hochladen',
           text: [
             `Hallo ${linkedUser.full_name || doctor.name},`,
@@ -940,20 +1033,22 @@ router.post('/reminders/send', express.json(), async (req, res, next) => {
 
 // ============ PATCH /api/certificates/:id ============
 // Aktualisiert nur Datum/Notiz, nicht den Dateiinhalt.
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
     const { id } = req.params;
     const [rows] = await db.execute(
       `SELECT doctor_id, qualification_id, doctor_qualification_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
-    );
+    ) as [Record<string, unknown>[], unknown];
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      return;
     }
-    ensureCanAccessDoctor(req, rows[0].doctor_id);
+    ensureCanAccessDoctor(curaReq, rows[0].doctor_id as string);
 
-    const qualificationConfig = await getQualificationConfig(req, rows[0].qualification_id);
+    const qualificationConfig = await getQualificationConfig(curaReq, rows[0].qualification_id as string);
     const { granted_date, expiry_date, notes, evidence_role } = req.body || {};
     await db.execute(
       `UPDATE QualificationCertificate
@@ -969,11 +1064,11 @@ router.patch('/:id', async (req, res, next) => {
       ]
     );
     const summary = await recomputeDoctorQualificationStatus({
-      tenantDb: req.db,
+      tenantDb: curaReq.db!,
       tenantKey,
-      doctorId: rows[0].doctor_id,
-      qualificationId: rows[0].qualification_id,
-      doctorQualificationId: rows[0].doctor_qualification_id || null,
+      doctorId: rows[0].doctor_id as string,
+      qualificationId: rows[0].qualification_id as string,
+      doctorQualificationId: (rows[0].doctor_qualification_id as string) || null,
       qualificationConfig,
     });
     res.json({ ok: true, qualification_summary: summary });
@@ -983,30 +1078,32 @@ router.patch('/:id', async (req, res, next) => {
 });
 
 // ============ GET /api/certificates/:id/download ============
-router.get('/:id/download', async (req, res, next) => {
+router.get('/:id/download', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
     const { id } = req.params;
     const [rows] = await db.execute(
       `SELECT doctor_id, file_name, mime_type, file_data
          FROM QualificationCertificate
         WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
-    );
+    ) as [Record<string, unknown>[], unknown];
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      return;
     }
-    ensureCanAccessDoctor(req, rows[0].doctor_id);
+    ensureCanAccessDoctor(curaReq, rows[0].doctor_id as string);
 
     const safeName = String(rows[0].file_name || 'zertifikat')
       .replace(/[\r\n"]/g, '_');
-    res.setHeader('Content-Type', rows[0].mime_type || 'application/octet-stream');
+    res.setHeader('Content-Type', (rows[0].mime_type as string) || 'application/octet-stream');
     res.setHeader(
       'Content-Disposition',
       `inline; filename="${encodeURIComponent(safeName)}"`
     );
     res.setHeader('Cache-Control', 'private, no-store');
-    res.send(rows[0].file_data);
+    res.send(rows[0].file_data as Buffer);
   } catch (err) {
     next(err);
   }
@@ -1014,10 +1111,11 @@ router.get('/:id/download', async (req, res, next) => {
 
 // ============ POST /api/certificates/:id/analyze ============
 // Erneute LLM-Analyse für ein bereits hochgeladenes Zertifikat anstoßen.
-router.post('/:id/analyze', express.json(), async (req, res, next) => {
+router.post('/:id/analyze', express.json(), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
-    const { id } = req.params;
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
+    const { id } = req.params as Record<string, string>;
     const { qualification_name, qualification_description } = req.body || {};
 
     const [rows] = await db.execute(
@@ -1025,17 +1123,20 @@ router.post('/:id/analyze', express.json(), async (req, res, next) => {
          FROM QualificationCertificate
         WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
-    );
+    ) as [Record<string, unknown>[], unknown];
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      return;
     }
-    ensureCanAccessDoctor(req, rows[0].doctor_id);
+    ensureCanAccessDoctor(curaReq, rows[0].doctor_id as string);
 
     if (!isAnalyzerConfigured()) {
-      return res.status(503).json({ error: 'Vision-LLM nicht konfiguriert' });
+      res.status(503).json({ error: 'Vision-LLM nicht konfiguriert' });
+      return;
     }
     if (!qualification_name) {
-      return res.status(400).json({ error: 'qualification_name erforderlich' });
+      res.status(400).json({ error: 'qualification_name erforderlich' });
+      return;
     }
 
     await db.execute(
@@ -1046,8 +1147,8 @@ router.post('/:id/analyze', express.json(), async (req, res, next) => {
     runAnalysisAndPersist({
       certificateId: id,
       tenantKey,
-      buffer: rows[0].file_data,
-      mimeType: rows[0].mime_type,
+      buffer: rows[0].file_data as Buffer,
+      mimeType: rows[0].mime_type as string,
       qualificationName: qualification_name,
       qualificationDescription: qualification_description,
       fillDatesIfMissing: false,
@@ -1060,31 +1161,33 @@ router.post('/:id/analyze', express.json(), async (req, res, next) => {
 });
 
 // ============ DELETE /api/certificates/:id ============
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const tenantKey = getTenantKey(req);
+    const curaReq = req as CuraRequest;
+    const tenantKey = getTenantKey(curaReq);
     const { id } = req.params;
     const [rows] = await db.execute(
       `SELECT doctor_id, qualification_id, doctor_qualification_id FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
-    );
+    ) as [Record<string, unknown>[], unknown];
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      res.status(404).json({ error: 'Zertifikat nicht gefunden' });
+      return;
     }
-    ensureCanAccessDoctor(req, rows[0].doctor_id);
+    ensureCanAccessDoctor(curaReq, rows[0].doctor_id as string);
 
-    const qualificationConfig = await getQualificationConfig(req, rows[0].qualification_id);
+    const qualificationConfig = await getQualificationConfig(curaReq, rows[0].qualification_id as string);
 
     await db.execute(
       `DELETE FROM QualificationCertificate WHERE id = ? AND tenant_key = ?`,
       [id, tenantKey]
     );
     const summary = await recomputeDoctorQualificationStatus({
-      tenantDb: req.db,
+      tenantDb: curaReq.db!,
       tenantKey,
-      doctorId: rows[0].doctor_id,
-      qualificationId: rows[0].qualification_id,
-      doctorQualificationId: rows[0].doctor_qualification_id || null,
+      doctorId: rows[0].doctor_id as string,
+      qualificationId: rows[0].qualification_id as string,
+      doctorQualificationId: (rows[0].doctor_qualification_id as string) || null,
       qualificationConfig,
     });
     res.json({ ok: true, qualification_summary: summary });
@@ -1094,13 +1197,16 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 // Multer-spezifische Fehlerbehandlung
-router.use((err, _req, res, next) => {
+router.use((err: unknown, _req: Request, res: Response, next: NextFunction): void => {
   if (!err) return next();
-  if (err.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({ error: 'Datei zu groß (max. 5 MB).' });
+  const multerErr = err as { code?: string; message?: string };
+  if (multerErr.code === 'LIMIT_FILE_SIZE') {
+    res.status(400).json({ error: 'Datei zu groß (max. 5 MB).' });
+    return;
   }
-  if (err.message && /Dateityp nicht erlaubt/i.test(err.message)) {
-    return res.status(400).json({ error: err.message });
+  if (multerErr.message && /Dateityp nicht erlaubt/i.test(multerErr.message)) {
+    res.status(400).json({ error: multerErr.message });
+    return;
   }
   next(err);
 });

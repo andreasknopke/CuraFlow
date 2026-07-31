@@ -25,6 +25,7 @@
  */
 
 import crypto from 'crypto';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { runQuery as queryTisoware } from './tisowareDataSource.js';
 import {
   isCentralAbsencePosition,
@@ -50,7 +51,7 @@ import {
 // in the note via the [TISO:CODE] prefix so the audit trail is not lost.
 // repairTisowareStatusMappings() below backfills already-imported rows.
 
-const LOANR_TO_POSITION = {
+const LOANR_TO_POSITION: Record<string, string> = {
   // Urlaub / Vacation
   '505': 'Urlaub',
 
@@ -101,7 +102,7 @@ const LOANR_TO_POSITION = {
 };
 
 // Subtype descriptions for known LOANR codes (used in [TISO:CODE] note)
-const LOANR_TO_NOTE = {
+const LOANR_TO_NOTE: Record<string, string> = {
   '530KV': 'Krank auf Vertrauen',
   '530KE': 'Krank auf Vertrauen (Eltern)',
   '531': 'Krank ohne AU-Bescheinigung',
@@ -148,7 +149,7 @@ const LOANR_TO_NOTE = {
  * @param {string|null} loatext1 - LOATEXT1 from LOASTAMM (human-readable name)
  * @returns {{ position: string, notePrefix: string }}
  */
-export function mapLoanrToPosition(loanr, loatext1 = null) {
+export function mapLoanrToPosition(loanr: string | null | undefined, loatext1: string | null = null): { position: string; notePrefix: string } {
   const code = String(loanr || '').trim();
   const position = LOANR_TO_POSITION[code] || 'Nicht verfügbar';
 
@@ -173,7 +174,7 @@ const STATUS_CODE_LOANRS = new Set(['550', '551', '5511', '552']);
  * @param {string|null} note
  * @returns {string|null} The LOANR code (trimmed) or null.
  */
-function extractTisoCodeFromNote(note) {
+function extractTisoCodeFromNote(note: string | null): string | null {
   if (!note) return null;
   const match = String(note).match(/\[TISO:([^\]]+)\]/);
   return match ? match[1].trim() : null;
@@ -195,7 +196,7 @@ function extractTisoCodeFromNote(note) {
  * @param {boolean} [options.dryRun=false] - When true, only report counts; write nothing.
  * @returns {Promise<{ dryRun: boolean, scanned: number, repaired: number, sample: Array<{id:string,employee_id:string,date:string,old_position:string,note:string|null}> }>}
  */
-export async function repairTisowareStatusMappings(masterDb, options = {}) {
+export async function repairTisowareStatusMappings(masterDb: Pool, options: { dryRun?: boolean } = {}): Promise<{ dryRun: boolean; scanned: number; repaired: number; sample: Array<{ id: string; employee_id: string; date: string; old_position: string; note: string | null }> }> {
   const { dryRun = false } = options;
 
   await ensureCentralAbsenceTables(masterDb);
@@ -212,14 +213,14 @@ export async function repairTisowareStatusMappings(masterDb, options = {}) {
       WHERE position IN ('Mutterschutz', 'Elternzeit')
         AND (${likeClauses})`,
     likeParams
-  );
+  ) as [RowDataPacket[], unknown];
 
   if (dryRun) {
     return {
       dryRun: true,
       scanned: rows.length,
       repaired: 0,
-      sample: rows.slice(0, 10).map(r => ({
+      sample: rows.slice(0, 10).map((r: RowDataPacket) => ({
         id: r.id,
         employee_id: r.employee_id,
         date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date),
@@ -237,8 +238,8 @@ export async function repairTisowareStatusMappings(masterDb, options = {}) {
     if (!code || !STATUS_CODE_LOANRS.has(code)) continue;
     await masterDb.execute(
       `UPDATE CentralAbsenceEntry
-          SET position = 'Nicht verfügbar', updated_date = CURRENT_TIMESTAMP
-        WHERE id = ? AND position IN ('Mutterschutz', 'Elternzeit')`,
+         SET position = 'Nicht verfügbar', updated_date = CURRENT_TIMESTAMP
+       WHERE id = ? AND position IN ('Mutterschutz', 'Elternzeit')`,
       [row.id]
     );
     repaired++;
@@ -250,7 +251,7 @@ export async function repairTisowareStatusMappings(masterDb, options = {}) {
     dryRun: false,
     scanned: rows.length,
     repaired,
-    sample: rows.slice(0, 10).map(r => ({
+    sample: rows.slice(0, 10).map((r: RowDataPacket) => ({
       id: r.id,
       employee_id: r.employee_id,
       date: r.date instanceof Date ? r.date.toISOString().slice(0, 10) : String(r.date),
@@ -268,13 +269,20 @@ export async function repairTisowareStatusMappings(masterDb, options = {}) {
  * @param {string} notePrefix - The [TISO:CODE] prefix to add
  * @returns {string}
  */
-function mergeNote(existingNote, notePrefix) {
+function mergeNote(existingNote: string | null, notePrefix: string): string {
   if (!existingNote) return notePrefix;
   if (existingNote.includes(`[TISO:`)) return existingNote; // Already has TISO prefix
   return `${notePrefix} | ${existingNote}`;
 }
 
 // ─── Employee Matching ──────────────────────────────────────────────────────
+
+interface SearchTisowareEmployeesOptions {
+  q?: string;
+  kstnr?: string;
+  allActive?: boolean;
+  limit?: number;
+}
 
 /**
  * Search for employees in the Tisoware PERSTAMM table via live proxy.
@@ -286,10 +294,10 @@ function mergeNote(existingNote, notePrefix) {
  * @param {number} [params.limit=200] - Max results (0 = no cap)
  * @returns {Promise<Array>} PERSTAMM rows
  */
-export async function searchTisowareEmployees({ q, kstnr, allActive = false, limit = 200 } = {}) {
+export async function searchTisowareEmployees({ q, kstnr, allActive = false, limit = 200 }: SearchTisowareEmployeesOptions = {}): Promise<Record<string, unknown>[]> {
   let sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
              FROM dbo.PERSTAMM WHERE 1=1`;
-  const conditions = [];
+  const conditions: string[] = [];
 
   if (allActive) {
     // PSAUSDAT is an int (YYYYMMDD). NULL/0 means no exit date set.
@@ -330,16 +338,16 @@ export async function searchTisowareEmployees({ q, kstnr, allActive = false, lim
  * @param {string[]} psPersNrList - PSPERSNR values to look up
  * @returns {Promise<Array>} PERSTAMM rows
  */
-export async function searchTisowareByPsPersNr(psPersNrList) {
-  const unique = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
+export async function searchTisowareByPsPersNr(psPersNrList: string[]): Promise<Record<string, unknown>[]> {
+  const unique = [...new Set(psPersNrList.map((p: string) => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
   const BATCH_SIZE = 200; // Keep IN clause well under 10 000 char proxy limit
-  let allRows = [];
+  let allRows: Record<string, unknown>[] = [];
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
-    const inClause = batch.map(p => `'${p.replace(/'/g, "''")}'`).join(',');
+    const inClause = batch.map((p: string) => `'${p.replace(/'/g, "''")}'`).join(',');
     const sql = `SELECT PSNR, PSPERSNR, PSVORNA, PSNACHNA, PSEINDAT, PSAUSDAT, PGNR, QALNR, KSTNR
                  FROM dbo.PERSTAMM WHERE PSPERSNR IN (${inClause}) ORDER BY PSNACHNA, PSVORNA`;
 
@@ -357,7 +365,7 @@ export async function searchTisowareByPsPersNr(psPersNrList) {
   // preferring the currently active employee (PSAUSDAT = 0) over future-exited ones,
   // and preferring the highest PSNR (most recently created) as tiebreaker.
   // This ensures N PSPERSNRs → N PERSTAMM rows → N ABWKAL queries.
-  const byPsPersNr = new Map();
+  const byPsPersNr = new Map<string, Record<string, unknown>>();
   for (const r of allRows) {
     const psp = String(r.PSPERSNR || '').trim();
     if (!psp) continue;
@@ -408,14 +416,14 @@ export async function searchTisowareByPsPersNr(psPersNrList) {
  * @param {Array} tisowareEmployees - PERSTAMM rows from Tisoware
  * @returns {Promise<Array>} Matched results with match status
  */
-export async function matchTisowareEmployees(masterDb, tisowareEmployees) {
+export async function matchTisowareEmployees(masterDb: Pool, tisowareEmployees: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
   // Build set of PSPERSNR values to look up
   const psPersNrList = tisowareEmployees
-    .map(e => String(e.PSPERSNR || '').trim())
+    .map((e: Record<string, unknown>) => String(e.PSPERSNR || '').trim())
     .filter(Boolean);
 
   if (psPersNrList.length === 0) {
-    return tisowareEmployees.map(e => ({
+    return tisowareEmployees.map((e: Record<string, unknown>) => ({
       ...e,
       match_status: 'no_pspersnr',
       employee_id: null,
@@ -430,15 +438,15 @@ export async function matchTisowareEmployees(masterDb, tisowareEmployees) {
      FROM Employee
      WHERE payroll_id IN (${placeholders})`,
     psPersNrList
-  );
+  ) as [RowDataPacket[], unknown];
 
-  const employeeByPayrollId = new Map();
+  const employeeByPayrollId = new Map<string, RowDataPacket>();
   for (const row of employeeRows) {
     const pid = String(row.payroll_id || '').trim();
     if (pid) employeeByPayrollId.set(pid, row);
   }
 
-  return tisowareEmployees.map(e => {
+  return tisowareEmployees.map((e: Record<string, unknown>) => {
     const psPersNr = String(e.PSPERSNR || '').trim();
     if (!psPersNr) {
       return {
@@ -478,20 +486,20 @@ export async function matchTisowareEmployees(masterDb, tisowareEmployees) {
  * @param {string[]} loanrCodes - Array of LOANR codes
  * @returns {Promise<Map<string, string>>}
  */
-export async function fetchLoanrDescriptions(loanrCodes) {
-  const unique = [...new Set(loanrCodes.map(c => String(c || '').trim()).filter(Boolean))];
+export async function fetchLoanrDescriptions(loanrCodes: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(loanrCodes.map((c: string) => String(c || '').trim()).filter(Boolean))];
   if (unique.length === 0) return new Map();
 
   // Build IN clause — MSSQL doesn't support parameterized IN well from Node,
   // but our queryTisoware sanitizes and these are alphanumeric codes anyway.
-  const inClause = unique.map(c => `'${c.replace(/'/g, "''")}'`).join(',');
+  const inClause = unique.map((c: string) => `'${c.replace(/'/g, "''")}'`).join(',');
   const sql = `SELECT LOANR, LOATEXT1 FROM dbo.LOASTAMM WHERE LOANR IN (${inClause})`;
 
   try {
     const result = await queryTisoware(sql);
-    const map = new Map();
+    const map = new Map<string, string>();
     for (const row of (result.rows || [])) {
-      map.set(String(row.LOANR || '').trim(), row.LOATEXT1 || null);
+      map.set(String(row.LOANR || '').trim(), (row.LOATEXT1 as string) || '');
     }
     return map;
   } catch {
@@ -510,8 +518,8 @@ export async function fetchLoanrDescriptions(loanrCodes) {
  * @param {string[]} keys - Column names from a sample ABWKAL row
  * @returns {{ fromCol: string|null, toCol: string|null }}
  */
-export function discoverAbwkalDateColumns(keys) {
-  const upperKeys = keys.map(k => k.toUpperCase());
+export function discoverAbwkalDateColumns(keys: string[]): { fromCol: string | null; toCol: string | null } {
+  const upperKeys = keys.map((k: string) => k.toUpperCase());
 
   // Canonical Tisoware column names: ABWDATE = single date column (int, YYYYMMDD).
   // ABWKAL stores one date per row — use it for both from/to.
@@ -525,7 +533,7 @@ export function discoverAbwkalDateColumns(keys) {
     return { fromCol: keys[datumIdx], toCol: keys[datumIdx] };
   }
 
-  const candidates = keys.filter(k => {
+  const candidates = keys.filter((k: string) => {
     const u = k.toUpperCase();
     // Look for columns that contain date-like German terms
     return (u.includes('VON') || u.includes('BIS') || u.includes('BEGINN')
@@ -536,11 +544,11 @@ export function discoverAbwkalDateColumns(keys) {
   });
 
   // Sort: "VON/BEGINN/ANFANG"-like first, then "BIS/ENDE"-like
-  const fromCandidates = candidates.filter(c => {
+  const fromCandidates = candidates.filter((c: string) => {
     const u = c.toUpperCase();
     return u.includes('VON') || u.includes('BEGINN') || u.includes('ANFANG');
   });
-  const toCandidates = candidates.filter(c => {
+  const toCandidates = candidates.filter((c: string) => {
     const u = c.toUpperCase();
     return u.includes('BIS') || u.includes('ENDE');
   });
@@ -564,11 +572,11 @@ export function discoverAbwkalDateColumns(keys) {
  * @param {string} toCol - Actual "to date" column name
  * @returns {object[]} Rows with ABWDATVON and ABWDATBIS properties added
  */
-function normalizeAbwkalRows(rows, fromCol, toCol) {
+function normalizeAbwkalRows(rows: Record<string, unknown>[], fromCol: string | null, toCol: string | null): Record<string, unknown>[] {
   if (!fromCol || rows.length === 0) return rows;
   for (const row of rows) {
     row.ABWDATVON = row[fromCol];
-    row.ABWDATBIS = row[toCol];
+    row.ABWDATBIS = row[toCol ?? fromCol];
   }
   return rows;
 }
@@ -585,15 +593,15 @@ function normalizeAbwkalRows(rows, fromCol, toCol) {
  * @param {string} [dateTo] - Optional end date (YYYYMMDD) — applied client-side after fetch
  * @returns {Promise<Array>} ABWKAL rows with normalized ABWDATVON/ABWDATBIS properties
  */
-export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
-  const unique = [...new Set(psnrList.map(p => String(p || '').trim()).filter(Boolean))];
+export async function fetchTisowareAbsences(psnrList: (string | number)[], dateFrom?: string, dateTo?: string): Promise<Record<string, unknown>[]> {
+  const unique = [...new Set(psnrList.map((p: string | number) => String(p || '').trim()).filter(Boolean))];
   if (unique.length === 0) return [];
 
   const BATCH_SIZE = 25; // Each PSNR can have 50–200 ABWKAL rows; PHP proxy caps at 5000 rows.
                           // 25 PSNRs × ~200 absences = 5000 rows max. For avg 100: 2500 rows.
-  let allRows = [];
-  let fromCol = null;
-  let toCol = null;
+  let allRows: Record<string, unknown>[] = [];
+  let fromCol: string | null = null;
+  let toCol: string | null = null;
 
   for (let i = 0; i < unique.length; i += BATCH_SIZE) {
     const batch = unique.slice(i, i + BATCH_SIZE);
@@ -627,8 +635,8 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   }
 
   // Deduplicate by PSNR + ABWDATVON + LOANR (paranoid safety net)
-  const seen = new Set();
-  const rows = allRows.filter(r => {
+  const seen = new Set<string>();
+  const rows = allRows.filter((r: Record<string, unknown>) => {
     const key = `${r.PSNR || ''}|${r.ABWDATVON || ''}|${r.LOANR || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -636,15 +644,15 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
   });
 
   // Log unique PSNR coverage vs requested — only warn on missing
-  const uniquePsnrsInResult = [...new Set(rows.map(r => String(r.PSNR || '').trim()))];
+  const uniquePsnrsInResult = [...new Set(rows.map((r: Record<string, unknown>) => String(r.PSNR || '').trim()))];
   if (uniquePsnrsInResult.length < unique.length) {
-    const missingPsnrs = unique.filter(p => !uniquePsnrsInResult.includes(p));
+    const missingPsnrs = unique.filter((p: string) => !uniquePsnrsInResult.includes(p));
     console.warn(`[Tisoware import] fetchTisowareAbsences: ${missingPsnrs.length} PSNRs have ZERO rows! First 20: [${missingPsnrs.slice(0, 20).join(',')}]`);
   }
 
   // Client-side date filtering (since we can't use SQL WHERE with unknown column names)
   if (dateFrom || dateTo) {
-    return rows.filter(row => {
+    return rows.filter((row: Record<string, unknown>) => {
       const fromVal = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
       const toVal = row.ABWDATBIS ? String(row.ABWDATBIS).trim() : '';
       if (!fromVal) return false;
@@ -666,7 +674,7 @@ export async function fetchTisowareAbsences(psnrList, dateFrom, dateTo) {
  * @param {string|null|undefined} raw - Raw date value from Tisoware
  * @returns {string|null} ISO date string or null if unparseable
  */
-export function parseTisowareDate(raw) {
+export function parseTisowareDate(raw: string | null | undefined): string | null {
   if (!raw) return null;
   const s = String(raw).trim();
   if (!s) return null;
@@ -710,8 +718,8 @@ export function parseTisowareDate(raw) {
  * @param {string} toDate - ISO date string
  * @returns {string[]}
  */
-function expandDateRange(fromDate, toDate) {
-  const dates = [];
+function expandDateRange(fromDate: string, toDate: string): string[] {
+  const dates: string[] = [];
   const from = new Date(fromDate + 'T12:00:00');
   const to = new Date(toDate + 'T12:00:00');
 
@@ -727,6 +735,19 @@ function expandDateRange(fromDate, toDate) {
 
 // ─── Preview & Import ────────────────────────────────────────────────────────
 
+interface PreviewTisowareImportOptions {
+  dateFrom?: string;
+  dateTo?: string;
+  resolveConflicts?: boolean;
+}
+
+interface ExecuteTisowareImportOptions {
+  dateFrom?: string;
+  dateTo?: string;
+  resolveConflicts?: boolean;
+  createdBy?: string | null;
+}
+
 /**
  * Preview the Tisoware absence import for a list of PSPERSNR values.
  *
@@ -740,14 +761,14 @@ function expandDateRange(fromDate, toDate) {
  * @param {boolean} [options.resolveConflicts=false] - Whether to show conflict resolution
  * @returns {Promise<object>} Preview result
  */
-export async function previewTisowareImport(masterDb, psPersNrList, options = {}) {
+export async function previewTisowareImport(masterDb: Pool, psPersNrList: string[], options: PreviewTisowareImportOptions = {}): Promise<Record<string, unknown>> {
   const { dateFrom, dateTo, resolveConflicts = false } = options;
 
   // 1. Fetch Tisoware employee data directly for the requested PSPERSNR values
   //    (avoid TOP-500 limitation of searchTisowareEmployees with empty q)
-  const cleanList = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
+  const cleanList = [...new Set(psPersNrList.map((p: string) => String(p || '').trim()).filter(Boolean))];
 
-  let tisowareRows = [];
+  let tisowareRows: Record<string, unknown>[] = [];
   if (cleanList.length > 0) {
     tisowareRows = await searchTisowareByPsPersNr(cleanList);
   } else {
@@ -759,17 +780,17 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
   const matched = await matchTisowareEmployees(masterDb, tisowareRows);
 
-  const matchedEmployees = matched.filter(e => e.match_status === 'matched');
-  const unmatchedEmployees = matched.filter(e => e.match_status !== 'matched');
+  const matchedEmployees = matched.filter((e: Record<string, unknown>) => e.match_status === 'matched');
+  const unmatchedEmployees = matched.filter((e: Record<string, unknown>) => e.match_status !== 'matched');
 
   console.log(`[Tisoware import] preview: match stats — ${matchedEmployees.length} matched, ${unmatchedEmployees.length} unmatched (total ${matched.length})`);
 
-  const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
+  const matchedPsPersNr = matchedEmployees.map((e: Record<string, unknown>) => String(e.PSPERSNR).trim());
 
   // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
-  const psnrToPsPersNr = new Map();
-  const psPersNrToPsnr = new Map();
-  const psnrToEindat = new Map(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
+  const psnrToPsPersNr = new Map<string, string>();
+  const psPersNrToPsnr = new Map<string, string>();
+  const psnrToEindat = new Map<string, string>(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
   for (const e of matchedEmployees) {
     const psnr = String(e.PSNR || '').trim();
     const psp = String(e.PSPERSNR || '').trim();
@@ -796,9 +817,9 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   // 2. Fetch LOASTAMM descriptions for LOANR codes we'll encounter
-  let loanrMap = new Map();
+  let loanrMap = new Map<string, string>();
   try {
-    const allLoanrCodes = new Set();
+    const allLoanrCodes = new Set<string>();
     // Peek at ABWKAL to get the LOANR codes — batched by PSNR
     const PEEK_BATCH = 200;
     for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
@@ -811,7 +832,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
     }
     loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
   } catch (e) {
-    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
+    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', (e as Error).message);
   }
 
   // 3. Process each employee one-by-one to avoid PHP proxy row limits.
@@ -820,14 +841,14 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
   await ensureCentralAbsenceTables(masterDb);
 
   // Build employeeId map
-  const employeeIdByPsPersNr = new Map(
-    matchedEmployees.map(e => [String(e.PSPERSNR).trim(), e.employee_id])
+  const employeeIdByPsPersNr = new Map<string, unknown>(
+    matchedEmployees.map((e: Record<string, unknown>) => [String(e.PSPERSNR).trim(), e.employee_id])
   );
 
-  const newAbsences = [];
-  const conflicts = [];
-  const alreadyExists = [];
-  const unparseableDates = [];
+  const newAbsences: Record<string, unknown>[] = [];
+  const conflicts: Record<string, unknown>[] = [];
+  const alreadyExists: Record<string, unknown>[] = [];
+  const unparseableDates: Record<string, unknown>[] = [];
   let totalAbsenceRows = 0;
 
   const employeeCount = matchedEmployees.length;
@@ -843,7 +864,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
     // Filter by PSEINDAT
     const filtered = eindat
-      ? employeeRows.filter(row => {
+      ? employeeRows.filter((row: Record<string, unknown>) => {
           const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
           return !rawFrom || rawFrom >= eindat;
         })
@@ -857,8 +878,8 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
     // Analyze each absence row for this employee
     for (const row of filtered) {
-      const fromDate = parseTisowareDate(row.ABWDATVON);
-      const toDate = parseTisowareDate(row.ABWDATBIS);
+      const fromDate = parseTisowareDate(row.ABWDATVON as string | null | undefined);
+      const toDate = parseTisowareDate(row.ABWDATBIS as string | null | undefined);
       if (!fromDate) {
         unparseableDates.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, rawTo: row.ABWDATBIS, reason: 'invalid_from_date' });
         continue;
@@ -866,14 +887,14 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
 
       const dates = expandDateRange(fromDate, toDate || fromDate);
       const loanr = String(row.LOANR || '').trim();
-      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr) ?? null);
 
       for (const date of dates) {
         // Check if already exists in CentralAbsenceEntry
         const [existingRows] = await masterDb.execute(
           'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
           [employeeId, date]
-        );
+        ) as [RowDataPacket[], unknown];
 
         if (existingRows.length > 0) {
           const existing = existingRows[0];
@@ -958,7 +979,7 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
     conflicts,
     already_exists: alreadyExists,
     unparseable_dates: unparseableDates,
-    unmatched_details: unmatchedEmployees.map(e => ({
+    unmatched_details: unmatchedEmployees.map((e: Record<string, unknown>) => ({
       PSPERSNR: e.PSPERSNR,
       PSVORNA: e.PSVORNA,
       PSNACHNA: e.PSNACHNA,
@@ -980,13 +1001,13 @@ export async function previewTisowareImport(masterDb, psPersNrList, options = {}
  * @param {string} [options.createdBy] - Email of the admin performing the import
  * @returns {Promise<object>} Import result
  */
-export async function executeTisowareImport(masterDb, psPersNrList, options = {}) {
+export async function executeTisowareImport(masterDb: Pool, psPersNrList: string[], options: ExecuteTisowareImportOptions = {}): Promise<Record<string, unknown>> {
   const { dateFrom, dateTo, resolveConflicts = false, createdBy = null } = options;
 
   // 1. Match employees — query PERSTAMM directly by PSPERSNR
-  const cleanList = [...new Set(psPersNrList.map(p => String(p || '').trim()).filter(Boolean))];
+  const cleanList = [...new Set(psPersNrList.map((p: string) => String(p || '').trim()).filter(Boolean))];
 
-  let tisowareRows = [];
+  let tisowareRows: Record<string, unknown>[] = [];
   if (cleanList.length > 0) {
     tisowareRows = await searchTisowareByPsPersNr(cleanList);
   }
@@ -994,12 +1015,12 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   console.log(`[Tisoware import] execute: requested ${cleanList.length} PSPERSNR(s), found ${tisowareRows.length} PERSTAMM row(s)`);
 
   const matched = await matchTisowareEmployees(masterDb, tisowareRows);
-  const matchedEmployees = matched.filter(e => e.match_status === 'matched');
-  const matchedPsPersNr = matchedEmployees.map(e => String(e.PSPERSNR).trim());
+  const matchedEmployees = matched.filter((e: Record<string, unknown>) => e.match_status === 'matched');
+  const matchedPsPersNr = matchedEmployees.map((e: Record<string, unknown>) => String(e.PSPERSNR).trim());
 
   // Build PSNR ↔ PSPERSNR maps (ABWKAL links via PSNR, not PSPERSNR)
-  const psnrToPsPersNr = new Map();
-  const psnrToEindat = new Map(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
+  const psnrToPsPersNr = new Map<string, string>();
+  const psnrToEindat = new Map<string, string>(); // PSNR → PSEINDAT for filtering stale PSNR-reuse data
   for (const e of matchedEmployees) {
     const psnr = String(e.PSNR || '').trim();
     const psp = String(e.PSPERSNR || '').trim();
@@ -1023,9 +1044,9 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   }
 
   // 2. Fetch LOASTAMM descriptions
-  let loanrMap = new Map();
+  let loanrMap = new Map<string, string>();
   try {
-    const allLoanrCodes = new Set();
+    const allLoanrCodes = new Set<string>();
     // Peek at ABWKAL to get the LOANR codes — batched by PSNR
     const PEEK_BATCH = 200;
     for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
@@ -1038,7 +1059,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
     }
     loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
   } catch (e) {
-    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', e.message);
+    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', (e as Error).message);
   }
 
   // 3. Process each employee one-by-one to avoid PHP proxy row limits.
@@ -1046,8 +1067,8 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
   await ensureCentralAbsenceTables(masterDb);
 
-  const employeeIdByPsPersNr = new Map(
-    matchedEmployees.map(e => [String(e.PSPERSNR).trim(), e.employee_id])
+  const employeeIdByPsPersNr = new Map<string, unknown>(
+    matchedEmployees.map((e: Record<string, unknown>) => [String(e.PSPERSNR).trim(), e.employee_id])
   );
 
   const { absencePriority, updateCentralAbsencePosition } = await import('./centralAbsences.js');
@@ -1057,7 +1078,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
   let resolvedConflicts = 0;
   let unresolvedConflicts = 0;
   let unparseableDates = 0;
-  const errors = [];
+  const errors: Record<string, unknown>[] = [];
 
   const employeeCount = matchedEmployees.length;
   for (let empIdx = 0; empIdx < employeeCount; empIdx++) {
@@ -1072,7 +1093,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
     // Filter by PSEINDAT
     const filtered = eindat
-      ? employeeRows.filter(row => {
+      ? employeeRows.filter((row: Record<string, unknown>) => {
           const rawFrom = row.ABWDATVON ? String(row.ABWDATVON).trim() : '';
           return !rawFrom || rawFrom >= eindat;
         })
@@ -1084,8 +1105,8 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
     // Write each absence row for this employee
     for (const row of filtered) {
-      const fromDate = parseTisowareDate(row.ABWDATVON);
-      const toDate = parseTisowareDate(row.ABWDATBIS);
+      const fromDate = parseTisowareDate(row.ABWDATVON as string | null | undefined);
+      const toDate = parseTisowareDate(row.ABWDATBIS as string | null | undefined);
       if (!fromDate) {
         unparseableDates++;
         errors.push({ psPersNr, loanr: row.LOANR, rawFrom: row.ABWDATVON, error: 'invalid_from_date' });
@@ -1094,14 +1115,14 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
 
       const dates = expandDateRange(fromDate, toDate || fromDate);
       const loanr = String(row.LOANR || '').trim();
-      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr));
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr) ?? null);
 
       for (const date of dates) {
         try {
           const [existingRows] = await masterDb.execute(
             'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
             [employeeId, date]
-          );
+          ) as [RowDataPacket[], unknown];
 
           if (existingRows.length > 0) {
             const existing = existingRows[0];
@@ -1168,7 +1189,7 @@ export async function executeTisowareImport(masterDb, psPersNrList, options = {}
             date,
             loanr,
             position,
-            error: err.message,
+            error: (err as Error).message,
           });
         }
       }

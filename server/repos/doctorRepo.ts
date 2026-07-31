@@ -24,6 +24,7 @@
  */
 
 import crypto from 'crypto';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 
 import {
   insertRow,
@@ -36,25 +37,41 @@ import { fromSqlRow } from '../utils/sqlMarshal.js';
 
 export const DOCTOR_TABLE = 'Doctor';
 
+type SqlRow = Record<string, unknown>;
+
+interface DoctorConflictRow extends RowDataPacket {
+  id: string;
+  name: string;
+  initials: string;
+}
+
+interface DoctorConflict {
+  status: number;
+  payload: {
+    error: string;
+    field: string;
+  };
+}
+
 // ─── Conflict detection (moved verbatim from dbProxy.js) ────────────────────
 
 /**
  * Find Doctor rows conflicting on name or initials.
- * @param {import('mysql2/promise').Pool} dbPool
- * @param {Record<string, *>} data
- * @param {string|null} [excludeId] - On update, the id being updated (excluded).
- * @returns {Promise<{nameConflict: object|null, initialsConflict: object|null}|null>}
  */
-export const findDoctorConflicts = async (dbPool, data, excludeId = null) => {
-  const name = data?.name?.trim();
-  const initials = data?.initials?.trim();
+export const findDoctorConflicts = async (
+  dbPool: Pool,
+  data: SqlRow,
+  excludeId: string | null = null
+): Promise<{ nameConflict: DoctorConflictRow | null; initialsConflict: DoctorConflictRow | null } | null> => {
+  const name = typeof data?.name === 'string' ? data.name.trim() : '';
+  const initials = typeof data?.initials === 'string' ? data.initials.trim() : '';
 
   if (!name && !initials) {
     return null;
   }
 
-  const conditions = [];
-  const params = [];
+  const conditions: string[] = [];
+  const params: string[] = [];
 
   if (name) {
     conditions.push('name = ?');
@@ -73,9 +90,9 @@ export const findDoctorConflicts = async (dbPool, data, excludeId = null) => {
   }
   sql += ' LIMIT 20';
 
-  const [rows] = await dbPool.execute(sql, params);
-  const nameConflict = name ? rows.find((row) => row.name === name) : null;
-  const initialsConflict = initials ? rows.find((row) => row.initials === initials) : null;
+  const [rows] = await dbPool.execute<DoctorConflictRow[]>(sql, params);
+  const nameConflict = name ? rows.find((row) => row.name === name) || null : null;
+  const initialsConflict = initials ? rows.find((row) => row.initials === initials) || null : null;
 
   return {
     nameConflict,
@@ -85,12 +102,12 @@ export const findDoctorConflicts = async (dbPool, data, excludeId = null) => {
 
 /**
  * Build a 409 conflict response if name/initials collide, else null.
- * @param {import('mysql2/promise').Pool} dbPool
- * @param {Record<string, *>} data
- * @param {string|null} [excludeId]
- * @returns {Promise<{status: number, payload: {error: string, field: string}}|null>}
  */
-export const buildDoctorConflictResponse = async (dbPool, data, excludeId = null) => {
+export const buildDoctorConflictResponse = async (
+  dbPool: Pool,
+  data: SqlRow,
+  excludeId: string | null = null
+): Promise<DoctorConflict | null> => {
   const conflicts = await findDoctorConflicts(dbPool, data, excludeId);
   if (!conflicts) {
     return null;
@@ -100,7 +117,7 @@ export const buildDoctorConflictResponse = async (dbPool, data, excludeId = null
     return {
       status: 409,
       payload: {
-        error: `Ein Mitarbeiter mit dem Namen "${data.name.trim()}" existiert bereits. Bitte wählen Sie einen anderen Namen.`,
+        error: `Ein Mitarbeiter mit dem Namen "${String(data.name).trim()}" existiert bereits. Bitte wählen Sie einen anderen Namen.`,
         field: 'name'
       }
     };
@@ -110,7 +127,7 @@ export const buildDoctorConflictResponse = async (dbPool, data, excludeId = null
     return {
       status: 409,
       payload: {
-        error: `Das Kürzel "${data.initials.trim()}" wird bereits verwendet. Bitte wählen Sie ein anderes Kürzel.`,
+        error: `Das Kürzel "${String(data.initials).trim()}" wird bereits verwendet. Bitte wählen Sie ein anderes Kürzel.`,
         field: 'initials'
       }
     };
@@ -121,22 +138,22 @@ export const buildDoctorConflictResponse = async (dbPool, data, excludeId = null
 
 // ─── CRUD ───────────────────────────────────────────────────────────────────
 
+interface CreateDoctorOptions {
+  dbPool: Pool;
+  data: SqlRow;
+  validColumns: string[];
+  actorEmail?: string;
+}
+
 /**
  * Create a Doctor row. Runs name/initials conflict detection as a pre-check
- * (returns a 409 conflict response if found), then auto-injects
+ * (throws a 409 conflict if found), then auto-injects
  * id/dates/created_by, filters to valid columns, inserts.
- * @param {object} opts
- * @param {import('mysql2/promise').Pool} opts.dbPool
- * @param {Record<string, *>} opts.data
- * @param {string[]} opts.validColumns
- * @param {string} [opts.actorEmail]
- * @returns {Promise<Record<string, *>>} The created row (the data object).
- * @throws {{status: 409, payload: object}} On name/initials conflict.
  */
-export async function createDoctor({ dbPool, data, validColumns, actorEmail }) {
+export async function createDoctor({ dbPool, data, validColumns, actorEmail }: CreateDoctorOptions): Promise<SqlRow> {
   const conflict = await buildDoctorConflictResponse(dbPool, data);
   if (conflict) {
-    const err = new Error(conflict.payload.error);
+    const err = new Error(conflict.payload.error) as Error & { status: number; conflictPayload: DoctorConflict['payload'] };
     err.status = conflict.status;
     err.conflictPayload = conflict.payload;
     throw err;
@@ -152,7 +169,7 @@ export async function createDoctor({ dbPool, data, validColumns, actorEmail }) {
     keys = keys.filter((k) => validColumns.includes(k));
   }
   if (keys.length === 0) {
-    const err = new Error(`No valid columns found for table ${DOCTOR_TABLE}`);
+    const err = new Error(`No valid columns found for table ${DOCTOR_TABLE}`) as Error & { status: number };
     err.status = 500;
     throw err;
   }
@@ -161,21 +178,21 @@ export async function createDoctor({ dbPool, data, validColumns, actorEmail }) {
   return data;
 }
 
+interface UpdateDoctorOptions {
+  dbPool: Pool;
+  id: string;
+  data: SqlRow;
+  validColumns?: string[];
+}
+
 /**
  * Update a Doctor row by id. Runs conflict detection (excluding self), then
  * updates. { success: true } if no valid keys.
- * @param {object} opts
- * @param {import('mysql2/promise').Pool} opts.dbPool
- * @param {string} opts.id
- * @param {Record<string, *>} opts.data
- * @param {string[]} [opts.validColumns]
- * @returns {Promise<Record<string, *>|null>}
- * @throws {{status: 409, conflictPayload: object}} On name/initials conflict.
  */
-export async function updateDoctor({ dbPool, id, data, validColumns }) {
+export async function updateDoctor({ dbPool, id, data, validColumns }: UpdateDoctorOptions): Promise<SqlRow | null> {
   const conflict = await buildDoctorConflictResponse(dbPool, data, id);
   if (conflict) {
-    const err = new Error(conflict.payload.error);
+    const err = new Error(conflict.payload.error) as Error & { status: number; conflictPayload: DoctorConflict['payload'] };
     err.status = conflict.status;
     err.conflictPayload = conflict.payload;
     throw err;
@@ -191,42 +208,40 @@ export async function updateDoctor({ dbPool, id, data, validColumns }) {
   }
   await updateRow(dbPool, DOCTOR_TABLE, keys, data, id);
   const row = await selectRow(dbPool, DOCTOR_TABLE, id);
-  return row ? fromSqlRow(row) : null;
+  return row ? (fromSqlRow(row) as SqlRow) : null;
+}
+
+interface DeleteDoctorOptions {
+  dbPool: Pool;
+  id: string;
 }
 
 /**
  * Delete a Doctor row by id. Pre-fetches for audit, deletes, returns the
  * deleted record (caller writes the SystemLog audit entry + broadcasts).
- * @param {object} opts
- * @param {import('mysql2/promise').Pool} opts.dbPool
- * @param {string} opts.id
- * @returns {Promise<Record<string, *>|null>}
  */
-export async function deleteDoctor({ dbPool, id }) {
+export async function deleteDoctor({ dbPool, id }: DeleteDoctorOptions): Promise<SqlRow | null> {
   const existing = await selectRow(dbPool, DOCTOR_TABLE, id);
-  const deletedRecord = existing ? fromSqlRow(existing) : null;
+  const deletedRecord = existing ? (fromSqlRow(existing) as SqlRow) : null;
   await deleteRow(dbPool, DOCTOR_TABLE, id);
   return deletedRecord;
 }
 
 /**
  * Get a single Doctor by id.
- * @param {import('mysql2/promise').Pool} dbPool
- * @param {string} id
- * @returns {Promise<Record<string, *>|null>}
  */
-export async function getDoctor(dbPool, id) {
+export async function getDoctor(dbPool: Pool, id: string): Promise<SqlRow | null> {
   const row = await selectRow(dbPool, DOCTOR_TABLE, id);
-  return row ? fromSqlRow(row) : null;
+  return row ? (fromSqlRow(row) as SqlRow) : null;
 }
 
 /**
  * List/filter Doctors. Pass-through to the shared filterRows helper.
- * @param {import('mysql2/promise').Pool} dbPool
- * @param {{ filters?: Record<string, *>, sort?: string, limit?: *, skip?: * }} [opts]
- * @returns {Promise<Record<string, *>[]>}
  */
-export async function listDoctors(dbPool, opts = {}) {
+export async function listDoctors(
+  dbPool: Pool,
+  opts: { filters?: SqlRow; sort?: string; limit?: string | number; skip?: string | number } = {}
+): Promise<SqlRow[]> {
   const rows = await filterRows(dbPool, DOCTOR_TABLE, opts);
-  return rows.map(fromSqlRow);
+  return rows.map(fromSqlRow) as SqlRow[];
 }

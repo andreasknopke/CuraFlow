@@ -9,12 +9,30 @@
  *   - Last 300 rows per table as INSERT statements (50 rows per batch)
  */
 
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+interface TableInfoRow extends RowDataPacket {
+  TABLE_NAME: string;
+  TABLE_ROWS: number | string | null;
+}
+
+interface ColumnRow extends RowDataPacket {
+  column_name: string;
+  data_type: string;
+  column_type: string;
+  is_nullable: 'YES' | 'NO' | string;
+  column_default: string | null;
+  extra: string | null;
+}
+
+interface SampleRow extends RowDataPacket {
+  [key: string]: unknown;
+}
+
 /**
  * Escape a value for SQL INSERT statement.
- * @param {unknown} val
- * @returns {string}
  */
-function escapeSqlValue(val) {
+function escapeSqlValue(val: unknown): string {
   if (val === null || val === undefined) return 'NULL';
 
   if (typeof val === 'number') {
@@ -46,10 +64,8 @@ function escapeSqlValue(val) {
 
 /**
  * Get column definitions for CREATE TABLE DDL.
- * @param {Array<{column_name: string, data_type: string, column_type: string, is_nullable: string, column_default: string|null, extra: string}>} columns
- * @returns {string}
  */
-function buildColumnDefinitions(columns) {
+function buildColumnDefinitions(columns: ColumnRow[]): string {
   return columns.map((col) => {
     let def = `  \`${col.column_name}\` ${col.column_type}`;
 
@@ -72,12 +88,12 @@ function buildColumnDefinitions(columns) {
 /**
  * Generate a SQL dump of all non-empty tables in the MasterDB.
  *
- * @param {import('mysql2/promise').Pool} db - MasterDB connection pool
- * @returns {Promise<string>} SQL dump as a string
+ * @param db - MasterDB connection pool
+ * @returns SQL dump as a string
  */
-export async function generateMasterDbDump(db) {
+export async function generateMasterDbDump(db: Pool): Promise<string> {
   // Get all non-empty tables in the current database
-  const [tables] = await db.execute(
+  const [tables] = await db.execute<TableInfoRow[]>(
     `SELECT TABLE_NAME, TABLE_ROWS
      FROM information_schema.TABLES
      WHERE TABLE_SCHEMA = DATABASE()
@@ -86,7 +102,7 @@ export async function generateMasterDbDump(db) {
      ORDER BY TABLE_NAME`
   );
 
-  const dumpParts = [];
+  const dumpParts: string[] = [];
 
   dumpParts.push('-- ============================================================');
   dumpParts.push('-- CuraFlow MasterDB SQL Dump');
@@ -100,12 +116,12 @@ export async function generateMasterDbDump(db) {
 
   for (const table of tables) {
     const tableName = table.TABLE_NAME;
-    const totalRows = table.TABLE_ROWS || 0;
+    const totalRows = Number(table.TABLE_ROWS) || 0;
 
     // Calculate offset: take the LAST 300 rows
     const maxSample = 300;
-    let offset;
-    let limit;
+    let offset: number;
+    let limit: number;
     if (totalRows <= maxSample) {
       offset = 0;
       limit = totalRows;
@@ -115,9 +131,9 @@ export async function generateMasterDbDump(db) {
     }
 
     // Get columns from information_schema
-    let columns;
+    let columns: ColumnRow[] | undefined;
     try {
-      const [cols] = await db.execute(
+      const [cols] = await db.execute<ColumnRow[]>(
         `SELECT column_name, data_type, column_type, is_nullable, column_default, extra
          FROM information_schema.COLUMNS
          WHERE TABLE_SCHEMA = DATABASE()
@@ -127,7 +143,8 @@ export async function generateMasterDbDump(db) {
       );
       columns = cols;
     } catch (err) {
-      dumpParts.push(`-- SKIPPED \`${tableName}\`: ${err.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      dumpParts.push(`-- SKIPPED \`${tableName}\`: ${message}`);
       dumpParts.push('');
       continue;
     }
@@ -139,15 +156,16 @@ export async function generateMasterDbDump(db) {
     }
 
     // Get sample rows
-    let rows;
+    let rows: SampleRow[] = [];
     try {
       const colNames = columns.map((c) => c.column_name).join(', ');
-      const [sample] = await db.execute(
+      const [sample] = await db.execute<SampleRow[]>(
         `SELECT ${colNames} FROM \`${tableName}\` LIMIT ${Number(limit)} OFFSET ${Number(offset)}`
       );
       rows = sample;
     } catch (err) {
-      dumpParts.push(`-- SKIPPED \`${tableName}\`: ${err.message}`);
+      const message = err instanceof Error ? err.message : String(err);
+      dumpParts.push(`-- SKIPPED \`${tableName}\`: ${message}`);
       dumpParts.push('');
       continue;
     }

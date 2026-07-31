@@ -12,6 +12,21 @@
 import express from 'express';
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
+
+interface CuraRequest extends Request {
+  db: Pool;
+  dbToken?: string;
+  isCustomDb?: boolean;
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    permissions?: Record<string, boolean>;
+    [key: string]: unknown;
+  };
+}
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
@@ -45,16 +60,17 @@ router.use(authMiddleware);
 // All routes below require an authenticated user. They operate exclusively
 // on the master DB, so we ignore any x-db-token header.
 
-function handleError(res, error) {
-  if (error && error.status) {
-    return res.status(error.status).json({ error: error.message });
+function handleError(res: Response, error: unknown) {
+  const err = error as Error & { status?: number };
+  if (err.status) {
+    return res.status(err.status).json({ error: err.message });
   }
   console.error('[groups]', error);
   return res.status(500).json({ error: 'Interner Fehler' });
 }
 
-function createHttpError(status, message, details) {
-  const error = new Error(message);
+function createHttpError(status: number, message: string, details?: any) {
+  const error: any = new Error(message);
   error.status = status;
   if (details !== undefined) {
     error.details = details;
@@ -74,7 +90,7 @@ function createHttpError(status, message, details) {
  * @param {Array} params.existingSharedShiftsForWorkplace - Bestehende Pool-Dienste
  * @returns {Promise<Array<{rule: string, message: string}>>}
  */
-async function checkRelationshipConflictsForPoolShift(db, { employeeId, dateStr, existingSharedShiftsForWorkplace }) {
+async function checkRelationshipConflictsForPoolShift(db: any, { employeeId, dateStr, existingSharedShiftsForWorkplace }: any) {
   try {
     // Alle Beziehungen mit shift_conflict abfragen, die diesen Mitarbeiter betreffen
     const [relationships] = await db.execute(
@@ -87,7 +103,7 @@ async function checkRelationshipConflictsForPoolShift(db, { employeeId, dateStr,
         WHERE er.shift_conflict = TRUE
           AND (er.employee_id = ? OR er.related_employee_id = ?)`,
       [employeeId, employeeId]
-    );
+    ) as [any[], any];
 
     if (relationships.length === 0) return [];
 
@@ -115,8 +131,7 @@ async function checkRelationshipConflictsForPoolShift(db, { employeeId, dateStr,
 
       if (relatedIds.has(String(existingShift.employee_id))) {
         // Name des Partners ermitteln
-        const rel = relationships.find(
-          (r) => String(r.employee_id) === String(existingShift.employee_id)
+        const rel = relationships.find((r: any) => String(r.employee_id) === String(existingShift.employee_id)
              || String(r.related_employee_id) === String(existingShift.employee_id)
         );
         const partnerName = rel
@@ -137,12 +152,12 @@ async function checkRelationshipConflictsForPoolShift(db, { employeeId, dateStr,
   }
 }
 
-async function loadTenantTokenById(tenantId) {
-  const [rows] = await db.execute('SELECT * FROM db_tokens WHERE id = ? LIMIT 1', [String(tenantId)]);
+async function loadTenantTokenById(tenantId: any) {
+  const [rows] = await db.execute('SELECT * FROM db_tokens WHERE id = ? LIMIT 1', [String(tenantId)]) as [any[], any];
   return rows[0] || null;
 }
 
-async function withTenantDb(token, callback) {
+async function withTenantDb(token: any, callback: any) {
   let pool = null;
   try {
     const config = parseDbToken(token.token);
@@ -152,7 +167,7 @@ async function withTenantDb(token, callback) {
 
     pool = createPool({
       host: config.host,
-      port: parseInt(config.port || '3306', 10),
+      port: parseInt(String(config.port || 3306)),
       user: config.user,
       password: config.password,
       database: config.database,
@@ -173,18 +188,18 @@ async function withTenantDb(token, callback) {
   }
 }
 
-async function loadTenantDoctorAssignment(employeeId, tenantId) {
+async function loadTenantDoctorAssignment(employeeId: any, tenantId: any) {
   const [rows] = await db.execute(
     'SELECT tenant_doctor_id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ? LIMIT 1',
     [String(employeeId), String(tenantId)]
-  );
+  ) as [any[], any];
   return rows[0]?.tenant_doctor_id || null;
 }
 
-async function loadEligibleAbsences(masterDb, eligibleStaffRows) {
+async function loadEligibleAbsences(masterDb: any, eligibleStaffRows: any) {
   try {
     await ensureCentralAbsenceTables(masterDb);
-    const empIds = eligibleStaffRows.map(r => String(r.id)).filter(Boolean);
+    const empIds = eligibleStaffRows.map((r: any) => String(r.id)).filter(Boolean);
     if (empIds.length === 0) return {};
     const placeholders = empIds.map(() => '?').join(',');
     const [rows] = await masterDb.execute(
@@ -192,8 +207,8 @@ async function loadEligibleAbsences(masterDb, eligibleStaffRows) {
         WHERE employee_id IN (${placeholders})
         ORDER BY employee_id, date`,
       empIds
-    );
-    const byEmp = {};
+    ) as [any[], any];
+    const byEmp: Record<string, any> = {};
     for (const r of rows) {
       const pos = String(r.position || '').trim();
       if (!isCentralAbsencePosition(pos)) continue;
@@ -206,12 +221,12 @@ async function loadEligibleAbsences(masterDb, eligibleStaffRows) {
     }
     return byEmp;
   } catch (err) {
-    console.error('[groups] loadEligibleAbsences error:', err.message);
+    console.error('[groups] loadEligibleAbsences error:', (err as Error).message);
     return {};
   }
 }
 
-async function loadHolidayDatesAround(dateStr) {
+async function loadHolidayDatesAround(dateStr: any) {
   const currentYear = Number(String(dateStr).slice(0, 4));
   const nextDate = new Date(`${dateStr}T00:00:00Z`);
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
@@ -225,7 +240,7 @@ async function loadHolidayDatesAround(dateStr) {
   return dates;
 }
 
-async function loadTenantRuleContext({ employeeId, billingTenantId, dateStr }) {
+async function loadTenantRuleContext({ employeeId, billingTenantId, dateStr }: any) {
   const tenantToken = await loadTenantTokenById(billingTenantId);
   if (!tenantToken) {
     throw createHttpError(422, 'Abrechnungsmandant nicht gefunden');
@@ -241,18 +256,18 @@ async function loadTenantRuleContext({ employeeId, billingTenantId, dateStr }) {
   nextDate.setUTCDate(nextDate.getUTCDate() + 1);
   const nextDateStr = nextDate.toISOString().slice(0, 10);
 
-  const tenantData = await withTenantDb(tenantToken, async (pool) => {
+  const tenantData = await withTenantDb(tenantToken, async (pool: any) => {
     const [shiftRows] = await pool.execute(
       `SELECT id, date, doctor_id, position, created_by
          FROM ShiftEntry
         WHERE doctor_id = ? AND date BETWEEN ? AND ?`,
       [String(tenantDoctorId), dateStr, nextDateStr]
-    );
+    ) as [any[], any];
 
     const [workplaceRows] = await pool.execute(
       `SELECT name, category, affects_availability
          FROM Workplace`
-    ).catch(() => [[[]]]);
+    ).catch(() => [[[]]]) as [any[], any];
 
     return {
       tenantShifts: Array.isArray(shiftRows) ? shiftRows : [],
@@ -269,20 +284,19 @@ async function loadTenantRuleContext({ employeeId, billingTenantId, dateStr }) {
   };
 }
 
-async function ensureTenantAutoFreiEntry({ shiftId, workplace, tenantToken, tenantDoctorId, autoFreiDate, tenantShifts }) {
+async function ensureTenantAutoFreiEntry({ shiftId, workplace, tenantToken, tenantDoctorId, autoFreiDate, tenantShifts }: any) {
   if (!workplace?.auto_off || !autoFreiDate) {
     return;
   }
 
-  const existingNextDayShift = tenantShifts.find(
-    (shift) => String(shift.doctor_id) === String(tenantDoctorId) && String(shift.date).slice(0, 10) === autoFreiDate
+  const existingNextDayShift = tenantShifts.find((shift: any) => String(shift.doctor_id) === String(tenantDoctorId) && String(shift.date).slice(0, 10) === autoFreiDate
   );
   if (existingNextDayShift) {
     return;
   }
 
   const marker = buildSharedShiftAutoFreiMarker(shiftId);
-  await withTenantDb(tenantToken, async (pool) => {
+  await withTenantDb(tenantToken, async (pool: any) => {
     await pool.execute(
       `INSERT INTO ShiftEntry (id, date, doctor_id, position, created_by)
        VALUES (?, ?, ?, ?, ?)`,
@@ -291,7 +305,7 @@ async function ensureTenantAutoFreiEntry({ shiftId, workplace, tenantToken, tena
   });
 }
 
-async function cleanupTenantAutoFreiEntry({ shiftId, tenantId }) {
+async function cleanupTenantAutoFreiEntry({ shiftId, tenantId }: any) {
   if (!tenantId) {
     return;
   }
@@ -300,13 +314,13 @@ async function cleanupTenantAutoFreiEntry({ shiftId, tenantId }) {
     return;
   }
   const marker = buildSharedShiftAutoFreiMarker(shiftId);
-  await withTenantDb(tenantToken, async (pool) => {
+  await withTenantDb(tenantToken, async (pool: any) => {
     await pool.execute('DELETE FROM ShiftEntry WHERE created_by = ?', [marker]);
   });
 }
 
-async function loadCtx(req, res) {
-  const ctx = await loadUserGroupContext(db, req.user.sub);
+async function loadCtx(req: Request, res: Response) {
+  const ctx = await loadUserGroupContext(db, (req as CuraRequest).user?.sub);
   if (!ctx) {
     res.status(401).json({ error: 'Benutzer nicht gefunden' });
     return null;
@@ -316,7 +330,7 @@ async function loadCtx(req, res) {
 
 // ============ GROUPS ============
 
-router.get('/', async (req, res) => {
+router.get('/', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -331,12 +345,12 @@ router.get('/', async (req, res) => {
 // Returns all shared shift entries that should appear in the active tenant's
 // schedule view. The active tenant is resolved from the x-db-token header.
 // Every shift carries a `canWrite` flag derived from the user's group admin rights.
-router.get('/visible-shifts', async (req, res) => {
+router.get('/visible-shifts', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
 
-    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    const activeTenantId = await resolveTenantIdFromToken(db, String(String(String(req.headers['x-db-token'] || '') || '') || ''));
     if (!activeTenantId) {
       // No tenant context → nothing to show. This is not an error: pool view works
       // only when a tenant is active in the switcher.
@@ -373,8 +387,8 @@ router.get('/visible-shifts', async (req, res) => {
           AND is_active = 1
         ORDER BY name ASC`,
       accessibleGroupIds
-    );
-    const workplaces = workplaceRows.map((r) => ({
+    ) as [any[], any];
+    const workplaces = workplaceRows.map((r: any) => ({
       id: r.id,
       group_id: Number(r.group_id),
       name: r.name,
@@ -419,9 +433,9 @@ router.get('/visible-shifts', async (req, res) => {
           ${dateWhere}
         ORDER BY s.date ASC, w.name ASC`,
       [activeTenantId, ...accessibleGroupIds, ...dateParams]
-    );
+    ) as [any[], any];
 
-    const shifts = shiftRows.map((r) => {
+    const shifts = shiftRows.map((r: any) => {
       const employeeName = [r.first_name, r.last_name].filter(Boolean).join(' ')
         || `#${r.employee_id}`;
       return {
@@ -463,13 +477,13 @@ router.get('/visible-shifts', async (req, res) => {
 // Used by the frontend to build a cross-tenant absence filter in the
 // pool shift dialog — absences from all group tenants are included,
 // not just the active tenant's.
-router.get('/central-absences', async (req, res) => {
-  console.log('🔥🔥🔥 [central-absences] CALLED by ' + req.user?.sub + ' url=' + req.originalUrl);
+router.get('/central-absences', async (req: Request, res: Response) => {
+  console.log('🔥🔥🔥 [central-absences] CALLED by ' + (req as CuraRequest).user?.sub + ' url=' + req.originalUrl);
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
 
-    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    const activeTenantId = await resolveTenantIdFromToken(db, String(String(String(req.headers['x-db-token'] || '') || '') || ''));
     if (!activeTenantId) {
       console.log('[central-absences] NO ACTIVE TENANT');
       return res.json({ absences: [] });
@@ -487,7 +501,7 @@ router.get('/central-absences', async (req, res) => {
       await ensureCentralAbsenceTables(db);
       console.log('[central-absences] table CentralAbsenceEntry ensured');
     } catch (tableErr) {
-      console.error('[central-absences] ensureCentralAbsenceTables ERROR:', tableErr.message);
+      console.error('[central-absences] ensureCentralAbsenceTables ERROR:', (tableErr as Error).message);
     }
 
     const { from, to } = req.query;
@@ -495,11 +509,11 @@ router.get('/central-absences', async (req, res) => {
     // 1) Count total in CentralAbsenceEntry — to know if table has ANY data
     let totalCount = -1;
     try {
-      const [cnt] = await db.execute('SELECT COUNT(*) AS c FROM CentralAbsenceEntry');
+      const [cnt] = await db.execute('SELECT COUNT(*) AS c FROM CentralAbsenceEntry') as [any[], any];
       totalCount = cnt[0]?.c ?? -1;
       console.log('[central-absences] total entries in CentralAbsenceEntry: ' + totalCount);
     } catch (cntErr) {
-      console.error('[central-absences] COUNT query failed:', cntErr.message);
+      console.error('[central-absences] COUNT query failed:', (cntErr as Error).message);
     }
 
     // 2) Alle tenant_ids der zugänglichen Gruppen sammeln
@@ -521,8 +535,8 @@ router.get('/central-absences', async (req, res) => {
     const [etaRows] = await db.execute(
       `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
       tenantIds
-    );
-    const groupEmployeeIds = new Set(etaRows.map(r => String(r.employee_id)));
+    ) as [any[], any];
+    const groupEmployeeIds = new Set(etaRows.map((r: any) => String(r.employee_id)));
     console.log('[central-absences] groupEmployeeIds from ETA: ' + groupEmployeeIds.size);
 
     // 3b) Fallback: auch in den Tenant-Doctor-Tabellen nach central_employee_id suchen,
@@ -539,7 +553,7 @@ router.get('/central-absences', async (req, res) => {
         try {
           pool = createPool({
             host: config.host,
-            port: parseInt(config.port || '3306', 10),
+            port: parseInt(String(config.port || 3306)),
             user: config.user,
             password: config.password,
             database: config.database,
@@ -562,7 +576,7 @@ router.get('/central-absences', async (req, res) => {
           if (pool) await pool.end();
         }
       } catch (err) {
-        console.error('[central-absences] Error scanning tenant ' + tid + ' Doctor table:', err.message);
+        console.error('[central-absences] Error scanning tenant ' + tid + ' Doctor table:', (err as Error).message);
       }
     }
     console.log('[central-absences] added ' + tenantDoctorCount + ' employee_ids from tenant Doctor tables, total unique=' + groupEmployeeIds.size);
@@ -571,7 +585,7 @@ router.get('/central-absences', async (req, res) => {
 
     // Find specific employee 2f7d3d63-48d8-4f25-9ec4-af973800fc50
     const targetId = '2f7d3d63-48d8-4f25-9ec4-af973800fc50';
-    const hasTarget = allEmployeeIds.some(id => id === targetId);
+    const hasTarget = allEmployeeIds.some((id: any) => id === targetId);
     console.log('[central-absences] target employee ' + targetId + ' in combined set: ' + hasTarget);
 
     if (allEmployeeIds.length === 0) {
@@ -584,34 +598,34 @@ router.get('/central-absences', async (req, res) => {
     let sql = `SELECT employee_id, date, position FROM CentralAbsenceEntry WHERE employee_id IN (${empPlaceholders})`;
     const sqlParams = [...allEmployeeIds];
 
-    if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
-    if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
+    if (from) { sql += ' AND date >= ?'; sqlParams.push(from as string); }
+    if (to) { sql += ' AND date <= ?'; sqlParams.push(to as string); }
     sql += ' ORDER BY employee_id, date ASC';
 
-    let rows = [];
+    let rows: any[] = [];
     try {
-      [rows] = await db.execute(sql, sqlParams);
+      [rows] = await db.execute(sql, sqlParams) as [any[], any];
     } catch (err) {
-      console.error('[central-absences] QUERY FAILED: ' + err.message + ' code=' + err.code);
+      console.error('[central-absences] QUERY FAILED: ' + (err as Error).message + ' code=' + (err as Record<string, unknown>).code);
     }
 
     // Check if target employee has absences in result
-    const targetRows = rows.filter(r => String(r.employee_id) === targetId);
+    const targetRows = rows.filter((r: any) => String(r.employee_id) === targetId);
     console.log('[central-absences] target employee absences found: ' + targetRows.length);
 
-    const absences = rows.map((r) => ({
+    const absences = rows.map((r: any) => ({
       employee_id: String(r.employee_id),
       date: typeof r.date === 'string' ? r.date.slice(0, 10) : String(r.date).slice(0, 10),
       position: String(r.position || '').trim(),
     }));
 
     // Log summary
-    const uniqueEmployees = new Set(absences.map(a => a.employee_id));
+    const uniqueEmployees = new Set(absences.map((a: any) => a.employee_id));
     console.log('[central-absences] DONE — ' + absences.length + ' absences for ' + uniqueEmployees.size + ' employees');
 
     res.json({ absences });
   } catch (err) {
-    console.error('[central-absences] UNCAUGHT ERROR:', err.message, err.stack);
+    console.error('[central-absences] UNCAUGHT ERROR:', (err as Error).message, (err as Error).stack);
     handleError(res, err);
   }
 });
@@ -630,11 +644,11 @@ router.get('/central-absences', async (req, res) => {
 // Helper: confirm the caller has write access to the group that owns the
 // given shared_workplace_id, and return the group_id. Throws 403/404 on
 // failure. Used by POST/PATCH/DELETE below.
-async function requireWriteAccessByWorkplace(ctx, sharedWorkplaceId) {
+async function requireWriteAccessByWorkplace(ctx: any, sharedWorkplaceId: any) {
   const [rows] = await db.execute(
     'SELECT id, group_id FROM shared_workplace WHERE id = ? LIMIT 1',
     [String(sharedWorkplaceId)]
-  );
+  ) as [any[], any];
   if (rows.length === 0) {
     throw createHttpError(404, 'Verbundsdienst nicht gefunden');
   }
@@ -645,7 +659,7 @@ async function requireWriteAccessByWorkplace(ctx, sharedWorkplaceId) {
 
 // Helper: confirm the employee_id is linked to one of the group's tenants,
 // so a caller cannot create wishes for arbitrary employees.
-async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
+async function assertEmployeeBelongsToGroupGroup(employeeId: any, groupId: any) {
   const tenantIds = await loadGroupTenantIds(db, groupId);
   if (tenantIds.length === 0) {
     throw createHttpError(422, 'Verbund hat keine Mandanten');
@@ -657,7 +671,7 @@ async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
         AND tenant_id IN (${placeholders})
       LIMIT 1`,
     [String(employeeId), ...tenantIds]
-  );
+  ) as [any[], any];
   if (etaRows.length === 0) {
     // Fallback: Doctor.central_employee_id link
     let linked = false;
@@ -671,7 +685,7 @@ async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
         try {
           pool = createPool({
             host: config.host,
-            port: parseInt(config.port || '3306', 10),
+            port: parseInt(String(config.port || 3306)),
             user: config.user,
             password: config.password,
             database: config.database,
@@ -684,7 +698,7 @@ async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
             connectTimeout: 5000,
           });
           const linkedDoctors = await loadLinkedDoctors(pool);
-          if (linkedDoctors.some((d) => String(d.employee_id) === String(employeeId))) {
+          if (linkedDoctors.some((d: any) => String(d.employee_id) === String(employeeId))) {
             linked = true;
             break;
           }
@@ -692,7 +706,7 @@ async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
           if (pool) await pool.end().catch(() => {});
         }
       } catch (err) {
-        console.error('[central-wishes] assertEmployee scan tenant ' + tid + ':', err.message);
+        console.error('[central-wishes] assertEmployee scan tenant ' + tid + ':', (err as Error).message);
       }
     }
     if (!linked) {
@@ -704,12 +718,12 @@ async function assertEmployeeBelongsToGroupGroup(employeeId, groupId) {
 // GET /central-wishes?from=&to=
 // Returns wishes for all employees in the user's accessible groups within
 // the optional date range. Shape mirrors /central-absences but richer.
-router.get('/central-wishes', async (req, res) => {
+router.get('/central-wishes', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
 
-    const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+    const activeTenantId = await resolveTenantIdFromToken(db, String(String(String(req.headers['x-db-token'] || '') || '') || ''));
     if (!activeTenantId) return res.json({ wishes: [] });
 
     const accessibleGroupIds = await loadVisibleGroupIdsForTenant(db, ctx, activeTenantId);
@@ -718,7 +732,7 @@ router.get('/central-wishes', async (req, res) => {
     try {
       await ensureCentralWishTables(db);
     } catch (tableErr) {
-      console.error('[central-wishes] ensureCentralWishTables ERROR:', tableErr.message);
+      console.error('[central-wishes] ensureCentralWishTables ERROR:', (tableErr as Error).message);
     }
 
     const { from, to } = req.query;
@@ -738,8 +752,8 @@ router.get('/central-wishes', async (req, res) => {
       `SELECT DISTINCT employee_id FROM EmployeeTenantAssignment
         WHERE tenant_id IN (${placeholders}) AND employee_id IS NOT NULL`,
       tenantIds
-    );
-    const groupEmployeeIds = new Set(etaRows.map((r) => String(r.employee_id)));
+    ) as [any[], any];
+    const groupEmployeeIds = new Set(etaRows.map((r: any) => String(r.employee_id)));
 
     for (const tid of tenantIds) {
       try {
@@ -751,7 +765,7 @@ router.get('/central-wishes', async (req, res) => {
         try {
           pool = createPool({
             host: config.host,
-            port: parseInt(config.port || '3306', 10),
+            port: parseInt(String(config.port || 3306)),
             user: config.user,
             password: config.password,
             database: config.database,
@@ -771,7 +785,7 @@ router.get('/central-wishes', async (req, res) => {
           if (pool) await pool.end().catch(() => {});
         }
       } catch (err) {
-        console.error('[central-wishes] Error scanning tenant ' + tid + ' Doctor table:', err.message);
+        console.error('[central-wishes] Error scanning tenant ' + tid + ' Doctor table:', (err as Error).message);
       }
     }
 
@@ -788,25 +802,25 @@ router.get('/central-wishes', async (req, res) => {
                  FROM CentralWishRequest
                 WHERE employee_id IN (${empPlaceholders})`;
     const sqlParams = [...allEmployeeIds];
-    if (from) { sql += ' AND date >= ?'; sqlParams.push(from); }
-    if (to) { sql += ' AND date <= ?'; sqlParams.push(to); }
+    if (from) { sql += ' AND date >= ?'; sqlParams.push(from as string); }
+    if (to) { sql += ' AND date <= ?'; sqlParams.push(to as string); }
     sql += ' ORDER BY employee_id, date ASC';
 
-    let rows = [];
+    let rows: any[] = [];
     try {
-      [rows] = await db.execute(sql, sqlParams);
+      [rows] = await db.execute(sql, sqlParams) as [any[], any];
     } catch (err) {
-      console.error('[central-wishes] QUERY FAILED: ' + err.message + ' code=' + err.code);
+      console.error('[central-wishes] QUERY FAILED: ' + (err as Error).message + ' code=' + (err as Record<string, unknown>).code);
     }
 
-    const toDateString = (value) => {
+    const toDateString = (value: any) => {
       if (!value) return null;
       if (typeof value === 'string') return value.slice(0, 10);
       if (value instanceof Date) return value.toISOString().slice(0, 10);
       return String(value).slice(0, 10);
     };
 
-    const wishes = rows.map((r) => ({
+    const wishes = rows.map((r: any) => ({
       id: String(r.id),
       employee_id: String(r.employee_id),
       shared_workplace_id: r.shared_workplace_id ? String(r.shared_workplace_id) : null,
@@ -833,7 +847,7 @@ router.get('/central-wishes', async (req, res) => {
 
     res.json({ wishes });
   } catch (err) {
-    console.error('[central-wishes] UNCAUGHT ERROR:', err.message, err.stack);
+    console.error('[central-wishes] UNCAUGHT ERROR:', (err as Error).message, (err as Error).stack);
     handleError(res, err);
   }
 });
@@ -841,7 +855,7 @@ router.get('/central-wishes', async (req, res) => {
 // POST /central-wishes
 // Create a new cross-tenant wish. Body must include employee_id, date, type,
 // and shared_workplace_id (or null for a global no_service wish).
-router.post('/central-wishes', async (req, res) => {
+router.post('/central-wishes', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -879,7 +893,7 @@ router.post('/central-wishes', async (req, res) => {
 
     // Build the row from a strict whitelist only.
     const id = crypto.randomUUID();
-    const row = { id, group_id: groupId };
+    const row: any = { id, group_id: groupId };
     for (const key of CENTRAL_WISH_WRITABLE_COLUMNS) {
       if (key === 'group_id' || key === 'created_by') continue;
       if (body[key] !== undefined) row[key] = body[key];
@@ -894,18 +908,18 @@ router.post('/central-wishes', async (req, res) => {
     if (row.status === undefined) row.status = 'pending';
     if (row.priority === undefined) row.priority = 'medium';
     if (row.user_viewed === undefined) row.user_viewed = 0;
-    row.created_by = req.user?.sub || null;
+    row.created_by = (req as CuraRequest).user?.sub || null;
 
     // source_tenant_id: stamp with the caller's active tenant so we can trace
     // where a wish originated, mirroring CentralAbsenceEntry usage.
     if (!row.source_tenant_id) {
-      const activeTenantId = await resolveTenantIdFromToken(db, req.headers['x-db-token']);
+      const activeTenantId = await resolveTenantIdFromToken(db, String(String(String(req.headers['x-db-token'] || '') || '') || ''));
       if (activeTenantId) row.source_tenant_id = String(activeTenantId);
     }
 
     const columns = Object.keys(row);
-    const values = columns.map((k) => row[k]);
-    const colList = columns.map((c) => (c === 'position' ? '`position`' : c)).join(', ');
+    const values = columns.map((k: any) => row[k]);
+    const colList = columns.map((c: any) => (c === 'position' ? '`position`' : c)).join(', ');
     const placeholders = columns.map(() => '?').join(', ');
 
     try {
@@ -914,7 +928,7 @@ router.post('/central-wishes', async (req, res) => {
         values
       );
     } catch (err) {
-      if (err.code === 'ER_DUP_ENTRY') {
+      if ((err as Record<string, unknown>).code === 'ER_DUP_ENTRY') {
         return res.status(409).json({
           error: 'Für diesen Mitarbeiter und Verbundsdienst existiert an diesem Datum bereits ein Wunsch',
         });
@@ -925,7 +939,7 @@ router.post('/central-wishes', async (req, res) => {
     const [rows] = await db.execute(
       'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
       [id]
-    );
+    ) as [any[], any];
     res.status(201).json({ wish: rows[0] });
   } catch (err) {
     handleError(res, err);
@@ -934,7 +948,7 @@ router.post('/central-wishes', async (req, res) => {
 
 // PATCH /central-wishes/:id
 // Update an existing wish. Only whitelisted columns from the body are applied.
-router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req, res) => {
+router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -943,8 +957,8 @@ router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), asy
 
     const [existing] = await db.execute(
       'SELECT id, shared_workplace_id, group_id, employee_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
+      [String(String(req.params.id))]
+    ) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Wunsch nicht gefunden' });
     }
@@ -980,7 +994,7 @@ router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), asy
       await assertEmployeeBelongsToGroupGroup(current.employee_id, newGroupId);
     }
 
-    values.push(String(req.params.id));
+    values.push(String(String(req.params.id)));
     await db.execute(
       `UPDATE CentralWishRequest SET ${fields.join(', ')} WHERE id = ?`,
       values
@@ -988,8 +1002,8 @@ router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), asy
 
     const [rows] = await db.execute(
       'SELECT * FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
+      [String(String(req.params.id))]
+    ) as [any[], any];
     res.json({ wish: rows[0] });
   } catch (err) {
     handleError(res, err);
@@ -997,7 +1011,7 @@ router.patch('/central-wishes/:id', requirePermission('can_approve_wishes'), asy
 });
 
 // DELETE /central-wishes/:id
-router.delete('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req, res) => {
+router.delete('/central-wishes/:id', requirePermission('can_approve_wishes'), async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
@@ -1006,8 +1020,8 @@ router.delete('/central-wishes/:id', requirePermission('can_approve_wishes'), as
 
     const [existing] = await db.execute(
       'SELECT id, shared_workplace_id, group_id FROM CentralWishRequest WHERE id = ? LIMIT 1',
-      [String(req.params.id)]
-    );
+      [String(String(req.params.id))]
+    ) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Wunsch nicht gefunden' });
     }
@@ -1022,25 +1036,25 @@ router.delete('/central-wishes/:id', requirePermission('can_approve_wishes'), as
       return res.status(403).json({ error: 'Wunsch ohne Workplace-Zuordnung kann nicht gelöscht werden' });
     }
 
-    await db.execute('DELETE FROM CentralWishRequest WHERE id = ?', [String(req.params.id)]);
+    await db.execute('DELETE FROM CentralWishRequest WHERE id = ?', [String(String(req.params.id))]);
     res.status(204).end();
   } catch (err) {
     handleError(res, err);
   }
 });
 
-router.get('/:groupId', async (req, res) => {
+router.get('/:groupId', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    const group = await requireGroupReadAccess(db, ctx, req.params.groupId);
+    const group = await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     res.json({ group });
   } catch (err) {
     handleError(res, err);
   }
 });
 
-router.post('/', requirePermission('can_manage_groups'), async (req, res) => {
+router.post('/', requirePermission('can_manage_groups'), async (req: Request, res: Response) => {
   try {
     const { name, description } = req.body || {};
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -1049,18 +1063,18 @@ router.post('/', requirePermission('can_manage_groups'), async (req, res) => {
     const [result] = await db.execute(
       'INSERT INTO tenant_group (name, description) VALUES (?, ?)',
       [name.trim(), description || null]
-    );
-    const [rows] = await db.execute('SELECT id, name, description, is_active FROM tenant_group WHERE id = ?', [result.insertId]);
+    ) as [ResultSetHeader, unknown];
+    const [rows] = await db.execute('SELECT id, name, description, is_active FROM tenant_group WHERE id = ?', [(result as ResultSetHeader).insertId]) as [RowDataPacket[], unknown];
     res.status(201).json({ group: rows[0] });
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
+    if ((err as Record<string, unknown>).code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ error: 'Verbund mit diesem Namen existiert bereits' });
     }
     handleError(res, err);
   }
 });
 
-router.patch('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
+router.patch('/:groupId', requirePermission('can_manage_groups'), async (req: Request, res: Response) => {
   try {
     const { name, description, is_active } = req.body || {};
     const fields = [];
@@ -1080,9 +1094,9 @@ router.patch('/:groupId', requirePermission('can_manage_groups'), async (req, re
     if (fields.length === 0) {
       return res.status(400).json({ error: 'Keine Änderungen' });
     }
-    values.push(Number(req.params.groupId));
+    values.push(Number(req.params.groupId as string));
     await db.execute(`UPDATE tenant_group SET ${fields.join(', ')} WHERE id = ?`, values);
-    const [rows] = await db.execute('SELECT id, name, description, is_active FROM tenant_group WHERE id = ?', [req.params.groupId]);
+    const [rows] = await db.execute('SELECT id, name, description, is_active FROM tenant_group WHERE id = ?', [String(String(req.params.groupId))]) as [any[], any];
     if (rows.length === 0) return res.status(404).json({ error: 'Verbund nicht gefunden' });
     res.json({ group: rows[0] });
   } catch (err) {
@@ -1090,9 +1104,9 @@ router.patch('/:groupId', requirePermission('can_manage_groups'), async (req, re
   }
 });
 
-router.delete('/:groupId', requirePermission('can_manage_groups'), async (req, res) => {
+router.delete('/:groupId', requirePermission('can_manage_groups'), async (req: Request, res: Response) => {
   try {
-    await db.execute('DELETE FROM tenant_group WHERE id = ?', [req.params.groupId]);
+    await db.execute('DELETE FROM tenant_group WHERE id = ?', [String(String(req.params.groupId))]);
     res.status(204).end();
   } catch (err) {
     handleError(res, err);
@@ -1101,33 +1115,33 @@ router.delete('/:groupId', requirePermission('can_manage_groups'), async (req, r
 
 // ============ MEMBERS ============
 
-router.get('/:groupId/members', async (req, res) => {
+router.get('/:groupId/members', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT m.tenant_id, m.role, t.name, t.host, t.db_name
          FROM tenant_group_member m
          JOIN db_tokens t ON t.id = m.tenant_id
         WHERE m.group_id = ?
         ORDER BY t.name ASC`,
-      [req.params.groupId]
-    );
+      [String(String(req.params.groupId))]
+    ) as [any[], any];
     res.json({ members: rows });
   } catch (err) {
     handleError(res, err);
   }
 });
 
-router.post('/:groupId/members', requirePermission('can_manage_groups'), async (req, res) => {
+router.post('/:groupId/members', requirePermission('can_manage_groups'), async (req: Request, res: Response) => {
   try {
     const { tenant_id, role } = req.body || {};
     if (!tenant_id) return res.status(400).json({ error: 'tenant_id ist erforderlich' });
-    const tenantRole = role === 'observer' ? 'observer' : 'member';
+    const tenantRole: string = role === 'observer' ? 'observer' : 'member';
     await db.execute(
       'INSERT IGNORE INTO tenant_group_member (group_id, tenant_id, role) VALUES (?, ?, ?)',
-      [req.params.groupId, tenant_id, tenantRole]
+      [String(req.params.groupId), tenant_id, tenantRole]
     );
     res.status(201).json({ success: true });
   } catch (err) {
@@ -1135,11 +1149,11 @@ router.post('/:groupId/members', requirePermission('can_manage_groups'), async (
   }
 });
 
-router.delete('/:groupId/members/:tenantId', requirePermission('can_manage_groups'), async (req, res) => {
+router.delete('/:groupId/members/:tenantId', requirePermission('can_manage_groups'), async (req: Request, res: Response) => {
   try {
     await db.execute(
       'DELETE FROM tenant_group_member WHERE group_id = ? AND tenant_id = ?',
-      [req.params.groupId, req.params.tenantId]
+      [String(req.params.groupId), String(String(req.params.tenantId))]
     );
     res.status(204).end();
   } catch (err) {
@@ -1149,11 +1163,11 @@ router.delete('/:groupId/members/:tenantId', requirePermission('can_manage_group
 
 // ============ WORKPLACES ============
 
-router.get('/:groupId/workplaces', async (req, res) => {
+router.get('/:groupId/workplaces', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT id, name, category, start_time, end_time, active_days,
               allows_multiple, min_staff, optimal_staff, default_overlap_tolerance_minutes,
@@ -1163,10 +1177,10 @@ router.get('/:groupId/workplaces', async (req, res) => {
          FROM shared_workplace
         WHERE group_id = ?
         ORDER BY name ASC`,
-      [req.params.groupId]
-    );
+      [String(String(req.params.groupId))]
+    ) as [any[], any];
     res.json({
-      workplaces: rows.map((row) => ({
+      workplaces: rows.map((row: any) => ({
         ...row,
         allows_multiple: row.allows_multiple == null ? null : Boolean(row.allows_multiple),
         auto_off: Boolean(row.auto_off),
@@ -1191,11 +1205,11 @@ router.get('/:groupId/workplaces', async (req, res) => {
   }
 });
 
-router.post('/:groupId/workplaces', async (req, res) => {
+router.post('/:groupId/workplaces', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const {
       name, start_time, end_time,
       active_days, allows_multiple, min_staff, optimal_staff, default_overlap_tolerance_minutes,
@@ -1213,7 +1227,7 @@ router.post('/:groupId/workplaces', async (req, res) => {
           allows_absence_overlap, timeslots_enabled, consecutive_days_mode, constraints_json, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id, Number(req.params.groupId), name, 'Dienste',
+        id, Number(req.params.groupId as string), name, 'Dienste',
         start_time || null, end_time || null,
         Array.isArray(active_days) ? JSON.stringify(active_days) : null,
         typeof allows_multiple === 'boolean' ? (allows_multiple ? 1 : 0) : 0,
@@ -1229,7 +1243,7 @@ router.post('/:groupId/workplaces', async (req, res) => {
         timeslots_enabled ? 1 : 0,
         consecutive_days_mode || 'allowed',
         constraints_json ? JSON.stringify(constraints_json) : null,
-        req.user.email || req.user.sub,
+        (req as CuraRequest).user?.email || (req as CuraRequest).user?.sub,
       ]
     );
     res.status(201).json({ id });
@@ -1238,11 +1252,11 @@ router.post('/:groupId/workplaces', async (req, res) => {
   }
 });
 
-router.patch('/:groupId/workplaces/:workplaceId', async (req, res) => {
+router.patch('/:groupId/workplaces/:workplaceId', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const allowed = ['name', 'start_time', 'end_time',
       'active_days', 'allows_multiple', 'min_staff', 'optimal_staff', 'default_overlap_tolerance_minutes',
       'work_time_percentage', 'service_type', 'auto_off', 'allows_rotation_concurrently',
@@ -1266,7 +1280,7 @@ router.patch('/:groupId/workplaces/:workplaceId', async (req, res) => {
       values.push(val);
     }
     if (fields.length === 0) return res.status(400).json({ error: 'Keine Änderungen' });
-    values.push(req.params.workplaceId, Number(req.params.groupId));
+    values.push(String(req.params.workplaceId), Number(req.params.groupId as string));
     await db.execute(
       `UPDATE shared_workplace SET ${fields.join(', ')} WHERE id = ? AND group_id = ?`,
       values
@@ -1277,14 +1291,14 @@ router.patch('/:groupId/workplaces/:workplaceId', async (req, res) => {
   }
 });
 
-router.delete('/:groupId/workplaces/:workplaceId', async (req, res) => {
+router.delete('/:groupId/workplaces/:workplaceId', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     await db.execute(
       'DELETE FROM shared_workplace WHERE id = ? AND group_id = ?',
-      [req.params.workplaceId, req.params.groupId]
+      [String(req.params.workplaceId), String(String(req.params.groupId))]
     );
     res.status(204).end();
   } catch (err) {
@@ -1298,20 +1312,20 @@ router.delete('/:groupId/workplaces/:workplaceId', async (req, res) => {
 // tenants of the group, the union of Qualification.name held via
 // DoctorQualification contains every required name (and none of the excluded).
 
-router.get('/:groupId/workplaces/:workplaceId/qualifications', async (req, res) => {
+router.get('/:groupId/workplaces/:workplaceId/qualifications', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT id, qualification_name, is_excluded
          FROM shared_workplace_qualification
         WHERE shared_workplace_id = ?
         ORDER BY qualification_name ASC`,
-      [req.params.workplaceId]
-    );
+      [String(String(req.params.workplaceId))]
+    ) as [any[], any];
     res.json({
-      qualifications: rows.map((r) => ({
+      qualifications: rows.map((r: any) => ({
         id: r.id,
         qualification_name: r.qualification_name,
         is_excluded: !!r.is_excluded,
@@ -1322,32 +1336,32 @@ router.get('/:groupId/workplaces/:workplaceId/qualifications', async (req, res) 
   }
 });
 
-router.put('/:groupId/workplaces/:workplaceId/qualifications', async (req, res) => {
+router.put('/:groupId/workplaces/:workplaceId/qualifications', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const list = Array.isArray(req.body?.qualifications) ? req.body.qualifications : [];
     const cleaned = list
-      .map((item) => ({
+      .map((item: any) => ({
         name: String(item?.qualification_name || item?.name || '').trim(),
         excluded: !!(item?.is_excluded ?? item?.excluded),
       }))
-      .filter((item) => item.name.length > 0 && item.name.length <= 255);
+      .filter((item: any) => item.name.length > 0 && item.name.length <= 255);
 
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
       await conn.execute(
         'DELETE FROM shared_workplace_qualification WHERE shared_workplace_id = ?',
-        [req.params.workplaceId]
+        [String(String(req.params.workplaceId))]
       );
       for (const item of cleaned) {
         await conn.execute(
           `INSERT IGNORE INTO shared_workplace_qualification
              (shared_workplace_id, qualification_name, is_excluded)
            VALUES (?, ?, ?)`,
-          [req.params.workplaceId, item.name, item.excluded ? 1 : 0]
+          [String(req.params.workplaceId), item.name, item.excluded ? 1 : 0]
         );
       }
       await conn.commit();
@@ -1366,12 +1380,12 @@ router.put('/:groupId/workplaces/:workplaceId/qualifications', async (req, res) 
 // Distinct qualification names found in any tenant of the group.
 // Used by the admin form as a picker so the operator does not need to type
 // names by hand. Order: alphabetical.
-router.get('/:groupId/qualifications', async (req, res) => {
+router.get('/:groupId/qualifications', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
-    const tenantIds = await loadGroupTenantIds(db, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
+    const tenantIds = await loadGroupTenantIds(db, String(req.params.groupId));
     if (tenantIds.length === 0) return res.json({ qualifications: [] });
 
     const allNames = new Set();
@@ -1379,18 +1393,18 @@ router.get('/:groupId/qualifications', async (req, res) => {
       const token = await loadTenantTokenById(tenantId);
       if (!token) continue;
       try {
-        await withTenantDb(token, async (pool) => {
-          const [rows] = await pool.execute('SELECT DISTINCT name FROM Qualification WHERE name IS NOT NULL');
+        await withTenantDb(token, async (pool: any) => {
+          const [rows] = await pool.execute('SELECT DISTINCT name FROM Qualification WHERE name IS NOT NULL') as [any[], any];
           for (const row of rows) {
             const name = String(row.name || '').trim();
             if (name) allNames.add(name);
           }
         });
       } catch (err) {
-        console.warn(`[groups] qualifications scan failed for tenant ${tenantId}:`, err.message);
+        console.warn(`[groups] qualifications scan failed for tenant ${tenantId}:`, (err as Error).message);
       }
     }
-    res.json({ qualifications: Array.from(allNames).sort((a, b) => a.localeCompare(b, 'de')) });
+    res.json({ qualifications: Array.from(allNames).sort((a: any, b: any) => a.localeCompare(b, 'de')) });
   } catch (err) {
     handleError(res, err);
   }
@@ -1401,29 +1415,29 @@ router.get('/:groupId/qualifications', async (req, res) => {
 // his/her assigned tenants in the group covers every required name and
 // includes none of the excluded names. If the workplace has no qualification
 // rules, all group staff are returned (same as /staff).
-router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) => {
+router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
-    const tenantIds = await loadGroupTenantIds(db, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
+    const tenantIds = await loadGroupTenantIds(db, String(req.params.groupId));
     if (tenantIds.length === 0) return res.json({ staff: [], required: [], excluded: [] });
 
     const [qualRows] = await db.execute(
       `SELECT qualification_name, is_excluded
          FROM shared_workplace_qualification
         WHERE shared_workplace_id = ?`,
-      [req.params.workplaceId]
-    );
+      [String(String(req.params.workplaceId))]
+    ) as [any[], any];
     // Trim qualification names from the master DB for robust comparison
     // with names coming from tenant DBs (which are trimmed on read).
     const required = qualRows
-      .filter((r) => !r.is_excluded)
-      .map((r) => String(r.qualification_name || '').trim())
+      .filter((r: any) => !r.is_excluded)
+      .map((r: any) => String(r.qualification_name || '').trim())
       .filter(Boolean);
     const excluded = qualRows
-      .filter((r) => r.is_excluded)
-      .map((r) => String(r.qualification_name || '').trim())
+      .filter((r: any) => r.is_excluded)
+      .map((r: any) => String(r.qualification_name || '').trim())
       .filter(Boolean);
 
     // Load all group staff (same shape as /staff)
@@ -1440,13 +1454,13 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
         GROUP BY e.id
         ORDER BY e.last_name, e.first_name`,
       tenantIds.map(String)
-    );
+    ) as [any[], any];
 
     // If no rules, return everyone (cheap path)
     if (required.length === 0 && excluded.length === 0) {
-      const allIds = staffRows.map(r => String(r.id));
+      const allIds = staffRows.map((r: any) => String(r.id));
       return res.json({
-        staff: staffRows.map((r) => ({
+        staff: staffRows.map((r: any) => ({
           id: r.id,
           last_name: r.last_name,
           first_name: r.first_name,
@@ -1470,7 +1484,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
         WHERE tenant_id IN (${placeholders})
           AND tenant_doctor_id IS NOT NULL`,
       tenantIds.map(String)
-    );
+    ) as [any[], any];
     for (const eta of etaRows) {
       const key = `${eta.tenant_id}:${eta.tenant_doctor_id}`;
       doctorToEmployee.set(key, String(eta.employee_id));
@@ -1485,7 +1499,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       const token = await loadTenantTokenById(tenantId);
       if (!token) continue;
       try {
-        await withTenantDb(token, async (pool) => {
+        await withTenantDb(token, async (pool: any) => {
           // Doctor uses utf8mb4_unicode_ci (explicit), but DoctorQualification
           // and Qualification use the database default (utf8mb4_uca1400_ai_ci
           // on MySQL 8.4+). Add COLLATE to avoid "Illegal mix of collations".
@@ -1494,7 +1508,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
                FROM Doctor d
                JOIN DoctorQualification dq ON dq.doctor_id COLLATE utf8mb4_unicode_ci = d.id
                JOIN Qualification q ON q.id = dq.qualification_id`
-          );
+          ) as [any[], any];
           for (const row of rows) {
             let empId = row.emp_id ? String(row.emp_id) : null;
             // Fallback: resolve via EmployeeTenantAssignment.tenant_doctor_id
@@ -1510,7 +1524,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
           }
         });
       } catch (err) {
-        console.warn(`[groups] eligible-staff scan failed for tenant ${tenantId}:`, err.message);
+        console.warn(`[groups] eligible-staff scan failed for tenant ${tenantId}:`, (err as Error).message);
       }
     }
 
@@ -1519,7 +1533,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
     // so "Facharzt" and "facharzt" cannot co-exist in the same tenant — but the
     // stored casing depends on which value was inserted first. Since JavaScript
     // Set.has() is case-sensitive, we normalize to lowercase for matching.
-    const hasQual = (set, name) => {
+    const hasQual = (set: any, name: any) => {
       if (set.has(name)) return true;
       const lower = name.toLowerCase();
       if (lower === name) return false;
@@ -1529,7 +1543,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
       return false;
     };
 
-    const eligible = staffRows.filter((r) => {
+    const eligible = staffRows.filter((r: any) => {
       const have = employeeQuals.get(String(r.id)) || new Set();
       for (const req of required) {
         if (!hasQual(have, req)) return false;
@@ -1543,9 +1557,9 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
     // Diagnostic: log when qualifications are required but no one matched
     if (required.length > 0 && eligible.length === 0) {
       const totalStaff = staffRows.length;
-      const lowerRequired = required.map((r) => r.toLowerCase());
+      const lowerRequired = required.map((r: any) => r.toLowerCase());
       const staffWithQuals = [...employeeQuals.entries()]
-        .filter(([_, quals]) => lowerRequired.every((lr) => {
+        .filter(([_, quals]) => lowerRequired.every((lr: any) => {
           for (const q of quals) {
             if (q.toLowerCase() === lr) return true;
           }
@@ -1565,7 +1579,7 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
     }
 
     res.json({
-      staff: eligible.map((r) => ({
+      staff: eligible.map((r: any) => ({
         id: r.id,
         last_name: r.last_name,
         first_name: r.first_name,
@@ -1584,21 +1598,21 @@ router.get('/:groupId/workplaces/:workplaceId/eligible-staff', async (req, res) 
   }
 });
 
-router.get('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
+router.get('/:groupId/workplaces/:workplaceId/timeslots', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT id, shared_workplace_id, label, start_time, end_time,
               \`order\` AS sort_order, overlap_tolerance_minutes, spans_midnight
          FROM shared_workplace_timeslot
         WHERE shared_workplace_id = ?
         ORDER BY COALESCE(\`order\`, 0) ASC, start_time ASC`,
-      [req.params.workplaceId]
-    );
+      [String(String(req.params.workplaceId))]
+    ) as [any[], any];
     res.json({
-      timeslots: rows.map((row) => ({
+      timeslots: rows.map((row: any) => ({
         ...row,
         order: row.sort_order ?? 0,
         spans_midnight: Boolean(row.spans_midnight),
@@ -1609,11 +1623,11 @@ router.get('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
   }
 });
 
-router.post('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
+router.post('/:groupId/workplaces/:workplaceId/timeslots', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const { label, start_time, end_time, order, overlap_tolerance_minutes, spans_midnight } = req.body || {};
     if (!label || !start_time || !end_time) {
       return res.status(400).json({ error: 'label, start_time und end_time sind erforderlich' });
@@ -1626,14 +1640,14 @@ router.post('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
-        req.params.workplaceId,
+        String(req.params.workplaceId),
         label,
         start_time,
         end_time,
         Number.isInteger(order) ? order : 0,
         Number.isInteger(overlap_tolerance_minutes) ? overlap_tolerance_minutes : 0,
         spans_midnight ? 1 : 0,
-        req.user.email || req.user.sub,
+        (req as CuraRequest).user?.email || (req as CuraRequest).user?.sub,
       ]
     );
     res.status(201).json({ id });
@@ -1642,11 +1656,11 @@ router.post('/:groupId/workplaces/:workplaceId/timeslots', async (req, res) => {
   }
 });
 
-router.patch('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req, res) => {
+router.patch('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const allowed = ['label', 'start_time', 'end_time', 'order', 'overlap_tolerance_minutes', 'spans_midnight'];
     const fields = [];
     const values = [];
@@ -1661,7 +1675,7 @@ router.patch('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (r
       values.push(val);
     }
     if (fields.length === 0) return res.status(400).json({ error: 'Keine Änderungen' });
-    values.push(req.params.timeslotId, req.params.workplaceId);
+    values.push(String(req.params.timeslotId), String(req.params.workplaceId));
     await db.execute(
       `UPDATE shared_workplace_timeslot SET ${fields.join(', ')}
         WHERE id = ? AND shared_workplace_id = ?`,
@@ -1673,14 +1687,14 @@ router.patch('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (r
   }
 });
 
-router.delete('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req, res) => {
+router.delete('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     await db.execute(
       'DELETE FROM shared_workplace_timeslot WHERE id = ? AND shared_workplace_id = ?',
-      [req.params.timeslotId, req.params.workplaceId]
+      [String(req.params.timeslotId), String(String(req.params.workplaceId))]
     );
     res.status(204).end();
   } catch (err) {
@@ -1690,30 +1704,30 @@ router.delete('/:groupId/workplaces/:workplaceId/timeslots/:timeslotId', async (
 
 // ============ QUOTAS ============
 
-router.get('/:groupId/workplaces/:workplaceId/quotas', async (req, res) => {
+router.get('/:groupId/workplaces/:workplaceId/quotas', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT q.shared_workplace_id, q.scope, q.scope_key, q.period,
               q.max_count, q.target_count, q.weight
          FROM shared_workplace_quota q
          JOIN shared_workplace w ON w.id = q.shared_workplace_id
         WHERE w.group_id = ? AND w.id = ?`,
-      [req.params.groupId, req.params.workplaceId]
-    );
+      [String(req.params.groupId), String(String(req.params.workplaceId))]
+    ) as [any[], any];
     res.json({ quotas: rows });
   } catch (err) {
     handleError(res, err);
   }
 });
 
-router.put('/:groupId/workplaces/:workplaceId/quotas', async (req, res) => {
+router.put('/:groupId/workplaces/:workplaceId/quotas', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const quotas = Array.isArray(req.body?.quotas) ? req.body.quotas : null;
     if (!quotas) return res.status(400).json({ error: 'quotas[] erforderlich' });
 
@@ -1721,7 +1735,7 @@ router.put('/:groupId/workplaces/:workplaceId/quotas', async (req, res) => {
     const conn = await db.getConnection();
     try {
       await conn.beginTransaction();
-      await conn.execute('DELETE FROM shared_workplace_quota WHERE shared_workplace_id = ?', [req.params.workplaceId]);
+      await conn.execute('DELETE FROM shared_workplace_quota WHERE shared_workplace_id = ?', [String(String(req.params.workplaceId))]);
       for (const q of quotas) {
         if (!['person', 'tenant', 'role'].includes(q.scope)) continue;
         if (!q.scope_key) continue;
@@ -1731,7 +1745,7 @@ router.put('/:groupId/workplaces/:workplaceId/quotas', async (req, res) => {
              (shared_workplace_id, scope, scope_key, period, max_count, target_count, weight)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [
-            req.params.workplaceId, q.scope, String(q.scope_key), period,
+            String(req.params.workplaceId), q.scope, String(q.scope_key), period,
             q.max_count ?? null, q.target_count ?? null,
             q.weight ?? 1.0,
           ]
@@ -1752,12 +1766,12 @@ router.put('/:groupId/workplaces/:workplaceId/quotas', async (req, res) => {
 
 // ============ STAFF (aggregated employees in the group) ============
 
-router.get('/:groupId/staff', async (req, res) => {
+router.get('/:groupId/staff', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
-    const tenantIds = await loadGroupTenantIds(db, req.params.groupId);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
+    const tenantIds = await loadGroupTenantIds(db, String(req.params.groupId));
     if (tenantIds.length === 0) return res.json({ staff: [] });
 
     // Employees assigned to any tenant in the group, with their primary
@@ -1778,9 +1792,9 @@ router.get('/:groupId/staff', async (req, res) => {
         GROUP BY e.id
         ORDER BY e.last_name, e.first_name`,
       tenantIds.map(String)
-    );
+    ) as [any[], any];
 
-    const staff = rows.map((r) => ({
+    const staff = rows.map((r: any) => ({
       id: r.id,
       last_name: r.last_name,
       first_name: r.first_name,
@@ -1798,13 +1812,13 @@ router.get('/:groupId/staff', async (req, res) => {
 
 // ============ SCHEDULE (pool shifts only) ============
 
-router.get('/:groupId/schedule', async (req, res) => {
+router.get('/:groupId/schedule', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
-    const from = String(req.query.from || '').slice(0, 10);
-    const to = String(req.query.to || '').slice(0, 10);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
+    const from = String((req.query.from as string) as string || '').slice(0, 10);
+    const to = String((req.query.to as string) as string || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       return res.status(400).json({ error: 'from/to (YYYY-MM-DD) erforderlich' });
     }
@@ -1817,8 +1831,8 @@ router.get('/:groupId/schedule', async (req, res) => {
         WHERE w.group_id = ?
           AND s.date BETWEEN ? AND ?
         ORDER BY s.date ASC, w.name ASC`,
-      [req.params.groupId, from, to]
-    );
+      [String(req.params.groupId), from, to]
+    ) as [any[], any];
     res.json({ shifts: rows });
   } catch (err) {
     handleError(res, err);
@@ -1831,7 +1845,7 @@ router.get('/:groupId/schedule', async (req, res) => {
  * Load existing shifts for a workplace covering the relevant window for
  * constraint evaluation.
  */
-async function loadShiftsWindow(workplaceId, dateStr) {
+async function loadShiftsWindow(workplaceId: any, dateStr: any) {
   const date = new Date(`${dateStr}T00:00:00Z`);
   const start = new Date(date);
   start.setUTCDate(start.getUTCDate() - 7);
@@ -1846,15 +1860,15 @@ async function loadShiftsWindow(workplaceId, dateStr) {
     `SELECT id, date, employee_id FROM shared_shift_entry
        WHERE shared_workplace_id = ? AND date BETWEEN ? AND ?`,
     [workplaceId, lo, hi]
-  );
-  return rows.map((r) => ({ ...r, date: String(r.date).slice(0, 10) }));
+  ) as [any[], any];
+  return rows.map((r: any) => ({ ...r, date: String(r.date).slice(0, 10) }));
 }
 
-router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), async (req, res) => {
+router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const { shared_workplace_id, date, employee_id, billing_tenant_id, start_time, end_time, note } = req.body || {};
     if (!shared_workplace_id || !date || !employee_id || !billing_tenant_id) {
       return res.status(400).json({ error: 'shared_workplace_id, date, employee_id, billing_tenant_id erforderlich' });
@@ -1870,8 +1884,8 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
               affects_availability, consecutive_days_mode
          FROM shared_workplace
         WHERE id = ? AND group_id = ? AND is_active = 1`,
-      [shared_workplace_id, req.params.groupId]
-    );
+      [shared_workplace_id, String(String(req.params.groupId))]
+    ) as [any[], any];
     if (wpRows.length === 0) return res.status(404).json({ error: 'Workplace nicht gefunden' });
     const workplace = wpRows[0];
 
@@ -1907,7 +1921,7 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
 
     // Hard violations (max_per_person_month, max_consecutive, rest_after) block the save.
     const hardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
-    const hard = violations.filter((v) => hardRules.has(v.rule));
+    const hard = violations.filter((v: any) => hardRules.has(v.rule));
     // Tenant-level blockers (rotation_conflict, auto_off_conflict, etc.) are
     // overridable via force=1 – the user gets a dialog asking whether to
     // remove the employee from the conflicting rotation.
@@ -1923,12 +1937,11 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
     // When force=1 with rotation_conflict blockers: delete the conflicting
     // rotation entries from the tenant DB before saving the new Dienst.
     if (req.query.force === '1') {
-      const rotationConflicts = (tenantRuleResult.blockers || []).filter(
-        (b) => b.rule === 'rotation_conflict' && b.rotationShiftId
+      const rotationConflicts = (tenantRuleResult.blockers || []).filter((b: any) => b.rule === 'rotation_conflict' && b.rotationShiftId
       );
       if (rotationConflicts.length > 0) {
-        await withTenantDb(tenantRuleContext.tenantToken, async (pool) => {
-          const ids = rotationConflicts.map((b) => b.rotationShiftId).filter(Boolean);
+        await withTenantDb(tenantRuleContext.tenantToken, async (pool: any) => {
+          const ids = rotationConflicts.map((b: any) => b.rotationShiftId).filter(Boolean);
           if (ids.length > 0) {
             const placeholders = ids.map(() => '?').join(',');
             await pool.execute(
@@ -1947,7 +1960,7 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, shared_workplace_id, date, employee_id, String(billing_tenant_id),
        start_time || null, end_time || null, note || null,
-       req.user.email || req.user.sub]
+       (req as CuraRequest).user?.email || (req as CuraRequest).user?.sub]
     );
     await ensureTenantAutoFreiEntry({
       shiftId: id,
@@ -1960,7 +1973,7 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
     res.status(201).json({
       id,
       warnings: [
-        ...violations.filter((v) => !hardRules.has(v.rule)),
+        ...violations.filter((v: any) => !hardRules.has(v.rule)),
         ...tenantRuleResult.warnings,
       ],
     });
@@ -1969,11 +1982,11 @@ router.post('/:groupId/shifts', requirePermission('can_assign_pool_shifts'), asy
   }
 });
 
-router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req, res) => {
+router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const allowed = ['date', 'employee_id', 'billing_tenant_id', 'start_time', 'end_time', 'note'];
     const fields = [];
     const values = [];
@@ -1997,8 +2010,8 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
          FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
         WHERE s.id = ? AND w.group_id = ?`,
-      [req.params.shiftId, req.params.groupId]
-    );
+      [String(req.params.shiftId), String(String(req.params.groupId))]
+    ) as [any[], any];
     if (rows.length === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
 
     const currentShift = rows[0];
@@ -2012,14 +2025,14 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
     };
 
     const existingForWorkplace = (await loadShiftsWindow(currentShift.shared_workplace_id, nextState.date))
-      .filter((shift) => String(shift.id) !== String(req.params.shiftId));
+      .filter((shift: any) => String(shift.id) !== String(String(req.params.shiftId)));
     const poolViolations = validateProposedShift({
       workplace: currentShift,
       proposed: { date: nextState.date, employee_id: nextState.employee_id, employee_role: req.body.employee_role || null },
       existingForWorkplace,
     });
     const poolHardRules = new Set(['max_per_person_month', 'max_consecutive', 'rest_after']);
-    const poolHard = poolViolations.filter((violation) => poolHardRules.has(violation.rule));
+    const poolHard = poolViolations.filter((violation: any) => poolHardRules.has(violation.rule));
     if (poolHard.length > 0 && req.query.force !== '1') {
       return res.status(422).json({ error: 'constraint_violation', details: poolHard });
     }
@@ -2059,12 +2072,11 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
     // When force=1 with rotation_conflict blockers: delete the conflicting
     // rotation entries from the tenant DB before updating the Dienst.
     if (req.query.force === '1') {
-      const rotationConflicts = (tenantRuleResult.blockers || []).filter(
-        (b) => b.rule === 'rotation_conflict' && b.rotationShiftId
+      const rotationConflicts = (tenantRuleResult.blockers || []).filter((b: any) => b.rule === 'rotation_conflict' && b.rotationShiftId
       );
       if (rotationConflicts.length > 0) {
-        await withTenantDb(tenantRuleContext.tenantToken, async (pool) => {
-          const ids = rotationConflicts.map((b) => b.rotationShiftId).filter(Boolean);
+        await withTenantDb(tenantRuleContext.tenantToken, async (pool: any) => {
+          const ids = rotationConflicts.map((b: any) => b.rotationShiftId).filter(Boolean);
           if (ids.length > 0) {
             const placeholders = ids.map(() => '?').join(',');
             await pool.execute(
@@ -2076,14 +2088,14 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
       }
     }
 
-    values.push(req.params.shiftId);
+    values.push(String(req.params.shiftId));
     await db.execute(`UPDATE shared_shift_entry SET ${fields.join(', ')} WHERE id = ?`, values);
-    await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: currentShift.billing_tenant_id });
+    await cleanupTenantAutoFreiEntry({ shiftId: String(req.params.shiftId), tenantId: currentShift.billing_tenant_id });
     if (String(nextState.billing_tenant_id) !== String(currentShift.billing_tenant_id)) {
-      await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: nextState.billing_tenant_id });
+      await cleanupTenantAutoFreiEntry({ shiftId: String(req.params.shiftId), tenantId: nextState.billing_tenant_id });
     }
     await ensureTenantAutoFreiEntry({
-      shiftId: req.params.shiftId,
+      shiftId: String(req.params.shiftId),
       workplace: currentShift,
       tenantToken: tenantRuleContext.tenantToken,
       tenantDoctorId: tenantRuleContext.tenantDoctorId,
@@ -2093,7 +2105,7 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
     res.json({
       success: true,
       warnings: [
-        ...poolViolations.filter((violation) => !poolHardRules.has(violation.rule)),
+        ...poolViolations.filter((violation: any) => !poolHardRules.has(violation.rule)),
         ...tenantRuleResult.warnings,
       ],
     });
@@ -2102,27 +2114,27 @@ router.patch('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shi
   }
 });
 
-router.delete('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req, res) => {
+router.delete('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_shifts'), async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    requireGroupWriteAccess(ctx, req.params.groupId);
+    requireGroupWriteAccess(ctx, String(req.params.groupId));
     const [rows] = await db.execute(
       `SELECT s.id, s.billing_tenant_id
          FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
         WHERE s.id = ? AND w.group_id = ?`,
-      [req.params.shiftId, req.params.groupId]
-    );
+      [String(req.params.shiftId), String(String(req.params.groupId))]
+    ) as [any[], any];
     if (rows.length === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
 
-    await cleanupTenantAutoFreiEntry({ shiftId: req.params.shiftId, tenantId: rows[0].billing_tenant_id });
+    await cleanupTenantAutoFreiEntry({ shiftId: String(req.params.shiftId), tenantId: rows[0].billing_tenant_id });
     const [result] = await db.execute(
       `DELETE s FROM shared_shift_entry s
          JOIN shared_workplace w ON w.id = s.shared_workplace_id
         WHERE s.id = ? AND w.group_id = ?`,
-      [req.params.shiftId, req.params.groupId]
-    );
+      [String(req.params.shiftId), String(String(req.params.groupId))]
+    ) as [ResultSetHeader, unknown];
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Schicht nicht gefunden' });
     res.status(204).end();
   } catch (err) {
@@ -2132,13 +2144,13 @@ router.delete('/:groupId/shifts/:shiftId', requirePermission('can_assign_pool_sh
 
 // ============ STATS ============
 
-router.get('/:groupId/stats', async (req, res) => {
+router.get('/:groupId/stats', async (req: Request, res: Response) => {
   try {
     const ctx = await loadCtx(req, res);
     if (!ctx) return;
-    await requireGroupReadAccess(db, ctx, req.params.groupId);
-    const from = String(req.query.from || '').slice(0, 10);
-    const to = String(req.query.to || '').slice(0, 10);
+    await requireGroupReadAccess(db, ctx, String(req.params.groupId));
+    const from = String((req.query.from as string) as string || '').slice(0, 10);
+    const to = String((req.query.to as string) as string || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       return res.status(400).json({ error: 'from/to (YYYY-MM-DD) erforderlich' });
     }
@@ -2154,8 +2166,8 @@ router.get('/:groupId/stats', async (req, res) => {
         WHERE w.group_id = ? AND s.date BETWEEN ? AND ?
         GROUP BY w.id, s.billing_tenant_id
         ORDER BY w.name, t.name`,
-      [req.params.groupId, from, to]
-    );
+      [String(req.params.groupId), from, to]
+    ) as [any[], any];
 
     // Counts per workplace + person
     const [perPerson] = await db.execute(
@@ -2169,8 +2181,8 @@ router.get('/:groupId/stats', async (req, res) => {
         WHERE w.group_id = ? AND s.date BETWEEN ? AND ?
         GROUP BY w.id, s.employee_id
         ORDER BY w.name, cnt DESC`,
-      [req.params.groupId, from, to]
-    );
+      [String(req.params.groupId), from, to]
+    ) as [any[], any];
 
     res.json({ per_tenant: perTenant, per_person: perPerson });
   } catch (err) {

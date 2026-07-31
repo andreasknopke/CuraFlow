@@ -22,29 +22,108 @@
  * `EmployeeVacationYear` migration hasn't been applied yet.
  */
 
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+interface EmployeeVacationYearRow extends RowDataPacket {
+  shift_vacation_days: number | string | null;
+  carried_over: number | boolean | null;
+  carried_over_from_year: number | string | null;
+  expires_at: Date | string | null;
+  note: string | null;
+}
+
+interface EmployeeRow extends RowDataPacket {
+  vacation_days_annual: number | string | null;
+}
+
+interface CentralAbsenceRow extends RowDataPacket {
+  date: Date | string;
+}
+
+interface ShiftVacationEntitlement {
+  shift_vacation_days: number;
+  carried_over: boolean;
+  carried_over_from_year: number | null;
+  expires_at: string | null;
+  note: string | null;
+}
+
+interface ShiftVacationRemaining {
+  shift_vacation_total: number;
+  shift_vacation_taken: number;
+  shift_vacation_planned: number;
+  remaining_shift_vacation: number;
+}
+
+interface SetEntitlementPayload {
+  shift_vacation_days: number | string;
+  carried_over?: boolean | number | string;
+  carried_over_from_year?: number | string | null;
+  expires_at?: string | Date | null;
+  note?: string | null;
+  updatedBy?: string | null;
+}
+
+interface CarryOverSuccess {
+  carried_days: number;
+  fromYear: number;
+  toYear: number;
+}
+
+interface CarryOverError {
+  error: string;
+}
+
+function toDateString(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function formatYmd(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getErrorCode(e: unknown): string | undefined {
+  if (typeof e === 'object' && e !== null && 'code' in e) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}
+
+function getErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function isMissingTableError(e: unknown): boolean {
+  const code = getErrorCode(e);
+  return code === 'ER_NO_SUCH_TABLE' || /Unknown table/i.test(getErrorMessage(e));
+}
+
+function isCountableDay(dateStr: string, holidaySet: Set<string>): boolean {
+  const d = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return false;
+  const day = d.getDay();
+  if (day === 0 || day === 6) return false;
+  if (holidaySet.has(dateStr)) return false;
+  return true;
+}
+
 /**
  * Read the year-specific row for a central employee. Always returns a
  * well-shaped object; missing rows resolve to the `0` default.
- *
- * **Dynamic carry adjustment (Option B):** When the requested `year` is
- * a carried-over row (`carried_over = true`), the real `shift_vacation_days`
- * is computed from the *current* remaining balance of the source year.
- * This prevents double-counting: if the planner books additional
- * Schichturlaub in the source year after the carry-over, the target
- * year's entitlement shrinks automatically. The carry never grows
- * beyond the original stored amount, but it shrinks in lockstep with
- * the source year's remaining balance.
- *
- * The adjustment is persisted on every read so subsequent reads and the
- * frontend API always return the up-to-date value.
- *
- * @param {import('mysql2/promise').Pool} masterDb
- * @param {string} employeeId
- * @param {number} year
- * @returns {Promise<{ shift_vacation_days: number, carried_over: boolean, carried_over_from_year: number|null, expires_at: string|null, note: string|null }>}
  */
-export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
-  const fallback = {
+export async function getShiftVacationEntitlement(
+  masterDb: Pool,
+  employeeId: string | null | undefined,
+  year: number
+): Promise<ShiftVacationEntitlement> {
+  const fallback: ShiftVacationEntitlement = {
     shift_vacation_days: 0,
     carried_over: false,
     carried_over_from_year: null,
@@ -53,7 +132,7 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
   };
   if (!employeeId || !Number.isFinite(year)) return fallback;
   try {
-    const [rows] = await masterDb.execute(
+    const [rows] = await masterDb.execute<EmployeeVacationYearRow[]>(
       `SELECT shift_vacation_days, carried_over, carried_over_from_year, expires_at, note
          FROM EmployeeVacationYear
         WHERE employee_id = ? AND year = ?
@@ -62,13 +141,13 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
     );
     if (rows.length === 0) return fallback;
 
-    const row = {
+    const row: ShiftVacationEntitlement = {
       shift_vacation_days: Number(rows[0].shift_vacation_days) || 0,
       carried_over: Boolean(rows[0].carried_over),
       carried_over_from_year: rows[0].carried_over_from_year != null
         ? Number(rows[0].carried_over_from_year)
         : null,
-      expires_at: rows[0].expires_at ? formatYmd(
+      expires_at: rows[0].expires_at ? toDateString(
         rows[0].expires_at instanceof Date ? rows[0].expires_at : new Date(rows[0].expires_at)
       ) : null,
       note: rows[0].note ?? null,
@@ -103,7 +182,7 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
     // Missing table is okay (migration not applied yet) — return default
     // so the API stays available. Any other error surfaces in the log.
     if (!isMissingTableError(e)) {
-      console.warn(`[shiftVacationEntitlement] get failed for ${employeeId}/${year}: ${e.message}`);
+      console.warn(`[shiftVacationEntitlement] get failed for ${employeeId}/${year}: ${getErrorMessage(e)}`);
     }
     return fallback;
   }
@@ -119,14 +198,13 @@ export async function getShiftVacationEntitlement(masterDb, employeeId, year) {
  *
  * Persists any change so the frontend always sees the corrected value
  * on subsequent reads.
- *
- * @param {import('mysql2/promise').Pool} masterDb
- * @param {string} employeeId
- * @param {number} targetYear  The carried-over year whose value to adjust.
- * @param {Object} row         The stored row (as returned by the SELECT).
- * @returns {Promise<Object>}  Adjusted row (same shape as `getShiftVacationEntitlement`).
  */
-async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
+async function _adjustCarryFromSource(
+  masterDb: Pool,
+  employeeId: string,
+  targetYear: number,
+  row: ShiftVacationEntitlement
+): Promise<ShiftVacationEntitlement> {
   const sourceYear = row.carried_over_from_year;
   // Guard: a carry always goes forward (source < target). If the stored
   // data violates this, don't adjust — it's either a degenerate test
@@ -164,7 +242,7 @@ async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
       [effectiveDays, employeeId, targetYear]
     );
   } catch (e) {
-    console.warn(`[shiftVacationEntitlement] carry-adjust persist failed: ${e.message}`);
+    console.warn(`[shiftVacationEntitlement] carry-adjust persist failed: ${getErrorMessage(e)}`);
   }
 
   return {
@@ -180,20 +258,13 @@ async function _adjustCarryFromSource(masterDb, employeeId, targetYear, row) {
  * Persist the row for `(employeeId, year)`. Creates the row via
  * INSERT ... ON DUPLICATE KEY UPDATE so both first-write and edit work,
  * and never touches `id`/`created_*`, only `updated_*`.
- *
- * @param {import('mysql2/promise').Pool} masterDb
- * @param {string} employeeId
- * @param {number} year
- * @param {Object} payload
- * @param {number} payload.shift_vacation_days   Non-negative integer.
- * @param {boolean} [payload.carried_over=false]
- * @param {number|null} [payload.carried_over_from_year=null]
- * @param {string|null} [payload.expires_at]     yyyy-MM-dd or ISO date.
- * @param {string|null} [payload.note=null]
- * @param {string|null} [payload.updatedBy=null]
- * @returns {Promise<Object>} the row as `getShiftVacationEntitlement` returns.
  */
-export async function setShiftVacationEntitlement(masterDb, employeeId, year, payload = {}) {
+export async function setShiftVacationEntitlement(
+  masterDb: Pool,
+  employeeId: string,
+  year: number,
+  payload: SetEntitlementPayload
+): Promise<ShiftVacationEntitlement> {
   const days = Number(payload.shift_vacation_days);
   if (!Number.isFinite(days) || days < 0 || !Number.isInteger(days)) {
     throw new Error('shift_vacation_days muss eine nicht-negative Ganzzahl sein.');
@@ -202,7 +273,7 @@ export async function setShiftVacationEntitlement(masterDb, employeeId, year, pa
   const carriedOverFromYear = Number.isFinite(payload.carried_over_from_year)
     ? Number(payload.carried_over_from_year)
     : null;
-  const expiresAt = payload.expires_at || null;
+  const expiresAt = payload.expires_at ? toDateString(payload.expires_at) : null;
   const note = payload.note ?? null;
   const updatedBy = payload.updatedBy ?? null;
 
@@ -231,16 +302,13 @@ export async function setShiftVacationEntitlement(masterDb, employeeId, year, pa
  * public holidays don't consume Schichturlaub, taken = date <= today,
  * planned = date > today. We keep it here server-side so the persist
  * step doesn't depend on client math.
- *
- * @param {import('mysql2/promise').Pool} masterDb
- * @param {string} employeeId
- * @param {number} year
- * @param {Object} [options]
- * @param {Set<string>} [options.publicHolidayDates]  `yyyy-MM-dd` set.
- * @param {string} [options.today]                     `yyyy-MM-dd`, defaults to today.
- * @returns {Promise<{ shift_vacation_total: number, shift_vacation_taken: number, shift_vacation_planned: number, remaining_shift_vacation: number }>}
  */
-export async function computeShiftVacationRemaining(masterDb, employeeId, year, options = {}) {
+export async function computeShiftVacationRemaining(
+  masterDb: Pool,
+  employeeId: string,
+  year: number,
+  options: { publicHolidayDates?: Set<string> | string[]; today?: string } = {}
+): Promise<ShiftVacationRemaining> {
   const entitlement = await getShiftVacationEntitlement(masterDb, employeeId, year);
   const total = Number(entitlement.shift_vacation_days) || 0;
   const holidaySet = options.publicHolidayDates instanceof Set
@@ -253,7 +321,7 @@ export async function computeShiftVacationRemaining(masterDb, employeeId, year, 
   let taken = 0;
   let planned = 0;
   try {
-    const [rows] = await masterDb.execute(
+    const [rows] = await masterDb.execute<CentralAbsenceRow[]>(
       `SELECT date FROM CentralAbsenceEntry
         WHERE employee_id = ?
           AND YEAR(date) = ?
@@ -268,7 +336,7 @@ export async function computeShiftVacationRemaining(masterDb, employeeId, year, 
     }
   } catch (e) {
     if (!isMissingTableError(e)) {
-      console.warn(`[shiftVacationEntitlement] compute failed for ${employeeId}/${year}: ${e.message}`);
+      console.warn(`[shiftVacationEntitlement] compute failed for ${employeeId}/${year}: ${getErrorMessage(e)}`);
     }
   }
 
@@ -292,18 +360,12 @@ export async function computeShiftVacationRemaining(masterDb, employeeId, year, 
  *  - The target year row must not already be `carried_over`
  *    (prevents re-carrying on top of an older carry).
  *  - The remainder must be positive (≤ 0 = nothing to do).
- *
- * @param {import('mysql2/promise').Pool} masterDb
- * @param {string} employeeId
- * @param {Object} opts
- * @param {number} opts.fromYear
- * @param {number} opts.toYear
- * @param {string|null} [opts.updatedBy]
- * @param {Set<string>} [opts.publicHolidayDates]
- * @returns {Promise<Object>} on success: `{ carried_days, fromYear, toYear }`
- *                            on rule violation: `{ error }`.
  */
-export async function carryOverShiftVacation(masterDb, employeeId, opts) {
+export async function carryOverShiftVacation(
+  masterDb: Pool,
+  employeeId: string,
+  opts: { fromYear: number; toYear: number; updatedBy?: string | null; publicHolidayDates?: Set<string> | string[] }
+): Promise<CarryOverSuccess | CarryOverError> {
   const { fromYear, toYear, updatedBy = null } = opts ?? {};
   if (!Number.isFinite(fromYear) || !Number.isFinite(toYear)) {
     return { error: 'fromYear/toYear fehlen.' };
@@ -335,31 +397,6 @@ export async function carryOverShiftVacation(masterDb, employeeId, opts) {
   });
 
   return { carried_days: carriedDays, fromYear, toYear };
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers (kept private — exported only for unit tests via the
-// named exports below).
-// ---------------------------------------------------------------------------
-
-function isMissingTableError(e) {
-  return e && (e.code === 'ER_NO_SUCH_TABLE' || /Unknown table/i.test(e.message || ''));
-}
-
-function isCountableDay(dateStr, holidaySet) {
-  const d = new Date(`${dateStr}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return false;
-  const day = d.getDay();
-  if (day === 0 || day === 6) return false;
-  if (holidaySet.has(dateStr)) return false;
-  return true;
-}
-
-function formatYmd(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 // Re-exported for unit tests so they don't need to construct a fresh id.

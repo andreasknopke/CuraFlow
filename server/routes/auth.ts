@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
@@ -9,6 +10,8 @@ import { loadUserGroupContext, listUserGroups } from '../utils/tenantGroups.js';
 import { requirePermission, isSuperAdmin, loadPermissions, clampPermissionsToGranter, ALL_PERMISSIONS_TRUE } from '../utils/permissions.js';
 
 const router = express.Router();
+
+type AuthRequest = Request & { user?: Record<string, unknown> };
 
 // JWT Helper Functions
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -22,19 +25,19 @@ const JITSI_JWT_EXPIRY_SECONDS = Math.max(Number.isFinite(parsedJitsiJwtExpirySe
 const COWORK_INVITE_EXPIRY_MINUTES = parseInt(process.env.COWORK_INVITE_EXPIRY_MINUTES || '10', 10);
 const COWORK_ONLINE_WINDOW_SECONDS = parseInt(process.env.COWORK_ONLINE_WINDOW_SECONDS || '120', 10);
 
-function createToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
+function createToken(payload: Record<string, unknown>): string {
+  return jwt.sign(payload, JWT_SECRET as string, { expiresIn: TOKEN_EXPIRY });
 }
 
-function verifyToken(token) {
+function verifyToken(token: string): Record<string, unknown> | null {
   try {
-    return jwt.verify(token, JWT_SECRET);
+    return jwt.verify(token, JWT_SECRET as string) as Record<string, unknown>;
   } catch (e) {
     return null;
   }
 }
 
-function resolveAuthPayload(req) {
+function resolveAuthPayload(req: Request): Record<string, unknown> | null {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     return verifyToken(authHeader.substring(7));
@@ -47,17 +50,18 @@ function resolveAuthPayload(req) {
   return null;
 }
 
-function streamAuthMiddleware(req, res, next) {
+function streamAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction): void {
   const payload = resolveAuthPayload(req);
   if (!payload) {
-    return res.status(401).json({ error: 'Nicht autorisiert' });
+    res.status(401).json({ error: 'Nicht autorisiert' });
+    return;
   }
 
   req.user = payload;
   next();
 }
 
-function parseTenantSlug(allowedTenants) {
+function parseTenantSlug(allowedTenants: unknown): string {
   if (!allowedTenants) return 'default';
 
   try {
@@ -72,7 +76,7 @@ function parseTenantSlug(allowedTenants) {
   return allowedTenants.toString().toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 40);
 }
 
-function parseTenantList(allowedTenants) {
+function parseTenantList(allowedTenants: unknown): string[] | null {
   if (!allowedTenants) return null;
 
   try {
@@ -87,7 +91,7 @@ function parseTenantList(allowedTenants) {
   return null;
 }
 
-function usersShareTenantAccess(firstAllowedTenants, secondAllowedTenants) {
+function usersShareTenantAccess(firstAllowedTenants: unknown, secondAllowedTenants: unknown): boolean {
   const first = parseTenantList(firstAllowedTenants);
   const second = parseTenantList(secondAllowedTenants);
 
@@ -97,18 +101,18 @@ function usersShareTenantAccess(firstAllowedTenants, secondAllowedTenants) {
   return first.some((tenantId) => second.includes(tenantId));
 }
 
-function buildCoworkRoomName(tenantSlug) {
+function buildCoworkRoomName(tenantSlug: string): string {
   return `curaflow-support-${tenantSlug}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-function isUserOnline(lastSeenAt) {
+function isUserOnline(lastSeenAt: unknown): boolean {
   if (!lastSeenAt) return false;
-  const lastSeen = new Date(lastSeenAt).getTime();
+  const lastSeen = new Date(lastSeenAt as string).getTime();
   if (Number.isNaN(lastSeen)) return false;
   return Date.now() - lastSeen <= COWORK_ONLINE_WINDOW_SECONDS * 1000;
 }
 
-async function expireStaleCoworkInvites() {
+async function expireStaleCoworkInvites(): Promise<void> {
   await db.execute(
     `UPDATE CoWorkInvite
      SET status = 'expired', responded_date = COALESCE(responded_date, UTC_TIMESTAMP())
@@ -116,11 +120,11 @@ async function expireStaleCoworkInvites() {
   );
 }
 
-function uuidCompareSql(columnName) {
+function uuidCompareSql(columnName: string): string {
   return `${columnName} COLLATE utf8mb4_unicode_ci = CAST(? AS CHAR(36) CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci`;
 }
 
-function createJitsiToken({ roomName, user }) {
+function createJitsiToken({ roomName, user }: { roomName: string; user: Record<string, unknown> }): string {
   const now = Math.floor(Date.now() / 1000);
 
   return jwt.sign({
@@ -138,19 +142,22 @@ function createJitsiToken({ roomName, user }) {
         moderator: user.role === 'admin',
       },
     },
-  }, JITSI_JWT_APP_SECRET, { algorithm: 'HS256' });
+  }, JITSI_JWT_APP_SECRET as string, { algorithm: 'HS256' });
 }
 
-async function getCoworkAudienceUserIds({ allowedTenants, includeUserIds = [] }) {
+async function getCoworkAudienceUserIds({ allowedTenants, includeUserIds = [] }: {
+  allowedTenants: unknown;
+  includeUserIds?: string[];
+}): Promise<string[]> {
   const [rows] = await db.execute(
     `SELECT id, allowed_tenants
      FROM app_users
      WHERE is_active = 1 AND role = 'admin'`
-  );
+  ) as [Record<string, unknown>[], unknown];
 
   const audience = rows
     .filter((candidate) => usersShareTenantAccess(allowedTenants, candidate.allowed_tenants))
-    .map((candidate) => candidate.id);
+    .map((candidate) => candidate.id as string);
 
   for (const userId of includeUserIds) {
     if (userId && !audience.includes(userId)) {
@@ -161,7 +168,13 @@ async function getCoworkAudienceUserIds({ allowedTenants, includeUserIds = [] })
   return audience;
 }
 
-async function broadcastCoworkUpdate({ type, actor = null, allowedTenants = null, includeUserIds = [], invite = null }) {
+async function broadcastCoworkUpdate({ type, actor = null, allowedTenants = null, includeUserIds = [], invite = null }: {
+  type: string;
+  actor?: Record<string, unknown> | null;
+  allowedTenants?: string | null;
+  includeUserIds?: string[];
+  invite?: Record<string, unknown> | null;
+}): Promise<void> {
   const userIds = await getCoworkAudienceUserIds({ allowedTenants, includeUserIds });
 
   broadcastUserEvent({
@@ -184,18 +197,20 @@ async function broadcastCoworkUpdate({ type, actor = null, allowedTenants = null
 }
 
 // Middleware to verify authentication
-export function authMiddleware(req, res, next) {
+export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers.authorization;
   
   if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Nicht autorisiert' });
+    res.status(401).json({ error: 'Nicht autorisiert' });
+    return;
   }
   
   const token = authHeader.substring(7);
   const payload = verifyToken(token);
   
   if (!payload) {
-    return res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
+    res.status(401).json({ error: 'Token ungültig oder abgelaufen' });
+    return;
   }
   
   req.user = payload;
@@ -203,15 +218,16 @@ export function authMiddleware(req, res, next) {
 }
 
 // Middleware to verify admin role
-export function adminMiddleware(req, res, next) {
+export function adminMiddleware(req: AuthRequest, res: Response, next: NextFunction): void {
   if (req.user?.role !== 'admin') {
-    return res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+    res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+    return;
   }
   next();
 }
 
 // Sanitize user object (remove sensitive data)
-function sanitizeUser(user) {
+function sanitizeUser(user: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!user) return null;
   
   const { password_hash, ...safe } = user;
@@ -221,7 +237,7 @@ function sanitizeUser(user) {
   for (const field of jsonFields) {
     if (safe[field] && typeof safe[field] === 'string') {
       try {
-        safe[field] = JSON.parse(safe[field]);
+        safe[field] = JSON.parse(safe[field] as string);
       } catch (e) {}
     }
   }
@@ -235,12 +251,12 @@ function sanitizeUser(user) {
   }
   
   // Super-admin flag (read-only, calculated from env)
-  safe.is_super_admin = isSuperAdmin(safe.email);
+  (safe as Record<string, unknown>).is_super_admin = isSuperAdmin(safe.email as string);
   
   return safe;
 }
 
-function generateTemporaryPassword() {
+function generateTemporaryPassword(): string {
   return `CF-${crypto.randomUUID().replace(/-/g, '').slice(0, 10)}!`;
 }
 
@@ -249,21 +265,25 @@ function generateTemporaryPassword() {
 // `permissions`, so `loadPermissions(req.user)` would hit the lockout-safe
 // branch and return ALL_PERMISSIONS_TRUE, enabling privilege escalation).
 // Returns null for a non-existent / inactive / non-admin granter.
-async function loadGranterPermissions(granterUser) {
+async function loadGranterPermissions(granterUser: Record<string, unknown>): Promise<Record<string, unknown> | null> {
   const [rows] = await db.execute(
     'SELECT email, role, is_active, permissions FROM app_users WHERE id = ?',
     [granterUser?.sub],
-  );
+  ) as [Record<string, unknown>[], unknown];
   const row = rows[0];
   if (!row || !row.is_active || row.role !== 'admin') return null;
   return loadPermissions({ ...row, role: row.role, permissions: row.permissions });
 }
 
-async function sendTemporaryPasswordEmail({ email, fullName, tempPassword }) {
+async function sendTemporaryPasswordEmail({ email, fullName, tempPassword }: {
+  email: string;
+  fullName: string;
+  tempPassword: string;
+}): Promise<void> {
   const providerInfo = getEmailProviderInfo();
   if (!providerInfo.configured) {
     const error = new Error('E-Mail nicht konfiguriert. Bitte BREVO_API_KEY oder SMTP_HOST + SMTP_USER + SMTP_PASS setzen.');
-    error.statusCode = 503;
+    (error as unknown as Record<string, unknown>).statusCode = 503;
     throw error;
   }
 
@@ -296,28 +316,31 @@ async function sendTemporaryPasswordEmail({ email, fullName, tempPassword }) {
 }
 
 // ============ LOGIN ============
-router.post('/login', async (req, res, next) => {
+router.post('/login', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password } = req.body;
     
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email und Passwort erforderlich' });
+      res.status(400).json({ error: 'Email und Passwort erforderlich' });
+      return;
     }
     
     const [rows] = await db.execute(
       'SELECT * FROM app_users WHERE email = ? AND is_active = 1',
       [email.toLowerCase().trim()]
-    );
+    ) as [Record<string, unknown>[], unknown];
     
     if (rows.length === 0) {
-      return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+      res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+      return;
     }
     
     const user = rows[0];
-    const validPassword = await bcrypt.compare(password, user.password_hash);
+    const validPassword = await bcrypt.compare(password, user.password_hash as string);
     
     if (!validPassword) {
-      return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+      res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+      return;
     }
     
     // Update last login and presence for CoWork online detection.
@@ -344,12 +367,14 @@ router.post('/login', async (req, res, next) => {
 });
 
 // ============ REGISTER (Admin only) ============
-router.post('/register', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
+router.post('/register', authMiddleware, requirePermission('can_manage_users'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { email, password, full_name, role = 'user', doctor_id } = req.body;
+    const authReq = req as AuthRequest;
     
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email und Passwort erforderlich' });
+      res.status(400).json({ error: 'Email und Passwort erforderlich' });
+      return;
     }
     
     // Permission inheritance (F1): if the new user is an admin, load the
@@ -357,9 +382,9 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
     // has no `permissions`, so the old `loadPermissions(req.user)` returned
     // ALL_PERMISSIONS_TRUE and let a restricted granter create a full admin).
     // A new admin can never hold a permission the granter lacks.
-    let permissions = null;
+    let permissions: string | null = null;
     if (role === 'admin') {
-      const granterPerms = await loadGranterPermissions(req.user);
+      const granterPerms = await loadGranterPermissions(authReq.user!);
       permissions = JSON.stringify(granterPerms ?? ALL_PERMISSIONS_TRUE);
     }
     
@@ -367,12 +392,13 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
     const [existing] = await db.execute(
       'SELECT id, is_active FROM app_users WHERE email = ?',
       [email.toLowerCase().trim()]
-    );
+    ) as [Record<string, unknown>[], unknown];
     
     if (existing.length > 0) {
       const existingUser = existing[0];
       if (existingUser.is_active) {
-        return res.status(409).json({ error: 'Benutzer existiert bereits' });
+        res.status(409).json({ error: 'Benutzer existiert bereits' });
+        return;
       }
       // Soft-deleted user → reaktivieren mit neuen Daten
       const password_hash = await bcrypt.hash(password, 12);
@@ -385,8 +411,9 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
           WHERE id = ?`,
         [password_hash, full_name || '', role, doctor_id || null, permissions, existingUser.id]
       );
-      const [updated] = await db.execute('SELECT * FROM app_users WHERE id = ?', [existingUser.id]);
-      return res.status(201).json({ user: sanitizeUser(updated[0]) });
+      const [updated] = await db.execute('SELECT * FROM app_users WHERE id = ?', [existingUser.id]) as [Record<string, unknown>[], unknown];
+      res.status(201).json({ user: sanitizeUser(updated[0]) });
+      return;
     }
     
     // Hash password
@@ -399,7 +426,7 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
       [id, email.toLowerCase().trim(), password_hash, full_name || '', role, doctor_id || null, permissions]
     );
     
-    const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]);
+    const [newUser] = await db.execute('SELECT * FROM app_users WHERE id = ?', [id]) as [Record<string, unknown>[], unknown];
     
     res.status(201).json({ user: sanitizeUser(newUser[0]) });
   } catch (error) {
@@ -408,15 +435,17 @@ router.post('/register', authMiddleware, requirePermission('can_manage_users'), 
 });
 
 // ============ ME (Get current user) ============
-router.get('/me', authMiddleware, async (req, res, next) => {
+router.get('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     const [rows] = await db.execute(
       'SELECT * FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
     
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
     
     res.json(sanitizeUser(rows[0]));
@@ -426,12 +455,14 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 });
 
 // ============ UPDATE ME ============
-router.patch('/me', authMiddleware, async (req, res, next) => {
+router.patch('/me', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { data } = req.body;
+    const authReq = req as AuthRequest;
     
     if (!data || Object.keys(data).length === 0) {
-      return res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
+      res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
+      return;
     }
     
     // Whitelist allowed fields for self-update
@@ -441,10 +472,10 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
       'grid_font_size', 'wish_show_occupied', 'wish_show_absences', 'wish_hidden_doctors', 'wish_default_position'
     ];
     
-    const updates = [];
-    const values = [];
+    const updates: string[] = [];
+    const values: unknown[] = [];
     
-    for (const [key, value] of Object.entries(data)) {
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       if (allowedFields.includes(key)) {
         updates.push(`\`${key}\` = ?`);
         // Serialize arrays/objects
@@ -457,17 +488,18 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
     }
     
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'Keine gültigen Felder zum Aktualisieren' });
+      res.status(400).json({ error: 'Keine gültigen Felder zum Aktualisieren' });
+      return;
     }
     
-    values.push(req.user.sub);
+    values.push(authReq.user?.sub);
     
     await db.execute(
       `UPDATE app_users SET ${updates.join(', ')}, updated_date = NOW() WHERE id = ?`,
       values
     );
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [authReq.user?.sub]) as [Record<string, unknown>[], unknown];
     
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
@@ -476,34 +508,39 @@ router.patch('/me', authMiddleware, async (req, res, next) => {
 });
 
 // ============ CHANGE PASSWORD ============
-router.post('/change-password', authMiddleware, async (req, res, next) => {
+router.post('/change-password', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { currentPassword, newPassword } = req.body;
+    const authReq = req as AuthRequest;
     
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
+      res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
+      return;
     }
     
     if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+      res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+      return;
     }
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [req.user.sub]);
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [authReq.user?.sub]) as [Record<string, unknown>[], unknown];
     
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
     
-    const validPassword = await bcrypt.compare(currentPassword, rows[0].password_hash);
+    const validPassword = await bcrypt.compare(currentPassword, rows[0].password_hash as string);
     
     if (!validPassword) {
-      return res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
+      res.status(401).json({ error: 'Aktuelles Passwort ist falsch' });
+      return;
     }
     
     const newHash = await bcrypt.hash(newPassword, 12);
     await db.execute(
       'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
-      [newHash, req.user.sub]
+      [newHash, authReq.user?.sub]
     );
     
     res.json({ success: true });
@@ -513,22 +550,25 @@ router.post('/change-password', authMiddleware, async (req, res, next) => {
 });
 
 // ============ FORCE CHANGE PASSWORD ============
-router.post('/force-change-password', authMiddleware, async (req, res, next) => {
+router.post('/force-change-password', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { newPassword } = req.body;
+    const authReq = req as AuthRequest;
 
     if (!newPassword) {
-      return res.status(400).json({ error: 'Neues Passwort erforderlich' });
+      res.status(400).json({ error: 'Neues Passwort erforderlich' });
+      return;
     }
 
     if (newPassword.length < 8) {
-      return res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+      res.status(400).json({ error: 'Neues Passwort muss mindestens 8 Zeichen haben' });
+      return;
     }
 
     const newHash = await bcrypt.hash(newPassword, 12);
     await db.execute(
       'UPDATE app_users SET password_hash = ?, must_change_password = 0, updated_date = NOW() WHERE id = ?',
-      [newHash, req.user.sub]
+      [newHash, authReq.user?.sub]
     );
 
     res.json({ success: true });
@@ -538,9 +578,9 @@ router.post('/force-change-password', authMiddleware, async (req, res, next) => 
 });
 
 // ============ LIST USERS (Admin only) ============
-router.get('/users', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
+router.get('/users', authMiddleware, requirePermission('can_manage_users'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE is_active = 1 ORDER BY created_date DESC');
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE is_active = 1 ORDER BY created_date DESC') as [Record<string, unknown>[], unknown];
     res.json(rows.map(sanitizeUser));
   } catch (error) {
     next(error);
@@ -548,13 +588,15 @@ router.get('/users', authMiddleware, requirePermission('can_manage_users'), asyn
 });
 
 // ============ UPDATE USER (Admin only) ============
-router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
+router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
     const { data } = req.body;
+    const authReq = req as AuthRequest;
     
     if (!data || Object.keys(data).length === 0) {
-      return res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
+      res.status(400).json({ error: 'Keine Daten zum Aktualisieren' });
+      return;
     }
     
     // Admin can update more fields
@@ -566,8 +608,8 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
       'permissions',
     ];
     
-    const updates = [];
-    const values = [];
+    const updates: string[] = [];
+    const values: unknown[] = [];
     
     // Normalize email early for uniqueness check
     if (data.email) {
@@ -575,9 +617,10 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
       const [existingWithEmail] = await db.execute(
         'SELECT id FROM app_users WHERE email = ? AND id != ? LIMIT 1',
         [data.email, userId]
-      );
+      ) as [Record<string, unknown>[], unknown];
       if (existingWithEmail.length > 0) {
-        return res.status(409).json({ error: 'E-Mail-Adresse wird bereits von einem anderen Benutzer verwendet' });
+        res.status(409).json({ error: 'E-Mail-Adresse wird bereits von einem anderen Benutzer verwendet' });
+        return;
       }
     }
     
@@ -590,18 +633,18 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
     // hold. The clamp is the authoritative control; the dialog disabling (F3)
     // is UX.
     if (data.role === 'admin') {
-      const granterPerms = await loadGranterPermissions(req.user);
+      const granterPerms = await loadGranterPermissions(authReq.user!);
       if (data.permissions === undefined) {
         data.permissions = granterPerms ?? ALL_PERMISSIONS_TRUE;
       } else {
         const incoming = typeof data.permissions === 'string'
           ? JSON.parse(data.permissions)
           : data.permissions;
-        data.permissions = clampPermissionsToGranter(incoming, granterPerms ?? ALL_PERMISSIONS_TRUE);
+        data.permissions = clampPermissionsToGranter(incoming, (granterPerms ?? ALL_PERMISSIONS_TRUE) as Parameters<typeof clampPermissionsToGranter>[1]);
       }
     }
     
-    for (const [key, value] of Object.entries(data)) {
+    for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       if (allowedFields.includes(key)) {
         updates.push(`\`${key}\` = ?`);
         if (Array.isArray(value) || (typeof value === 'object' && value !== null)) {
@@ -618,7 +661,8 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
     }
     
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'Keine gültigen Felder' });
+      res.status(400).json({ error: 'Keine gültigen Felder' });
+      return;
     }
     
     values.push(userId);
@@ -628,7 +672,7 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
       values
     );
     
-    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [userId]);
+    const [rows] = await db.execute('SELECT * FROM app_users WHERE id = ?', [userId]) as [Record<string, unknown>[], unknown];
     
     res.json(sanitizeUser(rows[0]));
   } catch (error) {
@@ -639,7 +683,7 @@ router.patch('/users/:userId', authMiddleware, requirePermission('can_manage_use
 // ============ DELETE USER (Admin only) ============
 // Hard delete — users are not doctors; they can be fully removed
 // so the same email can be used to create a new account.
-router.delete('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
+router.delete('/users/:userId', authMiddleware, requirePermission('can_manage_users'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
 
@@ -652,30 +696,32 @@ router.delete('/users/:userId', authMiddleware, requirePermission('can_manage_us
 });
 
 // ============ RESET USER PASSWORD (Admin only) ============
-router.post('/users/:userId/reset-password', authMiddleware, requirePermission('can_manage_users'), async (req, res, next) => {
+router.post('/users/:userId/reset-password', authMiddleware, requirePermission('can_manage_users'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { userId } = req.params;
 
     const [rows] = await db.execute(
       'SELECT id, email, full_name, is_active FROM app_users WHERE id = ?',
       [userId]
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     const user = rows[0];
     if (!user.is_active) {
-      return res.status(400).json({ error: 'Passwort kann nur für aktive Benutzer zurückgesetzt werden' });
+      res.status(400).json({ error: 'Passwort kann nur für aktive Benutzer zurückgesetzt werden' });
+      return;
     }
 
     const tempPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 12);
 
     await sendTemporaryPasswordEmail({
-      email: user.email,
-      fullName: user.full_name,
+      email: user.email as string,
+      fullName: user.full_name as string,
       tempPassword,
     });
 
@@ -692,26 +738,28 @@ router.post('/users/:userId/reset-password', authMiddleware, requirePermission('
 
 // ============ GET MY ALLOWED TENANTS ============
 // Returns the tenants that the current user is allowed to access
-router.get('/my-tenants', authMiddleware, async (req, res, next) => {
+router.get('/my-tenants', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     // Get user's allowed_tenants
     const [userRows] = await db.execute(
       'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
     
     if (userRows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
     
     const allowedTenants = userRows[0].allowed_tenants;
-    let allowedTenantList = null;
+    let allowedTenantList: string[] | null = null;
     
     // Parse allowed_tenants (could be JSON string, array, or null)
     if (allowedTenants) {
       allowedTenantList = typeof allowedTenants === 'string' 
         ? JSON.parse(allowedTenants) 
-        : allowedTenants;
+        : allowedTenants as string[];
     }
     
     // Get all db_tokens
@@ -719,14 +767,14 @@ router.get('/my-tenants', authMiddleware, async (req, res, next) => {
       SELECT id, name, host, db_name, description, is_active
       FROM db_tokens
       ORDER BY name ASC
-    `);
+    `) as [Record<string, unknown>[], unknown];
     
     // Filter tokens based on user's allowed_tenants
     let filteredTokens = tokenRows;
     
     // If allowedTenantList is null or empty, user has access to all tenants
     if (allowedTenantList && allowedTenantList.length > 0) {
-      filteredTokens = tokenRows.filter(token => allowedTenantList.includes(token.id));
+      filteredTokens = tokenRows.filter(token => (allowedTenantList as string[]).includes(token.id as string));
     }
     
     // Convert is_active from MySQL tinyint to proper boolean
@@ -746,11 +794,13 @@ router.get('/my-tenants', authMiddleware, async (req, res, next) => {
 
 // ============ GET MY ALLOWED GROUPS ============
 // Returns the cross-tenant pool groups the user is allowed to see.
-router.get('/my-groups', authMiddleware, async (req, res, next) => {
+router.get('/my-groups', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const ctx = await loadUserGroupContext(db, req.user.sub);
+    const authReq = req as AuthRequest;
+    const ctx = await loadUserGroupContext(db, authReq.user?.sub as string | null | undefined);
     if (!ctx) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
     const groups = await listUserGroups(db, ctx);
     res.json({
@@ -769,45 +819,49 @@ router.get('/my-groups', authMiddleware, async (req, res, next) => {
 });
 
 // Activate a tenant for the current user (checks tenant access)
-router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) => {
+router.post('/activate-tenant/:tokenId', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { tokenId } = req.params;
+    const authReq = req as AuthRequest;
 
     // Check user's allowed tenants
     const [userRows] = await db.execute(
       'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
     if (userRows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     const allowedTenants = userRows[0].allowed_tenants;
-    let allowedTenantList = null;
+    let allowedTenantList: string[] | null = null;
     if (allowedTenants) {
       allowedTenantList = typeof allowedTenants === 'string'
         ? JSON.parse(allowedTenants)
-        : allowedTenants;
+        : allowedTenants as string[];
     }
 
     // If user has restricted access, verify this tenant is allowed
     if (allowedTenantList && allowedTenantList.length > 0) {
-      if (!allowedTenantList.includes(Number(tokenId)) && !allowedTenantList.includes(String(tokenId))) {
-        return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+      if (!allowedTenantList.includes(tokenId as string)) {
+        res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+        return;
       }
     }
 
     // Find the token
-    const [existing] = await db.execute('SELECT id, token, name, host, db_name FROM db_tokens WHERE id = ?', [tokenId]);
+    const [existing] = await db.execute('SELECT id, token, name, host, db_name FROM db_tokens WHERE id = ?', [tokenId]) as [Record<string, unknown>[], unknown];
     if (existing.length === 0) {
-      return res.status(404).json({ error: 'Token nicht gefunden' });
+      res.status(404).json({ error: 'Token nicht gefunden' });
+      return;
     }
 
     // Deactivate all, activate selected
     await db.execute('UPDATE db_tokens SET is_active = FALSE');
     await db.execute('UPDATE db_tokens SET is_active = TRUE WHERE id = ?', [tokenId]);
 
-    console.log(`[Auth] Tenant "${existing[0].name}" activated by ${req.user.email}`);
+    console.log(`[Auth] Tenant "${existing[0].name}" activated by ${authReq.user?.email}`);
 
     res.json({
       success: true,
@@ -822,11 +876,12 @@ router.post('/activate-tenant/:tokenId', authMiddleware, async (req, res, next) 
 });
 
 // ============ VERIFY TOKEN ============
-router.get('/verify', (req, res) => {
+router.get('/verify', (req: Request, res: Response): void => {
   const authHeader = req.headers.authorization;
   
   if (!authHeader?.startsWith('Bearer ')) {
-    return res.json({ valid: false });
+    res.json({ valid: false });
+    return;
   }
   
   const token = authHeader.substring(7);
@@ -835,24 +890,25 @@ router.get('/verify', (req, res) => {
   res.json({ valid: !!payload, payload });
 });
 
-router.post('/presence', authMiddleware, async (req, res) => {
+router.post('/presence', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     await db.execute(
       'UPDATE app_users SET last_seen_at = NOW() WHERE id = ? AND is_active = 1',
-      [req.user.sub]
+      [authReq.user?.sub]
     );
 
     const [rows] = await db.execute(
       'SELECT id, email, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     if (rows[0]?.role === 'admin') {
       await broadcastCoworkUpdate({
         type: 'presence-updated',
         actor: rows[0],
-        allowedTenants: rows[0].allowed_tenants,
-        includeUserIds: [rows[0].id],
+        allowedTenants: rows[0].allowed_tenants as string,
+        includeUserIds: [rows[0].id as string],
       });
     }
 
@@ -862,21 +918,24 @@ router.post('/presence', authMiddleware, async (req, res) => {
   }
 });
 
-router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, next) => {
+router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
-      return res.status(503).json({
+      res.status(503).json({
         error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
       });
+      return;
     }
 
     const [rows] = await db.execute(
       'SELECT id, email, full_name, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     const user = rows[0];
@@ -896,7 +955,8 @@ router.get('/jitsi-token', authMiddleware, adminMiddleware, async (req, res, nex
   }
 });
 
-router.get('/events/stream', streamAuthMiddleware, async (req, res) => {
+router.get('/events/stream', streamAuthMiddleware, async (req: Request, res: Response): Promise<void> => {
+  const authReq = req as AuthRequest;
   const dbToken = typeof req.query?.db_token === 'string' ? req.query.db_token : null;
   const scope = buildRealtimeScope(dbToken);
 
@@ -911,24 +971,26 @@ router.get('/events/stream', streamAuthMiddleware, async (req, res) => {
   const unregister = registerRealtimeClient({
     scope,
     res,
-    userId: req.user?.sub || null,
+    userId: (authReq.user?.sub as string) || '',
   });
 
   req.on('close', unregister);
   req.on('end', unregister);
 });
 
-router.get('/cowork/contacts', authMiddleware, requirePermission('can_manage_cowork'), async (req, res, next) => {
+router.get('/cowork/contacts', authMiddleware, requirePermission('can_manage_cowork'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     const [adminRows] = await db.execute(
       'SELECT id, email, full_name, role, allowed_tenants, last_seen_at FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     if (adminRows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     const adminUser = adminRows[0];
@@ -937,8 +999,8 @@ router.get('/cowork/contacts', authMiddleware, requirePermission('can_manage_cow
        FROM app_users
        WHERE is_active = 1 AND id <> ?
        ORDER BY full_name ASC, email ASC`,
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     const contacts = rows
       .filter((candidate) => candidate.role === 'admin')
@@ -958,8 +1020,9 @@ router.get('/cowork/contacts', authMiddleware, requirePermission('can_manage_cow
   }
 });
 
-router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
+router.get('/cowork/invites', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     await expireStaleCoworkInvites();
@@ -973,8 +1036,8 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
          AND (ci.expires_date IS NULL OR ci.expires_date >= UTC_TIMESTAMP())
        ORDER BY ci.created_date DESC
        LIMIT 10`,
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     const [outgoingRows] = await db.execute(
       `SELECT ci.*, invitee.full_name AS invitee_name, invitee.email AS invitee_email, invitee.last_seen_at AS invitee_last_seen_at
@@ -985,8 +1048,8 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
          AND (ci.expires_date IS NULL OR ci.expires_date >= UTC_TIMESTAMP())
        ORDER BY ci.created_date DESC
        LIMIT 10`,
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     res.json({
       incoming: incomingRows.map((invite) => ({
@@ -1019,43 +1082,50 @@ router.get('/cowork/invites', authMiddleware, async (req, res, next) => {
   }
 });
 
-router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cowork'), async (req, res, next) => {
+router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cowork'), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
-      return res.status(503).json({
+      res.status(503).json({
         error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
       });
+      return;
     }
 
     const { inviteeUserId } = req.body || {};
     if (!inviteeUserId) {
-      return res.status(400).json({ error: 'inviteeUserId ist erforderlich' });
+      res.status(400).json({ error: 'inviteeUserId ist erforderlich' });
+      return;
     }
 
-    if (inviteeUserId === req.user.sub) {
-      return res.status(400).json({ error: 'Sie koennen sich nicht selbst einladen' });
+    if (inviteeUserId === authReq.user?.sub) {
+      res.status(400).json({ error: 'Sie koennen sich nicht selbst einladen' });
+      return;
     }
 
     const [userRows] = await db.execute(
       `SELECT id, email, full_name, role, allowed_tenants
        FROM app_users
        WHERE id IN (?, ?) AND is_active = 1`,
-      [req.user.sub, inviteeUserId]
-    );
+      [authReq.user?.sub, inviteeUserId]
+    ) as [Record<string, unknown>[], unknown];
 
-    const inviter = userRows.find((row) => row.id === req.user.sub);
+    const inviter = userRows.find((row) => row.id === authReq.user?.sub);
     const invitee = userRows.find((row) => row.id === inviteeUserId);
 
     if (!inviter || !invitee) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     if (invitee.role !== 'admin') {
-      return res.status(400).json({ error: 'CoWork-Einladungen koennen aktuell nur an Admins gesendet werden' });
+      res.status(400).json({ error: 'CoWork-Einladungen koennen aktuell nur an Admins gesendet werden' });
+      return;
     }
 
     if (!usersShareTenantAccess(inviter.allowed_tenants, invitee.allowed_tenants)) {
-      return res.status(403).json({ error: 'Der Benutzer liegt ausserhalb Ihres Mandantenkontexts' });
+      res.status(403).json({ error: 'Der Benutzer liegt ausserhalb Ihres Mandantenkontexts' });
+      return;
     }
 
     await expireStaleCoworkInvites();
@@ -1067,7 +1137,7 @@ router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cow
          AND ${uuidCompareSql('invitee_user_id')}
          AND status = 'pending'
          AND (expires_date IS NULL OR expires_date >= UTC_TIMESTAMP())`,
-      [req.user.sub, inviteeUserId]
+      [authReq.user?.sub, inviteeUserId]
     );
 
     const tenantSlug = parseTenantSlug(inviter.allowed_tenants || invitee.allowed_tenants);
@@ -1078,7 +1148,7 @@ router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cow
       `INSERT INTO CoWorkInvite (
         id, room_name, tenant_slug, inviter_user_id, invitee_user_id, status, expires_date
       ) VALUES (?, ?, ?, ?, ?, 'pending', DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE))`,
-      [inviteId, roomName, tenantSlug, req.user.sub, inviteeUserId, COWORK_INVITE_EXPIRY_MINUTES]
+      [inviteId, roomName, tenantSlug, authReq.user?.sub, inviteeUserId, COWORK_INVITE_EXPIRY_MINUTES]
     );
 
     const token = createJitsiToken({ roomName, user: inviter });
@@ -1087,8 +1157,8 @@ router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cow
     await broadcastCoworkUpdate({
       type: 'invite-created',
       actor: inviter,
-      allowedTenants: inviter.allowed_tenants,
-      includeUserIds: [inviter.id, invitee.id],
+      allowedTenants: inviter.allowed_tenants as string,
+      includeUserIds: [inviter.id as string, invitee.id as string],
       invite: {
         id: inviteId,
         roomName,
@@ -1119,28 +1189,32 @@ router.post('/cowork/invites', authMiddleware, requirePermission('can_manage_cow
   }
 });
 
-router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res, next) => {
+router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { inviteId } = req.params;
+    const authReq = req as AuthRequest;
 
     const [rows] = await db.execute(
       `SELECT ci.id, ci.inviter_user_id, ci.invitee_user_id, ci.status, ci.expires_date, ci.room_name
        FROM CoWorkInvite ci
        WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+      res.status(404).json({ error: 'Einladung nicht gefunden' });
+      return;
     }
 
     const invite = rows[0];
-    if (invite.invitee_user_id !== req.user.sub) {
-      return res.status(403).json({ error: 'Nur der eingeladene Benutzer kann ablehnen' });
+    if (invite.invitee_user_id !== authReq.user?.sub) {
+      res.status(403).json({ error: 'Nur der eingeladene Benutzer kann ablehnen' });
+      return;
     }
 
     if (invite.status === 'expired') {
-      return res.status(410).json({ error: 'Die Einladung ist bereits abgelaufen' });
+      res.status(410).json({ error: 'Die Einladung ist bereits abgelaufen' });
+      return;
     }
 
     await db.execute(
@@ -1156,18 +1230,18 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
       `SELECT id, email, allowed_tenants
        FROM app_users
        WHERE id = ? AND is_active = 1`,
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     if (userRows.length > 0) {
       await broadcastCoworkUpdate({
         type: 'invite-declined',
         actor: userRows[0],
-        allowedTenants: userRows[0].allowed_tenants,
-        includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+        allowedTenants: userRows[0].allowed_tenants as string,
+        includeUserIds: [invite.inviter_user_id as string, invite.invitee_user_id as string],
         invite: {
           id: inviteId,
-          roomName: invite.room_name,
+          roomName: invite.room_name as string,
           status: 'declined',
         },
       });
@@ -1179,9 +1253,10 @@ router.post('/cowork/invites/:inviteId/decline', authMiddleware, async (req, res
   }
 });
 
-router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res, next) => {
+router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { inviteId } = req.params;
+    const authReq = req as AuthRequest;
 
     const [rows] = await db.execute(
       `SELECT ci.id, ci.inviter_user_id, ci.invitee_user_id, ci.status, ci.room_name,
@@ -1190,16 +1265,18 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
        INNER JOIN app_users inviter ON inviter.id COLLATE utf8mb4_unicode_ci = ci.inviter_user_id COLLATE utf8mb4_unicode_ci
        WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     if (rows.length === 0) {
-      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+      res.status(404).json({ error: 'Einladung nicht gefunden' });
+      return;
     }
 
     const invite = rows[0];
-    const isParticipant = invite.inviter_user_id === req.user.sub || invite.invitee_user_id === req.user.sub;
+    const isParticipant = invite.inviter_user_id === authReq.user?.sub || invite.invitee_user_id === authReq.user?.sub;
     if (!isParticipant) {
-      return res.status(403).json({ error: 'Nur Teilnehmer dieser CoWork-Einladung koennen sie beenden' });
+      res.status(403).json({ error: 'Nur Teilnehmer dieser CoWork-Einladung koennen sie beenden' });
+      return;
     }
 
     await db.execute(
@@ -1211,12 +1288,12 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
 
     await broadcastCoworkUpdate({
       type: 'invite-cancelled',
-      actor: { id: req.user.sub, email: req.user.email || null },
-      allowedTenants: invite.inviter_allowed_tenants,
-      includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+      actor: { id: authReq.user?.sub, email: authReq.user?.email || null },
+      allowedTenants: invite.inviter_allowed_tenants as string,
+      includeUserIds: [invite.inviter_user_id as string, invite.invitee_user_id as string],
       invite: {
         id: inviteId,
-        roomName: invite.room_name,
+        roomName: invite.room_name as string,
         status: 'cancelled',
       },
     });
@@ -1227,12 +1304,14 @@ router.post('/cowork/invites/:inviteId/cancel', authMiddleware, async (req, res,
   }
 });
 
-router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) => {
+router.post('/cowork/session/:inviteId', authMiddleware, async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
+    const authReq = req as AuthRequest;
     if (!JITSI_JWT_APP_ID || !JITSI_JWT_APP_SECRET || !JITSI_JWT_SUB) {
-      return res.status(503).json({
+      res.status(503).json({
         error: 'Jitsi JWT ist nicht vollständig konfiguriert. Bitte JITSI_JWT_APP_ID, JITSI_JWT_APP_SECRET und JITSI_JWT_SUB setzen.'
       });
+      return;
     }
 
     await expireStaleCoworkInvites();
@@ -1246,39 +1325,44 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
        INNER JOIN app_users invitee ON invitee.id COLLATE utf8mb4_unicode_ci = ci.invitee_user_id COLLATE utf8mb4_unicode_ci
        WHERE ${uuidCompareSql('ci.id')}`,
       [inviteId]
-    );
+    ) as [Record<string, unknown>[], unknown];
 
     if (inviteRows.length === 0) {
-      return res.status(404).json({ error: 'Einladung nicht gefunden' });
+      res.status(404).json({ error: 'Einladung nicht gefunden' });
+      return;
     }
 
     const invite = inviteRows[0];
-    const isInviter = invite.inviter_user_id === req.user.sub;
-    const isInvitee = invite.invitee_user_id === req.user.sub;
+    const isInviter = invite.inviter_user_id === authReq.user?.sub;
+    const isInvitee = invite.invitee_user_id === authReq.user?.sub;
 
     if (!isInviter && !isInvitee) {
-      return res.status(403).json({ error: 'Kein Zugriff auf diese Einladung' });
+      res.status(403).json({ error: 'Kein Zugriff auf diese Einladung' });
+      return;
     }
 
-    if (['declined', 'cancelled', 'expired'].includes(invite.status)) {
-      return res.status(410).json({ error: 'Diese Einladung ist nicht mehr gueltig' });
+    if (['declined', 'cancelled', 'expired'].includes(invite.status as string)) {
+      res.status(410).json({ error: 'Diese Einladung ist nicht mehr gueltig' });
+      return;
     }
 
-    if (invite.expires_date && new Date(invite.expires_date).getTime() < Date.now()) {
+    if (invite.expires_date && new Date(invite.expires_date as string).getTime() < Date.now()) {
       await db.execute(
         `UPDATE CoWorkInvite SET status = 'expired', responded_date = UTC_TIMESTAMP() WHERE ${uuidCompareSql('id')}`,
         [inviteId]
       );
-      return res.status(410).json({ error: 'Diese Einladung ist abgelaufen' });
+      res.status(410).json({ error: 'Diese Einladung ist abgelaufen' });
+      return;
     }
 
     const [userRows] = await db.execute(
       'SELECT id, email, full_name, role, allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
-      [req.user.sub]
-    );
+      [authReq.user?.sub]
+    ) as [Record<string, unknown>[], unknown];
 
     if (userRows.length === 0) {
-      return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      res.status(404).json({ error: 'Benutzer nicht gefunden' });
+      return;
     }
 
     let inviteStatus = invite.status;
@@ -1294,22 +1378,22 @@ router.post('/cowork/session/:inviteId', authMiddleware, async (req, res, next) 
 
     await db.execute(
       'UPDATE app_users SET last_seen_at = NOW() WHERE id = ?',
-      [req.user.sub]
+      [authReq.user?.sub]
     );
 
     await broadcastCoworkUpdate({
       type: inviteStatus === 'accepted' ? 'invite-accepted' : 'session-opened',
       actor: userRows[0],
-      allowedTenants: userRows[0].allowed_tenants,
-      includeUserIds: [invite.inviter_user_id, invite.invitee_user_id],
+      allowedTenants: userRows[0].allowed_tenants as string,
+      includeUserIds: [invite.inviter_user_id as string, invite.invitee_user_id as string],
       invite: {
         id: inviteId,
-        roomName: invite.room_name,
-        status: inviteStatus,
+        roomName: invite.room_name as string,
+        status: inviteStatus as string,
       },
     });
 
-    const token = createJitsiToken({ roomName: invite.room_name, user: userRows[0] });
+    const token = createJitsiToken({ roomName: invite.room_name as string, user: userRows[0] });
     const expiresAt = Math.floor(Date.now() / 1000) + JITSI_JWT_EXPIRY_SECONDS;
 
     res.json({

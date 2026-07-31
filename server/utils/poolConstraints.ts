@@ -21,46 +21,81 @@
  * means the proposed assignment is valid.
  */
 
-function parseConstraints(raw) {
+interface ConstraintRule {
+  left?: string;
+  right?: string;
+  scope?: string;
+}
+
+interface Constraints {
+  daily_required?: number;
+  max_per_person_month?: number;
+  max_consecutive?: number;
+  rest_after?: { next_day_off?: boolean };
+  pairing?: ConstraintRule[];
+}
+
+interface Workplace {
+  constraints_json?: string | Constraints | null;
+}
+
+export interface ExistingShift {
+  id: string;
+  date: string;
+  employee_id: string;
+  employee_role?: string | null;
+}
+
+interface ProposedShift {
+  date: string;
+  employee_id: string;
+  employee_role?: string | null;
+}
+
+interface Violation {
+  rule: string;
+  message: string;
+}
+
+function parseConstraints(raw: string | Constraints | null | undefined): Constraints {
   if (!raw) return {};
   if (typeof raw === 'object') return raw;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw) as Constraints;
   } catch {
     return {};
   }
 }
 
-function monthKey(dateStr) {
+function monthKey(dateStr: string): string {
   // dateStr is YYYY-MM-DD
   return dateStr.slice(0, 7);
 }
 
-function dayDelta(aStr, bStr) {
+function dayDelta(aStr: string, bStr: string): number {
   const a = new Date(`${aStr}T00:00:00Z`).getTime();
   const b = new Date(`${bStr}T00:00:00Z`).getTime();
   return Math.round((a - b) / (24 * 60 * 60 * 1000));
 }
 
+interface ValidateProposedShiftParams {
+  workplace: Workplace;
+  proposed: ProposedShift;
+  existingForWorkplace: ExistingShift[];
+}
+
 /**
- * @typedef {Object} ExistingShift
- * @property {string} id
- * @property {string} date           - YYYY-MM-DD
- * @property {string} employee_id
- * @property {string|null} [employee_role]
- *
- * @param {Object} params
- * @param {Object} params.workplace      - shared_workplace row
- * @param {Object} params.proposed       - { date, employee_id, employee_role }
- * @param {ExistingShift[]} params.existingForWorkplace - all entries for this workplace
+ * @param params.workplace      - shared_workplace row
+ * @param params.proposed       - { date, employee_id, employee_role }
+ * @param params.existingForWorkplace - all entries for this workplace
  *                                                       in a window large enough to evaluate
  *                                                       month + consecutive constraints
  *                                                       (typically: month of proposed.date
  *                                                       +/- 1 day)
- * @returns {{rule: string, message: string}[]}
+ * @returns list of constraint violations
  */
-export function validateProposedShift({ workplace, proposed, existingForWorkplace }) {
-  const violations = [];
+export function validateProposedShift({ workplace, proposed, existingForWorkplace }: ValidateProposedShiftParams): Violation[] {
+  const violations: Violation[] = [];
   const constraints = parseConstraints(workplace?.constraints_json);
   const { date, employee_id, employee_role } = proposed;
 

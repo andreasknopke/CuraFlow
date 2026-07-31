@@ -231,13 +231,15 @@ The final and most complex entity. Consolidated ~300 lines of ShiftEntry-specifi
 
 With a builder + typed repos in place, the TS port is mostly mechanical and the types are largely free (Kysely infers from the schema). Port `server/` files to `.ts` opportunistically as touched in Phases 1–2, then sweep remaining files in SLOC order, smallest first (matches the frontend plan's risk ordering).
 
-**Setup PR (3.0):** add `server/tsconfig.json` (`strict: true`, `module: node16`/`nodenext` to match `"type": "module"`), add `tsc` to `server/package.json` scripts, decide runtime (see Decision below). Convert `server/utils/schema.js` first (small, already has tests from PR #1) to prove the toolchain.
+#### PR 3.0 — TypeScript toolchain setup + first file conversion — ✅ DONE
 
-**Runtime decision:** the server has **no build step today** (`node --watch index.js`). Two options:
-- **`tsx`/`--experimental-strip-types`** run the `.ts` directly (Node 22+ strips types natively) — zero build step, lowest friction, matches "no build" status quo. Recommended.
-- A `tsc` build step emitting `dist-server/` — more control, more ceremony. Only if stripping causes issues with the chosen Kysely/Drizzle import shapes.
+**Setup PR (3.0):** add `server/tsconfig.json` (`strict: true`, `module: nodenext` to match `"type": "module"`), add `tsc` to `server/package.json` scripts, decide runtime (see Decision below). Convert `server/utils/schema.js` first (small, already has tests from PR #1) to prove the toolchain.
 
-**Risk: Medium.** Same silent-null trap as the frontend; mitigate with explicit `| null` returns and no `as` casts. Backend has decent unit coverage (643 tests) that the port must keep green throughout.
+**Runtime decision (resolved — user chose build step):** the server uses a **`tsc` build step emitting to `dist/`** — NOT type stripping. The deployment targets (Docker Node 22, Railway Node 20) cannot guarantee stable native type stripping (needs Node 23.6+). A build step is the only portable option.
+
+> **Status (2026-07-31):** ✅ Complete. New `server/tsconfig.json` (`strict: true`, `allowJs: true`, `module: nodenext`, `outDir: ./dist` — gradual port: `.ts` and `.js` coexist). TypeScript 7.0.2 + `@types/node` + `@types/express` added as devDeps. Scripts updated: `build` → `tsc`, `start` → `node dist/index.js`, `dev` → `tsc && node --watch dist/index.js`, `typecheck` → `tsc --noEmit`. Seed scripts run from `dist/` (`node dist/scripts/seed-test-data.js`). Deployment configs updated: `Dockerfile.test` adds `RUN npm run build` + `CMD ["node", "dist/index.js"]`; root `Dockerfile` adds a `server_builder` stage (installs devDeps, builds, copies `dist/` to runtime); `nixpacks.toml` install phase includes devDeps + build phase runs `tsc`; `docker/entrypoint.sh` updated for dist paths. First file converted: `schema.js` → `schema.ts` (typed signatures with `Pool`, `unknown` params; 34 existing unit tests pass unchanged). Pre-existing broken files (`runMigration.js`, `migrateUsers.js`) excluded from compilation. 889 unit/component tests pass; `npm run typecheck` (root) + `npm run typecheck` (server) clean; full e2e **93 passed / 0 failed** (the Docker harness exercises the exact `Dockerfile.test` build step).
+
+**Risk: Medium.** Same silent-null trap as the frontend; mitigate with explicit `| null` returns and no `as` casts. Backend has decent unit coverage that the port must keep green throughout.
 
 ---
 

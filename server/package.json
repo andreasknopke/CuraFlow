@@ -5,11 +5,13 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node --watch index.js",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node --watch dist/index.js",
+    "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate-from-base44.js",
-    "seed:test-data": "node scripts/seed-test-data.js",
-    "seed:demo-data": "node scripts/seed-demo-data.js"
+    "seed:test-data": "node dist/scripts/seed-test-data.js",
+    "seed:demo-data": "node dist/scripts/seed-demo-data.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -33,7 +35,13 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.3"
+    "@types/compression": "^1.8.1",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.1.2",
+    "nodemon": "^3.0.3",
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=18.0.0"

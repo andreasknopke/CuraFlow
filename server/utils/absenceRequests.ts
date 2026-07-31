@@ -18,12 +18,38 @@
  */
 
 import crypto from 'crypto';
+import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+
+// ─── Row shapes ──────────────────────────────────────────────────────────────
+
+interface AbsenceRequestRow extends RowDataPacket {
+  id: string;
+  employee_id: string;
+  source_tenant_id: string | null;
+  source_tenant_doctor_id: string | null;
+  date: Date | string;
+  position: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reason: string | null;
+  admin_comment: string | null;
+  user_viewed: number;
+  approved_by: string | null;
+  approved_date: Date | string | null;
+  created_by: string | null;
+  created_date: Date | string;
+  updated_date: Date | string;
+}
+
+interface AbsenceRequestIdStatusRow extends RowDataPacket {
+  id: string;
+  status: 'pending' | 'approved' | 'rejected';
+}
 
 // ─── Table guard (einmal pro Process) ────────────────────────────────────────
 
 let absenceRequestTableEnsured = false;
 
-export async function ensureAbsenceRequestTables(masterDb) {
+export async function ensureAbsenceRequestTables(masterDb: Pool): Promise<void> {
   if (absenceRequestTableEnsured) return;
   await masterDb.execute(`
     CREATE TABLE IF NOT EXISTS AbsenceRequest (
@@ -60,13 +86,13 @@ export async function ensureAbsenceRequestTables(masterDb) {
  * Abwesenheitstypen, die Read-Only-User beantragen duerfen.
  * Krank/Fortbildung etc. bleiben Admin vorbehalten.
  */
-export const REQUEST_ABSENCE_POSITIONS = ['Urlaub', 'Frei', 'Dienstreise'];
+export const REQUEST_ABSENCE_POSITIONS: string[] = ['Urlaub', 'Frei', 'Dienstreise'];
 export const REQUEST_ABSENCE_POSITIONS_SET = new Set(REQUEST_ABSENCE_POSITIONS);
 
 /**
  * Erlaubte Stati eines Antrags.
  */
-export const REQUEST_STATUSES = ['pending', 'approved', 'rejected'];
+export const REQUEST_STATUSES: string[] = ['pending', 'approved', 'rejected'];
 
 /**
  * Whitelist der Spalten, die ueber die API beschreibbar sind.
@@ -90,14 +116,14 @@ export const ABSENCE_REQUEST_WRITABLE_COLUMNS = new Set([
 
 // ─── Helper: Abwesenheitstyp validieren ──────────────────────────────────────
 
-export function isRequestableAbsencePosition(position) {
+export function isRequestableAbsencePosition(position: unknown): boolean {
   if (!position || typeof position !== 'string') return false;
   return REQUEST_ABSENCE_POSITIONS_SET.has(position);
 }
 
 // ─── Helper: Future-Datum validieren ─────────────────────────────────────────
 
-export function isFutureDate(dateStr) {
+export function isFutureDate(dateStr: unknown): boolean {
   if (!dateStr || typeof dateStr !== 'string') return false;
   // ISO-Datum yyyy-mm-dd parsen
   const parts = dateStr.split('-').map(Number);
@@ -113,7 +139,25 @@ export function isFutureDate(dateStr) {
   return d > today;
 }
 
+function getErrorCode(err: unknown): string | undefined {
+  if (err instanceof Error && 'code' in err && typeof err.code === 'string') {
+    return err.code;
+  }
+  return undefined;
+}
+
 // ─── CREATE ──────────────────────────────────────────────────────────────────
+
+interface CreateAbsenceRequestDeps {
+  masterDb: Pool;
+  tenantId: string | null | undefined;
+  tenantDoctorId: string | null | undefined;
+  employeeId: string;
+  date: string;
+  position: string;
+  reason?: string | null;
+  createdBy: string | null | undefined;
+}
 
 /**
  * Erstellt einen neuen AbsenceRequest.
@@ -139,35 +183,35 @@ export async function createAbsenceRequest({
   position,
   reason,
   createdBy,
-}) {
+}: CreateAbsenceRequestDeps): Promise<AbsenceRequestRow> {
   // Validierung
   if (!employeeId || typeof employeeId !== 'string') {
     const err = new Error('Mitarbeiter-ID (employee_id) ist erforderlich.');
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
   if (!date || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     const err = new Error('Datum (yyyy-mm-dd) ist erforderlich.');
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
   if (!isFutureDate(date)) {
     const err = new Error('Das Datum muss in der Zukunft liegen.');
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
   if (!isRequestableAbsencePosition(position)) {
     const err = new Error(
       `Unzulaessige Position: "${position}". Erlaubt: ${REQUEST_ABSENCE_POSITIONS.join(', ')}.`
     );
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
 
   await ensureAbsenceRequestTables(masterDb);
 
   const id = crypto.randomUUID();
-  const row = {
+  const row: Record<string, string | number | null> = {
     id,
     employee_id: employeeId,
     source_tenant_id: tenantId || null,
@@ -185,16 +229,16 @@ export async function createAbsenceRequest({
   const colList = columns.join(', ');
 
   try {
-    await masterDb.execute(
+    await masterDb.execute<ResultSetHeader>(
       `INSERT INTO AbsenceRequest (${colList}) VALUES (${placeholders})`,
-      columns.map(k => row[k])
+      columns.map((k) => row[k])
     );
   } catch (err) {
-    if (err.code === 'ER_DUP_ENTRY') {
+    if (getErrorCode(err) === 'ER_DUP_ENTRY') {
       // Prüfen, ob ein bestehender nicht-pending Eintrag überschrieben werden kann.
       // Wenn der existierende Antrag rejected oder approved ist, darf ein neuer
       // Antrag (andere Position) diesen ersetzen — der alte Antrag gilt als erledigt.
-      const [existing] = await masterDb.execute(
+      const [existing] = await masterDb.execute<AbsenceRequestIdStatusRow[]>(
         'SELECT id, status FROM AbsenceRequest WHERE employee_id = ? AND date = ? LIMIT 1',
         [employeeId, date]
       );
@@ -202,13 +246,13 @@ export async function createAbsenceRequest({
         const conflict = new Error(
           'Fuer diesen Mitarbeiter existiert an diesem Datum bereits ein ausstehender Antrag.'
         );
-        conflict.statusCode = 409;
+        (conflict as Error & { statusCode?: number }).statusCode = 409;
         throw conflict;
       }
 
       // existing ist nicht pending (rejected oder approved) → überschreiben
       const existingId = existing[0].id;
-      await masterDb.execute(
+      await masterDb.execute<ResultSetHeader>(
         `UPDATE AbsenceRequest
             SET position = ?, reason = ?, status = 'pending',
                 created_by = ?, user_viewed = 0,
@@ -218,7 +262,7 @@ export async function createAbsenceRequest({
         [position, reason || null, createdBy || null, existingId]
       );
 
-      const [rows] = await masterDb.execute(
+      const [rows] = await masterDb.execute<AbsenceRequestRow[]>(
         'SELECT * FROM AbsenceRequest WHERE id = ? LIMIT 1',
         [existingId]
       );
@@ -227,7 +271,7 @@ export async function createAbsenceRequest({
     throw err;
   }
 
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<AbsenceRequestRow[]>(
     'SELECT * FROM AbsenceRequest WHERE id = ? LIMIT 1',
     [id]
   );
@@ -235,6 +279,14 @@ export async function createAbsenceRequest({
 }
 
 // ─── LIST (tenant-scoped) ────────────────────────────────────────────────────
+
+interface ListAbsenceRequestsDeps {
+  masterDb: Pool;
+  tenantId: string | null | undefined;
+  doctorId?: string | number | null;
+  status?: string | null;
+  year?: number | string | null;
+}
 
 /**
  * Listet AbsenceRequests fuer einen Tenant.
@@ -253,13 +305,13 @@ export async function listAbsenceRequests({
   doctorId,
   status,
   year,
-}) {
+}: ListAbsenceRequestsDeps): Promise<AbsenceRequestRow[]> {
   if (!tenantId) return [];
 
   await ensureAbsenceRequestTables(masterDb);
 
-  const conditions = ['source_tenant_id = ?'];
-  const params = [tenantId];
+  const conditions: string[] = ['source_tenant_id = ?'];
+  const params: (string | number)[] = [tenantId];
 
   if (doctorId) {
     conditions.push('source_tenant_doctor_id = ?');
@@ -281,11 +333,19 @@ export async function listAbsenceRequests({
 
   const sql = `SELECT * FROM AbsenceRequest WHERE ${conditions.join(' AND ')} ORDER BY created_date DESC`;
 
-  const [rows] = await masterDb.execute(sql, params);
+  const [rows] = await masterDb.execute<AbsenceRequestRow[]>(sql, params);
   return rows;
 }
 
 // ─── UPDATE STATUS (transaktional: Approve → CentralAbsenceEntry) ───────────
+
+interface UpdateAbsenceRequestStatusDeps {
+  masterDb: Pool;
+  requestId: string;
+  status: string;
+  adminUserId: string | null | undefined;
+  adminComment?: string | null;
+}
 
 /**
  * Aktualisiert den Status eines AbsenceRequest.
@@ -306,28 +366,28 @@ export async function updateAbsenceRequestStatus({
   status,
   adminUserId,
   adminComment,
-}) {
+}: UpdateAbsenceRequestStatusDeps): Promise<AbsenceRequestRow> {
   if (!requestId) {
     const err = new Error('requestId ist erforderlich.');
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
   if (!status || !['approved', 'rejected'].includes(status)) {
     const err = new Error("Status muss 'approved' oder 'rejected' sein.");
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
 
   await ensureAbsenceRequestTables(masterDb);
 
   // Aktuellen Antrag laden
-  const [existing] = await masterDb.execute(
+  const [existing] = await masterDb.execute<AbsenceRequestRow[]>(
     'SELECT * FROM AbsenceRequest WHERE id = ? LIMIT 1',
     [requestId]
   );
   if (existing.length === 0) {
     const err = new Error('Antrag nicht gefunden.');
-    err.statusCode = 404;
+    (err as Error & { statusCode?: number }).statusCode = 404;
     throw err;
   }
 
@@ -337,17 +397,17 @@ export async function updateAbsenceRequestStatus({
     const err = new Error(
       `Antrag hat bereits Status "${request.status}". Nur pending-Antraege koennen bearbeitet werden.`
     );
-    err.statusCode = 409;
+    (err as Error & { statusCode?: number }).statusCode = 409;
     throw err;
   }
 
   // Transaktion: Status-Update + ggf. CentralAbsenceEntry anlegen
-  const connection = await masterDb.getConnection();
+  const connection: PoolConnection = await masterDb.getConnection();
   try {
     await connection.beginTransaction();
 
     // Status-Update
-    await connection.execute(
+    await connection.execute<ResultSetHeader>(
       `UPDATE AbsenceRequest
           SET status = ?, approved_by = ?, approved_date = NOW(),
               admin_comment = COALESCE(?, admin_comment),
@@ -362,7 +422,7 @@ export async function updateAbsenceRequestStatus({
       // existiert (z.B. Admin hat direkt eingetragen), wird die Position ueberschrieben.
       // Das ist gewollt — der genehmigte Antrag ist die autoritative Quelle.
       const entryId = crypto.randomUUID();
-      await connection.execute(
+      await connection.execute<ResultSetHeader>(
         `INSERT INTO CentralAbsenceEntry (id, employee_id, date, position, note, source_tenant_id, source_tenant_doctor_id, created_by)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
@@ -387,7 +447,7 @@ export async function updateAbsenceRequestStatus({
     await connection.commit();
 
     // Aktualisierten Antrag zurueckgeben
-    const [updated] = await masterDb.execute(
+    const [updated] = await masterDb.execute<AbsenceRequestRow[]>(
       'SELECT * FROM AbsenceRequest WHERE id = ? LIMIT 1',
       [requestId]
     );
@@ -402,6 +462,11 @@ export async function updateAbsenceRequestStatus({
 
 // ─── DELETE ──────────────────────────────────────────────────────────────────
 
+interface DeleteAbsenceRequestDeps {
+  masterDb: Pool;
+  requestId: string;
+}
+
 /**
  * Loescht einen AbsenceRequest (nur im pending/rejected-Status).
  *
@@ -411,16 +476,19 @@ export async function updateAbsenceRequestStatus({
  * @returns {Promise<boolean>} true wenn geloescht, false wenn nicht vorhanden
  * @throws {Error} mit .statusCode = 422 wenn Status approved
  */
-export async function deleteAbsenceRequest({ masterDb, requestId }) {
+export async function deleteAbsenceRequest({
+  masterDb,
+  requestId,
+}: DeleteAbsenceRequestDeps): Promise<boolean> {
   if (!requestId) {
     const err = new Error('requestId ist erforderlich.');
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
 
   await ensureAbsenceRequestTables(masterDb);
 
-  const [existing] = await masterDb.execute(
+  const [existing] = await masterDb.execute<AbsenceRequestIdStatusRow[]>(
     'SELECT id, status FROM AbsenceRequest WHERE id = ? LIMIT 1',
     [requestId]
   );
@@ -430,10 +498,10 @@ export async function deleteAbsenceRequest({ masterDb, requestId }) {
     const err = new Error(
       'Bereits genehmigte Antraege koennen nicht geloescht werden. Bitte entfernen Sie den Urlaubseintrag direkt.'
     );
-    err.statusCode = 422;
+    (err as Error & { statusCode?: number }).statusCode = 422;
     throw err;
   }
 
-  await masterDb.execute('DELETE FROM AbsenceRequest WHERE id = ?', [requestId]);
+  await masterDb.execute<ResultSetHeader>('DELETE FROM AbsenceRequest WHERE id = ?', [requestId]);
   return true;
 }

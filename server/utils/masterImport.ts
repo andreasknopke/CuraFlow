@@ -16,6 +16,186 @@
 
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket, ResultSetHeader, FieldPacket } from 'mysql2/promise';
+
+// ============ TYPES ============
+
+interface StammdatConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+}
+
+interface StammdatRow extends RowDataPacket {
+  id: number;
+  personalnummer: number | string;
+  ma_arbeits_kst: number;
+  anrede: string | null;
+  titel: string | null;
+  vorname: string | null;
+  nachname: string | null;
+  beschaeftigt_als: string | null;
+  kst: string | null;
+  kst_bez: string | null;
+  an_personal_gesendete_mail: string | null;
+  von: string | null;
+  bis: string | null;
+  eintrittsmail_gesendet: number | string;
+  austrittsmail_gesendet: number | string;
+  ma_kst_anteil: number | string;
+}
+
+interface EmployeeData {
+  stammdat_id: number;
+  payroll_id: string;
+  salutation: string | null;
+  title: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  position: string | null;
+  cost_center: string | null;
+  cost_center_name: string | null;
+  email: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
+  entry_email_sent: boolean;
+  exit_email_sent: boolean;
+  source_system: string;
+  contract_type: null;
+  is_active: boolean;
+  exit_date?: string | null;
+  exit_reason?: string | null;
+}
+
+interface CostCenterData {
+  cost_center_number: number;
+  cost_center_share: number;
+  cost_center_code: string | null;
+  cost_center_name: string | null;
+  valid_from: string | null;
+  valid_until: string | null;
+}
+
+interface EmployeeBuildResult {
+  employee: EmployeeData;
+  costCenters: CostCenterData[];
+}
+
+interface ExistingEmployeeRow extends RowDataPacket {
+  id: string;
+  last_name: string | null;
+  first_name: string | null;
+  payroll_id: string | null;
+  email: string | null;
+  stammdat_id: number | null;
+}
+
+type MatchCategory = 'EXACT_MATCH' | 'AMBIGUOUS' | 'NO_MATCH';
+
+interface MatchResult {
+  category: MatchCategory;
+  matches: ExistingEmployeeRow[];
+  employee: EmployeeData;
+}
+
+interface CandidateInfo {
+  id: string;
+  last_name: string | null;
+  first_name: string | null;
+  payroll_id: string | null;
+  email: string | null;
+}
+
+interface AnalyzeEntry {
+  stammdat_id: number;
+  personalnummer: number;
+  last_name: string | null;
+  first_name: string | null;
+  position: string | null;
+  cost_center: string | null;
+  cost_center_name: string | null;
+  email: string | null;
+  contract_start: string | null;
+  contract_end: string | null;
+  is_active: boolean;
+  cost_center_splits: number;
+  source_data: EmployeeData;
+  cost_centers: CostCenterData[];
+  existing_employee_id?: string;
+  existing_last_name?: string | null;
+  existing_first_name?: string | null;
+  candidates?: CandidateInfo[];
+}
+
+interface UnmatchedEmployee {
+  id: string;
+  last_name: string | null;
+  first_name: string | null;
+  payroll_id: string | null;
+  email: string | null;
+  stammdat_id: number | null;
+  has_stammdat_id: boolean;
+}
+
+interface AnalyzeImportResults {
+  total_source_employees: number;
+  total_source_rows: number;
+  exact_matches: AnalyzeEntry[];
+  ambiguous: AnalyzeEntry[];
+  no_match: AnalyzeEntry[];
+  unmatched_in_curaflow: UnmatchedEmployee[];
+}
+
+interface ImportDecision {
+  stammdat_id: number;
+  action: string;
+  existing_employee_id?: string | null;
+}
+
+interface ExecuteImportOptions {
+  dryRun?: boolean;
+}
+
+interface FieldChange {
+  old: unknown;
+  new: unknown;
+}
+
+interface ImportPreview {
+  creates: Record<string, unknown>[];
+  updates: Record<string, unknown>[];
+  skips: Record<string, unknown>[];
+  cost_center_changes: Record<string, unknown>[];
+}
+
+interface ImportResult {
+  dry_run: boolean;
+  created: number;
+  updated: number;
+  skipped: number;
+  errors: Record<string, unknown>[];
+  details: Record<string, unknown>[];
+  preview?: ImportPreview;
+}
+
+type UpsertableEmployeeField =
+  | 'stammdat_id'
+  | 'salutation'
+  | 'title'
+  | 'position'
+  | 'cost_center'
+  | 'cost_center_name'
+  | 'email'
+  | 'contract_start'
+  | 'contract_end'
+  | 'entry_email_sent'
+  | 'exit_email_sent'
+  | 'source_system'
+  | 'is_active'
+  | 'exit_date'
+  | 'exit_reason';
 
 // ============ HELPERS ============
 
@@ -25,7 +205,7 @@ import { createPool } from 'mysql2/promise';
  *
  * @param {{ host, port, user, password, database }} config
  */
-function getStammdatPool(config) {
+function getStammdatPool(config: StammdatConfig): Pool {
   return createPool({
     host: config.host,
     port: config.port,
@@ -44,10 +224,10 @@ function getStammdatPool(config) {
 /**
  * Fetch all rows from stammdat table
  */
-async function fetchStammdatRows(config) {
+async function fetchStammdatRows(config: StammdatConfig): Promise<StammdatRow[]> {
   const pool = getStammdatPool(config);
   try {
-    const [rows] = await pool.query('SELECT * FROM stammdat ORDER BY personalnummer, ma_arbeits_kst');
+    const [rows] = await pool.query<StammdatRow[]>('SELECT * FROM stammdat ORDER BY personalnummer, ma_arbeits_kst');
     return rows;
   } finally {
     await pool.end();
@@ -58,14 +238,14 @@ async function fetchStammdatRows(config) {
  * Group stammdat rows by personalnummer.
  * Each employee may have multiple rows (one per cost center split).
  */
-function groupByPersonalnummer(rows) {
-  const grouped = new Map();
+function groupByPersonalnummer(rows: StammdatRow[]): Map<number | string, StammdatRow[]> {
+  const grouped = new Map<number | string, StammdatRow[]>();
   for (const row of rows) {
     const pn = row.personalnummer;
     if (!grouped.has(pn)) {
       grouped.set(pn, []);
     }
-    grouped.get(pn).push(row);
+    grouped.get(pn)?.push(row);
   }
   return grouped;
 }
@@ -74,12 +254,12 @@ function groupByPersonalnummer(rows) {
  * Build a consolidated employee object from a group of stammdat rows.
  * The first row (ma_arbeits_kst = 1) is the primary.
  */
-function buildEmployeeFromRows(rows) {
+function buildEmployeeFromRows(rows: StammdatRow[]): EmployeeBuildResult {
   // Sort: primary cost center first
   const sorted = [...rows].sort((a, b) => a.ma_arbeits_kst - b.ma_arbeits_kst);
   const primary = sorted[0];
 
-  const employee = {
+  const employee: EmployeeData = {
     stammdat_id: primary.id,
     payroll_id: String(primary.personalnummer),
     salutation: primary.anrede || null,
@@ -111,7 +291,7 @@ function buildEmployeeFromRows(rows) {
   }
 
   // Cost center splits (all rows)
-  const costCenters = sorted.map(row => ({
+  const costCenters: CostCenterData[] = sorted.map(row => ({
     cost_center_number: row.ma_arbeits_kst,
     cost_center_share: Number(row.ma_kst_anteil) || 100,
     cost_center_code: row.kst || null,
@@ -126,7 +306,7 @@ function buildEmployeeFromRows(rows) {
 /**
  * Normalize a name for comparison (lowercase, trimmed, umlauts preserved).
  */
-function normalizeName(name) {
+function normalizeName(name: unknown): string {
   return String(name || '')
     .trim()
     .toLowerCase();
@@ -141,7 +321,7 @@ function normalizeName(name) {
  * @param {Array} existingEmployees - All active Employee rows from MasterDB
  * @returns {{ category: 'EXACT_MATCH'|'AMBIGUOUS'|'NO_MATCH', matches: Array, employee: object }}
  */
-function matchEmployee(sourceEmployee, existingEmployees) {
+function matchEmployee(sourceEmployee: EmployeeData, existingEmployees: ExistingEmployeeRow[]): MatchResult {
   const srcLast = normalizeName(sourceEmployee.last_name);
   const srcFirst = normalizeName(sourceEmployee.first_name);
 
@@ -179,9 +359,9 @@ function matchEmployee(sourceEmployee, existingEmployees) {
  * @param {object} stammdatConfig - DB connection config for source
  * @returns {{ imported: number, total: number }}
  */
-export async function importCostCentersFromStammdat(dbPool, stammdatConfig) {
+export async function importCostCentersFromStammdat(dbPool: Pool, stammdatConfig: StammdatConfig): Promise<{ success: boolean; imported: number; total: number }> {
   const rows = await fetchStammdatRows(stammdatConfig);
-  const seen = new Map();
+  const seen = new Map<string, string>();
   for (const row of rows) {
     const code = String(row.kst || '').trim();
     const name = String(row.kst_bez || '').trim();
@@ -193,7 +373,7 @@ export async function importCostCentersFromStammdat(dbPool, stammdatConfig) {
   let imported = 0;
   for (const [code, name] of seen) {
     try {
-      await dbPool.execute(
+      await dbPool.execute<ResultSetHeader>(
         'INSERT IGNORE INTO CostCenter (code, name, source_system) VALUES (?, ?, ?)',
         [code, name, 'stammdat']
       );
@@ -209,8 +389,8 @@ export async function importCostCentersFromStammdat(dbPool, stammdatConfig) {
 /**
  * Fetch all existing Employee rows from MasterDB (for matching).
  */
-async function fetchExistingEmployees(dbPool) {
-  const [rows] = await dbPool.execute(
+async function fetchExistingEmployees(dbPool: Pool): Promise<ExistingEmployeeRow[]> {
+  const [rows] = await dbPool.execute<ExistingEmployeeRow[]>(
     'SELECT id, last_name, first_name, payroll_id, email, stammdat_id FROM Employee ORDER BY last_name, first_name'
   );
   return rows;
@@ -220,10 +400,15 @@ async function fetchExistingEmployees(dbPool) {
  * Upsert an employee into the MasterDB.
  * If the employee already has a stammdat_id match, update; otherwise insert new.
  */
-async function upsertEmployee(dbPool, employeeData, existingEmployeeId = null, createdBy = null) {
+async function upsertEmployee(
+  dbPool: Pool,
+  employeeData: EmployeeData,
+  existingEmployeeId: string | null = null,
+  createdBy: string | null = null
+): Promise<{ action: 'created' | 'updated'; id: string }> {
   if (existingEmployeeId) {
     // Update existing employee
-    const fields = [
+    const fieldsToUpdate: UpsertableEmployeeField[] = [
       'stammdat_id', 'salutation', 'title', 'position',
       'cost_center', 'cost_center_name', 'email',
       'contract_start', 'contract_end',
@@ -231,16 +416,16 @@ async function upsertEmployee(dbPool, employeeData, existingEmployeeId = null, c
       'source_system', 'is_active', 'exit_date', 'exit_reason',
     ];
 
-    const updates = [];
-    const values = [];
-    for (const field of fields) {
+    const updates: string[] = [];
+    const values: (string | number | boolean | null)[] = [];
+    for (const field of fieldsToUpdate) {
       if (employeeData[field] !== undefined) {
         updates.push(`${field} = ?`);
         values.push(employeeData[field] ?? null);
       }
     }
     // Always update payroll_id
-    if (!fields.includes('payroll_id')) {
+    if (!fieldsToUpdate.some((f: string) => f === 'payroll_id')) {
       updates.push('payroll_id = ?');
       values.push(employeeData.payroll_id ?? null);
     }
@@ -249,7 +434,7 @@ async function upsertEmployee(dbPool, employeeData, existingEmployeeId = null, c
     values.push(employeeData.last_name, employeeData.first_name);
 
     values.push(existingEmployeeId);
-    await dbPool.execute(
+    await dbPool.execute<ResultSetHeader>(
       `UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`,
       values
     );
@@ -258,7 +443,7 @@ async function upsertEmployee(dbPool, employeeData, existingEmployeeId = null, c
 
   // Create new employee
   const id = crypto.randomUUID();
-  await dbPool.execute(
+  await dbPool.execute<ResultSetHeader>(
     `INSERT INTO Employee (
       id, payroll_id, last_name, first_name, salutation, title, position,
       cost_center, cost_center_name, email,
@@ -295,14 +480,14 @@ async function upsertEmployee(dbPool, employeeData, existingEmployeeId = null, c
 /**
  * Sync cost center rows for an employee.
  */
-async function syncCostCenters(dbPool, employeeId, costCenters) {
+async function syncCostCenters(dbPool: Pool, employeeId: string, costCenters: CostCenterData[]): Promise<void> {
   // Delete existing cost center rows for this employee
-  await dbPool.execute('DELETE FROM EmployeeCostCenter WHERE employee_id = ?', [employeeId]);
+  await dbPool.execute<ResultSetHeader>('DELETE FROM EmployeeCostCenter WHERE employee_id = ?', [employeeId]);
 
   // Insert new rows
   for (const cc of costCenters) {
     const id = crypto.randomUUID();
-    await dbPool.execute(
+    await dbPool.execute<ResultSetHeader>(
       `INSERT INTO EmployeeCostCenter (
         id, employee_id, cost_center_number, cost_center_share,
         cost_center_code, cost_center_name, valid_from, valid_until
@@ -331,15 +516,15 @@ async function syncCostCenters(dbPool, employeeId, costCenters) {
  * 4. Categorize into EXACT_MATCH / AMBIGUOUS / NO_MATCH
  * 5. Return results for UI review
  */
-export async function analyzeStammdatImport(dbPool, stammdatConfig) {
+export async function analyzeStammdatImport(dbPool: Pool, stammdatConfig: StammdatConfig): Promise<AnalyzeImportResults> {
   const sourceRows = await fetchStammdatRows(stammdatConfig);
   const grouped = groupByPersonalnummer(sourceRows);
   const existingEmployees = await fetchExistingEmployees(dbPool);
 
   // Track which existing Employee IDs were matched from stammdat
-  const matchedEmployeeIds = new Set();
+  const matchedEmployeeIds = new Set<string>();
 
-  const results = {
+  const results: AnalyzeImportResults = {
     total_source_employees: grouped.size,
     total_source_rows: sourceRows.length,
     exact_matches: [],
@@ -352,7 +537,7 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
     const { employee, costCenters } = buildEmployeeFromRows(rows);
     const matchResult = matchEmployee(employee, existingEmployees);
 
-    const entry = {
+    const entry: AnalyzeEntry = {
       stammdat_id: employee.stammdat_id,
       personalnummer: Number(personalnummer),
       last_name: employee.last_name,
@@ -432,12 +617,18 @@ export async function analyzeStammdatImport(dbPool, stammdatConfig) {
  * @param {object}   stammdatConfig  - DB connection config for source
  * @returns {{ success: boolean, employee: object }}
  */
-export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, createdBy, stammdatConfig) {
+export async function linkStammdatToEmployee(
+  dbPool: Pool,
+  employeeId: string,
+  stammdatId: number,
+  createdBy: string | null,
+  stammdatConfig: StammdatConfig
+): Promise<{ success: boolean; employee: Record<string, unknown> }> {
   // Fetch the stammdat row(s) for this ID
   const pool = getStammdatPool(stammdatConfig);
-  let rows;
+  let rows: StammdatRow[];
   try {
-    const [result] = await pool.query(
+    const [result] = await pool.query<StammdatRow[]>(
       'SELECT * FROM stammdat WHERE id = ? ORDER BY ma_arbeits_kst',
       [stammdatId]
     );
@@ -453,13 +644,13 @@ export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, cre
   const { employee: stammdatEmployee, costCenters } = buildEmployeeFromRows(rows);
 
   // Verify the CuraFlow Employee exists
-  const [existing] = await dbPool.execute('SELECT id FROM Employee WHERE id = ?', [employeeId]);
+  const [existing] = await dbPool.execute<RowDataPacket[]>('SELECT id FROM Employee WHERE id = ?', [employeeId]);
   if (existing.length === 0) {
     throw new Error('Mitarbeiter nicht in CuraFlow gefunden');
   }
 
   // Update the Employee with stammdat fields
-  const fields = [
+  const fieldsToUpdate: UpsertableEmployeeField[] = [
     'stammdat_id', 'salutation', 'title', 'position',
     'cost_center', 'cost_center_name', 'email',
     'contract_start', 'contract_end',
@@ -467,9 +658,9 @@ export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, cre
     'source_system', 'is_active', 'exit_date', 'exit_reason',
   ];
 
-  const updates = [];
-  const values = [];
-  for (const field of fields) {
+  const updates: string[] = [];
+  const values: (string | number | boolean | null)[] = [];
+  for (const field of fieldsToUpdate) {
     if (stammdatEmployee[field] !== undefined) {
       updates.push(`${field} = ?`);
       values.push(stammdatEmployee[field] ?? null);
@@ -480,7 +671,7 @@ export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, cre
   values.push(stammdatEmployee.payroll_id ?? null, stammdatEmployee.last_name, stammdatEmployee.first_name ?? null);
 
   values.push(employeeId);
-  await dbPool.execute(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
+  await dbPool.execute<ResultSetHeader>(`UPDATE Employee SET ${updates.join(', ')} WHERE id = ?`, values);
 
   // Sync cost centers
   if (costCenters.length > 0) {
@@ -505,8 +696,8 @@ export async function linkStammdatToEmployee(dbPool, employeeId, stammdatId, cre
  * Compute a field-level diff between old and new employee data.
  * Returns only fields that would actually change.
  */
-function computeUpdateDiff(existingEmployee, newData) {
-  const fieldMap = {
+function computeUpdateDiff(existingEmployee: Record<string, unknown>, newData: Record<string, unknown>): Record<string, FieldChange> {
+  const fieldMap: Record<string, string> = {
     payroll_id: 'payroll_id',
     last_name: 'last_name',
     first_name: 'first_name',
@@ -527,10 +718,10 @@ function computeUpdateDiff(existingEmployee, newData) {
     exit_reason: 'exit_reason',
   };
 
-  const changes = {};
+  const changes: Record<string, FieldChange> = {};
   for (const [newKey, dbCol] of Object.entries(fieldMap)) {
-    const oldVal = existingEmployee[dbCol] ?? null;
-    const newVal = newData[newKey] ?? null;
+    const oldVal = existingEmployee[dbCol];
+    const newVal = newData[newKey];
 
     // Normalize for comparison
     const oldNorm = oldVal === null || oldVal === undefined ? null
@@ -556,7 +747,13 @@ function computeUpdateDiff(existingEmployee, newData) {
  * @param {object}   stammdatConfig    - DB connection config for source
  * @param {object}   options           - { dryRun?: boolean }
  */
-export async function executeStammdatImport(dbPool, decisions, createdBy, stammdatConfig, options = {}) {
+export async function executeStammdatImport(
+  dbPool: Pool,
+  decisions: ImportDecision[],
+  createdBy: string,
+  stammdatConfig: StammdatConfig,
+  options: ExecuteImportOptions = {}
+): Promise<ImportResult> {
   const { dryRun = false } = options;
 
   // Fetch source data
@@ -565,9 +762,9 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
   const existingEmployees = await fetchExistingEmployees(dbPool);
 
   // In dry-run mode, also fetch full employee data for diff computation
-  let existingFullDataMap = new Map();
+  const existingFullDataMap = new Map<string, Record<string, unknown>>();
   if (dryRun) {
-    const [fullRows] = await dbPool.execute(
+    const [fullRows] = await dbPool.execute<RowDataPacket[]>(
       `SELECT id, last_name, first_name, payroll_id, email,
         salutation, title, position, cost_center, cost_center_name,
         contract_start, contract_end, entry_email_sent, exit_email_sent,
@@ -575,16 +772,16 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
        FROM Employee`
     );
     for (const row of fullRows) {
-      existingFullDataMap.set(row.id, row);
+      existingFullDataMap.set(String(row.id), row as Record<string, unknown>);
     }
   }
 
-  const decisionMap = new Map();
+  const decisionMap = new Map<number, ImportDecision>();
   for (const d of decisions) {
     decisionMap.set(d.stammdat_id, d);
   }
 
-  const result = {
+  const result: ImportResult = {
     dry_run: dryRun,
     created: 0,
     updated: 0,
@@ -605,7 +802,7 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
     const matchResult = matchEmployee(employee, existingEmployees);
 
     // Check if this employee matches a decision
-    let decision = null;
+    let decision: ImportDecision | null = null;
     for (const [sid, d] of decisionMap) {
       if (sid === employee.stammdat_id) {
         decision = d;
@@ -615,21 +812,21 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
 
     if (!decision || decision.action === 'skip') {
       result.skipped++;
-      const detail = {
+      const detail: Record<string, unknown> = {
         stammdat_id: employee.stammdat_id,
         personalnummer: Number(personalnummer),
         name: `${employee.first_name} ${employee.last_name}`,
         action: 'skipped',
       };
       result.details.push(detail);
-      if (dryRun) {
+      if (dryRun && result.preview) {
         result.preview.skips.push(detail);
       }
       continue;
     }
 
     // Determine which existing employee to update (if any)
-    let existingId = null;
+    let existingId: string | null = null;
     if (decision.existing_employee_id) {
       existingId = decision.existing_employee_id;
     } else if (matchResult.category === 'EXACT_MATCH') {
@@ -640,11 +837,11 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
     if (dryRun) {
       if (existingId) {
         const oldData = existingFullDataMap.get(existingId);
-        const diff = computeUpdateDiff(oldData || {}, employee);
+        const diff = computeUpdateDiff(oldData || {}, employee as unknown as Record<string, unknown>);
 
         if (Object.keys(diff).length === 0) {
           // No changes — would be a no-op update
-          const detail = {
+          const detail: Record<string, unknown> = {
             stammdat_id: employee.stammdat_id,
             personalnummer: Number(personalnummer),
             name: `${employee.first_name} ${employee.last_name}`,
@@ -653,10 +850,12 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
             changes: {},
           };
           result.details.push(detail);
-          result.preview.updates.push(detail);
+          if (result.preview) {
+            result.preview.updates.push(detail);
+          }
           result.skipped++;
         } else {
-          const detail = {
+          const detail: Record<string, unknown> = {
             stammdat_id: employee.stammdat_id,
             personalnummer: Number(personalnummer),
             name: `${employee.first_name} ${employee.last_name}`,
@@ -667,11 +866,13 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
             cost_centers: costCenters.length,
           };
           result.details.push(detail);
-          result.preview.updates.push(detail);
+          if (result.preview) {
+            result.preview.updates.push(detail);
+          }
           result.updated++;
         }
       } else {
-        const detail = {
+        const detail: Record<string, unknown> = {
           stammdat_id: employee.stammdat_id,
           personalnummer: Number(personalnummer),
           name: `${employee.first_name} ${employee.last_name}`,
@@ -696,12 +897,14 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
           },
         };
         result.details.push(detail);
-        result.preview.creates.push(detail);
+        if (result.preview) {
+          result.preview.creates.push(detail);
+        }
         result.created++;
       }
 
       if (costCenters.length > 1) {
-        result.preview.cost_center_changes.push({
+        const ccChange: Record<string, unknown> = {
           name: `${employee.first_name} ${employee.last_name}`,
           personalnummer: Number(personalnummer),
           cost_center_count: costCenters.length,
@@ -711,7 +914,10 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
             code: cc.cost_center_code,
             name: cc.cost_center_name,
           })),
-        });
+        };
+        if (result.preview) {
+          result.preview.cost_center_changes.push(ccChange);
+        }
       }
       continue;
     }
@@ -738,11 +944,12 @@ export async function executeStammdatImport(dbPool, decisions, createdBy, stammd
         employee_id: targetId,
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
       result.errors.push({
         stammdat_id: employee.stammdat_id,
         personalnummer: Number(personalnummer),
         name: `${employee.first_name} ${employee.last_name}`,
-        error: err.message,
+        error: errorMessage,
       });
     }
   }

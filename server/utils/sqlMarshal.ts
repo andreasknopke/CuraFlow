@@ -19,13 +19,13 @@
 
 // ─── dbProxy variant ────────────────────────────────────────────────────────
 
+type SqlRow = Record<string, unknown>;
+
 /**
  * Convert a JS value to a MySQL value (dbProxy variant).
  * Empty strings become NULL (important for date fields).
- * @param {*} val
- * @returns {*}
  */
-export const toSqlValue = (val) => {
+export const toSqlValue = (val: unknown): unknown => {
   if (val === undefined) return null;
   if (val === '') return null; // Empty strings become NULL (important for date fields)
   if (typeof val === 'number' && isNaN(val)) return null;
@@ -41,10 +41,8 @@ export const toSqlValue = (val) => {
 /**
  * Parse a MySQL row to a JS object (dbProxy variant).
  * Parses the `active_days` JSON field and coerces 19 boolean fields.
- * @param {Record<string, *>|null} row
- * @returns {Record<string, *>|null}
  */
-export const fromSqlRow = (row) => {
+export const fromSqlRow = (row: Record<string, unknown> | null): Record<string, unknown> | null => {
   if (!row) return null;
   const res = { ...row };
 
@@ -79,10 +77,8 @@ export const fromSqlRow = (row) => {
 /**
  * Convert a JS value to a MySQL value (atomic variant).
  * Does NOT collapse empty strings to NULL.
- * @param {*} val
- * @returns {*}
  */
-export const toSqlValueStrict = (val) => {
+export const toSqlValueStrict = (val: unknown): unknown => {
   if (val === undefined) return null;
   if (typeof val === 'number' && isNaN(val)) return null;
   if (typeof val === 'object' && val !== null && !(val instanceof Date)) {
@@ -98,10 +94,8 @@ export const toSqlValueStrict = (val) => {
  * Parse a MySQL row to a JS object (atomic variant).
  * No JSON parsing; coerces only 9 boolean fields (a strict subset of the
  * dbProxy variant's list).
- * @param {Record<string, *>|null} row
- * @returns {Record<string, *>|null}
  */
-export const fromSqlRowBasic = (row) => {
+export const fromSqlRowBasic = (row: Record<string, unknown> | null): Record<string, unknown> | null => {
   if (!row) return null;
   const res = { ...row };
   const boolFields = [

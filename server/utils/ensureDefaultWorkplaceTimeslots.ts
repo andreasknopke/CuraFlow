@@ -12,47 +12,79 @@
  * @module utils/ensureDefaultWorkplaceTimeslots
  */
 import crypto from 'crypto';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+interface ColumnInfo extends RowDataPacket {
+  Field: string;
+}
+
+interface SettingRow extends RowDataPacket {
+  value: string;
+}
+
+interface WorkplaceRow extends RowDataPacket {
+  id: string;
+  name: string;
+  category: string;
+}
+
+interface CountRow extends RowDataPacket {
+  cnt: number | string;
+}
+
+interface TimeslotEnabledRow extends RowDataPacket {
+  timeslots_enabled: number | boolean | null;
+}
 
 /**
  * Parst die workplace_categories aus SystemSetting JSON.
  * Handhabt sowohl Legacy-Format (String-Array) als auch aktuelles (Object-Array).
  *
- * @param {string|null|undefined} rawValue
- * @returns {string[]} Kategorie-Namen
+ * @param rawValue - raw JSON value from SystemSetting
+ * @returns Kategorie-Namen
  */
-function parseWorkplaceCategories(rawValue) {
+function parseWorkplaceCategories(rawValue: string | null | undefined): string[] {
   if (!rawValue) return [];
 
   try {
-    const parsed = JSON.parse(rawValue);
+    const parsed = JSON.parse(rawValue) as unknown;
     if (!Array.isArray(parsed)) return [];
 
     return parsed
-      .map((category) => {
+      .map((category: unknown) => {
         if (typeof category === 'string') return category.trim();
-        if (category && typeof category.name === 'string') return category.name.trim();
+        if (category && typeof category === 'object' && typeof (category as Record<string, unknown>).name === 'string') {
+          return String((category as Record<string, unknown>).name).trim();
+        }
         return null;
       })
-      .filter(Boolean);
+      .filter((category: string | null): category is string => Boolean(category));
   } catch {
     return [];
   }
 }
 
+interface TimeslotStats {
+  processed: number;
+  created: number;
+  skipped: number;
+  enabledFlagSet: number;
+}
+
 /**
  * Stellt Default-Timeslots für Rotation/Custom-Arbeitsplätze sicher.
  *
- * @param {import('mysql2/promise').Pool} dbPool - Tenant-Datenbank-Pool
- * @param {string[]} customCategoryNames - Namen benutzerdefinierter Kategorien (wird aus SystemSetting gelesen, wenn leer)
- * @returns {Promise<{processed: number, created: number, skipped: number, enabledFlagSet: number}>}
+ * @param dbPool - Tenant-Datenbank-Pool
+ * @param customCategoryNames - Namen benutzerdefinierter Kategorien (wird aus SystemSetting gelesen, wenn leer)
+ * @returns Statistik über verarbeitete Workplaces
  */
-export async function ensureDefaultWorkplaceTimeslots(dbPool, customCategoryNames = []) {
-  const stats = { processed: 0, created: 0, skipped: 0, enabledFlagSet: 0 };
+export async function ensureDefaultWorkplaceTimeslots(dbPool: Pool, customCategoryNames: string[] = []): Promise<TimeslotStats> {
+  const stats: TimeslotStats = { processed: 0, created: 0, skipped: 0, enabledFlagSet: 0 };
 
   // Falls keine customCategoryNames übergeben wurden, versuche aus SystemSetting zu lesen
   if (customCategoryNames.length === 0) {
     try {
-      const [rows] = await dbPool.execute(
+      const [rows] = await dbPool.execute<SettingRow[]>(
         `SELECT value FROM SystemSetting WHERE \`key\` = 'workplace_categories' LIMIT 1`
       );
       if (rows.length > 0) {
@@ -80,14 +112,14 @@ export async function ensureDefaultWorkplaceTimeslots(dbPool, customCategoryName
 
   try {
     // Workplace-Tabelle auf timeslots_enabled-Spalte prüfen (alte Tenants ohne)
-    const [wpColumns] = await dbPool.execute(
+    const [wpColumns] = await dbPool.execute<ColumnInfo[]>(
       `SHOW COLUMNS FROM Workplace LIKE 'timeslots_enabled'`
     );
     const hasTimeslotsEnabled = wpColumns.length > 0;
 
     // Workplaces der Ziel-Kategorien laden
     const catPlaceholders = effectiveCategories.map(() => '?').join(',');
-    const [workplaces] = await dbPool.execute(
+    const [workplaces] = await dbPool.execute<WorkplaceRow[]>(
       `SELECT id, name, category FROM Workplace WHERE category IN (${catPlaceholders}) AND is_active = TRUE`,
       effectiveCategories
     );
@@ -96,12 +128,12 @@ export async function ensureDefaultWorkplaceTimeslots(dbPool, customCategoryName
       stats.processed++;
 
       // Prüfen, ob bereits ein Timeslot existiert
-      const [existingSlots] = await dbPool.execute(
+      const [existingSlots] = await dbPool.execute<CountRow[]>(
         `SELECT COUNT(*) AS cnt FROM WorkplaceTimeslot WHERE workplace_id = ?`,
         [wp.id]
       );
 
-      if (existingSlots[0]?.cnt > 0) {
+      if (Number(existingSlots[0]?.cnt || 0) > 0) {
         stats.skipped++;
         continue;
       }
@@ -118,7 +150,7 @@ export async function ensureDefaultWorkplaceTimeslots(dbPool, customCategoryName
       // timeslots_enabled = TRUE setzen (falls Spalte existiert)
       if (hasTimeslotsEnabled) {
         // Prüfen, ob bereits TRUE (sicherheitshalber)
-        const [currentWp] = await dbPool.execute(
+        const [currentWp] = await dbPool.execute<TimeslotEnabledRow[]>(
           `SELECT timeslots_enabled FROM Workplace WHERE id = ? LIMIT 1`,
           [wp.id]
         );
@@ -132,7 +164,7 @@ export async function ensureDefaultWorkplaceTimeslots(dbPool, customCategoryName
       }
     }
   } catch (error) {
-    console.error('[ensureDefaultWorkplaceTimeslots] Fehler:', error.message);
+    console.error('[ensureDefaultWorkplaceTimeslots] Fehler:', (error as Error).message);
     throw error;
   }
 

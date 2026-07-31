@@ -12,6 +12,8 @@ import express from 'express';
 import crypto from 'crypto';
 import ExcelJS from 'exceljs';
 import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
 import { db, getTenantDb } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
@@ -31,6 +33,28 @@ import { broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 import { format, startOfMonth, endOfMonth, getDaysInMonth } from 'date-fns';
 import { getPublicHolidayDatesForYear, clearHolidayCache } from './holidays.js';
 import { analyzeStammdatImport, executeStammdatImport, linkStammdatToEmployee, importCostCentersFromStammdat } from '../utils/masterImport.js';
+
+interface CuraRequest extends Request {
+  db: Pool;
+  dbToken?: string;
+  isCustomDb?: boolean;
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    permissions?: Record<string, boolean>;
+    group_admin_groups?: string[] | null;
+    allowed_groups?: string[] | null;
+    allowed_rotation_groups?: string[] | null;
+    rotation_admin_groups?: string[] | null;
+    [key: string]: unknown;
+  };
+  file?: { buffer: Buffer; originalname: string; mimetype: string; size: number };
+}
+
+const cuReq = (req: Request) => req as unknown as CuraRequest;
+const cuSub = (req: Request) => cuReq(req).user?.sub || '';
+const cuEmail = (req: Request) => cuReq(req).user?.email || null;
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -57,7 +81,7 @@ const NON_WORKING_SHIFT_POSITIONS = new Set([
 
 // ============ HELPERS ============
 
-function normalizeShiftPosition(position) {
+function normalizeShiftPosition(position: any) {
   return String(position || '')
     .trim()
     .normalize('NFD')
@@ -65,11 +89,11 @@ function normalizeShiftPosition(position) {
     .toLowerCase();
 }
 
-function isNonWorkingShiftPosition(position) {
+function isNonWorkingShiftPosition(position: any) {
   return NON_WORKING_SHIFT_POSITIONS.has(normalizeShiftPosition(position));
 }
 
-function mergeTimeIntervals(intervals) {
+function mergeTimeIntervals(intervals: any) {
   if (!intervals || intervals.length === 0) return 0;
 
   const sorted = [...intervals].sort((left, right) => left.start - right.start);
@@ -90,7 +114,7 @@ function mergeTimeIntervals(intervals) {
   return merged.reduce((sum, interval) => sum + (interval.end - interval.start), 0);
 }
 
-function shiftToInterval(shift, timeslot, workplace) {
+function shiftToInterval(shift: any, timeslot: any, workplace: any) {
   if (shift?.start_time && shift?.end_time) {
     const start = timeToMin(shift.start_time);
     let end = timeToMin(shift.end_time);
@@ -124,11 +148,11 @@ function shiftToInterval(shift, timeslot, workplace) {
   };
 }
 
-function getMonthKey(year, month) {
+function getMonthKey(year: any, month: any) {
   return `${year}-${String(month).padStart(2, '0')}`;
 }
 
-function createMonthlyPeriods(startDate, endDate = new Date(), maxMonths = 24) {
+function createMonthlyPeriods(startDate: any, endDate: any = new Date(), maxMonths = 24) {
   const periods = [];
   const cursor = new Date(startDate.getFullYear(), startDate.getMonth(), 1);
   const endCursor = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
@@ -153,7 +177,7 @@ function createMonthlyPeriods(startDate, endDate = new Date(), maxMonths = 24) {
   return periods.slice(-maxMonths);
 }
 
-function calculateMonthlyTargetMinutes(targetHoursPerWeek, year, month, options = {}) {
+function calculateMonthlyTargetMinutes(targetHoursPerWeek: any, year: any, month: any, options: Record<string, unknown> = {}) {
   const weeklyHours = Number(targetHoursPerWeek);
   if (!Number.isFinite(weeklyHours) || weeklyHours <= 0) return 0;
 
@@ -162,8 +186,8 @@ function calculateMonthlyTargetMinutes(targetHoursPerWeek, year, month, options 
   // Im Modell "volle Tage mit freien Tagen" wird an Arbeitstagen die volle
   // Tagesstundenzahl angesetzt; die Reduktion erfolgt über freie Tage.
   // Soll = Arbeitsstage × (Wochenstunden / 5)
-  if (options.partTimeModel === 'full_days_off') {
-    const fte = Number(options.fte);
+  if ((options as Record<string, unknown>).partTimeModel === 'full_days_off') {
+    const fte = Number((options as Record<string, unknown>).fte);
     if (Number.isFinite(fte) && fte > 0 && fte < 1) {
       const workDaysPerWeek = Math.max(1, Math.min(5, Math.round(fte * 5)));
       const fullDailyHours = weeklyHours / 5;
@@ -175,7 +199,7 @@ function calculateMonthlyTargetMinutes(targetHoursPerWeek, year, month, options 
   return Math.round((daysInMonth * weeklyHours / 7) * 60);
 }
 
-function countWorkdaysInMonth(year, month) {
+function countWorkdaysInMonth(year: any, month: any) {
   const daysInMonth = getDaysInMonth(new Date(year, month - 1, 1));
   let count = 0;
   for (let day = 1; day <= daysInMonth; day++) {
@@ -191,7 +215,7 @@ function countWorkdaysInMonth(year, month) {
  *   sonst 'reduced_daily' (Default).
  * - fte: der kleinste FTE-Wert (konservativ), damit das Soll nicht zu hoch ausfällt.
  */
-function aggregatePartTimeContext(assignmentContext) {
+function aggregatePartTimeContext(assignmentContext: any): any {
   if (!assignmentContext || assignmentContext.size === 0) return {};
   let partTimeModel = 'reduced_daily';
   let minFte = null;
@@ -204,12 +228,11 @@ function aggregatePartTimeContext(assignmentContext) {
       }
     }
   }
-  return { partTimeModel, fte: minFte };
+  return { partTimeModel, fte: minFte } as Record<string, unknown>;
 }
 
-async function syncEmployeeWorkSettingsForAssignments(adminUserId, employee, assignments, actor = null) {
-  const linkedAssignments = (assignments || []).filter(
-    (assignment) => assignment.tenant_id && assignment.tenant_doctor_id
+async function syncEmployeeWorkSettingsForAssignments(adminUserId: any, employee: any, assignments: any, actor: { id?: string | null; email?: string | null } | null = null) {
+  const linkedAssignments = (assignments || []).filter((assignment: any) => assignment.tenant_id && assignment.tenant_doctor_id
   );
 
   if (!employee?.id || linkedAssignments.length === 0) {
@@ -224,12 +247,12 @@ async function syncEmployeeWorkSettingsForAssignments(adminUserId, employee, ass
     withTenantDb,
     actor,
     buildRealtimeScope,
-    broadcastPlanUpdate,
+    broadcastPlanUpdate: broadcastPlanUpdate as unknown as (event: { scope: string; entity: string; action: string; recordId?: string | null; actor?: { id?: string | null; email?: string | null } | null }) => void,
   });
 }
 
-async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
-  const linkedAssignments = (assignments || []).filter(a => a.tenant_id && a.tenant_doctor_id);
+async function syncTimeAccountsForEmployee(adminUserId: any, employee: any, assignments: any) {
+  const linkedAssignments = (assignments || []).filter((a: any) => a.tenant_id && a.tenant_doctor_id);
   if (linkedAssignments.length === 0) {
     return { synced: false, reason: 'no-linked-assignments' };
   }
@@ -237,7 +260,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
   const now = new Date();
   const defaultStart = new Date(now.getFullYear(), now.getMonth() - 23, 1);
   const earliestAssignedSince = linkedAssignments
-    .map(a => a.assigned_since)
+    .map((a: any) => a.assigned_since)
     .filter(Boolean)
     .sort()[0];
   const periodStart = earliestAssignedSince
@@ -255,16 +278,16 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
   const rangeEnd = periods[periods.length - 1].endDate;
   const assignmentContext = new Map(); // tenantId -> { partTimeModel, fte }
 
-  await Promise.all(linkedAssignments.map(async (assignment) => {
+  await Promise.all(linkedAssignments.map(async (assignment: Record<string, unknown>) => {
     const token = tokenMap.get(assignment.tenant_id);
     if (!token) return;
 
-    await withTenantDb(token, async (pool) => {
+    await withTenantDb(token, async (pool: any) => {
       try {
         const [shiftCols] = await pool.execute(
           `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
            WHERE TABLE_NAME = 'ShiftEntry' AND TABLE_SCHEMA = DATABASE()`
-        );
+        ) as [any[], any];
         const shiftColNames = new Set(shiftCols.map(col => col.COLUMN_NAME));
         const shiftSelectCols = ['doctor_id', 'date', 'position'];
         if (shiftColNames.has('start_time')) shiftSelectCols.push('start_time');
@@ -277,7 +300,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
            FROM ShiftEntry
            WHERE doctor_id = ? AND date >= ? AND date <= ?`,
           [assignment.tenant_doctor_id, rangeStart, rangeEnd]
-        );
+        ) as [any[], any];
 
         // Teilzeitmodell + FTE des verknüpften Doctors laden, um das Soll
         // für das Modell "volle Tage mit freien Tagen" korrekt zu berechnen.
@@ -287,7 +310,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
           const [doctorCols] = await pool.execute(
             `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_NAME = 'Doctor' AND TABLE_SCHEMA = DATABASE()`
-          );
+          ) as [any[], any];
           const doctorColNames = new Set(doctorCols.map(col => col.COLUMN_NAME));
           const selectParts = [];
           if (doctorColNames.has('part_time_model')) selectParts.push('part_time_model');
@@ -296,7 +319,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
             const [docRows] = await pool.execute(
               `SELECT ${selectParts.join(', ')} FROM Doctor WHERE id = ? LIMIT 1`,
               [assignment.tenant_doctor_id]
-            );
+            ) as [any[], any];
             if (docRows.length > 0) {
               partTimeModel = docRows[0].part_time_model || null;
               doctorFte = docRows[0].fte ?? null;
@@ -307,7 +330,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
 
         let timeslots = [];
         try {
-          const [ts] = await pool.execute('SELECT id, start_time, end_time FROM WorkplaceTimeslot');
+          const [ts] = await pool.execute('SELECT id, start_time, end_time FROM WorkplaceTimeslot') as [any[], any];
           timeslots = ts;
         } catch { /* table may not exist */ }
 
@@ -316,7 +339,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
           const [workplaceCols] = await pool.execute(
             `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
              WHERE TABLE_NAME = 'Workplace' AND TABLE_SCHEMA = DATABASE()`
-          );
+          ) as [any[], any];
           const workplaceColNames = new Set(workplaceCols.map(col => col.COLUMN_NAME));
           const workplaceSelectCols = ['name'];
           if (workplaceColNames.has('work_time_percentage')) workplaceSelectCols.push('work_time_percentage');
@@ -324,7 +347,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
           if (workplaceColNames.has('affects_availability')) workplaceSelectCols.push('affects_availability');
           if (workplaceColNames.has('allows_absence_overlap')) workplaceSelectCols.push('allows_absence_overlap');
 
-          const [wp] = await pool.execute(`SELECT ${workplaceSelectCols.join(', ')} FROM Workplace`);
+          const [wp] = await pool.execute(`SELECT ${workplaceSelectCols.join(', ')} FROM Workplace`) as [any[], any];
           workplaces = wp;
         } catch { /* ignore */ }
 
@@ -340,7 +363,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
         });
 
         shiftsByDate.forEach((dayShifts, dateKey) => {
-          const eligibleShifts = dayShifts.filter((shift) => {
+          const eligibleShifts = dayShifts.filter((shift: any) => {
             if (isNonWorkingShiftPosition(shift.position)) return false;
 
             const workplace = workplaces.find(w => w.name === shift.position);
@@ -352,7 +375,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
           if (eligibleShifts.length === 0) return;
 
           const intervals = eligibleShifts
-            .map((shift) => {
+            .map((shift: Record<string, unknown>) => {
               const workplace = workplaces.find(w => w.name === shift.position);
               const timeslot = shift.timeslot_id
                 ? timeslots.find(t => t.id === shift.timeslot_id)
@@ -367,7 +390,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
           const monthKey = dateKey.substring(0, 7);
           actualMinutesByMonth.set(monthKey, (actualMinutesByMonth.get(monthKey) || 0) + dayMinutes);
         });
-      } catch (error) {
+      } catch (error: any) {
         console.warn(`[Master time-account sync] Tenant "${token.name}": ${error.message}`);
       }
 
@@ -378,12 +401,12 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
   const [existingRows] = await db.execute(
     'SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year ASC, month ASC',
     [employee.id]
-  );
+  ) as [any[], any];
   const existingMap = new Map(existingRows.map(row => [getMonthKey(row.year, row.month), row]));
 
   const oldestPeriod = periods[0];
   let carryForwardMinutes = 0;
-  const previousRows = existingRows.filter((row) => {
+  const previousRows = existingRows.filter((row: any) => {
     if (row.year < oldestPeriod.year) return true;
     if (row.year === oldestPeriod.year && row.month < oldestPeriod.month) return true;
     return false;
@@ -435,7 +458,7 @@ async function syncTimeAccountsForEmployee(adminUserId, employee, assignments) {
 /**
  * Get all configured tenant database tokens from master DB
  */
-async function getAllTenantTokens(adminUserId) {
+async function getAllTenantTokens(adminUserId: any) {
   try {
     // Ensure db_tokens table exists
     await db.execute(`
@@ -454,23 +477,23 @@ async function getAllTenantTokens(adminUserId) {
     `);
 
     // Get admin's allowed_tenants
-    const [adminRows] = await db.execute('SELECT allowed_tenants FROM app_users WHERE id = ?', [adminUserId]);
+    const [adminRows] = await db.execute('SELECT allowed_tenants FROM app_users WHERE id = ?', [adminUserId]) as [any[], any];
     const adminTenants = adminRows[0]?.allowed_tenants;
     let adminTenantList = null;
     if (adminTenants) {
       adminTenantList = typeof adminTenants === 'string' ? JSON.parse(adminTenants) : adminTenants;
     }
 
-    const [rows] = await db.execute('SELECT * FROM db_tokens ORDER BY name ASC');
+    const [rows] = await db.execute('SELECT * FROM db_tokens ORDER BY name ASC') as [any[], any];
 
     // Filter by admin's allowed tenants
     let filtered = rows;
     if (adminTenantList && adminTenantList.length > 0) {
-      filtered = rows.filter(t => adminTenantList.includes(t.id));
+      filtered = rows.filter((t: any) => adminTenantList.includes(t.id));
     }
 
     return filtered;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[Master API] Failed to get tenant tokens:', err.message);
     return [];
   }
@@ -479,7 +502,7 @@ async function getAllTenantTokens(adminUserId) {
 /**
  * Create a temporary connection pool for a tenant, execute callback, then close
  */
-async function withTenantDb(token, callback) {
+async function withTenantDb(token: any, callback: any) {
   let pool = null;
   try {
     const config = parseDbToken(token.token);
@@ -490,7 +513,7 @@ async function withTenantDb(token, callback) {
 
     pool = createPool({
       host: config.host,
-      port: parseInt(config.port || '3306'),
+      port: parseInt(String(config.port || '3306')),
       user: config.user,
       password: config.password,
       database: config.database,
@@ -505,12 +528,12 @@ async function withTenantDb(token, callback) {
 
     const result = await callback(pool, token);
     return result;
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[Master API] Error querying tenant "${token.name}":`, err.message);
     return null;
   } finally {
     if (pool) {
-      try { await pool.end(); } catch (e) { /* ignore */ }
+      try { await pool.end(); } catch (e: any) { /* ignore */ }
     }
   }
 }
@@ -518,10 +541,10 @@ async function withTenantDb(token, callback) {
 /**
  * Execute a query across all (or specific) tenants, merge results
  */
-async function queryAllTenants(adminUserId, tenantId, queryFn) {
+async function queryAllTenants(adminUserId: any, tenantId: any, queryFn: any) {
   const tokens = await getAllTenantTokens(adminUserId);
   const targetTokens = tenantId
-    ? tokens.filter(t => t.id === tenantId)
+    ? tokens.filter((t: any) => t.id === tenantId)
     : tokens;
 
   console.log(`[Master API] queryAllTenants: ${targetTokens.length} tenant(s) to query${tenantId ? ` (filtered to ${tenantId})` : ' (all)'}`);
@@ -536,7 +559,7 @@ async function queryAllTenants(adminUserId, tenantId, queryFn) {
         console.log(`[Master API] Tenant "${token.name}": 0 results (data=${data === null ? 'null' : '[]'})`);
       }
       return data || [];
-    } catch (e) {
+    } catch (e: any) {
       console.error(`[Master API] Tenant "${token.name}" failed:`, e.message);
       return [];
     }
@@ -548,7 +571,7 @@ async function queryAllTenants(adminUserId, tenantId, queryFn) {
   return results;
 }
 
-async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
+async function repairTenantCentralEmployeeLinks(adminUserId: any, tenantId: any = null) {
   const [assignments] = await db.execute(
     `SELECT employee_id, tenant_id, tenant_doctor_id
      FROM EmployeeTenantAssignment
@@ -556,14 +579,14 @@ async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
        AND tenant_doctor_id != ''
        ${tenantId ? 'AND tenant_id = ?' : ''}`,
     tenantId ? [tenantId] : []
-  );
+  ) as [any[], any];
 
   if (assignments.length === 0) {
     return { repaired: 0, checked: 0 };
   }
 
   const tokens = await getAllTenantTokens(adminUserId);
-  const targetTokens = tenantId ? tokens.filter((token) => String(token.id) === String(tenantId)) : tokens;
+  const targetTokens = tenantId ? tokens.filter((token: any) => String(token.id) === String(tenantId)) : tokens;
   const assignmentsByTenant = new Map();
 
   assignments.forEach((assignment) => {
@@ -581,12 +604,12 @@ async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
     const tenantAssignments = assignmentsByTenant.get(String(token.id)) || [];
     if (tenantAssignments.length === 0) return;
 
-    await withTenantDb(token, async (pool) => {
+    await withTenantDb(token, async (pool: any) => {
       try {
         const [cols] = await pool.execute(
           `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
            WHERE TABLE_NAME = 'Doctor' AND TABLE_SCHEMA = DATABASE() AND COLUMN_NAME = 'central_employee_id'`
-        );
+        ) as [any[], any];
         if (cols.length === 0) return [];
 
         for (const assignment of tenantAssignments) {
@@ -597,10 +620,10 @@ async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
              WHERE id = ?
                AND (central_employee_id IS NULL OR central_employee_id = '' OR central_employee_id != ?)`,
             [assignment.employee_id, assignment.tenant_doctor_id, assignment.employee_id]
-          );
-          repaired += Number(result?.affectedRows || 0);
+          ) as [any[], any];
+          repaired += Number((result as Record<string, unknown>[] & [{ affectedRows?: number }])?.[0]?.affectedRows || 0);
         }
-      } catch (error) {
+      } catch (error: any) {
         console.warn(`[Master staff] Link repair failed for tenant "${token.name}": ${error.message}`);
       }
 
@@ -617,16 +640,16 @@ async function repairTenantCentralEmployeeLinks(adminUserId, tenantId = null) {
  * GET /api/master/stats
  * Aggregated statistics across all tenants
  */
-router.get('/stats', async (req, res, next) => {
+router.get('/stats', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const today = format(new Date(), 'yyyy-MM-dd');
 
     let totalStaff = 0;
     let absencesToday = 0;
 
     for (const token of tokens) {
-      await withTenantDb(token, async (pool) => {
+      await withTenantDb(token, async (pool: any) => {
         try {
           // Count active staff (handle missing is_active column)
           let staffQuery;
@@ -634,14 +657,14 @@ router.get('/stats', async (req, res, next) => {
             const [testCols] = await pool.execute(
               `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
                WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'is_active' AND TABLE_SCHEMA = DATABASE()`
-            );
+            ) as [any[], any];
             staffQuery = testCols.length > 0
               ? 'SELECT COUNT(*) as cnt FROM Doctor WHERE is_active = 1'
               : 'SELECT COUNT(*) as cnt FROM Doctor';
           } catch {
             staffQuery = 'SELECT COUNT(*) as cnt FROM Doctor';
           }
-          const [staffRows] = await pool.execute(staffQuery);
+          const [staffRows] = await pool.execute(staffQuery) as [any[], any];
           totalStaff += staffRows[0]?.cnt || 0;
 
           // Count today's absences
@@ -649,9 +672,9 @@ router.get('/stats', async (req, res, next) => {
             `SELECT COUNT(*) as cnt FROM ShiftEntry 
              WHERE date = ? AND position IN ('Urlaub', 'Krank', 'Frei', 'Nicht verfügbar', 'Dienstreise')`,
             [today]
-          );
+          ) as [any[], any];
           absencesToday += absRows[0]?.cnt || 0;
-        } catch (e) {
+        } catch (e: any) {
           console.warn(`[Master stats] Tenant "${token.name}":`, e.message);
         }
         return [];
@@ -663,7 +686,7 @@ router.get('/stats', async (req, res, next) => {
       absencesToday,
       tenantCount: tokens.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     next(error);
   }
 });
@@ -672,26 +695,26 @@ router.get('/stats', async (req, res, next) => {
  * GET /api/master/staff?tenantId=xxx
  * Staff list across all tenants
  */
-router.get('/staff', async (req, res, next) => {
+router.get('/staff', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId } = req.query;
-    console.log(`[Master staff] Request: tenantId=${tenantId || 'all'}, user=${req.user.sub}`);
+    console.log(`[Master staff] Request: tenantId=${tenantId || 'all'}, user=${cuSub(req)}`);
 
     try {
-      const repairResult = await repairTenantCentralEmployeeLinks(req.user.sub, tenantId || null);
+      const repairResult = await repairTenantCentralEmployeeLinks(cuSub(req), tenantId || null);
       if (repairResult.repaired > 0) {
         console.log(`[Master staff] Repaired ${repairResult.repaired} tenant link(s) before staff listing`);
       }
-    } catch (repairError) {
+    } catch (repairError: any) {
       console.warn(`[Master staff] Link repair skipped: ${repairError.message}`);
     }
 
-    const staff = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    const staff = await queryAllTenants(cuSub(req), tenantId, async (pool: any, token: any) => {
       try {
         // Discover available columns to handle schema differences across tenants
         const [cols] = await pool.execute(
           `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Doctor' AND TABLE_SCHEMA = DATABASE()`
-        );
+        ) as [any[], any];
         const colNames = new Set(cols.map(c => c.COLUMN_NAME));
 
         // Build a safe SELECT with only existing columns
@@ -707,7 +730,7 @@ router.get('/staff', async (req, res, next) => {
 
         const [rows] = await pool.execute(
           `SELECT ${selectCols.join(', ')} FROM Doctor ORDER BY name`
-        );
+        ) as [any[], any];
         console.log(`[Master staff] Tenant "${token.name}": found ${rows.length} doctor(s) (cols: ${selectCols.join(',')})`);
         return rows.map(r => ({
           id: r.id,
@@ -722,7 +745,7 @@ router.get('/staff', async (req, res, next) => {
           tenantId: token.id,
           tenantName: token.name,
         }));
-      } catch (e) {
+      } catch (e: any) {
         console.error(`[Master staff] Tenant "${token.name}" query failed:`, e.message);
         return [];
       }
@@ -730,7 +753,7 @@ router.get('/staff', async (req, res, next) => {
 
     console.log(`[Master staff] Returning ${staff.length} staff members`);
     res.json({ staff });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master staff] Route error:', error);
     next(error);
   }
@@ -740,18 +763,18 @@ router.get('/staff', async (req, res, next) => {
  * GET /api/master/staff/:tenantId/:employeeId
  * Single employee detail from a specific tenant
  */
-router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
+router.get('/staff/:tenantId/:employeeId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId, employeeId } = req.params;
     console.log(`[Master staff-detail] Request: tenantId=${tenantId}, employeeId=${employeeId}`);
 
-    const results = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    const results = await queryAllTenants(cuSub(req), tenantId, async (pool: any, token: any) => {
       try {
         // Basic doctor info – use SELECT * to handle varying schemas
         const [rows] = await pool.execute(
           'SELECT * FROM Doctor WHERE id = ?',
           [employeeId]
-        );
+        ) as [any[], any];
         if (rows.length === 0) {
           console.log(`[Master staff-detail] Tenant "${token.name}": doctor ${employeeId} not found`);
           return [];
@@ -768,14 +791,14 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
         // endpoint also computes its own separate Shifturlaub balance).
         const absencePositions = ['Urlaub', 'Schichturlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar', 'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz'];
         const placeholders = absencePositions.map(() => '?').join(',');
-        let absences = [];
+        let absences: any[] = [];
         try {
           const [absRows] = await pool.execute(
             `SELECT date, position, note FROM ShiftEntry 
              WHERE doctor_id = ? AND YEAR(date) = ? AND position IN (${placeholders})
              ORDER BY date`,
             [employeeId, currentYear, ...absencePositions]
-          );
+          ) as [any[], any];
           // Group consecutive days into ranges
           absences = absRows.map(r => ({
             type: r.position,
@@ -784,13 +807,13 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
             days: 1,
             note: r.note || null,
           }));
-        } catch (e) {
+        } catch (e: any) {
           console.warn(`[Master staff-detail] Absences query failed:`, e.message);
         }
 
         // Vacation counts: only count workdays (Mon-Fri, no public holidays)
         const today = format(new Date(), 'yyyy-MM-dd');
-        const vacationDays = absences.filter(a => {
+        const vacationDays = absences.filter((a: any) => {
           if (a.type !== 'Urlaub') return false;
           const d = new Date(a.from + 'T12:00:00');
           const dayOfWeek = d.getDay(); // 0=Sun, 6=Sat
@@ -799,8 +822,8 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           if (publicHolidayDates && publicHolidayDates.has(a.from)) return false;
           return true;
         });
-        const vacationTaken = vacationDays.filter(a => a.from <= today).length;
-        const vacationPlanned = vacationDays.filter(a => a.from > today).length;
+        const vacationTaken = vacationDays.filter((a: any) => a.from <= today).length;
+        const vacationPlanned = vacationDays.filter((a: any) => a.from > today).length;
 
         return [{
           id: doc.id,
@@ -834,7 +857,7 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
           tenantId: token.id,
           tenantName: token.name,
         }];
-      } catch (e) {
+      } catch (e: any) {
         console.error(`[Master staff-detail] Tenant "${token.name}" query failed:`, e.message);
         return [];
       }
@@ -845,7 +868,7 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
     }
 
     res.json(results[0]);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master staff-detail] Route error:', error);
     next(error);
   }
@@ -856,12 +879,12 @@ router.get('/staff/:tenantId/:employeeId', async (req, res, next) => {
  * List qualification certificates stored in master DB for a single employee.
  * Read-only metadata view (no binary file data) for the Master Frontend.
  */
-router.get('/certificates/:tenantId/:employeeId', async (req, res, next) => {
+router.get('/certificates/:tenantId/:employeeId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId, employeeId } = req.params;
     console.log(`[Master certificates] Request: tenantId=${tenantId}, employeeId=${employeeId}`);
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const token = tokens.find(t => t.id === tenantId);
     if (!token) {
       return res.status(404).json({ error: 'Mandant nicht gefunden oder kein Zugriff' });
@@ -877,11 +900,11 @@ router.get('/certificates/:tenantId/:employeeId', async (req, res, next) => {
       .digest('hex');
 
     // Verify the employee exists in this tenant before exposing any certificate metadata
-    await withTenantDb(token, async (pool) => {
-      const [rows] = await pool.execute('SELECT id, name FROM Doctor WHERE id = ? LIMIT 1', [employeeId]);
+    await withTenantDb(token, async (pool: any) => {
+      const [rows] = await pool.execute('SELECT id, name FROM Doctor WHERE id = ? LIMIT 1', [employeeId]) as [any[], any];
       if (rows.length === 0) {
-        const err = new Error('Mitarbeiter im Mandanten nicht gefunden');
-        err.status = 404;
+        const err: Error & { status?: number } = new Error('Mitarbeiter im Mandanten nicht gefunden');
+        (err as Error & { status?: number }).status = 404;
         throw err;
       }
     });
@@ -896,16 +919,17 @@ router.get('/certificates/:tenantId/:employeeId', async (req, res, next) => {
         WHERE tenant_key = ? AND doctor_id = ?
         ORDER BY uploaded_at DESC`,
       [tenantKey, employeeId]
-    );
+    ) as [any[], any];
 
     res.json({
       employeeId,
       tenantId,
       certificates: certRows,
     });
-  } catch (error) {
-    if (error.status) {
-      return res.status(error.status).json({ error: error.message });
+  } catch (error: any) {
+    const httpErr = error as Error & { status?: number };
+    if (error instanceof Error && httpErr.status) {
+      return res.status(httpErr.status).json({ error: error.message });
     }
     console.error('[Master certificates] Route error:', error);
     next(error);
@@ -916,11 +940,11 @@ router.get('/certificates/:tenantId/:employeeId', async (req, res, next) => {
  * GET /api/master/certificates/:tenantId/:employeeId/:certificateId/download
  * Stream a single certificate file from master DB. Admin-only, tenant-scoped.
  */
-router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async (req, res, next) => {
+router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId, employeeId, certificateId } = req.params;
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const token = tokens.find(t => t.id === tenantId);
     if (!token) {
       return res.status(404).json({ error: 'Mandant nicht gefunden oder kein Zugriff' });
@@ -941,7 +965,7 @@ router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async 
         WHERE id = ? AND tenant_key = ? AND doctor_id = ?
         LIMIT 1`,
       [certificateId, tenantKey, employeeId]
-    );
+    ) as [any[], any];
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
@@ -951,7 +975,7 @@ router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async 
     res.setHeader('Content-Type', cert.mime_type);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(cert.file_name)}"`);
     return res.send(cert.file_data);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master certificate download] Route error:', error);
     next(error);
   }
@@ -965,11 +989,11 @@ router.get('/certificates/:tenantId/:employeeId/:certificateId/download', async 
  * Primary source: CentralAbsenceEntry (master DB).
  * Fallback: tenant ShiftEntry for doctors not yet linked to a central employee.
  */
-router.get('/absences', async (req, res, next) => {
+router.get('/absences', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { year, month, tenantId } = req.query;
-    const y = parseInt(year) || new Date().getFullYear();
-    const m = parseInt(month) || (new Date().getMonth() + 1);
+    const y = parseInt(String(year)) || new Date().getFullYear();
+    const m = parseInt(String(month)) || (new Date().getMonth() + 1);
     const isFullYear = month === undefined || month === '' || month === 'all';
     const startDate = isFullYear ? `${y}-01-01` : `${y}-${String(m).padStart(2, '0')}-01`;
     const endDate = isFullYear
@@ -995,15 +1019,15 @@ router.get('/absences', async (req, res, next) => {
 
       if (tenantId && tenantId !== 'all') {
         centralSql += ' AND cae.source_tenant_id = ?';
-        centralParams.push(tenantId);
+        centralParams.push(String(tenantId));
       }
 
       centralSql += ' ORDER BY cae.date, employee_name';
 
-      const [centralRows] = await db.execute(centralSql, centralParams);
+      const [centralRows] = await db.execute(centralSql, centralParams) as [any[], any];
 
       // Resolve tenant id → display name
-      const [tokens] = await db.execute('SELECT id, name FROM db_tokens');
+      const [tokens] = await db.execute('SELECT id, name FROM db_tokens') as [any[], any];
       const tenantNames = Object.fromEntries(tokens.map(t => [t.id, t.name]));
 
       for (const r of centralRows) {
@@ -1016,12 +1040,12 @@ router.get('/absences', async (req, res, next) => {
           tenantName: tenantNames[r.source_tenant_id] || 'Unbekannt',
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[Master absences] CentralAbsenceEntry query failed:', e.message);
     }
 
     // ── 2) Fallback: unlinked doctors still store absences in tenant DB ──
-    const tenantEntries = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    const tenantEntries = await queryAllTenants(cuSub(req), tenantId, async (pool: any, token: any) => {
       try {
         const placeholders = absenceTypes.map(() => '?').join(',');
         const [rows] = await pool.execute(
@@ -1033,7 +1057,7 @@ router.get('/absences', async (req, res, next) => {
              AND (d.central_employee_id IS NULL OR d.central_employee_id = '')
            ORDER BY se.date, d.name`,
           [startDate, endDate, ...absenceTypes]
-        );
+        ) as [any[], any];
         return rows.map(r => ({
           date: typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd'),
           type: r.position,
@@ -1042,7 +1066,7 @@ router.get('/absences', async (req, res, next) => {
           tenantId: token.id,
           tenantName: token.name,
         }));
-      } catch (e) {
+      } catch (e: any) {
         console.warn(`[Master absences] Tenant "${token.name}":`, e.message);
         return [];
       }
@@ -1054,14 +1078,14 @@ router.get('/absences', async (req, res, next) => {
     allEntries.sort((a, b) => a.date.localeCompare(b.date) || a.staffName.localeCompare(b.staffName));
 
     // ── 4) Summary: count by type ────────────────────────────────────────
-    const summary = {};
+    const summary: Record<string, number> = {};
     absenceTypes.forEach(t => { summary[t] = 0; });
     allEntries.forEach(e => {
-      if (Object.prototype.hasOwnProperty.call(summary, e.type)) summary[e.type]++;
+      if (Object.prototype.hasOwnProperty.call(summary, String(e.type))) summary[String(e.type)]++;
     });
 
     res.json({ entries: allEntries, summary });
-  } catch (error) {
+  } catch (error: any) {
     next(error);
   }
 });
@@ -1085,10 +1109,10 @@ router.get('/absences', async (req, res, next) => {
  * Primary source: CentralAbsenceEntry (master DB).
  * Fallback: tenant ShiftEntry for doctors not yet linked to a central employee.
  */
-router.get('/absence-stats', async (req, res, next) => {
+router.get('/absence-stats', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { year, tenantId } = req.query;
-    const y = parseInt(year) || new Date().getFullYear();
+    const y = parseInt(String(year)) || new Date().getFullYear();
     const startDate = `${y}-01-01`;
     const endDate = `${y}-12-31`;
 
@@ -1096,7 +1120,7 @@ router.get('/absence-stats', async (req, res, next) => {
 
     // Working-day filter for "Krank" (mirrors tenant AbsenceReport logic)
     const publicHolidays = await getPublicHolidayDatesForYear(y);
-    const isWorkingDay = (dateStr) => {
+    const isWorkingDay = (dateStr: string) => {
       const dow = new Date(dateStr + 'T12:00:00').getDay();
       if (dow === 0 || dow === 6) return false;
       return !publicHolidays.has(dateStr);
@@ -1122,22 +1146,22 @@ router.get('/absence-stats', async (req, res, next) => {
 
       if (tenantId && tenantId !== 'all') {
         centralSql += ' AND cae.source_tenant_id = ?';
-        centralParams.push(tenantId);
+        centralParams.push(String(tenantId));
       }
 
-      const [centralRows] = await db.execute(centralSql, centralParams);
+      const [centralRows] = await db.execute(centralSql, centralParams) as [any[], any];
 
       for (const r of centralRows) {
         const date = typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd');
         dayRows.push({ date, type: r.position, staffName: r.employee_name });
         staffNames.add(r.employee_name);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn('[Master absence-stats] CentralAbsenceEntry query failed:', e.message);
     }
 
     // ── 2) Fallback: unlinked doctors still store absences in tenant DB ──
-    await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    await queryAllTenants(cuSub(req), tenantId, async (pool: any, token: any) => {
       try {
         const placeholders = absenceTypes.map(() => '?').join(',');
         const [rows] = await pool.execute(
@@ -1148,21 +1172,21 @@ router.get('/absence-stats', async (req, res, next) => {
              AND se.position IN (${placeholders})
              AND (d.central_employee_id IS NULL OR d.central_employee_id = '')`,
           [startDate, endDate, ...absenceTypes]
-        );
+        ) as [any[], any];
         for (const r of rows) {
           const date = typeof r.date === 'string' ? r.date.substring(0, 10) : format(r.date, 'yyyy-MM-dd');
           dayRows.push({ date, type: r.position, staffName: r.doctor_name });
           staffNames.add(r.doctor_name);
         }
         return [];
-      } catch (e) {
+      } catch (e: any) {
         console.warn(`[Master absence-stats] Tenant "${token.name}":`, e.message);
         return [];
       }
     });
 
     // ── 3) Aggregate: monthly per-type counts + yearly totals ────────────
-    const byType = {};
+    const byType: Record<string, number> = {};
     absenceTypes.forEach(t => { byType[t] = 0; });
 
     const monthly = Array.from({ length: 12 }, (_, i) => ({
@@ -1176,12 +1200,12 @@ router.get('/absence-stats', async (req, res, next) => {
       if (row.type === 'Krank' && !isWorkingDay(row.date)) continue;
       const m = parseInt(row.date.slice(5, 7), 10);
       if (m < 1 || m > 12) continue;
-      monthly[m - 1].days[row.type]++;
-      byType[row.type]++;
+      (monthly[m - 1].days as Record<string, number>)[String(row.type)]++;
+      byType[String(row.type)]++;
     }
 
     res.json({ monthly, byType, staffCount: staffNames.size });
-  } catch (error) {
+  } catch (error: any) {
     next(error);
   }
 });
@@ -1190,46 +1214,46 @@ router.get('/absence-stats', async (req, res, next) => {
  * GET /api/master/time-tracking?year=2026&month=02&tenantId=xxx
  * Working time data (Soll/Ist) across all tenants for a given month
  */
-router.get('/time-tracking', async (req, res, next) => {
+router.get('/time-tracking', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { year, month, tenantId } = req.query;
-    const y = parseInt(year) || new Date().getFullYear();
-    const m = parseInt(month) || (new Date().getMonth() + 1);
+    const y = parseInt(String(year)) || new Date().getFullYear();
+    const m = parseInt(String(month)) || (new Date().getMonth() + 1);
     const startDate = `${y}-${String(m).padStart(2, '0')}-01`;
     const daysInMonth = getDaysInMonth(new Date(y, m - 1));
     const endDate = `${y}-${String(m).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
 
-    const entries = await queryAllTenants(req.user.sub, tenantId, async (pool, token) => {
+    const entries = await queryAllTenants(cuSub(req), tenantId, async (pool: any, token: any) => {
       try {
         // Get all active doctors
         const [doctors] = await pool.execute(
           'SELECT id, name, role FROM Doctor WHERE is_active = 1 ORDER BY name'
-        );
+        ) as [any[], any];
 
         // Get shifts for month
         const [shifts] = await pool.execute(
           'SELECT doctor_id, date, position, start_time, end_time, timeslot_id FROM ShiftEntry WHERE date >= ? AND date <= ?',
           [startDate, endDate]
-        );
+        ) as [any[], any];
 
         // Get timeslots (may not exist)
         let timeslots = [];
         try {
-          const [ts] = await pool.execute('SELECT id, start_time, end_time FROM WorkplaceTimeslot');
+          const [ts] = await pool.execute('SELECT id, start_time, end_time FROM WorkplaceTimeslot') as [any[], any];
           timeslots = ts;
         } catch { /* table may not exist */ }
 
         // Get workplaces for work_time_percentage, service_type and availability relevance
         let workplaces = [];
         try {
-          const [wp] = await pool.execute('SELECT name, work_time_percentage, service_type, affects_availability FROM Workplace');
+          const [wp] = await pool.execute('SELECT name, work_time_percentage, service_type, affects_availability FROM Workplace') as [any[], any];
           workplaces = wp;
         } catch { /* ignore */ }
 
         // Calculate per doctor
         return doctors.map(doc => {
-          const docShifts = shifts.filter(s => s.doctor_id === doc.id);
-          const shiftsByDate = {};
+          const docShifts = shifts.filter((s: any) => s.doctor_id === doc.id);
+          const shiftsByDate: Record<string, Record<string, unknown>[]> = {};
           docShifts.forEach(s => {
             const d = typeof s.date === 'string' ? s.date.substring(0, 10) : format(s.date, 'yyyy-MM-dd');
             if (!shiftsByDate[d]) shiftsByDate[d] = [];
@@ -1239,8 +1263,8 @@ router.get('/time-tracking', async (req, res, next) => {
           let totalMinutes = 0;
           let workDays = 0;
 
-          Object.values(shiftsByDate).forEach((dayShifts) => {
-            const workShifts = dayShifts.filter(s => {
+          Object.values(shiftsByDate).forEach((dayShifts: any) => {
+            const workShifts = dayShifts.filter((s: any) => {
               if (isNonWorkingShiftPosition(s.position)) return false;
 
               const wp = workplaces.find(w => w.name === s.position);
@@ -1249,9 +1273,9 @@ router.get('/time-tracking', async (req, res, next) => {
             });
             if (workShifts.length === 0) return;
 
-            const intervals = [];
+            const intervals: Record<string, unknown>[] = [];
 
-            workShifts.forEach(shift => {
+            workShifts.forEach((shift: Record<string, unknown>) => {
               const wp = workplaces.find(w => w.name === shift.position);
               const ts = shift.timeslot_id
                 ? timeslots.find(t => t.id === shift.timeslot_id)
@@ -1281,7 +1305,7 @@ router.get('/time-tracking', async (req, res, next) => {
             tenantName: token.name,
           };
         });
-      } catch (e) {
+      } catch (e: any) {
         console.warn(`[Master time-tracking] Tenant "${token.name}":`, e.message);
         return [];
       }
@@ -1302,16 +1326,16 @@ router.get('/time-tracking', async (req, res, next) => {
         totalDelta,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     next(error);
   }
 });
 
 // Helper: Convert "HH:MM:SS" to minutes
-function timeToMin(timeStr) {
+function timeToMin(timeStr: any) {
   if (!timeStr) return 0;
   const parts = String(timeStr).split(':');
-  return parseInt(parts[0]) * 60 + parseInt(parts[1] || 0);
+  return parseInt(parts[0] || '0') * 60 + parseInt((parts[1] as string) || '0');
 }
 
 // ============ CENTRAL HOLIDAYS & VACATIONS MANAGEMENT ============
@@ -1357,14 +1381,14 @@ async function ensureCentralHolidayTables() {
  * GET /api/master/holidays/settings
  * Returns central holiday settings (federal_state, show_school_holidays)
  */
-router.get('/holidays/settings', async (req, res, next) => {
+router.get('/holidays/settings', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureCentralHolidayTables();
-    const [rows] = await db.execute('SELECT * FROM holiday_settings');
-    const settings = {};
+    const [rows] = await db.execute('SELECT * FROM holiday_settings') as [any[], any];
+    const settings: Record<string, unknown> = {};
     rows.forEach(r => { settings[r.key] = r.value; });
     res.json({ settings, states: STATES });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] Settings error:', error);
     next(error);
   }
@@ -1375,7 +1399,7 @@ router.get('/holidays/settings', async (req, res, next) => {
  * Update a central holiday setting
  * Body: { key: 'federal_state', value: 'MV' }
  */
-router.put('/holidays/settings', async (req, res, next) => {
+router.put('/holidays/settings', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { key, value } = req.body;
     if (!key || value === undefined) {
@@ -1390,10 +1414,10 @@ router.put('/holidays/settings', async (req, res, next) => {
       'INSERT INTO holiday_settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)',
       [key, String(value)]
     );
-    console.log(`[Master holidays] Setting updated: ${key} = ${value} by user ${req.user.sub}`);
+    console.log(`[Master holidays] Setting updated: ${key} = ${value} by user ${cuSub(req)}`);
     clearHolidayCache();
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] Update setting error:', error);
     next(error);
   }
@@ -1403,12 +1427,12 @@ router.put('/holidays/settings', async (req, res, next) => {
  * GET /api/master/holidays/custom
  * List all custom holiday corrections
  */
-router.get('/holidays/custom', async (req, res, next) => {
+router.get('/holidays/custom', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureCentralHolidayTables();
-    const [rows] = await db.execute('SELECT * FROM custom_holidays ORDER BY start_date');
+    const [rows] = await db.execute('SELECT * FROM custom_holidays ORDER BY start_date') as [any[], any];
     res.json(rows);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] List custom error:', error);
     next(error);
   }
@@ -1419,7 +1443,7 @@ router.get('/holidays/custom', async (req, res, next) => {
  * Add a custom holiday correction
  * Body: { name, start_date, end_date?, type: 'public'|'school', action: 'add'|'remove' }
  */
-router.post('/holidays/custom', async (req, res, next) => {
+router.post('/holidays/custom', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, start_date, end_date, type, action } = req.body;
     if (!name || !start_date || !type || !action) {
@@ -1430,13 +1454,13 @@ router.post('/holidays/custom', async (req, res, next) => {
     await ensureCentralHolidayTables();
     await db.execute(
       'INSERT INTO custom_holidays (id, name, start_date, end_date, type, action, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, name, start_date, end_date || null, type, action, req.user.sub]
+      [id, name, start_date, end_date || null, type, action, cuSub(req)]
     );
 
-    console.log(`[Master holidays] Custom holiday created: ${name} (${type}/${action}) by user ${req.user.sub}`);
+    console.log(`[Master holidays] Custom holiday created: ${name} (${type}/${action}) by user ${cuSub(req)}`);
     clearHolidayCache();
     res.json({ id, name, start_date, end_date, type, action });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] Create custom error:', error);
     next(error);
   }
@@ -1446,15 +1470,15 @@ router.post('/holidays/custom', async (req, res, next) => {
  * DELETE /api/master/holidays/custom/:id
  * Delete a custom holiday correction
  */
-router.delete('/holidays/custom/:id', async (req, res, next) => {
+router.delete('/holidays/custom/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     await ensureCentralHolidayTables();
     await db.execute('DELETE FROM custom_holidays WHERE id = ?', [id]);
-    console.log(`[Master holidays] Custom holiday deleted: ${id} by user ${req.user.sub}`);
+    console.log(`[Master holidays] Custom holiday deleted: ${id} by user ${cuSub(req)}`);
     clearHolidayCache();
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] Delete custom error:', error);
     next(error);
   }
@@ -1464,7 +1488,7 @@ router.delete('/holidays/custom/:id', async (req, res, next) => {
  * GET /api/master/holidays/preview?year=YYYY
  * Preview the fully resolved holidays for a year (as tenants would see them)
  */
-router.get('/holidays/preview', async (req, res, next) => {
+router.get('/holidays/preview', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { year } = req.query;
     if (!year) return res.status(400).json({ error: 'year required' });
@@ -1473,7 +1497,7 @@ router.get('/holidays/preview', async (req, res, next) => {
     const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/holidays?year=${year}`);
     const data = await response.json();
     res.json(data);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master holidays] Preview error:', error);
     next(error);
   }
@@ -1485,7 +1509,7 @@ router.get('/holidays/preview', async (req, res, next) => {
  * GET /api/master/employees
  * List all central employees (with optional search)
  */
-router.get('/employees', async (req, res, next) => {
+router.get('/employees', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { q, active } = req.query;
     let sql = `SELECT e.*, wtm.name as work_time_model_name, wtm.hours_per_week as model_hours_per_week,
@@ -1513,19 +1537,19 @@ router.get('/employees', async (req, res, next) => {
     }
     sql += ' ORDER BY e.last_name, e.first_name';
 
-    const [rows] = await db.execute(sql, params);
+    const [rows] = await db.execute(sql, params) as [any[], any];
 
     // Enrich with tenant assignments
     const [assignments] = await db.execute(
       `SELECT eta.*, dt.name as tenant_name 
        FROM EmployeeTenantAssignment eta 
        LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id`
-    );
+    ) as [any[], any];
 
     const employees = rows.map(emp => ({
       ...emp,
       is_active: !!emp.is_active,
-      assignments: assignments.filter(a => a.employee_id === emp.id).map(a => ({
+      assignments: assignments.filter((a: any) => a.employee_id === emp.id).map(a => ({
         id: a.id,
         tenant_id: a.tenant_id,
         tenant_name: a.tenant_name,
@@ -1537,7 +1561,7 @@ router.get('/employees', async (req, res, next) => {
     }));
 
     res.json({ employees });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] List error:', error);
     next(error);
   }
@@ -1547,21 +1571,21 @@ router.get('/employees', async (req, res, next) => {
  * POST /api/master/employees/sync-time-accounts
  * Recalculate time accounts for all linked central employees
  */
-router.post('/employees/sync-time-accounts', async (req, res, next) => {
+router.post('/employees/sync-time-accounts', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [employees] = await db.execute(
       `SELECT e.*, wtm.hours_per_week as model_hours_per_week
        FROM Employee e
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        ORDER BY e.last_name ASC, e.first_name ASC`
-    );
+    ) as [any[], any];
     const [allAssignments] = await db.execute(
       `SELECT eta.*, dt.name as tenant_name
        FROM EmployeeTenantAssignment eta
        LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id`
-    );
+    ) as [any[], any];
 
-    const linkedEmployees = employees.filter((employee) =>
+    const linkedEmployees = employees.filter((employee: any) =>
       allAssignments.some((assignment) =>
         assignment.employee_id === employee.id && assignment.tenant_id && assignment.tenant_doctor_id
       )
@@ -1571,12 +1595,12 @@ router.post('/employees/sync-time-accounts', async (req, res, next) => {
     const skippedEmployees = employees.length - linkedEmployees.length;
 
     for (const employee of linkedEmployees) {
-      const assignments = allAssignments.filter((assignment) => assignment.employee_id === employee.id);
-      await syncEmployeeWorkSettingsForAssignments(req.user.sub, employee, assignments, {
-        id: req.user.sub,
-        email: req.user.email || null,
+      const assignments = allAssignments.filter((assignment: any) => assignment.employee_id === employee.id);
+      await syncEmployeeWorkSettingsForAssignments(cuSub(req), employee, assignments, {
+        id: cuSub(req),
+        email: cuEmail(req),
       });
-      const result = await syncTimeAccountsForEmployee(req.user.sub, employee, assignments);
+      const result = await syncTimeAccountsForEmployee(cuSub(req), employee, assignments);
       if (result?.synced) {
         syncedEmployees += 1;
       }
@@ -1589,7 +1613,7 @@ router.post('/employees/sync-time-accounts', async (req, res, next) => {
       syncedEmployees,
       skippedEmployees,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Global time-account sync error:', error);
     next(error);
   }
@@ -1601,7 +1625,7 @@ router.post('/employees/sync-time-accounts', async (req, res, next) => {
  * into the central absence storage.
  * Body: { tenant_id?, employee_id? }
  */
-router.post('/employees/migrate-linked-absences', async (req, res, next) => {
+router.post('/employees/migrate-linked-absences', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenant_id = null, employee_id = null, dry_run = false, purge_empty_dates = false, resolve_conflicts = false } = req.body || {};
     // Opt-in only: never delete empty-date tenant absence rows during the
@@ -1613,7 +1637,7 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
     // absence for the same day, even when the local row has a higher
     // priority. Ties are NEVER auto-resolved either.
     const resolveConflicts = Boolean(resolve_conflicts) && !dry_run;
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const tokenMap = new Map(tokens.map((token) => [String(token.id), token]));
 
     if (tenant_id && !tokenMap.has(String(tenant_id))) {
@@ -1646,10 +1670,10 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
          ${whereClause}
         ORDER BY dt.name ASC, e.last_name ASC, e.first_name ASC`,
       params
-    );
+    ) as [any[], any];
 
     const assignments = assignmentRows
-      .filter((row) => row.tenant_id && row.tenant_doctor_id && tokenMap.has(String(row.tenant_id)))
+      .filter((row: any) => row.tenant_id && row.tenant_doctor_id && tokenMap.has(String(row.tenant_id)))
       .map((row) => ({
         employee_id: row.employee_id,
         employee_name: [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || row.last_name || null,
@@ -1669,11 +1693,11 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
     });
 
     console.log(
-      `[Master employees] ${migrationResult.dryRun ? 'Previewed' : 'Migrated'} linked absences for ${migrationResult.migratedAssignments}/${migrationResult.totalAssignments} assignment(s)${purgeEmptyDates ? ` (purged ${migrationResult.purgedEmptyAbsences} empty-date row(s))` : ''}${resolveConflicts ? ` (resolved ${migrationResult.resolvedConflicts} conflict(s), ${migrationResult.unresolvedConflicts} still open)` : ''} by user ${req.user.sub}`
+      `[Master employees] ${migrationResult.dryRun ? 'Previewed' : 'Migrated'} linked absences for ${migrationResult.migratedAssignments}/${migrationResult.totalAssignments} assignment(s)${purgeEmptyDates ? ` (purged ${migrationResult.purgedEmptyAbsences} empty-date row(s))` : ''}${resolveConflicts ? ` (resolved ${migrationResult.resolvedConflicts} conflict(s), ${migrationResult.unresolvedConflicts} still open)` : ''} by user ${cuSub(req)}`
     );
 
     res.json(migrationResult);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Linked absence migration error:', error);
     next(error);
   }
@@ -1683,7 +1707,7 @@ router.post('/employees/migrate-linked-absences', async (req, res, next) => {
  * GET /api/master/employees/:id
  * Single employee detail with assignments and time accounts
  */
-router.get('/employees/:id', async (req, res, next) => {
+router.get('/employees/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -1698,7 +1722,7 @@ router.get('/employees/:id', async (req, res, next) => {
        LEFT JOIN PayScaleGroup psg ON e.payscale_group_id = psg.id
        WHERE e.id = ?`,
       [id]
-    );
+    ) as [any[], any];
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -1711,15 +1735,15 @@ router.get('/employees/:id', async (req, res, next) => {
        LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
        WHERE eta.employee_id = ?`,
       [id]
-    );
+    ) as [any[], any];
 
     try {
-      await syncEmployeeWorkSettingsForAssignments(req.user.sub, emp, assignments, {
-        id: req.user.sub,
-        email: req.user.email || null,
+      await syncEmployeeWorkSettingsForAssignments(cuSub(req), emp, assignments, {
+        id: cuSub(req),
+        email: cuEmail(req),
       });
-      await syncTimeAccountsForEmployee(req.user.sub, emp, assignments);
-    } catch (syncError) {
+      await syncTimeAccountsForEmployee(cuSub(req), emp, assignments);
+    } catch (syncError: any) {
       console.warn(`[Master employees] Time-account sync failed for ${id}: ${syncError.message}`);
     }
 
@@ -1727,15 +1751,15 @@ router.get('/employees/:id', async (req, res, next) => {
     const [timeAccounts] = await db.execute(
       `SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year DESC, month DESC LIMIT 24`,
       [id]
-    );
+    ) as [any[], any];
 
     // Vacation + absences aggregated across all linked tenants
     const empVacationDaysTotal = emp.vacation_days_annual != null ? Number(emp.vacation_days_annual) : 30;
     const vacationSummary = await aggregateVacationAcrossTenants(
-      req.user.sub,
+      cuSub(req),
       assignments,
       empVacationDaysTotal,
-      id
+      id as string
     );
 
     res.json({
@@ -1754,7 +1778,7 @@ router.get('/employees/:id', async (req, res, next) => {
       time_accounts: timeAccounts,
       ...vacationSummary,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Detail error:', error);
     next(error);
   }
@@ -1772,7 +1796,7 @@ router.get('/employees/:id', async (req, res, next) => {
  * tenants we only count it once (key = `${date}::${type}`) to avoid
  * inflating the counters via duplicate tenant links.
  */
-async function aggregateVacationAcrossTenants(adminUserId, assignments, vacationDaysTotal = 30, employeeId = null) {
+async function aggregateVacationAcrossTenants(adminUserId: any, assignments: any[], vacationDaysTotal = 30, employeeId: string | null = null) {
   const absencePositions = [
     'Urlaub', 'Schichturlaub', 'Krank', 'Frei', 'Dienstreise', 'Nicht verfügbar',
     'Fortbildung', 'Kongress', 'Elternzeit', 'Mutterschutz',
@@ -1783,7 +1807,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
   let publicHolidayDates = new Set();
   try {
     publicHolidayDates = await getPublicHolidayDatesForYear(currentYear);
-  } catch (e) {
+  } catch (e: any) {
     console.warn(`[Master employees] Holiday lookup failed: ${e.message}`);
   }
 
@@ -1806,7 +1830,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
           WHERE employee_id = ? AND YEAR(date) = ? AND position IN (${placeholders})
           ORDER BY date`,
         [employeeId, currentYear, ...absencePositions]
-      );
+      ) as [any[], any];
       for (const r of centralRows) {
         const dateStr = typeof r.date === 'string'
           ? r.date.substring(0, 10)
@@ -1824,7 +1848,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
           tenant_name: 'Zentral',
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn(`[Master employees] CentralAbsenceEntry query failed for ${employeeId}: ${e.message}`);
     }
   }
@@ -1836,13 +1860,13 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
     if (!token) continue;
 
     try {
-      const rows = await withTenantDb(token, async (pool) => {
+      const rows = await withTenantDb(token, async (pool: any) => {
         const [absRows] = await pool.execute(
           `SELECT date, position, note FROM ShiftEntry
             WHERE doctor_id = ? AND YEAR(date) = ? AND position IN (${placeholders})
             ORDER BY date`,
           [assignment.tenant_doctor_id, currentYear, ...absencePositions]
-        );
+        ) as [any[], any];
         return absRows;
       });
 
@@ -1863,14 +1887,14 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
           tenant_name: token.name,
         });
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn(`[Master employees] Absence query failed for tenant ${token.id}: ${e.message}`);
     }
   }
 
   absences.sort((a, b) => a.from.localeCompare(b.from));
 
-  const isWorkday = (dateStr) => {
+  const isWorkday = (dateStr: string) => {
     const d = new Date(`${dateStr}T12:00:00`);
     const day = d.getDay();
     if (day === 0 || day === 6) return false;
@@ -1879,10 +1903,10 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
   };
 
   const vacationDates = absences
-    .filter((a) => a.type === 'Urlaub' && isWorkday(a.from))
+    .filter((a: any) => a.type === 'Urlaub' && isWorkday(a.from))
     .map((a) => a.from);
-  const vacationTaken = vacationDates.filter((d) => d <= today).length;
-  const vacationPlanned = vacationDates.filter((d) => d > today).length;
+  const vacationTaken = vacationDates.filter((d: any) => d <= today).length;
+  const vacationPlanned = vacationDates.filter((d: any) => d > today).length;
 
   // Schichturlaub: separate balance with the same counting rules, but
   // sourced from EmployeeVacationYear.shift_vacation_days (default 0).
@@ -1893,10 +1917,10 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
     : { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
 
   const shiftVacationDates = absences
-    .filter((a) => a.type === 'Schichturlaub' && isWorkday(a.from))
+    .filter((a: any) => a.type === 'Schichturlaub' && isWorkday(a.from))
     .map((a) => a.from);
-  const shiftVacationTaken = shiftVacationDates.filter((d) => d <= today).length;
-  const shiftVacationPlanned = shiftVacationDates.filter((d) => d > today).length;
+  const shiftVacationTaken = shiftVacationDates.filter((d: any) => d <= today).length;
+  const shiftVacationPlanned = shiftVacationDates.filter((d: any) => d > today).length;
   const shiftVacationTotal = Number(shiftEntitlement.shift_vacation_days) || 0;
 
   return {
@@ -1923,7 +1947,7 @@ async function aggregateVacationAcrossTenants(adminUserId, assignments, vacation
  * Also tolerates a missing `EmployeeVacationYear` table so older
  * deployments don't crash on the detail endpoint.
  */
-async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
+async function fetchShiftVacationEntitlement(masterDb: any, employeeId: any, year: any) {
   try {
     const [rows] = await masterDb.execute(
       `SELECT shift_vacation_days, carried_over, carried_over_from_year, expires_at
@@ -1931,7 +1955,7 @@ async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
         WHERE employee_id = ? AND year = ?
         LIMIT 1`,
       [employeeId, year]
-    );
+    ) as [any[], any];
     if (rows.length === 0) {
       return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
     }
@@ -1945,7 +1969,7 @@ async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
           : String(rows[0].expires_at).slice(0, 10)
       ) : null,
     };
-  } catch (e) {
+  } catch (e: any) {
     console.warn(`[Master employees] Shift-vacation entitlement lookup failed for ${employeeId}/${year}: ${e.message}`);
     return { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
   }
@@ -1958,7 +1982,7 @@ async function fetchShiftVacationEntitlement(masterDb, employeeId, year) {
  * we resolve each assignment's tenant_key from the linked db_token and merge
  * the rows so the central UI can show everything in one place.
  */
-router.get('/employees/:id/certificates', async (req, res, next) => {
+router.get('/employees/:id/certificates', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     console.log(`[Master employee-certificates] Request: employeeId=${id}`);
@@ -1967,7 +1991,7 @@ router.get('/employees/:id/certificates', async (req, res, next) => {
     const [empRows] = await db.execute(
       'SELECT id, first_name, last_name FROM Employee WHERE id = ?',
       [id]
-    );
+    ) as [any[], any];
     if (empRows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -1979,7 +2003,7 @@ router.get('/employees/:id/certificates', async (req, res, next) => {
          LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
         WHERE eta.employee_id = ?`,
       [id]
-    );
+    ) as [any[], any];
 
     if (assignments.length === 0) {
       return res.json({ employeeId: id, certificates: [] });
@@ -2006,7 +2030,7 @@ router.get('/employees/:id/certificates', async (req, res, next) => {
           WHERE tenant_key = ? AND doctor_id = ?
           ORDER BY uploaded_at DESC`,
         [tenantKey, a.tenant_doctor_id]
-      );
+      ) as [any[], any];
       for (const r of rows) {
         certificates.push({
           ...r,
@@ -2018,7 +2042,7 @@ router.get('/employees/:id/certificates', async (req, res, next) => {
     }
 
     res.json({ employeeId: id, certificates });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employee-certificates] Route error:', error);
     next(error);
   }
@@ -2029,12 +2053,12 @@ router.get('/employees/:id/certificates', async (req, res, next) => {
  * Stream a single certificate file. Resolves the correct tenant_key from the
  * stored certificate row so we never trust the URL path for tenant scoping.
  */
-router.get('/employees/:id/certificates/:certificateId/download', async (req, res, next) => {
+router.get('/employees/:id/certificates/:certificateId/download', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, certificateId } = req.params;
 
     // Confirm the central employee exists
-    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]) as [any[], any];
     if (empRows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -2048,7 +2072,7 @@ router.get('/employees/:id/certificates/:certificateId/download', async (req, re
          LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
         WHERE eta.employee_id = ?`,
       [id]
-    );
+    ) as [any[], any];
 
     for (const a of assignments) {
       if (!a.token || !a.tenant_doctor_id) continue;
@@ -2065,7 +2089,7 @@ router.get('/employees/:id/certificates/:certificateId/download', async (req, re
           WHERE id = ? AND tenant_key = ? AND doctor_id = ?
           LIMIT 1`,
         [certificateId, tenantKey, a.tenant_doctor_id]
-      );
+      ) as [any[], any];
       if (rows.length > 0) {
         const cert = rows[0];
         res.setHeader('Content-Type', cert.mime_type);
@@ -2075,7 +2099,7 @@ router.get('/employees/:id/certificates/:certificateId/download', async (req, re
     }
 
     return res.status(404).json({ error: 'Zertifikat nicht gefunden' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employee-certificate download] Route error:', error);
     next(error);
   }
@@ -2085,7 +2109,7 @@ router.get('/employees/:id/certificates/:certificateId/download', async (req, re
  * POST /api/master/employees/:id/sync-time-accounts
  * Recalculate time accounts for a linked central employee
  */
-router.post('/employees/:id/sync-time-accounts', async (req, res, next) => {
+router.post('/employees/:id/sync-time-accounts', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -2095,7 +2119,7 @@ router.post('/employees/:id/sync-time-accounts', async (req, res, next) => {
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        WHERE e.id = ?`,
       [id]
-    );
+    ) as [any[], any];
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -2107,25 +2131,25 @@ router.post('/employees/:id/sync-time-accounts', async (req, res, next) => {
        LEFT JOIN db_tokens dt ON eta.tenant_id COLLATE utf8mb4_general_ci = dt.id
        WHERE eta.employee_id = ?`,
       [id]
-    );
+    ) as [any[], any];
 
-    await syncEmployeeWorkSettingsForAssignments(req.user.sub, employee, assignments, {
-      id: req.user.sub,
-      email: req.user.email || null,
+    await syncEmployeeWorkSettingsForAssignments(cuSub(req), employee, assignments, {
+      id: cuSub(req),
+      email: cuEmail(req),
     });
 
-    const result = await syncTimeAccountsForEmployee(req.user.sub, employee, assignments);
+    const result = await syncTimeAccountsForEmployee(cuSub(req), employee, assignments);
     const [timeAccounts] = await db.execute(
       `SELECT * FROM TimeAccount WHERE employee_id = ? ORDER BY year DESC, month DESC LIMIT 24`,
       [id]
-    );
+    ) as [any[], any];
 
     res.json({
       success: true,
       ...result,
       timeAccounts: timeAccounts.length,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Time-account sync error:', error);
     next(error);
   }
@@ -2135,7 +2159,7 @@ router.post('/employees/:id/sync-time-accounts', async (req, res, next) => {
  * POST /api/master/employees
  * Create a new central employee
  */
-router.post('/employees', async (req, res, next) => {
+router.post('/employees', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const {
       last_name, first_name, former_name, date_of_birth, email, phone, address,
@@ -2177,7 +2201,7 @@ router.post('/employees', async (req, res, next) => {
         payroll_id?.trim() || null,
         work_time_model_id || null,
         notes?.trim() || null,
-        req.user.sub,
+        cuSub(req),
         payscale_tariff_id || null,
         payscale_group_id || null,
         payscale_level != null ? parseInt(payscale_level, 10) : null,
@@ -2193,9 +2217,9 @@ router.post('/employees', async (req, res, next) => {
       ]
     );
 
-    console.log(`[Master employees] Created employee ${id} (${last_name}) by user ${req.user.sub}`);
+    console.log(`[Master employees] Created employee ${id} (${last_name}) by user ${cuSub(req)}`);
     res.status(201).json({ id, last_name, first_name });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Create error:', error);
     next(error);
   }
@@ -2205,12 +2229,12 @@ router.post('/employees', async (req, res, next) => {
  * PUT /api/master/employees/:id
  * Update a central employee
  */
-router.put('/employees/:id', async (req, res, next) => {
+router.put('/employees/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
     // Check employee exists
-    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -2254,7 +2278,7 @@ router.put('/employees/:id', async (req, res, next) => {
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        WHERE e.id = ?`,
       [id]
-    );
+    ) as [any[], any];
     const [assignmentRows] = await db.execute(
       `SELECT tenant_id, tenant_doctor_id
        FROM EmployeeTenantAssignment
@@ -2262,12 +2286,12 @@ router.put('/employees/:id', async (req, res, next) => {
          AND tenant_doctor_id IS NOT NULL
          AND tenant_doctor_id != ''`,
       [id]
-    );
+    ) as [any[], any];
 
     if (employeeRows.length > 0 && assignmentRows.length > 0) {
-      const syncResult = await syncEmployeeWorkSettingsForAssignments(req.user.sub, employeeRows[0], assignmentRows, {
-        id: req.user.sub,
-        email: req.user.email || null,
+      const syncResult = await syncEmployeeWorkSettingsForAssignments(cuSub(req), employeeRows[0], assignmentRows, {
+        id: cuSub(req),
+        email: cuEmail(req),
       });
 
       if (syncResult.failedAssignments.length > 0) {
@@ -2275,9 +2299,9 @@ router.put('/employees/:id', async (req, res, next) => {
       }
     }
 
-    console.log(`[Master employees] Updated employee ${id} (fields: ${updates.map(u => u.split(' =')[0]).join(', ')}) by user ${req.user.sub}`);
+    console.log(`[Master employees] Updated employee ${id} (fields: ${updates.map(u => u.split(' =')[0]).join(', ')}) by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Update error:', error);
     next(error);
   }
@@ -2288,7 +2312,7 @@ router.put('/employees/:id', async (req, res, next) => {
  * Update tenant assignments for a central employee
  * Body: { assignments: [{ tenant_id, fte_share, is_primary, tenant_doctor_id }] }
  */
-router.put('/employees/:id/assignments', async (req, res, next) => {
+router.put('/employees/:id/assignments', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { assignments } = req.body;
@@ -2298,7 +2322,7 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
     }
 
     // Check employee exists
-    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -2307,7 +2331,7 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
     const [currentAssignments] = await db.execute(
       'SELECT * FROM EmployeeTenantAssignment WHERE employee_id = ?',
       [id]
-    );
+    ) as [any[], any];
 
     // Upsert: for each assignment, insert or update
     for (const a of assignments) {
@@ -2337,9 +2361,9 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
       }
     }
 
-    console.log(`[Master employees] Updated assignments for employee ${id} by user ${req.user.sub}`);
+    console.log(`[Master employees] Updated assignments for employee ${id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Assignments error:', error);
     next(error);
   }
@@ -2349,12 +2373,12 @@ router.put('/employees/:id/assignments', async (req, res, next) => {
  * DELETE /api/master/employees/:id
  * Permanently delete a deactivated employee and clean up all references
  */
-router.delete('/employees/:id', async (req, res, next) => {
+router.delete('/employees/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
     // Check employee exists and is inactive
-    const [empRows] = await db.execute('SELECT id, is_active, last_name, first_name FROM Employee WHERE id = ?', [id]);
+    const [empRows] = await db.execute('SELECT id, is_active, last_name, first_name FROM Employee WHERE id = ?', [id]) as [any[], any];
     if (empRows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
@@ -2366,36 +2390,36 @@ router.delete('/employees/:id', async (req, res, next) => {
     const [assignments] = await db.execute(
       'SELECT eta.tenant_id, eta.tenant_doctor_id FROM EmployeeTenantAssignment eta WHERE eta.employee_id = ?',
       [id]
-    );
+    ) as [any[], any];
 
     // Clean up central_employee_id in tenant Doctor tables
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const tokenMap = new Map(tokens.map(t => [String(t.id), t]));
     for (const assign of assignments) {
       const token = tokenMap.get(String(assign.tenant_id));
       if (token && assign.tenant_doctor_id) {
         try {
-          await withTenantDb(token, async (pool) => {
+          await withTenantDb(token, async (pool: any) => {
             await pool.execute(
               'UPDATE Doctor SET central_employee_id = NULL WHERE id = ?',
               [assign.tenant_doctor_id]
             );
           });
-        } catch (err) {
+        } catch (err: any) {
           console.warn(`[Master employees] Could not unlink tenant doctor ${assign.tenant_doctor_id}: ${err.message}`);
         }
       }
     }
 
-    await deleteEmployeeDependentRecords(db, id);
+    await deleteEmployeeDependentRecords(db, String(id));
 
     // Delete employee
     await db.execute('DELETE FROM Employee WHERE id = ?', [id]);
 
     const name = [empRows[0].first_name, empRows[0].last_name].filter(Boolean).join(' ');
-    console.log(`[Master employees] Permanently deleted employee ${id} (${name}) by ${req.user.email}`);
+    console.log(`[Master employees] Permanently deleted employee ${id} (${name}) by ${cuEmail(req)}`);
     res.json({ success: true, message: `Mitarbeiter "${name}" wurde permanent gelöscht` });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Delete error:', error);
     next(error);
   }
@@ -2406,7 +2430,7 @@ router.delete('/employees/:id', async (req, res, next) => {
  * Create central Employee(s) from tenant Doctor records and auto-link them.
  * Body: { items: [{ tenant_id, doctor_id, name, role }] }
  */
-router.post('/employees/import-from-tenant', async (req, res, next) => {
+router.post('/employees/import-from-tenant', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items) || items.length === 0) {
@@ -2414,7 +2438,7 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
     }
 
     // Pre-check: admin has access to referenced tenants
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const tokenMap = new Map(tokens.map(t => [String(t.id), t]));
 
     const results = [];
@@ -2446,7 +2470,7 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
         const [existingAssign] = await db.execute(
           'SELECT id FROM EmployeeTenantAssignment WHERE tenant_id = ? AND tenant_doctor_id = ?',
           [tenant_id, doctor_id]
-        );
+        ) as [any[], any];
         if (existingAssign.length > 0) {
           results.push({ doctor_id, name, status: 'skipped', reason: 'Bereits verknüpft' });
           continue;
@@ -2457,11 +2481,11 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
         await db.execute(
           `INSERT INTO Employee (id, last_name, first_name, is_active, created_by)
            VALUES (?, ?, ?, TRUE, ?)`,
-          [empId, last_name, first_name, req.user.sub]
+          [empId, last_name, first_name, cuSub(req)]
         );
 
         // Set central_employee_id on tenant Doctor
-        await withTenantDb(token, async (pool) => {
+        await withTenantDb(token, async (pool: any) => {
           await pool.execute(
             'UPDATE Doctor SET central_employee_id = ? WHERE id = ?',
             [empId, doctor_id]
@@ -2476,16 +2500,16 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
         );
 
         results.push({ doctor_id, name, employee_id: empId, status: 'success' });
-      } catch (err) {
+      } catch (err: any) {
         console.error(`[Master import] Error for doctor ${doctor_id}:`, err.message);
         results.push({ doctor_id, name, status: 'error', error: err.message });
       }
     }
 
-    const successCount = results.filter(r => r.status === 'success').length;
-    console.log(`[Master import] Imported ${successCount}/${items.length} employees by ${req.user.email}`);
+    const successCount = results.filter((r: any) => r.status === 'success').length;
+    console.log(`[Master import] Imported ${successCount}/${items.length} employees by ${cuEmail(req)}`);
     res.json({ results, imported: successCount, total: items.length });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master import] Error:', error);
     next(error);
   }
@@ -2496,7 +2520,7 @@ router.post('/employees/import-from-tenant', async (req, res, next) => {
  * Link a central employee to a tenant's Doctor record
  * Body: { tenant_id, doctor_id }
  */
-router.post('/employees/:id/link-tenant', async (req, res, next) => {
+router.post('/employees/:id/link-tenant', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { tenant_id, doctor_id } = req.body;
@@ -2506,25 +2530,25 @@ router.post('/employees/:id/link-tenant', async (req, res, next) => {
     }
 
     // Check employee exists
-    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]);
+    const [empRows] = await db.execute('SELECT id FROM Employee WHERE id = ?', [id]) as [any[], any];
     if (empRows.length === 0) {
       return res.status(404).json({ error: 'Mitarbeiter nicht gefunden' });
     }
 
     // Check admin has access to this tenant
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const token = tokens.find(t => t.id === tenant_id);
     if (!token) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
 
     // Update Doctor in tenant DB to set central_employee_id
-    await withTenantDb(token, async (pool) => {
+    await withTenantDb(token, async (pool: any) => {
       // First check if doctor has central_employee_id column
       const [cols] = await pool.execute(
         `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
          WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'central_employee_id' AND TABLE_SCHEMA = DATABASE()`
-      );
+      ) as [any[], any];
       if (cols.length === 0) {
         throw new Error('Tenant hat noch keine Migrationen für zentrale Mitarbeiterverwaltung. Bitte zuerst Migrationen ausführen.');
       }
@@ -2544,7 +2568,7 @@ router.post('/employees/:id/link-tenant', async (req, res, next) => {
     const [existingAssign] = await db.execute(
       'SELECT id FROM EmployeeTenantAssignment WHERE employee_id = ? AND tenant_id = ?',
       [id, tenant_id]
-    );
+    ) as [any[], any];
     if (existingAssign.length > 0) {
       await db.execute(
         'UPDATE EmployeeTenantAssignment SET tenant_doctor_id = ? WHERE id = ?',
@@ -2558,8 +2582,8 @@ router.post('/employees/:id/link-tenant', async (req, res, next) => {
       );
     }
 
-    console.log(`[Master employees] Linked employee ${id} to tenant ${tenant_id} doctor ${doctor_id} by user ${req.user.sub}`);
-    await withTenantDb(token, async (pool) => {
+    console.log(`[Master employees] Linked employee ${id} to tenant ${tenant_id} doctor ${doctor_id} by user ${cuSub(req)}`);
+    await withTenantDb(token, async (pool: any) => {
       await migrateTenantDoctorAbsencesToCentral({
         tenantDb: pool,
         masterDb: db,
@@ -2568,7 +2592,7 @@ router.post('/employees/:id/link-tenant', async (req, res, next) => {
       });
     });
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Link error:', error);
     next(error);
   }
@@ -2579,7 +2603,7 @@ router.post('/employees/:id/link-tenant', async (req, res, next) => {
  * Remove the central link for a tenant Doctor record
  * Body: { tenant_id, doctor_id }
  */
-router.post('/employees/unlink-tenant', async (req, res, next) => {
+router.post('/employees/unlink-tenant', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenant_id, doctor_id } = req.body;
 
@@ -2587,18 +2611,18 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
       return res.status(400).json({ error: 'tenant_id and doctor_id required' });
     }
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const token = tokens.find(t => t.id === tenant_id);
     if (!token) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
 
     let employeeId = null;
-    await withTenantDb(token, async (pool) => {
+    await withTenantDb(token, async (pool: any) => {
       const [doctorRows] = await pool.execute(
         'SELECT central_employee_id FROM Doctor WHERE id = ? LIMIT 1',
         [doctor_id]
-      );
+      ) as [any[], any];
       employeeId = doctorRows[0]?.central_employee_id || null;
       if (employeeId) {
         await seedTenantDoctorAbsencesFromCentral({
@@ -2606,16 +2630,16 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
           masterDb: db,
           doctorId: doctor_id,
           employeeId,
-          createdBy: req.user?.email || 'system',
+          createdBy: cuReq(req).user?.email || 'system',
         });
       }
     });
 
-    await withTenantDb(token, async (pool) => {
+    await withTenantDb(token, async (pool: any) => {
       const [cols] = await pool.execute(
         `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
          WHERE TABLE_NAME = 'Doctor' AND COLUMN_NAME = 'central_employee_id' AND TABLE_SCHEMA = DATABASE()`
-      );
+      ) as [any[], any];
       if (cols.length === 0) {
         return [];
       }
@@ -2633,9 +2657,9 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
       [tenant_id, doctor_id]
     );
 
-    console.log(`[Master employees] Unlinked tenant ${tenant_id} doctor ${doctor_id} by user ${req.user.sub}`);
+    console.log(`[Master employees] Unlinked tenant ${tenant_id} doctor ${doctor_id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master employees] Unlink error:', error);
     next(error);
   }
@@ -2648,7 +2672,7 @@ router.post('/employees/unlink-tenant', async (req, res, next) => {
  * List all relationships with shift_conflict enabled.
  * Used by frontend validation to detect scheduling conflicts.
  */
-router.get('/employee-relationships', async (req, res, next) => {
+router.get('/employee-relationships', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [rows] = await db.execute(
       `SELECT er.*,
@@ -2659,10 +2683,10 @@ router.get('/employee-relationships', async (req, res, next) => {
        JOIN Employee e2 ON er.related_employee_id = e2.id
        WHERE er.shift_conflict = TRUE
        ORDER BY er.created_at DESC`
-    );
+    ) as [any[], any];
 
     res.json({ relationships: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master relationships] List all error:', error);
     next(error);
   }
@@ -2672,7 +2696,7 @@ router.get('/employee-relationships', async (req, res, next) => {
  * GET /api/master/employees/:id/relationships
  * List all relationships for a central employee
  */
-router.get('/employees/:id/relationships', async (req, res, next) => {
+router.get('/employees/:id/relationships', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -2686,10 +2710,10 @@ router.get('/employees/:id/relationships', async (req, res, next) => {
        WHERE er.employee_id = ? OR er.related_employee_id = ?
        ORDER BY er.created_at DESC`,
       [id, id]
-    );
+    ) as [any[], any];
 
     res.json({ relationships: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master relationships] List error:', error);
     next(error);
   }
@@ -2700,7 +2724,7 @@ router.get('/employees/:id/relationships', async (req, res, next) => {
  * Create a relationship between two employees
  * Body: { related_employee_id, relationship_type, shift_conflict }
  */
-router.post('/employees/:id/relationships', async (req, res, next) => {
+router.post('/employees/:id/relationships', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { related_employee_id, relationship_type, shift_conflict } = req.body;
@@ -2716,7 +2740,7 @@ router.post('/employees/:id/relationships', async (req, res, next) => {
     const [employees] = await db.execute(
       'SELECT id FROM Employee WHERE id IN (?, ?)',
       [id, related_employee_id]
-    );
+    ) as [any[], any];
     if (employees.length !== 2) {
       return res.status(404).json({ error: 'Einer oder beide Mitarbeiter wurden nicht gefunden' });
     }
@@ -2727,7 +2751,7 @@ router.post('/employees/:id/relationships', async (req, res, next) => {
        WHERE (employee_id = ? AND related_employee_id = ?)
           OR (employee_id = ? AND related_employee_id = ?)`,
       [id, related_employee_id, related_employee_id, id]
-    );
+    ) as [any[], any];
     if (existing.length > 0) {
       return res.status(409).json({ error: 'Diese Beziehung existiert bereits' });
     }
@@ -2736,7 +2760,7 @@ router.post('/employees/:id/relationships', async (req, res, next) => {
     await db.execute(
       `INSERT INTO EmployeeRelationship (id, employee_id, related_employee_id, relationship_type, shift_conflict, created_by)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [relId, id, related_employee_id, relationship_type || 'lebensgemeinschaft', shift_conflict ?? false, req.user.sub]
+      [relId, id, related_employee_id, relationship_type || 'lebensgemeinschaft', shift_conflict ?? false, cuSub(req)]
     );
 
     // Fetch the created row with names
@@ -2749,11 +2773,11 @@ router.post('/employees/:id/relationships', async (req, res, next) => {
        JOIN Employee e2 ON er.related_employee_id = e2.id
        WHERE er.id = ?`,
       [relId]
-    );
+    ) as [any[], any];
 
-    console.log(`[Master relationships] Created relationship ${relId}: ${id} <-> ${related_employee_id} (${relationship_type || 'lebensgemeinschaft'}) by user ${req.user.sub}`);
+    console.log(`[Master relationships] Created relationship ${relId}: ${id} <-> ${related_employee_id} (${relationship_type || 'lebensgemeinschaft'}) by user ${cuSub(req)}`);
     res.status(201).json({ relationship: rows[0] });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master relationships] Create error:', error);
     next(error);
   }
@@ -2763,23 +2787,23 @@ router.post('/employees/:id/relationships', async (req, res, next) => {
  * DELETE /api/master/employees/:id/relationships/:relationshipId
  * Remove a relationship
  */
-router.delete('/employees/:id/relationships/:relationshipId', async (req, res, next) => {
+router.delete('/employees/:id/relationships/:relationshipId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, relationshipId } = req.params;
 
     const [existing] = await db.execute(
       'SELECT id FROM EmployeeRelationship WHERE id = ? AND (employee_id = ? OR related_employee_id = ?)',
       [relationshipId, id, id]
-    );
+    ) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Beziehung nicht gefunden' });
     }
 
     await db.execute('DELETE FROM EmployeeRelationship WHERE id = ?', [relationshipId]);
 
-    console.log(`[Master relationships] Deleted relationship ${relationshipId} by user ${req.user.sub}`);
+    console.log(`[Master relationships] Deleted relationship ${relationshipId} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master relationships] Delete error:', error);
     next(error);
   }
@@ -2798,7 +2822,7 @@ router.delete('/employees/:id/relationships/:relationshipId', async (req, res, n
  * Body: { employee_id: string, date: string (YYYY-MM-DD) }
  * Returns: { conflicts: Array<{ related_employee_id, related_employee_name, relationship_type }> }
  */
-router.post('/check-relationship-conflicts', async (req, res, next) => {
+router.post('/check-relationship-conflicts', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { employee_id, date } = req.body || {};
     if (!employee_id || !date) {
@@ -2810,7 +2834,7 @@ router.post('/check-relationship-conflicts', async (req, res, next) => {
 
     const conflicts = await checkCrossTenantRelationshipConflicts(db, getTenantDb, { employeeId: employee_id, dateStr: date });
     res.json({ conflicts });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master] Cross-tenant relationship conflict check error:', error);
     next(error);
   }
@@ -2833,7 +2857,7 @@ router.post('/check-relationship-conflicts', async (req, res, next) => {
  * @param {string} params.dateStr - Datum als YYYY-MM-DD
  * @returns {Promise<Array<{related_employee_id, related_employee_name, relationship_type}>>}
  */
-async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, { employeeId, dateStr }) {
+async function checkCrossTenantRelationshipConflicts(masterDb: any, getTenantPoolFn: any, { employeeId, dateStr }: { employeeId: string; dateStr: string }) {
   // 1. Alle Beziehungen mit shift_conflict für diesen Mitarbeiter laden
   const [relationships] = await masterDb.execute(
     `SELECT er.*,
@@ -2845,7 +2869,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
       WHERE er.shift_conflict = TRUE
         AND (er.employee_id = ? OR er.related_employee_id = ?)`,
     [employeeId, employeeId]
-  );
+  ) as [any[], any];
 
   if (relationships.length === 0) return [];
 
@@ -2873,7 +2897,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
        FROM EmployeeTenantAssignment eta
       WHERE eta.employee_id IN (${placeholders})`,
     Array.from(relatedIds.keys())
-  );
+  ) as [any[], any];
 
   // Gruppiere Assignments nach tenant_id für effiziente Batch-Abfragen
   const tenantGroups = new Map(); // tenant_id → [{ employee_id, tenant_doctor_id }]
@@ -2903,7 +2927,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
     const [tokenRows] = await masterDb.execute(
       'SELECT token FROM db_tokens WHERE id = ? LIMIT 1',
       [String(tenantId)]
-    );
+    ) as [any[], any];
     if (tokenRows.length === 0) continue;
 
     const rawToken = tokenRows[0].token;
@@ -2911,7 +2935,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
     if (!tenantPool || tenantPool === masterDb) continue;
 
     // Alle tenantDoctorIds für diesen Tenant sammeln
-    const docIds = doctorMappings.map(d => d.tenantDoctorId);
+    const docIds = doctorMappings.map((d: Record<string, unknown>) => d.tenantDoctorId);
     const docPlaceholders = docIds.map(() => '?').join(',');
 
     try {
@@ -2926,7 +2950,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
       // Welche related employees haben einen Dienst?
       const conflictingEmployeeIds = new Set();
       for (const shift of shifts) {
-        const mapping = doctorMappings.find(d => String(d.tenantDoctorId) === String(shift.doctor_id));
+        const mapping = doctorMappings.find((d: Record<string, unknown>) => String(d.tenantDoctorId) === String(shift.doctor_id));
         if (mapping) {
           conflictingEmployeeIds.add(mapping.employeeId);
         }
@@ -2942,7 +2966,7 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
           });
         }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn(`[Master] Tenant query error for ${tenantId}:`, err.message);
       // Einzelschläge dürfen die Gesamtprüfung nicht blockieren
     }
@@ -2957,11 +2981,11 @@ async function checkCrossTenantRelationshipConflicts(masterDb, getTenantPoolFn, 
  * GET /api/master/work-time-models
  * List all work time models
  */
-router.get('/work-time-models', async (req, res, next) => {
+router.get('/work-time-models', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [rows] = await db.execute('SELECT * FROM WorkTimeModel ORDER BY hours_per_week DESC');
+    const [rows] = await db.execute('SELECT * FROM WorkTimeModel ORDER BY hours_per_week DESC') as [any[], any];
     res.json({ models: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master work-time-models] List error:', error);
     next(error);
   }
@@ -2971,7 +2995,7 @@ router.get('/work-time-models', async (req, res, next) => {
  * POST /api/master/work-time-models
  * Create a new work time model
  */
-router.post('/work-time-models', async (req, res, next) => {
+router.post('/work-time-models', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, hours_per_week, hours_per_day, is_default, description } = req.body;
 
@@ -2986,9 +3010,9 @@ router.post('/work-time-models', async (req, res, next) => {
       [id, name.trim(), hours_per_week, hours_per_day, !!is_default, description?.trim() || null]
     );
 
-    console.log(`[Master work-time-models] Created model ${id} (${name}) by user ${req.user.sub}`);
+    console.log(`[Master work-time-models] Created model ${id} (${name}) by user ${cuSub(req)}`);
     res.status(201).json({ id, name, hours_per_week, hours_per_day });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master work-time-models] Create error:', error);
     next(error);
   }
@@ -2998,12 +3022,12 @@ router.post('/work-time-models', async (req, res, next) => {
  * PUT /api/master/work-time-models/:id
  * Update an existing work time model
  */
-router.put('/work-time-models/:id', async (req, res, next) => {
+router.put('/work-time-models/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { name, hours_per_week, hours_per_day, is_default, description } = req.body;
 
-    const [existing] = await db.execute('SELECT id FROM WorkTimeModel WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT id FROM WorkTimeModel WHERE id = ?', [id]) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Arbeitszeitmodell nicht gefunden' });
     }
@@ -3014,9 +3038,9 @@ router.put('/work-time-models/:id', async (req, res, next) => {
       [name?.trim(), hours_per_week, hours_per_day, !!is_default, description?.trim() || null, id]
     );
 
-    console.log(`[Master work-time-models] Updated model ${id} by user ${req.user.sub}`);
+    console.log(`[Master work-time-models] Updated model ${id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master work-time-models] Update error:', error);
     next(error);
   }
@@ -3026,7 +3050,7 @@ router.put('/work-time-models/:id', async (req, res, next) => {
  * DELETE /api/master/work-time-models/:id
  * Delete a work time model (only if not assigned to any employee)
  */
-router.delete('/work-time-models/:id', async (req, res, next) => {
+router.delete('/work-time-models/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -3034,7 +3058,7 @@ router.delete('/work-time-models/:id', async (req, res, next) => {
     const [usages] = await db.execute(
       'SELECT COUNT(*) as cnt FROM Employee WHERE work_time_model_id = ?',
       [id]
-    );
+    ) as [any[], any];
     if (usages[0].cnt > 0) {
       return res.status(409).json({ 
         error: `Dieses Modell wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.` 
@@ -3043,9 +3067,9 @@ router.delete('/work-time-models/:id', async (req, res, next) => {
 
     await db.execute('DELETE FROM WorkTimeModel WHERE id = ?', [id]);
 
-    console.log(`[Master work-time-models] Deleted model ${id} by user ${req.user.sub}`);
+    console.log(`[Master work-time-models] Deleted model ${id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master work-time-models] Delete error:', error);
     next(error);
   }
@@ -3057,22 +3081,22 @@ router.delete('/work-time-models/:id', async (req, res, next) => {
  * GET /api/master/shift-time-rules?tenantId=xxx
  * Get shift time rules for a specific tenant
  */
-router.get('/shift-time-rules', async (req, res, next) => {
+router.get('/shift-time-rules', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId } = req.query;
     if (!tenantId) {
       return res.status(400).json({ error: 'tenantId required' });
     }
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     const token = tokens.find(t => t.id === tenantId);
     if (!token) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
 
-    const rules = await withTenantDb(token, async (pool) => {
+    const rules = await withTenantDb(token, async (pool: any) => {
       try {
-        const [tables] = await pool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`);
+        const [tables] = await pool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`) as [any[], any];
         if (tables.length === 0) return [];
 
         const [rows] = await pool.execute(`
@@ -3080,25 +3104,25 @@ router.get('/shift-time-rules', async (req, res, next) => {
           FROM ShiftTimeRule str
           LEFT JOIN Workplace w ON str.workplace_id = w.id
           ORDER BY w.name, str.work_time_model_id
-        `);
+        `) as [any[], any];
         return rows;
-      } catch (e) {
+      } catch (e: any) {
         console.warn(`[Master shift-time-rules] Query failed:`, e.message);
         return [];
       }
     });
 
     // Enrich with work time model names from master DB
-    const [models] = await db.execute('SELECT id, name FROM WorkTimeModel');
+    const [models] = await db.execute('SELECT id, name FROM WorkTimeModel') as [any[], any];
     const modelMap = Object.fromEntries(models.map(m => [m.id, m.name]));
 
-    const enriched = (rules || []).map(r => ({
+    const enriched = (rules || []).map((r: Record<string, unknown>) => ({
       ...r,
-      work_time_model_name: modelMap[r.work_time_model_id] || r.work_time_model_id,
+      work_time_model_name: modelMap[r.work_time_model_id as string] || r.work_time_model_id,
     }));
 
     res.json({ rules: enriched });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master shift-time-rules] List error:', error);
     next(error);
   }
@@ -3110,16 +3134,16 @@ router.get('/shift-time-rules', async (req, res, next) => {
  * GET /api/master/payscale-tariffs
  * List all pay scale tariffs with group counts
  */
-router.get('/payscale-tariffs', async (req, res, next) => {
+router.get('/payscale-tariffs', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [rows] = await db.execute(
       `SELECT pst.*,
               (SELECT COUNT(*) FROM PayScaleGroup psg WHERE psg.tariff_id = pst.id) AS group_count
        FROM PayScaleTariff pst
        ORDER BY pst.sort_order ASC, pst.name ASC`
-    );
+    ) as [any[], any];
     res.json({ tariffs: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] List error:', error);
     next(error);
   }
@@ -3129,7 +3153,7 @@ router.get('/payscale-tariffs', async (req, res, next) => {
  * POST /api/master/payscale-tariffs
  * Create a new pay scale tariff
  */
-router.post('/payscale-tariffs', async (req, res, next) => {
+router.post('/payscale-tariffs', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, short_name, default_weekly_hours, default_vacation_days, description } = req.body;
 
@@ -3144,9 +3168,9 @@ router.post('/payscale-tariffs', async (req, res, next) => {
       [id, name.trim(), short_name.trim(), default_weekly_hours ?? null, default_vacation_days ?? null, description?.trim() || null]
     );
 
-    console.log(`[Master payscale-tariffs] Created tariff ${id} (${name}) by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Created tariff ${id} (${name}) by user ${cuSub(req)}`);
     res.status(201).json({ id, name, short_name });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Create error:', error);
     next(error);
   }
@@ -3156,12 +3180,12 @@ router.post('/payscale-tariffs', async (req, res, next) => {
  * PUT /api/master/payscale-tariffs/:id
  * Update a pay scale tariff
  */
-router.put('/payscale-tariffs/:id', async (req, res, next) => {
+router.put('/payscale-tariffs/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const { name, short_name, default_weekly_hours, default_vacation_days, description, is_active, sort_order } = req.body;
 
-    const [existing] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [id]) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
     }
@@ -3188,9 +3212,9 @@ router.put('/payscale-tariffs/:id', async (req, res, next) => {
     values.push(id);
     await db.execute(`UPDATE PayScaleTariff SET ${updates.join(', ')} WHERE id = ?`, values);
 
-    console.log(`[Master payscale-tariffs] Updated tariff ${id} by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Updated tariff ${id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Update error:', error);
     next(error);
   }
@@ -3200,7 +3224,7 @@ router.put('/payscale-tariffs/:id', async (req, res, next) => {
  * DELETE /api/master/payscale-tariffs/:id
  * Delete a pay scale tariff (only if no employees assigned)
  */
-router.delete('/payscale-tariffs/:id', async (req, res, next) => {
+router.delete('/payscale-tariffs/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -3208,7 +3232,7 @@ router.delete('/payscale-tariffs/:id', async (req, res, next) => {
     const [usages] = await db.execute(
       'SELECT COUNT(*) as cnt FROM Employee WHERE payscale_tariff_id = ?',
       [id]
-    );
+    ) as [any[], any];
     if (usages[0].cnt > 0) {
       return res.status(409).json({
         error: `Dieser Tarifvertrag wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.`
@@ -3219,9 +3243,9 @@ router.delete('/payscale-tariffs/:id', async (req, res, next) => {
     await db.execute('DELETE FROM PayScaleGroup WHERE tariff_id = ?', [id]);
     await db.execute('DELETE FROM PayScaleTariff WHERE id = ?', [id]);
 
-    console.log(`[Master payscale-tariffs] Deleted tariff ${id} by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Deleted tariff ${id} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Delete error:', error);
     next(error);
   }
@@ -3231,17 +3255,17 @@ router.delete('/payscale-tariffs/:id', async (req, res, next) => {
  * GET /api/master/payscale-tariffs/:id/groups
  * List pay scale groups for a tariff
  */
-router.get('/payscale-tariffs/:id/groups', async (req, res, next) => {
+router.get('/payscale-tariffs/:id/groups', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
     const [rows] = await db.execute(
       'SELECT * FROM PayScaleGroup WHERE tariff_id = ? ORDER BY sort_order ASC, name ASC',
       [id]
-    );
+    ) as [any[], any];
 
     res.json({ groups: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Groups list error:', error);
     next(error);
   }
@@ -3251,7 +3275,7 @@ router.get('/payscale-tariffs/:id/groups', async (req, res, next) => {
  * POST /api/master/payscale-tariffs/:id/groups
  * Create a new pay scale group for a tariff
  */
-router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
+router.post('/payscale-tariffs/:id/groups', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const tariffId = req.params.id;
     const { name, description } = req.body;
@@ -3261,7 +3285,7 @@ router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
     }
 
     // Check tariff exists
-    const [tariffRows] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [tariffId]);
+    const [tariffRows] = await db.execute('SELECT id FROM PayScaleTariff WHERE id = ?', [tariffId]) as [any[], any];
     if (tariffRows.length === 0) {
       return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
     }
@@ -3270,7 +3294,7 @@ router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
     const [maxOrder] = await db.execute(
       'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_sort FROM PayScaleGroup WHERE tariff_id = ?',
       [tariffId]
-    );
+    ) as [any[], any];
     const nextSort = maxOrder[0]?.next_sort ?? 0;
 
     const id = crypto.randomUUID();
@@ -3279,9 +3303,9 @@ router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
       [id, tariffId, name.trim(), description?.trim() || null, nextSort]
     );
 
-    console.log(`[Master payscale-tariffs] Created group ${id} (${name}) in tariff ${tariffId} by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Created group ${id} (${name}) in tariff ${tariffId} by user ${cuSub(req)}`);
     res.status(201).json({ id, name });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Groups create error:', error);
     next(error);
   }
@@ -3291,7 +3315,7 @@ router.post('/payscale-tariffs/:id/groups', async (req, res, next) => {
  * PUT /api/master/payscale-tariffs/:tariffId/groups/:groupId
  * Update a pay scale group
  */
-router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next) => {
+router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tariffId, groupId } = req.params;
     const { name, description, sort_order } = req.body;
@@ -3299,7 +3323,7 @@ router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next)
     const [existing] = await db.execute(
       'SELECT id FROM PayScaleGroup WHERE id = ? AND tariff_id = ?',
       [groupId, tariffId]
-    );
+    ) as [any[], any];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Entgeltgruppe nicht gefunden' });
     }
@@ -3317,9 +3341,9 @@ router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next)
     values.push(groupId);
     await db.execute(`UPDATE PayScaleGroup SET ${updates.join(', ')} WHERE id = ?`, values);
 
-    console.log(`[Master payscale-tariffs] Updated group ${groupId} in tariff ${tariffId} by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Updated group ${groupId} in tariff ${tariffId} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Groups update error:', error);
     next(error);
   }
@@ -3329,7 +3353,7 @@ router.put('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next)
  * DELETE /api/master/payscale-tariffs/:tariffId/groups/:groupId
  * Delete a pay scale group
  */
-router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, next) => {
+router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tariffId, groupId } = req.params;
 
@@ -3337,7 +3361,7 @@ router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, ne
     const [usages] = await db.execute(
       'SELECT COUNT(*) as cnt FROM Employee WHERE payscale_group_id = ?',
       [groupId]
-    );
+    ) as [any[], any];
     if (usages[0].cnt > 0) {
       return res.status(409).json({
         error: `Diese Entgeltgruppe wird noch von ${usages[0].cnt} Mitarbeiter(n) verwendet und kann nicht gelöscht werden.`
@@ -3346,9 +3370,9 @@ router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, ne
 
     await db.execute('DELETE FROM PayScaleGroup WHERE id = ? AND tariff_id = ?', [groupId, tariffId]);
 
-    console.log(`[Master payscale-tariffs] Deleted group ${groupId} from tariff ${tariffId} by user ${req.user.sub}`);
+    console.log(`[Master payscale-tariffs] Deleted group ${groupId} from tariff ${tariffId} by user ${cuSub(req)}`);
     res.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Groups delete error:', error);
     next(error);
   }
@@ -3359,14 +3383,14 @@ router.delete('/payscale-tariffs/:tariffId/groups/:groupId', async (req, res, ne
  * Apply tariff defaults to all employees assigned to this tariff.
  * Only overwrites employees currently on system defaults (38.5h / 30d).
  */
-router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
+router.post('/payscale-tariffs/:id/apply-defaults', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
     const [tariffRows] = await db.execute(
       'SELECT id, name, default_weekly_hours, default_vacation_days FROM PayScaleTariff WHERE id = ?',
       [id]
-    );
+    ) as [any[], any];
     if (tariffRows.length === 0) {
       return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
     }
@@ -3383,7 +3407,7 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
          AND (target_hours_per_week = 38.5 OR target_hours_per_week IS NULL)
          AND (vacation_days_annual = 30 OR vacation_days_annual IS NULL)`,
       [id]
-    );
+    ) as [any[], any];
     const eligibleCount = eligibleRows[0].cnt;
 
     const [skippedRows] = await db.execute(
@@ -3391,7 +3415,7 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
        WHERE payscale_tariff_id = ?
          AND target_hours_per_week IS NOT NULL AND target_hours_per_week != 38.5`,
       [id]
-    );
+    ) as [any[], any];
     const skippedCount = skippedRows[0].cnt;
 
     if (eligibleCount === 0) {
@@ -3425,7 +3449,7 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        WHERE e.payscale_tariff_id = ?`,
       [id]
-    );
+    ) as [any[], any];
 
     let syncedCount = 0;
     let syncErrors = 0;
@@ -3436,18 +3460,18 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
            FROM EmployeeTenantAssignment
            WHERE employee_id = ? AND tenant_doctor_id IS NOT NULL AND tenant_doctor_id != ''`,
           [emp.id]
-        );
+        ) as [any[], any];
         if (assignmentRows.length > 0) {
-          const result = await syncEmployeeWorkSettingsForAssignments(req.user.sub, emp, assignmentRows, {
-            id: req.user.sub,
-            email: req.user.email || null,
+          const result = await syncEmployeeWorkSettingsForAssignments(cuSub(req), emp, assignmentRows, {
+            id: cuSub(req),
+            email: cuEmail(req),
           });
           if (result.failedAssignments.length > 0) {
             syncErrors++;
           }
           syncedCount++;
         }
-      } catch (syncError) {
+      } catch (syncError: any) {
         console.warn(`[Master payscale-tariffs] Sync failed for employee ${emp.id}: ${syncError.message}`);
         syncErrors++;
       }
@@ -3455,7 +3479,7 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
 
     console.log(`[Master payscale-tariffs] Applied defaults for tariff ${id} (${tariff.name}): ${eligibleCount} updated, ${skippedCount} skipped, ${syncedCount} tenants synced, ${syncErrors} errors`);
     res.json({ updated: eligibleCount, skipped: skippedCount, syncedTenants: syncedCount, syncErrors });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master payscale-tariffs] Apply-defaults error:', error);
     next(error);
   }
@@ -3467,7 +3491,7 @@ router.post('/payscale-tariffs/:id/apply-defaults', async (req, res, next) => {
  * Sets target_hours_per_week, vacation_days_annual, and payscale_tariff_id,
  * then syncs to all linked tenant doctors.
  */
-router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
+router.post('/employees/bulk-apply-tariff', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tariff_id, employee_ids } = req.body;
 
@@ -3482,7 +3506,7 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
     const [tariffRows] = await db.execute(
       'SELECT id, name, short_name, default_weekly_hours, default_vacation_days FROM PayScaleTariff WHERE id = ?',
       [tariff_id]
-    );
+    ) as [any[], any];
     if (tariffRows.length === 0) {
       return res.status(404).json({ error: 'Tarifvertrag nicht gefunden' });
     }
@@ -3512,8 +3536,8 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
     const [result] = await db.execute(
       `UPDATE Employee SET ${updates.join(', ')} WHERE id IN (${placeholders})`,
       params
-    );
-    const updatedCount = result.affectedRows;
+    ) as [any[], any];
+    const updatedCount = (result as Record<string, unknown>[] & [{ affectedRows?: number }])?.[0]?.affectedRows;
 
     // Sync to tenant doctors for all affected employees
     const [affectedEmployees] = await db.execute(
@@ -3522,7 +3546,7 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
        LEFT JOIN WorkTimeModel wtm ON e.work_time_model_id = wtm.id
        WHERE e.id IN (${placeholders})`,
       employee_ids
-    );
+    ) as [any[], any];
 
     let syncedCount = 0;
     let syncErrors = 0;
@@ -3533,31 +3557,31 @@ router.post('/employees/bulk-apply-tariff', async (req, res, next) => {
            FROM EmployeeTenantAssignment
            WHERE employee_id = ? AND tenant_doctor_id IS NOT NULL AND tenant_doctor_id != ''`,
           [emp.id]
-        );
+        ) as [any[], any];
         if (assignmentRows.length > 0) {
-          const syncResult = await syncEmployeeWorkSettingsForAssignments(req.user.sub, emp, assignmentRows, {
-            id: req.user.sub,
-            email: req.user.email || null,
+          const syncResult = await syncEmployeeWorkSettingsForAssignments(cuSub(req), emp, assignmentRows, {
+            id: cuSub(req),
+            email: cuEmail(req),
           });
           if (syncResult.failedAssignments.length > 0) {
             syncErrors++;
           }
           syncedCount++;
         }
-      } catch (syncError) {
+      } catch (syncError: any) {
         console.warn(`[Master bulk-apply-tariff] Sync failed for employee ${emp.id}: ${syncError.message}`);
         syncErrors++;
       }
     }
 
-    console.log(`[Master bulk-apply-tariff] Applied tariff ${tariff_id} (${tariff.name}) to ${updatedCount} employees, ${syncedCount} tenants synced, ${syncErrors} errors by user ${req.user.sub}`);
+    console.log(`[Master bulk-apply-tariff] Applied tariff ${tariff_id} (${tariff.name}) to ${updatedCount} employees, ${syncedCount} tenants synced, ${syncErrors} errors by user ${cuSub(req)}`);
     res.json({
       tariff: { id: tariff.id, name: tariff.name },
       updated: updatedCount,
       syncedTenants: syncedCount,
       syncErrors,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master bulk-apply-tariff] Error:', error);
     next(error);
   }
@@ -3618,7 +3642,7 @@ const PPUGV_PMA_BASE = process.env.PPUGV_PMA_BASE || `http://${PPUGV_HOST}/phpmy
 // Laeuft auf demselben MySQL-Server, nur andere Datenbank (Default: "ppbv")
 // reused PPUGV_HOST/PORT/USER/PASSWORD – nur Datenbankname unterscheidet sich.
 const PPBV_DATABASE = process.env.PPBV_DATABASE || 'ppbv';
-let ppbvPool = null;
+let ppbvPool: any = null;
 
 // ===== Stammdaten-Import (MA-Stammdaten, selber Server wie PPUGV) =====
 const STAMMDAT_DATABASE = process.env.STAMMDAT_DATABASE || 'mitarbeiter';
@@ -3651,14 +3675,14 @@ function getPpbvPool() {
       connectTimeout: 15000,
     });
     return ppbvPool;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[PPBV] Pool-Erstellung fehlgeschlagen:', err.message);
     return null;
   }
 }
 
 // PPBV Read-Only-Schutz wie bei PPUGV
-async function ppbvReadonlyQuery(sql, params = []) {
+async function ppbvReadonlyQuery(sql: any, params: any = []) {
   const pool = getPpbvPool();
   if (!pool) throw new Error('PPBV-Pool nicht verfuegbar');
   const normalizedSql = String(sql).trim().toUpperCase();
@@ -3673,8 +3697,8 @@ async function ppbvReadonlyQuery(sql, params = []) {
   return await pool.execute(sql, params);
 }
 
-let ppugvPool = null;
-let pmaSessionCookie = null;
+let ppugvPool: any = null;
+let pmaSessionCookie: any = null;
 
 function getPpugvPool() {
   if (ppugvPool) return ppugvPool;
@@ -3697,7 +3721,7 @@ function getPpugvPool() {
       // auf Applikationsebene als zusätzliche Schutzschicht (Defense in Depth).
     });
     return ppugvPool;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[PPUGV] Pool-Erstellung fehlgeschlagen:', err.message);
     return null;
   }
@@ -3706,7 +3730,7 @@ function getPpugvPool() {
 // SAFETY: Diese Funktion ist der EINZIGE Weg, wie auf den ppugv-Pool zugegriffen
 // werden darf. Sie stellet sicher, dass NUR Lesezugriff (SELECT) erfolgt.
 // Alle Anfragen gegen die externe ppugv-DB MUESSEN ueber diese Funktion laufen.
-async function ppugvReadonlyQuery(sql, params = []) {
+async function ppugvReadonlyQuery(sql: any, params: any = []) {
   const pool = getPpugvPool();
   if (!pool) throw new Error('PPUGV-Pool nicht verfuegbar');
 
@@ -3729,16 +3753,16 @@ async function ppugvReadonlyQuery(sql, params = []) {
 
 // Prueft, ob die 'jahr'-Spalte in ppugv_daily_cache existiert (einmal gecacht).
 // Falls eine Migration noch nicht gelaufen ist, fallback auf YEAR(frostungsdatum).
-let ppugvHasJahrColumn = null;
+let ppugvHasJahrColumn: boolean | null = null;
 async function hasJahrColumn() {
   if (ppugvHasJahrColumn !== null) return ppugvHasJahrColumn;
   try {
-    const [cols] = await db.execute('SHOW COLUMNS FROM ppugv_daily_cache LIKE ?', ['jahr']);
+    const [cols] = await db.execute('SHOW COLUMNS FROM ppugv_daily_cache LIKE ?', ['jahr']) as [any[], any];
     ppugvHasJahrColumn = cols.length > 0;
     if (!ppugvHasJahrColumn) {
       console.warn('[PPUGV] jahr-Spalte fehlt in ppugv_daily_cache – nutze YEAR(frostungsdatum) als Fallback. Migration läuft evtl. noch nicht.');
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[PPUGV] SHOW COLUMNS fehlgeschlagen – nutze YEAR(frostungsdatum):', err.message);
     ppugvHasJahrColumn = false;
   }
@@ -3776,7 +3800,7 @@ async function fetchPpugvViaPma() {
     + `&sql_query=${encodeURIComponent('SELECT * FROM export ORDER BY rec_id')}`
     + `&export_type=server&export_method=quick&format=json`;
 
-  const doFetch = async (cookie) => {
+  const doFetch = async (cookie: string) => {
     const res = await fetch(exportUrl, {
       method: 'GET',
       headers: { 'Cookie': cookie, 'User-Agent': 'CuraFlow-PPUGV-Cache/1.0' },
@@ -3799,7 +3823,7 @@ async function fetchPpugvViaPma() {
 /**
  * Normalisiert ein vom phpMyAdmin-Export geliefertes JSON-Objekt.
  */
-function normalizePpugvRow(row) {
+function normalizePpugvRow(row: any) {
   let jahr = 0;
   if (row.frostungsdatum) {
     const d = new Date(row.frostungsdatum);
@@ -3833,7 +3857,7 @@ function normalizePpugvRow(row) {
 // korrekte Datensatz. Falls alle Belegung=0 haben, behalten wir den ersten.
 const MONTH_ORDER_SQL = "FIELD(monat,'Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember')";
 
-function sanitizePpugvRows(rows) {
+function sanitizePpugvRows(rows: any[]) {
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.stationsname}|${row.monat}|${row.schicht}`;
@@ -3861,15 +3885,15 @@ const PPUGV_FAB_MAP = [
   { fabschluessel: 1200, fabname: 'Neonatologie / Pädiatrie',           stations: ['NEOI','SLB'] },
 ];
 
-function getFabForStation(stationsname) {
+function getFabForStation(stationsname: string) {
   for (const fab of PPUGV_FAB_MAP) {
     if (fab.stations.some(s => stationsname.includes(s))) return fab;
   }
   return null; // unbekannte Station bleibt eigenstaendig
 }
 
-async function fetchQuery(sql, params) {
-  const [rows] = await db.execute(sql, params);
+async function fetchQuery(sql: any, params: any) {
+  const [rows] = await db.execute(sql, params) as [any[], any];
   return rows;
 }
 
@@ -3880,7 +3904,7 @@ async function fetchQuery(sql, params) {
  * @param {string} cacheDate - Datum als 'YYYY-MM-DD'
  * @param {Array} normalizedRows - normalisierte Zeilen (via normalizePpugvRow)
  */
-async function writePpugvDataToCache(cacheDate, normalizedRows) {
+async function writePpugvDataToCache(cacheDate: string, normalizedRows: Record<string, unknown>[]) {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
@@ -3921,7 +3945,7 @@ async function writePpugvDataToCache(cacheDate, normalizedRows) {
 
     await connection.commit();
     return { success: true, count: normalizedRows.length };
-  } catch (txError) {
+  } catch (txError: any) {
     await connection.rollback();
     throw txError;
   } finally {
@@ -3962,7 +3986,7 @@ async function checkPpugvConnectivity() {
       const [rows] = await ppugvReadonlyQuery('SELECT 1 AS ok');
       const ok = rows?.[0]?.ok === 1;
       return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: ok ? 'ok' : 'error', detail: ok ? 'Verbindung + Query OK' : 'SELECT 1 lieferte unerwartetes Ergebnis' };
-    } catch (err) {
+    } catch (err: any) {
       return { type: 'mysql2', target: `${PPUGV_HOST}:${PPUGV_PORT}`, status: 'error', detail: `${err.code || err.message}` };
     }
   })());
@@ -3976,7 +4000,7 @@ async function checkPpugvConnectivity() {
       const res = await fetch(PPUGV_PMA_BASE, { method: 'HEAD', signal: ctrl.signal, redirect: 'manual' });
       clearTimeout(to);
       return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'ok', detail: `HTTP ${res.status} – Antwort empfangen` };
-    } catch (err) {
+    } catch (err: any) {
       if (err.name === 'AbortError') return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'error', detail: 'Timeout nach 8s' };
       return { type: 'phpMyAdmin', target: PPUGV_PMA_BASE, status: 'error', detail: err.message };
     }
@@ -3992,20 +4016,20 @@ async function checkPpugvConnectivity() {
   console.log('╚' + separator + '╝');
 
   for (const r of results) {
-    const c = r.status === 'fulfilled' ? r.value : { type: '?', target: '?', status: 'error', detail: r.reason?.message || 'Unbekannter Fehler' };
+    const c: any = r.status === 'fulfilled' ? (r as PromiseFulfilledResult<any>).value : { type: '?', target: '?', status: 'error', detail: (r as PromiseRejectedResult).reason?.message || 'Unbekannter Fehler' };
     const icon = c.status === 'ok' ? ' ✅' : c.status === 'info' ? ' ℹ️' : c.status === 'skip' ? ' ⏭' : ' ❌';
     console.log(`  ${icon} ${c.type.padEnd(12)} ${(c.target || '').padEnd(28)} ${c.status.padEnd(6)}  ${c.detail}`);
   }
 
   // Nur mysql2 und phpMyAdmin sind fuer den Datenabruf relevant (nicht DNS)
   const relevantResults = results
-    .filter(r => r.status === 'fulfilled' && r.value?.type !== 'DNS')
-    .map(r => r.value);
+    .filter((r: any) => r.status === 'fulfilled' && (r as PromiseFulfilledResult<any>).value?.type !== 'DNS')
+    .map(r => (r as PromiseFulfilledResult<any>).value);
   const anyServiceOk = relevantResults.some(c => c.status === 'ok');
   const anyServiceConfigured = relevantResults.some(c => c.status !== 'skip');
 
   // DNS-Info: Auflösung ok oder IP-Adresse (dann ist der Host grundsätzlich erreichbar)
-  const dnsResult = results.find(r => r.status === 'fulfilled' && r.value?.type === 'DNS');
+  const dnsResult = results.find(r => r.status === 'fulfilled' && (r as PromiseFulfilledResult<any>).value?.type === 'DNS') as PromiseFulfilledResult<any> | undefined;
   const dnsReachable = dnsResult?.value?.status === 'ok' || dnsResult?.value?.status === 'info';
   const mysqlOk = relevantResults.some(c => c.type === 'mysql2' && c.status === 'ok');
   const pmaConfigured = relevantResults.some(c => c.type === 'phpMyAdmin' && c.status !== 'skip');
@@ -4079,7 +4103,7 @@ async function runPpugvRefreshInBackground() {
         sourceRows = rows;
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         console.log(`[PPUGV-BG] mysql2 erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
-      } catch (dbErr) {
+      } catch (dbErr: any) {
         console.warn(`[PPUGV-BG] mysql2 fehlgeschlagen: ${dbErr.code || dbErr.message} – versuche phpMyAdmin-Fallback...`);
         sourceRows = null;
       }
@@ -4097,7 +4121,7 @@ async function runPpugvRefreshInBackground() {
           const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
           console.log(`[PPUGV-BG] phpMyAdmin erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
         }
-      } catch (pmaErr) {
+      } catch (pmaErr: any) {
         console.warn(`[PPUGV-BG] phpMyAdmin fehlgeschlagen: ${pmaErr.message}`);
       }
     }
@@ -4119,14 +4143,14 @@ async function runPpugvRefreshInBackground() {
     const result = await writePpugvDataToCache(today, sourceRows);
     const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[PPUGV-BG] ${new Date().toISOString()} Refresh erfolgreich – ${result.count} Datensaetze in ${totalTime}s`);
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[PPUGV-BG] Fehler nach ${((Date.now() - startTime) / 1000).toFixed(1)}s:`, error.code || error.message);
     try {
       await db.execute(
         "UPDATE ppugv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
         [(error.message || String(error)).substring(0, 500), today]
       );
-    } catch (metaError) {
+    } catch (metaError: any) {
       console.error('[PPUGV-BG] Konnte Meta-Status nicht aktualisieren:', metaError.message);
     }
   } finally {
@@ -4147,7 +4171,7 @@ async function ensurePpugvCacheAsync() {
   }
 
   try {
-    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppugv_daily_cache');
+    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppugv_daily_cache') as [any[], any];
     const count = Number(row[0]?.cnt || 0);
 
     if (count === 0) {
@@ -4161,7 +4185,7 @@ async function ensurePpugvCacheAsync() {
 
     // Cache ist gefuellt – nichts zu tun
     return 'ready';
-  } catch (error) {
+  } catch (error: any) {
     // Tabelle existiert vielleicht noch nicht – das ist ok
     console.warn('[PPUGV] ensurePpugvCache konnte Cache nicht prüfen:', error.message);
     return 'error';
@@ -4185,18 +4209,18 @@ async function ensurePpugvCacheAsync() {
  */
 // Hilfsfunktion: Monatsname → Index (1=Januar … 12=Dezember)
 const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const monthIndex = (name) => MONTH_NAMES.indexOf(name) + 1; // 0 wenn unbekannt
+const monthIndex = (name: string) => MONTH_NAMES.indexOf(name) + 1; // 0 wenn unbekannt
 
 /**
  * Markiert Zeilen, deren Monat in der Zukunft liegt, als is_estimated und
  * filtert sie ggf. heraus (es sei denn include_future=true).
  */
-function applyFutureMonthFilter(rows, jahr, includeFuture) {
+function applyFutureMonthFilter(rows: any[], jahr: any, includeFuture: any) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
   const requestedYear = parseInt(jahr, 10) || currentYear;
 
-  const withEstimate = rows.map(r => ({
+  const withEstimate = rows.map((r: any) => ({
     ...r,
     is_estimated: requestedYear === currentYear && monthIndex(r.monat) > currentMonth,
   }));
@@ -4204,10 +4228,10 @@ function applyFutureMonthFilter(rows, jahr, includeFuture) {
   if (includeFuture === true || includeFuture === 'true') {
     return withEstimate;
   }
-  return withEstimate.filter(r => !r.is_estimated);
+  return withEstimate.filter((r: any) => !r.is_estimated);
 }
 
-router.get('/ppugv', async (req, res, next) => {
+router.get('/ppugv', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cacheStatus = await ensurePpugvCacheAsync();
 
@@ -4227,12 +4251,12 @@ router.get('/ppugv', async (req, res, next) => {
       // Fallback auf YEAR(frostungsdatum), falls jahr-Spalte fehlt (Migration nicht gelaufen)
       const yearFilter = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
       sql += ` AND ${yearFilter} = ?`;
-      params.push(parseInt(jahr, 10));
+      params.push(parseInt(String(jahr), 10));
     }
 
     sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
 
-    const [rows] = await db.execute(sql, params);
+    const [rows] = await db.execute(sql, params) as [any[], any];
 
     // Sanitizer: Duplikate (gleiche Station/Monat/Schicht) entfernen,
     // die Zeile mit hoechster Belegung behalten
@@ -4244,7 +4268,7 @@ router.get('/ppugv', async (req, res, next) => {
     // Cache-Metadaten
     const [metaRows] = await db.execute(
       'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 1'
-    );
+    ) as [any[], any];
 
     const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
     const isEmpty = data.length === 0;
@@ -4254,7 +4278,7 @@ router.get('/ppugv', async (req, res, next) => {
       meta: metaRows[0] || null,
       count: data.length,
       rawCount: rows.length,
-      estimatedCount: data.filter(r => r.is_estimated).length,
+      estimatedCount: data.filter((r: any) => r.is_estimated).length,
       cacheStatus,
       building: isBuilding,
       message: isBuilding
@@ -4263,7 +4287,7 @@ router.get('/ppugv', async (req, res, next) => {
           ? 'Keine gecachten Daten vorhanden.'
           : null,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] GET error:', error.message);
     next(error);
   }
@@ -4272,13 +4296,13 @@ router.get('/ppugv', async (req, res, next) => {
 /**
  * GET /api/master/ppugv/stations
  */
-router.get('/ppugv/stations', async (req, res, next) => {
+router.get('/ppugv/stations', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [rows] = await db.execute(
       'SELECT DISTINCT stationsname, MIN(fabschluessel) AS fabschluessel, MIN(fabname) AS fabname FROM ppugv_daily_cache GROUP BY stationsname ORDER BY stationsname'
-    );
+    ) as [any[], any];
     res.json({ stations: rows });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] stations error:', error.message);
     next(error);
   }
@@ -4294,17 +4318,17 @@ router.get('/ppugv/stations', async (req, res, next) => {
  *   jahr – 4-stellig (optional, default: aktuelles Jahr)
  *   fab  – fabschluessel (optional, z.B. "0100" fuer Innere Medizin)
  */
-router.get('/ppugv/fabstats', async (req, res, next) => {
+router.get('/ppugv/fabstats', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { jahr } = req.query;
-    const year = parseInt(jahr, 10) || new Date().getFullYear();
+    const yearNum = parseInt(String(jahr), 10) || new Date().getFullYear();
 
     // Alle Rohdaten fuer das Jahr laden (mit Fallback falls jahr-Spalte fehlt)
     const yearFilter = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
     const [rows] = await db.execute(
       `SELECT * FROM ppugv_daily_cache WHERE ${yearFilter} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
-      [year]
-    );
+      [yearNum]
+    ) as [any[], any];
 
     const sanitized = sanitizePpugvRows(rows);
 
@@ -4346,7 +4370,7 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
     const fabArray = Array.from(fabMap.values()).map(fab => ({
       ...fab,
       stationen: Array.from(fab.stationen).sort(),
-      monate: Object.values(fab.monate).sort((a, b) => {
+      monate: Object.values(fab.monate).sort((a: any, b: any) => {
         const ma = MONTH_ORDER_SQL.indexOf(a.monat);
         const mb = MONTH_ORDER_SQL.indexOf(b.monat);
         return ma - mb;
@@ -4354,7 +4378,7 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
     }));
 
     // Gesamt-KH aggregieren (alle FABs)
-    const gesamtMonate = {};
+    const gesamtMonate: Record<string, any> = {};
     for (const fab of fabArray) {
       for (const m of fab.monate) {
         if (!gesamtMonate[m.monat]) {
@@ -4378,15 +4402,15 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
     }
 
     res.json({
-      jahr: year,
+      jahr: yearNum,
       fabs: fabArray,
-      gesamt: Object.values(gesamtMonate).sort((a, b) => {
+      gesamt: Object.values(gesamtMonate).sort((a: any, b: any) => {
         const ma = MONTH_ORDER_SQL.indexOf(a.monat);
         const mb = MONTH_ORDER_SQL.indexOf(b.monat);
         return ma - mb;
       }),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] fabstats error:', error.message);
     next(error);
   }
@@ -4403,45 +4427,45 @@ router.get('/ppugv/fabstats', async (req, res, next) => {
  * Liefert monatliche Durchschnittswerte fuer jedes angefragte Jahr,
  * aufgeschluesselt nach Station/FAB.
  */
-router.get('/ppugv/trends', async (req, res, next) => {
+router.get('/ppugv/trends', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { station, jahre, include_future } = req.query;
     const years = jahre
-      ? jahre.split(',').map(y => parseInt(y.trim(), 10)).filter(y => !isNaN(y))
+      ? String(jahre).split(',').map((y: string) => parseInt(y.trim(), 10)).filter((y: any) => !isNaN(y))
       : [new Date().getFullYear() - 2, new Date().getFullYear() - 1, new Date().getFullYear()];
 
     const allData = [];
     const yearColumn = await hasJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
     for (const year of years) {
       let sql = `SELECT * FROM ppugv_daily_cache WHERE ${yearColumn} = ?`;
-      const params = [year];
+      const params: any[] = [year];
       if (station && station !== 'all') {
         sql += ' AND stationsname LIKE ?';
-        params.push(`%${station}%`);
+        params.push(`%${String(station)}%`);
       }
       sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
-      const [rows] = await db.execute(sql, params);
+      const [rows] = await db.execute(sql, params) as [any[], any];
       const sanitized = sanitizePpugvRows(rows);
       const filtered = applyFutureMonthFilter(sanitized, String(year), include_future);
       allData.push({ year, rows: filtered });
     }
 
     // Monatliche Kennzahlen pro Jahr aufbereiten
-    const monthlyTrend = {};
+    const monthlyTrend: Record<string, Record<string, unknown>> = {};
     for (const MONTH of ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember']) {
       monthlyTrend[MONTH] = { monat: MONTH };
       for (const { year, rows } of allData) {
-        const monthRows = rows.filter(r => r.monat === MONTH);
-        const tagRows = monthRows.filter(r => r.schicht === 'Tag');
-        const nachtRows = monthRows.filter(r => r.schicht === 'Nacht');
+        const monthRows = rows.filter((r: any) => r.monat === MONTH);
+        const tagRows = monthRows.filter((r: any) => r.schicht === 'Tag');
+        const nachtRows = monthRows.filter((r: any) => r.schicht === 'Nacht');
 
-        monthlyTrend[MONTH][`patienten_${year}`] = tagRows.reduce((s, r) => s + Number(r.patienten), 0);
+        monthlyTrend[MONTH][`patienten_${year}`] = tagRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.patienten), 0);
         monthlyTrend[MONTH][`belegung_${year}`] = tagRows.length > 0
-          ? tagRows.reduce((s, r) => s + Number(r.belegung), 0) / tagRows.length : 0;
-        monthlyTrend[MONTH][`pflege_${year}`] = tagRows.reduce((s, r) => s + Number(r.pflegekraefte_ist), 0);
-        monthlyTrend[MONTH][`hilfe_${year}`] = tagRows.reduce((s, r) => s + Number(r.hilfskraefte_ist), 0);
-        monthlyTrend[MONTH][`hebamme_${year}`] = tagRows.reduce((s, r) => s + Number(r.hebammen_ist), 0);
-        monthlyTrend[MONTH][`patienten_nacht_${year}`] = nachtRows.reduce((s, r) => s + Number(r.patienten), 0);
+          ? tagRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.belegung), 0) / tagRows.length : 0;
+        monthlyTrend[MONTH][`pflege_${year}`] = tagRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.pflegekraefte_ist), 0);
+        monthlyTrend[MONTH][`hilfe_${year}`] = tagRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.hilfskraefte_ist), 0);
+        monthlyTrend[MONTH][`hebamme_${year}`] = tagRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.hebammen_ist), 0);
+        monthlyTrend[MONTH][`patienten_nacht_${year}`] = nachtRows.reduce((s: number, r: Record<string, unknown>) => s + Number(r.patienten), 0);
       }
     }
 
@@ -4449,7 +4473,7 @@ router.get('/ppugv/trends', async (req, res, next) => {
       years,
       monate: Object.values(monthlyTrend),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] trends error:', error.message);
     next(error);
   }
@@ -4460,7 +4484,7 @@ router.get('/ppugv/trends', async (req, res, next) => {
  * Startet eine sofortige Aktualisierung des Caches im Hintergrund.
  * Die Antwort kommt sofort (HTTP 202) – der Refresh laeuft asynchron weiter.
  */
-router.post('/ppugv/refresh', async (req, res, next) => {
+router.post('/ppugv/refresh', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const hasMysqlConfig = !!(PPUGV_HOST && PPUGV_USER && PPUGV_PASSWORD);
     const hasPmaConfig = !!PPUGV_PMA_BASE;
@@ -4487,7 +4511,7 @@ router.post('/ppugv/refresh', async (req, res, next) => {
       status: 'started',
       message: 'PPUGV-Cache-Refresh wurde im Hintergrund gestartet. Der Status kann ueber /api/master/ppugv/meta abgefragt werden.',
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] refresh error:', error.message);
     next(error);
   }
@@ -4497,16 +4521,16 @@ router.post('/ppugv/refresh', async (req, res, next) => {
  * GET /api/master/ppugv/meta
  * Liefert die Cache-Metadaten (letzte Aktualisierung, Status, laufender Refresh).
  */
-router.get('/ppugv/meta', async (req, res, next) => {
+router.get('/ppugv/meta', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const [rows] = await db.execute(
       'SELECT * FROM ppugv_cache_meta ORDER BY id DESC LIMIT 10'
-    );
+    ) as [any[], any];
     res.json({
       meta: rows,
       refreshInProgress: ppugvRefreshInProgress,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] meta error:', error.message);
     next(error);
   }
@@ -4519,7 +4543,7 @@ router.get('/ppugv/meta', async (req, res, next) => {
  *
  * Prueft die Vollstaendigkeit der aus dem PHP-System kommenden export-Daten.
  */
-router.get('/ppugv/quality', async (req, res, next) => {
+router.get('/ppugv/quality', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const hasJahr = await hasJahrColumn();
     const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
@@ -4532,7 +4556,7 @@ router.get('/ppugv/quality', async (req, res, next) => {
        FROM ppugv_daily_cache
        GROUP BY ${yearCol}
        ORDER BY ${yearCol} DESC`
-    );
+    ) as [any[], any];
 
     // Erwartete Werte aus PHP-Original
     const EXPECTED_STATIONS = 14;
@@ -4563,7 +4587,7 @@ router.get('/ppugv/quality', async (req, res, next) => {
          GROUP BY QUARTER(frostungsdatum)
          ORDER BY q`,
         [currentYear]
-      );
+      ) as [any[], any];
       quarterly = qRows.map(r => ({
         quartal: Number(r.q),
         rowCount: Number(r.cnt),
@@ -4580,7 +4604,7 @@ router.get('/ppugv/quality', async (req, res, next) => {
       quarterly,
       hasJahrColumn: hasJahr,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV] quality error:', error.message);
     next(error);
   }
@@ -4593,17 +4617,17 @@ router.get('/ppugv/quality', async (req, res, next) => {
  *
  * Query: jahr (optional, default aktuelles Jahr)
  */
-router.get('/ppugv/export/inek', async (req, res, next) => {
+router.get('/ppugv/export/inek', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { jahr } = req.query;
-    const year = parseInt(jahr, 10) || new Date().getFullYear();
+    const year = parseInt(String(jahr), 10) || new Date().getFullYear();
 
     const hasJahr = await hasJahrColumn();
     const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
     const [rows] = await db.execute(
       `SELECT * FROM ppugv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
       [year]
-    );
+    ) as [any[], any];
     const data = sanitizePpugvRows(rows);
 
     const wb = new ExcelJS.Workbook();
@@ -4664,7 +4688,7 @@ router.get('/ppugv/export/inek', async (req, res, next) => {
     headers.forEach((title, idx) => {
       const cell = ws.getCell(1 + idx, 7);
       cell.value = title;
-      cell.style = headerStyle;
+      cell.style = headerStyle as Partial<ExcelJS.Style>;
     });
     ws.getRow(7).height = 60;
 
@@ -4724,7 +4748,7 @@ router.get('/ppugv/export/inek', async (req, res, next) => {
     const buffer = await wb.xlsx.writeBuffer();
     res.send(Buffer.from(buffer));
     console.log(`[PPUGV-EXPORT] InEK-Excel exportiert: ${data.length} Zeilen, Jahr ${year}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV-EXPORT] error:', error.message);
     next(error);
   }
@@ -4734,10 +4758,10 @@ router.get('/ppugv/export/inek', async (req, res, next) => {
  * GET /api/master/ppugv/export/csv
  * CSV-Export der Rohdaten (sanitized) – fuer Import in externe Systeme.
  */
-router.get('/ppugv/export/csv', async (req, res, next) => {
+router.get('/ppugv/export/csv', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { jahr } = req.query;
-    const year = parseInt(jahr, 10) || new Date().getFullYear();
+    const year = parseInt(String(jahr), 10) || new Date().getFullYear();
 
     const hasJahr = await hasJahrColumn();
     const yearCol = hasJahr ? 'jahr' : 'YEAR(frostungsdatum)';
@@ -4745,7 +4769,7 @@ router.get('/ppugv/export/csv', async (req, res, next) => {
       `SELECT stationsname, fabschluessel, fabname, monat, schicht, anzahl, betten, patienten, belegung, pflegekraefte_ist, hebammen_ist, hilfskraefte_ist, frostung
        FROM ppugv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
       [year]
-    );
+    ) as [any[], any];
     const data = sanitizePpugvRows(rows);
 
     const csvHeader = 'Station;FAB-Schlüssel;Fachabteilung;Monat;Schicht;Schichten;Betten;Patienten;Belegung;Pflege;Hebammen;Hilfskräfte;Frostung\n';
@@ -4770,7 +4794,7 @@ router.get('/ppugv/export/csv', async (req, res, next) => {
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     // BOM fuer korrekte UTF-8 Erkennung in Excel
     res.send('\ufeff' + csvHeader + csvRows);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPUGV-CSV] error:', error.message);
     next(error);
   }
@@ -4789,24 +4813,24 @@ router.get('/ppugv/export/csv', async (req, res, next) => {
 // ===========================================================================
 
 let ppbvRefreshInProgress = false;
-let ppbvHasJahrColumn = null;
+let ppbvHasJahrColumn: boolean | null = null;
 
 async function hasPpbvJahrColumn() {
   if (ppbvHasJahrColumn !== null) return ppbvHasJahrColumn;
   try {
-    const [cols] = await db.execute('SHOW COLUMNS FROM ppbv_daily_cache LIKE ?', ['jahr']);
+    const [cols] = await db.execute('SHOW COLUMNS FROM ppbv_daily_cache LIKE ?', ['jahr']) as [any[], any];
     ppbvHasJahrColumn = cols.length > 0;
     if (!ppbvHasJahrColumn) {
       console.warn('[PPBV] jahr-Spalte fehlt – nutze YEAR(frostungsdatum) als Fallback.');
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('[PPBV] SHOW COLUMNS fehlgeschlagen – nutze YEAR(frostungsdatum):', err.message);
     ppbvHasJahrColumn = false;
   }
   return ppbvHasJahrColumn;
 }
 
-function sanitizePpbvRows(rows) {
+function sanitizePpbvRows(rows: any[]) {
   const groups = new Map();
   for (const row of rows) {
     const key = `${row.stationsname}|${row.monat}|${row.schicht}`;
@@ -4827,7 +4851,7 @@ function sanitizePpbvRows(rows) {
 async function ensurePpbvCacheAsync() {
   if (ppbvRefreshInProgress) return 'running';
   try {
-    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppbv_daily_cache');
+    const [row] = await db.execute('SELECT COUNT(*) AS cnt FROM ppbv_daily_cache') as [any[], any];
     const count = Number(row[0]?.cnt || 0);
     if (count === 0) {
       console.log('[PPBV] Cache leer – starte asynchronen Hintergrund-Refresh.');
@@ -4837,7 +4861,7 @@ async function ensurePpbvCacheAsync() {
       return 'triggered';
     }
     return 'ready';
-  } catch (error) {
+  } catch (error: any) {
     console.warn('[PPBV] ensurePpbvCache konnte Cache nicht prüfen:', error.message);
     return 'error';
   }
@@ -4870,7 +4894,7 @@ async function runPpbvRefreshInBackground() {
       sourceRows = rows;
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       console.log(`[PPBV-BG] mysql2 erfolgreich nach ${elapsed}s – ${sourceRows.length} Zeilen`);
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.warn(`[PPBV-BG] mysql2 fehlgeschlagen: ${dbErr.code || dbErr.message}`);
       await db.execute(
         "UPDATE ppbv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
@@ -4920,20 +4944,20 @@ async function runPpbvRefreshInBackground() {
       await connection.commit();
       const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
       console.log(`[PPBV-BG] Refresh erfolgreich – ${sourceRows.length} Datensaetze in ${totalTime}s`);
-    } catch (txError) {
+    } catch (txError: any) {
       await connection.rollback();
       throw txError;
     } finally {
       connection.release();
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error(`[PPBV-BG] Fehler:`, error.code || error.message);
     try {
       await db.execute(
         "UPDATE ppbv_cache_meta SET status = 'error', error_message = ? WHERE cache_date = ?",
         [(error.message || String(error)).substring(0, 500), today]
       );
-    } catch (metaError) {
+    } catch (metaError: any) {
       console.error('[PPBV-BG] Konnte Meta-Status nicht aktualisieren:', metaError.message);
     }
   } finally {
@@ -4950,7 +4974,7 @@ async function runPpbvRefreshInBackground() {
  * Verhalten bei leerem Cache: startet automatisch asynchronen Background-Refresh
  * und antwortet mit building:true (analog zu ppugv).
  */
-router.get('/ppbv', async (req, res, next) => {
+router.get('/ppbv', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const cacheStatus = await ensurePpbvCacheAsync();
     const { station, monat, jahr, include_future } = req.query;
@@ -4961,13 +4985,13 @@ router.get('/ppbv', async (req, res, next) => {
     if (jahr) {
       const yearCol = await hasPpbvJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
       sql += ` AND ${yearCol} = ?`;
-      params.push(parseInt(jahr, 10));
+      params.push(parseInt(String(jahr), 10));
     }
     sql += ` ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`;
-    const [rows] = await db.execute(sql, params);
+    const [rows] = await db.execute(sql, params) as [any[], any];
     const sanitized = sanitizePpbvRows(rows);
     const data = applyFutureMonthFilter(sanitized, jahr, include_future);
-    const [metaRows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 1');
+    const [metaRows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 1') as [any[], any];
 
     const isBuilding = cacheStatus === 'triggered' || cacheStatus === 'running';
 
@@ -4976,7 +5000,7 @@ router.get('/ppbv', async (req, res, next) => {
       meta: metaRows[0] || null,
       count: data.length,
       rawCount: rows.length,
-      estimatedCount: data.filter(r => r.is_estimated).length,
+      estimatedCount: data.filter((r: any) => r.is_estimated).length,
       cacheStatus,
       building: isBuilding,
       message: isBuilding
@@ -4985,7 +5009,7 @@ router.get('/ppbv', async (req, res, next) => {
           ? 'Keine gecachten PPBV-Daten vorhanden.'
           : null,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPBV] GET error:', error.message);
     next(error);
   }
@@ -4995,7 +5019,7 @@ router.get('/ppbv', async (req, res, next) => {
  * POST /api/master/ppbv/refresh
  * Startet Hintergrund-Refresh der ppbv-Daten
  */
-router.post('/ppbv/refresh', async (req, res, next) => {
+router.post('/ppbv/refresh', async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!PPUGV_HOST || !PPUGV_USER) {
       return res.status(503).json({ error: 'PPBV-Zugang nicht konfiguriert (PPUGV_HOST/USER).' });
@@ -5005,7 +5029,7 @@ router.post('/ppbv/refresh', async (req, res, next) => {
     }
     runPpbvRefreshInBackground().catch((err) => console.error('[PPBV] Fehler:', err.message));
     res.status(202).json({ status: 'started', message: 'PPBV-Cache-Refresh im Hintergrund gestartet.' });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPBV] refresh error:', error.message);
     next(error);
   }
@@ -5015,11 +5039,11 @@ router.post('/ppbv/refresh', async (req, res, next) => {
  * GET /api/master/ppbv/meta
  * Liefert ppbv-Cache-Metadaten + Status
  */
-router.get('/ppbv/meta', async (req, res, next) => {
+router.get('/ppbv/meta', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const [rows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 10');
+    const [rows] = await db.execute('SELECT * FROM ppbv_cache_meta ORDER BY id DESC LIMIT 10') as [any[], any];
     res.json({ meta: rows, refreshInProgress: ppbvRefreshInProgress });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPBV] meta error:', error.message);
     next(error);
   }
@@ -5035,15 +5059,15 @@ router.get('/ppbv/meta', async (req, res, next) => {
  *   - ausfall_ist_1/2/3 (Urlaub/Krank/Sonst, Ist)
  *   - azubi_ist (Auszubildende)
  */
-router.get('/ppbv/export/inek', async (req, res, next) => {
+router.get('/ppbv/export/inek', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { jahr } = req.query;
-    const year = parseInt(jahr, 10) || new Date().getFullYear();
+    const year = parseInt(String(jahr), 10) || new Date().getFullYear();
     const yearCol = await hasPpbvJahrColumn() ? 'jahr' : 'YEAR(frostungsdatum)';
     const [rows] = await db.execute(
       `SELECT * FROM ppbv_daily_cache WHERE ${yearCol} = ? ORDER BY stationsname, ${MONTH_ORDER_SQL}, schicht`,
       [year]
-    );
+    ) as [any[], any];
     const data = sanitizePpbvRows(rows);
 
     const wb = new ExcelJS.Workbook();
@@ -5062,11 +5086,11 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
     ws.getCell('B5').value = '1-4';
     ws.getCell('A3').font = ws.getCell('A4').font = ws.getCell('A5').font = { bold: true };
 
-    const headerStyle = {
+    const headerStyle: Record<string, unknown> = {
       font: { bold: true },
-      alignment: { horizontal: 'left', wrapText: true, vertical: 'top' },
-      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } },
-      border: { top: { style: 'thin' }, bottom: { style: 'thin' } },
+      alignment: { horizontal: 'left' as const, wrapText: true, vertical: 'top' as const },
+      fill: { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFD3D3D3' } },
+      border: { top: { style: 'thin' as const }, bottom: { style: 'thin' as const } },
     };
     const headers = [
       'Standortkennzeichen', 'Verwendeter Name der Station',
@@ -5092,7 +5116,7 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
     headers.forEach((title, idx) => {
       const cell = ws.getCell(1 + idx, 7);
       cell.value = title;
-      cell.style = headerStyle;
+      cell.style = headerStyle as Partial<ExcelJS.Style>;
     });
     ws.getRow(7).height = 60;
 
@@ -5126,7 +5150,7 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
     const buffer = await wb.xlsx.writeBuffer();
     res.send(Buffer.from(buffer));
     console.log(`[PPBV-EXPORT] InEK-Excel exportiert: ${data.length} Zeilen, Jahr ${year}`);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[PPBV-EXPORT] error:', error.message);
     next(error);
   }
@@ -5139,11 +5163,11 @@ router.get('/ppbv/export/inek', async (req, res, next) => {
  * Analyze the stammdat source DB and return categorized matching results.
  * No data is written — this is a dry-run for review.
  */
-router.get('/employees/stammdat/analyze', async (req, res, next) => {
+router.get('/employees/stammdat/analyze', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const results = await analyzeStammdatImport(db, getStammdatConfig());
     res.json(results);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master stammdat] Analyze error:', error);
     next(error);
   }
@@ -5158,7 +5182,7 @@ router.get('/employees/stammdat/analyze', async (req, res, next) => {
  * - action 'apply' without existing_employee_id → auto-match or create
  * - action 'skip' → skip this employee
  */
-router.post('/employees/stammdat/import', async (req, res, next) => {
+router.post('/employees/stammdat/import', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { decisions, dryRun } = req.body;
 
@@ -5169,24 +5193,24 @@ router.post('/employees/stammdat/import', async (req, res, next) => {
     const dryRunEnabled = dryRun === true || dryRun === 'true';
 
     const result = await executeStammdatImport(
-      db, decisions, req.user.sub, getStammdatConfig(),
+      db, decisions, cuSub(req), getStammdatConfig(),
       { dryRun: dryRunEnabled }
     );
 
     if (dryRunEnabled) {
       console.log(
         `[Master stammdat] Dry-run complete: ${result.created} would-create, ${result.updated} would-update, ` +
-        `${result.skipped} skipped (by user ${req.user.email})`
+        `${result.skipped} skipped (by user ${cuEmail(req)})`
       );
     } else {
       console.log(
         `[Master stammdat] Import complete: ${result.created} created, ${result.updated} updated, ` +
-        `${result.skipped} skipped, ${result.errors.length} errors (by user ${req.user.email})`
+        `${result.skipped} skipped, ${result.errors.length} errors (by user ${cuEmail(req)})`
       );
     }
 
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master stammdat] Import error:', error);
     next(error);
   }
@@ -5198,7 +5222,7 @@ router.post('/employees/stammdat/import', async (req, res, next) => {
  * Body: { employee_id: string, stammdat_id: number }
  * Updates the Employee with stammdat fields (position, email, cost-center, etc.)
  */
-router.post('/employees/stammdat/link', async (req, res, next) => {
+router.post('/employees/stammdat/link', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { employee_id, stammdat_id } = req.body;
 
@@ -5207,11 +5231,11 @@ router.post('/employees/stammdat/link', async (req, res, next) => {
     }
 
     const result = await linkStammdatToEmployee(
-      db, employee_id, stammdat_id, req.user.sub, getStammdatConfig()
+      db, employee_id, stammdat_id, cuSub(req), getStammdatConfig()
     );
 
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master stammdat] Link error:', error);
     next(error);
   }
@@ -5224,10 +5248,10 @@ router.post('/employees/stammdat/link', async (req, res, next) => {
  * List all cost centers with optional tenant assignment info.
  * Query: ?search=term, ?tenant_id=xxx
  */
-router.get('/cost-centers', async (req, res, next) => {
+router.get('/cost-centers', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { search, tenant_id } = req.query;
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
 
     let ccSql = 'SELECT cc.* FROM CostCenter cc WHERE 1=1';
     const ccParams = [];
@@ -5244,14 +5268,14 @@ router.get('/cost-centers', async (req, res, next) => {
     }
 
     ccSql += ' ORDER BY cc.code';
-    const [costCenters] = await db.execute(ccSql, ccParams);
+    const [costCenters] = await db.execute(ccSql, ccParams) as [any[], any];
 
     // Get all tenant assignments
     const [links] = await db.execute(
       'SELECT tcc.tenant_id, tcc.cost_center_code, dt.name as tenant_name FROM TenantCostCenter tcc JOIN db_tokens dt ON tcc.tenant_id = dt.id ORDER BY dt.name'
-    );
+    ) as [any[], any];
 
-    const linkMap = {};
+    const linkMap: Record<string, { tenant_id: any; tenant_name: any }[]> = {};
     for (const link of links) {
       if (!linkMap[link.cost_center_code]) linkMap[link.cost_center_code] = [];
       if (tokens.some(t => String(t.id) === String(link.tenant_id))) {
@@ -5266,7 +5290,7 @@ router.get('/cost-centers', async (req, res, next) => {
       })),
       tenants: tokens.map(t => ({ id: t.id, name: t.name })),
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master cost-centers] List error:', error);
     next(error);
   }
@@ -5277,12 +5301,12 @@ router.get('/cost-centers', async (req, res, next) => {
  * Bootstrap: import all unique KST codes from the stammdat dump.
  * The KST list is extracted from PHP/stammdat.sql at build time.
  */
-router.post('/cost-centers/import', async (req, res, next) => {
+router.post('/cost-centers/import', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await importCostCentersFromStammdat(db, getStammdatConfig());
     console.log(`[Master cost-centers] Bootstrap import: ${result.imported} entries`);
     res.json(result);
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master cost-centers] Import error:', error);
     next(error);
   }
@@ -5293,12 +5317,12 @@ router.post('/cost-centers/import', async (req, res, next) => {
  * Set which cost centers are linked to a tenant.
  * Body: { cost_center_codes: string[] }
  */
-router.put('/tenants/:tenantId/cost-centers', async (req, res, next) => {
+router.put('/tenants/:tenantId/cost-centers', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { tenantId } = req.params;
     const { cost_center_codes } = req.body;
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     if (!tokens.some(t => String(t.id) === String(tenantId))) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
@@ -5320,9 +5344,9 @@ router.put('/tenants/:tenantId/cost-centers', async (req, res, next) => {
       } catch { /* skip if cost center doesn't exist */ }
     }
 
-    console.log(`[Master cost-centers] Tenant ${tenantId} linked to ${cost_center_codes.length} cost centers by user ${req.user.email}`);
+    console.log(`[Master cost-centers] Tenant ${tenantId} linked to ${cost_center_codes.length} cost centers by user ${cuEmail(req)}`);
     res.json({ success: true, tenant_id: tenantId, linked: cost_center_codes.length });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master cost-centers] Link error:', error);
     next(error);
   }
@@ -5332,11 +5356,11 @@ router.put('/tenants/:tenantId/cost-centers', async (req, res, next) => {
  * PUT /api/master/cost-centers/:code/tenants/:tenantId
  * Link a single cost center to a single tenant.
  */
-router.put('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
+router.put('/cost-centers/:code/tenants/:tenantId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { code, tenantId } = req.params;
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     if (!tokens.some(t => String(t.id) === String(tenantId))) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
@@ -5346,9 +5370,9 @@ router.put('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
       [tenantId, code]
     );
 
-    console.log(`[Master cost-centers] Linked CC ${code} to tenant ${tenantId} by user ${req.user.email}`);
+    console.log(`[Master cost-centers] Linked CC ${code} to tenant ${tenantId} by user ${cuEmail(req)}`);
     res.json({ success: true, cost_center_code: code, tenant_id: tenantId, linked: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master cost-centers] Single-link error:', error);
     next(error);
   }
@@ -5358,11 +5382,11 @@ router.put('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
  * DELETE /api/master/cost-centers/:code/tenants/:tenantId
  * Unlink a single cost center from a single tenant.
  */
-router.delete('/cost-centers/:code/tenants/:tenantId', async (req, res, next) => {
+router.delete('/cost-centers/:code/tenants/:tenantId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { code, tenantId } = req.params;
 
-    const tokens = await getAllTenantTokens(req.user.sub);
+    const tokens = await getAllTenantTokens(cuSub(req));
     if (!tokens.some(t => String(t.id) === String(tenantId))) {
       return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
     }
@@ -5372,9 +5396,9 @@ router.delete('/cost-centers/:code/tenants/:tenantId', async (req, res, next) =>
       [tenantId, code]
     );
 
-    console.log(`[Master cost-centers] Unlinked CC ${code} from tenant ${tenantId} by user ${req.user.email}`);
+    console.log(`[Master cost-centers] Unlinked CC ${code} from tenant ${tenantId} by user ${cuEmail(req)}`);
     res.json({ success: true, cost_center_code: code, tenant_id: tenantId, linked: false });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Master cost-centers] Single-unlink error:', error);
     next(error);
   }

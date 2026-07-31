@@ -26,6 +26,7 @@
  */
 
 import crypto from 'crypto';
+import type { Pool } from 'mysql2/promise';
 
 import {
   insertRow,
@@ -35,6 +36,8 @@ import {
   filterRows,
 } from '../utils/queryHelpers.js';
 import { fromSqlRow } from '../utils/sqlMarshal.js';
+
+type SqlRow = Record<string, unknown>;
 
 export const WISH_REQUEST_TABLE = 'WishRequest';
 
@@ -48,7 +51,7 @@ export const WISH_REQUEST_TABLE = 'WishRequest';
  * @param {string} [opts.actorEmail] - created_by value.
  * @returns {Promise<Record<string, *>>} The created row (the data object).
  */
-export async function createWishRequest({ dbPool, data, validColumns, actorEmail }) {
+export async function createWishRequest({ dbPool, data, validColumns, actorEmail }: { dbPool: Pool; data: SqlRow; validColumns: string[]; actorEmail?: string }): Promise<SqlRow> {
   if (!data.id) data.id = crypto.randomUUID();
   data.created_date = new Date();
   data.updated_date = new Date();
@@ -59,7 +62,7 @@ export async function createWishRequest({ dbPool, data, validColumns, actorEmail
     keys = keys.filter((k) => validColumns.includes(k));
   }
   if (keys.length === 0) {
-    const err = new Error(`No valid columns found for table ${WISH_REQUEST_TABLE}`);
+    const err = new Error(`No valid columns found for table ${WISH_REQUEST_TABLE}`) as Error & { status: number };
     err.status = 500;
     throw err;
   }
@@ -77,7 +80,7 @@ export async function createWishRequest({ dbPool, data, validColumns, actorEmail
  * @param {string[]} [opts.validColumns]
  * @returns {Promise<Record<string, *>|null>} The updated row (fromSqlRow) or { success: true }.
  */
-export async function updateWishRequest({ dbPool, id, data, validColumns }) {
+export async function updateWishRequest({ dbPool, id, data, validColumns }: { dbPool: Pool; id: string; data: SqlRow; validColumns?: string[] }): Promise<SqlRow | null> {
   data.updated_date = new Date();
   let keys = Object.keys(data).filter((k) => k !== 'id');
   if (validColumns) {
@@ -100,7 +103,7 @@ export async function updateWishRequest({ dbPool, id, data, validColumns }) {
  * @param {string} opts.id
  * @returns {Promise<Record<string, *>|null>} The deleted row (fromSqlRow) or null.
  */
-export async function deleteWishRequest({ dbPool, id }) {
+export async function deleteWishRequest({ dbPool, id }: { dbPool: Pool; id: string }): Promise<SqlRow | null> {
   const existing = await selectRow(dbPool, WISH_REQUEST_TABLE, id);
   const deletedRecord = existing ? fromSqlRow(existing) : null;
   await deleteRow(dbPool, WISH_REQUEST_TABLE, id);
@@ -113,7 +116,7 @@ export async function deleteWishRequest({ dbPool, id }) {
  * @param {string} id
  * @returns {Promise<Record<string, *>|null>}
  */
-export async function getWishRequest(dbPool, id) {
+export async function getWishRequest(dbPool: Pool, id: string): Promise<SqlRow | null> {
   const row = await selectRow(dbPool, WISH_REQUEST_TABLE, id);
   return row ? fromSqlRow(row) : null;
 }
@@ -124,7 +127,7 @@ export async function getWishRequest(dbPool, id) {
  * @param {{ filters?: Record<string, *>, sort?: string, limit?: *, skip?: * }} [opts]
  * @returns {Promise<Record<string, *>[]>}
  */
-export async function listWishRequests(dbPool, opts = {}) {
+export async function listWishRequests(dbPool: Pool, opts: { filters?: SqlRow; sort?: string; limit?: string | number; skip?: string | number } = {}): Promise<SqlRow[]> {
   const rows = await filterRows(dbPool, WISH_REQUEST_TABLE, opts);
-  return rows.map(fromSqlRow);
+  return rows.map(fromSqlRow) as SqlRow[];
 }

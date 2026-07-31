@@ -2,6 +2,8 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import type { Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
 import { db, removeTenantPool } from '../index.js';
 import { runMasterMigrations } from '../utils/masterMigrations.js';
 import { authMiddleware } from './auth.js';
@@ -13,15 +15,28 @@ import { runTenantMigrations } from '../utils/tenantMigrations.js';
 import { resolveMasterDbConfig } from '../utils/mysqlConfig.js';
 import { ensureTenantBaseTables } from '../scripts/seed-runtime-shared.js';
 
+interface CuraRequest extends Request {
+  db: Pool;
+  dbToken?: string;
+  isCustomDb?: boolean;
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    permissions?: Record<string, boolean>;
+    [key: string]: unknown;
+  };
+}
+
 const router = express.Router();
 
 // Test endpoint without middleware
-router.get('/test', (req, res) => {
+router.get('/test', (req: Request, res: Response) => {
   res.json({ message: 'Admin routes working', timestamp: new Date().toISOString() });
 });
 
 // ===== ADMIN TOOLS - Simplified with inline auth check =====
-router.post('/tools', async (req, res, next) => {
+router.post('/tools', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Quick inline auth check
     const authHeader = req.headers.authorization;
@@ -32,7 +47,7 @@ router.post('/tools', async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     let user;
     try {
-      user = jwt.verify(token, process.env.JWT_SECRET);
+      user = jwt.verify(token, process.env.JWT_SECRET!) as Record<string, unknown>;
     } catch (err) {
       return res.status(401).json({ error: 'Token ungültig' });
     }
@@ -62,7 +77,7 @@ router.post('/tools', async (req, res, next) => {
           return res.status(400).json({ error: 'Keine Secrets gefunden' });
         }
 
-        if (!process.env.JWT_SECRET) {
+        if (!process.env.JWT_SECRET!) {
           console.error('JWT_SECRET not configured');
           return res.status(500).json({ error: 'Server nicht korrekt konfiguriert (JWT_SECRET fehlt)' });
         }
@@ -87,17 +102,17 @@ router.post('/tools', async (req, res, next) => {
           return res.status(400).json({ error: 'Host, Benutzer und Datenbank sind erforderlich' });
         }
 
-        if (!process.env.JWT_SECRET) {
+        if (!process.env.JWT_SECRET!) {
           console.error('JWT_SECRET not configured');
           return res.status(500).json({ error: 'Server nicht korrekt konfiguriert (JWT_SECRET fehlt)' });
         }
 
-        const config = {
+        const config: Record<string, unknown> = {
           host: host.trim(),
           user: user.trim(),
           password: password || '',
           database: database.trim(),
-          port: parseInt(port || '3306')
+          port: parseInt(port || '3306'),
         };
 
         if (ssl) {
@@ -116,36 +131,36 @@ router.post('/tools', async (req, res, next) => {
 
       case 'export_mysql_as_json': {
         // Export all tables as JSON - uses tenant DB if X-DB-Token provided
-        const dbPool = req.db || db;
-        const [tables] = await dbPool.execute('SHOW TABLES');
-        const exportData = {};
+        const dbPool = (req as unknown as CuraRequest).db || db;
+        const [tables] = await dbPool.execute('SHOW TABLES') as [RowDataPacket[], unknown];
+        const exportData: Record<string, unknown> = {};
 
         for (const table of tables) {
-          const tableName = Object.values(table)[0];
-          const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\``);
+          const tableName = Object.values(table)[0] as string;
+          const [rows] = await dbPool.execute(`SELECT * FROM \`${tableName}\``) as [RowDataPacket[], unknown];
           exportData[tableName] = rows;
         }
 
-        console.log(`[export] Exported ${Object.keys(exportData).length} tables from ${req.db ? 'tenant' : 'master'} database`);
+        console.log(`[export] Exported ${Object.keys(exportData).length} tables from ${(req as unknown as CuraRequest).db ? 'tenant' : 'master'} database`);
         return res.json(exportData);
       }
 
       case 'check': {
         // Database integrity check - runs on tenant database if X-DB-Token is provided
-        const dbPool = req.db || db; // req.db is set by tenantDbMiddleware
-        const issues = [];
+        const dbPool = (req as unknown as CuraRequest).db || db; // (req as unknown as CuraRequest).db is set by tenantDbMiddleware
+        const issues: Record<string, unknown>[] = [];
 
         try {
           // Load all data from the correct database
-          const [doctors] = await dbPool.execute('SELECT id, name FROM Doctor');
-          const [shifts] = await dbPool.execute('SELECT id, doctor_id, date, position, created_date FROM ShiftEntry');
-          const [staffing] = await dbPool.execute('SELECT id, doctor_id, year, month FROM StaffingPlanEntry');
-          const [workplaces] = await dbPool.execute('SELECT id, name FROM Workplace');
+          const [doctors] = await dbPool.execute('SELECT id, name FROM Doctor') as [RowDataPacket[], unknown];
+          const [shifts] = await dbPool.execute('SELECT id, doctor_id, date, position, created_date FROM ShiftEntry') as [RowDataPacket[], unknown];
+          const [staffing] = await dbPool.execute('SELECT id, doctor_id, year, month FROM StaffingPlanEntry') as [RowDataPacket[], unknown];
+          const [workplaces] = await dbPool.execute('SELECT id, name FROM Workplace') as [RowDataPacket[], unknown];
 
-          const doctorIds = new Set(doctors.map(d => d.id));
+          const doctorIds = new Set(doctors.map((d: RowDataPacket) => d.id));
           const validPositions = new Set([
             "Verfügbar", "Frei", "Krank", "Urlaub", "Dienstreise", "Nicht verfügbar", "Sonstiges",
-            ...workplaces.map(w => w.name)
+            ...workplaces.map((w: RowDataPacket) => w.name)
           ]);
 
           // Check for orphaned shifts (doctor doesn't exist)
@@ -178,10 +193,10 @@ router.post('/tools', async (req, res, next) => {
           });
 
           // Check for duplicates
-          const checkDuplicates = (entityName, items, keyFields, tableName) => {
+          const checkDuplicates = (entityName: string, items: Record<string, unknown>[], keyFields: string[], tableName: string) => {
             const map = new Map();
-            items.forEach(item => {
-              const key = keyFields.map(f => item[f]).join('|');
+              items.forEach((item: Record<string, unknown>) => {
+              const key = keyFields.map((f: string) => item[f]).join('|');
               if (!map.has(key)) map.set(key, []);
               map.get(key).push(item);
             });
@@ -189,11 +204,11 @@ router.post('/tools', async (req, res, next) => {
             for (const [key, group] of map.entries()) {
               if (group.length > 1) {
                 // Sort by created_date if available, keep the oldest
-                group.sort((a, b) => new Date(a.created_date || 0) - new Date(b.created_date || 0));
+                group.sort((a: Record<string, unknown>, b: Record<string, unknown>) => new Date(String(a.created_date || 0)).getTime() - new Date(String(b.created_date || 0)).getTime());
                 const toDelete = group.slice(1); // All except first (oldest)
                 issues.push({
                   type: `duplicate_${entityName.toLowerCase()}`,
-                  ids: toDelete.map(i => i.id),
+                  ids: toDelete.map((i: Record<string, unknown>) => i.id),
                   table: tableName,
                   count: group.length,
                   description: `${group.length} doppelte ${entityName} Einträge (${key})`
@@ -207,11 +222,11 @@ router.post('/tools', async (req, res, next) => {
           checkDuplicates('Workplace', workplaces, ['name'], 'Workplace');
           checkDuplicates('StaffingPlanEntry', staffing, ['doctor_id', 'year', 'month'], 'StaffingPlanEntry');
 
-          console.log(`[check] Found ${issues.length} issues in ${req.db ? 'tenant' : 'master'} database`);
+          console.log(`[check] Found ${issues.length} issues in ${(req as unknown as CuraRequest).db ? 'tenant' : 'master'} database`);
 
           return res.json({ 
             issues,
-            dataSource: req.db ? 'tenant' : 'master',
+            dataSource: (req as unknown as CuraRequest).db ? 'tenant' : 'master',
             stats: {
               doctors: doctors.length,
               shifts: shifts.length,
@@ -220,14 +235,14 @@ router.post('/tools', async (req, res, next) => {
             }
           });
         } catch (err) {
-          console.error('[check] Error:', err.message);
+          console.error('[check] Error:', (err as Error).message);
           return res.status(500).json({ error: 'Fehler bei Integritätsprüfung' });
         }
       }
 
       case 'repair': {
         // Database repair - delete orphaned entries and duplicates
-        const dbPool = req.db || db;
+        const dbPool = (req as unknown as CuraRequest).db || db;
         const { issuesToFix } = data || {};
         const results = [];
 
@@ -238,18 +253,18 @@ router.post('/tools', async (req, res, next) => {
           });
         }
 
-        const userEmail = req.user?.email || 'unknown';
+        const userEmail = (req as unknown as CuraRequest).user?.email || 'unknown';
         const timestamp = new Date().toISOString();
 
         for (const issue of issuesToFix) {
           try {
             if (issue.type === 'orphaned_shift' || issue.type === 'orphaned_position') {
-              const [rows] = await dbPool.execute('SELECT * FROM ShiftEntry WHERE id = ?', [issue.id]);
+              const [rows] = await dbPool.execute('SELECT * FROM ShiftEntry WHERE id = ?', [issue.id]) as [RowDataPacket[], unknown];
               await dbPool.execute('DELETE FROM ShiftEntry WHERE id = ?', [issue.id]);
               console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: ShiftEntry | ID: ${issue.id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
               results.push(`✓ Gelöscht: ShiftEntry ${issue.id}`);
             } else if (issue.type === 'orphaned_staffing') {
-              const [rows] = await dbPool.execute('SELECT * FROM StaffingPlanEntry WHERE id = ?', [issue.id]);
+              const [rows] = await dbPool.execute('SELECT * FROM StaffingPlanEntry WHERE id = ?', [issue.id]) as [RowDataPacket[], unknown];
               await dbPool.execute('DELETE FROM StaffingPlanEntry WHERE id = ?', [issue.id]);
               console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: StaffingPlanEntry | ID: ${issue.id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
               results.push(`✓ Gelöscht: StaffingPlanEntry ${issue.id}`);
@@ -264,7 +279,7 @@ router.post('/tools', async (req, res, next) => {
               }
               if (issue.ids && issue.ids.length > 0) {
                 for (const id of issue.ids) {
-                  const [rows] = await dbPool.execute(`SELECT * FROM \`${table}\` WHERE id = ?`, [id]);
+                  const [rows] = await dbPool.execute(`SELECT * FROM \`${table}\` WHERE id = ?`, [id]) as [RowDataPacket[], unknown];
                   await dbPool.execute(`DELETE FROM \`${table}\` WHERE id = ?`, [id]);
                   console.log(`[AUDIT][DELETE][REPAIR] ${timestamp} | User: ${userEmail} | Table: ${table} | ID: ${id} | Type: ${issue.type} | Data: ${JSON.stringify(rows[0] || null)}`);
                 }
@@ -272,47 +287,47 @@ router.post('/tools', async (req, res, next) => {
               }
             }
           } catch (err) {
-            results.push(`✗ Fehler: ${err.message}`);
+            results.push(`✗ Fehler: ${(err as Error).message}`);
           }
         }
 
         console.log(`[AUDIT][REPAIR] ${timestamp} | User: ${userEmail} | Processed ${issuesToFix.length} issues, results:`, results);
 
         // Write summary to SystemLog table
-        const dbPoolForLog = req.db || db;
+        const dbPoolForLog = (req as unknown as CuraRequest).db || db;
         await writeAuditLog(dbPoolForLog, {
           level: 'audit',
           source: 'DB-Reparatur',
-          message: `${results.filter(r => r.startsWith('\u2713')).length} Einträge repariert/gelöscht von ${userEmail}`,
+          message: `${results.filter((r: string) => r.startsWith('\u2713')).length} Einträge repariert/gelöscht von ${userEmail}`,
           details: { issues: issuesToFix.length, results, timestamp },
           userEmail
         });
 
         return res.json({ 
-          message: `${results.filter(r => r.startsWith('✓')).length} Probleme behoben`,
+          message: `${results.filter((r: string) => r.startsWith('✓')).length} Probleme behoben`,
           results
         });
       }
 
       case 'wipe_database': {
         // Wipe all data from tables (DANGEROUS!) - uses tenant DB if X-DB-Token provided
-        const dbPool = req.db || db;
-        const [tables] = await dbPool.execute('SHOW TABLES');
+        const dbPool = (req as unknown as CuraRequest).db || db;
+        const [tables] = await dbPool.execute('SHOW TABLES') as [RowDataPacket[], unknown];
         
         const wipedTables = [];
         for (const table of tables) {
-          const tableName = Object.values(table)[0];
+          const tableName = Object.values(table)[0] as string;
           // Skip user tables to keep admin access
           if (tableName === 'User' || tableName === 'app_users' || tableName === 'db_tokens') continue;
-          const [countRows] = await dbPool.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``);
+          const [countRows] = await dbPool.execute(`SELECT COUNT(*) as cnt FROM \`${tableName}\``) as [RowDataPacket[], unknown];
           const rowCount = countRows[0]?.cnt || 0;
           await dbPool.execute(`DELETE FROM \`${tableName}\``);
           if (rowCount > 0) wipedTables.push({ table: tableName, deletedRows: rowCount });
         }
 
         const wipeTimestamp = new Date().toISOString();
-        const wipeUser = req.user?.email || 'unknown';
-        console.log(`[AUDIT][DELETE][WIPE] ${wipeTimestamp} | User: ${wipeUser} | Target: ${req.db ? 'tenant' : 'master'} | Tables: ${JSON.stringify(wipedTables)}`);
+        const wipeUser = (req as unknown as CuraRequest).user?.email || 'unknown';
+        console.log(`[AUDIT][DELETE][WIPE] ${wipeTimestamp} | User: ${wipeUser} | Target: ${(req as unknown as CuraRequest).db ? 'tenant' : 'master'} | Tables: ${JSON.stringify(wipedTables)}`);
 
         // Write to SystemLog (re-create since we may have wiped it)
         try {
@@ -331,17 +346,17 @@ router.post('/tools', async (req, res, next) => {
           await writeAuditLog(dbPool, {
             level: 'audit',
             source: 'Datenbankbereinigung',
-            message: `Datenbank bereinigt von ${wipeUser} (${req.db ? 'Mandant' : 'Master'})`,
-            details: { target: req.db ? 'tenant' : 'master', wiped_tables: wipedTables, timestamp: wipeTimestamp },
+            message: `Datenbank bereinigt von ${wipeUser} (${(req as unknown as CuraRequest).db ? 'Mandant' : 'Master'})`,
+            details: { target: (req as unknown as CuraRequest).db ? 'tenant' : 'master', wiped_tables: wipedTables, timestamp: wipeTimestamp },
             userEmail: wipeUser
           });
         } catch (logErr) {
-          console.error('[AUDIT] Failed to write wipe audit log:', logErr.message);
+          console.error('[AUDIT] Failed to write wipe audit log:', (logErr as Error).message);
         }
         return res.json({ 
           message: 'Database wiped successfully',
           warning: 'User/Token tables preserved',
-          dataSource: req.db ? 'tenant' : 'master'
+          dataSource: (req as unknown as CuraRequest).db ? 'tenant' : 'master'
         });
       }
 
@@ -384,19 +399,19 @@ router.use(requirePermission('can_manage_system'));
 // Optional query param: tenantId -> filters users whose allowed_tenants JSON array contains this id.
 // Users with allowed_tenants NULL or empty array are treated as having access to all tenants
 // and are therefore always included in the result (backwards compatibility).
-router.get('/users', async (req, res, next) => {
+router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const dbPool = req.db || db;
+    const dbPool = (req as unknown as CuraRequest).db || db;
     const { tenantId } = req.query;
 
-    const [rows] = await dbPool.execute('SELECT * FROM app_users ORDER BY email ASC');
+    const [rows] = await dbPool.execute('SELECT * FROM app_users ORDER BY email ASC') as [RowDataPacket[], unknown];
 
     if (!tenantId) {
       return res.json(rows);
     }
 
     // Filter in JS to safely handle JSON column variations (string vs. array, NULL, empty array)
-    const filtered = rows.filter((u) => {
+    const filtered = rows.filter((u: RowDataPacket) => {
       const raw = u.allowed_tenants;
       if (raw === null || raw === undefined || raw === '') return true; // full access
       let parsed = raw;
@@ -411,7 +426,7 @@ router.get('/users', async (req, res, next) => {
 
     res.json(filtered);
   } catch (error) {
-    if (error.code === 'ER_NO_SUCH_TABLE') {
+    if ((error as Record<string, unknown>).code === 'ER_NO_SUCH_TABLE') {
       return res.json([]);
     }
     next(error);
@@ -419,21 +434,21 @@ router.get('/users', async (req, res, next) => {
 });
 
 // ===== GET SYSTEM LOGS =====
-router.get('/logs', async (req, res, next) => {
+router.get('/logs', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { limit = 100 } = req.query;
-    const dbPool = req.db || db;
+    const dbPool = (req as unknown as CuraRequest).db || db;
     
     // Could query a logs table or return server logs
     const [rows] = await dbPool.execute(
       'SELECT * FROM system_logs ORDER BY created_date DESC LIMIT ?',
-      [parseInt(limit)]
-    );
+      [parseInt(String(limit))]
+    ) as [RowDataPacket[], unknown];
     
     res.json(rows);
   } catch (error) {
     // If logs table doesn't exist, return empty array
-    if (error.code === 'ER_NO_SUCH_TABLE') {
+    if ((error as Record<string, unknown>).code === 'ER_NO_SUCH_TABLE') {
       return res.json([]);
     }
     next(error);
@@ -441,7 +456,7 @@ router.get('/logs', async (req, res, next) => {
 });
 
 // ===== DATABASE MANAGEMENT =====
-router.post('/database/backup', async (req, res, next) => {
+router.post('/database/backup', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Placeholder for database backup logic
     res.json({ success: true, message: 'Backup initiated' });
@@ -450,15 +465,15 @@ router.post('/database/backup', async (req, res, next) => {
   }
 });
 
-router.get('/database/stats', async (req, res, next) => {
+router.get('/database/stats', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const dbPool = req.db || db;
-    const [tables] = await dbPool.execute('SHOW TABLES');
+    const dbPool = (req as unknown as CuraRequest).db || db;
+    const [tables] = await dbPool.execute('SHOW TABLES') as [RowDataPacket[], unknown];
     const stats = [];
     
     for (const table of tables) {
-      const tableName = Object.values(table)[0];
-      const [rows] = await dbPool.execute(`SELECT COUNT(*) as count FROM \`${tableName}\``);
+      const tableName = Object.values(table)[0] as string;
+      const [rows] = await dbPool.execute(`SELECT COUNT(*) as count FROM \`${tableName}\``) as [RowDataPacket[], unknown];
       stats.push({ table: tableName, rows: rows[0].count });
     }
     
@@ -469,22 +484,22 @@ router.get('/database/stats', async (req, res, next) => {
 });
 
 // ===== SYSTEM SETTINGS =====
-router.get('/settings', async (req, res, next) => {
+router.get('/settings', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const dbPool = req.db || db;
-    const [rows] = await dbPool.execute('SELECT * FROM system_settings');
+    const dbPool = (req as unknown as CuraRequest).db || db;
+    const [rows] = await dbPool.execute('SELECT * FROM system_settings') as [RowDataPacket[], unknown];
     res.json(rows);
   } catch (error) {
-    if (error.code === 'ER_NO_SUCH_TABLE') {
+    if ((error as Record<string, unknown>).code === 'ER_NO_SUCH_TABLE') {
       return res.json([]);
     }
     next(error);
   }
 });
 
-router.post('/settings', async (req, res, next) => {
+router.post('/settings', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const dbPool = req.db || db;
+    const dbPool = (req as unknown as CuraRequest).db || db;
     const { key, value } = req.body;
     
     await dbPool.execute(
@@ -499,7 +514,7 @@ router.post('/settings', async (req, res, next) => {
 });
 
 // ===== MIGRATE USERS FROM BASE44 =====
-router.post('/migrate-users', async (req, res, next) => {
+router.post('/migrate-users', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Prüfe ob User-Tabelle existiert, wenn nicht erstellen
     await db.execute(`
@@ -558,7 +573,7 @@ router.post('/migrate-users', async (req, res, next) => {
 
     for (const user of users) {
       try {
-        const [existing] = await db.execute('SELECT id FROM User WHERE email = ?', [user.email]);
+        const [existing] = await db.execute('SELECT id FROM User WHERE email = ?', [user.email]) as [RowDataPacket[], unknown];
         
         if (existing.length > 0) {
           results.push({ email: user.email, status: 'skipped', reason: 'already exists' });
@@ -583,7 +598,7 @@ router.post('/migrate-users', async (req, res, next) => {
         results.push({ email: user.email, status: 'inserted', role: user.role });
         inserted++;
       } catch (err) {
-        results.push({ email: user.email, status: 'error', error: err.message });
+        results.push({ email: user.email, status: 'error', error: (err as Error).message });
       }
     }
 
@@ -601,7 +616,7 @@ router.post('/migrate-users', async (req, res, next) => {
 
 // ===== RENAME POSITION =====
 // Renames a position/workplace across all related tables
-router.post('/rename-position', async (req, res, next) => {
+router.post('/rename-position', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { oldName, newName } = req.body;
     
@@ -613,15 +628,15 @@ router.post('/rename-position', async (req, res, next) => {
       return res.json({ success: true, message: 'Keine Änderung nötig', stats: {} });
     }
     
-    // Use tenant DB if available (req.db is set by tenantDbMiddleware)
-    const dbPool = req.db;
+    // Use tenant DB if available ((req as unknown as CuraRequest).db is set by tenantDbMiddleware)
+    const dbPool = (req as unknown as CuraRequest).db;
 
     // Ensure all base tables exist before attempting updates (needed for new tenants)
-    if (req.isCustomDb) {
+    if ((req as unknown as CuraRequest).isCustomDb) {
       try {
         await ensureTenantBaseTables(dbPool);
       } catch (e) {
-        console.warn('[rename-position] ensureTenantBaseTables warning:', e.message);
+        console.warn('[rename-position] ensureTenantBaseTables warning:', (e as Error).message);
         // Non-fatal - continue anyway
       }
     }
@@ -634,10 +649,10 @@ router.post('/rename-position', async (req, res, next) => {
       const [r1] = await dbPool.execute(
         'UPDATE ShiftEntry SET position = ? WHERE position = ?',
         [newName, oldName]
-      );
+      ) as [ResultSetHeader, unknown];
       shiftsUpdated = r1.affectedRows || 0;
     } catch (e) {
-      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      if ((e as Record<string, unknown>).code !== 'ER_NO_SUCH_TABLE' && (e as Record<string, unknown>).code !== 'ER_BAD_FIELD_ERROR') throw e;
     }
     
     // Update TrainingRotation (modality field)
@@ -645,10 +660,10 @@ router.post('/rename-position', async (req, res, next) => {
       const [r3] = await dbPool.execute(
         'UPDATE TrainingRotation SET modality = ? WHERE modality = ?',
         [newName, oldName]
-      );
+      ) as [ResultSetHeader, unknown];
       rotationsUpdated = r3.affectedRows || 0;
     } catch (e) {
-      if (e.code !== 'ER_NO_SUCH_TABLE' && e.code !== 'ER_BAD_FIELD_ERROR') throw e;
+      if ((e as Record<string, unknown>).code !== 'ER_NO_SUCH_TABLE' && (e as Record<string, unknown>).code !== 'ER_BAD_FIELD_ERROR') throw e;
     }
     
     const stats = {
@@ -664,7 +679,7 @@ router.post('/rename-position', async (req, res, next) => {
       ...stats
     });
   } catch (error) {
-    console.error('[rename-position] Failed:', error.message, error.code);
+    console.error('[rename-position] Failed:', (error as Error).message, (error as Record<string, unknown>).code);
     next(error);
   }
 });
@@ -672,11 +687,11 @@ router.post('/rename-position', async (req, res, next) => {
 // ===== DATABASE MIGRATIONS =====
 // Run pending migrations on the master database
 
-router.post('/run-migrations', async (req, res, next) => {
+router.post('/run-migrations', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const results = await runMasterMigrations(db);
     
-    console.log(`[Migrations] Executed by ${req.user?.email}:`, results);
+    console.log(`[Migrations] Executed by ${(req as unknown as CuraRequest).user?.email}:`, results);
     
     res.json({
       success: true,
@@ -688,11 +703,11 @@ router.post('/run-migrations', async (req, res, next) => {
   }
 });
 
-router.get('/migration-status', async (req, res, next) => {
+router.get('/migration-status', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Check which columns exist in app_users
-    const [columns] = await db.execute(`SHOW COLUMNS FROM app_users`);
-    const columnNames = columns.map(c => c.Field);
+    const [columns] = await db.execute(`SHOW COLUMNS FROM app_users`) as [RowDataPacket[], unknown];
+    const columnNames = columns.map((c: RowDataPacket) => c.Field);
     
     const migrations = [
       { 
@@ -730,7 +745,7 @@ router.get('/migration-status', async (req, res, next) => {
     // Check EmailVerification table
     let emailVerificationTableExists = false;
     try {
-      const [tables] = await db.execute(`SHOW TABLES LIKE 'EmailVerification'`);
+      const [tables] = await db.execute(`SHOW TABLES LIKE 'EmailVerification'`) as [RowDataPacket[], unknown];
       emailVerificationTableExists = tables.length > 0;
     } catch (err) {
       // ignore
@@ -743,7 +758,7 @@ router.get('/migration-status', async (req, res, next) => {
 
     let coworkInviteTableExists = false;
     try {
-      const [tables] = await db.execute(`SHOW TABLES LIKE 'CoWorkInvite'`);
+      const [tables] = await db.execute(`SHOW TABLES LIKE 'CoWorkInvite'`) as [RowDataPacket[], unknown];
       coworkInviteTableExists = tables.length > 0;
     } catch (err) {
       // ignore
@@ -756,7 +771,7 @@ router.get('/migration-status', async (req, res, next) => {
     
     res.json({
       migrations,
-      allApplied: migrations.every(m => m.applied)
+      allApplied: migrations.every((m: Record<string, unknown>) => m.applied)
     });
   } catch (error) {
     next(error);
@@ -765,14 +780,14 @@ router.get('/migration-status', async (req, res, next) => {
 
 // ===== TIMESLOT MIGRATIONS (Tenant-specific) =====
 // Run timeslot migrations on the currently active tenant database
-router.post('/run-timeslot-migrations', async (req, res, next) => {
+router.post('/run-timeslot-migrations', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Use tenant DB if available (req.db is set by tenantDbMiddleware)
-    const dbPool = req.db || db;
-    const cacheKey = req.headers['x-db-token'] || 'default';
+    // Use tenant DB if available ((req as unknown as CuraRequest).db is set by tenantDbMiddleware)
+    const dbPool = (req as unknown as CuraRequest).db || db;
+    const cacheKey = String(req.headers['x-db-token'] || '') || 'default';
     const results = await runTenantMigrations(dbPool, cacheKey);
 
-    console.log(`[Timeslot Migrations] Executed by ${req.user?.email}:`, results);
+    console.log(`[Timeslot Migrations] Executed by ${(req as unknown as CuraRequest).user?.email}:`, results);
 
     res.json({
       success: true,
@@ -785,15 +800,15 @@ router.post('/run-timeslot-migrations', async (req, res, next) => {
 });
 
 // Check timeslot migration status
-router.get('/timeslot-migration-status', async (req, res, next) => {
+router.get('/timeslot-migration-status', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Use tenant DB if available
-    const dbPool = req.db || db;
+    const dbPool = (req as unknown as CuraRequest).db || db;
     const migrations = [];
 
     // Check WorkplaceTimeslot table
     try {
-      const [tables] = await dbPool.execute(`SHOW TABLES LIKE 'WorkplaceTimeslot'`);
+      const [tables] = await dbPool.execute(`SHOW TABLES LIKE 'WorkplaceTimeslot'`) as [RowDataPacket[], unknown];
       migrations.push({
         name: 'create_workplace_timeslot_table',
         description: 'Erstellt WorkplaceTimeslot-Tabelle',
@@ -804,14 +819,14 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'create_workplace_timeslot_table',
         description: 'Erstellt WorkplaceTimeslot-Tabelle',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check Workplace columns
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Workplace`);
-      const columnNames = columns.map(c => c.Field);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Workplace`) as [RowDataPacket[], unknown];
+      const columnNames = columns.map((c: RowDataPacket) => c.Field);
       
       migrations.push({
         name: 'add_workplace_timeslots_enabled',
@@ -847,14 +862,14 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'workplace_columns',
         description: 'Workplace-Spalten prüfen',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check ShiftEntry columns
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM ShiftEntry`);
-      const columnNames = columns.map(c => c.Field);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM ShiftEntry`) as [RowDataPacket[], unknown];
+      const columnNames = columns.map((c: RowDataPacket) => c.Field);
       
       migrations.push({
         name: 'add_shiftentry_timeslot_id',
@@ -884,14 +899,14 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'shiftentry_columns',
         description: 'ShiftEntry-Spalten prüfen',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check TeamRole columns for permissions
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM TeamRole`);
-      const columnNames = columns.map(c => c.Field);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM TeamRole`) as [RowDataPacket[], unknown];
+      const columnNames = columns.map((c: RowDataPacket) => c.Field);
       
       migrations.push({
         name: 'add_team_role_permissions',
@@ -905,13 +920,13 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'teamrole_columns',
         description: 'TeamRole-Spalten prüfen',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check service_type column in Workplace
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Workplace WHERE Field = 'service_type'`);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Workplace WHERE Field = 'service_type'`) as [RowDataPacket[], unknown];
       migrations.push({
         name: 'add_workplace_service_type',
         description: 'Diensttyp pro Dienst (Bereitschaftsdienst/Rufbereitschaft/Schichtdienst/Andere)',
@@ -922,13 +937,13 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'add_workplace_service_type',
         description: 'Diensttyp pro Dienst',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check central_employee_id column in Doctor
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'central_employee_id'`);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'central_employee_id'`) as [RowDataPacket[], unknown];
       migrations.push({
         name: 'add_doctor_central_employee_id',
         description: 'Verknüpfung zur zentralen Mitarbeiterverwaltung',
@@ -939,13 +954,13 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'add_doctor_central_employee_id',
         description: 'Verknüpfung zur zentralen Mitarbeiterverwaltung',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check work_time_model_id column in Doctor
     try {
-      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'work_time_model_id'`);
+      const [columns] = await dbPool.execute(`SHOW COLUMNS FROM Doctor WHERE Field = 'work_time_model_id'`) as [RowDataPacket[], unknown];
       migrations.push({
         name: 'add_doctor_work_time_model_id',
         description: 'Arbeitszeitmodell-Zuordnung pro Mitarbeiter',
@@ -956,13 +971,13 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'add_doctor_work_time_model_id',
         description: 'Arbeitszeitmodell-Zuordnung pro Mitarbeiter',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     // Check ShiftTimeRule table
     try {
-      const [tables] = await dbPool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`);
+      const [tables] = await dbPool.execute(`SHOW TABLES LIKE 'ShiftTimeRule'`) as [RowDataPacket[], unknown];
       migrations.push({
         name: 'create_shift_time_rule_table',
         description: 'Schichtzeitregeln pro Arbeitsplatz und Arbeitszeitmodell',
@@ -973,13 +988,13 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
         name: 'create_shift_time_rule_table',
         description: 'Schichtzeitregeln pro Arbeitsplatz und Arbeitszeitmodell',
         applied: false,
-        error: err.message
+        error: (err as Error).message
       });
     }
 
     res.json({
       migrations,
-      allApplied: migrations.every(m => m.applied)
+      allApplied: migrations.every((m: Record<string, unknown>) => m.applied)
     });
   } catch (error) {
     next(error);
@@ -990,10 +1005,10 @@ router.get('/timeslot-migration-status', async (req, res, next) => {
 // IMPORTANT: These tokens are ALWAYS stored on the MASTER database (from ENV variables)
 // NOT on tenant databases! This ensures tokens are available regardless of which
 // tenant database is currently active.
-// We use `db` (master) instead of `req.db` (tenant) for all token operations.
+// We use `db` (master) instead of `(req as unknown as CuraRequest).db` (tenant) for all token operations.
 
 // Ensure db_tokens table exists on MASTER database
-async function ensureDbTokensTable(masterDb) {
+async function ensureDbTokensTable(masterDb: Pool) {
   await masterDb.execute(`
     CREATE TABLE IF NOT EXISTS db_tokens (
       id VARCHAR(36) PRIMARY KEY,
@@ -1012,12 +1027,12 @@ async function ensureDbTokensTable(masterDb) {
 
 // GET all stored DB tokens (metadata only, not the actual token value for security)
 // Filters tokens based on admin's allowed_tenants
-router.get('/db-tokens', async (req, res, next) => {
+router.get('/db-tokens', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     // Get the requesting admin's allowed_tenants
-    const [adminRows] = await db.execute('SELECT allowed_tenants FROM app_users WHERE id = ?', [req.user.sub]);
+    const [adminRows] = await db.execute('SELECT allowed_tenants FROM app_users WHERE id = ?', [(req as unknown as CuraRequest).user?.sub || '']) as [RowDataPacket[], unknown];
     const adminTenants = adminRows[0]?.allowed_tenants;
     
     // Parse admin tenants (could be JSON string, array, or null)
@@ -1030,17 +1045,17 @@ router.get('/db-tokens', async (req, res, next) => {
       SELECT id, name, host, db_name, description, is_active, created_by, created_date, updated_date
       FROM db_tokens
       ORDER BY name ASC
-    `);
+    `) as [RowDataPacket[], unknown];
     
     // Filter tokens based on admin's allowed_tenants
     // If adminTenantList is null or empty, admin has access to all tenants
     let filteredRows = rows;
     if (adminTenantList && adminTenantList.length > 0) {
-      filteredRows = rows.filter(token => adminTenantList.includes(token.id));
+      filteredRows = rows.filter((token: RowDataPacket) => adminTenantList.includes(token.id));
     }
     
     // Convert is_active from MySQL tinyint to proper boolean
-    const tokens = filteredRows.map(row => ({
+    const tokens = filteredRows.map((row: RowDataPacket) => ({
       ...row,
       is_active: Boolean(row.is_active)
     }));
@@ -1052,14 +1067,14 @@ router.get('/db-tokens', async (req, res, next) => {
 });
 
 // GET a specific token (includes the encrypted token value)
-router.get('/db-tokens/:id', async (req, res, next) => {
+router.get('/db-tokens/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     const [rows] = await db.execute(
       'SELECT * FROM db_tokens WHERE id = ?',
       [req.params.id]
-    );
+    ) as [RowDataPacket[], unknown];
     
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Token nicht gefunden' });
@@ -1075,13 +1090,13 @@ router.get('/db-tokens/:id', async (req, res, next) => {
 });
 
 // GET the currently active token
-router.get('/db-tokens/active/current', async (req, res, next) => {
+router.get('/db-tokens/active/current', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     const [rows] = await db.execute(
       'SELECT * FROM db_tokens WHERE is_active = TRUE LIMIT 1'
-    );
+    ) as [RowDataPacket[], unknown];
     
     if (rows.length === 0) {
       return res.json(null);
@@ -1097,7 +1112,7 @@ router.get('/db-tokens/active/current', async (req, res, next) => {
 });
 
 // CREATE a new DB token
-router.post('/db-tokens', async (req, res, next) => {
+router.post('/db-tokens', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
@@ -1116,12 +1131,12 @@ router.post('/db-tokens', async (req, res, next) => {
     // Encrypt the credentials
     const { encryptToken } = await import('../utils/crypto.js');
     
-    const config = {
+    const config: Record<string, unknown> = {
       host: host.trim(),
       user: user.trim(),
       password: password || '',
       database: dbName.trim(),
-      port: parseInt(port || '3306')
+      port: parseInt(port || '3306'),
     };
     
     if (ssl) {
@@ -1134,9 +1149,9 @@ router.post('/db-tokens', async (req, res, next) => {
     await db.execute(`
       INSERT INTO db_tokens (id, name, token, host, db_name, description, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [id, name.trim(), encryptedToken, host.trim(), dbName.trim(), description || null, req.user.email]);
+    `, [id, name.trim(), encryptedToken, host.trim(), dbName.trim(), description || null, (req as unknown as CuraRequest).user?.email || 'unknown']);
     
-    console.log(`[DB-Tokens] Created token "${name}" for ${host}/${dbName} by ${req.user.email}`);
+    console.log(`[DB-Tokens] Created token "${name}" for ${host}/${dbName} by ${(req as unknown as CuraRequest).user?.email || 'unknown'}`);
     
     res.json({
       id,
@@ -1145,7 +1160,7 @@ router.post('/db-tokens', async (req, res, next) => {
       db_name: dbName.trim(),
       description: description || null,
       token: encryptedToken,
-      created_by: req.user.email
+      created_by: (req as unknown as CuraRequest).user?.email || 'unknown'
     });
   } catch (error) {
     next(error);
@@ -1153,7 +1168,7 @@ router.post('/db-tokens', async (req, res, next) => {
 });
 
 // UPDATE a DB token
-router.put('/db-tokens/:id', async (req, res, next) => {
+router.put('/db-tokens/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
@@ -1161,7 +1176,7 @@ router.put('/db-tokens/:id', async (req, res, next) => {
     const { id } = req.params;
     
     // Check if token exists
-    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]) as [RowDataPacket[], unknown];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Token nicht gefunden' });
     }
@@ -1180,8 +1195,8 @@ router.put('/db-tokens/:id', async (req, res, next) => {
         user: credentials.user.trim(),
         password: credentials.password || '',
         database: credentials.database.trim(),
-        port: parseInt(credentials.port || '3306')
-      };
+        port: parseInt(credentials.port || '3306'),
+      } as Record<string, unknown>;
       
       if (credentials.ssl) {
         newConfig.ssl = { rejectUnauthorized: false };
@@ -1214,12 +1229,12 @@ router.put('/db-tokens/:id', async (req, res, next) => {
                 SET tenant_key = ?
               WHERE tenant_key = ?`,
             [newKey, oldKey]
-          );
+          ) as [ResultSetHeader, unknown];
           if (result.affectedRows > 0) {
             console.log(
               `[DB-Tokens] Remapped ${result.affectedRows} QualificationCertificate row(s) ` +
               `from tenant_key ${oldKey.substring(0, 8)}… to ${newKey.substring(0, 8)}… ` +
-              `(token "${name || existing[0].name}" updated by ${req.user.email})`
+              `(token "${name || existing[0].name}" updated by ${(req as unknown as CuraRequest).user?.email || 'unknown'})`
             );
           }
         }
@@ -1228,7 +1243,7 @@ router.put('/db-tokens/:id', async (req, res, next) => {
         // server log so the operator can run a manual remap.
         console.error(
           '[DB-Tokens] tenant_key cascade remap failed (manual remap may be required):',
-          cascadeError.message
+          (cascadeError as Error).message
         );
       }
     }
@@ -1238,7 +1253,7 @@ router.put('/db-tokens/:id', async (req, res, next) => {
       removeTenantPool(encryptedToken);
     }
     
-    console.log(`[DB-Tokens] Updated token "${name || existing[0].name}" by ${req.user.email}`);
+    console.log(`[DB-Tokens] Updated token "${name || existing[0].name}" by ${(req as unknown as CuraRequest).user?.email || 'unknown'}`);
     
     res.json({ success: true, id });
   } catch (error) {
@@ -1247,18 +1262,18 @@ router.put('/db-tokens/:id', async (req, res, next) => {
 });
 
 // DELETE a DB token
-router.delete('/db-tokens/:id', async (req, res, next) => {
+router.delete('/db-tokens/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     const { id } = req.params;
     
-    const [existing] = await db.execute('SELECT name FROM db_tokens WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT name FROM db_tokens WHERE id = ?', [id]) as [RowDataPacket[], unknown];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Token nicht gefunden' });
     }
 
-    const [existingTokenRows] = await db.execute('SELECT token FROM db_tokens WHERE id = ?', [id]);
+    const [existingTokenRows] = await db.execute('SELECT token FROM db_tokens WHERE id = ?', [id]) as [RowDataPacket[], unknown];
     
     await db.execute('DELETE FROM db_tokens WHERE id = ?', [id]);
 
@@ -1267,15 +1282,15 @@ router.delete('/db-tokens/:id', async (req, res, next) => {
     }
     
     const tokenTimestamp = new Date().toISOString();
-    console.log(`[AUDIT][DELETE][DB-TOKEN] ${tokenTimestamp} | User: ${req.user.email} | Token: "${existing[0].name}" | ID: ${id}`);
+    console.log(`[AUDIT][DELETE][DB-TOKEN] ${tokenTimestamp} | User: ${(req as unknown as CuraRequest).user?.email || 'unknown'} | Token: "${existing[0].name}" | ID: ${id}`);
     
     // Write to SystemLog in master db
     await writeAuditLog(db, {
       level: 'audit',
       source: 'Mandantenverwaltung',
-      message: `DB-Token "${existing[0].name}" gelöscht von ${req.user.email}`,
+      message: `DB-Token "${existing[0].name}" gelöscht von ${(req as unknown as CuraRequest).user?.email || 'unknown'}`,
       details: { token_name: existing[0].name, token_id: id, timestamp: tokenTimestamp },
-      userEmail: req.user.email
+      userEmail: (req as unknown as CuraRequest).user?.email || 'unknown'
     });
     
     res.json({ success: true });
@@ -1285,13 +1300,13 @@ router.delete('/db-tokens/:id', async (req, res, next) => {
 });
 
 // SET a token as active (and deactivate all others)
-router.post('/db-tokens/:id/activate', async (req, res, next) => {
+router.post('/db-tokens/:id/activate', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     const { id } = req.params;
     
-    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]);
+    const [existing] = await db.execute('SELECT * FROM db_tokens WHERE id = ?', [id]) as [RowDataPacket[], unknown];
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Token nicht gefunden' });
     }
@@ -1302,7 +1317,7 @@ router.post('/db-tokens/:id/activate', async (req, res, next) => {
     // Activate the selected one
     await db.execute('UPDATE db_tokens SET is_active = TRUE WHERE id = ?', [id]);
     
-    console.log(`[DB-Tokens] Activated token "${existing[0].name}" by ${req.user.email}`);
+    console.log(`[DB-Tokens] Activated token "${existing[0].name}" by ${(req as unknown as CuraRequest).user?.email || 'unknown'}`);
     
     res.json({
       success: true,
@@ -1317,13 +1332,13 @@ router.post('/db-tokens/:id/activate', async (req, res, next) => {
 });
 
 // DEACTIVATE all tokens (return to default DB)
-router.post('/db-tokens/deactivate-all', async (req, res, next) => {
+router.post('/db-tokens/deactivate-all', async (req: Request, res: Response, next: NextFunction) => {
   try {
     await ensureDbTokensTable(db);
     
     await db.execute('UPDATE db_tokens SET is_active = FALSE');
     
-    console.log(`[DB-Tokens] All tokens deactivated by ${req.user.email}`);
+    console.log(`[DB-Tokens] All tokens deactivated by ${(req as unknown as CuraRequest).user?.email || 'unknown'}`);
     
     res.json({ success: true, message: 'Alle Tokens deaktiviert - Standard-DB wird verwendet' });
   } catch (error) {
@@ -1332,7 +1347,7 @@ router.post('/db-tokens/deactivate-all', async (req, res, next) => {
 });
 
 // TEST a token connection
-router.post('/db-tokens/test', async (req, res, next) => {
+router.post('/db-tokens/test', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { credentials, token } = req.body;
     
@@ -1345,7 +1360,7 @@ router.post('/db-tokens/test', async (req, res, next) => {
         user: credentials.user?.trim(),
         password: credentials.password || '',
         database: credentials.database?.trim(),
-        port: parseInt(credentials.port || '3306')
+        port: parseInt(credentials.port || '3306'),
       };
     } else if (token) {
       // Test with encrypted token
@@ -1364,7 +1379,7 @@ router.post('/db-tokens/test', async (req, res, next) => {
     
     const testPool = createPool({
       host: config.host,
-      port: config.port || 3306,
+      port: Number(config.port) || 3306,
       user: config.user,
       password: config.password,
       database: config.database,
@@ -1374,7 +1389,7 @@ router.post('/db-tokens/test', async (req, res, next) => {
     });
     
     try {
-      const [result] = await testPool.execute('SELECT 1 as test');
+      const [result] = await testPool.execute('SELECT 1 as test') as [RowDataPacket[], unknown];
       await testPool.end();
       
       res.json({
@@ -1385,7 +1400,7 @@ router.post('/db-tokens/test', async (req, res, next) => {
       });
     } catch (connErr) {
       await testPool.end().catch(() => {});
-      console.error('[db-tokens/test] connection failed:', connErr.message);
+      console.error('[db-tokens/test] connection failed:', (connErr as Error).message);
       res.status(400).json({
         success: false,
         error: 'Verbindung fehlgeschlagen'
@@ -1397,7 +1412,7 @@ router.post('/db-tokens/test', async (req, res, next) => {
 });
 
 // CHECK a database: exists? empty?
-router.post('/db-tokens/check-database', async (req, res, next) => {
+router.post('/db-tokens/check-database', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { credentials, database } = req.body;
     if (!credentials || !credentials.host || !credentials.user) {
@@ -1433,7 +1448,7 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
       const [schemaRows] = await checkPool.execute(
         'SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
         [dbName]
-      );
+      ) as [RowDataPacket[], unknown];
       const exists = schemaRows.length > 0;
 
       let tableCount = 0;
@@ -1443,7 +1458,7 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
         const [tableRows] = await checkPool.execute(
           'SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
           [dbName]
-        );
+        ) as [RowDataPacket[], unknown];
         tableCount = Number(tableRows[0].cnt) || 0;
       }
 
@@ -1457,7 +1472,7 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
       });
     } catch (connErr) {
       await checkPool.end().catch(() => {});
-      console.error('[db-tokens/check-database] connection failed:', connErr.message);
+      console.error('[db-tokens/check-database] connection failed:', (connErr as Error).message);
       return res.status(400).json({
         error: 'Verbindung fehlgeschlagen',
       });
@@ -1468,7 +1483,7 @@ router.post('/db-tokens/check-database', async (req, res, next) => {
 });
 
 // CREATE a new database
-router.post('/db-tokens/create-database', async (req, res, next) => {
+router.post('/db-tokens/create-database', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { credentials, database } = req.body;
     if (!credentials || !credentials.host || !credentials.user) {
@@ -1512,7 +1527,7 @@ router.post('/db-tokens/create-database', async (req, res, next) => {
       });
     } catch (connErr) {
       await adminPool.end().catch(() => {});
-      console.error('[db-tokens/create-database] failed:', connErr.message);
+      console.error('[db-tokens/create-database] failed:', (connErr as Error).message);
       return res.status(400).json({
         error: 'Fehler beim Anlegen der Datenbank',
       });
@@ -1523,7 +1538,7 @@ router.post('/db-tokens/create-database', async (req, res, next) => {
 });
 
 // ===== WISH REMINDER - Manual trigger or cron check =====
-router.post('/wish-reminder/check', async (req, res, next) => {
+router.post('/wish-reminder/check', async (req: Request, res: Response, next: NextFunction) => {
   try {
     // Inline auth check (same pattern as /tools)
     const authHeader = req.headers.authorization;
@@ -1534,7 +1549,7 @@ router.post('/wish-reminder/check', async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     let user;
     try {
-      user = jwt.verify(token, process.env.JWT_SECRET);
+      user = jwt.verify(token, process.env.JWT_SECRET!) as Record<string, unknown>;
     } catch (err) {
       return res.status(401).json({ error: 'Token ungültig' });
     }
@@ -1543,7 +1558,7 @@ router.post('/wish-reminder/check', async (req, res, next) => {
       return res.status(403).json({ error: 'Admin-Berechtigung erforderlich' });
     }
 
-    const dbPool = req.db || db;
+    const dbPool = (req as unknown as CuraRequest).db || db;
     const result = await checkAndSendWishReminders(dbPool, 'manual');
 
     res.json(result);

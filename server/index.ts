@@ -1,4 +1,5 @@
 import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import jwtLib from 'jsonwebtoken';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,6 +11,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { parseDbToken } from './utils/crypto.js';
 import { runMasterMigrations } from './utils/masterMigrations.js';
 import { ensureColumns } from './utils/schema.js';
@@ -43,6 +45,23 @@ import { ensureDefaultWorkplaceTimeslots } from './utils/ensureDefaultWorkplaceT
 
 // Load environment variables
 dotenv.config();
+
+interface TenantRequest extends Request {
+  db?: Pool;
+  dbToken?: string | null;
+  isCustomDb?: boolean;
+}
+
+interface AppError extends Error {
+  status?: number;
+  retryable?: boolean;
+  poolLabel?: string;
+  code?: string;
+  isDatabaseError?: boolean;
+  sql?: string;
+  sqlMessage?: string;
+  sqlState?: string;
+}
 
 const DB_RETRY_DELAYS_MS = [250, 750];
 const TRANSIENT_DB_ERROR_CODES = new Set([
@@ -79,60 +98,65 @@ const DATABASE_ERROR_PATTERNS = [
   ...TRANSIENT_DB_ERROR_PATTERNS,
 ];
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const isTransientDbError = (error) => {
+const isTransientDbError = (error: unknown): boolean => {
   if (!error) return false;
 
-  if (TRANSIENT_DB_ERROR_CODES.has(error.code)) {
+  const err = error as { code?: string; message?: string; sqlMessage?: string };
+
+  if (err.code && TRANSIENT_DB_ERROR_CODES.has(err.code)) {
     return true;
   }
 
-  const message = `${error.message || ''} ${error.sqlMessage || ''}`.trim();
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`.trim();
   return TRANSIENT_DB_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 };
 
-export const isDatabaseError = (error) => {
+export const isDatabaseError = (error: unknown): boolean => {
   if (!error) return false;
-  if (error.isDatabaseError) return true;
+  const err = error as { isDatabaseError?: boolean; code?: string; sql?: string; sqlMessage?: string; sqlState?: string; message?: string };
+  if (err.isDatabaseError) return true;
   if (isTransientDbError(error)) return true;
-  if (typeof error.code === 'string' && error.code.startsWith('ER_')) return true;
-  if (error.sql || error.sqlMessage || error.sqlState) return true;
+  if (typeof err.code === 'string' && err.code.startsWith('ER_')) return true;
+  if (err.sql || err.sqlMessage || err.sqlState) return true;
 
-  const message = `${error.message || ''} ${error.sqlMessage || ''}`.trim();
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`.trim();
   return DATABASE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 };
 
-const annotateDatabaseError = (error, meta = {}) => {
+const annotateDatabaseError = (error: unknown, meta: { poolLabel?: string; retryable?: boolean } = {}): unknown => {
   if (!error || typeof error !== 'object') return error;
 
-  error.isDatabaseError = true;
+  const err = error as { isDatabaseError?: boolean; poolLabel?: string; retryable?: boolean; [key: string]: unknown };
+  err.isDatabaseError = true;
   if (meta.poolLabel) {
-    error.poolLabel = meta.poolLabel;
+    err.poolLabel = meta.poolLabel;
   }
   if (meta.retryable !== undefined) {
-    error.retryable = meta.retryable;
-  } else if (error.retryable === undefined) {
-    error.retryable = isTransientDbError(error);
+    err.retryable = meta.retryable;
+  } else if (err.retryable === undefined) {
+    err.retryable = isTransientDbError(error);
   }
 
   return error;
 };
 
-const getSqlPreview = (sql) => {
+const getSqlPreview = (sql: string): string => {
   if (typeof sql !== 'string') return 'n/a';
   return sql.replace(/\s+/g, ' ').trim().slice(0, 180);
 };
 
-const isExpectedSchemaDuplicateError = (error, sql) => {
+const isExpectedSchemaDuplicateError = (error: unknown, sql: string): boolean => {
   if (!error || typeof sql !== 'string') return false;
-  if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(error.code)) return false;
+  const err = error as { code?: string };
+  if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(err.code as string)) return false;
 
   const normalizedSql = sql.replace(/\s+/g, ' ').trim().toUpperCase();
   return normalizedSql.startsWith('ALTER TABLE') || normalizedSql.startsWith('CREATE INDEX');
 };
 
-const sanitizeRequestPath = (requestPath) => {
+const sanitizeRequestPath = (requestPath: string): string => {
   if (typeof requestPath !== 'string' || requestPath.length === 0) {
     return 'n/a';
   }
@@ -140,24 +164,27 @@ const sanitizeRequestPath = (requestPath) => {
   return requestPath.split('?')[0];
 };
 
-const isTenantAccessDeniedError = (error) => (
-  error?.code === 'ER_ACCESS_DENIED_ERROR'
-  || error?.code === 'ER_DBACCESS_DENIED_ERROR'
-);
+const isTenantAccessDeniedError = (error: unknown): boolean => {
+  const err = error as { code?: string } | null | undefined;
+  return err?.code === 'ER_ACCESS_DENIED_ERROR'
+    || err?.code === 'ER_DBACCESS_DENIED_ERROR';
+};
 
-const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
-  if (!pool || pool.__curaflowRetryWrapped) {
+const wrapPoolWithRetry = (pool: Pool, { poolLabel, onFinalFailure }: { poolLabel?: string; onFinalFailure?: (error: Error) => Promise<void> } = {}): Pool => {
+  const wrapped = pool as Pool & { __curaflowRetryWrapped?: boolean };
+  if (!pool || wrapped.__curaflowRetryWrapped) {
     return pool;
   }
 
-  const wrapMethod = (methodName) => {
-    if (typeof pool[methodName] !== 'function') {
+  const wrapMethod = (methodName: 'execute' | 'query'): void => {
+    const original = (pool as unknown as Record<string, (...args: unknown[]) => unknown>)[methodName];
+    if (typeof original !== 'function') {
       return;
     }
 
-    const originalMethod = pool[methodName].bind(pool);
-    pool[methodName] = async (...args) => {
-      let lastError;
+    const originalMethod = original.bind(pool) as (...args: unknown[]) => unknown;
+    (pool as unknown as Record<string, (...args: unknown[]) => unknown>)[methodName] = async (...args: unknown[]): Promise<unknown> => {
+      let lastError: unknown;
 
       for (let attempt = 1; attempt <= DB_RETRY_DELAYS_MS.length + 1; attempt += 1) {
         try {
@@ -178,14 +205,14 @@ const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
           });
 
           const logPrefix = canRetry ? '[DB][Retry]' : '[DB][Failure]';
-          if (!isExpectedSchemaDuplicateError(error, args[0])) {
+          if (!isExpectedSchemaDuplicateError(error, args[0] as string)) {
             const logger = canRetry ? console.warn : console.error;
             logger(
               `${logPrefix} ${poolLabel || 'default'} ${methodName} attempt ${attempt}/${DB_RETRY_DELAYS_MS.length + 1} failed`,
               {
-                code: error.code || null,
-                message: error.message,
-                sql: getSqlPreview(args[0]),
+                code: (error as { code?: string }).code || null,
+                message: (error as { message?: string }).message,
+                sql: getSqlPreview(args[0] as string),
               }
             );
           }
@@ -197,9 +224,9 @@ const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
 
           if (typeof onFinalFailure === 'function') {
             try {
-              await onFinalFailure(error);
+              await onFinalFailure(error as Error);
             } catch (cleanupError) {
-              console.error('[DB][Cleanup] Failed to cleanup pool after error:', cleanupError.message);
+              console.error('[DB][Cleanup] Failed to cleanup pool after error:', (cleanupError as Error).message);
             }
           }
 
@@ -223,7 +250,16 @@ const wrapPoolWithRetry = (pool, { poolLabel, onFinalFailure } = {}) => {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const masterDbConfig = resolveMasterDbConfig();
+
+interface MasterDbConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+}
+
+const masterDbConfig = resolveMasterDbConfig() as MasterDbConfig;
 
 // ===== Static frontend serving (Coolify / single-container deployment) =====
 // Must be BEFORE helmet/CORS/auth middleware so static files are served fast and clean.
@@ -233,7 +269,7 @@ const distPath = path.resolve(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
   console.log(`📁 Serving static frontend from ${distPath}`);
   console.log(`📁 dist contents:`, fs.readdirSync(distPath));
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction): void => {
     // Debug: log non-API requests hitting static middleware
     if (!req.path.startsWith('/api/') && !req.path.startsWith('/health')) {
       console.debug(`[Static] Checking path="${req.path}" originalUrl="${req.originalUrl}"`);
@@ -268,17 +304,17 @@ export const db = wrapPoolWithRetry(createPool({
 }), { poolLabel: 'default' });
 
 // Cache for tenant database pools (Multi-Tenant Support)
-const tenantPools = new Map();
+const tenantPools = new Map<string, Pool>();
 
 // Track which tenants have been auto-migrated (resets on server restart)
-const migratedTenants = new Set();
+const migratedTenants = new Set<string>();
 // Track in-flight migration promises to avoid duplicate runs
-const migrationInFlight = new Map();
+const migrationInFlight = new Map<string, Promise<void>>();
 
 // Remove a tenant pool from cache (e.g., on connection error)
-export const removeTenantPool = (dbToken) => {
+export const removeTenantPool = (dbToken: string): void => {
   if (tenantPools.has(dbToken)) {
-    const pool = tenantPools.get(dbToken);
+    const pool = tenantPools.get(dbToken)!;
     try {
       pool.end(); // Close connections
     } catch (e) {
@@ -292,17 +328,24 @@ export const removeTenantPool = (dbToken) => {
 };
 
 // Get or create a connection pool for a tenant
-export const getTenantDb = (dbToken) => {
+export const getTenantDb = (dbToken: string | null): Pool => {
   if (!dbToken) return db; // Return default pool if no token
   
   // Check cache first
   if (tenantPools.has(dbToken)) {
-    return tenantPools.get(dbToken);
+    return tenantPools.get(dbToken)!;
   }
   
   try {
     // Decrypt and parse token (supports both legacy base64 and encrypted formats)
-    const config = parseDbToken(dbToken);
+    const config = parseDbToken(dbToken) as {
+      host: string;
+      port?: string;
+      user: string;
+      password: string;
+      database: string;
+      ssl?: unknown;
+    };
     
     // Validate required fields
     if (!config || !config.host || !config.user || !config.database) {
@@ -317,7 +360,7 @@ export const getTenantDb = (dbToken) => {
       user: config.user,
       password: config.password,
       database: config.database,
-      ssl: config.ssl || undefined,
+      ssl: (config.ssl as Record<string, unknown>) || undefined,
       waitForConnections: true,
       connectionLimit: 5, // Smaller limit for tenant pools
       queueLimit: 0,
@@ -325,7 +368,7 @@ export const getTenantDb = (dbToken) => {
       timezone: '+00:00'
     }), {
       poolLabel: `tenant:${config.host}/${config.database}`,
-      onFinalFailure: async (error) => {
+      onFinalFailure: async (error: Error): Promise<void> => {
         if (dbToken && (isTransientDbError(error) || isTenantAccessDeniedError(error))) {
           removeTenantPool(dbToken);
         }
@@ -338,26 +381,27 @@ export const getTenantDb = (dbToken) => {
     
     return tenantPool;
   } catch (error) {
-    console.error('Failed to parse DB token:', error.message);
+    console.error('Failed to parse DB token:', (error as Error).message);
     return db; // Fall back to default
   }
 };
 
 // Middleware to attach tenant DB to request + auto-run migrations
-export const tenantDbMiddleware = async (req, res, next) => {
-  const dbToken = req.headers['x-db-token'];
-  req.db = getTenantDb(dbToken);
-  req.dbToken = dbToken; // Store for error handling
-  req.isCustomDb = !!dbToken && req.db !== db;
+export const tenantDbMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const r = req as TenantRequest;
+  const dbToken = r.headers['x-db-token'] as string | undefined;
+  r.db = getTenantDb(dbToken ?? null);
+  r.dbToken = dbToken; // Store for error handling
+  r.isCustomDb = !!dbToken && r.db !== db;
 
   // Auto-run tenant migrations on first access per tenant (per server lifetime)
-  if (req.isCustomDb && !migratedTenants.has(dbToken)) {
+  if (r.isCustomDb && dbToken && !migratedTenants.has(dbToken)) {
     try {
       // Deduplicate: if another request already triggered migration, wait for the same promise
       if (!migrationInFlight.has(dbToken)) {
         const { runTenantMigrations } = await import('./utils/tenantMigrations.js');
-        const promise = runTenantMigrations(req.db, dbToken)
-          .then((results) => {
+        const promise = runTenantMigrations(r.db, dbToken)
+          .then((results: { status: string }[]) => {
             const errors = results.filter(r => r.status === 'error');
             if (errors.length > 0) {
               console.warn(`[Auto-Migration] Tenant migration completed with ${errors.length} errors:`, errors);
@@ -366,20 +410,20 @@ export const tenantDbMiddleware = async (req, res, next) => {
             }
             migratedTenants.add(dbToken);
           })
-          .catch((err) => {
+          .catch((err: Error) => {
             console.error('[Auto-Migration] Failed:', err.message);
             throw err;
           })
           .finally(() => {
-            migrationInFlight.delete(dbToken);
+            migrationInFlight.delete(dbToken!);
           });
         migrationInFlight.set(dbToken, promise);
       }
       await migrationInFlight.get(dbToken);
-      req.db = getTenantDb(dbToken);
-      req.isCustomDb = !!dbToken && req.db !== db;
+      r.db = getTenantDb(dbToken);
+      r.isCustomDb = !!dbToken && r.db !== db;
     } catch (err) {
-      console.error('[Auto-Migration] Unexpected error:', err.message);
+      console.error('[Auto-Migration] Unexpected error:', (err as Error).message);
       if (dbToken) {
         removeTenantPool(dbToken);
       }
@@ -391,23 +435,23 @@ export const tenantDbMiddleware = async (req, res, next) => {
   // Ist idempotent und sicher – CREATE TABLE IF NOT EXISTS und ensureColumns/addColumnIfMissing
   // sind No-Ops wenn Tabellen/Spalten bereits existieren.
   // Läuft bei jedem Request, damit Tenants aus allen Versionen automatisch aktuelle Schemas erhalten.
-  if (req.isCustomDb) {
+  if (r.isCustomDb) {
     try {
-      await ensureTenantBaseTables(req.db);
+      await ensureTenantBaseTables(r.db!);
     } catch (e) {
-      console.warn('[Auto-Migration] ensureTenantBaseTables warning:', e.message);
+      console.warn('[Auto-Migration] ensureTenantBaseTables warning:', (e as Error).message);
     }
 
     // Idempotenter Backfill: Default-Timeslots fuer Rotation/Custom-Arbeitsplaetze.
     // Der Helfer prueft selbst, ob bereits Timeslots existieren (skip) und laesst
     // Dienste/Demos unveraendert.
     try {
-      const stats = await ensureDefaultWorkplaceTimeslots(req.db);
+      const stats = await ensureDefaultWorkplaceTimeslots(r.db!) as { created: number; enabledFlagSet: number; skipped: number };
       if (stats.created > 0 || stats.enabledFlagSet > 0) {
         console.log(`[Default-Timeslot] ${stats.created} angelegt, ${stats.enabledFlagSet} aktiviert (${stats.skipped} skipped)`);
       }
     } catch (e) {
-      console.warn('[Default-Timeslot] Backfill warning:', e.message);
+      console.warn('[Default-Timeslot] Backfill warning:', (e as Error).message);
     }
   }
 
@@ -423,38 +467,46 @@ export const tenantDbMiddleware = async (req, res, next) => {
   // handlers apply authMiddleware, so req.user is NOT populated here yet. We
   // therefore decode the Bearer JWT directly (read-only) to obtain the user id.
   // The route handler still does its own authoritative verification afterward.
-  if (req.isCustomDb) {
+  if (r.isCustomDb) {
     try {
-      const authHeader = req.headers.authorization;
+      const authHeader = r.headers.authorization;
       const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
       // query-string ?access_token= fallback (SSE-style), same as resolveAuthPayload.
-      const queryToken = !bearer && typeof req.query?.access_token === 'string'
-        ? req.query.access_token : null;
+      const queryToken = !bearer && typeof r.query?.access_token === 'string'
+        ? r.query.access_token : null;
       const token = bearer || queryToken;
-      const decoded = token ? jwtLib.verify(token, process.env.JWT_SECRET) : null;
+      const decoded = token
+        ? jwtLib.verify(token, process.env.JWT_SECRET as string) as { sub?: string } & Record<string, unknown>
+        : null;
       const userId = decoded?.sub;
       if (userId) {
-        const tenantId = await resolveTenantIdFromToken(db, dbToken);
+        const tenantId = await resolveTenantIdFromToken(db, dbToken!);
         if (tenantId) {
           const [u] = await db.execute(
             'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
             [userId],
-          );
-          const allowedRaw = u[0]?.allowed_tenants;
-          const allowedList = allowedRaw
-            ? (typeof allowedRaw === 'string' ? JSON.parse(allowedRaw) : allowedRaw)
+          ) as [RowDataPacket[], unknown];
+          const row = u[0] as { allowed_tenants?: unknown } | undefined;
+          const allowedRaw = row?.allowed_tenants;
+          const allowedList: unknown[] | null = allowedRaw
+            ? (typeof allowedRaw === 'string' ? JSON.parse(allowedRaw) : allowedRaw) as unknown[]
+            : null;
+          const allowedTenantIds = Array.isArray(allowedList)
+            ? allowedList.map(String)
             : null;
           const hasFullAccess = !Array.isArray(allowedList) || allowedList.length === 0;
-          if (!hasFullAccess && !allowedList.map(String).includes(tenantId)) {
-            return res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+          if (!hasFullAccess && allowedTenantIds && !allowedTenantIds.includes(tenantId)) {
+            res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+            return;
           }
         }
       }
     } catch (err) {
       // Invalid/expired token here is fine — the route handler's authMiddleware
       // will reject it with 401. Only log unexpected (non-JWT) errors.
-      if (err.name !== 'JsonWebTokenError' && err.name !== 'TokenExpiredError') {
-        console.error('[tenantDbMiddleware] tenant authz check skipped:', err.message);
+      const jwtErr = err as { name?: string; message?: string };
+      if (jwtErr.name !== 'JsonWebTokenError' && jwtErr.name !== 'TokenExpiredError') {
+        console.error('[tenantDbMiddleware] tenant authz check skipped:', jwtErr.message);
       }
     }
   }
@@ -490,7 +542,7 @@ app.options('*', cors({
 }));
 
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void): void => {
     // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
     
@@ -520,7 +572,7 @@ app.use(helmet({
   contentSecurityPolicy: false, // CSP handled by Coolify/Traefik reverse proxy
 }));
 app.use(compression({
-  filter: (req, res) => {
+  filter: (req: Request, res: Response): boolean => {
     if (req.path === '/api/auth/events/stream') {
       return false;
     }
@@ -539,7 +591,7 @@ const generalLimiter = rateLimit({
   message: { error: 'Too many requests from this IP, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => {
+  skip: (req: Request) => {
     const requestPath = req.originalUrl?.split('?')[0] || `${req.baseUrl || ''}${req.path || ''}`;
     return requestPath === '/api/auth/me'
       || requestPath === '/api/auth/presence'
@@ -573,7 +625,7 @@ app.use('/api/auth/jitsi-token', internalAuthLimiter);
 app.use('/api/auth/cowork', internalAuthLimiter);
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get('/health', (_req: Request, res: Response): void => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
@@ -583,35 +635,40 @@ app.get('/health', (req, res) => {
 });
 
 // ===== PUBLIC (no-auth) endpoint: Wish reminder acknowledgment =====
-app.get('/api/wish-ack', async (req, res) => {
+app.get('/api/wish-ack', async (req: Request, res: Response): Promise<void> => {
   const { token } = req.query;
   if (!token || typeof token !== 'string' || token.length > 100) {
-    return res.status(400).send(wishAckHtml('Ungültiger Link', 'Der Link ist ungültig oder abgelaufen.', false));
+    res.status(400).send(wishAckHtml('Ungültiger Link', 'Der Link ist ungültig oder abgelaufen.', false));
+    return;
   }
   try {
     const [rows] = await db.execute(
       'SELECT id, doctor_id, target_month, status FROM WishReminderAck WHERE token = ?',
       [token]
-    );
+    ) as [RowDataPacket[], unknown];
     if (rows.length === 0) {
-      return res.status(404).send(wishAckHtml('Link nicht gefunden', 'Dieser Bestätigungslink ist ungültig oder wurde bereits verwendet.', false));
+      res.status(404).send(wishAckHtml('Link nicht gefunden', 'Dieser Bestätigungslink ist ungültig oder wurde bereits verwendet.', false));
+      return;
     }
-    const ack = rows[0];
+    const ack = rows[0] as { id: string; doctor_id: string; target_month: string; status: string };
     if (ack.status === 'acknowledged') {
-      return res.send(wishAckHtml('Bereits bestätigt', 'Sie haben bereits bestätigt, dass Sie keine Dienstwünsche haben. Vielen Dank!', true));
+      res.send(wishAckHtml('Bereits bestätigt', 'Sie haben bereits bestätigt, dass Sie keine Dienstwünsche haben. Vielen Dank!', true));
+      return;
     }
     await db.execute(
       "UPDATE WishReminderAck SET status = 'acknowledged', acknowledged_date = NOW() WHERE id = ?",
       [ack.id]
     );
-    return res.send(wishAckHtml('Vielen Dank!', 'Ihre Bestätigung wurde gespeichert. Sie haben angegeben, dass Sie keine Dienstwünsche für diesen Zeitraum haben.', true));
+    res.send(wishAckHtml('Vielen Dank!', 'Ihre Bestätigung wurde gespeichert. Sie haben angegeben, dass Sie keine Dienstwünsche für diesen Zeitraum haben.', true));
+    return;
   } catch (err) {
-    console.error('[wish-ack] Error:', err.message);
-    return res.status(500).send(wishAckHtml('Fehler', 'Es ist ein technischer Fehler aufgetreten. Bitte versuchen Sie es später erneut.', false));
+    console.error('[wish-ack] Error:', (err as Error).message);
+    res.status(500).send(wishAckHtml('Fehler', 'Es ist ein technischer Fehler aufgetreten. Bitte versuchen Sie es später erneut.', false));
+    return;
   }
 });
 
-function wishAckHtml(title, message, success) {
+function wishAckHtml(title: string, message: string, success: boolean): string {
   const color = success ? '#16a34a' : '#dc2626';
   const icon = success ? '✅' : '❌';
   return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -647,7 +704,7 @@ app.use('/api/workplace-links', workplaceLinksRouter);
 
 // ===== SPA fallback (Coolify / single-container deployment) =====
 if (fs.existsSync(distPath)) {
-  app.get(/^(?!\/api\/).*/, (req, res) => {
+  app.get(/^(?!\/api\/).*/, (req: Request, res: Response): void => {
     const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
       ? 'master.html'
       : 'index.html';
@@ -658,7 +715,7 @@ if (fs.existsSync(distPath)) {
 }
 
 // Error handling middleware
-app.use((err, req, res, next) => {
+app.use((err: AppError, req: Request, res: Response, _next: NextFunction): void => {
   const databaseError = isDatabaseError(err);
   const retryable = databaseError && (err.retryable ?? isTransientDbError(err));
 
@@ -698,9 +755,9 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response): void => {
   const safePath = sanitizeRequestPath(req.url);
-  console.warn('404 Not Found:', req.method, safePath, 'Body:', JSON.stringify(req.body || {}).substring(0, 200));
+  console.warn('404 Not Found:', req.method, safePath, 'Body:', JSON.stringify((req as Request & { body?: unknown }).body || {}).substring(0, 200));
   res.status(404).json({ error: 'Route not found', path: safePath, method: req.method });
 });
 
@@ -718,14 +775,14 @@ app.listen(PORT, async () => {
       console.error('⚠️  Some startup migrations failed:', failedMigrations);
     }
   } catch (err) {
-    console.error('⚠️  Startup migration error:', err.message);
+    console.error('⚠️  Startup migration error:', (err as Error).message);
   }
   
   // Auto-create missing tables on startup
   try {
     await ensureTablesExist();
   } catch (err) {
-    console.error('⚠️  Table initialization error:', err.message);
+    console.error('⚠️  Table initialization error:', (err as Error).message);
   }
 
   // Daily wish reminder check (runs every hour, checks internally if today is reminder day)
@@ -737,11 +794,11 @@ app.listen(PORT, async () => {
       if (hour < 7 || hour > 8) return;
 
       const result = await checkAndSendWishReminders(db, 'cron-default');
-      if (result.sent) {
+      if ('sent' in result) {
         console.log(`📧 [Cron] Wish reminders sent for ${result.targetMonth}: ${result.sentCount} emails`);
       }
     } catch (err) {
-      console.error('❌ [Cron] Wish reminder check failed:', err.message);
+      console.error('❌ [Cron] Wish reminder check failed:', (err as Error).message);
     }
   }, WISH_REMINDER_INTERVAL);
   console.log('⏰ Wish reminder cron enabled (hourly check, sends between 7-9 UTC)');
@@ -752,7 +809,7 @@ app.listen(PORT, async () => {
 });
 
 // Auto-create essential tables if missing
-async function ensureTablesExist() {
+async function ensureTablesExist(): Promise<void> {
   const tables = [
     {
       name: 'TeamRole',
@@ -854,8 +911,8 @@ async function ensureTablesExist() {
       
       // Seed default data for TeamRole — ergänzt fehlende Rollen, löscht keine bestehenden
       if (table.name === 'TeamRole') {
-        const [existing] = await db.execute('SELECT name FROM TeamRole');
-        const existingNames = new Set(existing.map(r => r.name));
+        const [existing] = await db.execute('SELECT name FROM TeamRole') as [RowDataPacket[], unknown];
+        const existingNames = new Set((existing as { name: string }[]).map(r => r.name));
         const defaultRoles = [
           { id: crypto.randomUUID(), name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
           { id: crypto.randomUUID(), name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann Hintergrunddienste übernehmen' },
@@ -893,7 +950,7 @@ async function ensureTablesExist() {
       }
       console.log(`✅ Table ${table.name} ready`);
     } catch (err) {
-      console.error(`❌ Failed to ensure ${table.name}:`, err.message);
+      console.error(`❌ Failed to ensure ${table.name}:`, (err as Error).message);
     }
   }
 

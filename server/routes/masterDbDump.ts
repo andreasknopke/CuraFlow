@@ -8,7 +8,7 @@
  * GET /api/master/database/dump — SQL dump download
  */
 
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
@@ -25,7 +25,7 @@ router.use(requirePermission('can_manage_system'));
  * Generates a SQL dump of all non-empty MasterDB tables with up to 300
  * representative rows per table (latest rows) and downloads it as a .sql file.
  */
-router.get('/dump', async (req, res, next) => {
+router.get('/dump', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const sql = await generateMasterDbDump(db);
 
@@ -36,7 +36,7 @@ router.get('/dump', async (req, res, next) => {
     res.setHeader('Content-Length', Buffer.byteLength(sql, 'utf-8'));
     res.send(sql);
   } catch (err) {
-    console.error('[MasterDB Dump] Error generating dump:', err.message);
+    console.error('[MasterDB Dump] Error generating dump:', (err as Error).message);
     next(err);
   }
 });

@@ -1,6 +1,15 @@
 import crypto from 'crypto';
+import type { Response } from 'express';
 
-const realtimeClients = new Map();
+type SseResponse = Response & { flush?: () => void };
+
+interface RealtimeClient {
+  res: SseResponse;
+  userId: string;
+  connectedAt: number;
+}
+
+const realtimeClients = new Map<string, Map<string, RealtimeClient>>();
 
 const PLAN_SYNC_ENTITIES = new Set([
   'ShiftEntry',
@@ -20,15 +29,15 @@ const PLAN_SYNC_ENTITIES = new Set([
   'SystemSetting',
 ]);
 
-function getClientsForScope(scope) {
+function getClientsForScope(scope: string): Map<string, RealtimeClient> {
   if (!realtimeClients.has(scope)) {
     realtimeClients.set(scope, new Map());
   }
 
-  return realtimeClients.get(scope);
+  return realtimeClients.get(scope) as Map<string, RealtimeClient>;
 }
 
-function writeEvent(res, eventName, payload) {
+function writeEvent(res: SseResponse, eventName: string, payload: unknown): void {
   res.write(`event: ${eventName}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 
@@ -37,7 +46,7 @@ function writeEvent(res, eventName, payload) {
   }
 }
 
-function removeClient(scope, clientId) {
+function removeClient(scope: string, clientId: string): void {
   const clients = realtimeClients.get(scope);
   if (!clients) return;
 
@@ -47,7 +56,7 @@ function removeClient(scope, clientId) {
   }
 }
 
-function pruneDisconnectedClients(clients) {
+function pruneDisconnectedClients(clients: Map<string, RealtimeClient>): void {
   for (const [clientId, client] of clients.entries()) {
     if (client.res.writableEnded || client.res.destroyed) {
       clients.delete(clientId);
@@ -55,21 +64,28 @@ function pruneDisconnectedClients(clients) {
   }
 }
 
-export function buildRealtimeScope(dbToken) {
+export function buildRealtimeScope(dbToken: string | null | undefined): string {
   if (!dbToken) return 'default';
 
   const hash = crypto.createHash('sha256').update(dbToken).digest('hex');
   return `tenant:${hash}`;
 }
 
-export function isPlanSyncEntity(entityName) {
+export function isPlanSyncEntity(entityName: string): boolean {
   return PLAN_SYNC_ENTITIES.has(entityName);
 }
 
-export function registerRealtimeClient({ scope, res, userId }) {
+interface RegisterRealtimeClientOptions {
+  scope: string;
+  res: Response;
+  userId: string;
+}
+
+export function registerRealtimeClient({ scope, res, userId }: RegisterRealtimeClientOptions): () => void {
+  const sseRes = res as SseResponse;
   const clientId = crypto.randomUUID();
   const clients = getClientsForScope(scope);
-  clients.set(clientId, { res, userId, connectedAt: Date.now() });
+  clients.set(clientId, { res: sseRes, userId, connectedAt: Date.now() });
 
   console.log('[Realtime] Client verbunden', {
     scope,
@@ -78,11 +94,11 @@ export function registerRealtimeClient({ scope, res, userId }) {
     clientCount: clients.size,
   });
 
-  res.write('retry: 5000\n\n');
-  if (typeof res.flush === 'function') {
-    res.flush();
+  sseRes.write('retry: 5000\n\n');
+  if (typeof sseRes.flush === 'function') {
+    sseRes.flush();
   }
-  writeEvent(res, 'connected', {
+  writeEvent(sseRes, 'connected', {
     clientId,
     connectedAt: new Date().toISOString(),
   });
@@ -99,7 +115,16 @@ export function registerRealtimeClient({ scope, res, userId }) {
   };
 }
 
-export function broadcastPlanUpdate({ scope, entity, action, recordId = null, recordCount = null, actor = null }) {
+interface PlanUpdateEvent {
+  scope: string;
+  entity: string;
+  action: string;
+  recordId?: string | null;
+  recordCount?: number | null;
+  actor?: { id?: string; email?: string } | null;
+}
+
+export function broadcastPlanUpdate({ scope, entity, action, recordId = null, recordCount = null, actor = null }: PlanUpdateEvent): void {
   const clients = realtimeClients.get(scope);
   if (!clients || clients.size === 0) {
     console.log('[Realtime] Event ohne Empfänger', {
@@ -119,10 +144,12 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
     recordId,
     recordCount,
     changedAt: new Date().toISOString(),
-    actor: actor ? {
-      id: actor.id || null,
-      email: actor.email || null,
-    } : null,
+    actor: actor
+      ? {
+          id: actor.id || null,
+          email: actor.email || null,
+        }
+      : null,
   };
 
   console.log('[Realtime] Sende Plan-Event', {
@@ -150,8 +177,14 @@ export function broadcastPlanUpdate({ scope, entity, action, recordId = null, re
   }
 }
 
-export function broadcastUserEvent({ eventName, payload, userIds = [] }) {
-  const targetUserIds = new Set((userIds || []).filter(Boolean));
+interface UserEvent {
+  eventName: string;
+  payload: unknown;
+  userIds?: (string | null | undefined)[];
+}
+
+export function broadcastUserEvent({ eventName, payload, userIds = [] }: UserEvent): void {
+  const targetUserIds = new Set((userIds || []).filter(Boolean) as string[]);
   if (targetUserIds.size === 0) {
     return;
   }

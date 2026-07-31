@@ -1,7 +1,16 @@
 const TCP_DSN_PATTERN = /^(?<user>[^:@/?#]+)(?::(?<password>[^@/?#]*))?@tcp\((?<host>[^)]+)\)\/(?<database>[^?]+)(?:\?(?<query>.*))?$/;
 const DEFAULT_PORT = 3306;
 
-function decodePart(value) {
+export interface MysqlConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+  source: string;
+}
+
+function decodePart(value: string | null | undefined): string {
   if (value === undefined || value === null) {
     return '';
   }
@@ -13,12 +22,12 @@ function decodePart(value) {
   }
 }
 
-function normalizePort(value) {
+function normalizePort(value: string | number | null | undefined): number {
   const parsed = Number.parseInt(String(value || DEFAULT_PORT), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_PORT;
 }
 
-function splitHostAndPort(rawHost) {
+function splitHostAndPort(rawHost: string | null | undefined): { host: string; port: number } {
   if (!rawHost) {
     return { host: '', port: DEFAULT_PORT };
   }
@@ -43,7 +52,7 @@ function splitHostAndPort(rawHost) {
   return { host: value, port: DEFAULT_PORT };
 }
 
-export function parseMysqlConnectionString(connectionString, label = 'MYSQL_URL') {
+export function parseMysqlConnectionString(connectionString: string | null | undefined, label = 'MYSQL_URL'): MysqlConfig {
   const trimmed = String(connectionString || '').trim();
   if (!trimmed) {
     throw new Error(`${label} is empty`);
@@ -86,45 +95,53 @@ export function parseMysqlConnectionString(connectionString, label = 'MYSQL_URL'
   throw new Error(`${label} uses an unsupported MySQL connection string format`);
 }
 
-function resolveFromDiscreteEnv(env, {
-  hostEnvName,
-  portEnvName,
-  userEnvName,
-  passwordEnvName,
-  databaseEnvNames,
-}) {
-  const host = env[hostEnvName]?.trim();
-  const user = env[userEnvName]?.trim();
-  const password = env[passwordEnvName] ?? '';
-  const database = databaseEnvNames
+interface DiscreteEnvNames {
+  hostEnvName: string;
+  portEnvName: string;
+  userEnvName: string;
+  passwordEnvName: string;
+  databaseEnvNames: string[];
+}
+
+function resolveFromDiscreteEnv(env: NodeJS.ProcessEnv, names: DiscreteEnvNames): MysqlConfig | null {
+  const host = env[names.hostEnvName]?.trim();
+  const user = env[names.userEnvName]?.trim();
+  const password = env[names.passwordEnvName] ?? '';
+  const database = names.databaseEnvNames
     .map((name) => env[name]?.trim())
     .find(Boolean);
 
-  const hasAnyValue = [host, user, password, database].some((value) => value !== undefined && value !== null && value !== '');
+  const hasAnyValue = [host, user, password, database].some(
+    (value) => value !== undefined && value !== null && value !== ''
+  );
   if (!hasAnyValue) {
     return null;
   }
 
   if (!host || !user || !database) {
-    throw new Error(`Incomplete MySQL configuration in ${hostEnvName}/${userEnvName}/${databaseEnvNames.join(', ')}`);
+    throw new Error(
+      `Incomplete MySQL configuration in ${names.hostEnvName}/${names.userEnvName}/${names.databaseEnvNames.join(', ')}`
+    );
   }
 
   return {
     host,
-    port: normalizePort(env[portEnvName]),
+    port: normalizePort(env[names.portEnvName]),
     user,
     password,
     database,
-    source: `${hostEnvName}/${userEnvName}/${databaseEnvNames[0]}`,
+    source: `${names.hostEnvName}/${names.userEnvName}/${names.databaseEnvNames[0]}`,
   };
 }
 
-function resolveMysqlConfig(env, options) {
-  const {
-    urlEnvNames,
-    discrete,
-    required = false,
-  } = options;
+interface ResolveMysqlConfigOptions {
+  urlEnvNames: string[];
+  discrete: DiscreteEnvNames;
+  required?: boolean;
+}
+
+function resolveMysqlConfig(env: NodeJS.ProcessEnv, options: ResolveMysqlConfigOptions): MysqlConfig | null {
+  const { urlEnvNames, discrete, required = false } = options;
 
   for (const envName of urlEnvNames) {
     if (env[envName]?.trim()) {
@@ -138,13 +155,15 @@ function resolveMysqlConfig(env, options) {
   }
 
   if (required) {
-    throw new Error(`Missing MySQL configuration. Checked ${urlEnvNames.join(', ')} and ${discrete.hostEnvName}/${discrete.userEnvName}/${discrete.databaseEnvNames.join(', ')}`);
+    throw new Error(
+      `Missing MySQL configuration. Checked ${urlEnvNames.join(', ')} and ${discrete.hostEnvName}/${discrete.userEnvName}/${discrete.databaseEnvNames.join(', ')}`
+    );
   }
 
   return null;
 }
 
-export function resolveMasterDbConfig(env = process.env) {
+export function resolveMasterDbConfig(env: NodeJS.ProcessEnv = process.env): MysqlConfig {
   return resolveMysqlConfig(env, {
     urlEnvNames: ['CURAFLOW_MASTER_MYSQL_URL', 'MYSQL_URL'],
     discrete: {
@@ -155,10 +174,10 @@ export function resolveMasterDbConfig(env = process.env) {
       databaseEnvNames: ['MYSQL_DATABASE'],
     },
     required: true,
-  });
+  }) as MysqlConfig;
 }
 
-export function resolveTenantDbConfig(env = process.env, masterConfig = null) {
+export function resolveTenantDbConfig(env: NodeJS.ProcessEnv = process.env, masterConfig: MysqlConfig | null = null): MysqlConfig | null {
   const hasDedicatedTenantConnection = [
     'CURAFLOW_TENANT_MYSQL_URL',
     'TEST_TENANT_MYSQL_HOST',

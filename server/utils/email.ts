@@ -1,26 +1,61 @@
 import nodemailer from 'nodemailer';
+import type { SentMessageInfo, Transporter } from 'nodemailer';
 
 /**
  * Email sending utility with multiple provider support.
- * 
+ *
  * Priority order:
  *   1. BREVO_API_KEY → sends via Brevo HTTP API (works on Railway/serverless)
  *   2. SMTP_HOST + SMTP_USER + SMTP_PASS → sends via SMTP (works locally / on VPS)
- * 
+ *
  * Brevo setup (recommended for Railway):
  *   - Sign up at https://www.brevo.com (free: 300 emails/day)
  *   - Add & verify your sender domain/email
  *   - Set BREVO_API_KEY env var on Railway
  *   - Optionally set SMTP_FROM for the sender address
- * 
+ *
  * SMTP setup (for local dev or VPS):
  *   - SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS
  *   - Optional: SMTP_FROM, SMTP_SECURE
  */
 
+export interface EmailAttachment {
+  filename: string;
+  content?: string | Buffer;
+}
+
+interface EmailOptions {
+  to: string | string[];
+  subject: string;
+  text?: string;
+  html?: string;
+  attachments?: EmailAttachment[];
+}
+
+interface BrevoPayload {
+  sender: { name: string; email: string };
+  to: { email: string }[];
+  subject: string;
+  htmlContent?: string;
+  textContent?: string;
+  attachment?: { name: string; content: string | undefined }[];
+}
+
+interface BrevoResult {
+  messageId?: string;
+  message?: string;
+  code?: string;
+  [key: string]: unknown;
+}
+
+interface SendResult {
+  messageId?: string;
+  provider: string;
+}
+
 // ==================== Brevo HTTP API ====================
 
-async function sendViaBrevo({ to, subject, text, html, attachments }) {
+async function sendViaBrevo({ to, subject, text, html, attachments }: EmailOptions): Promise<SendResult> {
   const apiKey = process.env.BREVO_API_KEY;
   const fromRaw = process.env.SMTP_FROM || process.env.BREVO_FROM || 'CuraFlow <noreply@curaflow.de>';
 
@@ -37,9 +72,9 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
   }
 
   // Build recipients array
-  const recipients = (Array.isArray(to) ? to : [to]).map(email => ({ email: email.trim() }));
+  const recipients = (Array.isArray(to) ? to : [to]).map((email) => ({ email: email.trim() }));
 
-  const payload = {
+  const payload: BrevoPayload = {
     sender: { name: senderName, email: senderEmail },
     to: recipients,
     subject,
@@ -49,25 +84,29 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
 
   // Brevo supports attachments as base64
   if (attachments && attachments.length > 0) {
-    payload.attachment = attachments.map(a => ({
-      name: a.filename,
-      content: a.content
-        ? (typeof a.content === 'string' ? Buffer.from(a.content).toString('base64') : a.content.toString('base64'))
-        : undefined,
-    })).filter(a => a.content);
+    payload.attachment = attachments
+      .map((a) => ({
+        name: a.filename,
+        content: a.content
+          ? typeof a.content === 'string'
+            ? Buffer.from(a.content).toString('base64')
+            : a.content.toString('base64')
+          : undefined,
+      }))
+      .filter((a) => a.content);
   }
 
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      'api-key': apiKey,
+      'api-key': apiKey || '',
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
+      Accept: 'application/json',
     },
     body: JSON.stringify(payload),
   });
 
-  const result = await response.json();
+  const result = (await response.json()) as BrevoResult;
 
   if (!response.ok) {
     const errMsg = result.message || result.code || JSON.stringify(result);
@@ -81,13 +120,13 @@ async function sendViaBrevo({ to, subject, text, html, attachments }) {
 
 // ==================== SMTP (Nodemailer) ====================
 
-let transporter = null;
+let transporter: Transporter | null = null;
 
-export function resetTransporter() {
+export function resetTransporter(): void {
   transporter = null;
 }
 
-export function getTransporter() {
+export function getTransporter(): Transporter | null {
   if (transporter) return transporter;
 
   const host = process.env.SMTP_HOST;
@@ -100,8 +139,8 @@ export function getTransporter() {
     return null;
   }
 
-  const secure = process.env.SMTP_SECURE 
-    ? process.env.SMTP_SECURE === 'true' 
+  const secure = process.env.SMTP_SECURE
+    ? process.env.SMTP_SECURE === 'true'
     : port === 465;
 
   transporter = nodemailer.createTransport({
@@ -114,7 +153,7 @@ export function getTransporter() {
     tls: {
       // Do not fail on invalid/self-signed certs (common with shared hosting like ALL-INKL)
       rejectUnauthorized: false,
-      minVersion: 'TLSv1.2'
+      minVersion: 'TLSv1.2',
     },
     connectionTimeout: 15000,
     greetingTimeout: 15000,
@@ -125,7 +164,7 @@ export function getTransporter() {
   return transporter;
 }
 
-async function sendViaSMTP({ to, subject, text, html, attachments }) {
+async function sendViaSMTP({ to, subject, text, html, attachments }: EmailOptions): Promise<SendResult> {
   const transport = getTransporter();
   if (!transport) {
     throw new Error('SMTP nicht konfiguriert. Bitte SMTP_HOST, SMTP_USER, SMTP_PASS als Umgebungsvariablen setzen.');
@@ -133,14 +172,14 @@ async function sendViaSMTP({ to, subject, text, html, attachments }) {
 
   const from = process.env.SMTP_FROM || process.env.SMTP_USER;
 
-  const info = await transport.sendMail({
+  const info = (await transport.sendMail({
     from,
     to,
     subject,
     text,
     html,
     attachments,
-  });
+  })) as SentMessageInfo;
 
   console.log(`[Email/SMTP] Gesendet an ${to}: ${info.messageId}`);
   return { ...info, provider: 'smtp' };
@@ -151,25 +190,34 @@ async function sendViaSMTP({ to, subject, text, html, attachments }) {
 /**
  * Send an email. Automatically uses Brevo (HTTP) if BREVO_API_KEY is set,
  * otherwise falls back to SMTP.
- * 
- * @param {object} opts - { to, subject, text, html, attachments }
- * @returns {Promise<object>} send result with messageId and provider
+ *
+ * @param opts - { to, subject, text, html, attachments }
+ * @returns send result with messageId and provider
  */
-export async function sendEmail({ to, subject, text, html, attachments }) {
+export async function sendEmail(opts: EmailOptions): Promise<SendResult> {
   // Prefer Brevo on serverless/Railway (SMTP ports often blocked)
   if (process.env.BREVO_API_KEY) {
-    return sendViaBrevo({ to, subject, text, html, attachments });
+    return sendViaBrevo(opts);
   }
 
   // Fall back to SMTP
-  return sendViaSMTP({ to, subject, text, html, attachments });
+  return sendViaSMTP(opts);
+}
+
+interface EmailProviderInfo {
+  provider: string;
+  configured: boolean;
+  from?: string;
+  host?: string;
+  port?: string;
+  note: string;
 }
 
 /**
  * Get info about the configured email provider.
  * Useful for diagnostics / admin UI.
  */
-export function getEmailProviderInfo() {
+export function getEmailProviderInfo(): EmailProviderInfo {
   if (process.env.BREVO_API_KEY) {
     return {
       provider: 'brevo',

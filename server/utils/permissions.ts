@@ -16,6 +16,8 @@
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 import { db } from '../index.js';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
 
 export const PERMISSION_KEYS = [
   'can_manage_users',
@@ -31,12 +33,28 @@ export const PERMISSION_KEYS = [
   'can_send_schedule_emails',
   'can_assign_pool_shifts',
   'can_edit_schedule',
-];
+] as const;
+
+export type PermissionKey = typeof PERMISSION_KEYS[number];
+
+interface PermissionsMap {
+  [key: string]: boolean | null | undefined;
+}
 
 /** Object with every permission key set to `true`. */
 export const ALL_PERMISSIONS_TRUE = Object.fromEntries(
   PERMISSION_KEYS.map((key) => [key, true]),
-);
+) as Record<PermissionKey, true>;
+
+interface PermissionUserInput {
+  role?: string;
+  email?: string;
+  permissions?: unknown;
+}
+
+function isPermissionObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /**
  * Force-revoke any permission key the granter themselves lacks (F1/F2/F3).
@@ -47,13 +65,20 @@ export const ALL_PERMISSIONS_TRUE = Object.fromEntries(
  * of the incoming value. For keys the granter has, the incoming explicit choice
  * is honored. Missing keys default to `true` (lockout-safe).
  *
- * @param {object|null|undefined} incoming - Requested permissions object.
- * @param {object} granterPerms - The granter's effective permissions (from
+ * @param incoming - Requested permissions object.
+ * @param granterPerms - The granter's effective permissions (from
  *   `loadPermissions`).
- * @returns {object} A flat record of `{ permission_key: boolean }`.
+ * @returns A flat record of `{ permission_key: boolean }`.
  */
-export function clampPermissionsToGranter(incoming, granterPerms) {
-  const clamped = { ...ALL_PERMISSIONS_TRUE, ...(incoming || {}) };
+export function clampPermissionsToGranter(
+  incoming: PermissionsMap | null | undefined,
+  granterPerms: PermissionsMap,
+): Record<PermissionKey, boolean> {
+  const incomingRecord = isPermissionObject(incoming) ? incoming : (incoming || {});
+  const clamped: Record<PermissionKey, boolean> = {
+    ...ALL_PERMISSIONS_TRUE,
+    ...incomingRecord,
+  } as Record<PermissionKey, boolean>;
   for (const key of PERMISSION_KEYS) {
     if (granterPerms[key] === false) clamped[key] = false;
   }
@@ -69,7 +94,7 @@ export function clampPermissionsToGranter(incoming, granterPerms) {
  * The env var uses **semicolons** as the delimiter (e.g.
  * `admin@example.com;super@hospital.org`).
  */
-function getSuperAdminEmails() {
+function getSuperAdminEmails(): string[] {
   const raw = process.env.SUPER_ADMINS_EMAILS || '';
   return raw
     .split(';')
@@ -83,7 +108,7 @@ function getSuperAdminEmails() {
  * Super-admins bypass all permission checks — they always have full access
  * and cannot be restricted via the UI.
  */
-export function isSuperAdmin(email) {
+export function isSuperAdmin(email: string | null | undefined): boolean {
   if (!email) return false;
   const normalized = String(email).trim().toLowerCase();
   return getSuperAdminEmails().includes(normalized);
@@ -100,10 +125,12 @@ export function isSuperAdmin(email) {
  * 3. Admin with NULL/empty/malformed permissions → all true (lockout-safe).
  * 4. Admin with valid permissions object → merge over defaults (missing keys = true).
  *
- * @param {object} user - The user row/object (must have `role` and `permissions`).
- * @returns {object} A flat record of `{ permission_key: boolean }`.
+ * @param user - The user row/object (must have `role` and `permissions`).
+ * @returns A flat record of `{ permission_key: boolean }`.
  */
-export function loadPermissions(user) {
+export function loadPermissions(
+  user: PermissionUserInput | null | undefined,
+): Record<string, boolean> {
   if (!user || user.role !== 'admin') {
     return {};
   }
@@ -113,7 +140,7 @@ export function loadPermissions(user) {
   }
 
   // Parse the stored permissions JSON
-  let stored = null;
+  let stored: unknown = null;
   if (user.permissions) {
     try {
       stored = typeof user.permissions === 'string'
@@ -125,12 +152,12 @@ export function loadPermissions(user) {
   }
 
   // Lockout-safe: missing / empty → full access
-  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+  if (!isPermissionObject(stored)) {
     return { ...ALL_PERMISSIONS_TRUE };
   }
 
   // Merge: every key defaults to `true` unless explicitly set to `false`
-  const result = { ...ALL_PERMISSIONS_TRUE };
+  const result: Record<PermissionKey, boolean> = { ...ALL_PERMISSIONS_TRUE };
   for (const key of PERMISSION_KEYS) {
     if (stored[key] === false) {
       result[key] = false;
@@ -142,11 +169,14 @@ export function loadPermissions(user) {
 /**
  * Check whether a user has a specific permission.
  *
- * @param {object} user - User object (from `req.user` or similar).
- * @param {string} key - One of `PERMISSION_KEYS`.
- * @returns {boolean}
+ * @param user - User object (from `req.user` or similar).
+ * @param key - One of `PERMISSION_KEYS`.
+ * @returns `true` if the permission is granted.
  */
-export function hasPermission(user, key) {
+export function hasPermission(
+  user: PermissionUserInput | null | undefined,
+  key: PermissionKey,
+): boolean {
   if (!user || user.role !== 'admin') return false;
   if (isSuperAdmin(user.email)) return true;
   const perms = loadPermissions(user);
@@ -154,6 +184,15 @@ export function hasPermission(user, key) {
 }
 
 // ─── Express middleware ──────────────────────────────────────────────────────
+
+interface AuthenticatedRequest extends Request {
+  user: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    permissions?: unknown;
+  };
+}
 
 /**
  * Express middleware factory that checks for a specific admin permission.
@@ -173,10 +212,10 @@ export function hasPermission(user, key) {
  * permissions from the master database on every request, so that
  * permission changes take effect immediately without re-login.
  *
- * @param {string} permissionKey - One of `PERMISSION_KEYS`.
- * @returns {Function} Express middleware.
+ * @param permissionKey - One of `PERMISSION_KEYS`.
+ * @returns Express middleware.
  */
-export function requirePermission(permissionKey) {
+export function requirePermission(permissionKey: PermissionKey): RequestHandler {
   if (!PERMISSION_KEYS.includes(permissionKey)) {
     throw new Error(
       `Unknown permission key "${permissionKey}". `
@@ -184,53 +223,72 @@ export function requirePermission(permissionKey) {
     );
   }
 
-  return async (req, res, next) => {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Nicht autorisiert' });
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const authReq = req as AuthenticatedRequest;
+    if (!authReq.user) {
+      res.status(401).json({ error: 'Nicht autorisiert' });
+      return;
     }
 
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+    if (authReq.user.role !== 'admin') {
+      res.status(403).json({ error: 'Nur Administratoren haben Zugriff' });
+      return;
     }
 
     // Super-Admin: immer Zugriff, kein DB-Lookup nötig
-    if (isSuperAdmin(req.user.email)) {
-      console.debug('[permissions] Super-Admin bypass:', req.user.email, 'key:', permissionKey);
-      return next();
+    if (isSuperAdmin(authReq.user.email)) {
+      console.debug('[permissions] Super-Admin bypass:', authReq.user.email, 'key:', permissionKey);
+      next();
+      return;
     }
 
     // Load current permissions from master DB
-    let permissionsRaw = null;
+    const masterDb: Pool = db;
+    let permissionsRaw: unknown = null;
     try {
-      const [rows] = await db.execute(
+      const [rows] = await masterDb.execute<RowDataPacket[]>(
         'SELECT permissions FROM app_users WHERE id = ? AND is_active = 1',
-        [req.user.sub],
+        [authReq.user.sub],
       );
       permissionsRaw = rows[0]?.permissions ?? null;
-      console.debug('[permissions] DB lookup for', req.user.email, 'key:', permissionKey, 'raw:', permissionsRaw ? '(has data)' : '(null/empty)');
+      console.debug('[permissions] DB lookup for', authReq.user.email, 'key:', permissionKey, 'raw:', permissionsRaw ? '(has data)' : '(null/empty)');
     } catch (err) {
       console.error('[permissions] DB lookup error:', err);
       // Bei DB-Fehler: Zugriff verweigern (sicherer als alles erlauben)
-      return res.status(500).json({ error: 'Fehler bei der Berechtigungsprüfung' });
+      res.status(500).json({ error: 'Fehler bei der Berechtigungsprüfung' });
+      return;
     }
 
     // Build effective user object with DB-loaded permissions
-    const effectiveUser = { ...req.user, permissions: permissionsRaw };
+    const effectiveUser = { ...authReq.user, permissions: permissionsRaw };
 
     if (!hasPermission(effectiveUser, permissionKey)) {
-      console.debug('[permissions] DENIED:', req.user.email, 'key:', permissionKey);
-      return res.status(403).json({
+      console.debug('[permissions] DENIED:', authReq.user.email, 'key:', permissionKey);
+      res.status(403).json({
         error: 'Ihnen fehlt die Berechtigung für diese Aktion',
         missingPermission: permissionKey,
       });
+      return;
     }
 
-    console.debug('[permissions] GRANTED:', req.user.email, 'key:', permissionKey);
+    console.debug('[permissions] GRANTED:', authReq.user.email, 'key:', permissionKey);
     next();
   };
 }
 
 // ─── DB-backed enforcement helper ────────────────────────────────────────────
+
+interface AppUserRow extends RowDataPacket {
+  email: string;
+  role: string;
+  is_active: number | boolean;
+  permissions: unknown;
+}
+
+interface AdminPermissionResult {
+  allowed: boolean;
+  reason: string;
+}
 
 /**
  * Resolve the authoritative admin state for a user from the master DB and
@@ -251,20 +309,24 @@ export function requirePermission(permissionKey) {
  * Fail-closed: a DB error rejects (`allowed: false, reason: 'error'`) — the
  * caller's surrounding try/catch already denies on false.
  *
- * @param {object} masterDb - Master mysql2 pool.
- * @param {string} userId - `app_users.id` (JWT `sub`).
- * @param {string} permissionKey - One of `PERMISSION_KEYS`.
- * @returns {Promise<{ allowed: boolean, reason: string }>}
+ * @param masterDb - Master mysql2 pool.
+ * @param userId - `app_users.id` (JWT `sub`).
+ * @param permissionKey - One of `PERMISSION_KEYS`.
+ * @returns Permission check result.
  */
-export async function checkAdminPermission(masterDb, userId, permissionKey) {
-  let rows;
+export async function checkAdminPermission(
+  masterDb: Pool,
+  userId: string,
+  permissionKey: PermissionKey,
+): Promise<AdminPermissionResult> {
+  let rows: AppUserRow[];
   try {
-    [rows] = await masterDb.execute(
+    [rows] = await masterDb.execute<AppUserRow[]>(
       'SELECT email, role, is_active, permissions FROM app_users WHERE id = ?',
       [userId],
     );
   } catch (err) {
-    console.error('[permissions] checkAdminPermission DB error:', err.message);
+    console.error('[permissions] checkAdminPermission DB error:', err instanceof Error ? err.message : String(err));
     return { allowed: false, reason: 'error' };
   }
 

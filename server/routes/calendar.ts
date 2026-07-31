@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 
@@ -6,7 +6,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 // ===== SYNC CALENDAR =====
-router.post('/sync', async (req, res, next) => {
+router.post('/sync', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { scheduleData, calendarId } = req.body;
     
@@ -26,7 +26,7 @@ router.post('/sync', async (req, res, next) => {
 });
 
 // ===== GET SERVICE ACCOUNT EMAIL =====
-router.get('/service-account', async (req, res, next) => {
+router.get('/service-account', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     // Return service account email if configured
     const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || null;

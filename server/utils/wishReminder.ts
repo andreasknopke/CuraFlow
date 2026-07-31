@@ -1,34 +1,74 @@
 import { addMonths, subDays, format, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { de } from 'date-fns/locale';
 import crypto from 'crypto';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { sendEmail } from '../utils/email.js';
+
+interface SystemSettingRow extends RowDataPacket {
+  key: string;
+  value: string | null;
+}
+
+interface DoctorRow extends RowDataPacket {
+  id: string;
+  name: string;
+  email: string;
+}
+
+interface ExistingSettingRow extends RowDataPacket {
+  id: string;
+}
+
+interface WishReminderError {
+  doctor: string;
+  error: string;
+}
+
+interface WishReminderSkippedResult {
+  skipped: true;
+  reason: string;
+}
+
+interface WishReminderSentResult {
+  sent: true;
+  targetMonth: string;
+  sperrtermin: string;
+  sentCount: number;
+  errors: WishReminderError[];
+}
+
+interface WishReminderErrorResult {
+  error: string;
+}
+
+type WishReminderResult = WishReminderSkippedResult | WishReminderSentResult | WishReminderErrorResult;
 
 /**
  * Checks if a wish reminder email should be sent today and sends it.
- * 
+ *
  * Logic:
  * - wish_deadline_months = N means the next N months are already locked/finalized
  * - In month X, users can submit wishes earliest for month X + (N + 1)
  * - Reminder is sent exactly 7 days before end of current month
  * - This gives users one final week in month X to submit for target month X + (N + 1)
  *
- * @param {import('mysql2/promise').Pool} dbPool - MySQL connection pool
- * @param {string} [contextLabel='default'] - Label for logging (e.g. tenant name)
+ * @param dbPool - MySQL connection pool
+ * @param contextLabel - Label for logging (e.g. tenant name)
  */
-export async function checkAndSendWishReminders(dbPool, contextLabel = 'default') {
+export async function checkAndSendWishReminders(dbPool: Pool, contextLabel = 'default'): Promise<WishReminderResult> {
   try {
     // 1. Read settings
-    const [settingsRows] = await dbPool.execute(
+    const [settingsRows] = await dbPool.execute<SystemSettingRow[]>(
       "SELECT `key`, `value` FROM SystemSetting WHERE `key` IN ('wish_deadline_months', 'wish_reminder_email_enabled', 'wish_reminder_last_sent')"
     );
 
-    const settings = {};
+    const settings: Record<string, string | null> = {};
     for (const row of settingsRows) {
       settings[row.key] = row.value;
     }
 
     const reminderEnabled = settings['wish_reminder_email_enabled'] === 'true';
-    const deadlineMonths = parseInt(settings['wish_deadline_months']);
+    const deadlineMonths = parseInt(settings['wish_deadline_months'] || '', 10);
 
     if (!reminderEnabled || !deadlineMonths || deadlineMonths <= 0) {
       return { skipped: true, reason: 'Reminder not enabled or no deadline configured' };
@@ -59,7 +99,7 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
 
     // 4. Get all doctors with email
     // Erinnerungsmails gehen an die Benachrichtigungs-E-Mail-Adresse (email)
-    const [doctors] = await dbPool.execute(
+    const [doctors] = await dbPool.execute<DoctorRow[]>(
       "SELECT id, name, email FROM Doctor WHERE email IS NOT NULL AND email != ''"
     );
 
@@ -70,14 +110,14 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
     // 5. Send emails
     const targetMonthFormatted = format(targetMonth, 'MMMM yyyy', { locale: de });
     const sperrterminFormatted = format(sperrtermin, 'dd.MM.yyyy');
-    
+
     // Build base URL for ack links
-    const apiBaseUrl = (process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN 
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` 
+    const apiBaseUrl = (process.env.API_URL || process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
       : 'http://localhost:3000').replace(/\/+$/, '');
-    
+
     let sentCount = 0;
-    const errors = [];
+    const errors: WishReminderError[] = [];
 
     for (const doctor of doctors) {
       try {
@@ -139,13 +179,14 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
 
         sentCount++;
       } catch (err) {
-        console.error(`[WishReminder][${contextLabel}] Fehler beim Senden an ${doctor.name}:`, err.message);
-        errors.push({ doctor: doctor.name, error: err.message });
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`[WishReminder][${contextLabel}] Fehler beim Senden an ${doctor.name}:`, message);
+        errors.push({ doctor: doctor.name, error: message });
       }
     }
 
     // 6. Record that we sent the reminder for this target month
-    const [existing] = await dbPool.execute(
+    const [existing] = await dbPool.execute<ExistingSettingRow[]>(
       "SELECT id FROM SystemSetting WHERE `key` = 'wish_reminder_last_sent'"
     );
     if (existing.length > 0) {
@@ -170,7 +211,8 @@ export async function checkAndSendWishReminders(dbPool, contextLabel = 'default'
       errors,
     };
   } catch (err) {
-    console.error(`[WishReminder][${contextLabel}] Fehler:`, err.message);
-    return { error: err.message };
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[WishReminder][${contextLabel}] Fehler:`, message);
+    return { error: message };
   }
 }

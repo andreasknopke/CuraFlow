@@ -19,6 +19,17 @@ COPY public ./public
 COPY index.html master.html vite.config.ts jsconfig.json postcss.config.js tailwind.config.js components.json ./
 RUN npm run build
 
+FROM node:22-slim AS server_builder
+
+WORKDIR /app/server
+
+COPY server/package*.json server/tsconfig.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --prefer-offline
+
+COPY server/ ./
+RUN npm run build
+
 FROM node:22-slim AS runtime
 
 WORKDIR /app/server
@@ -42,7 +53,8 @@ COPY server/package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --no-audit --prefer-offline
 
-COPY server/ ./
+COPY --from=server_builder /app/server/dist ./dist
+COPY server/scripts ./scripts
 COPY --from=frontend_builder /app/dist /app/dist
 COPY docker/entrypoint.sh /usr/local/bin/curaflow-entrypoint.sh
 RUN chmod +x /usr/local/bin/curaflow-entrypoint.sh
@@ -52,4 +64,4 @@ ENV NODE_ENV=production
 EXPOSE 3000
 
 ENTRYPOINT ["/usr/local/bin/curaflow-entrypoint.sh"]
-CMD ["node", "index.js"]
+CMD ["node", "dist/index.js"]

@@ -9,10 +9,10 @@ nixPkgs = ["nodejs_20", "npm-10_x"]
 nixLibs = []
 
 [phases.install]
-cmds = ["npm install --omit=dev"]
+cmds = ["npm ci"]
 
 [phases.build]
-cmds = []
+cmds = ["npm run build"]
 
 [start]
 cmd = "npm start"

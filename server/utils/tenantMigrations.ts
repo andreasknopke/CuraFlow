@@ -6,6 +6,21 @@
  *  - tenantDbMiddleware (auto-trigger on first tenant access)
  */
 import { clearColumnsCache } from './schema.js';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import { ensureDefaultWorkplaceTimeslots } from './ensureDefaultWorkplaceTimeslots.js';
+
+interface MigrationError extends Error {
+  code?: string;
+  sqlMessage?: string;
+}
+
+interface MigrationResult {
+  migration: string;
+  status: string;
+  reason?: string;
+  error?: string;
+  message?: string;
+}
 
 const FATAL_TENANT_MIGRATION_ERROR_CODES = new Set([
   'ER_ACCESS_DENIED_ERROR',
@@ -27,9 +42,9 @@ const FATAL_TENANT_MIGRATION_ERROR_PATTERNS = [
   /the client was disconnected by the server/i,
 ];
 
-function isFatalTenantMigrationError(error) {
+function isFatalTenantMigrationError(error: MigrationError | null | undefined): boolean {
   if (!error) return false;
-  if (FATAL_TENANT_MIGRATION_ERROR_CODES.has(error.code)) {
+  if (error.code && FATAL_TENANT_MIGRATION_ERROR_CODES.has(error.code)) {
     return true;
   }
 
@@ -37,62 +52,66 @@ function isFatalTenantMigrationError(error) {
   return FATAL_TENANT_MIGRATION_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
-export async function runTenantMigrations(dbPool, cacheKey = 'default') {
-  const results = [];
+export async function runTenantMigrations(dbPool: Pool, cacheKey = 'default'): Promise<MigrationResult[]> {
+  const results: MigrationResult[] = [];
 
-  const addCol = async (name, sql) => {
+  const addCol = async (name: string, sql: string): Promise<void> => {
     try {
       await dbPool.execute(sql);
       results.push({ migration: name, status: 'success' });
     } catch (err) {
-      if (err.code === 'ER_DUP_FIELDNAME') {
+      const error = err as MigrationError;
+      if (error.code === 'ER_DUP_FIELDNAME') {
         results.push({ migration: name, status: 'skipped', reason: 'Column already exists' });
-      } else if (isFatalTenantMigrationError(err)) {
-        throw err;
+      } else if (isFatalTenantMigrationError(error)) {
+        throw error;
       } else {
-        results.push({ migration: name, status: 'error', error: err.message });
+        results.push({ migration: name, status: 'error', error: error.message });
       }
     }
   };
 
-  const createTbl = async (name, sql) => {
+  const createTbl = async (name: string, sql: string): Promise<void> => {
     try {
       await dbPool.execute(sql);
       results.push({ migration: name, status: 'success' });
     } catch (err) {
-      if (err.code === 'ER_TABLE_EXISTS_ERROR') {
+      const error = err as MigrationError;
+      if (error.code === 'ER_TABLE_EXISTS_ERROR') {
         results.push({ migration: name, status: 'skipped', reason: 'Table already exists' });
-      } else if (isFatalTenantMigrationError(err)) {
-        throw err;
+      } else if (isFatalTenantMigrationError(error)) {
+        throw error;
       } else {
-        results.push({ migration: name, status: 'error', error: err.message });
+        results.push({ migration: name, status: 'error', error: error.message });
       }
     }
   };
 
-  const createIdx = async (name, sql) => {
+  const createIdx = async (name: string, sql: string): Promise<void> => {
     try {
       await dbPool.execute(sql);
       results.push({ migration: name, status: 'success' });
     } catch (err) {
-      if (err.code === 'ER_DUP_KEYNAME') {
+      const error = err as MigrationError;
+      if (error.code === 'ER_DUP_KEYNAME') {
         results.push({ migration: name, status: 'skipped', reason: 'Index already exists' });
-      } else if (isFatalTenantMigrationError(err)) {
-        throw err;
+      } else if (isFatalTenantMigrationError(error)) {
+        throw error;
       } else {
-        results.push({ migration: name, status: 'error', error: err.message });
+        results.push({ migration: name, status: 'error', error: error.message });
       }
     }
   };
 
-  const run = async (name, fn) => {
+  const run = async (name: string, fn: () => Promise<void>): Promise<void> => {
     try {
       await fn();
     } catch (err) {
-      if (isFatalTenantMigrationError(err)) {
-        throw err;
+      const error = err as MigrationError;
+      if (isFatalTenantMigrationError(error)) {
+        throw error;
       } else {
-        results.push({ migration: name, status: 'error', error: err.message });
+        results.push({ migration: name, status: 'error', error: error.message });
       }
     }
   };
@@ -166,7 +185,8 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       results.push({ migration: 'add_team_role_permissions', status: 'skipped', reason: 'Columns already exist' });
     }
   } catch (err) {
-    results.push({ migration: 'add_team_role_permissions', status: 'error', error: err.message });
+    const error = err as MigrationError;
+    results.push({ migration: 'add_team_role_permissions', status: 'error', error: error.message });
   }
 
   // ── 9. Workplace affects_availability ──
@@ -214,13 +234,13 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     await dbPool.execute(`ALTER TABLE Workplace ADD COLUMN service_type INT DEFAULT NULL`);
     results.push({ migration: 'add_workplace_service_type', status: 'success' });
     try {
-      const [serviceWps] = await dbPool.execute(
+      const [serviceWps] = await dbPool.execute<RowDataPacket[]>(
         `SELECT id, \`order\` FROM Workplace WHERE category = 'Dienste' ORDER BY COALESCE(\`order\`, 0) ASC`
       );
       if (serviceWps.length > 0) {
         await dbPool.execute(`UPDATE Workplace SET service_type = 1 WHERE id = ?`, [serviceWps[0].id]);
         if (serviceWps.length > 1) {
-          const otherIds = serviceWps.slice(1).map(w => w.id);
+          const otherIds = serviceWps.slice(1).map((w) => w.id);
           await dbPool.execute(
             `UPDATE Workplace SET service_type = 2 WHERE id IN (${otherIds.map(() => '?').join(',')})`,
             otherIds
@@ -229,12 +249,13 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       }
     } catch { /* data migration optional */ }
   } catch (err) {
-    if (err.code === 'ER_DUP_FIELDNAME') {
+    const error = err as MigrationError;
+    if (error.code === 'ER_DUP_FIELDNAME') {
       results.push({ migration: 'add_workplace_service_type', status: 'skipped', reason: 'Column already exists' });
-    } else if (isFatalTenantMigrationError(err)) {
-      throw err;
+    } else if (isFatalTenantMigrationError(error)) {
+      throw error;
     } else {
-      results.push({ migration: 'add_workplace_service_type', status: 'error', error: err.message });
+      results.push({ migration: 'add_workplace_service_type', status: 'error', error: error.message });
     }
   }
 
@@ -290,7 +311,7 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
 
   // ── ShiftTimeRule: Unique Key ändern für multi-Modell pro Workplace ──
   try {
-    const [keys] = await dbPool.execute(
+    const [keys] = await dbPool.execute<RowDataPacket[]>(
       `SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ShiftTimeRule'
        AND CONSTRAINT_NAME = 'uk_workplace_model' AND CONSTRAINT_TYPE = 'UNIQUE'`
@@ -308,12 +329,13 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
     );
     results.push({ migration: 'add_uk_shortcode_model', status: 'applied' });
   } catch (e) {
-    if (e.code === 'ER_DUP_KEYNAME') {
+    const error = e as MigrationError;
+    if (error.code === 'ER_DUP_KEYNAME') {
       results.push({ migration: 'add_uk_shortcode_model', status: 'skipped', reason: 'Unique key already exists' });
-    } else if (isFatalTenantMigrationError(e)) {
-      throw e;
+    } else if (isFatalTenantMigrationError(error)) {
+      throw error;
     } else {
-      results.push({ migration: 'add_uk_shortcode_model', status: 'error', error: e.message });
+      results.push({ migration: 'add_uk_shortcode_model', status: 'error', error: error.message });
     }
   }
 
@@ -322,26 +344,30 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
 
   // ── PHASE N+1: Ensure default WorkplaceTimeslots for Rotation/Custom workplaces ──
   await run('ensure_default_workplace_timeslots', async () => {
-    const { ensureDefaultWorkplaceTimeslots } = await import('./ensureDefaultWorkplaceTimeslots.js');
+    const { ensureDefaultWorkplaceTimeslots: ensureFn } = await import('./ensureDefaultWorkplaceTimeslots.js') as {
+      ensureDefaultWorkplaceTimeslots: typeof ensureDefaultWorkplaceTimeslots;
+    };
 
     // Custom-Kategorien aus SystemSetting lesen
-    let customCategoryNames = [];
+    const customCategoryNames: string[] = [];
     try {
-      const [rows] = await dbPool.execute(
+      const [rows] = await dbPool.execute<RowDataPacket[]>(
         `SELECT value FROM SystemSetting WHERE \`key\` = 'workplace_categories' LIMIT 1`
       );
       if (rows.length > 0) {
         const rawValue = rows[0].value;
         if (rawValue) {
-          const parsed = JSON.parse(rawValue);
+          const parsed = JSON.parse(rawValue as string) as unknown;
           if (Array.isArray(parsed)) {
-            customCategoryNames = parsed
-              .map((cat) => {
+            customCategoryNames.push(...parsed
+              .map((cat: unknown) => {
                 if (typeof cat === 'string') return cat.trim();
-                if (cat && typeof cat.name === 'string') return cat.name.trim();
+                if (cat && typeof cat === 'object' && typeof (cat as Record<string, unknown>).name === 'string') {
+                  return String((cat as Record<string, unknown>).name).trim();
+                }
                 return null;
               })
-              .filter(Boolean);
+              .filter((cat: string | null): cat is string => Boolean(cat)));
           }
         }
       }
@@ -349,7 +375,7 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       // SystemSetting-Tabelle existiert ggf. nicht → leer lassen
     }
 
-    const stats = await ensureDefaultWorkplaceTimeslots(dbPool, customCategoryNames);
+    const stats = await ensureFn(dbPool, customCategoryNames);
     if (stats.created > 0 || stats.enabledFlagSet > 0) {
       results.push({
         migration: 'ensure_default_workplace_timeslots',
@@ -373,7 +399,8 @@ export async function runTenantMigrations(dbPool, cacheKey = 'default') {
       'StaffingPlanEntry', 'Wish', 'Absence', 'Shift'
     ], cacheKey);
   } catch (error) {
-    results.push({ migration: 'clear_columns_cache', status: 'error', error: error.message });
+    const err = error as MigrationError;
+    results.push({ migration: 'clear_columns_cache', status: 'error', error: err.message });
   }
 
   return results;

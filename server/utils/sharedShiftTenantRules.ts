@@ -1,6 +1,53 @@
 import { addDays, format, parseISO } from 'date-fns';
 
-const DEFAULT_ABSENCE_BLOCKING_RULES = {
+interface SharedShiftWorkplace {
+  name?: string | null;
+  category?: string | null;
+  allows_absence_overlap?: boolean | null;
+  affects_availability?: boolean | null;
+  allows_rotation_concurrently?: boolean | null;
+  consecutive_days_mode?: string | null;
+  auto_off?: boolean | null;
+}
+
+interface SharedShiftEntry {
+  id: string;
+  doctor_id: string | null;
+  date: string | Date | null;
+  position: string;
+}
+
+interface SharedShiftRuleBlocker {
+  rule: string;
+  message: string;
+  rotationShiftId?: string;
+  rotationPosition?: string;
+}
+
+interface SharedShiftRuleWarning {
+  rule: string;
+  message: string;
+}
+
+interface SharedShiftRuleResult {
+  blockers: SharedShiftRuleBlocker[];
+  warnings: SharedShiftRuleWarning[];
+  autoFreiDate: string | null;
+}
+
+interface SharedShiftRuleOptions {
+  workplace: SharedShiftWorkplace | null | undefined;
+  dateStr: string | Date | null | undefined;
+  centralEmployeeId: string | null | undefined;
+  tenantDoctorId: string | null | undefined;
+  tenantShifts?: SharedShiftEntry[];
+  tenantWorkplaces?: SharedShiftWorkplace[];
+  existingSharedShiftsForWorkplace?: Array<{ id?: string | null; employee_id?: string | null; date?: string | Date | null; position?: string | null }>;
+  absenceBlockingRules?: Record<string, boolean | undefined>;
+  holidayDates?: Set<string>;
+}
+
+const DEFAULT_ABSENCE_BLOCKING_RULES: Record<string, boolean> = {
   Urlaub: true,
   Krank: true,
   Frei: true,
@@ -8,11 +55,12 @@ const DEFAULT_ABSENCE_BLOCKING_RULES = {
   'Nicht verfügbar': false,
 };
 
-function normalizeDate(dateValue) {
-  return typeof dateValue === 'string' ? dateValue.slice(0, 10) : String(dateValue || '').slice(0, 10);
+function normalizeDate(dateValue: unknown): string {
+  if (typeof dateValue === 'string') return dateValue.slice(0, 10);
+  return String(dateValue || '').slice(0, 10);
 }
 
-export function getSharedShiftAutoFreiDate(dateStr, holidayDates = new Set()) {
+export function getSharedShiftAutoFreiDate(dateStr: string, holidayDates: Set<string> = new Set()): string | null {
   const nextDay = addDays(parseISO(dateStr), 1);
   const nextDateStr = format(nextDay, 'yyyy-MM-dd');
   const dayOfWeek = nextDay.getDay();
@@ -26,7 +74,7 @@ export function getSharedShiftAutoFreiDate(dateStr, holidayDates = new Set()) {
   return nextDateStr;
 }
 
-export function buildSharedShiftAutoFreiMarker(shiftId) {
+export function buildSharedShiftAutoFreiMarker(shiftId: string): string {
   return `cross-tenant:auto-frei:${shiftId}`;
 }
 
@@ -39,13 +87,14 @@ export function validateSharedShiftTenantRules({
   tenantWorkplaces = [],
   existingSharedShiftsForWorkplace = [],
   absenceBlockingRules = DEFAULT_ABSENCE_BLOCKING_RULES,
-  holidayDates = new Set(),
-}) {
-  const blockers = [];
-  const warnings = [];
+  holidayDates = new Set<string>(),
+}: SharedShiftRuleOptions): SharedShiftRuleResult {
+  const blockers: SharedShiftRuleBlocker[] = [];
+  const warnings: SharedShiftRuleWarning[] = [];
   const normalizedDate = normalizeDate(dateStr);
+  const tenantDoctorIdString = tenantDoctorId ? String(tenantDoctorId) : '';
   const sameDayTenantShifts = tenantShifts.filter(
-    (shift) => normalizeDate(shift.date) === normalizedDate && String(shift.doctor_id) === String(tenantDoctorId)
+    (shift) => normalizeDate(shift.date) === normalizedDate && String(shift.doctor_id) === tenantDoctorIdString
   );
 
   if (workplace?.allows_absence_overlap !== true) {
@@ -72,6 +121,7 @@ export function validateSharedShiftTenantRules({
       tenantWorkplaces
         .filter((entry) => entry.category === 'Rotationen')
         .map((entry) => entry.name)
+        .filter((name): name is string => typeof name === 'string')
     );
 
     if (workplace?.category === 'Dienste' && workplace?.allows_rotation_concurrently === false) {
@@ -96,8 +146,9 @@ export function validateSharedShiftTenantRules({
   if (workplace?.category === 'Dienste' && consecutiveMode === 'forbidden') {
     const prevDate = format(addDays(parseISO(normalizedDate), -1), 'yyyy-MM-dd');
     const nextDate = format(addDays(parseISO(normalizedDate), 1), 'yyyy-MM-dd');
+    const centralEmployeeIdString = centralEmployeeId ? String(centralEmployeeId) : '';
     const hasConsecutiveSharedShift = existingSharedShiftsForWorkplace.some((shift) =>
-      String(shift.employee_id) === String(centralEmployeeId)
+      String(shift.employee_id) === centralEmployeeIdString
       && (normalizeDate(shift.date) === prevDate || normalizeDate(shift.date) === nextDate)
     );
 
@@ -109,12 +160,12 @@ export function validateSharedShiftTenantRules({
     }
   }
 
-  let autoFreiDate = null;
+  let autoFreiDate: string | null = null;
   if (workplace?.auto_off) {
     autoFreiDate = getSharedShiftAutoFreiDate(normalizedDate, holidayDates);
     if (autoFreiDate) {
       const nextDayShift = tenantShifts.find(
-        (shift) => normalizeDate(shift.date) === autoFreiDate && String(shift.doctor_id) === String(tenantDoctorId)
+        (shift) => normalizeDate(shift.date) === autoFreiDate && String(shift.doctor_id) === tenantDoctorIdString
       );
       if (nextDayShift && nextDayShift.position !== 'Frei') {
         blockers.push({

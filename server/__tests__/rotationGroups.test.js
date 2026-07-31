@@ -103,7 +103,7 @@ describe('canWriteRotationGroup', () => {
 describe('rotations router route ordering', () => {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   const source = readFileSync(
-    join(__dirname, '..', 'routes', 'rotations.js'),
+    join(__dirname, '..', 'routes', 'rotations.ts'),
     'utf-8'
   );
   const lines = source.split('\n');

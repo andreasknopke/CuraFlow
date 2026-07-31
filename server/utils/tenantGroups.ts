@@ -6,12 +6,14 @@
  * membership, and centralize permission checks.
  */
 
-function parseJsonArray(raw) {
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+function parseJsonArray(raw: unknown): unknown[] | null {
   if (raw === null || raw === undefined || raw === '') return null;
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as unknown;
       return Array.isArray(parsed) ? parsed : null;
     } catch {
       return null;
@@ -22,9 +24,9 @@ function parseJsonArray(raw) {
 
 /**
  * Parse `allowed_groups` from an app_users row.
- * @returns {number[] | null} list of group ids; null means "no group access"
+ * @returns list of group ids; null means "no group access"
  */
-export function parseAllowedGroups(raw) {
+export function parseAllowedGroups(raw: unknown): number[] | null {
   const list = parseJsonArray(raw);
   if (!list) return null;
   const ids = list.map((v) => Number(v)).filter((n) => Number.isInteger(n));
@@ -33,17 +35,32 @@ export function parseAllowedGroups(raw) {
 
 /**
  * Parse `group_admin_groups` from an app_users row.
- * @returns {number[] | null}
  */
-export function parseGroupAdminGroups(raw) {
+export function parseGroupAdminGroups(raw: unknown): number[] | null {
   return parseAllowedGroups(raw);
+}
+
+interface AppUserRow extends RowDataPacket {
+  id: string;
+  role: string;
+  allowed_groups: string | unknown[] | null;
+  group_admin_groups: string | unknown[] | null;
+}
+
+export interface UserGroupContext {
+  id: string;
+  role: string;
+  isMasterAdmin: boolean;
+  allowedGroups: number[] | null;
+  adminGroups: number[] | null;
 }
 
 /**
  * Load the full user record needed for group permission checks.
  */
-export async function loadUserGroupContext(masterDb, userId) {
-  const [rows] = await masterDb.execute(
+export async function loadUserGroupContext(masterDb: Pool, userId: string | null | undefined): Promise<UserGroupContext | null> {
+  if (!userId) return null;
+  const [rows] = await masterDb.execute<AppUserRow[]>(
     'SELECT id, role, allowed_groups, group_admin_groups FROM app_users WHERE id = ? AND is_active = 1',
     [userId]
   );
@@ -63,7 +80,7 @@ export async function loadUserGroupContext(masterDb, userId) {
  * Master admins always have access. Otherwise the group id must appear in
  * allowed_groups.
  */
-export function canReadGroup(ctx, groupId) {
+export function canReadGroup(ctx: UserGroupContext | null, groupId: number | string): boolean {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   const list = ctx.allowedGroups;
@@ -73,19 +90,26 @@ export function canReadGroup(ctx, groupId) {
 /**
  * Check whether the user may modify pool data for a group.
  */
-export function canWriteGroup(ctx, groupId) {
+export function canWriteGroup(ctx: UserGroupContext | null, groupId: number | string): boolean {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   const list = ctx.adminGroups;
   return Array.isArray(list) && list.includes(Number(groupId));
 }
 
+interface TenantGroupRow extends RowDataPacket {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: number | boolean;
+}
+
 /**
  * Load every group the user is allowed to see.
  */
-export async function listUserGroups(masterDb, ctx) {
+export async function listUserGroups(masterDb: Pool, ctx: UserGroupContext | null): Promise<TenantGroupRow[]> {
   if (!ctx) return [];
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<TenantGroupRow[]>(
     `SELECT g.id, g.name, g.description, g.is_active
        FROM tenant_group g
       WHERE g.is_active = 1
@@ -101,30 +125,41 @@ export async function listUserGroups(masterDb, ctx) {
  * Load tenant ids that belong to a group.
  * Returns VARCHAR(36) UUID strings (matches db_tokens.id).
  */
-export async function loadGroupTenantIds(masterDb, groupId) {
-  const [rows] = await masterDb.execute(
+export async function loadGroupTenantIds(masterDb: Pool, groupId: number | string): Promise<string[]> {
+  const [rows] = await masterDb.execute<RowDataPacket[]>(
     'SELECT tenant_id FROM tenant_group_member WHERE group_id = ?',
     [groupId]
   );
   return rows.map((r) => String(r.tenant_id));
 }
 
+interface TenantGroupDetailRow extends RowDataPacket {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: number | boolean;
+}
+
 /**
  * Throws an Error with `status` if the group does not exist or the user
  * lacks read permission. Returns the group row on success.
  */
-export async function requireGroupReadAccess(masterDb, ctx, groupId) {
-  const [rows] = await masterDb.execute(
+export async function requireGroupReadAccess(
+  masterDb: Pool,
+  ctx: UserGroupContext | null,
+  groupId: number | string
+): Promise<TenantGroupDetailRow> {
+  const [rows] = await masterDb.execute<TenantGroupDetailRow[]>(
     'SELECT id, name, description, is_active FROM tenant_group WHERE id = ?',
     [groupId]
   );
   if (rows.length === 0) {
-    const err = new Error('Verbund nicht gefunden');
+    const err = new Error('Verbund nicht gefunden') as Error & { status: number };
     err.status = 404;
     throw err;
   }
   if (!canReadGroup(ctx, groupId)) {
-    const err = new Error('Kein Zugriff auf diesen Verbund');
+    const err = new Error('Kein Zugriff auf diesen Verbund') as Error & { status: number };
     err.status = 403;
     throw err;
   }
@@ -134,9 +169,9 @@ export async function requireGroupReadAccess(masterDb, ctx, groupId) {
 /**
  * Throws if the user lacks write permission for the group.
  */
-export function requireGroupWriteAccess(ctx, groupId) {
+export function requireGroupWriteAccess(ctx: UserGroupContext | null, groupId: number | string): void {
   if (!canWriteGroup(ctx, groupId)) {
-    const err = new Error('Keine Schreibrechte für diesen Verbund');
+    const err = new Error('Keine Schreibrechte für diesen Verbund') as Error & { status: number };
     err.status = 403;
     throw err;
   }
@@ -146,9 +181,9 @@ export function requireGroupWriteAccess(ctx, groupId) {
  * Resolve the db_tokens.id (VARCHAR(36) UUID) for a given raw token string.
  * Returns null when the token is absent or unknown.
  */
-export async function resolveTenantIdFromToken(masterDb, dbToken) {
+export async function resolveTenantIdFromToken(masterDb: Pool, dbToken: string | null | undefined): Promise<string | null> {
   if (!dbToken) return null;
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<RowDataPacket[]>(
     'SELECT id FROM db_tokens WHERE token = ? LIMIT 1',
     [dbToken]
   );
@@ -161,22 +196,26 @@ export async function resolveTenantIdFromToken(masterDb, dbToken) {
  *   - groups the tenant participates in (tenant_group_member.tenant_id)
  *   - groups the user is allowed to read (ctx.allowedGroups or master admin)
  */
-export async function loadVisibleGroupIdsForTenant(masterDb, ctx, tenantId) {
+export async function loadVisibleGroupIdsForTenant(
+  masterDb: Pool,
+  ctx: UserGroupContext | null,
+  tenantId: string | null | undefined
+): Promise<number[]> {
   if (!ctx || !tenantId) return [];
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<RowDataPacket[]>(
     'SELECT group_id FROM tenant_group_member WHERE tenant_id = ?',
     [tenantId]
   );
   const groupIds = rows.map((r) => Number(r.group_id));
   if (ctx.isMasterAdmin) return groupIds;
   if (!Array.isArray(ctx.allowedGroups)) return [];
-  return groupIds.filter((id) => ctx.allowedGroups.includes(id));
+  return groupIds.filter((id) => ctx.allowedGroups?.includes(id));
 }
 
 /**
  * Decide whether the user may write a pool shift that belongs to `groupId`.
  */
-export function canWriteShiftInGroup(ctx, groupId) {
+export function canWriteShiftInGroup(ctx: UserGroupContext | null, groupId: number | string): boolean {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   return Array.isArray(ctx.adminGroups) && ctx.adminGroups.includes(Number(groupId));

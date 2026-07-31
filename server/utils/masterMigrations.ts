@@ -1,18 +1,20 @@
-export async function runMasterMigrations(dbPool) {
-  const results = [];
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+export async function runMasterMigrations(dbPool: Pool): Promise<Array<{migration: string; status: string; reason?: string; error?: string}>> {
+  const results: Array<{migration: string; status: string; reason?: string; error?: string}> = [];
   const SKIPPED = Symbol('skipped');
 
-  const hasColumn = async (tableName, columnName) => {
+  const hasColumn = async (tableName: string, columnName: string): Promise<boolean> => {
     const [rows] = await dbPool.execute(
       `SELECT COUNT(*) AS cnt
        FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
       [tableName, columnName]
-    );
+    ) as [RowDataPacket[], unknown];
     return Number(rows[0]?.cnt || 0) > 0;
   };
 
-  const addColumnIfMissing = async (tableName, columnName, definition) => {
+  const addColumnIfMissing = async (tableName: string, columnName: string, definition: string): Promise<boolean> => {
     if (await hasColumn(tableName, columnName)) {
       return false;
     }
@@ -21,17 +23,17 @@ export async function runMasterMigrations(dbPool) {
     return true;
   };
 
-  const getColumnInfo = async (tableName, columnName) => {
+  const getColumnInfo = async (tableName: string, columnName: string): Promise<RowDataPacket | null> => {
     const [rows] = await dbPool.execute(
       `SELECT COLUMN_TYPE, CHARACTER_SET_NAME, COLLATION_NAME
        FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
       [tableName, columnName]
-    );
+    ) as [RowDataPacket[], unknown];
     return rows[0] || null;
   };
 
-  const run = async (migration, execute, options = {}) => {
+  const run = async (migration: string, execute: () => Promise<unknown>, options: {duplicateCodes?: string[]; duplicateReason?: string; skippedReason?: string} = {}): Promise<void> => {
     const {
       duplicateCodes = [],
       duplicateReason = 'Bereits vorhanden',
@@ -45,13 +47,14 @@ export async function runMasterMigrations(dbPool) {
         return;
       }
       results.push({ migration, status: 'success' });
-    } catch (err) {
-      if (duplicateCodes.includes(err.code)) {
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      if (duplicateCodes.includes(error.code as string)) {
         results.push({ migration, status: 'skipped', reason: duplicateReason });
         return;
       }
 
-      results.push({ migration, status: 'error', error: err.message });
+      results.push({ migration, status: 'error', error: error.message || String(err) });
     }
   };
 
@@ -446,7 +449,7 @@ export async function runMasterMigrations(dbPool) {
       WHERE TABLE_SCHEMA = DATABASE()
         AND TABLE_NAME = 'db_tokens'
         AND COLUMN_NAME = 'id'`
-  );
+  ) as [RowDataPacket[], unknown];
   const dbTokensCharset = collRows[0]?.cs || 'utf8mb4';
   const dbTokensCollation = collRows[0]?.co || 'utf8mb4_0900_ai_ci';
   const fkTableSuffix = `CHARACTER SET ${dbTokensCharset} COLLATE ${dbTokensCollation}`;
@@ -485,11 +488,11 @@ export async function runMasterMigrations(dbPool) {
         `SELECT TABLE_COLLATION AS co FROM information_schema.TABLES
           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
         [t]
-      );
+      ) as [RowDataPacket[], unknown];
       const current = tRows[0]?.co;
       if (!current || current === dbTokensCollation) continue;
 
-      const [cntRows] = await dbPool.execute(`SELECT COUNT(*) AS cnt FROM \`${t}\``);
+      const [cntRows] = await dbPool.execute(`SELECT COUNT(*) AS cnt FROM \`${t}\``) as [RowDataPacket[], unknown];
       const rowCount = Number(cntRows[0]?.cnt || 0);
       if (rowCount > 0) {
         // Leave non-empty tables alone — operator must migrate data manually.
@@ -1161,9 +1164,10 @@ export async function runMasterMigrations(dbPool) {
         await dbPool.execute(
           'UPDATE ppugv_daily_cache SET jahr = YEAR(frostungsdatum) WHERE jahr = 0 AND frostungsdatum IS NOT NULL'
         );
-      } catch (err) {
+      } catch (err: unknown) {
         // nicht kritisch – die Spalte existiert dann, wird nach und nach gefüllt
-        console.warn('[Migration] ppugv_daily_cache.jahr backfill warning:', err.message);
+        const error = err as { message?: string };
+        console.warn('[Migration] ppugv_daily_cache.jahr backfill warning:', error.message || String(err));
       }
     }
     return changed || SKIPPED;

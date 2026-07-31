@@ -27,7 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import sharp from 'sharp';
-import { createWorker } from 'tesseract.js';
+import Tesseract from 'tesseract.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -40,8 +40,8 @@ const RESPONSE_MAX_TOKENS = 800;
 const OCR_TARGET_LONG_EDGE = 2000;
 const OCR_LANGUAGES = ['deu', 'eng'];
 const PDF_RENDER_DPI = 200;
-const OCR_ROTATION_FALLBACK_ANGLES = [0, 90, 270, 180];
-const OCR_DESKEW_FALLBACK_OFFSETS = [-12, -8, -4, 4, 8, 12];
+const OCR_ROTATION_FALLBACK_ANGLES: readonly number[] = [0, 90, 270, 180];
+const OCR_DESKEW_FALLBACK_OFFSETS: readonly number[] = [-12, -8, -4, 4, 8, 12];
 const OCR_MIN_CONFIDENCE_FOR_SINGLE_PASS = 45;
 const OCR_MIN_TEXT_LENGTH_FOR_SINGLE_PASS = 80;
 const PDF_TEXT_MIN_LENGTH = 80;
@@ -57,18 +57,18 @@ const OCR_DOCUMENT_KEYWORDS = [
 // klein und schützt vor riesigen OCR-Outputs (Logos, Wasserzeichen, Fehler).
 const MAX_OCR_CHARS = 6000;
 
-let _ocrWorkerPromise = null;
+let _ocrWorkerPromise: Promise<Tesseract.Worker> | null = null;
 
 /**
  * Lazy-initialisierter Singleton-Worker. Tesseract lädt die Sprachmodelle
  * beim ersten Aufruf herunter (~10 MB pro Sprache), danach wird gecached.
  */
-async function getOcrWorker() {
+async function getOcrWorker(): Promise<Tesseract.Worker> {
   if (!_ocrWorkerPromise) {
-    _ocrWorkerPromise = createWorker(OCR_LANGUAGES, undefined, {
+    _ocrWorkerPromise = Tesseract.createWorker(OCR_LANGUAGES, undefined, {
       logger: () => {},
       errorHandler: (err) => console.error('[certificateAnalyzer] Tesseract-Fehler:', err),
-    }).catch((err) => {
+    }).catch((err: unknown) => {
       _ocrWorkerPromise = null;
       throw err;
     });
@@ -76,11 +76,11 @@ async function getOcrWorker() {
   return _ocrWorkerPromise;
 }
 
-export function isAnalyzerConfigured() {
+export function isAnalyzerConfigured(): boolean {
   return !!(process.env.LLM_VISION_BASE_URL && process.env.LLM_VISION_MODEL);
 }
 
-function buildSystemPrompt() {
+function buildSystemPrompt(): string {
   return [
     'Du bist ein Prüfer für medizinische Fortbildungs- und Qualifikationszertifikate.',
     'Du erhältst den per OCR aus einem hochgeladenen Zertifikat extrahierten Text und den Namen einer geforderten Qualifikation.',
@@ -89,7 +89,13 @@ function buildSystemPrompt() {
   ].join(' ');
 }
 
-function buildUserPrompt({ qualificationName, qualificationDescription, ocrText }) {
+interface BuildUserPromptArgs {
+  qualificationName: string;
+  qualificationDescription?: string | null;
+  ocrText: string;
+}
+
+function buildUserPrompt({ qualificationName, qualificationDescription, ocrText }: BuildUserPromptArgs): string {
   const descLine = qualificationDescription
     ? `Beschreibung: "${qualificationDescription}"`
     : '';
@@ -117,7 +123,22 @@ function buildUserPrompt({ qualificationName, qualificationDescription, ocrText 
   ].filter(Boolean).join('\n');
 }
 
-async function renderPdfFirstPageToPng(buffer) {
+interface ExecFileError extends Error {
+  code?: string;
+  stderr?: string;
+  stdout?: string;
+}
+
+function isExecFileError(err: unknown): err is ExecFileError {
+  return err instanceof Error;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+async function renderPdfFirstPageToPng(buffer: Buffer): Promise<Buffer> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'curaflow-pdf-'));
   const inputPath = path.join(tempDir, 'document.pdf');
   const outputBase = path.join(tempDir, 'page');
@@ -136,16 +157,17 @@ async function renderPdfFirstPageToPng(buffer) {
     ]);
     return await fs.readFile(outputPath);
   } catch (err) {
-    if (err.code === 'ENOENT') {
+    if (isExecFileError(err) && err.code === 'ENOENT') {
       throw new Error('PDF-Prüfung nicht verfügbar: pdftoppm fehlt im Server-Image');
     }
-    throw new Error(`PDF-Konvertierung fehlgeschlagen: ${err.stderr?.slice(0, 300) || err.message || err}`);
+    const stderr = isExecFileError(err) ? err.stderr : undefined;
+    throw new Error(`PDF-Konvertierung fehlgeschlagen: ${stderr?.slice(0, 300) || getErrorMessage(err)}`);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-async function extractPdfFirstPageText(buffer) {
+async function extractPdfFirstPageText(buffer: Buffer): Promise<string> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'curaflow-pdf-text-'));
   const inputPath = path.join(tempDir, 'document.pdf');
 
@@ -160,18 +182,24 @@ async function extractPdfFirstPageText(buffer) {
     ]);
     return normalizeOcrText(stdout || '');
   } catch (err) {
-    if (err.code === 'ENOENT') {
+    if (isExecFileError(err) && err.code === 'ENOENT') {
       console.warn('[certificateAnalyzer] pdftotext fehlt im Server-Image, falle auf OCR zurück');
       return '';
     }
-    console.warn('[certificateAnalyzer] PDF-Text konnte nicht direkt extrahiert werden, falle auf OCR zurück:', err.message);
+    console.warn('[certificateAnalyzer] PDF-Text konnte nicht direkt extrahiert werden, falle auf OCR zurück:', getErrorMessage(err));
     return '';
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-async function prepareFileForOcr(buffer, mimeType) {
+interface PreparedFile {
+  buffer: Buffer;
+  mimeType: string;
+  sourceType: 'pdf' | 'image';
+}
+
+async function prepareFileForOcr(buffer: Buffer, mimeType: string): Promise<PreparedFile> {
   if (mimeType === 'application/pdf') {
     const pngBuffer = await renderPdfFirstPageToPng(buffer);
     return {
@@ -192,11 +220,11 @@ async function prepareFileForOcr(buffer, mimeType) {
  * Bereitet ein Bild für OCR auf: EXIF-Rotation, auf max 2000px skalieren,
  * Graustufen + Normalize für besseren Kontrast.
  */
-async function preprocessForOcr(buffer, mimeType) {
+async function preprocessForOcr(buffer: Buffer, mimeType: string): Promise<Buffer> {
   return preprocessForOcrAngle(buffer, mimeType, 0);
 }
 
-async function preprocessForOcrAngle(buffer, mimeType, rotationAngle = 0) {
+async function preprocessForOcrAngle(buffer: Buffer, mimeType: string, rotationAngle = 0): Promise<Buffer> {
   if (!mimeType?.startsWith('image/')) {
     return buffer;
   }
@@ -207,8 +235,8 @@ async function preprocessForOcrAngle(buffer, mimeType, rotationAngle = 0) {
     let pipeline = image.rotate();
     if (longEdge > OCR_TARGET_LONG_EDGE) {
       pipeline = pipeline.resize({
-        width: meta.width >= meta.height ? OCR_TARGET_LONG_EDGE : null,
-        height: meta.height > meta.width ? OCR_TARGET_LONG_EDGE : null,
+        width: meta.width && meta.height && meta.width >= meta.height ? OCR_TARGET_LONG_EDGE : undefined,
+        height: meta.height && meta.width && meta.height > meta.width ? OCR_TARGET_LONG_EDGE : undefined,
         fit: 'inside',
         withoutEnlargement: true,
       });
@@ -224,12 +252,32 @@ async function preprocessForOcrAngle(buffer, mimeType, rotationAngle = 0) {
       .png()
       .toBuffer();
   } catch (err) {
-    console.warn('[certificateAnalyzer] OCR-Preprocessing fehlgeschlagen, sende Original:', err.message);
+    console.warn('[certificateAnalyzer] OCR-Preprocessing fehlgeschlagen, sende Original:', getErrorMessage(err));
     return buffer;
   }
 }
 
-async function runOcr(buffer, mimeType) {
+interface OcrCandidate {
+  text: string;
+  confidence: number | null;
+  truncated: boolean;
+  fullLength: number;
+  angle: number;
+}
+
+interface AttemptedAngle {
+  angle: number;
+  confidence: number | null;
+  chars: number;
+  mode?: string;
+}
+
+interface OcrResult extends OcrCandidate {
+  attemptedAngles: AttemptedAngle[];
+  extractionMode?: string;
+}
+
+async function runOcr(buffer: Buffer, mimeType: string): Promise<OcrCandidate> {
   const prepped = await preprocessForOcr(buffer, mimeType);
   const worker = await getOcrWorker();
   const { data } = await worker.recognize(prepped);
@@ -243,7 +291,7 @@ async function runOcr(buffer, mimeType) {
   };
 }
 
-function normalizeOcrText(text) {
+function normalizeOcrText(text: string): string {
   return String(text || '')
     .replace(/\f/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
@@ -251,8 +299,8 @@ function normalizeOcrText(text) {
     .trim();
 }
 
-function scoreOcrResult(result) {
-  const confidence = typeof result?.confidence === 'number' ? result.confidence : 0;
+function scoreOcrResult(result: OcrCandidate | null): number {
+  const confidence = result && typeof result.confidence === 'number' ? result.confidence : 0;
   const textLength = result?.fullLength || result?.text?.length || 0;
   const keywordHits = countDocumentKeywordHits(result?.text || '');
   const dateHits = countDateLikeHits(result?.text || '');
@@ -264,40 +312,40 @@ function scoreOcrResult(result) {
     + Math.min(readableWords * 12, 1200);
 }
 
-function normalizeComparableText(text) {
+function normalizeComparableText(text: string): string {
   return String(text || '')
     .toLowerCase()
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-function countDocumentKeywordHits(text) {
+function countDocumentKeywordHits(text: string): number {
   const normalized = normalizeComparableText(text);
   return OCR_DOCUMENT_KEYWORDS.reduce((count, keyword) => (
     normalized.includes(normalizeComparableText(keyword)) ? count + 1 : count
   ), 0);
 }
 
-function countDateLikeHits(text) {
+function countDateLikeHits(text: string): number {
   return (String(text || '').match(/\b\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}\b/g) || []).length;
 }
 
-function countReadableWords(text) {
+function countReadableWords(text: string): number {
   return (String(text || '').match(/\b[A-Za-zÄÖÜäöüß]{4,}\b/g) || []).length;
 }
 
-function shouldTryRotatedOcr(result) {
+function shouldTryRotatedOcr(result: OcrCandidate | null): boolean {
   if (!result) return true;
   const confidence = typeof result.confidence === 'number' ? result.confidence : 0;
   const textLength = result.fullLength || result.text?.length || 0;
   return confidence < OCR_MIN_CONFIDENCE_FOR_SINGLE_PASS || textLength < OCR_MIN_TEXT_LENGTH_FOR_SINGLE_PASS;
 }
 
-function buildDeskewAngles(baseAngle) {
+function buildDeskewAngles(baseAngle: number): number[] {
   return OCR_DESKEW_FALLBACK_OFFSETS.map((offset) => baseAngle + offset);
 }
 
-async function recognizeOcrCandidate(worker, buffer, mimeType, angle) {
+async function recognizeOcrCandidate(worker: Tesseract.Worker, buffer: Buffer, mimeType: string, angle: number): Promise<OcrCandidate> {
   const prepped = angle === 0
     ? await preprocessForOcr(buffer, mimeType)
     : await preprocessForOcrAngle(buffer, mimeType, angle);
@@ -313,10 +361,10 @@ async function recognizeOcrCandidate(worker, buffer, mimeType, angle) {
   };
 }
 
-async function runOcrWithRotationFallback(buffer, mimeType) {
+async function runOcrWithRotationFallback(buffer: Buffer, mimeType: string): Promise<OcrResult> {
   const worker = await getOcrWorker();
-  const attemptedAngles = [];
-  let bestResult = null;
+  const attemptedAngles: AttemptedAngle[] = [];
+  let bestResult: OcrCandidate | null = null;
 
   for (const angle of OCR_ROTATION_FALLBACK_ANGLES) {
     const candidate = await recognizeOcrCandidate(worker, buffer, mimeType, angle);
@@ -338,13 +386,22 @@ async function runOcrWithRotationFallback(buffer, mimeType) {
     }
   }
 
+  if (!bestResult) {
+    // Should never happen because OCR_ROTATION_FALLBACK_ANGLES is non-empty.
+    throw new Error('OCR rotation fallback produced no result');
+  }
+
   return {
     ...bestResult,
     attemptedAngles,
   };
 }
 
-function tryParseJson(text) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function tryParseJson(text: unknown): unknown {
   if (!text || typeof text !== 'string') return null;
   const cleaned = text.trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -360,14 +417,14 @@ function tryParseJson(text) {
   }
 }
 
-function normalizeDate(value) {
+function normalizeDate(value: unknown): string | null {
   if (!value || typeof value !== 'string') return null;
   const m = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
 }
 
-function classifyStatus(parsed) {
-  if (!parsed) return 'error';
+function classifyStatus(parsed: unknown): 'error' | 'failed' | 'warning' | 'passed' {
+  if (!isRecord(parsed)) return 'error';
   const isCert = parsed.is_certificate === true;
   const scope = parsed.scope_match === true;
   if (!isCert) return 'failed';
@@ -375,21 +432,60 @@ function classifyStatus(parsed) {
   return 'passed';
 }
 
+function getLlmChoiceContent(data: unknown): string | undefined {
+  if (!isRecord(data) || !Array.isArray(data.choices) || data.choices.length === 0) {
+    return undefined;
+  }
+  const choice = data.choices[0];
+  if (!isRecord(choice)) return undefined;
+  const message = choice.message;
+  if (!isRecord(message)) return undefined;
+  return typeof message.content === 'string' ? message.content : undefined;
+}
+
+function getLlmFinishReason(data: unknown): unknown {
+  if (!isRecord(data) || !Array.isArray(data.choices) || data.choices.length === 0) {
+    return undefined;
+  }
+  const choice = data.choices[0];
+  return isRecord(choice) ? choice.finish_reason : undefined;
+}
+
+interface CertificateAnalysisResult {
+  status: 'skipped' | 'error' | 'failed' | 'warning' | 'passed';
+  is_certificate: boolean | null;
+  scope_match: boolean | null;
+  scope_detected: string | null;
+  granted_date: string | null;
+  expiry_date: string | null;
+  confidence: number | null;
+  reasoning: string | null;
+  raw: string | null;
+  error: string | null;
+}
+
+interface AnalyzeCertificateArgs {
+  buffer: Buffer;
+  mimeType: string;
+  qualificationName: string;
+  qualificationDescription?: string | null;
+}
+
 /**
  * Analysiert eine Datei mit OCR + Text-LLM.
  *
- * @param {object} args
- * @param {Buffer} args.buffer        Datei-Inhalt
- * @param {string} args.mimeType      z.B. image/jpeg, application/pdf
- * @param {string} args.qualificationName
- * @param {string} [args.qualificationDescription]
+ * @param args
+ * @param args.buffer        Datei-Inhalt
+ * @param args.mimeType      z.B. image/jpeg, application/pdf
+ * @param args.qualificationName
+ * @param [args.qualificationDescription]
  */
 export async function analyzeCertificate({
   buffer,
   mimeType,
   qualificationName,
   qualificationDescription,
-}) {
+}: AnalyzeCertificateArgs): Promise<CertificateAnalysisResult> {
   if (!isAnalyzerConfigured()) {
     return {
       status: 'skipped',
@@ -420,12 +516,12 @@ export async function analyzeCertificate({
     };
   }
 
-  const baseUrl = process.env.LLM_VISION_BASE_URL.replace(/\/$/, '');
-  const model = process.env.LLM_VISION_MODEL;
+  const baseUrl = process.env.LLM_VISION_BASE_URL!.replace(/\/$/, '');
+  const model = process.env.LLM_VISION_MODEL!;
 
   // ---- OCR ----
-  let ocrResult;
-  let ocrInput;
+  let ocrResult: OcrResult;
+  let ocrInput: PreparedFile | undefined;
   const ocrStartedAt = Date.now();
   try {
     const directPdfText = mimeType === 'application/pdf'
@@ -466,8 +562,11 @@ export async function analyzeCertificate({
       }
     }
   } catch (err) {
-    const errMsg = `OCR fehlgeschlagen: ${err.message || err}`;
-    console.error('[certificateAnalyzer] OCR-Fehler', { name: err.name, message: err.message });
+    const errMsg = `OCR fehlgeschlagen: ${getErrorMessage(err)}`;
+    console.error('[certificateAnalyzer] OCR-Fehler', {
+      name: isExecFileError(err) ? err.name : undefined,
+      message: getErrorMessage(err),
+    });
     return {
       status: 'error',
       is_certificate: null,
@@ -564,14 +663,14 @@ export async function analyzeCertificate({
       };
     }
 
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content;
-    const parsed = tryParseJson(typeof content === 'string' ? content : '');
+    const data: unknown = await response.json();
+    const content = getLlmChoiceContent(data);
+    const parsed = tryParseJson(content);
 
     console.info('[certificateAnalyzer] LLM-Antwort', {
       durationMs: Date.now() - startedAt,
-      finishReason: data?.choices?.[0]?.finish_reason,
-      usage: data?.usage,
+      finishReason: getLlmFinishReason(data),
+      usage: isRecord(data) ? data.usage : undefined,
       parsed: !!parsed,
     });
 
@@ -592,27 +691,42 @@ export async function analyzeCertificate({
       };
     }
 
+    if (!isRecord(parsed)) {
+      return {
+        status: 'error',
+        is_certificate: null,
+        scope_match: null,
+        scope_detected: null,
+        granted_date: null,
+        expiry_date: null,
+        confidence: null,
+        reasoning: 'LLM-Antwort war kein gültiges JSON-Objekt.',
+        raw: typeof content === 'string' ? content : null,
+        error: 'Antwort des LLM konnte nicht als JSON-Objekt geparst werden.',
+      };
+    }
+
     return {
       status: classifyStatus(parsed),
       is_certificate: typeof parsed.is_certificate === 'boolean' ? parsed.is_certificate : null,
       scope_match: typeof parsed.scope_match === 'boolean' ? parsed.scope_match : null,
-      scope_detected: parsed.scope_detected ? String(parsed.scope_detected).slice(0, 250) : null,
+      scope_detected: typeof parsed.scope_detected === 'string' ? parsed.scope_detected.slice(0, 250) : null,
       granted_date: normalizeDate(parsed.granted_date),
       expiry_date: normalizeDate(parsed.expiry_date),
       confidence: typeof parsed.confidence === 'number' ? Math.max(0, Math.min(1, parsed.confidence)) : null,
-      reasoning: parsed.reasoning ? String(parsed.reasoning).slice(0, 1500) : null,
+      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning.slice(0, 1500) : null,
       raw: null,
       error: null,
     };
   } catch (err) {
-    const errMsg = err.name === 'AbortError'
+    const errMsg = err instanceof Error && err.name === 'AbortError'
       ? `LLM-Anfrage Timeout nach ${REQUEST_TIMEOUT_MS / 1000}s`
-      : (err.message || 'Unbekannter Fehler beim LLM-Aufruf');
+      : (err instanceof Error ? err.message : 'Unbekannter Fehler beim LLM-Aufruf');
     console.error('[certificateAnalyzer] Aufruf fehlgeschlagen', {
       durationMs: Date.now() - startedAt,
-      name: err.name,
-      message: err.message,
-      cause: err.cause?.message || err.cause?.code,
+      name: err instanceof Error ? err.name : undefined,
+      message: err instanceof Error ? err.message : String(err),
+      cause: err instanceof Error && err.cause instanceof Error ? err.cause.message : undefined,
     });
     return {
       status: 'error',

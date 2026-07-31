@@ -13,6 +13,8 @@
  */
 
 import express from 'express';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import type { Request, Response, NextFunction } from 'express';
 import {
   getConnectionStatus,
   testConnection,
@@ -27,6 +29,15 @@ import { authMiddleware } from './auth.js';
 import { requirePermission } from '../utils/permissions.js';
 import { checkPhpAvailable } from '../utils/tisowarePhpProxy.js';
 
+interface CuraRequest extends Request {
+  user?: {
+    sub?: string;
+    email?: string;
+    role?: string;
+    [key: string]: unknown;
+  };
+}
+
 const router = express.Router();
 
 // All tisoware routes require master-level auth
@@ -37,23 +48,23 @@ router.use(requirePermission('can_manage_system'));
  * GET /api/master/tisoware/php-check
  * Prüft ob PHP + ODBC im Container verfügbar sind.
  */
-router.get('/php-check', async (req, res, next) => {
+router.get('/php-check', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await checkPhpAvailable();
-    return res.json(result);
+    res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
 // ─── Error analysis helper ────────────────────────────────────────────────────
 
-function analyzeTisowareError(err) {
-  const code = err?.code || '';
-  const message = err?.message || '';
-  const number = err?.number; // SQL Server native error number
-  const odbcState = err?.odbcState;
-  const odbcNativeCode = err?.odbcNativeCode;
+function analyzeTisowareError(err: Record<string, unknown> | null | undefined) {
+  const code = (err?.code as string) || '';
+  const message = (err?.message as string) || '';
+  const number = err?.number as number | undefined; // SQL Server native error number
+  const odbcState = err?.odbcState as string | undefined;
+  const odbcNativeCode = err?.odbcNativeCode as string | number | undefined;
 
   // ODBC SQLSTATE: 28000 → Login failed
   if (code === '28000' || odbcState === '28000' || message.includes('Login failed') || message.includes('login failed')) {
@@ -73,7 +84,7 @@ function analyzeTisowareError(err) {
     return {
       diagnosis: 'Server nicht erreichbar',
       detail: `Der Tisoware SQL-Server antwortet nicht (${code || odbcState}).`,
-      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) SQL Browser (UDP 1434) ist erreichbar für Named Instances',
+      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu (4) SQL Browser (UDP 1434) ist erreichbar für Named Instances',
       code: 'ECONNREFUSED',
       odbcState,
       odbcNativeCode,
@@ -99,7 +110,7 @@ function analyzeTisowareError(err) {
     return {
       diagnosis: 'Server antwortet nicht',
       detail: `Der Tisoware SQL-Server antwortet nicht (${code}).`,
-      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu',
+      hint: 'Prüfe: (1) TISO_SERVER ist korrekt (Host\\Instance oder Host,Port) (2) Der SQL Server läuft (3) Die Firewall lässt Verbindungen zu',
       code,
       odbcState,
       odbcNativeCode,
@@ -148,7 +159,7 @@ function analyzeTisowareError(err) {
 
   // Generic ODBC/SQL error
   if (code || odbcState || message.includes('odbc') || message.includes('SQL')) {
-    const detailText = err?.detail || message || '';
+    const detailText = (err?.detail as string) || message || '';
     return {
       diagnosis: 'SQL/ODBC-Fehler',
       detail: `${(odbcState ? `[${odbcState}] ` : '')}${detailText.substring(0, 300)}`,
@@ -176,21 +187,21 @@ function analyzeTisowareError(err) {
 // Catches ALL errors from Tisoware endpoints and returns detailed diagnostics.
 // Does NOT delegate to the global Express error handler.
 
-function tisowareErrorHandler(err, req, res, next) {
+function tisowareErrorHandler(err: unknown, req: Request, res: Response, next: NextFunction) {
   // If already handled, skip
   if (res.headersSent) return next(err);
 
-  const analysis = analyzeTisowareError(err);
+  const analysis = analyzeTisowareError(err as Record<string, unknown> | null | undefined);
 
   console.error('[TISOWARE]', analysis.diagnosis, {
     code: analysis.code,
-    message: err?.message?.substring(0, 200),
-    detail: err?.detail?.substring(0, 400),
-    stack: err?.stack?.substring(0, 400),
+    message: (err as Record<string, unknown> | null)?.message ? String((err as Record<string, unknown>).message).substring(0, 200) : undefined,
+    detail: (err as Record<string, unknown> | null)?.detail ? String((err as Record<string, unknown>).detail).substring(0, 400) : undefined,
+    stack: (err as Record<string, unknown> | null)?.stack ? String((err as Record<string, unknown>).stack).substring(0, 400) : undefined,
     path: req.originalUrl,
   });
 
-  const statusCode = err?.status || (analysis.code === 'ETIMEOUT' || analysis.code === 'ECONNREFUSED' ? 502 : 500);
+  const statusCode = ((err as Record<string, unknown> | null)?.status as number) || (analysis.code === 'ETIMEOUT' || analysis.code === 'ECONNREFUSED' ? 502 : 500);
 
   res.status(statusCode).json({
     error: `Tisoware: ${analysis.diagnosis}`,
@@ -211,12 +222,12 @@ function tisowareErrorHandler(err, req, res, next) {
  * GET /api/master/tisoware/status
  * Verbindungsstatus — immer erfolgreich (zeigt an ob verbunden oder warum nicht).
  */
-router.get('/status', async (req, res, next) => {
+router.get('/status', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const status = await getConnectionStatus();
-    return res.json(status);
+    res.json(status);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -224,12 +235,12 @@ router.get('/status', async (req, res, next) => {
  * GET /api/master/tisoware/test
  * Aktiver Verbindungstest — kann fehlschlagen.
  */
-router.get('/test', async (req, res, next) => {
+router.get('/test', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const result = await testConnection();
-    return res.json(result);
+    res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -237,11 +248,11 @@ router.get('/test', async (req, res, next) => {
  * GET /api/master/tisoware/mock
  * Gibt zurück, ob der Mock-Modus aktiv ist.
  */
-router.get('/mock', async (req, res, next) => {
+router.get('/mock', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    return res.json({ mock: isMockMode() });
+    res.json({ mock: isMockMode() });
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -251,12 +262,12 @@ router.get('/mock', async (req, res, next) => {
  * GET /api/master/tisoware/tables
  * Alle Benutzertabellen in der Tisoware-Datenbank listen.
  */
-router.get('/tables', async (req, res, next) => {
+router.get('/tables', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const tables = await listTables();
-    return res.json({ tables });
+    res.json({ tables });
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -264,13 +275,13 @@ router.get('/tables', async (req, res, next) => {
  * GET /api/master/tisoware/tables/:schema/:table/columns
  * Spalten einer Tabelle.
  */
-router.get('/tables/:schema/:table/columns', async (req, res, next) => {
+router.get('/tables/:schema/:table/columns', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { schema, table } = req.params;
+    const { schema, table } = req.params as Record<string, string>;
     const columns = await listColumns(schema, table);
-    return res.json({ columns });
+    res.json({ columns });
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -278,15 +289,15 @@ router.get('/tables/:schema/:table/columns', async (req, res, next) => {
  * GET /api/master/tisoware/tables/:schema/:table/sample
  * Paginierte Datenvorschau. Query-Parameter: offset (Default 0), limit (Default 50).
  */
-router.get('/tables/:schema/:table/sample', async (req, res, next) => {
+router.get('/tables/:schema/:table/sample', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { schema, table } = req.params;
-    const offset = parseInt(req.query.offset, 10) || 0;
-    const limit = parseInt(req.query.limit, 10) || 50;
+    const { schema, table } = req.params as Record<string, string>;
+    const offset = parseInt(req.query.offset as string, 10) || 0;
+    const limit = parseInt(req.query.limit as string, 10) || 50;
     const result = await sampleTable(schema, table, offset, Math.min(limit, 500));
-    return res.json(result);
+    res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -297,34 +308,37 @@ router.get('/tables/:schema/:table/sample', async (req, res, next) => {
  * Eigene SELECT / WITH Abfrage (read-only).
  * Body: { query: string }
  */
-router.post('/query', async (req, res, next) => {
+router.post('/query', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { query } = req.body;
 
     if (!query || typeof query !== 'string' || query.trim().length === 0) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Query darf nicht leer sein',
         tisoware: true,
       });
+      return;
     }
 
     if (query.trim().length > 10000) {
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Query zu lang (max. 10.000 Zeichen)',
         tisoware: true,
       });
+      return;
     }
 
     const result = await runQuery(query.trim());
-    return res.json(result);
+    res.json(result);
   } catch (err) {
-    if (err.status === 400) {
-      return res.status(400).json({
-        error: err.message,
+    if ((err as Record<string, unknown> | null)?.status === 400) {
+      res.status(400).json({
+        error: (err as Record<string, unknown>).message,
         tisoware: true,
       });
+      return;
     }
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -335,7 +349,7 @@ router.post('/query', async (req, res, next) => {
  * Erzeugt einen SQL-Dump aller nicht-leeren Tabellen mit bis zu 300
  * repräsentativen Zeilen aus der Tabellenmitte und lädt ihn als .sql-Datei herunter.
  */
-router.get('/dump', async (req, res, next) => {
+router.get('/dump', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
     const sql = await generateDumpWrapper();
 
@@ -346,7 +360,7 @@ router.get('/dump', async (req, res, next) => {
     res.setHeader('Content-Length', Buffer.byteLength(sql, 'utf-8'));
     res.send(sql);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -368,9 +382,12 @@ import { db } from '../index.js';
  * Body: { q?: string, kstnr?: string }
  * Returns PERSTAMM rows with CuraFlow match status.
  */
-router.post('/import/employee-search', async (req, res, next) => {
+router.post('/import/employee-search', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    let { q, kstnr, allActive } = req.body || {};
+    const body = req.body as Record<string, unknown> || {};
+    let q = body.q as string | undefined;
+    const kstnr = body.kstnr as string | undefined;
+    const allActive = body.allActive;
 
     // If q looks like a CuraFlow employee UUID, resolve it to payroll_id first
     const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -380,17 +397,18 @@ router.post('/import/employee-search', async (req, res, next) => {
         const [employees] = await db.execute(
           'SELECT id, payroll_id, last_name, first_name FROM Employee WHERE id = ?',
           [trimmedUuid]
-        );
+        ) as [RowDataPacket[], unknown];
         if (employees.length > 0 && employees[0].payroll_id) {
           const emp = employees[0];
           console.log(`[Tisoware employee-search] UUID ${trimmedUuid} → payroll_id=${emp.payroll_id} (${emp.last_name}, ${emp.first_name})`);
-          q = emp.payroll_id;
+          q = emp.payroll_id as string;
         } else {
           // UUID not found or has no payroll_id
-          return res.json({ employees: [], stats: { total: 0, matched: 0, unmatched: 0, no_pspersnr: 0 } });
+          res.json({ employees: [], stats: { total: 0, matched: 0, unmatched: 0, no_pspersnr: 0 } });
+          return;
         }
       } catch (lookupErr) {
-        console.warn('[Tisoware employee-search] UUID lookup failed:', lookupErr.message);
+        console.warn('[Tisoware employee-search] UUID lookup failed:', (lookupErr as Error).message);
         // Fall through to normal search with original q
       }
     }
@@ -400,12 +418,12 @@ router.post('/import/employee-search', async (req, res, next) => {
     if (allActive && !q && !kstnr) {
       const [activeEmployees] = await db.execute(
         `SELECT payroll_id FROM Employee WHERE is_active = 1 AND payroll_id IS NOT NULL AND payroll_id != ''`
-      );
-      const allPayrollIds = [...new Set(activeEmployees.map(e => String(e.payroll_id).trim()).filter(Boolean))];
+      ) as [RowDataPacket[], unknown];
+      const allPayrollIds = [...new Set(activeEmployees.map((e: RowDataPacket) => String(e.payroll_id).trim()).filter(Boolean))];
       console.log(`[Tisoware employee-search] allActive: found ${allPayrollIds.length} active employees in MasterDB with payroll_id`);
 
       const BATCH_SIZE = 100;
-      let allTisowareRows = [];
+      let allTisowareRows: Record<string, unknown>[] = [];
       for (let i = 0; i < allPayrollIds.length; i += BATCH_SIZE) {
         const batch = allPayrollIds.slice(i, i + BATCH_SIZE);
         const batchRows = await searchTisowareByPsPersNr(batch);
@@ -414,8 +432,8 @@ router.post('/import/employee-search', async (req, res, next) => {
       }
 
       // Deduplicate by PSNR (integer primary key).
-      const seen = new Set();
-      const tisowareRows = allTisowareRows.filter(r => {
+      const seen = new Set<string>();
+      const tisowareRows = allTisowareRows.filter((r: Record<string, unknown>) => {
         const key = String(r.PSNR || '');
         if (!key || seen.has(key)) return false;
         seen.add(key);
@@ -425,11 +443,12 @@ router.post('/import/employee-search', async (req, res, next) => {
       const matched = await matchTisowareEmployees(db, tisowareRows);
       const stats = {
         total: matched.length,
-        matched: matched.filter(e => e.match_status === 'matched').length,
-        unmatched: matched.filter(e => e.match_status === 'unmatched').length,
-        no_pspersnr: matched.filter(e => e.match_status === 'no_pspersnr').length,
+        matched: matched.filter((e: Record<string, unknown>) => e.match_status === 'matched').length,
+        unmatched: matched.filter((e: Record<string, unknown>) => e.match_status === 'unmatched').length,
+        no_pspersnr: matched.filter((e: Record<string, unknown>) => e.match_status === 'no_pspersnr').length,
       };
-      return res.json({ employees: matched, stats });
+      res.json({ employees: matched, stats });
+      return;
     }
 
     const limit = (allActive && !q && !kstnr) ? 0 : 200;
@@ -438,14 +457,14 @@ router.post('/import/employee-search', async (req, res, next) => {
 
     const stats = {
       total: matched.length,
-      matched: matched.filter(e => e.match_status === 'matched').length,
-      unmatched: matched.filter(e => e.match_status === 'unmatched').length,
-      no_pspersnr: matched.filter(e => e.match_status === 'no_pspersnr').length,
+      matched: matched.filter((e: Record<string, unknown>) => e.match_status === 'matched').length,
+      unmatched: matched.filter((e: Record<string, unknown>) => e.match_status === 'unmatched').length,
+      no_pspersnr: matched.filter((e: Record<string, unknown>) => e.match_status === 'no_pspersnr').length,
     };
 
     res.json({ employees: matched, stats });
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -455,23 +474,27 @@ router.post('/import/employee-search', async (req, res, next) => {
  * Body: { psPersNr?: string[] | null, dateFrom?: string, dateTo?: string, resolveConflicts?: boolean }
  * If psPersNr is empty/null, fetches ALL employees from Tisoware (up to 500).
  */
-router.post('/import/preview', async (req, res, next) => {
+router.post('/import/preview', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { psPersNr = null, dateFrom, dateTo, resolveConflicts = false } = req.body || {};
+    const body = req.body as Record<string, unknown> || {};
+    const psPersNr = body.psPersNr === null ? null : body.psPersNr;
+    const dateFrom = body.dateFrom as string | undefined;
+    const dateTo = body.dateTo as string | undefined;
+    const resolveConflicts = body.resolveConflicts === true;
 
-    const psPersNrList = Array.isArray(psPersNr) && psPersNr.length > 0
-      ? psPersNr.map(p => String(p).trim()).filter(Boolean)
+    const psPersNrList: string[] = Array.isArray(psPersNr) && psPersNr.length > 0
+      ? (psPersNr as unknown[]).map((p: unknown) => String(p).trim()).filter(Boolean)
       : [];
 
     const result = await previewTisowareImport(db, psPersNrList, {
       dateFrom,
       dateTo,
-      resolveConflicts: Boolean(resolveConflicts),
+      resolveConflicts,
     });
 
     res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -480,17 +503,23 @@ router.post('/import/preview', async (req, res, next) => {
  * Execute the Tisoware absence import.
  * Body: { psPersNr: string[], dateFrom?: string, dateTo?: string, resolveConflicts?: boolean }
  */
-router.post('/import/run', async (req, res, next) => {
+router.post('/import/run', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { psPersNr, dateFrom, dateTo, resolveConflicts = false } = req.body || {};
+    const body = req.body as Record<string, unknown> || {};
+    const psPersNr = body.psPersNr;
+    const dateFrom = body.dateFrom as string | undefined;
+    const dateTo = body.dateTo as string | undefined;
+    const resolveConflicts = body.resolveConflicts === true;
 
     if (!Array.isArray(psPersNr) || psPersNr.length === 0) {
-      return res.status(400).json({ error: 'psPersNr muss ein nicht-leeres Array sein' });
+      res.status(400).json({ error: 'psPersNr muss ein nicht-leeres Array sein' });
+      return;
     }
 
-    const psPersNrList = psPersNr.map(p => String(p).trim()).filter(Boolean);
+    const psPersNrList: string[] = (psPersNr as unknown[]).map((p: unknown) => String(p).trim()).filter(Boolean);
     if (psPersNrList.length === 0) {
-      return res.status(400).json({ error: 'Keine gültigen PSPERSNR Werte' });
+      res.status(400).json({ error: 'Keine gültigen PSPERSNR Werte' });
+      return;
     }
 
     const masterDb = db;
@@ -499,19 +528,19 @@ router.post('/import/run', async (req, res, next) => {
     const result = await executeTisowareImport(masterDb, psPersNrList, {
       dateFrom,
       dateTo,
-      resolveConflicts: Boolean(resolveConflicts),
-      createdBy,
+      resolveConflicts,
+      createdBy: createdBy as string,
     });
 
     console.log(
       `[Tisoware import] Imported ${result.imported} absence(s) for ${psPersNrList.length} employee(s) by ${createdBy || 'unknown'}` +
-      (result.resolved_conflicts > 0 ? ` (resolved ${result.resolved_conflicts} conflicts)` : '') +
-      (result.unresolved_conflicts > 0 ? ` (${result.unresolved_conflicts} unresolved conflicts)` : '')
+      ((result as Record<string, unknown>).resolved_conflicts as number > 0 ? ` (resolved ${(result as Record<string, unknown>).resolved_conflicts} conflicts)` : '') +
+      ((result as Record<string, unknown>).unresolved_conflicts as number > 0 ? ` (${(result as Record<string, unknown>).unresolved_conflicts} unresolved conflicts)` : '')
     );
 
     res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
@@ -526,9 +555,10 @@ router.post('/import/run', async (req, res, next) => {
  *
  * Body: { dryRun?: boolean }
  */
-router.post('/import/repair-status-mappings', async (req, res, next) => {
+router.post('/import/repair-status-mappings', async (req: CuraRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const dryRun = req.body?.dryRun === true;
+    const body = req.body as Record<string, unknown> || {};
+    const dryRun = body.dryRun === true;
     const result = await repairTisowareStatusMappings(db, { dryRun });
     console.log(
       `[Tisoware import] repair-status-mappings (dryRun=${dryRun}) by ${req.user?.email || req.user?.sub || 'unknown'}: ` +
@@ -536,13 +566,13 @@ router.post('/import/repair-status-mappings', async (req, res, next) => {
     );
     res.json(result);
   } catch (err) {
-    return tisowareErrorHandler(err, req, res, next);
+    tisowareErrorHandler(err, req, res, next);
   }
 });
 
 // ─── Fallback for unknown routes ──────────────────────────────────────────────
 
-router.use('*', (req, res) => {
+router.use('*', (req: Request, res: Response) => {
   res.status(404).json({
     error: 'Unbekannter Tisoware-Endpoint',
     tisoware: true,

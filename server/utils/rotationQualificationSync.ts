@@ -18,6 +18,7 @@
 
 import crypto from 'crypto';
 import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { parseDbToken } from './crypto.js';
 import { resolvePoolTenantId } from './rotationGroups.js';
 
@@ -25,8 +26,11 @@ import { resolvePoolTenantId } from './rotationGroups.js';
  * Open a short-lived pool for a tenant token row and run callback.
  * Mirrors the helper used in groups.js / master.js.
  */
-export async function withTenantDb(token, callback) {
-  let pool = null;
+export async function withTenantDb(
+  token: { token: string; name?: string; id?: unknown },
+  callback: (pool: Pool, token: unknown) => Promise<unknown>
+): Promise<unknown> {
+  let pool: Pool | null = null;
   try {
     const config = parseDbToken(token.token);
     if (!config || !config.host || !config.database) {
@@ -34,7 +38,7 @@ export async function withTenantDb(token, callback) {
     }
     pool = createPool({
       host: config.host,
-      port: parseInt(config.port || '3306', 10),
+      port: parseInt(String(config.port || '3306'), 10),
       user: config.user,
       password: config.password,
       database: config.database,
@@ -54,12 +58,15 @@ export async function withTenantDb(token, callback) {
   }
 }
 
-export async function loadTenantTokenById(masterDb, tenantId) {
+export async function loadTenantTokenById(
+  masterDb: Pool,
+  tenantId: string | null
+): Promise<RowDataPacket | null> {
   if (!tenantId) return null;
   const [rows] = await masterDb.execute(
     'SELECT * FROM db_tokens WHERE id = ? LIMIT 1',
     [String(tenantId)]
-  );
+  ) as [RowDataPacket[], unknown];
   return rows[0] || null;
 }
 
@@ -67,14 +74,17 @@ export async function loadTenantTokenById(masterDb, tenantId) {
  * Resolve central Employee id for a rotation assignment employee_id value.
  * @returns {Promise<string|null>}
  */
-export async function resolveCentralEmployeeId(masterDb, employeeId) {
+export async function resolveCentralEmployeeId(
+  masterDb: Pool,
+  employeeId: string | null
+): Promise<string | null> {
   if (!employeeId) return null;
   const id = String(employeeId);
 
   const [direct] = await masterDb.execute(
     'SELECT id FROM Employee WHERE id = ? LIMIT 1',
     [id]
-  );
+  ) as [RowDataPacket[], unknown];
   if (direct.length > 0) return String(direct[0].id);
 
   const [etaRows] = await masterDb.execute(
@@ -82,7 +92,7 @@ export async function resolveCentralEmployeeId(masterDb, employeeId) {
       WHERE tenant_doctor_id = ?
       LIMIT 1`,
     [id]
-  );
+  ) as [RowDataPacket[], unknown];
   if (etaRows.length > 0 && etaRows[0].employee_id) {
     return String(etaRows[0].employee_id);
   }
@@ -92,20 +102,28 @@ export async function resolveCentralEmployeeId(masterDb, employeeId) {
 /**
  * Load distinct qualification names held by the springer in the pool tenant.
  */
-export async function loadPoolQualificationNames(pool, {
-  employeeId,
-  centralEmployeeId = null,
-  poolTenantId = null,
-  doctorToEmployee = null,
-}) {
-  const names = new Set();
-  const doctorIds = new Set();
+export async function loadPoolQualificationNames(
+  pool: Pool,
+  {
+    employeeId,
+    centralEmployeeId = null,
+    poolTenantId = null,
+    doctorToEmployee = null,
+  }: {
+    employeeId: string;
+    centralEmployeeId?: string | null;
+    poolTenantId?: string | null;
+    doctorToEmployee?: Map<string, string> | null;
+  }
+): Promise<string[]> {
+  const names = new Set<string>();
+  const doctorIds = new Set<string>();
 
   // Direct id match (assignment stores pool Doctor.id)
   const [byId] = await pool.execute(
     'SELECT id FROM Doctor WHERE id = ? LIMIT 1',
     [String(employeeId)]
-  );
+  ) as [RowDataPacket[], unknown];
   if (byId.length > 0) doctorIds.add(String(byId[0].id));
 
   if (centralEmployeeId) {
@@ -114,7 +132,7 @@ export async function loadPoolQualificationNames(pool, {
         WHERE central_employee_id = ?
         LIMIT 5`,
       [String(centralEmployeeId)]
-    );
+    ) as [RowDataPacket[], unknown];
     for (const row of byCentral) doctorIds.add(String(row.id));
   }
 
@@ -138,7 +156,7 @@ export async function loadPoolQualificationNames(pool, {
         AND q.name IS NOT NULL
         AND (q.is_active IS NULL OR q.is_active = 1)`,
     [...doctorIds]
-  );
+  ) as [RowDataPacket[], unknown];
 
   for (const row of rows) {
     const name = String(row.qname || '').trim();
@@ -150,20 +168,28 @@ export async function loadPoolQualificationNames(pool, {
 /**
  * Resolve ward-local doctor ids that should receive inherited qualifications.
  */
-export async function resolveWardDoctorIds(pool, {
-  employeeId,
-  centralEmployeeId = null,
-  wardTenantId = null,
-  masterDb = null,
-}) {
-  const ids = new Set([String(employeeId)]);
+export async function resolveWardDoctorIds(
+  pool: Pool,
+  {
+    employeeId,
+    centralEmployeeId = null,
+    wardTenantId = null,
+    masterDb = null,
+  }: {
+    employeeId: string;
+    centralEmployeeId?: string | null;
+    wardTenantId?: string | null;
+    masterDb?: Pool | null;
+  }
+): Promise<string[]> {
+  const ids = new Set<string>([String(employeeId)]);
 
   if (centralEmployeeId) {
     const [byCentral] = await pool.execute(
       `SELECT id FROM Doctor
         WHERE central_employee_id = ?`,
       [String(centralEmployeeId)]
-    );
+    ) as [RowDataPacket[], unknown];
     for (const row of byCentral) ids.add(String(row.id));
   }
 
@@ -173,7 +199,7 @@ export async function resolveWardDoctorIds(pool, {
         WHERE employee_id = ? AND tenant_id = ?
           AND tenant_doctor_id IS NOT NULL AND tenant_doctor_id != ''`,
       [String(centralEmployeeId), String(wardTenantId)]
-    );
+    ) as [RowDataPacket[], unknown];
     for (const row of etaRows) {
       if (row.tenant_doctor_id) ids.add(String(row.tenant_doctor_id));
     }
@@ -185,13 +211,15 @@ export async function resolveWardDoctorIds(pool, {
 /**
  * Case-insensitive name → qualification id map for a tenant.
  */
-export async function loadWardQualificationsByName(pool) {
+export async function loadWardQualificationsByName(
+  pool: Pool
+): Promise<Map<string, { id: string; name: string }>> {
   const [rows] = await pool.execute(
     `SELECT id, name FROM Qualification
       WHERE name IS NOT NULL
         AND (is_active IS NULL OR is_active = 1)`
-  );
-  const byLower = new Map();
+  ) as [RowDataPacket[], unknown];
+  const byLower = new Map<string, { id: string; name: string }>();
   for (const row of rows) {
     const name = String(row.name || '').trim();
     if (!name) continue;
@@ -207,13 +235,21 @@ export async function loadWardQualificationsByName(pool) {
 /**
  * Insert missing DoctorQualification rows. Returns created ids.
  */
-export async function ensureDoctorQualifications(pool, {
-  doctorIds,
-  qualificationIds,
-  createdBy = 'system',
-  notes = 'Inherited from pool rotation',
-}) {
-  const created = [];
+export async function ensureDoctorQualifications(
+  pool: Pool,
+  {
+    doctorIds,
+    qualificationIds,
+    createdBy = 'system',
+    notes = 'Inherited from pool rotation',
+  }: {
+    doctorIds: string[];
+    qualificationIds: string[];
+    createdBy?: string;
+    notes?: string;
+  }
+): Promise<Array<{ id: string; doctor_id: string; qualification_id: string }>> {
+  const created: Array<{ id: string; doctor_id: string; qualification_id: string }> = [];
   if (!doctorIds?.length || !qualificationIds?.length) return created;
 
   for (const doctorId of doctorIds) {
@@ -223,7 +259,7 @@ export async function ensureDoctorQualifications(pool, {
           WHERE doctor_id = ? AND qualification_id = ?
           LIMIT 1`,
         [String(doctorId), String(qualificationId)]
-      );
+      ) as [RowDataPacket[], unknown];
       if (existing.length > 0) continue;
 
       const id = crypto.randomUUID();
@@ -264,7 +300,32 @@ export async function syncRotationAssignmentQualifications({
   actor = null,
   buildRealtimeScope = null,
   broadcastPlanUpdate = null,
-}) {
+}: {
+  masterDb: Pool;
+  groupId: string | number;
+  rotationWorkplaceId: string;
+  employeeId: string;
+  withTenantDb?: typeof withTenantDb;
+  actor?: { email?: string; sub?: string } | null;
+  buildRealtimeScope?: ((token: string) => unknown) | null;
+  broadcastPlanUpdate?: ((opts: {
+    scope: unknown;
+    entity: string;
+    action: string;
+    recordId: string;
+    actor: unknown;
+  }) => void) | null;
+}): Promise<{
+  skipped?: string;
+  poolQualificationNames?: string[];
+  matchedQualificationIds?: string[];
+  created?: Array<{ id: string; doctor_id: string; qualification_id: string }>;
+  wardTenantId?: string;
+  poolTenantId?: string;
+  centralEmployeeId?: string | null;
+  wardDoctorIds?: string[];
+  error?: string;
+}> {
   if (!masterDb || !groupId || !rotationWorkplaceId || !employeeId) {
     return { skipped: 'missing_params' };
   }
@@ -275,7 +336,7 @@ export async function syncRotationAssignmentQualifications({
       WHERE id = ? AND group_id = ?
       LIMIT 1`,
     [String(rotationWorkplaceId), String(groupId)]
-  );
+  ) as [RowDataPacket[], unknown];
   if (wpRows.length === 0) return { skipped: 'workplace_not_found' };
 
   const wardTenantId = wpRows[0].ward_tenant_id ? String(wpRows[0].ward_tenant_id) : null;
@@ -294,16 +355,16 @@ export async function syncRotationAssignmentQualifications({
   const centralEmployeeId = await resolveCentralEmployeeId(masterDb, employeeId);
 
   // Optional ETA fallback map for pool doctors without central_employee_id
-  let doctorToEmployee = null;
+  let doctorToEmployee: Map<string, string> | null = null;
   if (centralEmployeeId) {
-    doctorToEmployee = new Map();
+    doctorToEmployee = new Map<string, string>();
     const [etaRows] = await masterDb.execute(
       `SELECT tenant_id, tenant_doctor_id, employee_id
          FROM EmployeeTenantAssignment
         WHERE tenant_id = ?
           AND tenant_doctor_id IS NOT NULL`,
       [String(poolTenantId)]
-    );
+    ) as [RowDataPacket[], unknown];
     for (const eta of etaRows) {
       doctorToEmployee.set(
         `${eta.tenant_id}:${eta.tenant_doctor_id}`,
@@ -312,19 +373,19 @@ export async function syncRotationAssignmentQualifications({
     }
   }
 
-  let poolQualificationNames = [];
+  let poolQualificationNames: string[] = [];
   try {
-    poolQualificationNames = await withTenantDbFn(poolToken, async (pool) =>
+    poolQualificationNames = await withTenantDbFn(poolToken as unknown as { token: string; name?: string; id?: unknown }, async (pool: Pool) =>
       loadPoolQualificationNames(pool, {
         employeeId,
         centralEmployeeId,
         poolTenantId,
         doctorToEmployee,
       })
-    );
+    ) as string[] || [];
   } catch (err) {
-    console.warn('[rotationQualificationSync] pool scan failed:', err.message);
-    return { skipped: 'pool_scan_failed', error: err.message };
+    console.warn('[rotationQualificationSync] pool scan failed:', (err as Error).message);
+    return { skipped: 'pool_scan_failed', error: (err as Error).message };
   }
 
   if (poolQualificationNames.length === 0) {
@@ -336,20 +397,20 @@ export async function syncRotationAssignmentQualifications({
     };
   }
 
-  let created = [];
-  let matchedQualificationIds = [];
-  let wardDoctorIds = [];
+  let created: Array<{ id: string; doctor_id: string; qualification_id: string }> = [];
+  let matchedQualificationIds: string[] = [];
+  let wardDoctorIds: string[] = [];
 
   try {
-    const result = await withTenantDbFn(wardToken, async (pool) => {
+    const result = await withTenantDbFn(wardToken as unknown as { token: string; name?: string; id?: unknown }, async (pool: Pool) => {
       const qualsByName = await loadWardQualificationsByName(pool);
-      const matchedIds = [];
+      const matchedIds: string[] = [];
       for (const name of poolQualificationNames) {
         const match = qualsByName.get(name.toLowerCase());
         if (match) matchedIds.push(match.id);
       }
       if (matchedIds.length === 0) {
-        return { matchedIds: [], doctorIds: [], createdRows: [] };
+        return { matchedIds: [] as string[], doctorIds: [] as string[], createdRows: [] as Array<{ id: string; doctor_id: string; qualification_id: string }> };
       }
 
       const doctorIds = await resolveWardDoctorIds(pool, {
@@ -366,16 +427,16 @@ export async function syncRotationAssignmentQualifications({
       });
 
       return { matchedIds, doctorIds, createdRows };
-    });
+    }) as { matchedIds: string[]; doctorIds: string[]; createdRows: Array<{ id: string; doctor_id: string; qualification_id: string }> };
 
     matchedQualificationIds = result.matchedIds;
     wardDoctorIds = result.doctorIds;
     created = result.createdRows;
   } catch (err) {
-    console.warn('[rotationQualificationSync] ward sync failed:', err.message);
+    console.warn('[rotationQualificationSync] ward sync failed:', (err as Error).message);
     return {
       skipped: 'ward_sync_failed',
-      error: err.message,
+      error: (err as Error).message,
       poolTenantId,
       wardTenantId,
       poolQualificationNames,
@@ -386,9 +447,9 @@ export async function syncRotationAssignmentQualifications({
     created.length > 0 &&
     buildRealtimeScope &&
     broadcastPlanUpdate &&
-    wardToken.token
+    (wardToken as RowDataPacket & { token?: string }).token
   ) {
-    const scope = buildRealtimeScope(wardToken.token);
+    const scope = buildRealtimeScope((wardToken as RowDataPacket & { token: string }).token);
     const touchedDoctors = new Set(created.map((row) => row.doctor_id));
     for (const doctorId of touchedDoctors) {
       broadcastPlanUpdate({

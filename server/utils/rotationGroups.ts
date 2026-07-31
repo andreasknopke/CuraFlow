@@ -14,12 +14,14 @@
  *   - 'ward'  → a department tenant served by the pool (N per group)
  */
 
-function parseJsonArray(raw) {
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+
+function parseJsonArray(raw: unknown): unknown[] | null {
   if (raw === null || raw === undefined || raw === '') return null;
   if (Array.isArray(raw)) return raw;
   if (typeof raw === 'string') {
     try {
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as unknown;
       return Array.isArray(parsed) ? parsed : null;
     } catch {
       return null;
@@ -30,9 +32,9 @@ function parseJsonArray(raw) {
 
 /**
  * Parse `allowed_rotation_groups` from an app_users row.
- * @returns {number[] | null} list of group ids; null means "no rotation access"
+ * @returns list of group ids; null means "no rotation access"
  */
-export function parseAllowedRotationGroups(raw) {
+export function parseAllowedRotationGroups(raw: unknown): number[] | null {
   const list = parseJsonArray(raw);
   if (!list) return null;
   const ids = list.map((v) => Number(v)).filter((n) => Number.isInteger(n));
@@ -41,18 +43,36 @@ export function parseAllowedRotationGroups(raw) {
 
 /**
  * Parse `rotation_admin_groups` from an app_users row.
- * @returns {number[] | null}
  */
-export function parseRotationAdminGroups(raw) {
+export function parseRotationAdminGroups(raw: unknown): number[] | null {
   return parseAllowedRotationGroups(raw);
+}
+
+interface AppUserRow extends RowDataPacket {
+  id: string;
+  role: string;
+  allowed_rotation_groups: string | unknown[] | null;
+  rotation_admin_groups: string | unknown[] | null;
+}
+
+export interface UserRotationContext {
+  id: string;
+  role: string;
+  isMasterAdmin: boolean;
+  allowedGroups: number[] | null;
+  adminGroups: number[] | null;
 }
 
 /**
  * Load the user record needed for rotation permission checks.
  * Returns null when the user is not found or inactive.
  */
-export async function loadUserRotationContext(masterDb, userId) {
-  const [rows] = await masterDb.execute(
+export async function loadUserRotationContext(
+  masterDb: Pool,
+  userId: string | null | undefined
+): Promise<UserRotationContext | null> {
+  if (!userId) return null;
+  const [rows] = await masterDb.execute<AppUserRow[]>(
     'SELECT id, role, allowed_rotation_groups, rotation_admin_groups FROM app_users WHERE id = ? AND is_active = 1',
     [userId]
   );
@@ -73,7 +93,7 @@ export async function loadUserRotationContext(masterDb, userId) {
  * Users without an explicit allowed_rotation_groups list get membership-based
  * access (same behaviour as canReadRotationGroupForDemand in the routes).
  */
-export function canReadRotationGroup(ctx, groupId) {
+export function canReadRotationGroup(ctx: UserRotationContext | null, groupId: number | string): boolean {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   const list = ctx.allowedGroups;
@@ -85,31 +105,50 @@ export function canReadRotationGroup(ctx, groupId) {
  * Check whether the user may modify rotation data for a group
  * (assign springers, manage workplaces, fulfil/reject demands).
  */
-export function canWriteRotationGroup(ctx, groupId) {
+export function canWriteRotationGroup(ctx: UserRotationContext | null, groupId: number | string): boolean {
   if (!ctx) return false;
   if (ctx.isMasterAdmin) return true;
   const list = ctx.adminGroups;
   return Array.isArray(list) && list.includes(Number(groupId));
 }
 
+interface RotationGroupRow extends RowDataPacket {
+  id: number;
+  name: string;
+  description: string | null;
+  is_active: number | boolean;
+}
+
+function forbiddenError(message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = 403;
+  return err;
+}
+
+function notFoundError(message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = 404;
+  return err;
+}
+
 /**
  * Throws an Error with `status` if the rotation group does not exist or
  * the user lacks read permission. Returns the group row on success.
  */
-export async function requireRotationGroupReadAccess(masterDb, ctx, groupId) {
-  const [rows] = await masterDb.execute(
+export async function requireRotationGroupReadAccess(
+  masterDb: Pool,
+  ctx: UserRotationContext | null,
+  groupId: number | string
+): Promise<RotationGroupRow> {
+  const [rows] = await masterDb.execute<RotationGroupRow[]>(
     'SELECT id, name, description, is_active FROM rotation_group WHERE id = ?',
     [groupId]
   );
   if (rows.length === 0) {
-    const err = new Error('Rotationsverbund nicht gefunden');
-    err.status = 404;
-    throw err;
+    throw notFoundError('Rotationsverbund nicht gefunden');
   }
   if (!canReadRotationGroup(ctx, groupId)) {
-    const err = new Error('Kein Zugriff auf diesen Rotationsverbund');
-    err.status = 403;
-    throw err;
+    throw forbiddenError('Kein Zugriff auf diesen Rotationsverbund');
   }
   return rows[0];
 }
@@ -117,20 +156,21 @@ export async function requireRotationGroupReadAccess(masterDb, ctx, groupId) {
 /**
  * Throws if the user lacks write permission for the rotation group.
  */
-export function requireRotationGroupWriteAccess(ctx, groupId) {
+export function requireRotationGroupWriteAccess(ctx: UserRotationContext | null, groupId: number | string): void {
   if (!canWriteRotationGroup(ctx, groupId)) {
-    const err = new Error('Keine Schreibrechte für diesen Rotationsverbund');
-    err.status = 403;
-    throw err;
+    throw forbiddenError('Keine Schreibrechte für diesen Rotationsverbund');
   }
 }
 
 /**
  * Load all rotation groups the user is allowed to see.
  */
-export async function listUserRotationGroups(masterDb, ctx) {
+export async function listUserRotationGroups(
+  masterDb: Pool,
+  ctx: UserRotationContext | null
+): Promise<RotationGroupRow[]> {
   if (!ctx) return [];
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<RotationGroupRow[]>(
     `SELECT id, name, description, is_active
        FROM rotation_group
       WHERE is_active = 1
@@ -142,12 +182,19 @@ export async function listUserRotationGroups(masterDb, ctx) {
   return rows.filter((g) => allowed.includes(Number(g.id)));
 }
 
+interface RotationGroupMemberRow extends RowDataPacket {
+  tenant_id: string;
+  role: string;
+}
+
 /**
  * Load the members of a rotation group with their role (pool/ward).
- * @returns {Promise<Array<{tenant_id: string, role: string}>>}
  */
-export async function loadRotationGroupMembers(masterDb, groupId) {
-  const [rows] = await masterDb.execute(
+export async function loadRotationGroupMembers(
+  masterDb: Pool,
+  groupId: number | string
+): Promise<Array<{ tenant_id: string; role: string }>> {
+  const [rows] = await masterDb.execute<RotationGroupMemberRow[]>(
     'SELECT tenant_id, role FROM rotation_group_member WHERE group_id = ?',
     [groupId]
   );
@@ -158,8 +205,8 @@ export async function loadRotationGroupMembers(masterDb, groupId) {
  * Resolve the pool tenant id for a rotation group (the member with role='pool').
  * Returns null if the group has no pool member.
  */
-export async function resolvePoolTenantId(masterDb, groupId) {
-  const [rows] = await masterDb.execute(
+export async function resolvePoolTenantId(masterDb: Pool, groupId: number | string): Promise<string | null> {
+  const [rows] = await masterDb.execute<RotationGroupMemberRow[]>(
     "SELECT tenant_id FROM rotation_group_member WHERE group_id = ? AND role = 'pool' LIMIT 1",
     [groupId]
   );
@@ -176,9 +223,13 @@ export async function resolvePoolTenantId(masterDb, groupId) {
  * access: they see all groups their tenant participates in (read-only unless
  * they also have rotation_admin_groups set).
  */
-export async function loadVisibleRotationGroupIdsForTenant(masterDb, ctx, tenantId) {
+export async function loadVisibleRotationGroupIdsForTenant(
+  masterDb: Pool,
+  ctx: UserRotationContext | null,
+  tenantId: string | null | undefined
+): Promise<number[]> {
   if (!ctx || !tenantId) return [];
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<RotationGroupMemberRow[]>(
     'SELECT group_id FROM rotation_group_member WHERE tenant_id = ?',
     [tenantId]
   );
@@ -187,20 +238,28 @@ export async function loadVisibleRotationGroupIdsForTenant(masterDb, ctx, tenant
   // No explicit allow list → membership-based access (same as canReadRotationGroupForDemand)
   if (ctx.allowedGroups === null) return groupIds;
   if (!Array.isArray(ctx.allowedGroups)) return [];
-  return groupIds.filter((id) => ctx.allowedGroups.includes(id));
+  return groupIds.filter((id) => ctx.allowedGroups?.includes(id));
+}
+
+interface DbTokenRow extends RowDataPacket {
+  id: string;
 }
 
 /**
  * Resolve the db_tokens.id (VARCHAR(36) UUID) for a given raw token string.
  * Returns null when the token is absent or unknown.
  */
-export async function resolveTenantIdFromToken(masterDb, dbToken) {
+export async function resolveTenantIdFromToken(masterDb: Pool, dbToken: string | null | undefined): Promise<string | null> {
   if (!dbToken) return null;
-  const [rows] = await masterDb.execute(
+  const [rows] = await masterDb.execute<DbTokenRow[]>(
     'SELECT id FROM db_tokens WHERE token = ? LIMIT 1',
     [dbToken]
   );
   return rows.length > 0 ? String(rows[0].id) : null;
+}
+
+interface AdminUserRow extends RowDataPacket {
+  id: string;
 }
 
 /**
@@ -208,8 +267,8 @@ export async function resolveTenantIdFromToken(masterDb, dbToken) {
  * rotation_admin_groups contains groupId OR role='admin'). Used for
  * realtime event targeting via broadcastUserEvent.
  */
-export async function getRotationAdminUserIds(masterDb, groupId) {
-  const [rows] = await masterDb.execute(
+export async function getRotationAdminUserIds(masterDb: Pool, groupId: number | string): Promise<string[]> {
+  const [rows] = await masterDb.execute<AdminUserRow[]>(
     `SELECT id FROM app_users
       WHERE is_active = 1
         AND (role = 'admin'
