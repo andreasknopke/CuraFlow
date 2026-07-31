@@ -1,0 +1,171 @@
+/**
+ * Rotation Demand — Bedarfsanmeldung für Springerpool-Rotationen.
+ *
+ * Ward staff on a department tenant can register demand ("Bedarf") for a
+ * float-pool nurse on a specific date+timeslot. The pool scheduler sees
+ * open demands and fulfils them by assigning a rotation_assignment to that
+ * cell (rotation_workplace_id + date + timeslot_id), which auto-transitions
+ * the demand to "fulfilled".
+ *
+ * This is a SEPARATE system from the cross-tenant Dienste. It operates on
+ * rotation_demand / rotation_assignment tables only — never on
+ * shared_shift_entry or shared_workplace.
+ */
+
+import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+
+/**
+ * Whitelist of columns the API is allowed to write via POST/PATCH.
+ * Never spread req.body directly into SQL — this is the security boundary.
+ */
+export const ROTATION_DEMAND_WRITABLE_COLUMNS = new Set([
+  'rotation_workplace_id',
+  'group_id',
+  'ward_tenant_id',
+  'date',
+  'timeslot_id',
+  'note',
+  'status',
+  'fulfilled_by_assignment_id',
+  'return_requested_assignment_id',
+  'offered_employee_id',
+  'created_by',
+]);
+
+interface DemandIdRow extends RowDataPacket {
+  id: string;
+}
+
+interface CellParams {
+  rotationWorkplaceId: string;
+  date: string;
+  timeslotId: string | null;
+}
+
+function conflictError(message: string, existingId: string): Error & { status: number; existingId: string } {
+  const err = new Error(message) as Error & { status: number; existingId: string };
+  err.status = 409;
+  err.existingId = existingId;
+  return err;
+}
+
+/**
+ * Assert that no open demand exists for the same cell (rotation_workplace_id +
+ * date + timeslot_id). This prevents duplicate open demands via application
+ * logic, allowing status history (the same cell can have → fulfilled → open
+ * again → fulfilled).
+ *
+ * @param masterDb
+ * @param params
+ * @throws Error with status 409 if a matching open demand exists
+ */
+export async function assertNoOpenDemandForCell(masterDb: Pool, { rotationWorkplaceId, date, timeslotId }: CellParams): Promise<void> {
+  const [rows] = await masterDb.execute<DemandIdRow[]>(
+    `SELECT id FROM rotation_demand
+      WHERE rotation_workplace_id = ?
+        AND date = ?
+        AND (timeslot_id = ? OR (timeslot_id IS NULL AND ? IS NULL))
+        AND status = 'open'
+      LIMIT 1`,
+    [rotationWorkplaceId, date, timeslotId || null, timeslotId || null]
+  );
+  if (rows.length > 0) {
+    throw conflictError('Für diese Zelle existiert bereits ein offener Bedarf', rows[0].id);
+  }
+}
+
+/**
+ * Assert that no OPEN return-request exists for a given assignment.
+ * Prevents duplicate "Rückgabe anfordern" requests for the same Springer.
+ *
+ * @param masterDb
+ * @param assignmentId
+ * @throws Error with status 409 if a matching open return-request exists
+ */
+export async function assertNoOpenReturnRequestForAssignment(masterDb: Pool, assignmentId: string): Promise<void> {
+  const [rows] = await masterDb.execute<DemandIdRow[]>(
+    `SELECT id FROM rotation_demand
+      WHERE return_requested_assignment_id = ?
+        AND status = 'open'
+      LIMIT 1`,
+    [assignmentId]
+  );
+  if (rows.length > 0) {
+    throw conflictError('Für diese Zuweisung wurde bereits eine Rückgabe angefordert', rows[0].id);
+  }
+}
+
+/**
+ * Cancel any open return-request demand that targets the given assignment.
+ * Used when the assignment is deleted by the pool — the request is moot.
+ *
+ * @param masterDb
+ * @param assignmentId
+ * @returns number of rows cancelled
+ */
+export async function cancelReturnRequestOnAssignmentDelete(masterDb: Pool, assignmentId: string): Promise<number> {
+  const [result] = await masterDb.execute<ResultSetHeader>(
+    `UPDATE rotation_demand
+        SET status = 'cancelled'
+      WHERE return_requested_assignment_id = ?
+        AND status = 'open'`,
+    [assignmentId]
+  );
+  return result.affectedRows;
+}
+
+/**
+ * Mark any open demand for the given cell as fulfilled, linking it to the
+ * rotation_assignment that fulfilled it.
+ *
+ * @param masterDb
+ * @param params
+ * @returns the demand id that was fulfilled, or null if none
+ */
+export async function markDemandFulfilledForCell(
+  masterDb: Pool,
+  { rotationWorkplaceId, date, timeslotId, assignmentId }: CellParams & { assignmentId: string }
+): Promise<string | null> {
+  const [result] = await masterDb.execute<ResultSetHeader>(
+    `UPDATE rotation_demand
+        SET status = 'fulfilled',
+            fulfilled_by_assignment_id = ?
+      WHERE rotation_workplace_id = ?
+        AND date = ?
+        AND (timeslot_id = ? OR (timeslot_id IS NULL AND ? IS NULL))
+        AND status = 'open'
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [assignmentId, rotationWorkplaceId, date, timeslotId || null, timeslotId || null]
+  );
+  if (result.affectedRows > 0) {
+    const [rows] = await masterDb.execute<DemandIdRow[]>(
+      `SELECT id FROM rotation_demand
+        WHERE fulfilled_by_assignment_id = ? AND status = 'fulfilled'
+        LIMIT 1`,
+      [assignmentId]
+    );
+    return rows.length > 0 ? rows[0].id : null;
+  }
+  return null;
+}
+
+/**
+ * When a rotation_assignment is deleted, reopen any demand that was fulfilled
+ * by it (so the ward knows the slot is vacant again).
+ *
+ * @param masterDb
+ * @param assignmentId — the rotation_assignment.id being deleted
+ * @returns number of demands reopened
+ */
+export async function reopenDemandOnAssignmentDelete(masterDb: Pool, assignmentId: string): Promise<number> {
+  const [result] = await masterDb.execute<ResultSetHeader>(
+    `UPDATE rotation_demand
+        SET status = 'open',
+            fulfilled_by_assignment_id = NULL
+      WHERE fulfilled_by_assignment_id = ?
+        AND status = 'fulfilled'`,
+    [assignmentId]
+  );
+  return result.affectedRows;
+}

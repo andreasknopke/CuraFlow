@@ -1,0 +1,1020 @@
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import jwtLib from 'jsonwebtoken';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import dotenv from 'dotenv';
+import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { createPool } from 'mysql2/promise';
+import type { Pool, RowDataPacket } from 'mysql2/promise';
+import { parseDbToken } from './utils/crypto.js';
+import { runMasterMigrations } from './utils/masterMigrations.js';
+import { ensureColumns } from './utils/schema.js';
+import { resolveMasterDbConfig } from './utils/mysqlConfig.js';
+import { resolveTenantIdFromToken } from './utils/tenantGroups.js';
+
+// Import routes
+import authRouter from './routes/auth.js';
+import dbProxyRouter from './routes/dbProxy.js';
+import scheduleRouter from './routes/schedule.js';
+import holidaysRouter from './routes/holidays.js';
+import staffRouter from './routes/staff.js';
+import calendarRouter from './routes/calendar.js';
+import voiceRouter from './routes/voice.js';
+import adminRouter from './routes/admin.js';
+import atomicRouter from './routes/atomic.js';
+import aiAutofillRouter from './routes/aiAutofill.js';
+import masterRouter from './routes/master.js';
+import certificatesRouter from './routes/certificates.js';
+import groupsRouter from './routes/groups.js';
+import rotationsRouter from './routes/rotations.js';
+import workplaceLinksRouter from './routes/workplaceLinks.js';
+import vacationRouter from './routes/vacation.js';
+import absenceRequestsRouter from './routes/absenceRequests.js';
+import tisowareRouter from './routes/tisoware.js';
+import masterDbDumpRouter from './routes/masterDbDump.js';
+import { checkAndSendWishReminders } from './utils/wishReminder.js';
+import { startTisowareCron } from './utils/tisowareCron.js';
+import { ensureTenantBaseTables } from './scripts/seed-runtime-shared.js';
+import { ensureDefaultWorkplaceTimeslots } from './utils/ensureDefaultWorkplaceTimeslots.js';
+
+// Load environment variables
+dotenv.config();
+
+interface TenantRequest extends Request {
+  db?: Pool;
+  dbToken?: string | null;
+  isCustomDb?: boolean;
+}
+
+interface AppError extends Error {
+  status?: number;
+  retryable?: boolean;
+  poolLabel?: string;
+  code?: string;
+  isDatabaseError?: boolean;
+  sql?: string;
+  sqlMessage?: string;
+  sqlState?: string;
+}
+
+const DB_RETRY_DELAYS_MS = [250, 750];
+const TRANSIENT_DB_ERROR_CODES = new Set([
+  'PROTOCOL_CONNECTION_LOST',
+  'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR',
+  'PROTOCOL_ENQUEUE_AFTER_QUIT',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ER_CON_COUNT_ERROR',
+  'ER_LOCK_DEADLOCK',
+  'ER_LOCK_WAIT_TIMEOUT',
+]);
+const TRANSIENT_DB_ERROR_PATTERNS = [
+  /server has gone away/i,
+  /lost connection/i,
+  /connection.*closed/i,
+  /closed state/i,
+  /read ECONNRESET/i,
+  /connect ETIMEDOUT/i,
+  /can't add new command when connection is in closed state/i,
+  /can't add new command when connection is closed/i,
+  /the client was disconnected by the server/i,
+];
+const DATABASE_ERROR_PATTERNS = [
+  /mysql/i,
+  /sql/i,
+  /database/i,
+  /unknown column/i,
+  /doesn't exist/i,
+  /table .* doesn't exist/i,
+  /ER_[A-Z_]+/i,
+  ...TRANSIENT_DB_ERROR_PATTERNS,
+];
+
+const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isTransientDbError = (error: unknown): boolean => {
+  if (!error) return false;
+
+  const err = error as { code?: string; message?: string; sqlMessage?: string };
+
+  if (err.code && TRANSIENT_DB_ERROR_CODES.has(err.code)) {
+    return true;
+  }
+
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`.trim();
+  return TRANSIENT_DB_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+};
+
+export const isDatabaseError = (error: unknown): boolean => {
+  if (!error) return false;
+  const err = error as { isDatabaseError?: boolean; code?: string; sql?: string; sqlMessage?: string; sqlState?: string; message?: string };
+  if (err.isDatabaseError) return true;
+  if (isTransientDbError(error)) return true;
+  if (typeof err.code === 'string' && err.code.startsWith('ER_')) return true;
+  if (err.sql || err.sqlMessage || err.sqlState) return true;
+
+  const message = `${err.message || ''} ${err.sqlMessage || ''}`.trim();
+  return DATABASE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+};
+
+const annotateDatabaseError = (error: unknown, meta: { poolLabel?: string; retryable?: boolean } = {}): unknown => {
+  if (!error || typeof error !== 'object') return error;
+
+  const err = error as { isDatabaseError?: boolean; poolLabel?: string; retryable?: boolean; [key: string]: unknown };
+  err.isDatabaseError = true;
+  if (meta.poolLabel) {
+    err.poolLabel = meta.poolLabel;
+  }
+  if (meta.retryable !== undefined) {
+    err.retryable = meta.retryable;
+  } else if (err.retryable === undefined) {
+    err.retryable = isTransientDbError(error);
+  }
+
+  return error;
+};
+
+const getSqlPreview = (sql: string): string => {
+  if (typeof sql !== 'string') return 'n/a';
+  return sql.replace(/\s+/g, ' ').trim().slice(0, 180);
+};
+
+const isExpectedSchemaDuplicateError = (error: unknown, sql: string): boolean => {
+  if (!error || typeof sql !== 'string') return false;
+  const err = error as { code?: string };
+  if (!['ER_DUP_FIELDNAME', 'ER_DUP_KEYNAME'].includes(err.code as string)) return false;
+
+  const normalizedSql = sql.replace(/\s+/g, ' ').trim().toUpperCase();
+  return normalizedSql.startsWith('ALTER TABLE') || normalizedSql.startsWith('CREATE INDEX');
+};
+
+const sanitizeRequestPath = (requestPath: string): string => {
+  if (typeof requestPath !== 'string' || requestPath.length === 0) {
+    return 'n/a';
+  }
+
+  return requestPath.split('?')[0];
+};
+
+const isTenantAccessDeniedError = (error: unknown): boolean => {
+  const err = error as { code?: string } | null | undefined;
+  return err?.code === 'ER_ACCESS_DENIED_ERROR'
+    || err?.code === 'ER_DBACCESS_DENIED_ERROR';
+};
+
+const wrapPoolWithRetry = (pool: Pool, { poolLabel, onFinalFailure }: { poolLabel?: string; onFinalFailure?: (error: Error) => Promise<void> } = {}): Pool => {
+  const wrapped = pool as Pool & { __curaflowRetryWrapped?: boolean };
+  if (!pool || wrapped.__curaflowRetryWrapped) {
+    return pool;
+  }
+
+  const wrapMethod = (methodName: 'execute' | 'query'): void => {
+    const original = (pool as unknown as Record<string, (...args: unknown[]) => unknown>)[methodName];
+    if (typeof original !== 'function') {
+      return;
+    }
+
+    const originalMethod = original.bind(pool) as (...args: unknown[]) => unknown;
+    (pool as unknown as Record<string, (...args: unknown[]) => unknown>)[methodName] = async (...args: unknown[]): Promise<unknown> => {
+      let lastError: unknown;
+
+      for (let attempt = 1; attempt <= DB_RETRY_DELAYS_MS.length + 1; attempt += 1) {
+        try {
+          return await originalMethod(...args);
+        } catch (error) {
+          lastError = error;
+          const databaseError = isDatabaseError(error);
+          const transient = isTransientDbError(error);
+          const canRetry = transient && attempt <= DB_RETRY_DELAYS_MS.length;
+
+          if (!databaseError) {
+            throw error;
+          }
+
+          annotateDatabaseError(error, {
+            poolLabel,
+            retryable: canRetry,
+          });
+
+          const logPrefix = canRetry ? '[DB][Retry]' : '[DB][Failure]';
+          if (!isExpectedSchemaDuplicateError(error, args[0] as string)) {
+            const logger = canRetry ? console.warn : console.error;
+            logger(
+              `${logPrefix} ${poolLabel || 'default'} ${methodName} attempt ${attempt}/${DB_RETRY_DELAYS_MS.length + 1} failed`,
+              {
+                code: (error as { code?: string }).code || null,
+                message: (error as { message?: string }).message,
+                sql: getSqlPreview(args[0] as string),
+              }
+            );
+          }
+
+          if (canRetry) {
+            await sleep(DB_RETRY_DELAYS_MS[attempt - 1]);
+            continue;
+          }
+
+          if (typeof onFinalFailure === 'function') {
+            try {
+              await onFinalFailure(error as Error);
+            } catch (cleanupError) {
+              console.error('[DB][Cleanup] Failed to cleanup pool after error:', (cleanupError as Error).message);
+            }
+          }
+
+          throw error;
+        }
+      }
+
+      throw lastError;
+    };
+  };
+
+  wrapMethod('execute');
+  wrapMethod('query');
+  Object.defineProperty(pool, '__curaflowRetryWrapped', {
+    value: true,
+    configurable: false,
+    enumerable: false,
+  });
+  return pool;
+};
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+interface MasterDbConfig {
+  host: string;
+  port: number;
+  user: string;
+  password: string;
+  database: string;
+}
+
+const masterDbConfig = resolveMasterDbConfig() as MasterDbConfig;
+
+// ===== Static frontend serving (Coolify / single-container deployment) =====
+// Must be BEFORE helmet/CORS/auth middleware so static files are served fast and clean.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.resolve(__dirname, '..', '..', 'dist');
+if (fs.existsSync(distPath)) {
+  console.log(`📁 Serving static frontend from ${distPath}`);
+  console.log(`📁 dist contents:`, fs.readdirSync(distPath));
+  app.use((req: Request, res: Response, next: NextFunction): void => {
+    // Debug: log non-API requests hitting static middleware
+    if (!req.path.startsWith('/api/') && !req.path.startsWith('/health')) {
+      console.debug(`[Static] Checking path="${req.path}" originalUrl="${req.originalUrl}"`);
+    }
+    next();
+  });
+  app.use(express.static(distPath, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    }
+  }));
+}
+
+// Trust proxy - Railway runs behind a reverse proxy
+app.set('trust proxy', 1);
+
+// Default MySQL Connection Pool
+export const db = wrapPoolWithRetry(createPool({
+  host: masterDbConfig.host,
+  port: masterDbConfig.port,
+  user: masterDbConfig.user,
+  password: masterDbConfig.password,
+  database: masterDbConfig.database,
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  dateStrings: true, // Important for DATE/DATETIME consistency
+  timezone: '+00:00'
+}), { poolLabel: 'default' });
+
+// Cache for tenant database pools (Multi-Tenant Support)
+const tenantPools = new Map<string, Pool>();
+
+// Track which tenants have been auto-migrated (resets on server restart)
+const migratedTenants = new Set<string>();
+// Track in-flight migration promises to avoid duplicate runs
+const migrationInFlight = new Map<string, Promise<void>>();
+
+// Remove a tenant pool from cache (e.g., on connection error)
+export const removeTenantPool = (dbToken: string): void => {
+  if (tenantPools.has(dbToken)) {
+    const pool = tenantPools.get(dbToken)!;
+    try {
+      pool.end(); // Close connections
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    tenantPools.delete(dbToken);
+    migratedTenants.delete(dbToken);
+    migrationInFlight.delete(dbToken);
+    console.log(`Removed tenant pool from cache`);
+  }
+};
+
+// Get or create a connection pool for a tenant
+export const getTenantDb = (dbToken: string | null): Pool => {
+  if (!dbToken) return db; // Return default pool if no token
+  
+  // Check cache first
+  if (tenantPools.has(dbToken)) {
+    return tenantPools.get(dbToken)!;
+  }
+  
+  try {
+    // Decrypt and parse token (supports both legacy base64 and encrypted formats)
+    const config = parseDbToken(dbToken) as {
+      host: string;
+      port?: string;
+      user: string;
+      password: string;
+      database: string;
+      ssl?: unknown;
+    };
+    
+    // Validate required fields
+    if (!config || !config.host || !config.user || !config.database) {
+      console.error('Invalid DB token: missing required fields');
+      return db;
+    }
+    
+    // Create new pool for this tenant
+    const tenantPool = wrapPoolWithRetry(createPool({
+      host: config.host,
+      port: parseInt(config.port || '3306'),
+      user: config.user,
+      password: config.password,
+      database: config.database,
+      ssl: (config.ssl as Record<string, unknown>) || undefined,
+      waitForConnections: true,
+      connectionLimit: 5, // Smaller limit for tenant pools
+      queueLimit: 0,
+      dateStrings: true,
+      timezone: '+00:00'
+    }), {
+      poolLabel: `tenant:${config.host}/${config.database}`,
+      onFinalFailure: async (error: Error): Promise<void> => {
+        if (dbToken && (isTransientDbError(error) || isTenantAccessDeniedError(error))) {
+          removeTenantPool(dbToken);
+        }
+      }
+    });
+    
+    // Cache it
+    tenantPools.set(dbToken, tenantPool);
+    console.log(`Created new tenant pool for: ${config.host}/${config.database}`);
+    
+    return tenantPool;
+  } catch (error) {
+    console.error('Failed to parse DB token:', (error as Error).message);
+    return db; // Fall back to default
+  }
+};
+
+// Middleware to attach tenant DB to request + auto-run migrations
+export const tenantDbMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const r = req as TenantRequest;
+  const dbToken = r.headers['x-db-token'] as string | undefined;
+  r.db = getTenantDb(dbToken ?? null);
+  r.dbToken = dbToken; // Store for error handling
+  r.isCustomDb = !!dbToken && r.db !== db;
+
+  // Auto-run tenant migrations on first access per tenant (per server lifetime)
+  if (r.isCustomDb && dbToken && !migratedTenants.has(dbToken)) {
+    try {
+      // Deduplicate: if another request already triggered migration, wait for the same promise
+      if (!migrationInFlight.has(dbToken)) {
+        const { runTenantMigrations } = await import('./utils/tenantMigrations.js');
+        const promise = runTenantMigrations(r.db, dbToken)
+          .then((results: { status: string }[]) => {
+            const errors = results.filter(r => r.status === 'error');
+            if (errors.length > 0) {
+              console.warn(`[Auto-Migration] Tenant migration completed with ${errors.length} errors:`, errors);
+            } else {
+              console.log(`[Auto-Migration] Tenant migrations OK (${results.length} checked)`);
+            }
+            migratedTenants.add(dbToken);
+          })
+          .catch((err: Error) => {
+            console.error('[Auto-Migration] Failed:', err.message);
+            throw err;
+          })
+          .finally(() => {
+            migrationInFlight.delete(dbToken!);
+          });
+        migrationInFlight.set(dbToken, promise);
+      }
+      await migrationInFlight.get(dbToken);
+      r.db = getTenantDb(dbToken);
+      r.isCustomDb = !!dbToken && r.db !== db;
+    } catch (err) {
+      console.error('[Auto-Migration] Unexpected error:', (err as Error).message);
+      if (dbToken) {
+        removeTenantPool(dbToken);
+      }
+      return next(err);
+    }
+  }
+
+  // Ensure all base tables exist and have all required columns.
+  // Ist idempotent und sicher – CREATE TABLE IF NOT EXISTS und ensureColumns/addColumnIfMissing
+  // sind No-Ops wenn Tabellen/Spalten bereits existieren.
+  // Läuft bei jedem Request, damit Tenants aus allen Versionen automatisch aktuelle Schemas erhalten.
+  if (r.isCustomDb) {
+    try {
+      await ensureTenantBaseTables(r.db!);
+    } catch (e) {
+      console.warn('[Auto-Migration] ensureTenantBaseTables warning:', (e as Error).message);
+    }
+
+    // Idempotenter Backfill: Default-Timeslots fuer Rotation/Custom-Arbeitsplaetze.
+    // Der Helfer prueft selbst, ob bereits Timeslots existieren (skip) und laesst
+    // Dienste/Demos unveraendert.
+    try {
+      const stats = await ensureDefaultWorkplaceTimeslots(r.db!) as { created: number; enabledFlagSet: number; skipped: number };
+      if (stats.created > 0 || stats.enabledFlagSet > 0) {
+        console.log(`[Default-Timeslot] ${stats.created} angelegt, ${stats.enabledFlagSet} aktiviert (${stats.skipped} skipped)`);
+      }
+    } catch (e) {
+      console.warn('[Default-Timeslot] Backfill warning:', (e as Error).message);
+    }
+  }
+
+  // Per-user tenant authorization (S2): for a custom (per-tenant) pool, verify
+  // the resolved token's tenant id is in the authenticated user's
+  // allowed_tenants. Mirrors the filtering /my-tenants already does client-side.
+  // - Master pool (no token) is bypassed (matches /my-tenants: empty/null
+  //   allowed_tenants ⇒ full access, and the default pool needs no gating).
+  // - Fail-open on lookup error: this runs on every tenant request, so a
+  //   transient master-DB error must not lock out all tenant traffic.
+  //
+  // NOTE on timing: this is a global middleware that runs BEFORE the route
+  // handlers apply authMiddleware, so req.user is NOT populated here yet. We
+  // therefore decode the Bearer JWT directly (read-only) to obtain the user id.
+  // The route handler still does its own authoritative verification afterward.
+  if (r.isCustomDb) {
+    try {
+      const authHeader = r.headers.authorization;
+      const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      // query-string ?access_token= fallback (SSE-style), same as resolveAuthPayload.
+      const queryToken = !bearer && typeof r.query?.access_token === 'string'
+        ? r.query.access_token : null;
+      const token = bearer || queryToken;
+      const decoded = token
+        ? jwtLib.verify(token, process.env.JWT_SECRET as string) as { sub?: string } & Record<string, unknown>
+        : null;
+      const userId = decoded?.sub;
+      if (userId) {
+        const tenantId = await resolveTenantIdFromToken(db, dbToken!);
+        if (tenantId) {
+          const [u] = await db.execute(
+            'SELECT allowed_tenants FROM app_users WHERE id = ? AND is_active = 1',
+            [userId],
+          ) as [RowDataPacket[], unknown];
+          const row = u[0] as { allowed_tenants?: unknown } | undefined;
+          const allowedRaw = row?.allowed_tenants;
+          const allowedList: unknown[] | null = allowedRaw
+            ? (typeof allowedRaw === 'string' ? JSON.parse(allowedRaw) : allowedRaw) as unknown[]
+            : null;
+          const allowedTenantIds = Array.isArray(allowedList)
+            ? allowedList.map(String)
+            : null;
+          const hasFullAccess = !Array.isArray(allowedList) || allowedList.length === 0;
+          if (!hasFullAccess && allowedTenantIds && !allowedTenantIds.includes(tenantId)) {
+            res.status(403).json({ error: 'Kein Zugriff auf diesen Mandanten' });
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      // Invalid/expired token here is fine — the route handler's authMiddleware
+      // will reject it with 401. Only log unexpected (non-JWT) errors.
+      const jwtErr = err as { name?: string; message?: string };
+      if (jwtErr.name !== 'JsonWebTokenError' && jwtErr.name !== 'TokenExpiredError') {
+        console.error('[tenantDbMiddleware] tenant authz check skipped:', jwtErr.message);
+      }
+    }
+  }
+
+  next();
+};
+
+// CORS Configuration - MUST be before other middleware!
+const configuredAllowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = Array.from(new Set([
+  'https://curaflow-production.up.railway.app',
+  'https://curaflow-frontend-production.up.railway.app',
+  'https://curaflow.abigailrook.de',
+  process.env.FRONTEND_URL,
+  ...configuredAllowedOrigins,
+  'http://localhost:5173',
+  'http://localhost:3000'
+].filter(Boolean)));
+
+console.log('CORS allowed origins:', allowedOrigins);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+
+// Handle preflight requests explicitly
+app.options('*', cors({
+  origin: true, // Allow all origins for preflight
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-DB-Token']
+}));
+
+app.use(cors({
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void): void => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Allow all railway.app subdomains
+    if (origin.endsWith('.railway.app')) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn('CORS blocked origin:', origin);
+      callback(null, false); // Reject unknown origins - production policy (S5)
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-DB-Token']
+}));
+
+// Multi-Tenant DB Middleware - attach tenant DB to each request
+app.use(tenantDbMiddleware);// Security & Compression - AFTER CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "unsafe-none" },
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: false, // CSP handled by Coolify/Traefik reverse proxy
+}));
+app.use(compression({
+  filter: (req: Request, res: Response): boolean => {
+    if (req.path === '/api/auth/events/stream') {
+      return false;
+    }
+
+    return compression.filter(req, res);
+  },
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting - General API
+const generalLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 800, // limit each IP to 800 requests per minute
+  message: { error: 'Too many requests from this IP, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req: Request) => {
+    const requestPath = req.originalUrl?.split('?')[0] || `${req.baseUrl || ''}${req.path || ''}`;
+    return requestPath === '/api/auth/me'
+      || requestPath === '/api/auth/presence'
+      || requestPath === '/api/auth/jitsi-token'
+      || requestPath.startsWith('/api/auth/cowork');
+  },
+});
+
+const internalAuthLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 1200,
+  message: { error: 'Too many internal auth or CoWork requests from this IP, please try again shortly.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Stricter rate limiting for auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // limit each IP to 30 login attempts per windowMs
+  message: { error: 'Too many login attempts from this IP, please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Don't count successful requests
+});
+
+app.use('/api/', generalLimiter);
+app.use('/api/auth/me', internalAuthLimiter);
+app.use('/api/auth/presence', internalAuthLimiter);
+app.use('/api/auth/jitsi-token', internalAuthLimiter);
+app.use('/api/auth/cowork', internalAuthLimiter);
+
+// Health check endpoint
+app.get('/health', (_req: Request, res: Response): void => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
+    version: '1.0.4' // Better error logging
+  });
+});
+
+// ===== PUBLIC (no-auth) endpoint: Wish reminder acknowledgment =====
+app.get('/api/wish-ack', async (req: Request, res: Response): Promise<void> => {
+  const { token } = req.query;
+  if (!token || typeof token !== 'string' || token.length > 100) {
+    res.status(400).send(wishAckHtml('Ungültiger Link', 'Der Link ist ungültig oder abgelaufen.', false));
+    return;
+  }
+  try {
+    const [rows] = await db.execute(
+      'SELECT id, doctor_id, target_month, status FROM WishReminderAck WHERE token = ?',
+      [token]
+    ) as [RowDataPacket[], unknown];
+    if (rows.length === 0) {
+      res.status(404).send(wishAckHtml('Link nicht gefunden', 'Dieser Bestätigungslink ist ungültig oder wurde bereits verwendet.', false));
+      return;
+    }
+    const ack = rows[0] as { id: string; doctor_id: string; target_month: string; status: string };
+    if (ack.status === 'acknowledged') {
+      res.send(wishAckHtml('Bereits bestätigt', 'Sie haben bereits bestätigt, dass Sie keine Dienstwünsche haben. Vielen Dank!', true));
+      return;
+    }
+    await db.execute(
+      "UPDATE WishReminderAck SET status = 'acknowledged', acknowledged_date = NOW() WHERE id = ?",
+      [ack.id]
+    );
+    res.send(wishAckHtml('Vielen Dank!', 'Ihre Bestätigung wurde gespeichert. Sie haben angegeben, dass Sie keine Dienstwünsche für diesen Zeitraum haben.', true));
+    return;
+  } catch (err) {
+    console.error('[wish-ack] Error:', (err as Error).message);
+    res.status(500).send(wishAckHtml('Fehler', 'Es ist ein technischer Fehler aufgetreten. Bitte versuchen Sie es später erneut.', false));
+    return;
+  }
+});
+
+function wishAckHtml(title: string, message: string, success: boolean): string {
+  const color = success ? '#16a34a' : '#dc2626';
+  const icon = success ? '✅' : '❌';
+  return `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CuraFlow – ${title}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f8fafc;padding:20px}
+.card{background:#fff;border-radius:16px;padding:48px;max-width:480px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.08);border-top:4px solid ${color}}
+.icon{font-size:48px;margin-bottom:16px}.title{font-size:24px;font-weight:700;color:#1e293b;margin-bottom:12px}
+.msg{font-size:16px;color:#64748b;line-height:1.6}.footer{margin-top:24px;font-size:13px;color:#94a3b8}</style></head>
+<body><div class="card"><div class="icon">${icon}</div><h1 class="title">${title}</h1><p class="msg">${message}</p><p class="footer">CuraFlow Dienstplanverwaltung</p></div></body></html>`;
+}
+
+// API Routes
+app.use('/api/auth/login', authLimiter); // Apply stricter limit to login
+app.use('/api/auth', authRouter);
+app.use('/api/db', dbProxyRouter);
+app.use('/api/schedule', scheduleRouter);
+app.use('/api/holidays', holidaysRouter);
+app.use('/api/staff', staffRouter);
+app.use('/api/vacation', vacationRouter);
+app.use('/api/absence-requests', absenceRequestsRouter);
+app.use('/api/calendar', calendarRouter);
+app.use('/api/voice', voiceRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/atomic', atomicRouter);
+app.use('/api/schedule', aiAutofillRouter);
+app.use('/api/master', masterRouter);
+app.use('/api/certificates', certificatesRouter);
+app.use('/api/groups', groupsRouter);
+app.use('/api/master/tisoware', tisowareRouter);
+app.use('/api/master/database', masterDbDumpRouter);
+app.use('/api/rotations', rotationsRouter);
+app.use('/api/workplace-links', workplaceLinksRouter);
+
+// ===== SPA fallback (Coolify / single-container deployment) =====
+if (fs.existsSync(distPath)) {
+  app.get(/^(?!\/api\/).*/, (req: Request, res: Response): void => {
+    const htmlFile = req.path === '/master' || req.path.startsWith('/master/')
+      ? 'master.html'
+      : 'index.html';
+    console.log(`[SPA] Serving ${htmlFile} for path="${req.path}" originalUrl="${req.originalUrl}"`);
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(distPath, htmlFile));
+  });
+}
+
+// Error handling middleware
+app.use((err: AppError, req: Request, res: Response, _next: NextFunction): void => {
+  const databaseError = isDatabaseError(err);
+  const retryable = databaseError && (err.retryable ?? isTransientDbError(err));
+
+  if (databaseError) {
+    console.error('[DB][HTTP] Request failed', {
+      method: req.method,
+      path: sanitizeRequestPath(req.originalUrl),
+      code: err.code || null,
+      retryable,
+      pool: err.poolLabel || 'unknown',
+      message: err.message,
+    });
+  } else {
+    console.error('Error:', err);
+  }
+
+  const status = err.status || (databaseError && retryable ? 503 : 500);
+  const message = databaseError
+    ? 'Datenbankproblem auf dem Server. Bitte versuchen Sie es erneut.'
+    : (process.env.NODE_ENV === 'production' && status === 500
+        ? 'Internal server error'
+        : err.message);
+
+  res.status(status).json({ 
+    error: message,
+    ...(databaseError && {
+      databaseError: true,
+      retryable,
+      code: err.code || null,
+    }),
+    ...(databaseError && process.env.NODE_ENV !== 'production' && {
+      details: err.message,
+      pool: err.poolLabel || 'unknown',
+    }),
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+});
+
+// 404 handler
+app.use((req: Request, res: Response): void => {
+  const safePath = sanitizeRequestPath(req.url);
+  console.warn('404 Not Found:', req.method, safePath, 'Body:', JSON.stringify((req as Request & { body?: unknown }).body || {}).substring(0, 200));
+  res.status(404).json({ error: 'Route not found', path: safePath, method: req.method });
+});
+
+// Start server
+app.listen(PORT, async () => {
+  console.log(`🚀 CuraFlow Railway Server running on port ${PORT}`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🗄️  Database: ${masterDbConfig.host}/${masterDbConfig.database}`);
+
+  try {
+    const migrationResults = await runMasterMigrations(db);
+    const failedMigrations = migrationResults.filter(result => result.status === 'error');
+    console.log('🔧 Master migrations on startup:', migrationResults);
+    if (failedMigrations.length > 0) {
+      console.error('⚠️  Some startup migrations failed:', failedMigrations);
+    }
+  } catch (err) {
+    console.error('⚠️  Startup migration error:', (err as Error).message);
+  }
+  
+  // Auto-create missing tables on startup
+  try {
+    await ensureTablesExist();
+  } catch (err) {
+    console.error('⚠️  Table initialization error:', (err as Error).message);
+  }
+
+  // Daily wish reminder check (runs every hour, checks internally if today is reminder day)
+  const WISH_REMINDER_INTERVAL = 60 * 60 * 1000; // 1 hour
+  setInterval(async () => {
+    try {
+      // Only trigger between 7:00 and 8:59 UTC to avoid duplicate sends
+      const hour = new Date().getUTCHours();
+      if (hour < 7 || hour > 8) return;
+
+      const result = await checkAndSendWishReminders(db, 'cron-default');
+      if ('sent' in result) {
+        console.log(`📧 [Cron] Wish reminders sent for ${result.targetMonth}: ${result.sentCount} emails`);
+      }
+    } catch (err) {
+      console.error('❌ [Cron] Wish reminder check failed:', (err as Error).message);
+    }
+  }, WISH_REMINDER_INTERVAL);
+  console.log('⏰ Wish reminder cron enabled (hourly check, sends between 7-9 UTC)');
+
+  // Nightly Tisoware import cron (01:30 local time, all active employees, auto-resolve conflicts)
+  startTisowareCron(db);
+  console.log('⏰ Tisoware nightly import cron enabled (01:30 daily, resolveConflicts=true)');
+});
+
+// Auto-create essential tables if missing
+async function ensureTablesExist(): Promise<void> {
+  const tables = [
+    {
+      name: 'TeamRole',
+      sql: `CREATE TABLE IF NOT EXISTS TeamRole (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL UNIQUE,
+        priority INT NOT NULL DEFAULT 99,
+        is_specialist BOOLEAN NOT NULL DEFAULT FALSE,
+        can_do_foreground_duty BOOLEAN NOT NULL DEFAULT TRUE,
+        can_do_background_duty BOOLEAN NOT NULL DEFAULT FALSE,
+        excluded_from_statistics BOOLEAN NOT NULL DEFAULT FALSE,
+        description VARCHAR(255) DEFAULT NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`
+    },
+    {
+      name: 'WishReminderAck',
+      sql: `CREATE TABLE IF NOT EXISTS WishReminderAck (
+        id VARCHAR(36) PRIMARY KEY,
+        doctor_id VARCHAR(36) NOT NULL,
+        target_month VARCHAR(7) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        status ENUM('sent', 'acknowledged') NOT NULL DEFAULT 'sent',
+        acknowledged_date TIMESTAMP NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_target_month (target_month),
+        INDEX idx_doctor_month (doctor_id, target_month),
+        INDEX idx_token (token)
+      )`
+    },
+    {
+      name: 'EmailVerification',
+      sql: `CREATE TABLE IF NOT EXISTS EmailVerification (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
+        status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        INDEX idx_token (token),
+        INDEX idx_user_id (user_id)
+      )`
+    },
+    {
+      name: 'CoWorkInvite',
+      sql: `CREATE TABLE IF NOT EXISTS CoWorkInvite (
+        id VARCHAR(36) PRIMARY KEY,
+        room_name VARCHAR(128) NOT NULL,
+        tenant_slug VARCHAR(64) NOT NULL,
+        inviter_user_id VARCHAR(36) NOT NULL,
+        invitee_user_id VARCHAR(36) NOT NULL,
+        status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+        responded_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_invitee_status (invitee_user_id, status),
+        INDEX idx_inviter_status (inviter_user_id, status),
+        INDEX idx_room_name (room_name),
+        INDEX idx_expires_date (expires_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    },
+    {
+      name: 'ScheduleBlock',
+      sql: `CREATE TABLE IF NOT EXISTS ScheduleBlock (
+        id VARCHAR(36) PRIMARY KEY,
+        date DATE NOT NULL,
+        position VARCHAR(255) NOT NULL,
+        timeslot_id VARCHAR(36) DEFAULT NULL,
+        reason VARCHAR(500) DEFAULT NULL,
+        created_by VARCHAR(255) DEFAULT NULL,
+        created_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_date DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_block (date, position, timeslot_id)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
+    }
+  ];
+
+  for (const table of tables) {
+    try {
+      await db.execute(table.sql);
+      
+      // Add new columns if they don't exist (migration for existing DBs)
+      if (table.name === 'TeamRole') {
+        try {
+          await ensureColumns(db, 'TeamRole', [
+            ['can_do_foreground_duty', 'BOOLEAN NOT NULL DEFAULT TRUE'],
+            ['can_do_background_duty', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+            ['excluded_from_statistics', 'BOOLEAN NOT NULL DEFAULT FALSE'],
+            ['description', 'VARCHAR(255) DEFAULT NULL'],
+          ]);
+        } catch (alterErr) {
+          // Columns might already exist or syntax not supported
+        }
+      }
+      
+      // Seed default data for TeamRole — ergänzt fehlende Rollen, löscht keine bestehenden
+      if (table.name === 'TeamRole') {
+        const [existing] = await db.execute('SELECT name FROM TeamRole') as [RowDataPacket[], unknown];
+        const existingNames = new Set((existing as { name: string }[]).map(r => r.name));
+        const defaultRoles = [
+          { id: crypto.randomUUID(), name: 'Chefarzt', priority: 0, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Oberste Führungsebene' },
+          { id: crypto.randomUUID(), name: 'Oberarzt', priority: 1, is_specialist: true, can_do_foreground_duty: false, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann Hintergrunddienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Facharzt', priority: 2, is_specialist: true, can_do_foreground_duty: true, can_do_background_duty: true, excluded_from_statistics: false, description: 'Kann alle Dienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Assistenzarzt', priority: 3, is_specialist: false, can_do_foreground_duty: true, can_do_background_duty: false, excluded_from_statistics: false, description: 'Kann Vordergrunddienste übernehmen' },
+          { id: crypto.randomUUID(), name: 'Nicht-Radiologe', priority: 4, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: true, description: 'Wird in Statistiken nicht gezählt' },
+          { id: crypto.randomUUID(), name: 'Pflegekraft', priority: 5, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Pflegerische Betreuung der Patienten' },
+          { id: crypto.randomUUID(), name: 'MTR', priority: 6, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Medizinischer Technologe für Radiologie' },
+          { id: crypto.randomUUID(), name: 'MTL', priority: 7, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Medizinischer Technologe für Laboratoriumsanalytik' },
+          { id: crypto.randomUUID(), name: 'MTA', priority: 8, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Medizinisch-technische Assistenz' },
+          { id: crypto.randomUUID(), name: 'Physician Assistant', priority: 9, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Unterstützung der ärztlichen Tätigkeit' },
+          { id: crypto.randomUUID(), name: 'Hilfskraft', priority: 10, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Unterstützung im Praxisalltag' },
+          { id: crypto.randomUUID(), name: 'Student', priority: 11, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Student in der Ausbildung' },
+          { id: crypto.randomUUID(), name: 'Hospitant', priority: 12, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Hospitant zur Orientierung' },
+          { id: crypto.randomUUID(), name: 'MFA', priority: 13, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Medizinische Fachangestellte' },
+          { id: crypto.randomUUID(), name: 'Pflegefachkraft', priority: 14, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Pflegerische Betreuung der Patienten' },
+          { id: crypto.randomUUID(), name: 'KAPH', priority: 15, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Krankenpflegehilfe' },
+          // "Azubi …" roles intentionally NOT seeded as defaults. Their names
+          // clash with trainee positions imported from the central employee
+          // management (seed "Azubi MTR" vs. imported "MTR-Azubi"), which made
+          // them undeletable duplicates. Tenants create trainees on demand.
+          { id: crypto.randomUUID(), name: 'Studentische Hilfskraft', priority: 25, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Studentische Unterstützung im Praxisalltag' },
+          { id: crypto.randomUUID(), name: 'Pflegerische Hilfskraft', priority: 26, is_specialist: false, can_do_foreground_duty: false, can_do_background_duty: false, excluded_from_statistics: false, description: 'Unterstützung in der Pflege' },
+        ];
+        const missingRoles = defaultRoles.filter(r => !existingNames.has(r.name));
+        if (missingRoles.length > 0) {
+          for (const role of missingRoles) {
+            await db.execute(
+              'INSERT IGNORE INTO TeamRole (id, name, priority, is_specialist, can_do_foreground_duty, can_do_background_duty, excluded_from_statistics, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+              [role.id, role.name, role.priority, role.is_specialist, role.can_do_foreground_duty, role.can_do_background_duty, role.excluded_from_statistics, role.description]
+            );
+          }
+          console.log(`✅ TeamRole seeded ${missingRoles.length} missing default roles`);
+        }
+      }
+      console.log(`✅ Table ${table.name} ready`);
+    } catch (err) {
+      console.error(`❌ Failed to ensure ${table.name}:`, (err as Error).message);
+    }
+  }
+
+  // Add email_verified columns to app_users if they don't exist
+  // Note: This can also be triggered manually via Admin Panel > Migrationen
+  try {
+    await ensureColumns(db, 'app_users', [
+      ['email_verified', 'TINYINT(1) DEFAULT 0'],
+      ['email_verified_date', 'DATETIME DEFAULT NULL'],
+      ['last_seen_at', 'DATETIME DEFAULT NULL'],
+    ]);
+  } catch (err) {
+    // Columns may already exist - that's fine, migration is also available in Admin Panel
+  }
+
+  // Ensure EmailVerification table exists
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS EmailVerification (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token VARCHAR(64) NOT NULL UNIQUE,
+        type ENUM('email_verify', 'password_sent') NOT NULL DEFAULT 'email_verify',
+        status ENUM('pending', 'verified', 'expired') NOT NULL DEFAULT 'pending',
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        verified_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        INDEX idx_token (token),
+        INDEX idx_user_id (user_id)
+      )
+    `);
+  } catch (err) {
+    // Table may already exist
+  }
+
+  // Ensure CoWorkInvite table exists
+  try {
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS CoWorkInvite (
+        id VARCHAR(36) PRIMARY KEY,
+        room_name VARCHAR(128) NOT NULL,
+        tenant_slug VARCHAR(64) NOT NULL,
+        inviter_user_id VARCHAR(36) NOT NULL,
+        invitee_user_id VARCHAR(36) NOT NULL,
+        status ENUM('pending', 'accepted', 'declined', 'cancelled', 'expired') NOT NULL DEFAULT 'pending',
+        responded_date TIMESTAMP NULL,
+        expires_date TIMESTAMP NULL,
+        created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_invitee_status (invitee_user_id, status),
+        INDEX idx_inviter_status (inviter_user_id, status),
+        INDEX idx_room_name (room_name),
+        INDEX idx_expires_date (expires_date)
+      ) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+    `);
+    await db.execute(`ALTER TABLE CoWorkInvite CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
+  } catch (err) {
+    // Table may already exist
+  }
+}
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing server gracefully...');
+  await db.end();
+  process.exit(0);
+});
