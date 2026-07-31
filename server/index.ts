@@ -265,7 +265,7 @@ const masterDbConfig = resolveMasterDbConfig() as MasterDbConfig;
 // Must be BEFORE helmet/CORS/auth middleware so static files are served fast and clean.
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const distPath = path.resolve(__dirname, '..', 'dist');
+const distPath = path.resolve(__dirname, '..', '..', 'dist');
 if (fs.existsSync(distPath)) {
   console.log(`📁 Serving static frontend from ${distPath}`);
   console.log(`📁 dist contents:`, fs.readdirSync(distPath));
