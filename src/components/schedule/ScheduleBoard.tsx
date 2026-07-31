@@ -80,6 +80,7 @@ import {
   getDoctorShortLabel,
   normalizeChipSource,
   formatChipLabel,
+  formatEmployeeChipLabel,
   buildDoctorChipLabelMap,
   formatTimeslotTimeRange,
   formatMinutesAsTime,
@@ -2356,7 +2357,7 @@ export default function ScheduleBoard() {
                 .filter((assignment: any) => !openReturnRequestAssignmentIds.has(String(assignment.id)))
                 .map((assignment: any) => {
                     const empName = assignment.employee_name || `#${assignment.employee_id}`;
-                    const autoLabel = formatChipLabel(empName);
+                    const autoLabel = formatEmployeeChipLabel(empName);
                     return {
                         id: assignment.employee_id,
                         name: empName,
@@ -2417,7 +2418,7 @@ export default function ScheduleBoard() {
                 || doc?.name
                 || (centralEmp ? `${centralEmp.first_name || ''} ${centralEmp.last_name || ''}`.trim() : '')
                 || `#${demand.offered_employee_id}`;
-            const initials = doc?.initials || formatChipLabel(name);
+            const initials = doc?.initials || formatEmployeeChipLabel(name);
             const chips = map.get(dateStr) || [];
             chips.push({
                 id: String(demand.offered_employee_id),
@@ -2470,7 +2471,7 @@ export default function ScheduleBoard() {
                     id: empId,
                     name: assignment.employee_name,
                     role: 'Arzt',
-                    initials: formatChipLabel(assignment.employee_name),
+                    initials: formatEmployeeChipLabel(assignment.employee_name),
                     _isJoker: true,
                 });
             }

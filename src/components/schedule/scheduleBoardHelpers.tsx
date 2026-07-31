@@ -137,6 +137,33 @@ export const formatChipLabel = (value: string = ''): string => {
     return normalized.padEnd(3, normalized[normalized.length - 1] || 'X');
 };
 
+/**
+ * Build a chip label for an employee with the naming convention
+ * "Vorname Nachname" (first name, last name).
+ *
+ * Produces up to 4 characters: last name (up to 4 chars, capitalized)
+ * + first letter of the first name (uppercase).
+ * Example: "Sandra Müller" → "MüllS".
+ *
+ * Falls back to formatChipLabel behaviour for single-word names or
+ * when the first-name initial would be non-alphabetic.
+ */
+export const formatEmployeeChipLabel = (value: string = ''): string => {
+    const parts = String(value).trim().split(/\s+/).filter(Boolean);
+
+    if (parts.length >= 2) {
+        const firstNameInitial = parts[0].charAt(0).toUpperCase();
+        const lastName = parts[parts.length - 1];
+        const lastNameCapitalized = lastName.charAt(0).toUpperCase() + lastName.slice(1, 4);
+
+        if (lastNameCapitalized && /^[A-ZÄÖÜ]$/.test(firstNameInitial)) {
+            return `${lastNameCapitalized}${firstNameInitial}`;
+        }
+    }
+
+    return formatChipLabel(value);
+};
+
 const getUniqueChipCandidates = (doctor: Doctor): string[] => {
     const source = normalizeChipSource(doctor);
     const candidates: string[] = [];
