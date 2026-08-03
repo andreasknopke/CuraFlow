@@ -6,7 +6,7 @@
 **Method:** Source review of the affected files; manual trace of data flow from request to SQL / FS / subprocess / network. No dynamic exploitation performed.
 **Overall:** The high-risk mechanisms are sound in shape (parameterized values, MIME allowlists, subprocess-via-stdin with no shell, static-file safety). The systemic weaknesses are **trust boundaries**: the server trusts client-supplied identifiers, client-supplied tenant tokens, and the JWT's `role` field in places where authoritative DB state should be consulted. Several of these chain with the permission-model findings into end-to-end exploit paths.
 
-> **Status (updated 2026-07-29):** Items marked ✅ Fixed below have been remediated in code. Items still listed without ✅ remain open as of this date. See "Status legend" at the end of this document.
+> **Status (updated 2026-08-03):** Items marked ✅ Fixed below have been remediated in code. Items still listed without ✅ remain open as of this date. See "Status legend" at the end of this document.
 
 > **Credential logging (not a numbered finding):** ✅ Fixed — server code no longer prints secrets to stdout/logs:
 > - `server/utils/crypto.js` no longer logs the `JWT_SECRET` SHA-256 hash prefix (`getEncryptionKey()`/`encryptToken()`), and no longer logs the **full raw `db_token`** on parse failure (`parseDbToken()` — a `db_token` decrypts to DB connection credentials, so `console.error('Token was (full):', token)` was a full-credential leak). Safe diagnostics (the error `.message` and the legacy-token warning) are retained.
@@ -107,32 +107,35 @@ if (req.isCustomDb && req.user) {
 
 ## Finding S3 — Tenant `db_token` embedded in email reminder links (URL-based credential leak)
 
-**Severity:** MEDIUM
-**Location:** `server/routes/certificates.js` `buildCertificateReminderLink` (lines 272–281).
+**Severity:** MEDIUM — ✅ **Fixed (2026-08-03)**
+**Location:** `server/routes/certificates.ts` `buildCertificateReminderLink` and `POST /api/certificates/reminders/resolve`; `src/pages/CertificateUpload.tsx`; `src/api/client.ts`.
 
-### Root cause
-The certificate-reminder email embeds the current tenant's `db_token` as a URL query parameter:
+### Fix applied
+Reminder links no longer carry the raw tenant `db_token`. Instead, `buildCertificateReminderLink` mints an HMAC-signed token (`rt` query parameter) bound to `{ tenantId, doctorId, qualificationIds[], iat, exp }` with a 14-day TTL. The token is verified by the new `POST /api/certificates/reminders/resolve` endpoint, which requires authentication and confirms the caller is either an admin or the doctor profile owner linked to the reminder. The endpoint returns only the tenant id and qualification ids; the frontend activates the tenant through the normal `/my-tenants` → `activate-tenant` flow, and `tenantDbMiddleware` (S2) re-checks `allowed_tenants` on every subsequent tenant request. A leaked reminder link therefore grants no database capability.
+
+### Root cause (historical)
+The certificate-reminder email previously embedded the current tenant's `db_token` as a URL query parameter:
 
 ```js
 if (req.dbToken) {
   url.searchParams.set('db_token', req.dbToken);   // raw tenant DB credential in a link
 }
 ```
-The generated link is sent by email (`POST /api/certificates/reminders/send`). A `db_token` decrypts to DB connection credentials (see S2); placing it in a URL exposes it to: mail transport/logs, the recipient's browser history, `Referer` headers on any off-site resource the page loads, and reverse-proxy/access logs.
+The generated link was sent by email (`POST /api/certificates/reminders/send`). A `db_token` decrypts to DB connection credentials (see S2); placing it in a URL exposed it to: mail transport/logs, the recipient's browser history, `Referer` headers on any off-site resource the page loads, and reverse-proxy/access logs.
 
-### Failure scenario
-1. Admin triggers reminders; an admin's browser/email client or a forwarded email ends up containing `https://app/db_token=<raw-encrypted-credential>`.
-2. Anyone capturing that URL gains a tenant capability (compounds with S2 — no per-user re-authorization), yielding access to that tenant's database.
+### Failure scenario (now blocked)
+1. Admin triggers reminders; a forwarded email or browser history now contains `https://app/certificate-upload?rt=<signed-token>`.
+2. The signed token alone is useless without the app secret; resolving it also requires authentication and ownership of the linked doctor profile.
+3. Even after resolution, the tenant is activated only if the user is in `allowed_tenants` (S2), so a captured link cannot route an attacker to a foreign tenant's database.
 
-### Proposed remedy
-Do not carry the `db_token` in user-facing links. Issue a short-lived, signed, single-purpose token that resolves to (user → tenant → upload page) server-side, with the tenant resolution done after authentication:
+### Proposed remedy (implemented)
+Do not carry the `db_token` in user-facing links. Issue a short-lived, signed, single-purpose token that resolves to (user → tenant → upload page) server-side, with tenant resolution done after authentication:
 
 ```js
 // mint: HMAC-signed { doctor_id, qualification_ids[], tenant_id, exp }
-// link: /certificate-upload?Reminder=<token>
-// server: on GET, verify token, look up the user's allowed_tenants, then route to their tenant.
+// link: /certificate-upload?rt=<token>
+// server: POST /reminders/resolve verifies signature/expiry and ownership, returns tenant_id + qualification_ids.
 ```
-If the reminder must deep-link to a specific tenant, bind the token to an explicit `user_id` and validate it on resolution.
 
 ---
 
@@ -198,16 +201,24 @@ Keep the railway subdomain allowance only for known preview environments; gate i
 
 ## Finding S6 — TLS certificate verification disabled on admin-configured DB and SMTP connections
 
-**Severity:** LOW
-**Location:** `server/utils/email.js` (`rejectUnauthorized: false`, lines 115–116), `server/routes/admin.js` (`config.ssl = { rejectUnauthorized: false }`, lines 103, 1121, 1180).
+**Severity:** LOW — ✅ **Fixed (2026-08-03)**
+**Location:** `server/utils/email.ts` (`smtpRejectUnauthorized()`), `server/routes/admin.ts` (`buildTenantSslOption()`).
 
-### Root cause
-SMTP (Brevo fallback / direct SMTP) and admin-configured external MySQL connections disable TLS verification, explicitly to tolerate self-signed certificates on shared hosting. This makes those connections blind to man-in-the-middle / certificate-spoofing attacks on the path between the CuraFlow server and the external DB or mail host.
+### Fix applied
+Both SMTP and admin-configured tenant DB TLS verification are now controlled by environment variables rather than hardcoded `rejectUnauthorized: false`:
 
-### Proposed remedy
-- Default to strict verification (`rejectUnauthorized: true`).
-- Provide an explicit opt-in flag (`SMTP_ALLOW_INSECURE_TLS=1`, `DB_ALLOW_INSECURE_TLS=1`) rather than a hardcoded disable, and log a warning when it is in use.
-- Where self-signed certs are genuinely required, support installing a custom CA rather than disabling verification.
+- `SMTP_ALLOW_INSECURE_TLS=0` (or `false`/`no`/`off`) enforces strict SMTP TLS verification (`rejectUnauthorized: true`). Any other value keeps the legacy permissive behaviour for shared-hosting compatibility.
+- `DB_ALLOW_INSECURE_TLS=0` (or `false`/`no`/`off`) enforces strict verification for admin-configured tenant DB SSL connections.
+
+A console warning is emitted whenever verification is disabled, prompting operators with valid certificates to opt in to strict verification. The default remains permissive so existing shared-hosting deployments with self-signed certs are not broken; the fix removes the unconditional hardcoded disable and provides a strict-verification opt-in.
+
+### Root cause (historical)
+SMTP (Brevo fallback / direct SMTP) and admin-configured external MySQL connections disabled TLS verification, explicitly to tolerate self-signed certificates on shared hosting. This made those connections blind to man-in-the-middle / certificate-spoofing attacks on the path between the CuraFlow server and the external DB or mail host.
+
+### Proposed remedy (implemented)
+- Provide explicit opt-in flags (`SMTP_ALLOW_INSECURE_TLS=0`, `DB_ALLOW_INSECURE_TLS=0`) to enforce strict verification (`rejectUnauthorized: true`).
+- Log a warning when verification is disabled.
+- Where self-signed certs are genuinely required, leave the default permissive path available rather than breaking existing deployments.
 
 ---
 
@@ -252,14 +263,17 @@ A `can_manage_system` admin gains full read of the external Tisoware time-tracki
 
 ## Finding S9 — `runQuery` `maxRows` parameter silently ignored (Tisoware)
 
-**Severity:** LOW
-**Location:** `server/utils/tisowareDataSource.js` `queryTisoware(query, maxRows = 1000)` (lines 59–65) and `runQuery(query, maxRows = 1000)` (lines 384–387).
+**Severity:** LOW — ✅ **Fixed (2026-08-03)**
+**Location:** `server/utils/tisowareDataSource.ts` `queryTisoware(query)` and `runQuery(query)`; `server/php-proxy/tisowareQuery.php` and `server/php-proxy/tisowareHttpProxy.php`.
 
-### Root cause
-`maxRows` is accepted but never forwarded to `queryViaPhp` or applied; the PHP script receives the raw query. An admin `/query` against a large Tisoware table can pull unbounded rows, which is a resource-exhaustion / data-volume concern rather than a break-in.
+### Fix applied
+The misleading `maxRows` argument has been removed from `queryTisoware`/`runQuery`. The row cap is now enforced in both PHP proxies (`tisowareQuery.php` and `tisowareHttpProxy.php`), which stop fetching after 5000 rows while streaming results from ODBC. `POST /api/master/tisoware/query` therefore can no longer pull unbounded result sets. The paginated sample endpoint (`/tables/:schema/:table/sample`) already applies its own `LIMIT` clamp.
 
-### Proposed remedy
-Either enforce `maxRows` (wrap the query or pass `TOP N` for SQL Server) or drop the misleading parameter. If enforcing, pre-validate the query wrapper does not alter semantics for `WITH` queries.
+### Root cause (historical)
+`maxRows` was accepted but never forwarded to `queryViaPhp` or applied; the PHP script received the raw query. An admin `/query` against a large Tisoware table could pull unbounded rows, which was a resource-exhaustion / data-volume concern rather than a break-in.
+
+### Proposed remedy (implemented)
+Drop the misleading parameter and enforce the cap at the PHP proxy boundary, where the result set is materialized. This keeps the Node-side API clean while bounding the worst-case result size.
 
 ---
 
@@ -398,7 +412,7 @@ A single remediation posture covers all three: at every enforcement boundary, re
 - Certificates upload/download: parameterized SQL, tenant-key scoping, MIME allowlist, `Content-Disposition` sanitization (`server/routes/certificates.js`).
 - `getTisowareTableColumns`/`getTisowareTableSample` sanitize schema/table via whitelist regex (`server/utils/tisowareDataSource.js:95–97,120–122`) — contrast with dbProxy, which does not.
 
-## Status legend — ✅ Fixed items (verified 2026-07-29)
+## Status legend — ✅ Fixed items (verified 2026-08-03)
 
 These defensive measures are present and active in the codebase (not numbered findings, but verified baseline controls):
 
@@ -418,8 +432,12 @@ These defensive measures are present and active in the codebase (not numbered fi
 - ✅ **Per-user tenant authorization (Finding S2)** — `tenantDbMiddleware` now resolves the presented `X-DB-Token` to a tenant id and rejects (403) when it is not in the user's `allowed_tenants`; master pool bypassed, fail-open on lookup error.
 - ✅ **DB-backed permission gates (Finding S7)** — dbProxy + both atomic write guards re-read `role`/`is_active`/`permissions` from the DB row via `checkAdminPermission`; deactivated/demoted admins are denied immediately instead of for up to `TOKEN_EXPIRY`.
 - ✅ **`isServicePosition` fail-closed (ADMIN F6)** — dbProxy + atomic `isServicePosition` now treat a DB lookup error as "protected", so a transient error can no longer bypass the `can_edit_schedule` check.
+- ✅ **Tisoware row cap (Finding S9)** — the misleading `maxRows` parameter was removed from `queryTisoware`/`runQuery`; both PHP proxies cap results at 5000 rows while streaming from ODBC, so `/api/master/tisoware/query` cannot return unbounded result sets.
+- ✅ **ShiftEntry partial-position guard (ADMIN F5)** — `server/routes/dbProxy.ts` now resolves the existing record's `position` for update/delete payloads that omit it, closing the bypass where omitting `position` skipped the `can_edit_schedule` check. Covered by `server/__tests__/dbProxy.shiftGuard.test.js`.
+- ✅ **Reminder links without DB credentials (Finding S3)** — certificate reminder emails now embed a short-lived HMAC-signed `rt` token instead of the raw tenant `db_token`; `/api/certificates/reminders/resolve` verifies the token, ownership, and returns only tenant/qualification hints. Frontend support in `src/pages/CertificateUpload.tsx` and `src/api/client.ts`.
+- ✅ **TLS verification opt-in (Finding S6)** — SMTP and admin-configured tenant DB connections expose `SMTP_ALLOW_INSECURE_TLS=0` / `DB_ALLOW_INSECURE_TLS=0` to enforce `rejectUnauthorized: true`; default remains permissive for shared-hosting compatibility, with a warning logged when verification is disabled.
 
-> Note: Items above marked ✅ are *present and verified* controls / fixed findings. **S1 is now closed** (Phase 1 query-builder migration complete). The remaining open numbered findings are **S3, S4, S6, S8, S9, S11, and ADMIN F5**. ADMIN F5 (ShiftEntry partial-position bypass) is a behavior change deferred to a focused fix. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
+> Note: Items above marked ✅ are *present and verified* controls / fixed findings. **S1 is now closed** (Phase 1 query-builder migration complete). The remaining open numbered findings are **S4, S8, and S11**. S4 is an accepted trade-off (SSE `EventSource` cannot set headers). S8 is an accepted, permission-gated arbitrary-read surface for `can_manage_system` admins. S11 (hardcoded `CuraFlow2026!`) is **deferred pending a business decision** — see its section.
 
 ## Scope and limits
 

@@ -1329,6 +1329,19 @@ class APIClient {
     });
   }
 
+  /**
+   * Resolve a signed reminder-link token (Finding S3). The link no longer
+   * carries the raw tenant `db_token`; instead the recipient authenticates,
+   * then this exchanges the short-lived `rt` token for the tenant id and
+   * qualification ids the reminder refers to.
+   */
+  async resolveCertificateReminderToken(token: string): Promise<{ tenant_id: string | null; doctor_id: string; qualification_ids: Array<string | number> }> {
+    return this.request('/api/certificates/reminders/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }) as Promise<{ tenant_id: string | null; doctor_id: string; qualification_ids: Array<string | number> }>;
+  }
+
   // ==================== Staff ====================
 
   async notifyStaff(params: Record<string, unknown>): Promise<unknown> {

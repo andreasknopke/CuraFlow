@@ -122,6 +122,25 @@ async function sendViaBrevo({ to, subject, text, html, attachments }: EmailOptio
 
 let transporter: Transporter | null = null;
 
+/**
+ * Whether SMTP TLS certificate verification is disabled (Finding S6).
+ *
+ * Default is the legacy permissive behaviour (`true` ⇒ `rejectUnauthorized:
+ * false`) so existing deployments on shared hosting with self-signed certs
+ * keep working. Operators with a valid certificate should set
+ * `SMTP_ALLOW_INSECURE_TLS=0` to enforce strict verification.
+ */
+function smtpAllowsInsecureTls(): boolean {
+  const flag = (process.env.SMTP_ALLOW_INSECURE_TLS ?? '').trim().toLowerCase();
+  // Explicit opt-out of insecure TLS: "0", "false", "no", "off".
+  return !(flag === '0' || flag === 'false' || flag === 'no' || flag === 'off');
+}
+
+export function smtpRejectUnauthorized(): boolean {
+  // rejectUnauthorized is the inverse of "allows insecure".
+  return !smtpAllowsInsecureTls();
+}
+
 export function resetTransporter(): void {
   transporter = null;
 }
@@ -151,8 +170,15 @@ export function getTransporter(): Transporter | null {
     // Port 587: use STARTTLS upgrade; Port 465: direct TLS
     ...(!secure && { requireTLS: true }),
     tls: {
-      // Do not fail on invalid/self-signed certs (common with shared hosting like ALL-INKL)
-      rejectUnauthorized: false,
+      // TLS verification is opt-in strict by default via SMTP_ALLOW_INSECURE_TLS
+      // (Finding S6). Historically this was hardcoded `rejectUnauthorized: false`
+      // to tolerate self-signed certs on shared hosting (e.g. ALL-INKL). That
+      // disabled verification for everyone, including deployments with valid
+      // certificates, making SMTP blind to MITM. We keep the permissive
+      // behaviour as the default to avoid breaking existing operators, but
+      // expose SMTP_ALLOW_INSECURE_TLS=0 so deployments with valid certs can
+      // enforce verification, and warn loudly when verification is disabled.
+      rejectUnauthorized: smtpRejectUnauthorized(),
       minVersion: 'TLSv1.2',
     },
     connectionTimeout: 15000,
@@ -160,6 +186,9 @@ export function getTransporter(): Transporter | null {
     socketTimeout: 30000,
   });
 
+  if (smtpAllowsInsecureTls()) {
+    console.warn('[Email] SMTP TLS certificate verification is DISABLED (SMTP_ALLOW_INSECURE_TLS default). Set SMTP_ALLOW_INSECURE_TLS=0 to enforce verification with a valid certificate.');
+  }
   console.log(`[Email] SMTP Transporter konfiguriert: ${host}:${port} (secure=${secure}, STARTTLS=${!secure})`);
   return transporter;
 }

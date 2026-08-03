@@ -609,7 +609,7 @@ export async function fetchTisowareAbsences(psnrList: (string | number)[], dateF
 
     const sql = `SELECT ABWKAL.* FROM dbo.ABWKAL WHERE PSNR IN (${inClause}) ORDER BY PSNR`;
 
-    const result = await queryTisoware(sql, 50000);
+    const result = await queryTisoware(sql);
     const rawRows = result.rows || [];
 
     // PHP proxy caps at 5000 rows — warn if we hit that limit

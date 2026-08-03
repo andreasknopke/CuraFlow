@@ -211,7 +211,17 @@ export async function testTisowareConnection(): Promise<TisowareConnectionResult
     : { success: false, error: result.error, code: result.code, detail: result.detail };
 }
 
-export async function queryTisoware<T = Record<string, unknown>>(query: string, maxRows = 1000): Promise<TisowareQueryResult<T>> {
+/**
+ * Execute a read-only Tisoware query.
+ *
+ * NOTE (Finding S9): the row cap is enforced inside the PHP proxies
+ * (`tisowareQuery.php` / `tisowareHttpProxy.php` cap at 5000 rows while
+ * streaming results), NOT here. An earlier signature accepted a `maxRows`
+ * argument that was silently ignored — that misleading parameter has been
+ * removed. If a Node-side row cap is ever needed, wrap the query here rather
+ * than re-adding an unused argument.
+ */
+export async function queryTisoware<T = Record<string, unknown>>(query: string): Promise<TisowareQueryResult<T>> {
   const normalized = query.trim().toUpperCase();
   if (!normalized.startsWith('SELECT') && !normalized.startsWith('WITH')) {
     throw Object.assign(new Error('Only SELECT / WITH queries are allowed'), { status: 400 });
@@ -654,9 +664,9 @@ export async function sampleTable(schema: string, table: string, offset = 0, lim
   return getTisowareTableSample(schema, table, offset, limit);
 }
 
-export async function runQuery(query: string, maxRows = 1000): Promise<TisowareQueryResult> {
+export async function runQuery(query: string): Promise<TisowareQueryResult> {
   if (isMockMode()) return mockQuery(query);
-  return queryTisoware(query, maxRows);
+  return queryTisoware(query);
 }
 
 export async function testConnection(): Promise<TisowareConnectionResult> {

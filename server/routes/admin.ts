@@ -30,6 +30,26 @@ interface CuraRequest extends Request {
 
 const router = express.Router();
 
+/**
+ * Build the `ssl` option for an admin-configured tenant DB connection
+ * (Finding S6). Historically every admin "ssl" toggle stored
+ * `{ rejectUnauthorized: false }`, disabling certificate verification for all
+ * tenant connections — including those whose servers present a valid cert,
+ * making them blind to MITM. We keep the permissive behaviour as the default
+ * (so existing shared-hosting tenants with self-signed certs keep connecting)
+ * but expose `DB_ALLOW_INSECURE_TLS=0` so deployments whose tenant servers use
+ * valid certificates can enforce verification. A warning is logged whenever
+ * verification is disabled.
+ */
+export function buildTenantSslOption(): { rejectUnauthorized: boolean } {
+  const flag = (process.env.DB_ALLOW_INSECURE_TLS ?? '').trim().toLowerCase();
+  const allowInsecure = !(flag === '0' || flag === 'false' || flag === 'no' || flag === 'off');
+  if (allowInsecure) {
+    console.warn('[admin] Tenant DB TLS certificate verification is DISABLED (DB_ALLOW_INSECURE_TLS default). Set DB_ALLOW_INSECURE_TLS=0 to enforce verification for tenant servers with a valid certificate.');
+  }
+  return { rejectUnauthorized: !allowInsecure };
+}
+
 // Test endpoint without middleware
 router.get('/test', (req: Request, res: Response) => {
   res.json({ message: 'Admin routes working', timestamp: new Date().toISOString() });
@@ -116,7 +136,7 @@ router.post('/tools', async (req: Request, res: Response, next: NextFunction) =>
         };
 
         if (ssl) {
-          config.ssl = { rejectUnauthorized: false };
+          config.ssl = buildTenantSslOption();
         }
 
         const { encryptToken } = await import('../utils/crypto.js');
@@ -1140,9 +1160,9 @@ router.post('/db-tokens', async (req: Request, res: Response, next: NextFunction
     };
     
     if (ssl) {
-      config.ssl = { rejectUnauthorized: false };
+      config.ssl = buildTenantSslOption();
     }
-    
+
     const encryptedToken = encryptToken(JSON.stringify(config));
     const id = crypto.randomUUID();
     
@@ -1199,7 +1219,7 @@ router.put('/db-tokens/:id', async (req: Request, res: Response, next: NextFunct
       } as Record<string, unknown>;
       
       if (credentials.ssl) {
-        newConfig.ssl = { rejectUnauthorized: false };
+        newConfig.ssl = buildTenantSslOption();
       }
       
       encryptedToken = encryptToken(JSON.stringify(newConfig));

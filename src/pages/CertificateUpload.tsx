@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, FileCheck, Loader2, ShieldCheck } from 'lucide-react';
@@ -36,10 +36,64 @@ function groupCertificatesByQualification(certificates: CertificateEntry[] = [])
 export default function CertificateUploadPage() {
   const location = useLocation();
   const { user, isLoading: authLoading } = useAuth();
-  const selectedQualificationId = useMemo(() => {
-    const params = new URLSearchParams(location.search);
-    return params.get('qualification_id');
-  }, [location.search]);
+
+  // Finding S3: reminder links carry a short-lived signed `rt` token instead
+  // of the raw tenant `db_token`. Resolve it (after auth) to recover the
+  // intended tenant + qualification and pre-select them. The backend re-checks
+  // that the caller is the reminder's owner; `tenantDbMiddleware` re-checks
+  // `allowed_tenants` when the tenant is activated.
+  const [resolvedQualificationId, setResolvedQualificationId] = useState<string | null>(null);
+  const urlParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const reminderToken = urlParams.get('rt');
+  const explicitQualificationId = urlParams.get('qualification_id');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!reminderToken || !user) return;
+    api
+      .resolveCertificateReminderToken(reminderToken)
+      .then((result) => {
+        if (cancelled) return;
+        // Activate the hinted tenant when it differs from the active one and
+        // the user is allowed to access it. activateTenant enforces
+        // allowed_tenants server-side (S2) and reloads on success.
+        const activeTenantId = localStorage.getItem('active_token_id');
+        if (result.tenant_id && result.tenant_id !== activeTenantId) {
+          api
+            .activateTenant(result.tenant_id)
+            .then((activationResult) => {
+              const token = (activationResult as { token?: string })?.token;
+              if (token) {
+                localStorage.setItem('active_token_id', result.tenant_id as string);
+                // Persist + reload so subsequent certificate reads hit the
+                // correct tenant pool. Reload is the established pattern in
+                // TenantSelectionDialog for a tenant switch.
+                import('@/components/dbTokenStorage').then(({ saveDbToken, enableDbToken }) => {
+                  Promise.all([saveDbToken(token), enableDbToken()]).then(() => {
+                    window.location.reload();
+                  });
+                });
+              }
+            })
+            .catch((err) => {
+              // Not allowed / tenant unavailable — fall through and show the
+              // user's default context rather than blocking the page.
+              console.warn('[certificate-upload] tenant activation failed', err);
+            });
+        }
+        if (result.qualification_ids?.length) {
+          setResolvedQualificationId(String(result.qualification_ids[0]));
+        }
+      })
+      .catch((err) => {
+        console.warn('[certificate-upload] reminder token resolve failed', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [reminderToken, user]);
+
+  const selectedQualificationId = resolvedQualificationId || explicitQualificationId;
 
   const { qualifications, qualificationMap, isLoading: qualificationsLoading } = useQualifications();
   const { doctorQualifications = [], isLoading: doctorQualificationsLoading } = useDoctorQualifications(user?.doctor_id as string | null | undefined);

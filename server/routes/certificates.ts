@@ -22,6 +22,7 @@ import crypto from 'crypto';
 import { db } from '../index.js';
 import { authMiddleware } from './auth.js';
 import { parseDbToken } from '../utils/crypto.js';
+import { resolveTenantIdFromToken } from '../utils/tenantGroups.js';
 import { analyzeCertificate, isAnalyzerConfigured } from '../utils/certificateAnalyzer.js';
 import { getEmailProviderInfo, sendEmail } from '../utils/email.js';
 import type { Certificate, Qualification } from '../utils/qualificationEvidence.js';
@@ -55,6 +56,10 @@ const ALLOWED_MIME = new Set([
 ]);
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const ANALYSIS_TOKEN_TTL_MS = 15 * 60 * 1000;
+// Reminder-link tokens are single-purpose, short-lived, and carry NO DB
+// credential — replacing the previous scheme that embedded the raw tenant
+// `db_token` in the email link (SECURITY_REVIEW_SYSTEM.md Finding S3).
+const REMINDER_TOKEN_TTL_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -140,6 +145,72 @@ function verifyAnalysisApprovalToken(token: string): Record<string, unknown> | n
   }
   try {
     return JSON.parse(decodeBase64Url(encodedPayload));
+  } catch {
+    return null;
+  }
+}
+
+// ─── Reminder-link token (Finding S3) ──────────────────────────────────────
+// A signed, short-lived token that resolves to { tenant_id, doctor_id,
+// qualification_ids[] } after the recipient authenticates. It carries NO
+// tenant DB credential, so a leaked reminder link (mail logs, browser
+// history, Referer headers) does not grant database access the way the raw
+// `db_token` it replaces did. The signature uses the same app secret as the
+// analysis token; both are single-purpose and verified server-side.
+
+export function createReminderToken(payload: {
+  tenantId: string;
+  doctorId: string;
+  qualificationIds: Array<string | number>;
+}): string {
+  const now = Date.now();
+  const fullPayload = {
+    ...payload,
+    iat: now,
+    exp: now + REMINDER_TOKEN_TTL_MS,
+  };
+  const encodedPayload = encodeBase64Url(JSON.stringify(fullPayload));
+  const signature = crypto
+    .createHmac('sha256', getAnalysisSigningSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+  return `${encodedPayload}.${signature}`;
+}
+
+export function verifyReminderToken(token: string): {
+  tenantId: string;
+  doctorId: string;
+  qualificationIds: Array<string | number>;
+  exp: number;
+} | null {
+  if (!token || typeof token !== 'string' || !token.includes('.')) {
+    return null;
+  }
+  const [encodedPayload, signature] = token.split('.');
+  const expected = crypto
+    .createHmac('sha256', getAnalysisSigningSecret())
+    .update(encodedPayload)
+    .digest('base64url');
+  if (signature !== expected) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(decodeBase64Url(encodedPayload)) as Record<string, unknown>;
+    if (typeof parsed.exp !== 'number' || parsed.exp < Date.now()) {
+      return null;
+    }
+    if (typeof parsed.tenantId !== 'string' || typeof parsed.doctorId !== 'string') {
+      return null;
+    }
+    if (!Array.isArray(parsed.qualificationIds)) {
+      return null;
+    }
+    return {
+      tenantId: parsed.tenantId,
+      doctorId: parsed.doctorId,
+      qualificationIds: parsed.qualificationIds as Array<string | number>,
+      exp: parsed.exp,
+    };
   } catch {
     return null;
   }
@@ -321,13 +392,33 @@ function buildAppBaseUrl(req: Request): string {
   return `${req.protocol}://${req.get('host')}`.replace(/\/$/, '');
 }
 
-function buildCertificateReminderLink(req: CuraRequest, qualificationIds: Array<string | number> = []): string {
+/**
+ * Build the reminder deep-link. Embeds a short-lived HMAC-signed token
+ * (Finding S3) bound to { tenantId, doctorId, qualificationIds } instead of
+ * the raw tenant `db_token`. The recipient authenticates normally; the
+ * `tenantDbMiddleware` (Finding S2) still re-checks `allowed_tenants` server-
+ * side, so a leaked link grants no database capability. `/reminders/resolve`
+ * verifies the token after auth and the frontend uses it to pre-select the
+ * tenant and qualification.
+ */
+async function buildCertificateReminderLink(
+  req: CuraRequest,
+  doctorId: string,
+  qualificationIds: Array<string | number>,
+): Promise<string> {
   const url = new URL('/certificate-upload', buildAppBaseUrl(req));
+  const tenantId = await resolveTenantIdFromToken(db, req.dbToken);
+  // Fallback: if the tenant cannot be resolved (no token / master pool),
+  // still issue a token so the link resolves to the recipient's own tenant
+  // context after login — we just omit the deep-link tenant hint.
+  const reminderToken = createReminderToken({
+    tenantId: tenantId || '',
+    doctorId,
+    qualificationIds,
+  });
+  url.searchParams.set('rt', reminderToken);
   if (qualificationIds.length === 1) {
     url.searchParams.set('qualification_id', String(qualificationIds[0]));
-  }
-  if (req.dbToken) {
-    url.searchParams.set('db_token', req.dbToken);
   }
   return url.toString();
 }
@@ -894,6 +985,51 @@ router.get('/expiring', async (req: Request, res: Response, next: NextFunction):
   }
 });
 
+// ============ POST /api/certificates/reminders/resolve ============
+// Resolves a reminder-link token (Finding S3) for the *authenticated* user
+// clicking the link. Body: { token }. The token is HMAC-signed and short-
+// lived; it binds a reminder to { tenantId, doctorId, qualificationIds[] }.
+// After verifying the signature/expiry we confirm the calling user is the
+// linked owner of the doctor profile — so a captured link still cannot
+// surface another user's certificate state. The tenant is returned as an id
+// only; the frontend resolves it to a tenant token via `/my-tenants`, and
+// `tenantDbMiddleware` re-checks `allowed_tenants` on the subsequent tenant
+// requests (Finding S2).
+router.post('/reminders/resolve', express.json(), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const curaReq = req as CuraRequest;
+    const { token } = (req.body || {}) as { token?: string };
+    const payload = verifyReminderToken(String(token || ''));
+    if (!payload) {
+      res.status(400).json({ error: 'Ungültiger oder abgelaufener Link' });
+      return;
+    }
+
+    // The caller must be authenticated and linked to the doctor the reminder
+    // was issued for. Admins (who initiated the reminder) are also allowed,
+    // so an admin opening a sent link does not error.
+    if (curaReq.user?.role !== 'admin') {
+      const linkedUsers = await getReminderRecipientsForDoctor(payload.doctorId);
+      const callerId = curaReq.user?.sub;
+      const isOwner = callerId
+        ? linkedUsers.some((u) => String(u.id) === String(callerId))
+        : false;
+      if (!isOwner) {
+        res.status(403).json({ error: 'Kein Zugriff auf diesen Link' });
+        return;
+      }
+    }
+
+    res.json({
+      tenant_id: payload.tenantId || null,
+      doctor_id: payload.doctorId,
+      qualification_ids: payload.qualificationIds,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ============ POST /api/certificates/reminders/send ============
 // Body: { recipients: [{ doctor_id, qualification_ids: [] }] }
 router.post('/reminders/send', express.json(), async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -975,7 +1111,11 @@ router.post('/reminders/send', express.json(), async (req: Request, res: Respons
         continue;
       }
 
-      const reminderLink = buildCertificateReminderLink(curaReq, pendingQualifications.map((item) => item.id as string | number));
+      const reminderLink = await buildCertificateReminderLink(
+        curaReq,
+        doctorId,
+        pendingQualifications.map((item) => item.id as string | number),
+      );
       const qualificationLines = pendingQualifications
         .map((item) => `<li><strong>${item.name}</strong>: ${item.reason}</li>`)
         .join('');

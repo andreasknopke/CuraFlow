@@ -2,9 +2,9 @@
 
 **Reviewed scope:** The admin role-scoping / permission system.
 **Date:** 2026-07-08
-**Overall verdict:** The permission *data model* and *enforcement wiring* are sound in design, but several enforcement sites trusted the JWT payload or the client request body where they must not, producing privilege-escalation and bypass paths. **Findings 1–6 are now ✅ Fixed (2026-07-29)** via a backend DB-backed clamp (F1–F3), a DB-backed permission resolver (F4), and fail-closed lookups (F6). See each finding's "Fix applied" section.
+**Overall verdict:** The permission *data model* and *enforcement wiring* are sound in design, but several enforcement sites trusted the JWT payload or the client request body where they must not, producing privilege-escalation and bypass paths. **Findings 1–6 are now ✅ Fixed** via a backend DB-backed clamp (F1–F3), a DB-backed permission resolver (F4), a guard that resolves the existing record's position on partial ShiftEntry updates (F5), and fail-closed lookups (F6). See each finding's "Fix applied" section.
 
-> **Status (updated 2026-07-29):** Findings 1, 2, 3, 4, and 6 are ✅ Fixed. Finding 5 (ShiftEntry partial-position update bypass) remains **open** — it is closed structurally by the upcoming Phase 1 query-builder migration (see `BACKEND_MODERNIZATION_PLAN.md`). The *baseline* permission infrastructure these findings build on is verified present and active — see the "Verified baseline controls" list at the end of this document, and the ✅ Fixed items in [`SECURITY_REVIEW_SYSTEM.md`](./SECURITY_REVIEW_SYSTEM.md).
+> **Status (updated 2026-08-03):** Findings 1, 2, 3, 4, 5, and 6 are ✅ Fixed. The *baseline* permission infrastructure these findings build on is verified present and active — see the "Verified baseline controls" list at the end of this document, and the ✅ Fixed items in [`SECURITY_REVIEW_SYSTEM.md`](./SECURITY_REVIEW_SYSTEM.md).
 
 ---
 
@@ -246,15 +246,18 @@ hasPerm = hasPermission(effectiveUser, requiredPerm);
 
 ## Finding 5 — ShiftEntry permission guard bypassed by partial-position updates
 
-**Severity:** MEDIUM — **OPEN** (deferred: closed structurally by the Phase 1 query-builder migration, see `BACKEND_MODERNIZATION_PLAN.md` PR 1.2)
+**Severity:** MEDIUM — ✅ **Fixed (2026-08-03)**
 **Likelihood:** Medium (the bypass is reachable through a normal UI operation; impact limited to schedule edits)
-**Impact:** An admin without `can_edit_schedule` can modify Dienste shifts by sending an update that omits the `position` field, because the guard inspects only `data.position`.
+**Impact:** An admin without `can_edit_schedule` could modify Dienste shifts by sending an update that omitted the `position` field, because the guard inspected only `data.position`.
+
+### Fix applied
+`server/routes/dbProxy.ts` now resolves the existing ShiftEntry's `position` when an `update` or `delete` payload does not carry one. The logic is extracted into `resolveShiftEntryPositionsForGuard(dbPool, requestBody)`, which first extracts positions from the payload (create/update/bulkCreate) and then falls back to `SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1` for update/delete when the payload positions are empty. The route handler now awaits this helper, so an update like `{ order: index }` on a Dienste shift correctly triggers the `can_edit_schedule` check. Unit tests for the helper live in `server/__tests__/dbProxy.shiftGuard.test.js`.
 
 ### Location
-`server/routes/dbProxy.js`, ShiftEntry write-guard block, lines ~758–785 (`extractPositionNamesFromShiftData`, called at ~759) and `server/routes/dbProxy.js` `extractPositionNamesFromShiftData` (lines ~612–633).
+`server/routes/dbProxy.ts`, ShiftEntry write-guard block (`resolveShiftEntryPositionsForGuard` call) and the helper definition at lines ~636–670.
 
-### Root cause
-For `ShiftEntry` writes the guard decides whether to apply the `can_edit_schedule` check based on the position(s) reported in the payload only:
+### Root cause (historical)
+For `ShiftEntry` writes the guard decided whether to apply the `can_edit_schedule` check based on the position(s) reported in the payload only:
 
 ```js
 const positions = extractPositionNamesFromShiftData(req.body);
@@ -265,31 +268,29 @@ const isDienste = positions.length > 0
 shouldCheckPermission = isDienste;
 ```
 
-`extractPositionNamesFromShiftData` returns `data?.position` for `create`/`update` and the `position` of each item for `bulkCreate`. For a `delete` it returns `[]` but the guard separately looks up the existing record's `position`. For **`update`** and **`bulkCreate`** with no `position` field in the payload, `positions` is `[]` → `isDienste = false` → the permission check is skipped entirely.
+`extractPositionNamesFromShiftData` returned `data?.position` for `create`/`update` and the `position` of each item for `bulkCreate`. For a `delete` it returned `[]` but the guard separately looked up the existing record's `position`. For **`update`** and **`bulkCreate`** with no `position` field in the payload, `positions` was `[]` → `isDienste = false` → the permission check was skipped entirely.
 
-The atomic path is more careful — it uses `data?.position || current.position` (fetching the existing record) — confirming the dbProxy `update` path is the inconsistent, weaker one.
+The atomic path was more careful — it used `data?.position || current.position` (fetching the existing record) — confirming the dbProxy `update` path was the inconsistent, weaker one.
 
-### Failure scenario
+### Failure scenario (now blocked)
 1. Admin *A* lacks `can_edit_schedule`.
 2. *A* reorders shifts within a cell. The UI (`src/components/schedule/ScheduleBoard.jsx:4577`) issues `db.ShiftEntry.update(id, { order: index })` — no `position` field.
-3. dbProxy: `extractPositionNamesFromShiftData` → `[]` → `isDienste false` → `shouldCheckPermission false` → no 403. The reorder commits on a Dienste shift.
-4. Any direct client call `POST /api/db { action:'update', entity:'ShiftEntry', id, data:{ doctor_id } }` (reassign a Dienste shift without sending `position`) likewise bypasses the guard, including doctor reassignment.
+3. dbProxy: `resolveShiftEntryPositionsForGuard` fetches the existing record's `position`, sees it is a Dienste position, and the guard now requires `can_edit_schedule`. Without the permission the request returns **403**.
+4. Any direct client call `POST /api/db { action:'update', entity:'ShiftEntry', id, data:{ doctor_id } }` (reassign a Dienste shift without sending `position`) is now likewise blocked.
 
-### Proposed remedy
+### Proposed remedy (implemented)
 For `update` on `ShiftEntry` where `data.position` is absent, fetch the existing record's position before deciding — mirroring the `delete` path and the atomic guard:
 
 ```js
-if (effectiveAction === 'update' && id && !extractPositionNamesFromShiftData(req.body).length) {
+if ((effectiveAction === 'update' || effectiveAction === 'delete') && id && positions.length === 0) {
   try {
     const [shiftRows] = await dbPool.execute(
       'SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1', [id],
     );
     if (shiftRows[0]?.position) positions.push(shiftRows[0].position);
-  } catch { /* fall through to default-deny (see Finding 6) */ }
+  } catch { /* continue */ }
 }
 ```
-
-Better: treat "could not determine whether this is a Dienste write" as **deny-by-default** rather than allow-by-default.
 
 ---
 
@@ -362,7 +363,7 @@ For the `app_users` permission lookup, on `catch` today the code falls through t
 - The findings are static-analysis-verifed against the code as of the reviewed commit. "Likelihood" reflects reachability under realistic operator workflows, not active exploitation evidence.
 - Originally a report-only document; the ✅ entries below reflect controls verified present on 2026-07-29.
 
-## Verified baseline controls (✅, checked 2026-07-29)
+## Verified baseline controls (✅, checked 2026-08-03)
 
 These are the *infrastructure* pieces the findings above assume or build on. They are present and active — their presence is what makes the findings "escalation/bypass" rather than "open hole":
 
@@ -372,4 +373,4 @@ These are the *infrastructure* pieces the findings above assume or build on. The
 - ✅ **Response sanitization** — `sanitizeUser` strips `password_hash` before returning user objects.
 - ✅ **Centralized error handling** — a single structured error handler returns generic client messages and logs structured context server-side (see `SECURITY_REVIEW_SYSTEM.md`).
 
-> None of the numbered Findings 1–6 are remediated by these baselines; they describe where enforcement *on top of* this infrastructure trusts the wrong source of truth. They remain open.
+> None of the numbered Findings 1–6 are remediated by these baselines; they describe where enforcement *on top of* this infrastructure trusts the wrong source of truth. As of 2026-08-03 all six findings are fixed in code.
