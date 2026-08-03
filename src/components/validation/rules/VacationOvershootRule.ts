@@ -37,6 +37,9 @@ export class VacationOvershootRule extends ValidationRule {
             annualVacationDays: (doctor as Doctor & { vacation_days?: number }).vacation_days,
             publicHolidayDates: holidays,
             candidateDate: dateStr,
+            // Past/today rows count only when Tisoware-confirmed, so the
+            // validation agrees with the balance box / calendar display.
+            tisowareConfirmedOnly: true,
         });
 
         if (!balance.overshoot) return null;

@@ -5,7 +5,7 @@ import { AlertTriangle, Check, X } from 'lucide-react';
 import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scrollbar';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
-import { parseAnnualVacationDays } from './vacationBalance';
+import { hasTisowareConfirmation, parseAnnualVacationDays } from './vacationBalance';
 import type { Doctor, ShiftEntry } from '@/types';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -292,20 +292,29 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         });
     }, []);
     
-    // Optimize shift lookup
+    // Optimize shift lookup — stores position + note so the Tisoware rule
+    // (past dates show only TISO-confirmed absences) can be applied per cell.
     const shiftLookup = React.useMemo(() => {
-        const lookup = new Map<string, string>();
+        const lookup = new Map<string, { position: string; note?: string | null }>();
         shifts.forEach(s => {
-            lookup.set(`${s.date}_${s.doctor_id}`, s.position);
+            lookup.set(`${s.date}_${s.doctor_id}`, { position: s.position, note: s.note });
         });
         return lookup;
     }, [shifts]);
 
+    // Tisoware rule (mirrors DoctorYearView.getShiftStatus): past/today dates
+    // only show absences confirmed by Tisoware ([TISO: marker in the note).
+    // Future dates remain unchanged (show all absences).
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+
     // Helper to check status using lookup
     const getStatus = React.useCallback((date: Date, doctorId: string): string | null => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        return shiftLookup.get(`${dateStr}_${doctorId}`) || null;
-    }, [shiftLookup]);
+        const entry = shiftLookup.get(`${dateStr}_${doctorId}`);
+        if (!entry) return null;
+        if (dateStr <= todayStr && !hasTisowareConfirmation(entry.note)) return null;
+        return entry.position;
+    }, [shiftLookup, todayStr]);
 
     // Hilfsfunktion: gibt die Qualifikations-IDs eines Arztes zurück
     const getDoctorQualificationIds = React.useCallback((doctorId: string): string[] => {
@@ -396,13 +405,20 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         doctors.forEach(doc => {
             counts[doc.id] = 0;
         });
-        
+
+        // Tisoware rule (mirrors the calendar display): past/today dates count
+        // only when the absence is Tisoware-confirmed ([TISO: marker in the
+        // note). Future dates always count.
+        const todayStr = format(new Date(), 'yyyy-MM-dd');
+
         shifts.forEach(s => {
                 if (s.position === 'Urlaub') {
                     const d = new Date(s.date);
                     if (!isWeekend(d) && !isPublicHoliday(d)) {
                         if (s.doctor_id && counts[s.doctor_id] !== undefined) {
-                            counts[s.doctor_id]++;
+                            if (s.date > todayStr || hasTisowareConfirmation(s.note)) {
+                                counts[s.doctor_id]++;
+                            }
                         }
                     }
                 }

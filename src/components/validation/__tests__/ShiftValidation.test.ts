@@ -169,6 +169,7 @@ describe('ShiftValidator vacation overshoot', () => {
       doctor_id: 'doctor-1',
       date,
       position: 'Urlaub',
+      note: '[TISO:900] match',
     }));
     const validator = build({ shifts });
     // 2026-02-16 is a Monday — well within the year of the past dates.
@@ -203,6 +204,7 @@ describe('ShiftValidator vacation overshoot', () => {
       doctor_id: 'doctor-1',
       date,
       position: 'Urlaub',
+      note: '[TISO:900] match',
     }));
     const validator = build({ shifts });
     // 2026-05-21 is a Thursday
@@ -217,8 +219,8 @@ describe('ShiftValidator vacation overshoot', () => {
     // 29 + 1 (candidate) = 30 = entitlement → no overshoot when excludeShiftId works.
     const past = buildPastWeekdays(new Date('2026-01-05'), 29);
     const shifts = [
-      ...past.map((date, i) => ({ id: `s-${i}`, doctor_id: 'doctor-1', date, position: 'Urlaub' })),
-      { id: 's-edit', doctor_id: 'doctor-1', date: '2026-05-20', position: 'Urlaub' },
+      ...past.map((date, i) => ({ id: `s-${i}`, doctor_id: 'doctor-1', date, position: 'Urlaub', note: '[TISO:900] match' })),
+      { id: 's-edit', doctor_id: 'doctor-1', date: '2026-05-20', position: 'Urlaub', note: '[TISO:900] match' },
     ];
     const validator = build({ shifts });
     // Re-validate the SAME shift (exclude its own id) → no overshoot yet.

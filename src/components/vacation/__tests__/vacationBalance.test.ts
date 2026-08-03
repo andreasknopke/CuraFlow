@@ -280,6 +280,82 @@ describe('computeVacationBalance — Schichturlaub', () => {
   });
 });
 
+describe('computeVacationBalance — tisowareConfirmedOnly', () => {
+  it('counts past rows with a [TISO: marker as taken', () => {
+    const result = computeVacationBalance({
+      shifts: [{ date: `${YEAR}-06-10`, position: 'Urlaub', note: '[TISO:900] match' }],
+      year: YEAR,
+      annualVacationDays: 30,
+      today: TODAY,
+      tisowareConfirmedOnly: true,
+    });
+    expect(result.taken).toBe(1);
+    expect(result.planned).toBe(0);
+    expect(result.remaining).toBe(29);
+  });
+
+  it('excludes past rows without a [TISO: marker from taken', () => {
+    const result = computeVacationBalance({
+      shifts: [
+        { date: `${YEAR}-06-10`, position: 'Urlaub' }, // no note at all
+        { date: `${YEAR}-06-11`, position: 'Urlaub', note: 'plain note' }, // no marker
+      ],
+      year: YEAR,
+      annualVacationDays: 30,
+      today: TODAY,
+      tisowareConfirmedOnly: true,
+    });
+    expect(result.taken).toBe(0);
+    expect(result.planned).toBe(0);
+    expect(result.remaining).toBe(30);
+  });
+
+  it('still counts future rows regardless of the marker', () => {
+    // 2026-06-22 Monday, 2026-06-23 Tuesday — both after today.
+    const result = computeVacationBalance({
+      shifts: [
+        { date: `${YEAR}-06-22`, position: 'Urlaub' }, // future, no marker
+        { date: `${YEAR}-06-23`, position: 'Urlaub', note: '[TISO:900] match' },
+      ],
+      year: YEAR,
+      annualVacationDays: 30,
+      today: TODAY,
+      tisowareConfirmedOnly: true,
+    });
+    expect(result.taken).toBe(0);
+    expect(result.planned).toBe(2);
+    expect(result.remaining).toBe(28);
+  });
+
+  it('keeps excluding weekends/holidays even when Tisoware-confirmed', () => {
+    // 2026-06-13 is a Saturday, 2026-06-10 is on the holiday set.
+    const result = computeVacationBalance({
+      shifts: [
+        { date: `${YEAR}-06-13`, position: 'Urlaub', note: '[TISO:900] match' },
+        { date: `${YEAR}-06-10`, position: 'Urlaub', note: '[TISO:900] match' },
+      ],
+      year: YEAR,
+      annualVacationDays: 30,
+      today: TODAY,
+      publicHolidayDates: new Set([`${YEAR}-06-10`]),
+      tisowareConfirmedOnly: true,
+    });
+    expect(result.taken).toBe(0);
+    expect(result.remaining).toBe(30);
+  });
+
+  it('behaves identically to the default when the flag is off', () => {
+    const result = computeVacationBalance({
+      shifts: [{ date: `${YEAR}-06-10`, position: 'Urlaub' }],
+      year: YEAR,
+      annualVacationDays: 30,
+      today: TODAY,
+      tisowareConfirmedOnly: false,
+    });
+    expect(result.taken).toBe(1);
+  });
+});
+
 describe('parseAnnualVacationDays', () => {
   it('returns the numeric value for finite numbers', () => {
     expect(parseAnnualVacationDays(30)).toBe(30);

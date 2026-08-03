@@ -437,6 +437,7 @@ export default function VacationPage() {
       year: selectedYear,
       annualVacationDays,
       publicHolidayDates,
+      tisowareConfirmedOnly: true,
     });
     const shiftDays = selectedShiftEntitlement?.doctorId === doctor.id
       ? (selectedShiftEntitlement.shift_vacation_days ?? 0)
@@ -447,6 +448,7 @@ export default function VacationPage() {
       position: 'Schichturlaub',
       annualVacationDays: shiftDays,
       publicHolidayDates,
+      tisowareConfirmedOnly: true,
     });
     return { regular, shift };
   };

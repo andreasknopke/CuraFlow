@@ -822,7 +822,7 @@ router.get('/staff/:tenantId/:employeeId', async (req: Request, res: Response, n
           if (publicHolidayDates && publicHolidayDates.has(a.from)) return false;
           return true;
         });
-        const vacationTaken = vacationDays.filter((a: any) => a.from <= today).length;
+        const vacationTaken = vacationDays.filter((a: any) => a.from <= today && String(a.note || '').includes('[TISO:')).length;
         const vacationPlanned = vacationDays.filter((a: any) => a.from > today).length;
 
         return [{
@@ -1902,11 +1902,12 @@ async function aggregateVacationAcrossTenants(adminUserId: any, assignments: any
     return true;
   };
 
-  const vacationDates = absences
-    .filter((a: any) => a.type === 'Urlaub' && isWorkday(a.from))
-    .map((a) => a.from);
-  const vacationTaken = vacationDates.filter((d: any) => d <= today).length;
-  const vacationPlanned = vacationDates.filter((d: any) => d > today).length;
+  // Tisoware rule: past/today rows count as taken only when they carry a
+  // [TISO:...] marker in the note (same rule as the tenant calendar).
+  // Future rows always count as planned.
+  const vacationRows = absences.filter((a: any) => a.type === 'Urlaub' && isWorkday(a.from));
+  const vacationTaken = vacationRows.filter((a: any) => a.from <= today && String(a.note || '').includes('[TISO:')).length;
+  const vacationPlanned = vacationRows.filter((a: any) => a.from > today).length;
 
   // Schichturlaub: separate balance with the same counting rules, but
   // sourced from EmployeeVacationYear.shift_vacation_days (default 0).
@@ -1916,11 +1917,9 @@ async function aggregateVacationAcrossTenants(adminUserId: any, assignments: any
     ? await fetchShiftVacationEntitlement(db, employeeId, currentYear)
     : { shift_vacation_days: 0, carried_over: false, carried_over_from_year: null, expires_at: null };
 
-  const shiftVacationDates = absences
-    .filter((a: any) => a.type === 'Schichturlaub' && isWorkday(a.from))
-    .map((a) => a.from);
-  const shiftVacationTaken = shiftVacationDates.filter((d: any) => d <= today).length;
-  const shiftVacationPlanned = shiftVacationDates.filter((d: any) => d > today).length;
+  const shiftVacationRows = absences.filter((a: any) => a.type === 'Schichturlaub' && isWorkday(a.from));
+  const shiftVacationTaken = shiftVacationRows.filter((a: any) => a.from <= today && String(a.note || '').includes('[TISO:')).length;
+  const shiftVacationPlanned = shiftVacationRows.filter((a: any) => a.from > today).length;
   const shiftVacationTotal = Number(shiftEntitlement.shift_vacation_days) || 0;
 
   return {

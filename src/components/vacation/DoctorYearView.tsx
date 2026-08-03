@@ -329,6 +329,9 @@ export default function DoctorYearView({
       year,
       annualVacationDays,
       publicHolidayDates,
+      // Mirrors the calendar display: past/today dates count only when the
+      // absence is Tisoware-confirmed ([TISO: marker in the note).
+      tisowareConfirmedOnly: true,
     });
   }, [doctor, shifts, centralAbsencePayload, year, publicHolidayDates]);
 
@@ -372,6 +375,7 @@ export default function DoctorYearView({
       position: 'Schichturlaub',
       annualVacationDays: shiftEntitlement?.shift_vacation_days ?? 0,
       publicHolidayDates,
+      tisowareConfirmedOnly: true,
     });
   }, [doctor, shifts, centralAbsencePayload, year, shiftEntitlement, publicHolidayDates]);
 

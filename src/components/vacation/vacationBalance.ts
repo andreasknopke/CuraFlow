@@ -17,6 +17,9 @@
  *  - The candidate date (the shift the user is currently planning) is
  *    optionally added on top so the UI can show the live over/undershoot
  *    while the user is dragging a range.
+ *  - With `tisowareConfirmedOnly`, past/today rows are only counted when
+ *    they carry a Tisoware-confirmation marker ([TISO:...] in the note).
+ *    Future rows always count.
  */
 
 export interface VacationBalance {
@@ -30,6 +33,9 @@ export interface VacationBalance {
 interface VacationShift {
     date: string;
     position: string;
+    /** Optional note; inspected for the [TISO:...] marker when
+     *  `tisowareConfirmedOnly` is set. */
+    note?: string | null;
 }
 
 interface VacationBalanceParams {
@@ -40,6 +46,15 @@ interface VacationBalanceParams {
     publicHolidayDates?: Set<string> | string[] | null;
     today?: Date | string;
     candidateDate?: string;
+    /**
+     * When true, dates on or before `today` are only counted when the row
+     * carries a Tisoware-confirmation marker in `note` (the [TISO:...]
+     * prefix the Tisoware import writes). Future dates always count.
+     * Mirrors the calendar display rule ("past dates show only
+     * TISO-confirmed absences") so the balance never counts absences that
+     * are hidden in the UI.
+     */
+    tisowareConfirmedOnly?: boolean;
 }
 
 export function computeVacationBalance({
@@ -50,6 +65,7 @@ export function computeVacationBalance({
   publicHolidayDates,
   today,
   candidateDate,
+  tisowareConfirmedOnly = false,
 }: VacationBalanceParams = {}): VacationBalance {
   const total = parseAnnualVacationDays(annualVacationDays);
 
@@ -69,6 +85,11 @@ export function computeVacationBalance({
     if (!dateStr) continue;
     if (Number(dateStr.slice(0, 4)) !== Number(year)) continue;
     if (!isCountableVacationDay(dateStr, holidaySet)) continue;
+
+    // Tisoware rule: past/today absences count only when confirmed by the
+    // Tisoware import ([TISO:...] marker in the note). Future rows always
+    // count — they are planning entries not yet synced to Tisoware.
+    if (tisowareConfirmedOnly && dateStr <= todayStr && !hasTisowareConfirmation(shift.note)) continue;
 
     if (dateStr <= todayStr) taken += 1;
     else planned += 1;
@@ -97,6 +118,19 @@ export function computeVacationBalance({
     remaining,
     overshoot: remaining < 0,
   };
+}
+
+/**
+ * True iff the note carries a Tisoware-confirmation marker ([TISO:...]).
+ * The Tisoware import writes this prefix into the note field for every
+ * absence it confirms; a note without it is a CuraFlow-only entry that is
+ * not (yet) known to Tisoware and therefore hidden in past-date views.
+ *
+ * Exported so the multi-doctor `VacationOverview` can apply the same rule
+ * without re-implementing the marker check.
+ */
+export function hasTisowareConfirmation(note: unknown): boolean {
+  return typeof note === 'string' && note.includes('[TISO:');
 }
 
 /**
