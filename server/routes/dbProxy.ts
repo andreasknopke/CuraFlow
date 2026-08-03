@@ -649,6 +649,35 @@ function extractPositionNamesFromShiftData(requestBody: any) {
   return [];
 }
 
+/**
+ * Resolve the list of position names that should drive the ShiftEntry
+ * `can_edit_schedule` guard.
+ *
+ * For create/bulkCreate the positions come from the payload only. For
+ * update/delete, if the payload does not include a position we look up the
+ * existing record by id so the guard cannot be bypassed by omitting the
+ * position field (Finding F5).
+ *
+ * Exported for unit testing.
+ */
+export async function resolveShiftEntryPositionsForGuard(dbPool: any, requestBody: any): Promise<string[]> {
+  const { action, operation, id } = requestBody;
+  const effAction = action || operation;
+  const positions = extractPositionNamesFromShiftData(requestBody);
+  if ((effAction === 'update' || effAction === 'delete') && id && positions.length === 0) {
+    try {
+      const [shiftRows] = await dbPool.execute(
+        'SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1',
+        [id],
+      ) as unknown as [RowDataPacket[], RowDataPacket[]];
+      if (shiftRows.length > 0 && shiftRows[0].position) {
+        positions.push(shiftRows[0].position);
+      }
+    } catch { /* continue */ }
+  }
+  return positions;
+}
+
 // WishRequest/AbsenceRequest statuses that represent an approval decision.
 // Only writes that promote a record to one of these — or mutate an already
 // decided record — require the approval permission. Creating, editing, or
@@ -796,16 +825,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       // For ShiftEntry: only block if the position is a "Dienste"-category workplace
       let shouldCheckPermission = true;
       if (tableName === 'ShiftEntry') {
-        const positions = extractPositionNamesFromShiftData(req.body);
-        if (effectiveAction === 'delete' && id) {
-          try {
-            const [shiftRows] = await dbPool.execute(
-              'SELECT position FROM ShiftEntry WHERE id = ? LIMIT 1',
-              [id],
-            ) as unknown as [RowDataPacket[], RowDataPacket[]];
-            if (shiftRows.length > 0) positions.push(shiftRows[0].position);
-          } catch { /* continue */ }
-        }
+        const positions = await resolveShiftEntryPositionsForGuard(dbPool, req.body);
         const isDienste = positions.length > 0
           ? (await Promise.all(positions.map((p: any) => isServicePosition(dbPool, p)))).some(Boolean)
           : false;
