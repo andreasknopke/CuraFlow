@@ -314,30 +314,6 @@
       ]
     },
     {
-      "name": "Calendar",
-      "item": [
-        {
-          "name": "Sync Calendar",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"doctorId\": {{doctorId}}\n}"
-            },
-            "url": "{{baseUrl}}/api/calendar/sync"
-          }
-        },
-        {
-          "name": "Export ICS",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/api/calendar/export/{{doctorId}}"
-          }
-        }
-      ]
-    },
-    {
       "name": "Voice",
       "item": [
         {

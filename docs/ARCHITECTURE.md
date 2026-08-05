@@ -28,7 +28,6 @@ CuraFlow folgt einer klassischen **Client-Server-Architektur**. Das Frontend (Re
 │  /api/schedule → schedule.js   (Dienstplan-Spezial-Ops)     │
 │  /api/staff    → staff.js      (Mitarbeiter-APIs)           │
 │  /api/holidays → holidays.js   (Feiertage-API)              │
-│  /api/calendar → calendar.js   (Kalender-Sync)              │
 │  /api/voice    → voice.js      (Sprachsteuerung)            │
 │  /api/admin    → admin.js      (Admin-Ops)                  │
 │  /api/atomic   → atomic.js     (Batch-Operationen)          │

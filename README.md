@@ -39,7 +39,8 @@ Dienstplanverwaltung (Schedule):
 Die zentrale Funktion der Anwendung ermöglicht die visuelle Planung von Diensten in einer Wochen- oder Tagesansicht. Ärzte und Mitarbeiter können per Drag-and-Drop verschiedenen Arbeitsbereichen zugeordnet werden. Das System unterscheidet zwischen Anwesenheiten, Abwesenheiten (Urlaub, Krank, Frei, Dienstreise), Diensten (Vordergrund, Hintergrund, Spätdienst) sowie Rotationen und Spezialbereichen (CT, MRT, Sonographie, Angiographie, Mammographie etc.). Die Konfiguration der Arbeitsbereiche ist vollständig anpassbar.
 
 Automatische Dienstplanfüllung (AutoFill):
-Die deterministische AutoFill-Engine füllt den Dienstplan prioritätsbasiert in vier Phasen: Phase A besetzt Dienste zuerst (inkl. Dienstwünsche und Auto-Frei am Folgetag), Phase B füllt verfügbarkeitsrelevante Arbeitsplätze (Rotationen etc.), Phase C besetzt nicht-verfügbarkeitsrelevante Arbeitsplätze (Mitarbeiter aus Phase B bleiben verfügbar), und Phase D generiert verbleibende Auto-Frei-Einträge. Die Kandidatenauswahl erfolgt über eine einheitliche additive Kostenfunktion.
+Die AutoFill-Funktion erzeugt Vorschläge für einen offenen Wochenplan. Die Planentscheidung ist deterministisch und rein regelbasiert, es kommt also keine KI zum Einsatz. Die Engine läuft vollständig im Browser und überträgt keine Planungsdaten an externe Dienste. Alle Vorschläge werden zunächst als Preview-Einträge angezeigt und erst nach Freigabe durch den Planer übernommen; automatische Einzelentscheidungen ohne menschliche Bestätigung finden nicht statt.
+
 
 Kostenfunktion:
 Eine einheitliche additive Kostenfunktion bewertet alle Planungsdimensionen als numerischen Score. Optimiert werden 10 Dimensionen: Qualifikations-Match, Rotations-Passung, FTE-gewichtete Fairness, Auswirkung auf andere Arbeitsplätze (Unterbesetzungsfolgen), Dienstwünsche, Wochenbalance, Displacement-Bonus für verdrängte Rotationsärzte, Sollte-nicht-Penalty, Alleinbesetzer-Strafe und Dienstlimits. Alle Gewichte sind als zentrale Konstanten konfigurierbar.
@@ -51,7 +52,39 @@ Qualifikationssystem:
 CuraFlow bietet ein 4-stufiges Qualifikationssystem für Arbeitsplätze und Mitarbeiter. Pro Arbeitsplatz können Qualifikationen als Pflicht (Mitarbeiter muss die Qualifikation besitzen), Sollte (bevorzugt qualifiziert, aber Unqualifizierte erlaubt), Sollte nicht (Qualifizierte nur wenn kein anderer verfügbar) oder Nicht/Ausschlusskriterium (Mitarbeiter mit dieser Qualifikation darf nie eingeteilt werden) konfiguriert werden. Mitarbeitern werden Qualifikationen über einen eigenen Editor zugewiesen. Sowohl die AutoFill-Engine als auch die manuelle Einteilung prüfen alle vier Stufen und zeigen entsprechende Warnungen oder Blocker an.
 
 Mitarbeiterverwaltung (Staff):
-Verwaltung aller Ärzte und Mitarbeiter mit ihren Stammdaten. Jeder Mitarbeiter kann einer Rolle zugeordnet werden (Chefarzt, Oberarzt, Facharzt, Assistenzarzt, Nicht-Radiologe). Die Reihenfolge der Anzeige ist konfigurierbar. Es können Qualifikationen und Einschränkungen hinterlegt werden.
+Verwaltung aller Ärzte und Mitarbeiter mit ihren Stammdaten. Jeder Mitarbeiter kann einer Rolle zugeordnet werden (zB. Chefarzt, Oberarzt, Facharzt, Assistenzarzt, Nicht-Radiologe). Die Reihenfolge der Anzeige ist konfigurierbar. Es können Qualifikationen und Einschränkungen hinterlegt werden.
+
+Tisoware-Import und zentrale Mitarbeiterverknüpfung:
+CuraFlow kann Teile des Zeiterfassungssystems Tisoware auslesen (READ ONLY). Beim Anlegen eines neuen Teammitglieds (Team → „Teammitglied hinzufügen" → „Mit zentralem Mitarbeiter verknüpfen") kann ein Mitarbeiter aus der zentralen Mitarbeiterverwaltung ausgewählt werden. Dabei werden folgende planungsrelevante Daten automatisch in das Formular übernommen:
+- Name (Vor- und Nachname)
+- E-Mail-Adresse (als Arbeits-E-Mail und Kalender-E-Mail)
+- Soll-Stunden pro Woche
+- Funktion (aus der zentralen Position)
+
+Zusätzlich kann die Liste über eine Kostenstelle gefiltert werden (z. B. „9642000 – Station Intensivmedizin"); die Kostenstelle selbst wird nur als Filter verwendet. Diese Stammdaten stammen aus der zentralen Mitarbeiterverwaltung, die über den Tisoware- und Stammdaten-Import befüllt wird.
+
+Berechtigungen (wer kann das / wer sieht die Daten):
+- Die Mitarbeiter-Seite („Team") einschließlich des Dialogs „Teammitglied hinzufügen" ist nur für Administratoren (Rolle `admin`) sichtbar. Reguläre Nutzer und Read-Only-Nutzer sehen diese Seite nicht.
+- Das Verknüpfen eines Mitarbeiters (zentral ↔ Mandant) erfordert die Berechtigung `can_link_employees` („Mitarbeiter-Verknüpfung"), die nur Administratoren granular zugewiesen werden kann.
+- Die zentrale Mitarbeiterverwaltung (Master-Daten) ist zusätzlich über die Berechtigung `can_manage_master_data` geschützt.
+- Hinweis: Der Abruf der zentralen Mitarbeiterliste über die API (`GET /api/staff/central-employees`) ist derzeit nur durch die Anmeldung (JWT) geschützt, nicht durch eine feingranulare Berechtigung. Technisch kann damit jeder angemeldete Benutzer Name, E-Mail, Funktion, Kostenstelle und Soll-Stunden der zentralen Mitarbeiter abrufen. Die Benutzeroberfläche beschränkt den Zugriff jedoch auf Administratoren.
+
+Tisoware-Abwesenheitsimport:
+Neben der Mitarbeiterverknüpfung importiert CuraFlow Abwesenheitsdaten aus dem Zeiterfassungssystem Tisoware (nächtlicher Import). Dabei werden die in Tisoware erfassten Abwesenheiten (Krank, Urlaub, Dienstreise, Frei, Mutterschutz, Elternzeit etc.) in die zentrale Abwesenheitsverwaltung von CuraFlow übernommen.
+
+Importierte Daten und Abbildung:
+- Die Abwesenheiten werden über die Personalnummer (PSPERSNR) den zentralen Mitarbeitern zugeordnet.
+- Tisoware-Abwesenheitscodes (LOANR) werden auf die kanonischen CuraFlow-Abwesenheitspositionen abgebildet (z. B. Krank, Urlaub, Dienstreise, Frei, Nicht verfügbar).
+- **Datenschutz (Art. 9 DSGVO):** Krankheits-Subtypen (z. B. „Krank mit AU-Bescheinigung", „Krank Quarantäne", „Krank Infektion") und Original-Abwesenheitsgründe werden **bewusst nicht** importiert bzw. gespeichert. Es wird ausschließlich die kanonische Position (z. B. „Krank") übernommen — keine gesundheitsbezogenen Detailinformationen im Notizfeld.
+- Mutterschutz und Elternzeit werden auf „Nicht verfügbar" abgebildet (ebenfalls ohne gesundheitsbezogene Zusatzvermerke).
+
+Konfliktbehandlung:
+- `CentralAbsenceEntry` hat einen eindeutigen Schlüssel (Mitarbeiter, Datum). Bei einem Konflikt gilt: Gleiche Position → überspringen; unterschiedliche Position → Prioritätsvergleich (Tisoware vs. zentral); bei Gleichstand bleibt der Eintrag unverändert (Konflikt wird gemeldet).
+- Beim manuellen Import kann die Konfliktauflösung zugeschaltet werden; der nächtliche Automatik-Import läuft mit automatischer Konfliktauflösung.
+
+Berechtigung:
+- Alle Tisoware-Import-Endpunkte (`/api/master/tisoware/*`) erfordern zusätzlich zur Anmeldung die Berechtigung `can_manage_system` (Systemverwaltung). Nur Administratoren mit dieser Berechtigung können den Import ausführen, Vorschauen erzeugen oder Mitarbeiter in Tisoware suchen.
+- Der nächtliche Automatik-Import (Cron, 01:30 Uhr Serverzeit) kann über die Umgebungsvariable `TISOWARE_AUTO_IMPORT=false` deaktiviert werden (Standard: aktiv).
 
 Team-Rollen und Berechtigungen:
 Rollen sind vollständig konfigurierbar mit Priorität und Drag-and-Drop-Sortierung. Granulare Berechtigungen steuern, ob eine Rolle Vordergrunddienste oder Hintergrunddienste übernehmen darf, ob sie aus Statistiken ausgeschlossen wird und ob sie als Facharzt-Rolle gilt. Standardrollen werden automatisch angelegt, können aber beliebig erweitert oder angepasst werden.
@@ -96,11 +129,12 @@ Die Anwendung implementiert folgende Sicherheitsmaßnahmen:
 - Helmet-Middleware für HTTP-Security-Header
 - Mandantenspezifische Datenbanktrennung bei Multi-Tenant-Betrieb
 
-Für den Betrieb in Krankenhausumgebungen wird empfohlen:
+Betrieb in der Krankenhaus-Umgebung (umgesetzt):
 - Betrieb hinter einem Reverse-Proxy mit SSL-Terminierung
-- Regelmäßige Datensicherung der MySQL-Datenbank
-- Integration in das vorhandene Netzwerk- und Firewall-Konzept
-- Prüfung der Kompatibilität mit lokalen Datenschutzrichtlinien
+- Integration in das vorhandene Netzwerk- und Firewall-Konzept des Krankenhauses (erfolgt)
+- Tägliche Datensicherung der MySQL-Datenbank (erfolgt)
+- Tägliche Spiegelung des Coolify-Servers (erfolgt)
+
 
 
 ## Installation und Deployment
@@ -115,11 +149,39 @@ Lokale Installation:
 5. Frontend bauen mit npm run build
 6. Server starten mit npm start im server-Verzeichnis
 
-Cloud-Deployment (Railway):
-Die Anwendung ist für das Deployment auf Railway optimiert. Detaillierte Anleitungen finden sich in den Dateien RAILWAY_DEPLOYMENT.md und RAILWAY_QUICKSTART.md. Railway bietet eine einfache Möglichkeit, sowohl das Frontend als auch das Backend inklusive MySQL-Datenbank zu hosten.
+Deployment im Krankenhaus (lokaler Server / Coolify):
+Die Anwendung wird im Krankenhaus auf einem lokalen Server betrieben (Docker/Coolify). Frontend, Backend und sämtliche MySQL-Datenbanken laufen vollständig in der lokalen Infrastruktur des Krankenhauses. Es werden keine Benutzerdaten in eine Cloud hochgeladen; alle Datenbanken liegen auf lokalen Servern im Krankenhaus.
 
 Docker:
-Ein Dockerfile ist im Repository enthalten und ermöglicht den Betrieb in Container-Umgebungen.
+Ein Dockerfile ist im Repository enthalten und ermöglicht den Betrieb in Container-Umgebungen (z. B. Coolify auf einem lokalen Server).
+
+
+## Nutzung als Endanwender (PWA)
+
+CuraFlow wird als Website betrieben und ist unter folgender Adresse erreichbar:
+
+https://cf.coolify.kliniksued-rostock.de/
+
+Die Seite ist sowohl innerhalb des Krankenhausnetzes als auch außerhalb (z. B. über mobiles Internet) erreichbar. Für die Anmeldung werden Zugangsdaten benötigt, die vom Administrator vergeben werden.
+
+### Auf Desktop-PCs (Google Chrome)
+
+1. Chrome öffnen und die Adresse **https://cf.coolify.kliniksued-rostock.de/** aufrufen
+2. Oben rechts im Browser auf das Installationssymbol (Monitor mit Pfeil) klicken
+   - Alternativ: Menü (⋮) → **„CuraFlow installieren"** bzw. **„Als App installieren"**
+3. Im Dialog **„Installieren"** bestätigen
+
+CuraFlow wird damit als eigenständige App (Progressive Web App) installiert und ist über eine Verknüpfung auf dem Desktop startbar. Ein separates Installationsprogramm ist nicht erforderlich.
+
+### Auf Smartphones (Android / iOS)
+
+1. Browser öffnen (z. B. Chrome auf Android, Safari auf iOS) und die Adresse **https://cf.coolify.kliniksued-rostock.de/** aufrufen
+2. Anmelden und die Seite als App installieren:
+   - **Android (Chrome):** Menü (⋮) → **„App installieren"** bzw. **„Zum Startbildschirm hinzufügen"**
+   - **iOS (Safari):** Teilen-Button → **„Zum Home-Bildschirm"**
+3. Das CuraFlow-Symbol erscheint auf dem Startbildschirm und öffnet die App im Vollbildmodus
+
+**Hinweis:** Die Nutzung ist als PWA möglich (App-Start im eigenen Fenster). Da die Anwendung online verbunden bleibt und keine Daten dauerhaft auf dem Gerät speichert, ist für die Nutzung eine Internetverbindung zur CuraFlow-Adresse erforderlich.
 
 
 ## Konfiguration
@@ -136,9 +198,6 @@ PORT: Port für den Express-Server (Standard: 3000)
 
 Optionale Variablen für erweiterte Funktionen:
 ENCRYPTION_KEY: Schlüssel für die Verschlüsselung von Mandanten-Datenbankzugangsdaten
-GOOGLE_CALENDAR_CREDENTIALS: Zugangsdaten für Google Calendar Integration
-OPENAI_API_KEY: API-Schlüssel für KI-gestütztes AutoFill und Planungsoptimierung
-MISTRAL_API_KEY: Alternativer API-Schlüssel für Mistral-basierte KI-Funktionen
 SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS: Konfiguration für E-Mail-Versand (Verifizierung, Benachrichtigungen)
 VITE_JITSI_BASE_URL: Basis-URL für CoWork-Videokonferenzen (Standard: https://meet.jit.si)
 
@@ -165,7 +224,7 @@ doctor_qualifications: Zuordnung von Qualifikationen zu Mitarbeitern
 training_rotations: Ausbildungsrotationen mit Zeitraum, Mitarbeiter und Arbeitsplatz
 workplace_timeslots: Zeitfenster-Definitionen pro Arbeitsplatz
 email_verification: E-Mail-Verifizierungstokens
-schedule_rules: Benutzerdefinierte KI-Planungsregeln in natürlicher Sprache
+schedule_rules: Planungsregeln (Tabelle vorhanden; derzeit kein aktives Feature nutzt sie)
 
 Die Tabellenstruktur kann über die SQL-Migrationen im Verzeichnis server/migrations angepasst werden.
 
@@ -175,9 +234,6 @@ Die Tabellenstruktur kann über die SQL-Migrationen im Verzeichnis server/migrat
 REST-API:
 Alle Funktionen sind über eine dokumentierte REST-API erreichbar. Die API verwendet JSON als Datenaustauschformat. Authentifizierung erfolgt über Bearer-Token im Authorization-Header.
 
-Kalender-Synchronisation:
-Optionale Integration mit Google Calendar zur automatischen Synchronisation von Diensten.
-
 Excel-Export:
 Dienstpläne können als Excel-Dateien exportiert werden zur Weitergabe oder Archivierung.
 
@@ -185,7 +241,7 @@ Dienstpläne können als Excel-Dateien exportiert werden zur Weitergabe oder Arc
 ## Wartung und Support
 
 Datenbank-Backup:
-Regelmäßige Backups der MySQL-Datenbank werden dringend empfohlen. Die Anwendung selbst speichert keine persistenten Daten außerhalb der Datenbank.
+Die MySQL-Datenbank wird einmal täglich gesichert. Zusätzlich wird der Coolify-Server einmal täglich gespiegelt. Damit sind sowohl die Anwendungsdaten als auch die Server-Infrastruktur regelmäßig gesichert. Die Anwendung selbst speichert keine persistenten Daten außerhalb der Datenbank.
 
 Logging:
 Das Backend protokolliert Zugriffe und Fehler. Die Logs können über die Admin-Oberfläche eingesehen werden.

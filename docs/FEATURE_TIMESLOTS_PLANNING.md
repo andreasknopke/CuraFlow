@@ -429,42 +429,6 @@ Bei Timeslots: Zeige Zeitangabe im Chip
 
 ## 9. Kalender-Integration
 
-### 9.1 Google Calendar Sync erweitern
-
-**Datei:** `functions/syncCalendar.ts`
-
-```typescript
-// Bei Event-Erstellung: Timeslot-Zeiten berücksichtigen
-const createCalendarEvent = async (shift: ShiftEntry, timeslot?: WorkplaceTimeslot) => {
-    const baseDate = new Date(shift.date);
-    
-    let startDateTime: Date;
-    let endDateTime: Date;
-    
-    if (timeslot) {
-        // Mit Timeslot: Exakte Zeiten verwenden
-        startDateTime = combineDateAndTime(baseDate, timeslot.start_time);
-        endDateTime = combineDateAndTime(baseDate, timeslot.end_time);
-        
-        // Über Mitternacht: Ende auf nächsten Tag
-        if (timeslot.spans_midnight) {
-            endDateTime = addDays(endDateTime, 1);
-        }
-    } else {
-        // Ohne Timeslot: Ganztägiges Event
-        startDateTime = startOfDay(baseDate);
-        endDateTime = endOfDay(baseDate);
-    }
-    
-    return {
-        summary: `${shift.position}${timeslot ? ` (${timeslot.label})` : ''}`,
-        start: { dateTime: startDateTime.toISOString() },
-        end: { dateTime: endDateTime.toISOString() },
-        // ...
-    };
-};
-```
-
 ### 9.2 Event-Titel Format
 
 - Ohne Timeslot: `"OP Saal 1"`
@@ -590,7 +554,6 @@ const workloadAnalysis = (doctor, shifts, timeslots, period) => {
 - [ ] Toleranz-Handling
 
 ### Phase 5: Kalender & Export
-- [ ] `syncCalendar.ts` für Timeslots erweitern
 - [ ] Excel-Export mit Zeitangaben
 - [ ] E-Mail-Benachrichtigungen anpassen
 
@@ -612,10 +575,6 @@ const workloadAnalysis = (doctor, shifts, timeslots, period) => {
 - [ ] Timeslot-Zuweisung per Drag & Drop
 - [ ] Überlappungsprüfung blockiert Doppelbelegung
 - [ ] Über-Mitternacht-Schichten werden korrekt angezeigt
-
-### 12.3 Kalender-Sync
-- [ ] Events mit korrekten Start-/Endzeiten
-- [ ] Über-Mitternacht-Events auf richtigem Datum
 
 ### 12.4 Reporting
 - [ ] Arbeitsstunden-Aggregation korrekt
@@ -646,7 +605,6 @@ const workloadAnalysis = (doctor, shifts, timeslots, period) => {
 | `WorkplaceTimeslot` Entity | Neue DB-Tabelle |
 | Timeslot-Editor UI | shadcn/ui Komponenten |
 | Überlappungsprüfung | Bestehende `ShiftValidation.jsx` |
-| Kalender-Sync | Bestehende `syncCalendar.ts` |
 | Reporting | Bestehende Statistik-Komponenten |
 
 ---
@@ -658,7 +616,6 @@ const workloadAnalysis = (doctor, shifts, timeslots, period) => {
 | Performance bei vielen Timeslots | Mittel | Mittel | Lazy Loading, Caching |
 | UI-Komplexität im Grid | Hoch | Mittel | Collapsible Sections, nur bei Bedarf |
 | Validierungs-Edge-Cases | Mittel | Hoch | Umfangreiche Unit-Tests |
-| Kalender-Sync-Probleme | Niedrig | Niedrig | Batch-Updates, Fehlerhandling |
 
 ---
 

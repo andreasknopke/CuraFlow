@@ -400,7 +400,7 @@ Die Hauptarbeit – wer war wann wo – erledigt die Abteilung über ihren norma
 | 11.1 | P&I Loga Import/Export | Geplant in Phase 4 (Format unklar) | 📋 | Abhängig von Kundenfeedback |
 | 11.2 | SAP HR-Anbindung | – | ⊘ | Kunde nutzt Loga, nicht SAP |
 | 11.3 | DATEV-Export | – | ❌ | Ggf. als Alternative zu Loga für andere Kunden |
-| 11.4 | Kalender-Sync (iCal/Google) | syncCalendar.ts + ICS-Anhang in E-Mails | ✅ | |
+| 11.4 | Kalender-Sync (iCal) | ICS-Anhang in E-Mails | ✅ | |
 | 11.5 | E-Mail-Benachrichtigungen | sendScheduleEmails, sendShiftNotification, Wish-Reminders | ✅ | Umfangreich |
 | 11.6 | REST-API | Vollständige Express-API mit JWT-Auth | ✅ | |
 | 11.7 | Excel-Import | – | ❌ | Kein Import, nur Export |

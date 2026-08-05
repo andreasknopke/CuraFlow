@@ -382,30 +382,6 @@
       "url": "{{ _.base_url }}/api/holidays/{{ _.state }}/{{ _.year }}"
     },
 
-    { "_id": "fld_calendar", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Calendar" },
-    {
-      "_id": "req_calendar_sync",
-      "_type": "request",
-      "parentId": "fld_calendar",
-      "name": "Sync Calendar",
-      "method": "POST",
-      "url": "{{ _.base_url }}/api/calendar/sync",
-      "headers": [
-        { "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" },
-        { "name": "Content-Type", "value": "application/json" }
-      ],
-      "body": { "mimeType": "application/json", "text": "{\n  \"doctorId\": {{ _.doctor_id }}\n}" }
-    },
-    {
-      "_id": "req_calendar_export",
-      "_type": "request",
-      "parentId": "fld_calendar",
-      "name": "Export ICS",
-      "method": "GET",
-      "url": "{{ _.base_url }}/api/calendar/export/{{ _.doctor_id }}",
-      "headers": [{ "name": "Authorization", "value": "Bearer {{ _.jwt_token }}" }]
-    },
-
     { "_id": "fld_voice", "_type": "request_group", "parentId": "wrk_curaflow_api", "name": "Voice" },
     {
       "_id": "req_voice_transcribe",

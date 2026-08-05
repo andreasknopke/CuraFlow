@@ -40,7 +40,7 @@ export default function AutoFillSettingsDialog({ trigger }: AutoFillSettingsDial
     const limitBG = getSetting('limit_back_services', '12');
     const limitWeekend = getSetting('limit_weekend_services', '1');
     const strictRotationMode = getSettingBool('rotation_restricts_other_assignments');
-    const autoFillDebugEnabled = getSettingBool('autofill_debug_enabled') || getSettingBool('ai_autofill_debug_enabled');
+    const autoFillDebugEnabled = getSettingBool('autofill_debug_enabled');
 
     return (
         <Dialog>

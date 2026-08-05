@@ -176,15 +176,6 @@ Gibt öffentliche Feiertage u. Schulferien für Mecklenburg-Vorpommern zurück.
 
 ---
 
-## Kalender-Sync (`/api/calendar`)
-
-| Methode | Endpunkt | Beschreibung |
-|---|---|---|
-| POST | `/api/calendar/sync` | Mit externem Kalender synchronisieren |
-| GET | `/api/calendar/export/:doctorId` | ICS-Datei für Mitarbeiter exportieren |
-
----
-
 ## Sprachsteuerung (`/api/voice`)
 
 | Methode | Endpunkt | Beschreibung |

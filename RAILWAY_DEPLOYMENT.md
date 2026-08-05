@@ -29,7 +29,6 @@ server/
 │   ├── schedule.js              # Dienstplan-Funktionen
 │   ├── holidays.js              # Feiertage
 │   ├── staff.js                 # Mitarbeiter
-│   ├── calendar.js              # Kalender-Sync
 │   ├── voice.js                 # Sprachbefehle
 │   └── admin.js                 # Admin-Tools
 └── scripts/
@@ -252,7 +251,6 @@ railway up --dockerfile Dockerfile
 | `NODE_ENV` | Environment | `production` |
 | `PORT` | Server Port (Railway setzt automatisch) | `3000` |
 | `ELEVENLABS_API_KEY` | Für Voice-Features | - |
-| `GOOGLE_SERVICE_ACCOUNT_EMAIL` | Für Calendar-Sync | - |
 
 ### Setzen via CLI
 

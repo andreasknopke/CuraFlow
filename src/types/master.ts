@@ -369,9 +369,7 @@ export interface TisowareNewAbsence {
   psPersNr: string;
   date: string;
   position: string;
-  notePrefix: string;
   loanr: string;
-  note: string | null;
 }
 
 /** A conflict entry in the preview. */

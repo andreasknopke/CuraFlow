@@ -559,7 +559,6 @@ export default function MasterTisowareImport() {
                           <th className="p-2 text-left">Mitarbeiter</th>
                           <th className="p-2 text-left">Datum</th>
                           <th className="p-2 text-left">Position</th>
-                          <th className="p-2 text-left">Notiz</th>
                           <th className="p-2 text-left">LOANR</th>
                         </tr>
                       </thead>
@@ -571,7 +570,6 @@ export default function MasterTisowareImport() {
                             <td className="p-2">
                               <Badge variant="outline" className="text-xs">{a.position}</Badge>
                             </td>
-                            <td className="p-2 max-w-48 truncate text-slate-500">{a.notePrefix}</td>
                             <td className="p-2 font-mono text-xs text-slate-400">{a.loanr}</td>
                           </tr>
                         ))}

@@ -2852,10 +2852,7 @@ export default function ScheduleBoard() {
   const handleAutoFill = (categories: string[] | null = null): void => {
     setIsGenerating(true);
     try {
-            const autoFillDebugEnabled = (
-                systemSettings.find((s) => s.key === 'autofill_debug_enabled')?.value ||
-                systemSettings.find((s) => s.key === 'ai_autofill_debug_enabled')?.value
-            ) === 'true';
+            const autoFillDebugEnabled = systemSettings.find((s) => s.key === 'autofill_debug_enabled')?.value === 'true';
             const autoFillDebugEntries: any[] = [];
             const autoFillRequestId = `af-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -3759,17 +3756,6 @@ export default function ScheduleBoard() {
                              } />
                            </>
                          )}
-                         {/* KI-Optimierung temporarily hidden
-                         <DropdownMenuSeparator />
-                         <DropdownMenuLabel className="flex items-center gap-1">
-                             <Sparkles className="w-3 h-3 text-amber-500" />
-                             KI-Optimierung
-                         </DropdownMenuLabel>
-                         <DropdownMenuItem onClick={handleAIAutoFill} className="text-amber-700 font-medium">
-                             <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
-                             KI-AutoFill (alle Kategorien)
-                         </DropdownMenuItem>
-                         */}
                      </DropdownMenuContent>
                  </DropdownMenu>
              )}

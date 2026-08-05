@@ -1368,19 +1368,6 @@ class APIClient {
     });
   }
 
-  // ==================== Calendar ====================
-
-  async syncCalendar(year: number, month: number): Promise<unknown> {
-    return this.request('/api/calendar/sync', {
-      method: 'POST',
-      body: JSON.stringify({ year, month }),
-    });
-  }
-
-  async getServiceAccountEmail(): Promise<unknown> {
-    return this.request('/api/calendar/service-account-email');
-  }
-
   // ==================== Voice (unused / planned) ====================
 
   async processVoiceCommand(command: string): Promise<unknown> {
