@@ -77,6 +77,7 @@ export default function WishListPage() {
   const [viewMode, setViewMode] = useState('year'); // 'year' | 'month'
   const { isSchoolHoliday, isPublicHoliday } = useHolidays(selectedYear);
   const [selectedDoctorId, setSelectedDoctorId] = useState(null);
+  const [dialogDoctorId, setDialogDoctorId] = useState(null);
   const [activeTab, setActiveTab] = useState(null);
   
   const [dialogState, setDialogState] = useState({
@@ -288,6 +289,10 @@ export default function WishListPage() {
   }, [doctorsForSelection, selectedDoctorId, user]);
 
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+  // Doctor the currently open dialog operates on. In the month overview the
+  // grid shows all doctors, so clicking a cell must not change
+  // selectedDoctorId (that would collapse the overview to one doctor).
+  const dialogDoctor = doctors.find(d => d.id === dialogDoctorId);
 
   const contractInfoByDoctorId = useMemo(() => {
       const employeesById = new Map(masterEmployees.map((employee) => [employee.id, employee]));
@@ -307,6 +312,7 @@ export default function WishListPage() {
 
   const getDoctorContractInfo = (doctorId) => contractInfoByDoctorId[doctorId] || null;
   const selectedDoctorContractInfo = selectedDoctor ? getDoctorContractInfo(selectedDoctor.id) : null;
+  const dialogDoctorContractInfo = dialogDoctor ? getDoctorContractInfo(dialogDoctor.id) : null;
 
   // Fetch Wishes
   const { data: allWishes = [] } = useQuery({
@@ -669,16 +675,6 @@ export default function WishListPage() {
 
     const handleDateClick = (date, doctorIdOverride = null, dragDateKeys = null) => {
         const targetDoctorId = doctorIdOverride || selectedDoctorId;
-        // TEMP-DEBUG: trace click path from month overview / year view
-        console.log('[Wunschbox-Debug] handleDateClick aufgerufen', {
-            date: format(date, 'yyyy-MM-dd'),
-            doctorIdOverride,
-            targetDoctorId,
-            selectedDoctorId,
-            viewMode,
-            activeTab,
-            isAdmin,
-        });
         if (!targetDoctorId || !canEdit) return;
         const targetContractInfo = getDoctorContractInfo(targetDoctorId);
         if (!isDateWithinContract(date, targetContractInfo?.contractStart, targetContractInfo?.contractEnd)) return;
@@ -686,19 +682,12 @@ export default function WishListPage() {
         // Wenn keine qualifizierten Dienst-Typen vorhanden sind, keine neuen Wünsche zulassen
         // (bestehende Wünsche können weiterhin bearbeitet werden)
         const dateStr = format(date, 'yyyy-MM-dd');
-        const relevantDoctorWishes = targetDoctorId === selectedDoctorId
-            ? mergedDoctorWishes
-            : allWishes.filter(w => w.doctor_id === targetDoctorId);
+        // In the month overview the grid shows all doctors, so match against
+        // the full wish list (including cross-tenant wishes). The year view
+        // only ever shows the selected doctor.
+        const relevantDoctorWishes = (viewMode === 'month' ? mergedAllWishes : mergedDoctorWishes)
+            .filter(w => w.doctor_id === targetDoctorId);
         const hasExistingWish = relevantDoctorWishes.some(w => isWishOnDate(w, dateStr));
-        // TEMP-DEBUG: which wishes are visible for the clicked doctor/date
-        console.log('[Wunschbox-Debug] handleDateClick Wünsche des Ziel-Mitarbeiters', {
-            targetDoctorId,
-            dateStr,
-            source: targetDoctorId === selectedDoctorId ? 'mergedDoctorWishes' : 'allWishes (gefiltert)',
-            wishesOnDate: relevantDoctorWishes
-                .filter(w => isWishOnDate(w, dateStr))
-                .map(w => ({ id: w.id, type: w.type, position: w.position ?? null, status: w.status, date: w.date, range_start: w.range_start ?? null, range_end: w.range_end ?? null, isCentral: !!w._isCentral })),
-        });
         if (!activeTab && !hasExistingWish) {
             alert('Für diese Person sind keine qualifizierten Dienste hinterlegt. Es können keine Wünsche eingetragen werden.');
             return;
@@ -737,14 +726,11 @@ export default function WishListPage() {
         rangeWishes: rangeWishesFromDrag?.length > 0 ? rangeWishesFromDrag : null,
     });
 
-        if (targetDoctorId !== selectedDoctorId) {
-            // TEMP-DEBUG: this selection change is suspected to collapse the
-            // month overview to a single doctor (bug 1).
-            console.log('[Wunschbox-Debug] handleDateClick ändert selectedDoctorId', {
-                from: selectedDoctorId,
-                to: targetDoctorId,
-                viewMode,
-            });
+        // The dialog must work for the clicked doctor, but in the month
+        // overview the grid must stay on "Alle" — otherwise it collapses to
+        // the single doctor and no other employee can be edited anymore.
+        setDialogDoctorId(targetDoctorId);
+        if (targetDoctorId !== selectedDoctorId && viewMode !== 'month') {
             setSelectedDoctorId(targetDoctorId);
         }
   };
@@ -773,8 +759,8 @@ export default function WishListPage() {
   // doctor_id for employee_id and adds shared_workplace_id. No local shift is
   // created automatically — cross-tenant shifts are managed via the pool.
   const handleCentralDialogSave = async (formData) => {
-      if (!selectedDoctorId) return;
-      const employeeId = selectedDoctor?.central_employee_id;
+      if (!dialogDoctorId) return;
+      const employeeId = dialogDoctor?.central_employee_id;
       if (!employeeId) {
           alert('Dieser Arzt ist noch keiner zentralen Mitarbeiterkennung zugeordnet. Bitte wende dich an die Verwaltung.');
           return;
@@ -804,9 +790,15 @@ export default function WishListPage() {
           const rangeDates = eachDayOfInterval({ start: new Date(range_start), end: new Date(range_end) })
               .map((d) => format(d, 'yyyy-MM-dd'));
 
+          // Match existing central wishes for the dialog doctor — in the
+          // month overview this may differ from the currently selected one.
           const existingByDate = new Map();
-          for (const w of mappedDoctorCentralWishes) {
-              if (w.type === dataToSave.type && rangeDates.includes(w.date)) {
+          for (const w of allCentralWishes) {
+              if (
+                  String(w.employee_id) === String(employeeId)
+                  && w.type === dataToSave.type
+                  && rangeDates.includes(w.date)
+              ) {
                   existingByDate.set(w.date, w);
               }
           }
@@ -837,10 +829,10 @@ export default function WishListPage() {
 
       trackDbChange();
       queryClient.invalidateQueries({ queryKey: ['pool', 'central-wishes'] });
-      if (selectedDoctor) {
+      if (dialogDoctor) {
           logWishAction(
               dialogState.wish?._isCentral ? 'Verbundswunsch aktualisiert' : 'Verbundswunsch erstellt',
-              selectedDoctor.name,
+              dialogDoctor.name,
               format(dialogState.date, 'yyyy-MM-dd'),
               dataToSave.type
           );
@@ -858,10 +850,10 @@ export default function WishListPage() {
       }
       trackDbChange();
       queryClient.invalidateQueries({ queryKey: ['pool', 'central-wishes'] });
-      if (selectedDoctor) {
+      if (dialogDoctor) {
           logWishAction(
               'Verbundswunsch gelöscht',
-              selectedDoctor.name,
+              dialogDoctor.name,
               format(dialogState.date, 'yyyy-MM-dd'),
               dialogState.wish?.type
           );
@@ -869,15 +861,15 @@ export default function WishListPage() {
   };
 
   const handleDialogSave = async (formData) => {
-      if (!selectedDoctorId) return;
+      if (!dialogDoctorId) return;
 
       // Cross-tenant wishes live in the master DB (CentralWishRequest) and are
       // routed through the dedicated API. Local wishes are unchanged.
-      if (isCrossTenantTab(activeTab)) {
+      if (isCrossTenantTab(activeTab) || dialogState.wish?._isCentral) {
           return handleCentralDialogSave(formData);
       }
 
-      const contractInfo = getDoctorContractInfo(selectedDoctorId);
+      const contractInfo = getDoctorContractInfo(dialogDoctorId);
       if (!isDateWithinContract(dialogState.date, contractInfo?.contractStart, contractInfo?.contractEnd)) {
           alert('Das gewählte Datum liegt außerhalb der Vertragslaufzeit.');
           return;
@@ -907,13 +899,13 @@ export default function WishListPage() {
               format(clampedRange.endDate, 'yyyy-MM-dd')
           );
           const existingWishesByDate = new Map(
-              doctorWishes
-                  .filter(w => w.type === dataToSave.type && rangeDates.includes(w.date))
+              allWishes
+                  .filter(w => w.doctor_id === dialogDoctorId && w.type === dataToSave.type && rangeDates.includes(w.date))
                   .map(w => [w.date, w])
           );
           const baseWishData = {
               ...dataToSave,
-              doctor_id: selectedDoctorId,
+              doctor_id: dialogDoctorId,
               user_viewed: false,
               range_start: null,
               range_end: null,
@@ -943,12 +935,12 @@ export default function WishListPage() {
 
           trackDbChange();
           queryClient.invalidateQueries({ queryKey: ['wishes'] });
-          if (selectedDoctor) {
+          if (dialogDoctor) {
               const logDate = `${rangeDates[0]} bis ${rangeDates[rangeDates.length - 1]}`;
               const actionLabel = dialogState.wish
                   ? `Eintrag aktualisiert (${rangeDates.length} Tage)`
                   : `Eintrag erstellt (${rangeDates.length} Tage)`;
-              logWishAction(actionLabel, selectedDoctor.name, logDate, dataToSave.type);
+              logWishAction(actionLabel, dialogDoctor.name, logDate, dataToSave.type);
           }
           return;
       }
@@ -957,25 +949,25 @@ export default function WishListPage() {
           // Update
           await db.WishRequest.update(dialogState.wish.id, {
               ...dataToSave,
-              doctor_id: selectedDoctorId,
+              doctor_id: dialogDoctorId,
               date: dateStr,
               user_viewed: false
           });
           
           // Create shift if flagged
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
+              await createShiftFromWish(dialogDoctorId, dateStr, dataToSave.position);
           }
           
           trackDbChange();
           queryClient.invalidateQueries({ queryKey: ['wishes'] });
-          if (selectedDoctor) {
-              logWishAction(`Eintrag aktualisiert (${dataToSave.status})`, selectedDoctor.name, dateStr, dataToSave.type);
+          if (dialogDoctor) {
+              logWishAction(`Eintrag aktualisiert (${dataToSave.status})`, dialogDoctor.name, dateStr, dataToSave.type);
           }
       } else {
           // Create
           const wishData = {
-              doctor_id: selectedDoctorId,
+              doctor_id: dialogDoctorId,
               date: dateStr,
               ...dataToSave
           };
@@ -983,13 +975,13 @@ export default function WishListPage() {
           
           // Create shift if flagged (auto-approved)
           if (_createShift && dataToSave.position) {
-              await createShiftFromWish(selectedDoctorId, dateStr, dataToSave.position);
+              await createShiftFromWish(dialogDoctorId, dateStr, dataToSave.position);
           }
           
           trackDbChange();
           queryClient.invalidateQueries({ queryKey: ['wishes'] });
-          if (selectedDoctor) {
-              logWishAction('Eintrag erstellt', selectedDoctor.name, dateStr, dataToSave.type);
+          if (dialogDoctor) {
+              logWishAction('Eintrag erstellt', dialogDoctor.name, dateStr, dataToSave.type);
           }
       }
   };
@@ -1008,10 +1000,10 @@ export default function WishListPage() {
           trackDbChange();
           queryClient.invalidateQueries({ queryKey: ['wishes'] });
           queryClient.invalidateQueries({ queryKey: ['shifts'] });
-          if (selectedDoctor) {
+          if (dialogDoctor) {
               logWishAction(
                   `${rangeWishes.length} Einträge gelöscht`,
-                  selectedDoctor.name,
+                  dialogDoctor.name,
                   `${dates[0]} bis ${dates[dates.length - 1]}`,
                   rangeWishes[0].type
               );
@@ -1019,8 +1011,8 @@ export default function WishListPage() {
       } else if (dialogState.wish) {
           deleteWishMutation.mutate(dialogState.wish.id, {
               onSuccess: () => {
-                  if (selectedDoctor) {
-                      logWishAction('Eintrag gelöscht', selectedDoctor.name, format(dialogState.date, 'yyyy-MM-dd'), dialogState.wish.type);
+                  if (dialogDoctor) {
+                      logWishAction('Eintrag gelöscht', dialogDoctor.name, format(dialogState.date, 'yyyy-MM-dd'), dialogState.wish.type);
                   }
               }
           });
@@ -1202,8 +1194,8 @@ export default function WishListPage() {
           wish={dialogState.wish}
           initialDraft={dialogState.initialDraft}
           rangeWishes={dialogState.rangeWishes}
-          doctorName={selectedDoctor?.name}
-          contractInfo={selectedDoctorContractInfo}
+          doctorName={dialogDoctor?.name}
+          contractInfo={dialogDoctorContractInfo}
           activePosition={activeTab}
           activePositionLabel={isCrossTenantTab(activeTab) ? crossTenantTabLabel(activeTab) : null}
           isReadOnly={!canEdit}
