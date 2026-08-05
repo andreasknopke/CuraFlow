@@ -24,6 +24,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { isUnavailableShiftPosition } from '@/utils/shiftPositionUtils';
 
 /**
  * Dialog for the pool planner to assign (or edit/delete) a Springer to a
@@ -99,6 +100,54 @@ export default function RotationAssignmentDialog({
             return aName.localeCompare(bName, 'de');
         });
     }, [doctors]);
+
+    // ── 'Nicht verfügbar'-Abwesenheiten am Zieldatum ──
+    // Lokale ShiftEntry-Einträge (Tenant) + zentrale Abwesenheiten (CentralAbsenceEntry).
+    // Mitarbeiter, die am Zieldatum als "Nicht verfügbar" eingetragen sind, werden im
+    // Dropdown gekennzeichnet; der Server blockt die Einteilung zusätzlich mit 409.
+    const { data: dateShifts = [] } = useQuery({
+        queryKey: ['shifts', 'rotation-dialog', date],
+        queryFn: () => db.ShiftEntry.filter({ date }) as Promise<Array<{ doctor_id: string | null; date: string; position: string }>>,
+        enabled: !!open && !!date,
+        staleTime: 30 * 1000,
+    });
+
+    const { data: centralAbsencesData } = useQuery({
+        queryKey: ['groups', 'central-absences', 'rotation-dialog', date],
+        queryFn: () => api.getGroupCentralAbsences({ from: date ?? undefined, to: date ?? undefined }),
+        enabled: !!open && !!date,
+        staleTime: 30 * 1000,
+    });
+
+    const unavailableByEmployeeId = useMemo(() => {
+        const local = new Set<string>();
+        const central = new Set<string>();
+        const targetDate = date ? String(date).slice(0, 10) : null;
+        if (!targetDate) return { local, central };
+        for (const s of dateShifts) {
+            if (String(s.date).slice(0, 10) !== targetDate) continue;
+            if (isUnavailableShiftPosition(s.position) && s.doctor_id) {
+                local.add(String(s.doctor_id));
+            }
+        }
+        const absences = (centralAbsencesData as { absences?: Array<{ employee_id: string; date: string; position: string }> } | undefined)?.absences ?? [];
+        for (const a of absences) {
+            if (String(a.date).slice(0, 10) !== targetDate) continue;
+            if (isUnavailableShiftPosition(a.position)) {
+                central.add(String(a.employee_id));
+            }
+        }
+        return { local, central };
+    }, [dateShifts, centralAbsencesData, date]);
+
+    const isDoctorUnavailable = (doc: { id: string; central_employee_id?: string | null }): boolean => {
+        if (unavailableByEmployeeId.local.has(doc.id)) return true;
+        return !!doc.central_employee_id && unavailableByEmployeeId.central.has(String(doc.central_employee_id));
+    };
+
+    const selectedDoctorUnavailable = employeeId
+        ? doctors.some((doc) => doc.id === employeeId && isDoctorUnavailable(doc))
+        : false;
 
     const invalidateRotationQueries = () => {
         queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
@@ -185,15 +234,30 @@ export default function RotationAssignmentDialog({
                                     <SelectValue placeholder="Mitarbeiter wählen" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {sortedDoctors.map((doc) => (
-                                        <SelectItem key={doc.id} value={doc.id}>
-                                            {doc.name}
-                                        </SelectItem>
-                                    ))}
+                                    {sortedDoctors.map((doc) => {
+                                        const unavailable = isDoctorUnavailable(doc);
+                                        return (
+                                            <SelectItem key={doc.id} value={doc.id}>
+                                                {doc.name}
+                                                {unavailable ? ' · nicht verfügbar' : ''}
+                                            </SelectItem>
+                                        );
+                                    })}
                                 </SelectContent>
                             </Select>
                         )}
                     </div>
+
+                    {selectedDoctorUnavailable && (
+                        <Alert className="bg-amber-50 border-amber-200">
+                            <AlertCircle className="h-4 w-4 text-amber-600" />
+                            <AlertDescription className="text-amber-800">
+                                {doctors.find((d) => d.id === employeeId)?.name} ist am {dateLabel} als
+                                „Nicht verfügbar" eingetragen. Die Einteilung wird blockiert, solange die
+                                Abwesenheit besteht — bitte zuerst im Abwesenheitskalender entfernen.
+                            </AlertDescription>
+                        </Alert>
+                    )}
 
                     <div className="space-y-1.5">
                         <Label htmlFor="rotation-assignment-note">Notiz (optional)</Label>

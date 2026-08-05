@@ -48,3 +48,20 @@ export function normalizeShiftPosition(position: unknown): string {
 export function isNonWorkingShiftPosition(position: unknown): boolean {
   return NON_WORKING_SHIFT_POSITIONS.has(normalizeShiftPosition(position));
 }
+
+/**
+ * Normalisierte Schreibweisen von "Nicht verfügbar" — die NFD-Normalisierung
+ * entfernt nur echte Umlaute (ü→u), nicht die ASCII-Umschreibung "ue".
+ */
+const UNAVAILABLE_NORMALIZED_VARIANTS: ReadonlySet<string> = new Set([
+  normalizeShiftPosition('Nicht verfügbar'),  // 'nicht verfugbar'
+  normalizeShiftPosition('nicht verfuegbar'), // 'nicht verfuegbar'
+]);
+
+/**
+ * Returns true if the given position is a "Nicht verfügbar" absence —
+ * independent of spelling ('Nicht verfügbar', 'nicht verfuegbar', …).
+ */
+export function isUnavailableShiftPosition(position: unknown): boolean {
+  return UNAVAILABLE_NORMALIZED_VARIANTS.has(normalizeShiftPosition(position));
+}

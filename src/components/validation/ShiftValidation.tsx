@@ -140,10 +140,19 @@ export class ShiftValidator {
     }
 
     _parseAbsenceRules(): Record<string, boolean> {
-        const setting = this.systemSettings.find(s => s.key === 'absence_blocking_rules');
-        return setting ? JSON.parse(setting.value || '{}') : {
-            "Urlaub": true, "Schichturlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
+        // "Nicht verfügbar" blockiert wie "Frei" (Blocker, per Override überschreibbar).
+        // Fehlende Keys in gespeicherten Settings erben den Default, damit
+        // Altdaten ohne den Key nicht unbeabsichtigt freigeschaltet bleiben.
+        const defaults: Record<string, boolean> = {
+            "Urlaub": true, "Schichturlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": true
         };
+        const setting = this.systemSettings.find(s => s.key === 'absence_blocking_rules');
+        if (!setting) return defaults;
+        try {
+            return { ...defaults, ...JSON.parse(setting.value || '{}') };
+        } catch {
+            return defaults;
+        }
     }
 
     _parseLimits(): { foreground: number; background: number; weekend: number } {

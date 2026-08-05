@@ -22,6 +22,48 @@ interface MigrationResult {
   message?: string;
 }
 
+/**
+ * Product decision: "Nicht verfügbar" blocks like "Frei" (blocker, overridable).
+ * Historical workaround: it was a soft (warning-only) absence so employees with
+ * variable part-time/full days could still be scheduled flexibly.
+ *
+ * Updates a stored absence_blocking_rules setting so the "Nicht verfügbar" key
+ * is true. Idempotent — leaves the rest of the stored rules untouched. Throws
+ * on fatal pool errors; returns { updated: false, skipped } otherwise.
+ */
+export async function setUnavailableAbsenceBlocking(dbPool: Pool): Promise<{ updated: boolean; skipped?: string }> {
+  let rows: RowDataPacket[];
+  try {
+    [rows] = await dbPool.execute<RowDataPacket[]>(
+      `SELECT id, \`value\` FROM SystemSetting WHERE \`key\` = 'absence_blocking_rules' LIMIT 1`
+    );
+  } catch (error) {
+    const err = error as MigrationError;
+    if (isFatalTenantMigrationError(err)) throw err;
+    // SystemSetting-Tabelle existiert ggf. noch nicht → nichts zu migrieren
+    return { updated: false, skipped: 'SystemSetting not available' };
+  }
+  if (rows.length === 0) {
+    // Kein gespeichertes Setting → der Code-Default (blockierend) greift bereits
+    return { updated: false, skipped: 'No stored setting' };
+  }
+  let rules: Record<string, unknown> = {};
+  try {
+    rules = JSON.parse(String(rows[0].value ?? '{}')) as Record<string, unknown>;
+  } catch {
+    rules = {};
+  }
+  if (rules['Nicht verfügbar'] === true) {
+    return { updated: false, skipped: 'Already blocking' };
+  }
+  rules['Nicht verfügbar'] = true;
+  await dbPool.execute(
+    `UPDATE SystemSetting SET \`value\` = ? WHERE id = ?`,
+    [JSON.stringify(rules), rows[0].id]
+  );
+  return { updated: true };
+}
+
 const FATAL_TENANT_MIGRATION_ERROR_CODES = new Set([
   'ER_ACCESS_DENIED_ERROR',
   'ER_DBACCESS_DENIED_ERROR',
@@ -388,6 +430,16 @@ export async function runTenantMigrations(dbPool: Pool, cacheKey = 'default'): P
         status: 'skipped',
         reason: `${stats.processed} geprüft, alle bereits mit Timeslot`,
       });
+    }
+  });
+
+  // ── PHASE N+2: "Nicht verfügbar" blockiert wie "Frei" (absence_blocking_rules) ──
+  await run('set_absence_blocking_rules_unavailable_blocking', async () => {
+    const result = await setUnavailableAbsenceBlocking(dbPool);
+    if (result.updated) {
+      results.push({ migration: 'set_absence_blocking_rules_unavailable_blocking', status: 'success' });
+    } else {
+      results.push({ migration: 'set_absence_blocking_rules_unavailable_blocking', status: 'skipped', reason: result.skipped });
     }
   });
 

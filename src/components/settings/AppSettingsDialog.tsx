@@ -45,7 +45,7 @@ export default function AppSettingsDialog() {
 
     // --- Absence Rules ---
     const defaultRules: Record<string, boolean> = {
-        "Urlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": false
+        "Urlaub": true, "Krank": true, "Frei": true, "Dienstreise": false, "Nicht verfügbar": true
     };
     const rulesSetting = settings.find((s: SystemSetting) => s.key === 'absence_blocking_rules');
     const absenceRules: Record<string, boolean> = rulesSetting ? JSON.parse(rulesSetting.value ?? 'null') : defaultRules;

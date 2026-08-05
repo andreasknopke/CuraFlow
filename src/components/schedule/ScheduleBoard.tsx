@@ -64,7 +64,7 @@ import MobileScheduleView from './MobileScheduleView';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useTeamRoles } from '@/components/settings/TeamRoleSettings';
 import { getWorkplaceCategoriesFromSettings, getWorkplaceCategoryNames, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
-import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
+import { isNonWorkingShiftPosition, isUnavailableShiftPosition } from '@/utils/shiftPositionUtils';
 import { applyAlwaysVisibleRowsToSections, parseAlwaysVisibleRows, ALWAYS_VISIBLE_ROWS_KEY } from '@/components/schedule/sectionVisibility';
 import { createScheduleShiftLookup, getShiftsForScheduleCell } from '@/components/schedule/scheduleShiftLookup';
 import { buildInitialCustomTimeslotEndMinutesByOption, buildInitialCustomTimeslotStartMinutesByOption, getDefaultCustomTimeslotEndMinutes, normalizeCustomTimeslotEndMinutes, normalizeCustomTimeslotStartMinutes } from '@/components/schedule/timeslotSelectionUtils';
@@ -1809,26 +1809,40 @@ export default function ScheduleBoard() {
       
       // Bei Blockern: Override-Dialog anzeigen
       if (result.blockers.length > 0) {
+          // 'Nicht verfügbar'-Abwesenheit am Zieltag? Dann bietet der Dialog an,
+          // den Eintrag beim Override gleich zu entfernen (Workaround für
+          // variable Teilzeit: Mitarbeiter wird trotzdem flexibel eingesetzt).
+          const unavailableShift = currentWeekShifts.find(
+              (s: any) =>
+                  s.doctor_id === doctorId &&
+                  String(s.date).slice(0, 10) === dateStr &&
+                  isUnavailableShiftPosition(s.position)
+          );
+          const hasUnavailableConflict = !!unavailableShift;
+
           // Bei Rotationskonflikt: onProceed so wrappen, dass die Rotation vorher entfernt wird
-          const wrappedOnConfirm = isRotationConflict && onProceed
-              ? () => {
-                    const rotationPositions = new Set(
-                        workplaces
-                            .filter((w: any) => w.category === 'Rotationen')
-                            .map((w: any) => w.name)
-                    );
-                    const rotationShift = allShifts.find(
-                        (s: any) =>
-                            s.date === dateStr &&
-                            s.doctor_id === doctorId &&
-                            rotationPositions.has(s.position)
-                    );
-                    if (rotationShift) {
-                        deleteShiftMutation.mutate(rotationShift.id);
-                    }
-                    onProceed();
-                }
-              : onProceed;
+          const wrappedOnConfirm = async (removeUnavailable?: boolean) => {
+              if (removeUnavailable && unavailableShift) {
+                  await deleteShiftMutation.mutateAsync(unavailableShift.id);
+              }
+              if (isRotationConflict && onProceed) {
+                  const rotationPositions = new Set(
+                      workplaces
+                          .filter((w: any) => w.category === 'Rotationen')
+                          .map((w: any) => w.name)
+                  );
+                  const rotationShift = allShifts.find(
+                      (s: any) =>
+                          s.date === dateStr &&
+                          s.doctor_id === doctorId &&
+                          rotationPositions.has(s.position)
+                  );
+                  if (rotationShift) {
+                      deleteShiftMutation.mutate(rotationShift.id);
+                  }
+              }
+              onProceed?.();
+          };
           requestOverride({
               blockers: result.blockers,
               warnings: result.warnings,
@@ -1836,6 +1850,7 @@ export default function ScheduleBoard() {
               doctorName: doctor?.name,
               date: dateStr,
               position: newPosition,
+              unavailableConflict: hasUnavailableConflict,
               onConfirm: wrappedOnConfirm as any
           });
           return true; // Blockiert - warte auf Override-Bestätigung

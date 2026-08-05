@@ -35,6 +35,67 @@ describe('ShiftValidator absence overlap setting', () => {
     expect(result.blockers).toContain('Mitarbeiter ist bereits als "Frei" eingetragen (blockiert).');
   });
 
+  it('blocks an assignment when the doctor is marked "Nicht verfügbar" (treated like Frei by default)', () => {
+    const validator = createShiftValidator({
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1 }] as any,
+      shifts: [
+        {
+          id: 'shift-2',
+          doctor_id: 'doctor-1',
+          date: '2026-05-19',
+          position: 'Nicht verfügbar',
+        },
+      ] as any,
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ] as any,
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+    });
+
+    const result = validator.validate('doctor-1', '2026-05-19', 'Bereitschaftsdienst');
+
+    expect(result.canProceed).toBe(false);
+    expect(result.blockers).toContain('Mitarbeiter ist bereits als "Nicht verfügbar" eingetragen (blockiert).');
+  });
+
+  it('inherits the blocking default for stored absence rules that lack the "Nicht verfügbar" key', () => {
+    const validator = createShiftValidator({
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1 }] as any,
+      shifts: [
+        {
+          id: 'shift-3',
+          doctor_id: 'doctor-1',
+          date: '2026-05-19',
+          position: 'Nicht verfügbar',
+        },
+      ] as any,
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ] as any,
+      wishes: [],
+      systemSettings: [
+        // Legacy setting without the "Nicht verfügbar" key
+        { id: 's1', key: 'absence_blocking_rules', value: '{"Urlaub":true,"Krank":true,"Frei":true,"Dienstreise":false}', created_date: '2026-01-01', updated_date: '2026-01-01' },
+      ],
+      staffingEntries: [],
+      timeslots: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+    });
+
+    const result = validator.validate('doctor-1', '2026-05-19', 'Bereitschaftsdienst');
+
+    expect(result.canProceed).toBe(false);
+    expect(result.blockers).toContain('Mitarbeiter ist bereits als "Nicht verfügbar" eingetragen (blockiert).');
+  });
+
   it('allows overlapping absence and duty when the workplace setting is enabled', () => {
     const validator = createValidator([
       { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste', allows_absence_overlap: true },

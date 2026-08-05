@@ -44,6 +44,7 @@ import {
   reopenDemandOnAssignmentDelete,
 } from '../utils/rotationDemand.js';
 import { syncRotationAssignmentQualifications } from '../utils/rotationQualificationSync.js';
+import { findUnavailableAbsenceForAssignment } from '../utils/rotationAbsenceGuard.js';
 import { broadcastUserEvent, broadcastPlanUpdate, buildRealtimeScope } from '../utils/realtime.js';
 
 const router = express.Router();
@@ -51,6 +52,11 @@ const router = express.Router();
 router.use(authMiddleware);
 
 type AuthRequest = Request & { user?: Record<string, unknown> };
+
+interface CuraRequest extends AuthRequest {
+  db?: import('mysql2/promise').Pool;
+  dbToken?: string | null;
+}
 
 function handleError(res: Response, error: unknown): void {
   const err = error as Record<string, unknown> | null | undefined;
@@ -69,6 +75,33 @@ async function loadCtx(req: AuthRequest, res: Response): Promise<UserRotationCon
     return null;
   }
   return ctx;
+}
+
+/**
+ * 'Nicht verfügbar' blockiert wie 'Frei': Ein Mitarbeiter, der am Zieldatum im
+ * Abwesenheitskalender als "Nicht verfügbar" eingetragen ist, darf NICHT still
+ * in eine Pool-Rotation eingeteilt werden. Per Override (Abwesenheit zuerst
+ * entfernen) ist der Einsatz weiterhin möglich. Antwortet mit 409, wenn die
+ * Abwesenheit vorliegt.
+ */
+async function rejectIfUnavailable(req: AuthRequest, res: Response, employeeId: string, date: string): Promise<boolean> {
+  try {
+    const blocking = await findUnavailableAbsenceForAssignment({
+      masterDb: db,
+      tenantDb: (req as CuraRequest).db ?? null,
+      employeeId,
+      date,
+    });
+    if (blocking) {
+      res.status(409).json({
+        error: `Mitarbeiter ist am ${date} als "Nicht verfügbar" eingetragen. Bitte die Abwesenheit zuerst entfernen oder im Dienstplan per Drag&Drop mit Override einteilen.`,
+      });
+      return true;
+    }
+  } catch (guardErr) {
+    console.error('[rotations] absence guard error:', (guardErr as Error).message);
+  }
+  return false;
 }
 
 // ============================================================
@@ -648,6 +681,11 @@ router.post('/:groupId/assignments', async (req: Request, res: Response): Promis
       return;
     }
 
+    // 'Nicht verfügbar'-Abwesenheit blockiert wie 'Frei' — keine stillen Einteilungen
+    if (await rejectIfUnavailable(req as AuthRequest, res, String(employee_id), date)) {
+      return;
+    }
+
     const id = crypto.randomUUID();
     await db.execute(
       `INSERT INTO rotation_assignment (id, rotation_workplace_id, date, employee_id, timeslot_id, note, created_by)
@@ -712,6 +750,34 @@ router.patch('/:groupId/assignments/:assignmentId', async (req: Request, res: Re
       res.status(400).json({ error: 'Keine Änderungen' });
       return;
     }
+
+    // 'Nicht verfügbar'-Abwesenheit blockiert wie 'Frei' — prüfe nur, wenn sich
+    // Datum oder Mitarbeiter tatsächlich ändern (ein reiner Notiz-Update soll
+    // nicht an einer inzwischen eingetragenen Abwesenheit scheitern).
+    if (req.body.date !== undefined || req.body.employee_id !== undefined) {
+      let effDate = req.body.date as string | undefined;
+      let effEmployeeId = req.body.employee_id as string | undefined;
+      if (effDate === undefined || effEmployeeId === undefined) {
+        const [aRows] = await db.execute(
+          `SELECT a.date, a.employee_id
+             FROM rotation_assignment a
+             JOIN rotation_workplace w ON w.id = a.rotation_workplace_id
+            WHERE a.id = ? AND w.group_id = ?
+            LIMIT 1`,
+          [req.params.assignmentId, req.params.groupId as string]
+        ) as [Record<string, unknown>[], unknown];
+        if (aRows.length > 0) {
+          effDate = effDate ?? String(aRows[0].date).slice(0, 10);
+          effEmployeeId = effEmployeeId ?? String(aRows[0].employee_id);
+        }
+      }
+      if (effDate && effEmployeeId) {
+        if (await rejectIfUnavailable(req as AuthRequest, res, String(effEmployeeId), effDate)) {
+          return;
+        }
+      }
+    }
+
     values.push(req.params.assignmentId, req.params.groupId as string);
     await db.execute(
       `UPDATE rotation_assignment a

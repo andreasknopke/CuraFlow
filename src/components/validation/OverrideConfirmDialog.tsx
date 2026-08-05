@@ -10,12 +10,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AlertTriangle, ShieldAlert } from 'lucide-react';
 
 interface OverrideContext {
     doctorName?: string;
     date?: string;
     position?: string;
+    unavailableConflict?: boolean;
 }
 
 interface OverrideConfirmDialogProps {
@@ -24,7 +26,7 @@ interface OverrideConfirmDialogProps {
     blockers?: string[];
     warnings?: string[];
     context?: OverrideContext;
-    onConfirm?: (reason: string) => void | Promise<void>;
+    onConfirm?: (reason: string, removeUnavailable?: boolean) => void | Promise<void>;
     onCancel?: () => void;
 }
 
@@ -54,6 +56,7 @@ export default function OverrideConfirmDialog({
     const [step, setStep] = useState(1); // 1 = Warnung, 2 = Override-Begründung
     const [reason, setReason] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [removeUnavailable, setRemoveUnavailable] = useState(true);
 
     const hasBlockers = blockers.length > 0;
     const hasWarnings = warnings.length > 0;
@@ -62,17 +65,19 @@ export default function OverrideConfirmDialog({
     const handleConfirm = async () => {
         setIsSubmitting(true);
         try {
-            await onConfirm?.(reason.trim() || 'Keine Begründung angegeben');
+            await onConfirm?.(reason.trim() || 'Keine Begründung angegeben', removeUnavailable);
         } finally {
             setIsSubmitting(false);
             setReason('');
             setStep(1);
+            setRemoveUnavailable(true);
         }
     };
 
     const handleCancel = () => {
         setReason('');
         setStep(1);
+        setRemoveUnavailable(true);
         onCancel?.();
         onOpenChange(false);
     };
@@ -90,6 +95,7 @@ export default function OverrideConfirmDialog({
         if (!newOpen) {
             setReason('');
             setStep(1);
+            setRemoveUnavailable(true);
         }
         onOpenChange(newOpen);
     };
@@ -179,6 +185,23 @@ export default function OverrideConfirmDialog({
                                     rows={2}
                                 />
                             </div>
+
+                            {/* Frage bei 'Nicht verfügbar'-Blockade: Abwesenheit entfernen? */}
+                            {context.unavailableConflict && (
+                                <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                    <Checkbox
+                                        id="override-remove-unavailable"
+                                        checked={removeUnavailable}
+                                        onCheckedChange={(checked) => { setRemoveUnavailable(checked === true); }}
+                                    />
+                                    <Label
+                                        htmlFor="override-remove-unavailable"
+                                        className="text-sm font-medium text-amber-800 cursor-pointer"
+                                    >
+                                        Mitarbeiter aus „Nicht verfügbar" entfernen
+                                    </Label>
+                                </div>
+                            )}
                         </div>
                         
                         <DialogFooter className="gap-2 sm:gap-2">

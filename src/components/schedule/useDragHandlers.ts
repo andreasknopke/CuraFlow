@@ -15,6 +15,7 @@ import {
   applyTimeslotSelectionToUpdateData,
 } from './scheduleBoardHelpers';
 import { getWorkplaceCategoriesFromSettings, workplaceAllowsMultiple } from '@/utils/workplaceCategoryUtils';
+import { isUnavailableShiftPosition } from '@/utils/shiftPositionUtils';
 
 // Re-using the mutations result type via structural typing. We import the
 // hook's return type indirectly by typing the deps below.
@@ -352,18 +353,62 @@ export function useDragHandlers(deps: DragHandlersDeps) {
 
         // Build callback for timeslot selection (or direct creation)
         const doCreate = (timeslotId: string | null) => {
-            api.createRotationAssignment(String(wp.group_id), {
-                rotation_workplace_id: wp.id,
-                date: destDate,
-                employee_id: doctorId,
-                timeslot_id: timeslotId || null,
-            }).then(() => {
-                queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
-                queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
-                toast.success('Springer eingeteilt');
-            }).catch((err) => {
-                toast.error('Fehler: ' + (err?.message || ''));
-            });
+            const executeCreate = () => {
+                api.createRotationAssignment(String(wp.group_id), {
+                    rotation_workplace_id: wp.id,
+                    date: destDate,
+                    employee_id: doctorId,
+                    timeslot_id: timeslotId || null,
+                }).then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'visible-rotations'] });
+                    queryClient.invalidateQueries({ queryKey: ['rotations', 'demands'] });
+                    toast.success('Springer eingeteilt');
+                }).catch((err) => {
+                    toast.error('Fehler: ' + (err?.message || ''));
+                });
+            };
+
+            // Springer-/Joker-Chips tragen eine zentrale employee_id, die der
+            // lokale Validator nicht kennt — dort wird die Prüfung übersprungen
+            // (gleiches Muster wie im normalen Grid-Drop-Pfad).
+            const springerSourceDate = sourceDroppableId.startsWith('available__')
+                ? sourceDroppableId.replace('available__', '')
+                : '';
+            const isSpringerDrop = springerSourceDate
+                && ((allDisplayDocsByDate.get(springerSourceDate) || [])[source.index] || {})._isSpringer;
+
+            // Lokale Mitarbeiter werden gegen Abwesenheiten/Blocker validiert.
+            // 'Nicht verfügbar' blockiert wie 'Frei' — per Override überschreibbar,
+            // wobei der Dialog anbietet, den Eintrag gleich zu entfernen.
+            if (!isSpringerDrop && doctorById.has(doctorId)) {
+                const result = validate(doctorId, destDate, wp.name, {});
+                if (result.blockers.length > 0) {
+                    const unavailableShift = currentWeekShifts.find(
+                        (s: any) =>
+                            s.doctor_id === doctorId
+                            && String(s.date).slice(0, 10) === destDate
+                            && isUnavailableShiftPosition(s.position)
+                    );
+                    requestOverride({
+                        blockers: result.blockers,
+                        warnings: result.warnings,
+                        doctorId,
+                        doctorName: doctorById.get(doctorId)?.name,
+                        date: destDate,
+                        position: wp.name,
+                        unavailableConflict: !!unavailableShift,
+                        onConfirm: async (removeUnavailable?: boolean) => {
+                            if (removeUnavailable && unavailableShift) {
+                                await deleteShiftMutation.mutateAsync(unavailableShift.id);
+                            }
+                            executeCreate();
+                        },
+                    });
+                    return;
+                }
+            }
+
+            executeCreate();
         };
 
         // Drop on a specific timeslot cell → no dialog, create directly
@@ -674,6 +719,14 @@ export function useDragHandlers(deps: DragHandlersDeps) {
             // ── Phase 2: If blockers, show ONE override dialog ──
             if (allBlockers.length > 0) {
                 const doctor = doctors.find((d) => d.id === doctorId);
+                // 'Nicht verfügbar'-Abwesenheiten in den Zuweisungstagen? Der
+                // Dialog bietet dann an, sie beim Override gleich zu entfernen.
+                const dayStrs = daysToAssign.map((day: any) => format(day, 'yyyy-MM-dd'));
+                const unavailableShifts = currentWeekShifts.filter((s: any) =>
+                    s.doctor_id === doctorId
+                    && dayStrs.includes(String(s.date).slice(0, 10))
+                    && isUnavailableShiftPosition(s.position)
+                );
                 return new Promise<void>((resolve) => {
                     requestOverride({
                         blockers: allBlockers,
@@ -682,13 +735,18 @@ export function useDragHandlers(deps: DragHandlersDeps) {
                         doctorName: doctor?.name,
                         date: format(monday, 'yyyy-MM-dd'),
                         position: `${rowName} (Mo–Fr Batch)`,
-                        onConfirm: () => {
-                            void batchCreateShifts(
+                        unavailableConflict: unavailableShifts.length > 0,
+                        onConfirm: async (removeUnavailable?: boolean) => {
+                            if (removeUnavailable && unavailableShifts.length > 0) {
+                                await bulkDeleteMutation.mutateAsync(unavailableShifts.map((s: any) => s.id));
+                            }
+                            await batchCreateShifts(
                                 effectiveDateStrs,
                                 normalizedSelection,
                                 resolvedTimeslotId,
                                 scheduleBlockedDays.length,
-                            ).then(() => { resolve(); });
+                            );
+                            resolve();
                         },
                     });
                 });

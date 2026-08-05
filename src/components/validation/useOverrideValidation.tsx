@@ -13,8 +13,11 @@ interface OverrideDialogState {
         doctorName?: string;
         date?: string;
         position?: string;
+        // True when the conflict stems from a "Nicht verfügbar" absence — the
+        // dialog then offers to remove the absence as part of the override.
+        unavailableConflict?: boolean;
     };
-    pendingAction: (() => void | Promise<void>) | null;
+    pendingAction: ((removeUnavailable?: boolean) => void | Promise<void>) | null;
     resolve: ((value: { confirmed: boolean; reason?: string }) => void) | null;
 }
 
@@ -36,7 +39,8 @@ interface RequestOverrideParams {
     doctorName?: string;
     date?: string | Date;
     position?: string;
-    onConfirm?: () => void | Promise<void>;
+    unavailableConflict?: boolean;
+    onConfirm?: (removeUnavailable?: boolean) => void | Promise<void>;
 }
 
 interface UseOverrideValidationReturn {
@@ -120,6 +124,7 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
         doctorName,
         date,
         position,
+        unavailableConflict = false,
         onConfirm
     }: RequestOverrideParams) => {
         return new Promise<{ confirmed: boolean; reason?: string }>((resolve) => {
@@ -135,7 +140,8 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
                     doctorId,
                     doctorName: doctorName || doctors.find(d => d.id === doctorId)?.name || 'Unbekannt',
                     date: formattedDate,
-                    position
+                    position,
+                    unavailableConflict
                 },
                 pendingAction: onConfirm || null,
                 resolve
@@ -146,7 +152,7 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
     /**
      * Bestätigt den Override
      */
-    const confirmOverride = useCallback(async (reason: string) => {
+    const confirmOverride = useCallback(async (reason: string, removeUnavailable?: boolean) => {
         const { context, blockers, warnings, pendingAction, resolve } = overrideDialog;
 
         // Log the override
@@ -171,9 +177,10 @@ export function useOverrideValidation({ user, doctors = [] }: { user?: { email?:
             resolve: null
         });
 
-        // Execute pending action if provided
+        // Execute pending action if provided (removeUnavailable is the dialog's
+        // decision whether to delete the "Nicht verfügbar" absence first)
         if (pendingAction) {
-            await pendingAction();
+            await pendingAction(removeUnavailable);
         }
 
         // Resolve the promise
