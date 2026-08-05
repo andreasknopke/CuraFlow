@@ -63,6 +63,17 @@ export default function WishMonthOverview({
         loadPreferences();
     }, []);
 
+    // TEMP-DEBUG: shows which doctors/wishes actually arrive in the month overview
+    useEffect(() => {
+        console.log('[Wunschbox-Debug] Monatsübersicht Props erhalten', {
+            doctors: doctors.map((d: Doctor) => d.name),
+            wishesTotal: wishes.length,
+            noServiceWishes: wishes.filter((w: WishRequest) => w.type === 'no_service').length,
+            serviceWishes: wishes.filter((w: WishRequest) => w.type === 'service').length,
+            activeType,
+        });
+    }, [doctors, wishes, activeType]);
+
     const handleShowAbsencesChange = async (checked: boolean) => {
         setShowAbsences(checked);
         try {
@@ -98,6 +109,30 @@ export default function WishMonthOverview({
     const visibleDoctors = doctors.filter((d: Doctor) => !hiddenDoctorIds.includes(d.id));
     const areAllDoctorsVisible = doctors.length > 0 && hiddenDoctorIds.length === 0;
 
+    // TEMP-DEBUG: compact summary of a wish for console diagnostics
+    const summarizeWish = (w: WishRequest | null | undefined) => w ? {
+        id: w.id,
+        type: w.type,
+        position: w.position ?? null,
+        status: w.status,
+        date: w.date,
+        range_start: w.range_start ?? null,
+        range_end: w.range_end ?? null,
+        isCentral: Boolean((w as { _isCentral?: boolean })._isCentral),
+    } : null;
+
+    // TEMP-DEBUG: central click handler that logs before delegating to onToggle
+    const handleCellClick = (date: Date, doctor: Doctor, wish: WishRequest | null) => {
+        console.log('[Wunschbox-Debug] Monatsübersicht Zellen-Klick', {
+            doctor: doctor.name,
+            doctorId: doctor.id,
+            date: format(date, 'yyyy-MM-dd'),
+            activeType,
+            wish: summarizeWish(wish),
+        });
+        onToggle && onToggle(date, doctor.id);
+    };
+
     const getWish = (doctor: Doctor, date: Date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         const doctorDateWishes = wishes.filter((w: WishRequest) =>
@@ -105,14 +140,29 @@ export default function WishMonthOverview({
             isWishOnDate(w, dateStr)
         );
 
+        let resolved: WishRequest | undefined;
         if (!activeType) {
-            return doctorDateWishes.find((w: WishRequest) => w.type === 'service') || doctorDateWishes[0];
+            resolved = doctorDateWishes.find((w: WishRequest) => w.type === 'service') || doctorDateWishes[0];
+        } else {
+            const serviceWish = doctorDateWishes.find((w: WishRequest) => w.type === 'service' && w.position === activeType);
+            resolved = serviceWish
+                || doctorDateWishes.find((w: WishRequest) => w.type === 'no_service' && (!w.position || w.position === activeType));
         }
 
-        const serviceWish = doctorDateWishes.find((w: WishRequest) => w.type === 'service' && w.position === activeType);
-        if (serviceWish) return serviceWish;
+        // TEMP-DEBUG: log every cell where wishes exist so we can see why a
+        // no_service wish might resolve to a service wish (green "D").
+        if (doctorDateWishes.length > 0) {
+            console.log('[Wunschbox-Debug] Monatsübersicht getWish', {
+                doctor: doctor.name,
+                doctorId: doctor.id,
+                date: dateStr,
+                activeType,
+                candidates: doctorDateWishes.map(summarizeWish),
+                resolved: summarizeWish(resolved),
+            });
+        }
 
-        return doctorDateWishes.find((w: WishRequest) => w.type === 'no_service' && (!w.position || w.position === activeType));
+        return resolved;
     };
 
     const hasAnyWish = (date: Date) => {
@@ -253,7 +303,7 @@ export default function WishMonthOverview({
             return (
                 <div 
                     className={`w-full h-full min-h-[40px] hover:bg-slate-50 cursor-pointer transition-colors ${borderClass}`}
-                    onClick={() => onToggle && onToggle(date, doctor.id)}
+                    onClick={() => handleCellClick(date, doctor, wish || null)}
                 ></div>
             );
         }
@@ -285,7 +335,7 @@ export default function WishMonthOverview({
                     <TooltipTrigger asChild>
                         <div 
                             className={`relative w-full h-full min-h-[40px] flex items-center justify-center border rounded-sm ${bgColor} ${borderColor} ${textColor} transition-all hover:opacity-80 cursor-pointer p-0.5`}
-                            onClick={() => onToggle && onToggle(date, doctor.id)}
+                            onClick={() => handleCellClick(date, doctor, wish)}
                         >
                             {icon}
                             {wish.status === 'pending' && (

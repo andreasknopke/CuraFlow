@@ -669,6 +669,16 @@ export default function WishListPage() {
 
     const handleDateClick = (date, doctorIdOverride = null, dragDateKeys = null) => {
         const targetDoctorId = doctorIdOverride || selectedDoctorId;
+        // TEMP-DEBUG: trace click path from month overview / year view
+        console.log('[Wunschbox-Debug] handleDateClick aufgerufen', {
+            date: format(date, 'yyyy-MM-dd'),
+            doctorIdOverride,
+            targetDoctorId,
+            selectedDoctorId,
+            viewMode,
+            activeTab,
+            isAdmin,
+        });
         if (!targetDoctorId || !canEdit) return;
         const targetContractInfo = getDoctorContractInfo(targetDoctorId);
         if (!isDateWithinContract(date, targetContractInfo?.contractStart, targetContractInfo?.contractEnd)) return;
@@ -680,6 +690,15 @@ export default function WishListPage() {
             ? mergedDoctorWishes
             : allWishes.filter(w => w.doctor_id === targetDoctorId);
         const hasExistingWish = relevantDoctorWishes.some(w => isWishOnDate(w, dateStr));
+        // TEMP-DEBUG: which wishes are visible for the clicked doctor/date
+        console.log('[Wunschbox-Debug] handleDateClick Wünsche des Ziel-Mitarbeiters', {
+            targetDoctorId,
+            dateStr,
+            source: targetDoctorId === selectedDoctorId ? 'mergedDoctorWishes' : 'allWishes (gefiltert)',
+            wishesOnDate: relevantDoctorWishes
+                .filter(w => isWishOnDate(w, dateStr))
+                .map(w => ({ id: w.id, type: w.type, position: w.position ?? null, status: w.status, date: w.date, range_start: w.range_start ?? null, range_end: w.range_end ?? null, isCentral: !!w._isCentral })),
+        });
         if (!activeTab && !hasExistingWish) {
             alert('Für diese Person sind keine qualifizierten Dienste hinterlegt. Es können keine Wünsche eingetragen werden.');
             return;
@@ -719,7 +738,14 @@ export default function WishListPage() {
     });
 
         if (targetDoctorId !== selectedDoctorId) {
-                setSelectedDoctorId(targetDoctorId);
+            // TEMP-DEBUG: this selection change is suspected to collapse the
+            // month overview to a single doctor (bug 1).
+            console.log('[Wunschbox-Debug] handleDateClick ändert selectedDoctorId', {
+                from: selectedDoctorId,
+                to: targetDoctorId,
+                viewMode,
+            });
+            setSelectedDoctorId(targetDoctorId);
         }
   };
 
