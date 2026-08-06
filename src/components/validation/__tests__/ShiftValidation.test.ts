@@ -469,3 +469,79 @@ describe('ShiftValidator employee relationship conflicts', () => {
     expect(result.warnings.filter((w: string) => w.includes('Dienstkonflikt'))).toEqual([]);
   });
 });
+
+/**
+ * Auto-Frei regression (2026-08): shouldCreateAutoFrei received the holiday
+ * check as a FUNCTION (from useHolidays), but wrapped it in `() => …` before
+ * passing it to getAutoFreiDate. getAutoFreiDate then resolved the callback
+ * to a function (truthy) and treated EVERY day as a holiday — auto-frei was
+ * silently disabled in the scheduler. The callback must be passed through
+ * unchanged.
+ */
+describe('ShiftValidator shouldCreateAutoFrei', () => {
+  function build(overrides: any = {}) {
+    return createShiftValidator({
+      doctors: [{ id: 'doctor-1', role: 'Facharzt', fte: 1 }] as any,
+      shifts: [],
+      workplaces: [],
+      wishes: [],
+      systemSettings: [],
+      staffingEntries: [],
+      timeslots: [],
+      qualificationMap: {},
+      getDoctorQualIds: () => [],
+      wpQualsByWorkplace: {},
+      ...overrides,
+    });
+  }
+
+  it('returns the next workday when the workplace has auto_off and the holiday callback returns false', () => {
+    const validator = build({
+      workplaces: [
+        { id: 'workplace-1', name: 'Dienst Vordergrund', category: 'Dienste', auto_off: true },
+      ] as any,
+    });
+
+    // 2026-05-19 = Dienstag → Folgetag 2026-05-20 = Mittwoch (Werktag).
+    // Regression: with `() => isPublicHoliday` wrapping, this returned null.
+    const result = validator.shouldCreateAutoFrei('Dienst Vordergrund', '2026-05-19', () => false);
+    expect(result).toBe('2026-05-20');
+  });
+
+  it('accepts a PublicHolidayResult-style callback that returns null for workdays', () => {
+    const validator = build({
+      workplaces: [
+        { id: 'workplace-1', name: 'Dienst Vordergrund', category: 'Dienste', auto_off: true },
+      ] as any,
+    });
+
+    // Mirrors useHolidays: (date) => { name, date } | null.
+    const isHoliday = (date: Date) => {
+      const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      return iso === '2026-05-20' ? { name: 'Test-Feiertag', date: iso } : null;
+    };
+    expect(validator.shouldCreateAutoFrei('Dienst Vordergrund', '2026-05-19', isHoliday)).toBeNull();
+    expect(validator.shouldCreateAutoFrei('Dienst Vordergrund', '2026-05-21', isHoliday)).toBe('2026-05-22');
+  });
+
+  it('returns null when the next day is a weekend', () => {
+    const validator = build({
+      workplaces: [
+        { id: 'workplace-1', name: 'Dienst Vordergrund', category: 'Dienste', auto_off: true },
+      ] as any,
+    });
+
+    // 2026-05-22 = Freitag → Folgetag 2026-05-23 = Samstag.
+    expect(validator.shouldCreateAutoFrei('Dienst Vordergrund', '2026-05-22', () => false)).toBeNull();
+  });
+
+  it('returns null when the workplace has no auto_off flag', () => {
+    const validator = build({
+      workplaces: [
+        { id: 'workplace-1', name: 'Bereitschaftsdienst', category: 'Dienste' },
+      ] as any,
+    });
+
+    expect(validator.shouldCreateAutoFrei('Bereitschaftsdienst', '2026-05-19', () => false)).toBeNull();
+  });
+});

@@ -2683,7 +2683,7 @@ export default function ScheduleBoard() {
      * Returns the updated preview array (or unchanged array if no auto-frei needed).
      */
   const addPreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
-      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
       if (!autoFreiDateStr) return currentPreviews;
 
       // Check if doctor already has something on that date (in preview or DB)
@@ -2713,7 +2713,7 @@ export default function ScheduleBoard() {
    * Returns the updated preview array.
    */
   const removePreviewAutoFrei = (doctorId: string, dateStr: string, positionName: string, currentPreviews: ShiftEntry[]): ShiftEntry[] => {
-      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
+      const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday);
       if (!autoFreiDateStr) return currentPreviews;
 
       // Remove from preview

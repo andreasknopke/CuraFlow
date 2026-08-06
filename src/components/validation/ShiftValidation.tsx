@@ -741,20 +741,15 @@ export class ShiftValidator {
      * Samstage, Sonntage und Feiertage lösen kein verschobenes Auto-Frei aus.
      * @returns {string|null} - Datum für Auto-Frei oder null
      */
-    shouldCreateAutoFrei(position: string, dateStr: string, isPublicHoliday: boolean): string | null {
+    shouldCreateAutoFrei(position: string, dateStr: string, isPublicHoliday?: (date: Date) => unknown): string | null {
         const workplace = this.workplaces.find(w => w.name === position);
-        const autoOff = (workplace as Workplace & { auto_off?: boolean } | undefined)?.auto_off;
-        if (!autoOff) {
-            console.log(`[AUTOFREI] shouldCreateAutoFrei(${position}, ${dateStr}) → null: workplace=${workplace?.name ?? 'NICHT GEFUNDEN'}, auto_off=${String(autoOff)}`);
-            return null;
-        }
-        const result = getAutoFreiDate(dateStr, () => isPublicHoliday);
-        console.log(`[AUTOFREI] shouldCreateAutoFrei(${position}, ${dateStr}) → ${result ?? 'null'}`, {
-            workplace: workplace?.name,
-            auto_off: autoOff,
-            isPublicHolidayType: typeof isPublicHoliday,
-        });
-        return result;
+        if (!(workplace as Workplace & { auto_off?: boolean }).auto_off) return null;
+
+        // Pass the holiday callback through unchanged. Wrapping it (e.g.
+        // `() => isPublicHoliday`) makes getAutoFreiDate treat every day as a
+        // holiday because the resolved value is a function (truthy) — auto-frei
+        // silently stops (regression 2026-08).
+        return getAutoFreiDate(dateStr, isPublicHoliday);
     }
 
     /**

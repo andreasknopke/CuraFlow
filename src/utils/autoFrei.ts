@@ -18,26 +18,21 @@ import { addDays, format, parseISO } from 'date-fns';
  */
 export function getAutoFreiDate(
   dateStr: string,
-  isPublicHoliday?: (date: Date) => boolean,
+  isPublicHoliday?: (date: Date) => unknown,
 ): string | null {
   const nextDay = addDays(parseISO(dateStr), 1);
-  const nextDayStr = format(nextDay, 'yyyy-MM-dd');
   const dayOfWeek = nextDay.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-  // The resolved value is logged to expose wrong argument types: if a function
-  // is passed instead of a boolean, holidayValue becomes a function (truthy).
-  const holidayValue = isPublicHoliday?.(nextDay);
-  const isHoliday = Boolean(holidayValue);
+  // The callback may return a boolean, a PublicHolidayResult, or null — only
+  // truthiness matters here, so `unknown` keeps every caller type-compatible
+  // without casts. The callback MUST be a function: wrapping a value (or
+  // another function) in `() => …` here would make every day look like a
+  // holiday and silently disable auto-frei (regression 2026-08).
+  const isHoliday = Boolean(isPublicHoliday?.(nextDay));
 
-  const result = isWeekend || isHoliday ? null : nextDayStr;
-  console.log('[AUTOFREI] getAutoFreiDate:', {
-    dateStr,
-    nextDay: nextDayStr,
-    dayOfWeek,
-    isWeekend,
-    holidayValueType: typeof holidayValue,
-    isHoliday,
-    result,
-  });
-  return result;
+  if (isWeekend || isHoliday) {
+    return null;
+  }
+
+  return format(nextDay, 'yyyy-MM-dd');
 }

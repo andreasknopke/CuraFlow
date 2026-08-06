@@ -30,7 +30,7 @@ function buildRelationshipMap(relationships: Array<{ employee_id: string; relate
 interface UseShiftValidationReturn {
     validate: (doctorId: string, dateStr: string, position: string, options?: Record<string, unknown>) => ValidationResult;
     validateWithUI: (doctorId: string, dateStr: string, position: string, options?: Record<string, unknown>) => boolean;
-    shouldCreateAutoFrei: (position: string, dateStr: string, isPublicHoliday: boolean) => string | null;
+    shouldCreateAutoFrei: (position: string, dateStr: string, isPublicHoliday?: (date: Date) => unknown) => string | null;
     findAutoFreiToCleanup: (doctorId: string, dateStr: string, position: string) => ShiftEntry | null;
     isAutoOffPosition: (position: string) => boolean;
     checkCrossTenantConflicts: (doctorId: string, dateStr: string) => Promise<unknown[]>;
@@ -168,7 +168,7 @@ export function useShiftValidation(shifts: ShiftEntry[] = [], customOptions: Rec
     /**
      * Prüft ob Auto-Frei erstellt werden soll
      */
-    const shouldCreateAutoFrei = (position: string, dateStr: string, isPublicHoliday: boolean): string | null => {
+    const shouldCreateAutoFrei = (position: string, dateStr: string, isPublicHoliday?: (date: Date) => unknown): string | null => {
         return validator.shouldCreateAutoFrei(position, dateStr, isPublicHoliday);
     };
 
