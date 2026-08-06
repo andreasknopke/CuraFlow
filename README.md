@@ -75,8 +75,8 @@ Neben der Mitarbeiterverknüpfung importiert CuraFlow Abwesenheitsdaten aus dem 
 Importierte Daten und Abbildung:
 - Die Abwesenheiten werden über die Personalnummer (PSPERSNR) den zentralen Mitarbeitern zugeordnet.
 - Tisoware-Abwesenheitscodes (LOANR) werden auf die kanonischen CuraFlow-Abwesenheitspositionen abgebildet (z. B. Krank, Urlaub, Dienstreise, Frei, Nicht verfügbar).
-- **Datenschutz (Art. 9 DSGVO):** Krankheits-Subtypen (z. B. „Krank mit AU-Bescheinigung", „Krank Quarantäne", „Krank Infektion") und Original-Abwesenheitsgründe werden **bewusst nicht** importiert bzw. gespeichert. Es wird ausschließlich die kanonische Position (z. B. „Krank") übernommen — keine gesundheitsbezogenen Detailinformationen im Notizfeld.
-- Mutterschutz und Elternzeit werden auf „Nicht verfügbar" abgebildet (ebenfalls ohne gesundheitsbezogene Zusatzvermerke).
+- **Datenschutz (Art. 9 DSGVO):** Krankheits-Subtypen (z. B. „Krank mit AU-Bescheinigung", „Krank Quarantäne", „Krank Infektion") und Original-Abwesenheitsgründe werden als Zusatzvermerk (`[TISO:CODE]`) im Notizfeld der zentralen Abwesenheitsverwaltung gespeichert (Nachvollziehbarkeit des Imports). Diese gesundheitsbezogenen Detailinformationen werden in der Benutzeroberfläche **nicht angezeigt** (Datenminimierung auf Anzeigeebene); der Zugriff ist auf Administratoren mit Systemverwaltungs-Berechtigung beschränkt.
+- Mutterschutz und Elternzeit werden auf „Nicht verfügbar" abgebildet; der ursprüngliche Grund bleibt als TISO-Vermerk im Notizfeld erhalten (ebenfalls nicht in der UI angezeigt).
 
 Konfliktbehandlung:
 - `CentralAbsenceEntry` hat einen eindeutigen Schlüssel (Mitarbeiter, Datum). Bei einem Konflikt gilt: Gleiche Position → überspringen; unterschiedliche Position → Prioritätsvergleich (Tisoware vs. zentral); bei Gleichstand bleibt der Eintrag unverändert (Konflikt wird gemeldet).

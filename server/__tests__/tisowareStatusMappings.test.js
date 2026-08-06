@@ -35,14 +35,14 @@ describe('mapLoanrToPosition', () => {
     expect(mapLoanrToPosition('552').position).toBe('Nicht verfügbar');
   });
 
-  it('does NOT expose Tisoware subtype/reason details (Datenschutz Art. 9 DSGVO)', () => {
+  it('preserves the original Tisoware reason in the note prefix', () => {
     const ms = mapLoanrToPosition('550');
-    expect(ms.position).toBe('Nicht verfügbar');
-    expect(ms.notePrefix).toBeUndefined();
+    expect(ms.notePrefix).toContain('[TISO:550]');
+    expect(ms.notePrefix).toContain('Mutterschutz');
 
     const ez = mapLoanrToPosition('552');
-    expect(ez.position).toBe('Nicht verfügbar');
-    expect(ez.notePrefix).toBeUndefined();
+    expect(ez.notePrefix).toContain('[TISO:552]');
+    expect(ez.notePrefix).toContain('Elternzeit');
   });
 
   it('keeps Urlaub/Krank mappings unchanged', () => {
@@ -51,9 +51,10 @@ describe('mapLoanrToPosition', () => {
   });
 
   it('falls back to Nicht verfügbar for unknown LOANR codes', () => {
-    const result = mapLoanrToPosition('9999');
+    const result = mapLoanrToPosition('9999', 'Unbekannter Grund');
     expect(result.position).toBe('Nicht verfügbar');
-    expect(result.notePrefix).toBeUndefined();
+    expect(result.notePrefix).toContain('[TISO:9999]');
+    expect(result.notePrefix).toContain('Unbekannter Grund');
   });
 });
 

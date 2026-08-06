@@ -12,12 +12,8 @@
  *
  * ─── LOANR → Canonical Position Mapping ────────────────────────────────
  * Tisoware uses LOANR (Abwesenheitsgrund-Nummer) linked to LOASTAMM.
- * We map known codes to the canonical CuraFlow absence positions.
- *
- * Datenschutz (Art. 9 DSGVO): Krankheits-Subtypen (z. B. „Krank mit AU",
- * „Krank Quarantäne", „Krank Infektion") werden bewusst NICHT importiert.
- * Es wird nur die kanonische Position (z. B. „Krank") gespeichert, keine
- * gesundheitsbezogenen Detailinformationen in der note.
+ * We map known codes to the canonical CuraFlow absence positions and
+ * write a [TISO:CODE] prefix into the note field for auditability.
  *
  * ─── Merge Strategy ─────────────────────────────────────────────────────
  * CentralAbsenceEntry has UNIQUE(employee_id, date). On conflict:
@@ -43,18 +39,16 @@ import {
 // ─── LOANR → Canonical Position Mapping ────────────────────────────────────
 // Based on analysis of Tisoware LOASTAMM (~50 absence codes).
 // Only codes that map to a canonical CuraFlow absence position are listed.
-// Unmapped codes are stored as "Nicht verfügbar" (the safest fallback).
-//
-// Datenschutz (Art. 9 DSGVO): Krankheits-Subtypen werden NICHT in die
-// note geschrieben. Es wird ausschließlich die kanonische Position
-// gespeichert (z. B. „Krank"), keine gesundheitsbezogenen Details.
+// Unmapped codes are preserved as-is with [TISO:CODE] note but stored
+// as "Nicht verfügbar" (the safest fallback).
 //
 // Mutterschutz / Elternzeit (and similar long-running status codes such as
 // KO) are INTENTIONALLY mapped to "Nicht verfügbar" rather than to their own
 // canonical positions. CuraFlow's tenant scheduler only renders a fixed set
 // of absence rows (Frei/Krank/Urlaub/Dienstreise/Nicht verfügbar); writing
 // "Mutterschutz"/"Elternzeit" causes these absences to spill into the
-// "Archiv / Unbekannt" section.
+// "Archiv / Unbekannt" section. The original Tisoware reason is preserved
+// in the note via the [TISO:CODE] prefix so the audit trail is not lost.
 // repairTisowareStatusMappings() below backfills already-imported rows.
 
 const LOANR_TO_POSITION: Record<string, string> = {
@@ -107,30 +101,63 @@ const LOANR_TO_POSITION: Record<string, string> = {
   '580': 'Nicht verfügbar',
 };
 
-// Subtype descriptions for known LOANR codes.
-// Datenschutz (Art. 9 DSGVO): Die Subtypen werden bewusst NICHT in die
-// Datenbank geschrieben. Nur die kanonische Position wird persistiert.
+// Subtype descriptions for known LOANR codes (used in [TISO:CODE] note)
+const LOANR_TO_NOTE: Record<string, string> = {
+  '530KV': 'Krank auf Vertrauen',
+  '530KE': 'Krank auf Vertrauen (Eltern)',
+  '531': 'Krank ohne AU-Bescheinigung',
+  '532': 'Krank mit AU-Bescheinigung',
+  '533': 'Krank Kind krank',
+  '534': 'Krank Unfall',
+  '535': 'Krank stationär',
+  '536': 'Krank Reha',
+  '537': 'Krank Kuraufenthalt',
+  '538': 'Krank Quarantäne',
+  '539': 'Krank Verdienstausfall',
+  '540': 'Krank Infektion',
+  '570': 'Krank (Attest)',
+  '570Ä': 'Krank (ärztl. Attest)',
+  '570Q': 'Krank (Quarantäne)',
+  '571': 'Krank (ohne Attest)',
+  '572': 'Krank (Kind)',
+  '550': 'Mutterschutz',
+  '551': 'Mutterschutz vor Geburt',
+  '5511': 'Mutterschutz nach Geburt',
+  '552': 'Elternzeit',
+  '506': 'Freizeitausgleich',
+  '507': 'Überstundenabbau',
+  '508': 'Sonderurlaub',
+  '509': 'Bildungsurlaub',
+  '510': 'Freistellung',
+  '511': 'AZV-Tag',
+  '512': 'Freischicht',
+  '575': 'Freigestellt',
+  '579': 'Suspendiert',
+  '580': 'Ruhendes Arbeitsverhältnis',
+  '9000': 'Sonstige Abwesenheit',
+};
 
 /**
  * Determine canonical absence position for a given LOANR code.
- * Returns only the canonical position — no [TISO:CODE] note prefix.
- *
- * Datenschutz (Art. 9 DSGVO): Krankheits-Subtypen und Original-Gründe
- * (z. B. "Mutterschutz", "Krank mit AU-Bescheinigung") werden bewusst
- * NICHT in die note geschrieben. Es wird ausschließlich die kanonische
- * Position gespeichert.
+ * Returns the position and a [TISO:CODE] note prefix.
  *
  * Mutterschutz/Elternzeit LOANRs (550/551/5511/552) deliberately map to
- * the "Nicht verfügbar" position so they land in a known scheduler row.
+ * the "Nicht verfügbar" position so they land in a known scheduler row; the
+ * original reason stays in notePrefix (e.g. "[TISO:550] Mutterschutz").
  *
  * @param {string} loanr - The LOANR code from ABWKAL
- * @returns {{ position: string }}
+ * @param {string|null} loatext1 - LOATEXT1 from LOASTAMM (human-readable name)
+ * @returns {{ position: string, notePrefix: string }}
  */
-export function mapLoanrToPosition(loanr: string | null | undefined): { position: string } {
+export function mapLoanrToPosition(loanr: string | null | undefined, loatext1: string | null = null): { position: string; notePrefix: string } {
   const code = String(loanr || '').trim();
   const position = LOANR_TO_POSITION[code] || 'Nicht verfügbar';
 
-  return { position };
+  // Build note: [TISO:CODE] subtype info
+  const subtype = LOANR_TO_NOTE[code] || loatext1 || null;
+  const notePrefix = subtype ? `[TISO:${code}] ${subtype}` : `[TISO:${code}]`;
+
+  return { position, notePrefix };
 }
 
 /**
@@ -232,6 +259,20 @@ export async function repairTisowareStatusMappings(masterDb: Pool, options: { dr
       note: r.note,
     })),
   };
+}
+
+/**
+ * Build a conservative note by merging an existing central note with
+ * the Tisoware note prefix. Never overwrites existing notes, only appends.
+ *
+ * @param {string|null} existingNote - Existing note in CentralAbsenceEntry
+ * @param {string} notePrefix - The [TISO:CODE] prefix to add
+ * @returns {string}
+ */
+function mergeNote(existingNote: string | null, notePrefix: string): string {
+  if (!existingNote) return notePrefix;
+  if (existingNote.includes(`[TISO:`)) return existingNote; // Already has TISO prefix
+  return `${notePrefix} | ${existingNote}`;
 }
 
 // ─── Employee Matching ──────────────────────────────────────────────────────
@@ -434,6 +475,37 @@ export async function matchTisowareEmployees(masterDb: Pool, tisowareEmployees: 
       employee_name: null,
     };
   });
+}
+
+// ─── LOANR Lookup (batch) ───────────────────────────────────────────────────
+
+/**
+ * Fetch LOANR descriptions from LOASTAMM for a set of LOANR codes.
+ * Returns a Map: LOANR → LOATEXT1
+ *
+ * @param {string[]} loanrCodes - Array of LOANR codes
+ * @returns {Promise<Map<string, string>>}
+ */
+export async function fetchLoanrDescriptions(loanrCodes: string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(loanrCodes.map((c: string) => String(c || '').trim()).filter(Boolean))];
+  if (unique.length === 0) return new Map();
+
+  // Build IN clause — MSSQL doesn't support parameterized IN well from Node,
+  // but our queryTisoware sanitizes and these are alphanumeric codes anyway.
+  const inClause = unique.map((c: string) => `'${c.replace(/'/g, "''")}'`).join(',');
+  const sql = `SELECT LOANR, LOATEXT1 FROM dbo.LOASTAMM WHERE LOANR IN (${inClause})`;
+
+  try {
+    const result = await queryTisoware(sql);
+    const map = new Map<string, string>();
+    for (const row of (result.rows || [])) {
+      map.set(String(row.LOANR || '').trim(), (row.LOATEXT1 as string) || '');
+    }
+    return map;
+  } catch {
+    // LOASTAMM table might not exist or be inaccessible
+    return new Map();
+  }
 }
 
 // ─── Absence Fetching ────────────────────────────────────────────────────────
@@ -744,6 +816,25 @@ export async function previewTisowareImport(masterDb: Pool, psPersNrList: string
     };
   }
 
+  // 2. Fetch LOASTAMM descriptions for LOANR codes we'll encounter
+  let loanrMap = new Map<string, string>();
+  try {
+    const allLoanrCodes = new Set<string>();
+    // Peek at ABWKAL to get the LOANR codes — batched by PSNR
+    const PEEK_BATCH = 200;
+    for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
+      const batch = matchedPsnr.slice(i, i + PEEK_BATCH);
+      const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${batch.join(',')})`;
+      const peekResult = await queryTisoware(peekSql);
+      for (const row of (peekResult.rows || [])) {
+        if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+      }
+    }
+    loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
+  } catch (e) {
+    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', (e as Error).message);
+  }
+
   // 3. Process each employee one-by-one to avoid PHP proxy row limits.
   //    Each individual employee has <1000 ABWKAL rows — well within all limits.
 
@@ -796,7 +887,7 @@ export async function previewTisowareImport(masterDb: Pool, psPersNrList: string
 
       const dates = expandDateRange(fromDate, toDate || fromDate);
       const loanr = String(row.LOANR || '').trim();
-      const { position } = mapLoanrToPosition(loanr);
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr) ?? null);
 
       for (const date of dates) {
         // Check if already exists in CentralAbsenceEntry
@@ -867,7 +958,9 @@ export async function previewTisowareImport(masterDb: Pool, psPersNrList: string
             psPersNr,
             date,
             position,
+            notePrefix,
             loanr,
+            note: row.LOATEXT1 || null,
           });
         }
       }
@@ -950,6 +1043,25 @@ export async function executeTisowareImport(masterDb: Pool, psPersNrList: string
     };
   }
 
+  // 2. Fetch LOASTAMM descriptions
+  let loanrMap = new Map<string, string>();
+  try {
+    const allLoanrCodes = new Set<string>();
+    // Peek at ABWKAL to get the LOANR codes — batched by PSNR
+    const PEEK_BATCH = 200;
+    for (let i = 0; i < matchedPsnr.length; i += PEEK_BATCH) {
+      const batch = matchedPsnr.slice(i, i + PEEK_BATCH);
+      const peekSql = `SELECT DISTINCT LOANR FROM dbo.ABWKAL WHERE PSNR IN (${batch.join(',')})`;
+      const peekResult = await queryTisoware(peekSql);
+      for (const row of (peekResult.rows || [])) {
+        if (row.LOANR) allLoanrCodes.add(String(row.LOANR).trim());
+      }
+    }
+    loanrMap = await fetchLoanrDescriptions([...allLoanrCodes]);
+  } catch (e) {
+    console.warn('[Tisoware import] Could not fetch LOANR descriptions:', (e as Error).message);
+  }
+
   // 3. Process each employee one-by-one to avoid PHP proxy row limits.
   //    Each individual employee has <1000 ABWKAL rows — well within all limits.
 
@@ -1003,12 +1115,12 @@ export async function executeTisowareImport(masterDb: Pool, psPersNrList: string
 
       const dates = expandDateRange(fromDate, toDate || fromDate);
       const loanr = String(row.LOANR || '').trim();
-      const { position } = mapLoanrToPosition(loanr);
+      const { position, notePrefix } = mapLoanrToPosition(loanr, loanrMap.get(loanr) ?? null);
 
       for (const date of dates) {
         try {
           const [existingRows] = await masterDb.execute(
-            'SELECT id, position FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
+            'SELECT id, position, note FROM CentralAbsenceEntry WHERE employee_id = ? AND date = ? LIMIT 1',
             [employeeId, date]
           ) as [RowDataPacket[], unknown];
 
@@ -1017,7 +1129,16 @@ export async function executeTisowareImport(masterDb: Pool, psPersNrList: string
             const samePosition = existing.position === position;
 
             if (samePosition) {
-              // Already exists with same position — skip (no note write; Datenschutz)
+              // Already exists with same position — ensure note confirms Tisoware match
+              if (!existing.note || !existing.note.includes('[TISO:')) {
+                const matchNote = existing.note
+                  ? `${notePrefix} match | ${existing.note}`
+                  : `${notePrefix} match`;
+                await masterDb.execute(
+                  'UPDATE CentralAbsenceEntry SET note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
+                  [matchNote, existing.id]
+                );
+              }
               skippedExisting++;
               continue;
             }
@@ -1027,10 +1148,11 @@ export async function executeTisowareImport(masterDb: Pool, psPersNrList: string
             const centralPrio = absencePriority(existing.position);
 
             if (resolveConflicts && localPrio > centralPrio) {
-              // Tisoware has higher priority — update central position only
+              // Tisoware has higher priority — update central
+              const mergedNote = mergeNote(existing.note, notePrefix);
               await masterDb.execute(
-                'UPDATE CentralAbsenceEntry SET position = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
-                [position, existing.id]
+                'UPDATE CentralAbsenceEntry SET position = ?, note = ?, updated_date = CURRENT_TIMESTAMP WHERE id = ?',
+                [position, mergedNote, existing.id]
               );
               resolvedConflicts++;
             } else if (resolveConflicts && centralPrio > localPrio) {
@@ -1041,20 +1163,23 @@ export async function executeTisowareImport(masterDb: Pool, psPersNrList: string
               unresolvedConflicts++;
             }
           } else {
-            // New entry — insert (note stays NULL: Krankheits-Subtypen werden
-            // bewusst nicht importiert, Datenschutz Art. 9 DSGVO)
+            // New entry — insert
             const id = crypto.randomUUID();
+            const fullNote = row.LOATEXT1 && row.LOATEXT1 !== notePrefix
+              ? `${notePrefix} | ${String(row.LOATEXT1 || '').trim()}`
+              : notePrefix;
 
             await masterDb.execute(
               `INSERT INTO CentralAbsenceEntry (
                 id, employee_id, date, position, note,
                 created_date, updated_date, created_by,
                 source_tenant_id, source_tenant_doctor_id
-              ) VALUES (?, ?, ?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL)
+              ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, NULL, NULL)
               ON DUPLICATE KEY UPDATE
                 position = VALUES(position),
+                note = VALUES(note),
                 updated_date = CURRENT_TIMESTAMP`,
-              [id, employeeId, date, position, createdBy]
+              [id, employeeId, date, position, fullNote, createdBy]
             );
             imported++;
           }
