@@ -38,9 +38,16 @@ import {
   setShiftVacationEntitlement,
   carryOverShiftVacation,
 } from '../utils/shiftVacationEntitlement.js';
+import {
+  refreshTenantTisowareAbsences,
+  createTisowareRefreshStore,
+} from '../utils/tisowareTenantRefresh.js';
 
 const router = express.Router();
 router.use(authMiddleware);
+
+// Cooldown store for the on-demand Tisoware refresh (per server process).
+const tisowareRefreshStore = createTisowareRefreshStore();
 
 type ExtendedRequest = Request & {
   user?: { sub?: string; role?: string; doctor_id?: string; [key: string]: unknown };
@@ -319,6 +326,75 @@ router.post('/shift-entitlement/carry-over', requirePermission('can_manage_shift
     return;
   } catch (error) {
     console.error('[vacation] shift-entitlement carry-over failed', {
+      message: (error as Error).message,
+      code: (error as { code?: string }).code,
+    });
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/vacation/tisoware-refresh
+ *   body: { doctorId?: string }
+ *
+ * On-demand Tisoware absence refresh scoped to the calling tenant:
+ *   - with `doctorId` → refresh ONLY that employee (absence module open /
+ *     employee switch via dropdown)
+ *   - without          → refresh ALL linked tenant employees (yearly overview)
+ *
+ * The refresh resolves the tenant's own employees via
+ * `EmployeeTenantAssignment` and imports their Tisoware ABWKAL absences
+ * into the central `CentralAbsenceEntry` table (conflict resolution on).
+ * It is a data sync, not a user edit, so it only requires a valid JWT +
+ * tenant token — same auth surface as `GET /central-absences`. A short
+ * cooldown per scope prevents hammering the Tisoware SQL server.
+ *
+ * Response: `{ skipped: false, imported, ... }` on success or
+ * `{ skipped: true, reason: 'cooldown' | 'no_payroll_id' |
+ *   'no_linked_employees' | 'tisoware_unavailable' }` — the frontend
+ * ignores skips silently (the nightly cron is the safety net).
+ */
+router.post('/tisoware-refresh', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const body = (req.body as Record<string, unknown>) || {};
+    const doctorId = body.doctorId == null || body.doctorId === ''
+      ? null
+      : String(body.doctorId);
+
+    const dbToken = (req.headers['x-db-token'] as string | undefined);
+    const tenantId = await resolveTenantIdFromToken(db, dbToken);
+    if (!tenantId) {
+      res.status(400).json({
+        error: 'Mandanten-Token fehlt. Bitte mit aktivem Mandanten verbinden.',
+      });
+      return;
+    }
+
+    const extReq = req as ExtendedRequest;
+    const createdBy = String(extReq.user?.sub || '');
+
+    const result = await refreshTenantTisowareAbsences({
+      db,
+      tenantId,
+      doctorId,
+      createdBy: createdBy || null,
+      store: tisowareRefreshStore,
+    });
+
+    if (!result.skipped) {
+      console.log(
+        `[Tisoware refresh] tenant=${tenantId} scope=${result.scope}` +
+        `${result.doctorId ? ` doctor=${result.doctorId}` : ''} by ${createdBy || 'unknown'}: ` +
+        `imported=${result.imported} skipped=${result.skipped_existing} ` +
+        `resolved=${result.resolved_conflicts} unresolved=${result.unresolved_conflicts} ` +
+        `errors=${result.errors_count}`
+      );
+    }
+
+    res.json(result);
+    return;
+  } catch (error) {
+    console.error('[vacation] tisoware-refresh failed', {
       message: (error as Error).message,
       code: (error as { code?: string }).code,
     });

@@ -162,6 +162,51 @@ Content-Type: application/json
 
 ---
 
+## Abwesenheiten (`/api/vacation`)
+
+| Methode | Endpunkt | Beschreibung |
+|---|---|---|
+| GET | `/api/vacation/central-absences?year=&doctorId=` | Zentrale Abwesenheiten eines Mitarbeiters (Jahresansicht) |
+| POST | `/api/vacation/tisoware-refresh` | Tisoware-Abwesenheiten on demand synchronisieren |
+
+### POST `/api/vacation/tisoware-refresh`
+
+Synchronisiert die Tisoware-Abwesenheiten (ABWKAL) on demand in die zentrale
+Tabelle `CentralAbsenceEntry`. Der Refresh ist strikt auf den aufrufenden
+Mandanten begrenzt (Auflösung über `EmployeeTenantAssignment` + `X-DB-Token`).
+
+```http
+POST /api/vacation/tisoware-refresh
+X-DB-Token: <tenant-token>
+Content-Type: application/json
+
+// Nur einen Mitarbeiter aktualisieren (Modul öffnen / Dropdown-Wechsel):
+{ "doctorId": "doc-42" }
+
+// Alle Mandanten-Mitarbeiter aktualisieren (Jahresübersicht öffnen):
+{}
+```
+
+Antworten:
+
+```json
+// Erfolg
+{ "skipped": false, "scope": "single", "doctorId": "doc-42", "employees": 1,
+  "imported": 4, "skipped_existing": 2, "resolved_conflicts": 1,
+  "unresolved_conflicts": 0, "errors_count": 0 }
+
+// Übersprungen (kein Payroll-Link, Cooldown, Tisoware nicht erreichbar)
+{ "skipped": true, "reason": "cooldown", "scope": "tenant:t-1:doctor:doc-42" }
+```
+
+`reason` kann `cooldown` (erneuter Refresh < 60 s, steuerbar über
+`TISOWARE_REFRESH_COOLDOWN_SECONDS`), `no_payroll_id`,
+`no_linked_employees` oder `tisoware_unavailable` sein. Übersprungene
+Refreshes sind für den Client unkritisch — der nächtliche Cron
+(`TISOWARE_AUTO_IMPORT`) bleibt das Sicherheitsnetz.
+
+---
+
 ## Feiertage (`/api/holidays`)
 
 | Methode | Endpunkt | Beschreibung |

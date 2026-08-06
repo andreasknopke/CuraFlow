@@ -494,6 +494,45 @@ export default function VacationPage() {
     absencePositions.includes(s.position)
   );
 
+  // ─── On-demand Tisoware refresh ─────────────────────────────────────────
+  //
+  // The nightly cron imports absences once per day. When the absence module
+  // opens (or the displayed employee changes via the dropdown) we refresh
+  // ONLY that employee; when the yearly overview opens we refresh ALL tenant
+  // employees so the overview is never stale. The endpoint is tenant-scoped
+  // and returns `{ skipped: true }` when nothing could be done (no payroll
+  // link, cooldown, Tisoware down) — those are ignored silently, the nightly
+  // cron remains the safety net.
+  const tisowareRefreshMutation = useMutation({
+    mutationFn: async (doctorId) => {
+      const result = await api.request('/api/vacation/tisoware-refresh', {
+        method: 'POST',
+        body: doctorId ? { doctorId } : {},
+      });
+      return result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['central-absences'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts', selectedYear] });
+      if (result && !result.skipped && (result.imported ?? 0) > 0) {
+        toast.success(`Tisoware: ${result.imported} ${absencesCaption} aktualisiert`);
+      }
+    },
+  });
+
+  // Refresh the currently displayed employee when the single view opens or
+  // the employee changes via the dropdown.
+  React.useEffect(() => {
+    if (viewMode !== 'single' || !selectedDoctorId) return;
+    tisowareRefreshMutation.mutate(selectedDoctorId);
+  }, [viewMode, selectedDoctorId]);
+
+  // Refresh ALL tenant employees when the yearly overview opens.
+  React.useEffect(() => {
+    if (viewMode !== 'overview') return;
+    tisowareRefreshMutation.mutate(null);
+  }, [viewMode]);
+
   const createShiftMutation = useMutation({
     mutationFn: async (data) => {
         return api.checkAndCreate('ShiftEntry', data, { uniqueKeys: ['date', 'doctor_id'] });
