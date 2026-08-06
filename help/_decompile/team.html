@@ -1,0 +1,133 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Team (Personalverwaltung) - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Team</div>
+
+<h1>Team (Personalverwaltung)</h1>
+<p>Der Bereich <strong>Team</strong> verwaltet alle Mitarbeiter, ihre Rollen, Qualifikationen und den Stellenplan. Er ist f&uuml;r nicht-schreibgesch&uuml;tzte Benutzer sichtbar; die Bearbeitung erfolgt in der Regel durch Administratoren.</p>
+
+<h2>Mitarbeiter verwalten</h2>
+
+<h3>Mitarbeiterliste</h3>
+<ul>
+<li>Zeigt alle Mitarbeiter, sortiert nach <strong>Rollenpriorit&auml;t</strong> und dann nach individueller Reihenfolge (oder alphabetisch, je nach Einstellung).</li>
+<li>Jeder Mitarbeiter zeigt Name, Rolle (mit Farbe), Qualifikations-Badges und Status.</li>
+<li>&Uuml;ber den <strong>Qualifikationsfilter</strong> kann die Liste nach Mitarbeitern mit bestimmten Qualifikationen gefiltert werden.</li>
+</ul>
+
+<h3>Mitarbeiter anlegen / bearbeiten</h3>
+<ol>
+<li>Klicken Sie auf <strong>"+ Hinzuf&uuml;gen"</strong>, um ein neues Teammitglied anzulegen.</li>
+<li>Pflichtfelder: <strong>Name, K&uuml;rzel, Rolle, E-Mail</strong>.</li>
+<li>Weitere Felder: FTE (Vollzeit&auml;quivalent), Vertragsende, Farbe, Reihenfolge, Qualifikationen.</li>
+<li>Speichern - der Mitarbeiter erscheint sofort in Wochenplan, Abwesenheiten und Wunschkiste.</li>
+</ol>
+
+<h3>Reihenfolge &auml;ndern</h3>
+<ul>
+<li>Die Reihenfolge der Mitarbeiter kann per <strong>Drag &amp; Drop</strong> ge&auml;ndert werden und gilt systemweit.</li>
+</ul>
+
+<h2>Rollen (Teamrollen)</h2>
+<ul>
+<li>Jeder Mitarbeiter hat eine Rolle (z.B. Chefarzt, Oberarzt, Facharzt, Assistenzarzt, MFA, Pflegefachkraft, ...).</li>
+<li>Die Rollen werden im Bereich "Team" angezeigt und k&ouml;nnen im <strong>Adminbereich unter "Einstellungen -&gt; Team-Funktionen"</strong> angepasst werden.</li>
+</ul>
+
+<table>
+<tr><th>Rollen-Eigenschaft</th><th>Bedeutung</th></tr>
+<tr><td><strong>Name</strong></td><td>Bezeichnung der Rolle</td></tr>
+<tr><td><strong>Priorit&auml;t</strong></td><td>Bestimmt die Sortierung (niedriger = weiter oben)</td></tr>
+<tr><td><strong>Facharzt (is_specialist)</strong></td><td>Kennzeichnet Spezialisten; Badge "Facharzt" (blau)</td></tr>
+<tr><td><strong>Vordergrunddienst (can_do_foreground_duty)</strong></td><td>Rolle darf Vordergrunddienste &uuml;bernehmen; Badge "VG" (gr&uuml;n)</td></tr>
+<tr><td><strong>Hintergrunddienst (can_do_background_duty)</strong></td><td>Rolle darf Hintergrunddienste &uuml;bernehmen; Badge "HG" (orange)</td></tr>
+<tr><td><strong>Aus Statistik ausgeschlossen (excluded_from_statistics)</strong></td><td>Mitarbeiter dieser Rolle werden in Statistiken nicht gez&auml;hlt</td></tr>
+</table>
+
+<h3>Standard-Rollenfarben</h3>
+<table>
+<tr><th>Rolle</th><th>Standardfarbe</th></tr>
+<tr><td>Chefarzt</td><td>Rot</td></tr>
+<tr><td>Oberarzt</td><td>Blau</td></tr>
+<tr><td>Facharzt</td><td>Gr&uuml;n</td></tr>
+<tr><td>Assistenzarzt</td><td>Gelb</td></tr>
+<tr><td>Nicht-Radiologe / weitere</td><td>Grau/neutral</td></tr>
+</table>
+<p>Die Farben k&ouml;nnen im Adminbereich (Farbeinstellungen) &uuml;berschrieben werden.</p>
+
+<h2>Stellenplan (FTE / VK)</h2>
+<p>Der Stellenplan dokumentiert den <strong>Arbeitsumfang (FTE = Vollzeit&auml;quivalent)</strong> pro Mitarbeiter und Monat.</p>
+
+<table>
+<tr><th>K&uuml;rzel</th><th>Bedeutung</th></tr>
+<tr><td><strong>FTE</strong></td><td>Arbeitsumfang (0-100 %, z.B. 0,5 = halbe Stelle)</td></tr>
+<tr><td><strong>EZ</strong></td><td>Elternzeit</td></tr>
+<tr><td><strong>MS</strong></td><td>Mutterschutz</td></tr>
+<tr><td><strong>KO</strong></td><td>Krank ohne Entgelt</td></tr>
+<tr><td><strong>BV</strong></td><td>Besch&auml;ftigungsverbot</td></tr>
+<tr><td><strong>OU</strong></td><td>Andere Organisationseinheit</td></tr>
+</table>
+
+<div class="tip">
+<strong>Automatik:</strong> Bei EZ, MS, KO, BV, OU oder FTE 0,00 wird der Mitarbeiter im Abwesenheitsplaner automatisch als <strong>"Nicht verf&uuml;gbar"</strong> markiert (mit Begr&uuml;ndung). Er kann in diesen Monaten nicht eingeplant werden.
+</div>
+
+<h2>Qualifikationen</h2>
+<h3>Qualifikationsstufen</h3>
+<table>
+<tr><th>Stufe</th><th>Bedeutung</th></tr>
+<tr><td><strong>Pflicht</strong></td><td>Der Mitarbeiter MUSS die Qualifikation haben, um den Dienst auszu&uuml;ben (sonst Blocker).</td></tr>
+<tr><td><strong>Sollte</strong></td><td>Bevorzugt qualifiziert; unqualifizierte Mitarbeiter sind als Fallback erlaubt (Warnung).</td></tr>
+<tr><td><strong>Sollte nicht</strong></td><td>Qualifizierte Mitarbeiter nur zuweisen, wenn niemand anderes verf&uuml;gbar ist (Warnung).</td></tr>
+<tr><td><strong>Ausschluss (Nicht)</strong></td><td>Mitarbeiter mit dieser Qualifikation d&uuml;rfen hier NIEMALS eingeteilt werden (harter Blocker).</td></tr>
+</table>
+
+<h3>Qualifikationen verwalten</h3>
+<ul>
+<li>Im Bereich <strong>Team</strong> gibt es eine Qualifikations-Verwaltung (Qualifikationen anlegen, aktivieren/deaktivieren) und eine <strong>Qualifikations-&Uuml;bersicht</strong> (welcher Mitarbeiter hat welche Qualifikation).</li>
+<li>Pro Mitarbeiter werden Qualifikations-Badges angezeigt; Zuweisung &uuml;ber den Mitarbeiter-Dialog.</li>
+<li>Die Zuordnung Qualifikation &lt;-&gt; Arbeitsplatz erfolgt im Adminbereich (Arbeitsplatz-Konfiguration bzw. Qualifikations-Editor f&uuml;r Arbeitspl&auml;tze).</li>
+</ul>
+
+<h2>Zentrale Mitarbeiter-Verkn&uuml;pfung</h2>
+<ul>
+<li>Mitarbeiter k&ouml;nnen mit der <strong>zentralen Mitarbeiterverwaltung</strong> (Master-Datenbank) verkn&uuml;pft werden.</li>
+<li>&Uuml;ber die Verkn&uuml;pfung werden Stammdaten (Name, Vertragsdaten) aus dem Master &uuml;bernommen und synchronisiert.</li>
+<li>Nur Benutzer mit der Berechtigung <code>can_link_employees</code> k&ouml;nnen Verkn&uuml;pfungen herstellen.</li>
+</ul>
+
+<h2>Bulk-Login</h2>
+<ul>
+<li>&Uuml;ber den Bereich Team k&ouml;nnen f&uuml;r mehrere Mitarbeiter <strong>Benutzerkonten im Paket</strong> erstellt werden (Bulk-Login-Dialog).</li>
+<li>Dabei werden Benutzer mit E-Mail-Konten der Mitarbeiter angelegt.</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="concepts.html">Konzepte: Rollen, Qualifikationsstufen, Berechtigungen</a></li>
+<li><a href="admin.html">Adminbereich: Benutzer &amp; Rollen, Einstellungen</a></li>
+<li><a href="vacation.html">Abwesenheiten: Stellenplan-Integration</a></li>
+</ul>
+</body>
+</html>

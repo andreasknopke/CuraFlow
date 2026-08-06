@@ -1,0 +1,150 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>H&auml;ufige Probleme - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; H&auml;ufige Probleme</div>
+
+<h1>H&auml;ufige Probleme und Fehlerbehebung</h1>
+
+<h2>Anmeldeprobleme</h2>
+
+<h3>"Ung&uuml;ltige Anmeldedaten"</h3>
+<ul>
+<li>Pr&uuml;fen Sie E-Mail und Passwort (Gro&szlig;-/Kleinschreibung beachten).</li>
+<li>Kontaktieren Sie Ihren Administrator, wenn Sie Ihr Passwort vergessen haben - er kann es zur&uuml;cksetzen (der Benutzer muss es dann beim n&auml;chsten Login &auml;ndern).</li>
+</ul>
+
+<h3>Konto vor&uuml;bergehend gesperrt</h3>
+<ul>
+<li>Nach <strong>10 fehlgeschlagenen Anmeldeversuchen</strong> innerhalb von 15 Minuten wird die Anmeldung gesperrt.</li>
+<li>Warten Sie 15 Minuten oder wenden Sie sich an Ihren Administrator.</li>
+</ul>
+
+<h3>"Zugriff verweigert" beim &Ouml;ffnen des Adminbereichs</h3>
+<ul>
+<li>Der Adminbereich ist nur f&uuml;r die Rolle <code>admin</code> zug&auml;nglich.</li>
+<li>Meldung: "Zugriff verweigert. Nur f&uuml;r Administratoren."</li>
+</ul>
+
+<h3>Nach dem Login erscheint die Mandanten-Auswahl</h3>
+<ul>
+<li>Ihr Konto ist mehreren Mandanten (Abteilungen) zugeordnet. W&auml;hlen Sie den gew&uuml;nschten Mandanten.</li>
+<li>Erscheint kein Mandant, kontaktieren Sie Ihren Administrator (Zuordnung fehlt).</li>
+</ul>
+
+<h2>Schreibgesch&uuml;tzter Modus</h2>
+<ul>
+<li>Gelber Hinweis "Schreibgesch&uuml;tzter Modus": Ihr Konto hat die Rolle <code>readonly</code>.</li>
+<li>Sie k&ouml;nnen Daten ansehen, aber nicht &auml;ndern. In Abwesenheiten und Wunschkiste sehen Sie nur Ihren eigenen Mitarbeiter.</li>
+<li>F&uuml;r Schreibzugriff: Administrator muss Ihre Rolle &auml;ndern.</li>
+</ul>
+
+<h2>Wochenplan: Probleme</h2>
+
+<h3>Drag-and-Drop funktioniert nicht</h3>
+<ul>
+<li>Haben Sie die Berechtigung <code>can_edit_schedule</code>? Ohne sie sind keine &Auml;nderungen m&ouml;glich.</li>
+<li>Im schreibgesch&uuml;tzten Modus ist Drag-and-Drop deaktiviert.</li>
+<li>Verwenden Sie einen aktuellen Browser (Chrome, Edge, Firefox).</li>
+</ul>
+
+<h3>Warnung/Blocker beim Einteilen</h3>
+<ul>
+<li>Das System verhindert ung&uuml;ltige Zuweisungen: fehlende Pflicht-Qualifikation, Abwesenheit, Zeitkonflikt, aufeinanderfolgende Tage.</li>
+<li>Override-f&auml;hige Meldungen k&ouml;nnen Sie mit "Trotzdem speichern" best&auml;tigen; harte Blocker (Ausschluss-Qualifikation) nicht.</li>
+<li>Details: <a href="schedule_advanced.html">Automatik &amp; Validierung</a>.</li>
+</ul>
+
+<h3>&Auml;nderungen anderer Benutzer erscheinen nicht</h3>
+<ul>
+<li>Pr&uuml;fen Sie, ob Sie im <strong>richtigen Mandanten</strong> angemeldet sind (Echtzeit-Synchronisation wirkt pro Mandant).</li>
+<li>Aktualisieren Sie die Seite einmal (F5), wenn die Verbindung zum Echtzeit-Stream unterbrochen war.</li>
+</ul>
+
+<h3>Feiertage/Schulferien fehlen</h3>
+<ul>
+<li>Die Feiertagsdaten werden von der OpenHolidays-API geladen - ohne Internetverbindung k&ouml;nnen sie fehlen.</li>
+<li>Pr&uuml;fen Sie die Konfiguration des Bundeslandes in den Einstellungen.</li>
+</ul>
+
+<h2>Dienstbesetzung: Probleme</h2>
+
+<h3>E-Mail-Versand schl&auml;gt fehl</h3>
+<ul>
+<li>Pr&uuml;fen Sie die E-Mail-Konfiguration (SMTP) und ob Ihr Konto die Berechtigung <code>can_send_schedule_emails</code> besitzt.</li>
+</ul>
+
+<h3>Pool-Dienste fehlen in der &Uuml;bersicht</h3>
+<ul>
+<li>Ihr Mandant muss einem Verbund angeh&ouml;ren, und der Verbund muss Pool-Arbeitspl&auml;tze besitzen.</li>
+<li>Pr&uuml;fen Sie die Verbund-Konfiguration im Adminbereich.</li>
+</ul>
+
+<h2>Wunschkiste &amp; Abwesenheiten: Probleme</h2>
+
+<h3>Wunsch kann nicht eingetragen werden</h3>
+<ul>
+<li>W&uuml;nsche sind an die Dienst-Kategorien gekoppelt; ggf. ist der Dienst-Tab nur f&uuml;r qualifizierte Dienste sichtbar.</li>
+<li>Pr&uuml;fen Sie, ob Sie den richtigen Benutzer-Mitarbeiter ausgew&auml;hlt haben.</li>
+</ul>
+
+<h3>Urlaub/Abwesenheit wird blockiert</h3>
+<ul>
+<li>Konflikt-Erkennung: zu viele Mitarbeiter gleichzeitig abwesend oder Dienste unbesetzt.</li>
+<li>Sie k&ouml;nnen "Trotzdem speichern" w&auml;hlen oder einen anderen Zeitraum pr&uuml;fen.</li>
+<li>Eintr&auml;ge au&szlig;erhalb des Vertragszeitraums werden abgelehnt/begrenzt.</li>
+</ul>
+
+<h2>Allgemeine Probleme</h2>
+
+<h3>Seite l&auml;dt nicht / langsam</h3>
+<ul>
+<li>Pr&uuml;fen Sie Ihre Internetverbindung.</li>
+<li>Leeren Sie den Browser-Cache und laden Sie neu.</li>
+<li>Wenden Sie sich an die IT, wenn das Problem anh&auml;lt.</li>
+</ul>
+
+<h3>"Ausstehende Migrationen" im Adminbereich</h3>
+<ul>
+<li>Nach einem Update k&ouml;nnen Datenbank-Migrationen ausstehen. F&uuml;hren Sie sie im Adminbereich -&gt; Datenbank aus, um alle Funktionen zu aktivieren.</li>
+<li>Erstellen Sie vorher ein Backup.</li>
+</ul>
+
+<h3>Fehler beim &Ouml;ffnen einer Seite (Crash)</h3>
+<ul>
+<li>Es &ouml;ffnet sich automatisch der Dialog "Feedback &amp; Verbesserungen" mit einem vorbef&uuml;llten Fehlerbericht.</li>
+<li>Senden Sie den Bericht ab - er enth&auml;lt Fehlermeldung und Stack-Trace.</li>
+</ul>
+
+<h2>Browser-Empfehlungen</h2>
+<ul>
+<li>Google Chrome, Microsoft Edge, Mozilla Firefox oder Safari (jeweils aktuelle Version).</li>
+</ul>
+
+<h2>Support</h2>
+<ul>
+<li>Nutzen Sie <strong>"Feedback &amp; Verbesserungen"</strong> in der Anwendung f&uuml;r Fehler- und Verbesserungsmeldungen.</li>
+<li>Geben Sie bei Anfragen die Version/Build-Nummer aus dem Account-Men&uuml; sowie Browser und Betriebssystem an.</li>
+</ul>
+</body>
+</html>

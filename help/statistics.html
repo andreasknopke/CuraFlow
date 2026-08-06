@@ -1,0 +1,107 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Statistik &amp; Berichte - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Statistik &amp; Berichte</div>
+
+<h1>Statistik &amp; Berichte</h1>
+<p>Die Statistik-Seite wertet <strong>Dienste, Zuweisungen, Arbeitszeiten und W&uuml;nsche</strong> aus. Zugriff haben nur Benutzer mit der Rolle <code>admin</code> (bzw. mit der Berechtigung zur Statistik-Einsicht).</p>
+
+<h2>Filter</h2>
+<ul>
+<li><strong>Jahr:</strong> W&auml;hlen Sie das auszuwertende Jahr.</li>
+<li><strong>Monat:</strong> Entweder "alle" oder ein einzelner Monat.</li>
+<li>Alle Berichte reagieren sofort auf die Filterauswahl.</li>
+</ul>
+
+<h2>Berichte (Tabs)</h2>
+
+<h3>&Uuml;bersicht &amp; Charts</h3>
+<ul>
+<li><strong>Balkendiagramm</strong> der Dienste pro Mitarbeiter (nach Diensttyp farbcodiert).</li>
+<li><strong>Jahresverlauf:</strong> Dienste und Rotationen pro Monat.</li>
+<li>Die Farben der Diensttypen werden aus der <strong>Arbeitsplatz-Konfiguration</strong> &uuml;bernommen. Ist dort keine Farbe hinterlegt, vergibt das System automatisch Farben f&uuml;r die Diensttypen.</li>
+<li>Zus&auml;tzlich werden Diensttypen nach <strong>service_type</strong> unterschieden: Bereitschaftsdienst, Rufbereitschaftsdienst, Schichtdienst, Andere.</li>
+</ul>
+
+<h3>Arbeitszeit</h3>
+<ul>
+<li>Kumulierte <strong>Arbeitszeit pro Mitarbeiter</strong> (Ist-Stunden) auf Tages-/Wochen-/Monatsebene.</li>
+<li>&Uuml;berlappende Zeitfenster werden zusammengef&uuml;hrt (Interval-Merge).</li>
+<li>Ber&uuml;cksichtigt den <strong>Arbeitszeit-Prozentsatz</strong> des Arbeitsplatzes (z.B. Rufbereitschaft = 70 %).</li>
+<li>Sinnvoll nur bei aktivierten <strong>Timeslots/Zeiten</strong> auf den Arbeitspl&auml;tzen.</li>
+</ul>
+
+<h3>Regel-Compliance</h3>
+<ul>
+<li>Auswertung der Einhaltung von <strong>Dienstregeln</strong>: aufeinanderfolgende Tage, Dienst-Limits (Bereitschafts-, Rufbereitschafts-, Wochenenddienst) u.a.</li>
+<li>Zeigt Verst&ouml;&szlig;e und Warnungen je Mitarbeiter.</li>
+</ul>
+
+<h3>Wunscherf&uuml;llung</h3>
+<ul>
+<li>Statistik zu <strong>genehmigten vs. abgelehnten Dienstw&uuml;nschen</strong> je Mitarbeiter.</li>
+<li>Erf&uuml;llungsquote in Prozent.</li>
+</ul>
+
+<h3>Fehlzeiten</h3>
+<ul>
+<li>&Uuml;bersicht der Abwesenheiten (Urlaub, Krank, Dienstreise, Nicht verf&uuml;gbar) je Mitarbeiter im gew&auml;hlten Zeitraum.</li>
+</ul>
+
+<h3>Detaillierte Tabelle</h3>
+<ul>
+<li>Alle Statistikdaten als <strong>sortierbare Tabelle</strong>.</li>
+</ul>
+
+<h2>Export</h2>
+<table>
+<tr><th>Format</th><th>Beschreibung</th></tr>
+<tr><td><strong>CSV</strong></td><td>Export der aktuellen Ansicht als CSV-Datei (f&uuml;r Excel geeignet).</td></tr>
+<tr><td><strong>Excel</strong></td><td>Export als XLSX-Datei.</td></tr>
+<tr><td><strong>PDF</strong></td><td>Export als PDF-Dokument (Druck/Archiv).</td></tr>
+</table>
+<p>Die Export-Buttons befinden sich in der Symbolleiste der Statistik-Seite.</p>
+
+<h2>Arbeitszeit-Prozentsatz konfigurieren</h2>
+<ul>
+<li>F&uuml;r Dienste kann ein <strong>Arbeitszeit-Anteil</strong> konfiguriert werden (z.B. Rufbereitschaft = 70 %).</li>
+<li>Konfiguration: <strong>Arbeitsplatz-Einstellungen</strong> (Adminbereich -&gt; Einstellungen) -&gt; Dienst ausw&auml;hlen -&gt; "Arbeitszeit-Anteil" setzen.</li>
+<li>Der Anteil flie&szlig;t in die Berechnung der Arbeitszeit-Statistik ein.</li>
+</ul>
+
+<h2>H&auml;ufige Fragen</h2>
+<h3>Warum sehe ich die Statistik nicht?</h3>
+<p>Die Statistik ist Administratoren vorbehalten. Sollten Sie sehen "Nur f&uuml;r Administratoren", fehlt Ihnen die Berechtigung.</p>
+
+<h3>Warum zeigt der Arbeitszeit-Report nichts?</h3>
+<p>Der Report ben&ouml;tigt <strong>Zeitangaben</strong> auf den Arbeitspl&auml;tzen (Timeslots bzw. Zeitfenster). Sind keine Zeiten hinterlegt, k&ouml;nnen keine Stunden berechnet werden.</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="concepts.html">Konzepte: Diensttypen (service_type)</a></li>
+<li><a href="wishlist.html">Wunschkiste</a> - Grundlage des Wunscherf&uuml;llungs-Reports</li>
+<li><a href="admin.html">Adminbereich - Einstellungen</a></li>
+</ul>
+</body>
+</html>

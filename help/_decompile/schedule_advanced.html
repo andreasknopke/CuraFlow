@@ -1,0 +1,132 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Wochenplan: Automatik &amp; Validierung - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; <a href="schedule.html">Wochenplan</a> &gt; Automatik &amp; Validierung</div>
+
+<h1>Wochenplan: Automatik &amp; Validierung</h1>
+<p>Der Wochenplan enth&auml;lt automatische F&uuml;llfunktionen (AutoFill) und eine umfangreiche Validierung, die ung&uuml;ltige Zuweisungen verhindert oder als Warnung kennzeichnet.</p>
+
+<h2>AutoFill: Automatische Besetzung</h2>
+<p>&Uuml;ber das <strong>Zauberstab-Symbol (Wand)</strong> in der Symbolleiste des Wochenplans &ouml;ffnet sich ein Men&uuml; mit F&uuml;lloptionen. Die Funktion f&uuml;llt freie Zellen anhand von Regeln automatisch vor.</p>
+
+<h3>Verf&uuml;gbare Optionen</h3>
+<table>
+<tr><th>Option</th><th>Beschreibung</th></tr>
+<tr><td><strong>AutoFill (alle Kategorien)</strong></td><td>F&uuml;llt alle Kategorien in einem Durchlauf.</td></tr>
+<tr><td><strong>Rotationen</strong></td><td>F&uuml;llt nur den Bereich Rotationen.</td></tr>
+<tr><td><strong>Dienste</strong></td><td>F&uuml;llt nur den Bereich Dienste.</td></tr>
+<tr><td><strong>Demonstrationen &amp; Konsile</strong></td><td>F&uuml;llt nur diesen Bereich.</td></tr>
+<tr><td><strong>Einzelne Kategorien</strong></td><td>Weitere benutzerdefinierte Kategorien aus der Arbeitsplatz-Konfiguration.</td></tr>
+<tr><td><strong>KI-AutoFill (alle Kategorien)</strong></td><td>Intelligente F&uuml;llung &uuml;ber alle Kategorien mit Optimierung nach Fairness, Qualifikation und W&uuml;nschen.</td></tr>
+</table>
+
+<h3>Einstellungen (AutoFill-Settings)</h3>
+<ul>
+<li>&Uuml;ber den Einstellungen-Eintrag im AutoFill-Men&uuml; k&ouml;nnen Sie Regeln und Grenzen konfigurieren (z.B. welche Kategorien gef&uuml;llt werden, Limit-Ber&uuml;cksichtigung).</li>
+<li>Die Vorschl&auml;ge werden vor dem endg&uuml;ltigen Speichern als <strong>halbtransparente Vorschau</strong> angezeigt; Sie k&ouml;nnen sie pr&uuml;fen und best&auml;tigen oder verwerfen.</li>
+</ul>
+
+<div class="note">
+<strong>Hinweis:</strong> AutoFill ber&uuml;cksichtigt W&uuml;nsche, Qualifikationen, Abwesenheiten und Dienst-Limits. Die Qualit&auml;t der Vorschl&auml;ge h&auml;ngt von der Vollst&auml;ndigkeit der Stammdaten (FTE, Qualifikationen, W&uuml;nsche) ab.
+</div>
+
+<h2>Validierung: Blocker und Warnungen</h2>
+<p>Jede Zuweisung wird vor dem Speichern gepr&uuml;ft. Es gibt zwei Ergebnisarten:</p>
+<ul>
+<li><strong>Blocker:</strong> Die Zuweisung wird <strong>verhindert</strong>. Manche Blocker k&ouml;nnen per Override ("Trotzdem speichern") umgangen werden, andere sind hart.</li>
+<li><strong>Warnung:</strong> Die Zuweisung ist m&ouml;glich, wird aber mit einem Hinweis versehen.</li>
+</ul>
+
+<h3>Qualifikationspr&uuml;fung (4 Stufen)</h3>
+<table>
+<tr><th>Stufe</th><th>Verhalten bei Versto&szlig;</th></tr>
+<tr><td><strong>Pflicht</strong> (is_mandatory)</td><td>Blocker: "Fehlende Pflicht-Qualifikation: ..." - <em>override-f&auml;hig</em>.</td></tr>
+<tr><td><strong>Sollte</strong> (bevorzugt)</td><td>Warnung, wenn der Mitarbeiter die bevorzugte Qualifikation <strong>nicht</strong> hat - Zuweisung nur sinnvoll, wenn kein qualifizierter Kollege verf&uuml;gbar ist.</td></tr>
+<tr><td><strong>Sollte nicht</strong> (is_mandatory + is_excluded)</td><td>Warnung: "Sollte nicht: Mitarbeiter hat Qualifikation ... - nur zuweisen, wenn kein anderer verf&uuml;gbar." <em>override-f&auml;hig</em>.</td></tr>
+<tr><td><strong>Ausschluss/Nicht</strong> (is_excluded, nicht mandatory)</td><td><strong>Harter Blocker</strong>: "Ausgeschlossen: Mitarbeiter hat Ausschlusskriterium ... - darf hier nicht eingeteilt werden." Kein Override m&ouml;glich.</td></tr>
+</table>
+
+<div class="tip">
+<strong>Ausbildungsmodus:</strong> Bei Arbeitspl&auml;tzen mit <strong>Mehrfachbesetzung</strong> werden die Qualifikations-Checks ausgesetzt, sobald bereits mindestens ein qualifizierter Kollege eingeteilt ist - so k&ouml;nnen Auszubildende an qualifizierte Mitarbeiter "angeh&auml;ngt" werden.
+</div>
+
+<h3>Weitere Blocker</h3>
+<table>
+<tr><th>Regel</th><th>Meldung (Beispiel)</th></tr>
+<tr><td><strong>Person nicht gefunden</strong></td><td>"Person nicht gefunden"</td></tr>
+<tr><td><strong>Zeitkonflikt (Timeslot-&Uuml;berlappung)</strong></td><td>"Zeitkonflikt: ... &uuml;berlappt mit ..." - der Mitarbeiter hat bereits einen Eintrag im selben Zeitfenster.</td></tr>
+<tr><td><strong>Doppelbelegung am Tag</strong></td><td>"Mitarbeiter ist bereits als ... eingetragen (blockiert)".</td></tr>
+<tr><td><strong>Aufeinanderfolgende Tage verboten</strong></td><td>"... ist nicht an aufeinanderfolgenden Tagen erlaubt."</td></tr>
+<tr><td><strong>Abwesenheitskonflikt</strong></td><td>Mitarbeiter ist an dem Tag krank, im Urlaub oder "Nicht verf&uuml;gbar" - Zuweisung wird verhindert.</td></tr>
+</table>
+
+<h3>Warnungen</h3>
+<table>
+<tr><th>Regel</th><th>Meldung (Beispiel)</th></tr>
+<tr><td><strong>Dienst-Limits</strong></td><td>"X. Bereitschaftsdienst (Limit: Y)", "X. Rufbereitschaftsdienst (Limit: Y)", "X. Wochenenddienst (Limit: Y)"</td></tr>
+<tr><td><strong>Unterbesetzung</strong></td><td>"Nur X [Qualifikation] anwesend (Min: Y)"</td></tr>
+<tr><td><strong>Sollte-nicht-Qualifikation</strong></td><td>Siehe Qualifikationspr&uuml;fung oben.</td></tr>
+</table>
+
+<h3>Konflikt&uuml;bersicht (Conflict Panel)</h3>
+<ul>
+<li>Zus&auml;tzlich zur Einzelpr&uuml;fung kann der gesamte Plan auf Konflikte gescannt werden (Conflict-Panel).</li>
+<li>Erkannte Konflikte werden aufgelistet und k&ouml;nnen direkt aus der Liste heraus bearbeitet werden.</li>
+</ul>
+
+<h2>Override-Best&auml;tigung</h2>
+<ul>
+<li>Bei <strong>override-f&auml;higen</strong> Blockern oder Warnungen erscheint der Dialog <strong>"Override best&auml;tigen"</strong>.</li>
+<li>Sie k&ouml;nnen mit <strong>"Trotzdem speichern"</strong> fortfahren oder mit <strong>"Abbrechen"</strong> die Aktion verwerfen.</li>
+<li>Harte Blocker (z.B. Ausschluss-Qualifikation) bieten <strong>keine</strong> Override-Option.</li>
+</ul>
+
+<h2>Konfiguration der Arbeitspl&auml;tze</h2>
+<p>&Uuml;ber den Arbeitsplatz-Konfigurationsdialog (Adminbereich -&gt; Einstellungen, oder direkt aus dem Wochenplan) k&ouml;nnen pro Arbeitsplatz festgelegt werden:</p>
+<ul>
+<li><strong>Name und Kategorie</strong> (Dienste, Rotationen, Demonstrationen &amp; Konsile, benutzerdefiniert)</li>
+<li><strong>Mehrfachbesetzung</strong> erlauben (allows_multiple)</li>
+<li><strong>Timeslots aktivieren</strong> (f&uuml;r Dienste und Demonstrationen &amp; Konsile; Rotationen und benutzerdefinierte Kategorien haben immer einen Standard-Zeitraum)</li>
+<li><strong>Arbeitszeit-Prozentsatz</strong> (z.B. 70 % f&uuml;r Rufbereitschaft) - flie&szlig;t in die Arbeitszeit-Statistik ein</li>
+<li><strong>Beeinflusst Verf&uuml;gbarkeit</strong> (affects_availability)</li>
+<li><strong>Aufeinanderfolgende Tage</strong>: verboten / erlaubt / bevorzugt</li>
+<li><strong>Mindest- und Optimalbesetzung</strong> (min_staff, optimal_staff)</li>
+<li><strong>Auto-Frei</strong>: automatischer Freizeitausgleich am Folgetag nach diesem Dienst</li>
+<li><strong>Diensttyp</strong> (service_type): Bereitschaftsdienst, Rufbereitschaftsdienst, Schichtdienst, Andere</li>
+</ul>
+
+<h2>Arbeitszeitmodelle und Schichtzeiten</h2>
+<ul>
+<li>&Uuml;ber <strong>Arbeitszeitmodelle</strong> und <strong>Schichtzeit-Regeln</strong> (ShiftTimeRuleManager) k&ouml;nnen Zeitfenster und Dienstdauern standardisiert werden.</li>
+<li>Die Regelung "Aufeinanderfolgende Tage" pro Arbeitsplatz wird bei der Validierung ber&uuml;cksichtigt.</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="schedule.html">Wochenplan - Grundlagen</a></li>
+<li><a href="concepts.html">Konzepte: Qualifikationsstufen &amp; Diensttypen</a></li>
+<li><a href="services.html">Dienstbesetzung - Monats&uuml;bersicht</a></li>
+</ul>
+</body>
+</html>

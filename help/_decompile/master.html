@@ -1,0 +1,80 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Master-Frontend (HR) - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Master-Frontend (HR)</div>
+
+<h1>Master-Frontend (Personalabteilung / HR)</h1>
+<p>Das Master-Frontend ist ein <strong>separater Einstiegspunkt</strong> (URL-Endung <code>/master</code>) f&uuml;r Personalabteilung und Gesch&auml;ftsf&uuml;hrung. Es b&uuml;ndelt die <strong>mandanten&uuml;bergreifende Personalverwaltung</strong> auf Basis der zentralen Master-Datenbank.</p>
+
+<div class="tip">
+<strong>Grundsatz:</strong> Die <strong>Master-Datenbank ist f&uuml;hrend</strong>. &Auml;nderungen im Master-Frontend (Stammdaten, Vertr&auml;ge, Soll-Stunden) werden gespeichert und den Mandanten zur Synchronisation angeboten.
+</div>
+
+<h2>Anmeldung</h2>
+<ul>
+<li>Das Master-Frontend besitzt eine <strong>eigene Anmeldeseite</strong> mit eigenem Authentifizierungs-Provider.</li>
+<li>Nur berechtigte HR-/Verwaltungsbenutzer erhalten Zugriff.</li>
+</ul>
+
+<h2>Navigation</h2>
+<table>
+<tr><th>Men&uuml;punkt</th><th>Beschreibung</th></tr>
+<tr><td><strong>Dashboard</strong></td><td>Startseite mit Bereichskarten: Mitarbeiterverwaltung, Fehlzeiten, Feiertage &amp; Ferien, Zeiterfassung. Hinweis "Master-Datenbank ist f&uuml;hrend".</td></tr>
+<tr><td><strong>Mitarbeiter</strong></td><td>Zentrale Mitarbeiterverwaltung: Stammdaten, Vertr&auml;ge, Arbeitsmodelle - pro Mitarbeiter und Mandant. Inklusive Anlegen neuer Mitarbeiter und Detailansichten (zentral oder mandantenspezifisch).</td></tr>
+<tr><td><strong>Fehlzeiten</strong></td><td>Mandanten&uuml;bergreifende &Uuml;bersicht aller Abwesenheiten und Urlaubstage.</td></tr>
+<tr><td><strong>Feiertage &amp; Ferien</strong></td><td>Zentrale Verwaltung von Feiertagen und Schulferien f&uuml;r alle Mandanten.</td></tr>
+<tr><td><strong>Arbeitszeitmodelle</strong></td><td>Definition und Verwaltung von Arbeitszeitmodellen.</td></tr>
+<tr><td><strong>Tarifvertr&auml;ge</strong></td><td>Verwaltung von Tarifvertr&auml;gen und Entgeltgruppen.</td></tr>
+<tr><td><strong>Zeiterfassung</strong></td><td>Soll/Ist-Vergleich, &Uuml;berstunden-Salden und Monatsabschl&uuml;sse (Zeitkonten).</td></tr>
+<tr><td><strong>PPUGV-Statistik</strong></td><td>Statistische Auswertung (Personal-/Patientenbezogene Leistungsdaten).</td></tr>
+<tr><td><strong>Stammdaten-Import</strong></td><td>Import von Stammdaten (z.B. aus Bestandssystemen).</td></tr>
+<tr><td><strong>Kostenstellen</strong></td><td>Verwaltung der Kostenstellen.</td></tr>
+<tr><td><strong>Tisoware DB</strong></td><td>Anbindung an das Tisoware-Personalzeitsystem (Tabellen-Abfrage).</td></tr>
+<tr><td><strong>Tisoware-Import</strong></td><td>Import von Daten aus Tisoware.</td></tr>
+<tr><td><strong>Admin-Rechte</strong></td><td>Verwaltung der Berechtigungen von Master-Benutzern.</td></tr>
+</table>
+
+<h2>Zentrale Mitarbeiterverwaltung</h2>
+<ul>
+<li>Zentrale Stammdaten je Mitarbeiter: Name, Personalnummer, E-Mail, Vertragsart (Vollzeit/Teilzeit/Minijob/...), Vertragsbeginn/-ende, Soll-Stunden pro Woche, Jahresurlaubs-Anspruch, Status aktiv/inaktiv.</li>
+<li><strong>Mandantenzuordnung:</strong> Ein Mitarbeiter kann in mehreren Mandanten (Abteilungen) arbeiten.</li>
+<li>Die Mandanten f&uuml;hren lokale Mitarbeiterdatens&auml;tze (<code>Doctor</code>) mit abteilungsspezifischen Feldern (Rolle, FTE, Qualifikationen, Farbe), die mit dem zentralen Datensatz &uuml;ber <code>central_employee_id</code> verkn&uuml;pft sind.</li>
+<li>&Auml;nderungen im Master werden den Mandanten zur Best&auml;tigung angeboten (Synchronisations-Button im jeweiligen Mandanten).</li>
+</ul>
+
+<h2>Zeiterfassung (Soll/Ist)</h2>
+<ul>
+<li>Monatliche Soll-Stunden aus Vertrag (Soll-Stunden/Woche) und VK-Anteil des Mandanten.</li>
+<li>Ist-Stunden aus den Schichteintr&auml;gen der Mandanten (mit Zeiten und Arbeitszeit-Prozents&auml;tzen).</li>
+<li>Daraus ergeben sich <strong>&Uuml;berstunden-Salden und Zeitkonten</strong> mit Monatsabschluss.</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="concepts.html">Konzepte: Zentrale Mitarbeiterverwaltung</a></li>
+<li><a href="admin.html">Adminbereich (Mandanten)</a></li>
+<li><a href="team.html">Team - Mitarbeiter-Verkn&uuml;pfung</a></li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Rotationsplaner - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Rotationsplaner</div>
+
+<h1>Rotationsplaner (Weiterbildungsplanung)</h1>
+<p>Der Rotationsplaner dient der <strong>langfristigen Planung und Dokumentation von Weiterbildungsrotationen</strong> durch verschiedene Modalit&auml;ten (CT, MRT, Angiographie, Sonographie, Mammographie u.a.).</p>
+
+<div class="note">
+<strong>Hinweis:</strong> Der Men&uuml;punkt hei&szlig;t standardm&auml;&szlig;ig "Rotationsplaner" und entspricht dem Abschnitt "Rotationen" des Wochenplans. Der Name kann im Adminbereich ge&auml;ndert werden.
+</div>
+
+<h2>Ansichten</h2>
+<table>
+<tr><th>Ansicht</th><th>Beschreibung</th></tr>
+<tr><td><strong>Einzelansicht</strong></td><td>Jahreskalender f&uuml;r einen Mitarbeiter und eine Modalit&auml;t. Klicken Sie auf den Starttag und dann auf den Endtag - der Zeitraum wird farblich markiert.</td></tr>
+<tr><td><strong>Jahres&uuml;bersicht</strong></td><td>Alle Mitarbeiter und deren Rotationen im gesamten Jahr. Per Ziehen k&ouml;nnen Bereiche selektiert oder gel&ouml;scht werden.</td></tr>
+<tr><td><strong>Mehrjahres&uuml;bersicht</strong></td><td>Langfristige &Uuml;bersicht &uuml;ber mehrere Jahre.</td></tr>
+</table>
+
+<h2>Modalit&auml;ten</h2>
+<ul>
+<li>Die verf&uuml;gbaren Modalit&auml;ten (CT, MRT, Angiographie, Sonographie, Mammographie, ...) werden <strong>dynamisch aus den Arbeitspl&auml;tzen der Kategorie "Rotationen"</strong> geladen.</li>
+<li>Legt der Administrator einen neuen Arbeitsplatz in dieser Kategorie an (z.B. "PET-CT"), erscheint automatisch ein neuer Modalit&auml;ten-Tab.</li>
+</ul>
+
+<h2>Rotation planen</h2>
+<ol>
+<li>W&auml;hlen Sie den <strong>Mitarbeiter</strong> und die <strong>Modalit&auml;t</strong>.</li>
+<li>Klicken Sie auf den <strong>Starttag</strong> und dann auf den <strong>Endtag</strong> (oder halten Sie STRG gedr&uuml;ckt, um einen Bereich auszuw&auml;hlen).</li>
+<li>Der Zeitraum wird als Rotation markiert.</li>
+</ol>
+
+<div class="tip">
+<strong>Vertragszeitraum:</strong> Rotationen k&ouml;nnen nur innerhalb des hinterlegten Vertragszeitraums des Mitarbeiters (Beginn/Ende aus der zentralen Mitarbeiterverwaltung) geplant werden. Kollidierende Auswahl wird automatisch begrenzt.
+</div>
+
+<h3>Rotationen l&ouml;schen</h3>
+<ul>
+<li>W&auml;hlen Sie den <strong>L&ouml;sch-Modus</strong> und markieren Sie den zu l&ouml;schenden Bereich.</li>
+<li>Bestehende Rotationen werden beim L&ouml;schen <strong>passend zugeschnitten</strong> (nur der markierte Teil wird entfernt).</li>
+</ul>
+
+<h2>&Uuml;bertragung in den Wochenplan</h2>
+<ul>
+<li>&Uuml;ber den <strong>Transfer-Button</strong> werden geplante Rotationen als Eintr&auml;ge in den Wochenplan &uuml;bertragen.</li>
+<li>W&auml;hlen Sie den Zeitraum: <strong>Tag / Woche / ab Datum</strong>.</li>
+<li>Optional: <strong>Bestehende Eintr&auml;ge &uuml;berschreiben</strong>.</li>
+<li>Beim Transfer wird automatisch gepr&uuml;ft, ob der Mitarbeiter an den Tagen abwesend ist oder Konflikte bestehen; betroffene Tage werden &uuml;bersprungen bzw. gemeldet.</li>
+</ul>
+
+<h2>Integration in den Wochenplan</h2>
+<ul>
+<li>Geplante Rotationen werden im Wochenplan mit einem <strong>farbigen Marker</strong> angezeigt (Sektion "Rotationen"), sodass bei der t&auml;glichen Planung sichtbar ist, wer sich gerade in welcher Rotation befindet.</li>
+<li>Rotationseintr&auml;ge sind normale Schichteintr&auml;ge mit der Sektion "Rotationen".</li>
+<li>W&auml;hrend einer Rotation kann der Mitarbeiter nicht f&uuml;r andere Dienste eingeplant werden (Abwesenheits-/Konfliktlogik).</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="schedule.html">Wochenplan - Sektion Rotationen</a></li>
+<li><a href="team.html">Team - Qualifikationen</a></li>
+<li><a href="concepts.html">Konzepte: Springerpool-Rotationen</a></li>
+</ul>
+</body>
+</html>

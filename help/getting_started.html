@@ -1,0 +1,131 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Erste Schritte - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Erste Schritte</div>
+
+<h1>Erste Schritte mit CuraFlow</h1>
+
+<h2>Anmeldung</h2>
+<p>Zum Anmelden ben&ouml;tigen Sie eine <strong>E-Mail-Adresse</strong> und ein <strong>Passwort</strong>, die Ihnen von Ihrem Administrator zugewiesen wurden. Ein eigenst&auml;ndiges Registrieren ist nicht m&ouml;glich.</p>
+
+<ol>
+<li>&Ouml;ffnen Sie die CuraFlow-URL Ihrer Einrichtung in Ihrem Browser.</li>
+<li>Geben Sie Ihre <strong>E-Mail-Adresse</strong> ein.</li>
+<li>Geben Sie Ihr <strong>Passwort</strong> ein.</li>
+<li>Klicken Sie auf <strong>"Anmelden"</strong>.</li>
+</ol>
+
+<div class="warning">
+<strong>Wichtig:</strong> Nach <strong>10 fehlgeschlagenen Anmeldeversuchen</strong> innerhalb von 15 Minuten wird die Anmeldung vor&uuml;bergehend gesperrt (Rate-Limiting). Warten Sie 15 Minuten oder wenden Sie sich an Ihren Administrator.
+</div>
+
+<div class="note">
+<strong>Hinweis:</strong> Bei einem Ablauf der Sitzung (JWT-Token, g&uuml;ltig 24 Stunden) werden Sie automatisch zur Anmeldeseite zur&uuml;ckgeleitet. Der Token wird im Browser unter dem Schl&uuml;ssel <code>radioplan_jwt_token</code> gespeichert.
+</div>
+
+<h3>Mandanten-Auswahl (Multi-Tenant)</h3>
+<p>Benutzer, die <strong>mehreren Mandanten</strong> (z.B. Abteilungen) zugeordnet sind, sehen nach der Anmeldung einen <strong>Mandanten-Auswahldialog</strong>. W&auml;hlen Sie den Mandanten, in dem Sie arbeiten m&ouml;chten. Anschlie&szlig;end werden alle Daten (Dienstplan, Team, Statistik) aus der Datenbank dieses Mandanten geladen.</p>
+<p>Der ausgew&auml;hlte Mandant wird &uuml;ber einen verschl&uuml;sselten <strong>DB-Token</strong> identifiziert, der bei jeder Anfrage mitgesendet wird (<code>X-DB-Token</code>-Header). Sie k&ouml;nnen den Mandanten sp&auml;ter &uuml;ber Ihr Benutzerkonto wechseln.</p>
+
+<h2>Erste Anmeldung: Passwort &auml;ndern</h2>
+<ul>
+<li>Ist Ihr Konto mit dem Hinweis <em>"Passwort muss ge&auml;ndert werden"</em> markiert, erscheint nach der Anmeldung automatisch der <strong>Dialog zur erzwungenen Passwort&auml;nderung</strong>.</li>
+<li>Die Navigation ist erst m&ouml;glich, nachdem Sie ein neues Passwort vergeben haben.</li>
+<li>Ein Passwort muss mindestens <strong>8 Zeichen</strong> lang sein.</li>
+</ul>
+
+<h2>Die Hauptnavigation (Seitenleiste)</h2>
+<p>Nach der Anmeldung sehen Sie links die Seitenleiste mit allen Modulen. Die Seitenleiste klappt nach <strong>3 Sekunden</strong> automatisch ein; bewegen Sie die Maus dar&uuml;ber oder klicken Sie auf das Men&uuml;-Symbol oben links, um sie wieder einzublenden.</p>
+
+<table>
+<tr><th>Men&uuml;punkt</th><th>Beschreibung</th><th>Sichtbarkeit</th></tr>
+<tr><td><strong>Mein Dashboard</strong></td><td>Pers&ouml;nliche Aufgaben, Dienste, Abwesenheiten, Benachrichtigungen. Ein roter Puls-Punkt erscheint, wenn offene Aufgaben vorhanden sind.</td><td>Alle</td></tr>
+<tr><td><strong>Wochenplan</strong></td><td>Die zentrale Planungsoberfl&auml;che (Drag-and-Drop).</td><td>Alle</td></tr>
+<tr><td><strong>Dienstbesetzung</strong></td><td>Monats&uuml;bersicht aller Dienste (Vordergrund, Hintergrund, Sp&auml;tdienst). Der Name kann in den Einstellungen ge&auml;ndert werden (Abschnitt "Dienste").</td><td>Alle</td></tr>
+<tr><td><strong>Team</strong></td><td>Mitarbeiterverwaltung, Stellenplan, Rollen, Qualifikationen.</td><td>Nicht schreibgesch&uuml;tzt</td></tr>
+<tr><td><strong>Abwesenheiten</strong></td><td>Jahresplanung Urlaub, Krank, Dienstreise etc. (Abschnitt "Abwesenheiten").</td><td>Alle</td></tr>
+<tr><td><strong>Wunschkiste</strong></td><td>Dienstw&uuml;nsche und "Kein Dienst"-Anfragen.</td><td>Alle</td></tr>
+<tr><td><strong>Rotationsplaner</strong></td><td>Weiterbildungsrotationen (Abschnitt "Rotationen").</td><td>Alle</td></tr>
+<tr><td><strong>Statistik</strong></td><td>Berichte und Auswertungen.</td><td>Nicht schreibgesch&uuml;tzt (nur Admin)</td></tr>
+<tr><td><strong>Hilfe</strong></td><td>Online-Anleitung innerhalb der Anwendung.</td><td>Alle</td></tr>
+<tr><td><strong>Feedback &amp; Verbesserungen</strong></td><td>Fehler melden (Bug) oder Verbesserung vorschlagen (Feature).</td><td>Alle</td></tr>
+<tr><td><strong>Design w&auml;hlen</strong></td><td>Farbschema der Anwendung umschalten.</td><td>Alle</td></tr>
+<tr><td><strong>Adminbereich</strong></td><td>Systemverwaltung (Benutzer, Verb&uuml;nde, Einstellungen, Datenbank, Logs).</td><td>Nur Admin</td></tr>
+<tr><td><strong>Abmelden</strong></td><td>Beendet die Sitzung (unten in der Seitenleiste).</td><td>Alle</td></tr>
+</table>
+
+<div class="note">
+<strong>Hinweis:</strong> Im <strong>schreibgesch&uuml;tzten Modus</strong> (Rolle <code>readonly</code>) wird oben ein gelber Hinweis <em>"Schreibgesch&uuml;tzter Modus"</em> angezeigt. Schreibgesch&uuml;tzte Benutzer sehen nur ihren eigenen zugeordneten Mitarbeiter (z.B. in Abwesenheiten und Wunschkiste) und k&ouml;nnen keine &Auml;nderungen vornehmen.
+</div>
+
+<h2>Benutzerkonto (Account-Men&uuml;)</h2>
+<p>Klicken Sie oben rechts auf Ihr Benutzerkonto. Folgende Aktionen stehen zur Verf&uuml;gung:</p>
+
+<h3>Passwort &auml;ndern</h3>
+<ul>
+<li>Geben Sie das <strong>aktuelle Passwort</strong>, das <strong>neue Passwort</strong> und dessen <strong>Wiederholung</strong> ein.</li>
+<li>Das neue Passwort muss mindestens <strong>8 Zeichen</strong> lang sein; beide Eingaben m&uuml;ssen &uuml;bereinstimmen.</li>
+</ul>
+
+<h3>E-Mail-Adresse &auml;ndern</h3>
+<ul>
+<li>Geben Sie die <strong>neue E-Mail-Adresse</strong> und zur Best&auml;tigung Ihr <strong>Passwort</strong> ein.</li>
+<li>Nach erfolgreicher &Auml;nderung werden Sie <strong>abgemeldet</strong> und m&uuml;ssen sich mit der neuen E-Mail-Adresse neu anmelden.</li>
+</ul>
+
+<h3>Abmelden</h3>
+<ul>
+<li>Beendet die Sitzung und l&ouml;scht den Token aus dem Browser-Speicher.</li>
+</ul>
+
+<div class="tip">
+<strong>Tipp:</strong> Die Versions- und Build-Informationen (z.B. Commit-Hash) Ihrer Installation finden Sie im Account-Men&uuml;. Geben Sie diese bei Support-Anfragen an.
+</div>
+
+<h2>Pers&ouml;nliche Einstellungen</h2>
+<p>Folgende benutzerbezogene Einstellungen k&ouml;nnen an verschiedenen Stellen angepasst werden:</p>
+<table>
+<tr><th>Einstellung</th><th>Beschreibung</th></tr>
+<tr><td><strong>Alphabetische Sortierung der Mitarbeiter</strong></td><td>Mitarbeiterlisten (Wochenplan, Wunschkiste, Abwesenheiten) alphabetisch statt nach Rollenpriorit&auml;t sortieren.</td></tr>
+<tr><td><strong>Design/Farbschema</strong></td><td>&Uuml;ber "Design w&auml;hlen" im Seitenmen&uuml;; wird pro Benutzer gespeichert.</td></tr>
+<tr><td><strong>Schriftgr&ouml;&szlig;e im Wochenplan</strong></td><td>Schieberegler in der Wochenplan-Ansicht; wird gespeichert.</td></tr>
+<tr><td><strong>Eingeklappte Sektionen</strong></td><td>Welche Sektionen des Wochenplans standardm&auml;&szlig;ig eingeklappt sind.</td></tr>
+<tr><td><strong>Ausgeblendete Zeilen</strong></td><td>&Uuml;ber "Zeilen verwalten" im Wochenplan; pro Benutzer gespeichert.</td></tr>
+</table>
+
+<h2>Feedback senden</h2>
+<p>&Uuml;ber <strong>"Feedback &amp; Verbesserungen"</strong> &ouml;ffnet sich ein Dialog mit zwei Typen:</p>
+<ul>
+<li><strong>Bug-Report:</strong> Melden Sie einen Fehler. Titel und Beschreibung sind Pflicht. System-, Benutzer- und Mandanteninformationen werden automatisch mit &uuml;bermittelt.</li>
+<li><strong>Feature-Request:</strong> Schlagen Sie eine neue Funktion oder Verbesserung vor.</li>
+</ul>
+<p>Tritt ein unerwarteter Fehler (Crash) auf, &ouml;ffnet sich der Dialog automatisch mit einem vorbef&uuml;llten Fehlerbericht (Fehlermeldung + Stack Trace).</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li>Rollen und Berechtigungen: <a href="concepts.html">Konzepte &amp; Berechtigungen</a></li>
+<li>Die zentrale Planungsoberfl&auml;che: <a href="schedule.html">Wochenplan</a></li>
+</ul>
+</body>
+</html>

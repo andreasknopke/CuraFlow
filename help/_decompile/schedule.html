@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Wochenplan - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+.shortcut { background: #e8f4fd; padding: 2px 6px; border-radius: 3px; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Wochenplan</div>
+
+<h1>Wochenplan (Dienstplan)</h1>
+<p>Der Wochenplan ist die <strong>zentrale Planungsoberfl&auml;che</strong> von CuraFlow. Hier werden alle Personalzuweisungen, Dienste und Abwesenheiten per Drag-and-Drop verwaltet.</p>
+
+<h2>Ansichtsmodi</h2>
+<ul>
+<li><strong>Wochenansicht:</strong> Zeigt 7 Tage nebeneinander (Standard).</li>
+<li><strong>Tagesansicht:</strong> Detailansicht eines einzelnen Tages - ideal f&uuml;r die Arbeit mit Zeiten und Arbeitsplatz-Links.</li>
+</ul>
+<p>Wechseln Sie &uuml;ber die Schaltfl&auml;chen oben rechts zwischen den Ansichten. Die Navigation erfolgt &uuml;ber die Pfeile (vorherige/n&auml;chste Woche) und die "Heute"-Auswahl.</p>
+
+<h2>Die Sektionen des Plans</h2>
+<p>Der Plan ist in Sektionen unterteilt, die jeweils ein- und ausgeklappt werden k&ouml;nnen:</p>
+
+<table>
+<tr><th>Sektion</th><th>Zeilen</th><th>Bedeutung</th></tr>
+<tr><td><strong>Anwesenheiten</strong></td><td>Verf&uuml;gbar</td><td>Mitarbeiter, die an dem Tag verf&uuml;gbar sind (aus der Seitenleiste heraus berechnet).</td></tr>
+<tr><td><strong>Abwesenheiten</strong></td><td>Frei, Krank, Urlaub, Dienstreise, Nicht verf&uuml;gbar</td><td>Abwesenheitsarten; werden auch im Abwesenheitsplaner verwaltet.</td></tr>
+<tr><td><strong>Dienste</strong></td><td>dynamisch</td><td>Dienstpositionen (Vordergrund, Hintergrund, Sp&auml;tdienst etc.) - werden aus den konfigurierten Arbeitspl&auml;tzen der Kategorie "Dienste" geladen.</td></tr>
+<tr><td><strong>Rotationen</strong></td><td>dynamisch</td><td>Weiterbildungsrotationen (CT, MRT, Sono etc.) - aus Arbeitspl&auml;tzen der Kategorie "Rotationen".</td></tr>
+<tr><td><strong>Demonstrationen &amp; Konsile</strong></td><td>dynamisch</td><td>Lehre und Konsildienste.</td></tr>
+<tr><td><strong>Pool-Rotationen</strong></td><td>dynamisch</td><td>Springerpool-Rotationen &uuml;ber Mandantengrenzen hinweg.</td></tr>
+<tr><td><strong>Sonstiges</strong></td><td>Sonstiges</td><td>Freie Eintragungen.</td></tr>
+</table>
+
+<div class="note">
+<strong>Hinweis:</strong> Die Sichtbarkeit, Reihenfolge und Beschriftung der Sektionen kann der Administrator konfigurieren (Abschnitts-Konfiguration im Adminbereich). Die Namen der Men&uuml;punkte "Dienstbesetzung", "Abwesenheiten" und "Rotationsplaner" passen sich entsprechend an.
+</div>
+
+<h2>Seitenleiste: Mitarbeiter</h2>
+<ul>
+<li>Die linke Seitenleiste (Teil der Hauptnavigation) enth&auml;lt die Liste der Mitarbeiter, die Sie per Drag-and-Drop in den Plan ziehen k&ouml;nnen.</li>
+<li>Die Reihenfolge richtet sich nach der <strong>Rollenpriorit&auml;t</strong> (Chefarzt zuerst) und danach nach der individuellen Reihenfolge des Mitarbeiters - alternativ alphabetisch, je nach Einstellung.</li>
+<li>Mitarbeiter mit Abwesenheiten oder "Nicht verf&uuml;gbar" werden entsprechend markiert.</li>
+</ul>
+
+<h2>Drag-and-Drop-Grundlagen</h2>
+
+<h3>Zuweisen</h3>
+<ol>
+<li>Ziehen Sie einen Mitarbeiter aus der Seitenleiste in die gew&uuml;nschte Zelle.</li>
+<li>Beim Loslassen wird der Eintrag gespeichert (Best&auml;tigung per Toast "Dienst eingetragen").</li>
+</ol>
+
+<h3>Verschieben</h3>
+<ol>
+<li>Ziehen Sie einen bereits eingetragenen Dienst an eine andere Zelle.</li>
+</ol>
+
+<h3>Kopieren</h3>
+<ul>
+<li>Halten Sie die <span class="shortcut">STRG</span>-Taste (oder <span class="shortcut">&#8984;</span> auf dem Mac) gedr&uuml;ckt, w&auml;hrend Sie ziehen: Der Eintrag wird <strong>kopiert</strong> statt verschoben.</li>
+</ul>
+
+<h3>R&uuml;ckg&auml;ngig</h3>
+<ul>
+<li><span class="shortcut">STRG+Z</span> macht die letzte Aktion r&uuml;ckg&auml;ngig (bis zu 10 Schritte).</li>
+<li>Nutzen Sie zus&auml;tzlich den R&uuml;ckg&auml;ngig-Button (Pfeil nach links) in der Symbolleiste.</li>
+</ul>
+
+<h2>Eintr&auml;ge l&ouml;schen</h2>
+<p>Es gibt drei M&ouml;glichkeiten, einen Eintrag zu entfernen:</p>
+<table>
+<tr><th>Methode</th><th>Beschreibung</th></tr>
+<tr><td><strong>Papierkorb</strong></td><td>Beim Ziehen erscheint unten ein roter Papierkorb-Bereich. Ziehen Sie den Eintrag dorthin.</td></tr>
+<tr><td><strong>Zur&uuml;ck zur Seitenleiste</strong></td><td>Ziehen Sie den Eintrag zur&uuml;ck in die Personenliste der Seitenleiste.</td></tr>
+<tr><td><strong>Zeile/Tag leeren</strong></td><td>Klicken Sie auf das Papierkorb-Symbol an Zeilen- oder Spaltenk&ouml;pfen, um die gesamte Zeile bzw. den Tag zu leeren.</td></tr>
+</table>
+
+<h2>Freitext-Zellen</h2>
+<ul>
+<li>In Zellen k&ouml;nnen Sie statt eines Mitarbeiters auch einen <strong>Freitext</strong> eintragen (z.B. "Besetzt durch Springer", "Ger&auml;t au&szlig;er Betrieb").</li>
+<li>Doppelklicken Sie eine Zelle, geben Sie den Text ein und best&auml;tigen Sie mit Enter.</li>
+</ul>
+
+<h2>Feiertage und Schulferien</h2>
+<ul>
+<li><strong>Feiertage</strong> werden wie Sonntage behandelt und r&ouml;tlich markiert; ein Tooltip zeigt den Feiertagsnamen.</li>
+<li><strong>Schulferien</strong> werden gr&uuml;n hinterlegt - rein informativ, ohne Auswirkung auf die Planung.</li>
+<li>Die Daten werden automatisch von der <strong>OpenHolidays-API</strong> f&uuml;r das konfigurierte Bundesland (Standard: Mecklenburg-Vorpommern) geladen.</li>
+<li>In den Einstellungen k&ouml;nnen zus&auml;tzliche freie Tage definiert oder Feiertage ausgeblendet werden.</li>
+</ul>
+
+<div class="note">
+<strong>Auto-Frei:</strong> Bestimmte Dienste l&ouml;sen automatisch einen <strong>Freizeitausgleich am Folgetag</strong> aus - jedoch nur, wenn der Folgetag weder Samstag, Sonntag noch Feiertag ist. Wird der Dienst gel&ouml;scht, verschwindet auch das "Frei".
+</div>
+
+<h2>Zeitfenster (Timeslots)</h2>
+<ul>
+<li>Arbeitspl&auml;tze k&ouml;nnen in <strong>Zeitfenster</strong> aufgeteilt werden (z.B. Fr&uuml;h- und Sp&auml;tschicht).</li>
+<li>Bei Arbeitspl&auml;tzen mit mehreren Zeitfenstern erscheint beim Ziehen in die Zelle eine <strong>Auswahl des Zeitfensters</strong>. Bei nur einem Zeitfenster erfolgt die Zuweisung direkt.</li>
+<li>Jedes Zeitfenster kann mit <strong>unterschiedlichen Mitarbeitern</strong> besetzt werden (Teamwechsel).</li>
+<li>Die Zeiten werden in der <strong>Arbeitszeit-Statistik</strong> korrekt berechnet.</li>
+<li>Rotations- und benutzerdefinierte Arbeitspl&auml;tze haben immer einen sichtbaren Standard-Zeitraum (07:00-15:30), der im Mitarbeiter-Chip angezeigt und per Klick auf die Zeitangabe individuell angepasst werden kann. Bei Teilzeitkr&auml;ften wird die Zeit automatisch an den FTE-Anteil skaliert.</li>
+</ul>
+
+<h2>Warnungen und Konflikte</h2>
+
+<h3>Gelbes Warndreieck (Verf&uuml;gbarkeit)</h3>
+<ul>
+<li>Erscheint neben dem Datum, wenn <strong>Personal verf&uuml;gbar ist, aber nicht eingeteilt wurde</strong>.</li>
+<li>Ein Klick zeigt an, wer an diesem Tag noch frei ist.</li>
+</ul>
+
+<h3>Konflikterkennung</h3>
+<ul>
+<li>Das System <strong>verhindert ung&uuml;ltige Zuweisungen</strong> (z.B. Person ist bereits krank oder im Urlaub).</li>
+<li>Bei <strong>Doppelbelegung</strong> (Person bereits am selben Tag eingetragen) wird der alte Eintrag ersetzt - oder es erscheint ein Best&auml;tigungsdialog, je nach Regel.</li>
+<li>Details zu allen Regeln finden Sie unter <a href="schedule_advanced.html">Automatik &amp; Validierung</a>.</li>
+</ul>
+
+<h2>Ansicht anpassen</h2>
+<table>
+<tr><th>Funktion</th><th>Beschreibung</th></tr>
+<tr><td><strong>Zeilen verwalten</strong></td><td>Dropdown-Men&uuml; zum Ein- und Ausblenden einzelner Zeilen; wird pro Benutzer gespeichert.</td></tr>
+<tr><td><strong>Farbschema</strong></td><td>Farben f&uuml;r Rollen und Zeilen &uuml;ber den Farbeinstellungs-Dialog anpassen (auch im Adminbereich).</td></tr>
+<tr><td><strong>Schriftgr&ouml;&szlig;e</strong></td><td>Schieberegler zum Anpassen der Schriftgr&ouml;&szlig;e im Plan; wird gespeichert.</td></tr>
+<tr><td><strong>Drucken</strong></td><td>Optimierte Druckansicht &uuml;ber die Browser-Druckfunktion.</td></tr>
+<tr><td><strong>Excel-Export</strong></td><td>L&auml;dt den aktuellen Wochenplan als XLSX-Datei herunter (Export-Button in der Symbolleiste).</td></tr>
+</table>
+
+<h2>Echtzeit-Synchronisation</h2>
+<ul>
+<li>&Auml;nderungen am Plan (durch Sie oder andere Benutzer) werden in <strong>Echtzeit</strong> an alle ge&ouml;ffneten Ansichten &uuml;bertragen.</li>
+<li>Technisch wird dazu ein Server-Sent-Events-Stream (<code>/api/auth/events/stream</code>) verwendet. Sie m&uuml;ssen die Seite nicht neu laden.</li>
+<li>Hinweis: Die automatische Synchronisation wirkt nur im selben Mandanten-Kontext (aktives DB-Token).</li>
+</ul>
+
+<h2>Mobile Ansicht</h2>
+<ul>
+<li>Unterhalb von 768 Pixel Breite wird automatisch eine <strong>vereinfachte Listenansicht</strong> (MobileScheduleView) dargestellt.</li>
+<li>Sie eignet sich zum Lesen; umfangreiche Planungsarbeit sollte am Desktop erfolgen.</li>
+</ul>
+
+<h2>Tastenk&uuml;rzel</h2>
+<table>
+<tr><th>K&uuml;rzel</th><th>Aktion</th></tr>
+<tr><td><span class="shortcut">STRG+Z</span></td><td>Letzte Aktion r&uuml;ckg&auml;ngig machen</td></tr>
+<tr><td><span class="shortcut">STRG+Ziehen</span></td><td>Eintrag kopieren statt verschieben</td></tr>
+<tr><td><span class="shortcut">STRG+Klick</span></td><td>Bereich ausw&auml;hlen (z.B. im Abwesenheits- und Rotationsplaner)</td></tr>
+</table>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="schedule_advanced.html">Wochenplan: Automatik &amp; Validierung</a> - AutoFill, KI-Vorschl&auml;ge, alle Konfliktregeln</li>
+<li><a href="services.html">Dienstbesetzung</a> - Monats&uuml;bersicht der Dienste</li>
+<li><a href="concepts.html">Konzepte &amp; Berechtigungen</a> - Wer darf den Plan bearbeiten?</li>
+</ul>
+</body>
+</html>

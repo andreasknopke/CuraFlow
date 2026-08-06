@@ -1,0 +1,86 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>CuraFlow - Benutzerhandbuch</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.nav-box { background: #f8f9fa; border-left: 4px solid #3498db; padding: 15px; margin: 20px 0; }
+ul { line-height: 1.8; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+</style>
+</head>
+<body>
+<h1>CuraFlow - Benutzerhandbuch</h1>
+<p><strong>Version:</strong> 2026.2 | <strong>Letztes Update:</strong> August 2026</p>
+
+<p>CuraFlow ist ein intelligentes Dienstplanungs- und Personalverwaltungssystem f&uuml;r Krankenh&auml;user und Kliniken aller Fachbereiche. Es erm&ouml;glicht die digitale Verwaltung von Wochenpl&auml;nen, Dienstbesetzungen, Abwesenheiten, Dienstw&uuml;nschen, Rotationen, dem Stellenplan (FTE) und statistischen Auswertungen - f&uuml;r <strong>alle Mitarbeiter des Hauses</strong>, unabh&auml;ngig von Berufsgruppe oder Abteilung.</p>
+
+<p>CuraFlow arbeitet <strong>mandantenf&auml;hig (Multi-Tenant)</strong>: Jede Abteilung/Klinik hat ihre eigene Datenbank. Zus&auml;tzlich existiert ein separates <strong>Master-Frontend</strong> f&uuml;r die Personalabteilung (HR) mit mandanten&uuml;bergreifender Sicht.</p>
+
+<div class="nav-box">
+<h3>Inhalt dieses Handbuchs</h3>
+<ul>
+<li><a href="getting_started.html">Erste Schritte</a> - Anmeldung, Navigation, Benutzerkonto, Mandanten</li>
+<li><a href="schedule.html">Wochenplan (Dienstplan)</a> - Die zentrale Planungsoberfl&auml;che</li>
+<li><a href="schedule_advanced.html">Wochenplan: Automatik &amp; Validierung</a> - AutoFill, Konfliktregeln, Timeslots</li>
+<li><a href="services.html">Dienstbesetzung</a> - Monats&uuml;bersicht der Dienste</li>
+<li><a href="vacation.html">Abwesenheiten (Urlaubsplanung)</a> - Urlaub, Krank, Dienstreise u.a.</li>
+<li><a href="wishlist.html">Wunschkiste (Dienstw&uuml;nsche)</a> - W&uuml;nsche eintragen und genehmigen</li>
+<li><a href="training.html">Rotationsplaner</a> - Rotationen durch verschiedene Arbeitsbereiche</li>
+<li><a href="team.html">Team (Personalverwaltung)</a> - Mitarbeiter, Rollen, Stellenplan, Qualifikationen</li>
+<li><a href="statistics.html">Statistik &amp; Berichte</a> - Auswertungen und Reports</li>
+<li><a href="dashboard.html">Mein Dashboard</a> - Pers&ouml;nliche &Uuml;bersicht</li>
+<li><a href="admin.html">Adminbereich</a> - Benutzer, Verb&uuml;nde, Einstellungen, Datenbank</li>
+<li><a href="concepts.html">Konzepte &amp; Berechtigungen</a> - Rollen, Qualifikationsstufen, Multi-Tenant</li>
+<li><a href="master.html">Master-Frontend (HR)</a> - Mandanten&uuml;bergreifende Verwaltung</li>
+<li><a href="troubleshooting.html">H&auml;ufige Probleme</a> - Fehlerbehebung und Tipps</li>
+</ul>
+</div>
+
+<h2>Systemvoraussetzungen</h2>
+<ul>
+<li><strong>Browser:</strong> Aktuelle Version von Chrome, Edge, Firefox oder Safari</li>
+<li><strong>Internetverbindung:</strong> F&uuml;r den Zugriff auf die Anwendung erforderlich</li>
+<li><strong>Empfohlene Aufl&ouml;sung:</strong> Mindestens 1280x720; f&uuml;r den Wochenplan 1440x900 oder gr&ouml;&szlig;er</li>
+<li><strong>Mikrofon:</strong> Nur f&uuml;r die (optionale, derzeit nicht aktive) Sprachsteuerung n&ouml;tig</li>
+</ul>
+
+<h2>&Uuml;berblick &uuml;ber die Module</h2>
+<table>
+<tr><th>Modul</th><th>Beschreibung</th><th>Sichtbarkeit</th></tr>
+<tr><td><strong>Mein Dashboard</strong></td><td>Pers&ouml;nliche &Uuml;bersicht mit Aufgaben, Diensten, Abwesenheiten und Benachrichtigungen</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Wochenplan</strong></td><td>Zentrale Planungsoberfl&auml;che mit Drag-and-Drop, AutoFill und Export</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Dienstbesetzung</strong></td><td>Monats&uuml;bersicht zur schnellen Besetzung aller Dienste</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Team</strong></td><td>Mitarbeiterverwaltung, Stellenplan, Rollen und Qualifikationen</td><td>Nicht schreibgesch&uuml;tzt</td></tr>
+<tr><td><strong>Abwesenheiten</strong></td><td>Jahresplanung f&uuml;r Urlaub, Krankheit und andere Abwesenheiten</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Wunschkiste</strong></td><td>Dienstw&uuml;nsche eintragen, genehmigen und verwalten</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Rotationsplaner</strong></td><td>Rotationen durch verschiedene Arbeitsbereiche und Stationen</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Statistik</strong></td><td>Berichte: Dienstverteilung, Arbeitszeit, Compliance, W&uuml;nsche, Fehlzeiten</td><td>Nicht schreibgesch&uuml;tzt (nur Admin)</td></tr>
+<tr><td><strong>Hilfe</strong></td><td>Online-Hilfe innerhalb der Anwendung</td><td>Alle Benutzer</td></tr>
+<tr><td><strong>Adminbereich</strong></td><td>Benutzer &amp; Rollen, Verb&uuml;nde, Arbeitsplatz-Links, Einstellungen, Datenbank, Logs</td><td>Nur Admin</td></tr>
+</table>
+
+<div class="tip">
+<strong>Tipp:</strong> Verwenden Sie das Inhaltsverzeichnis links (falls sichtbar) oder die Suchfunktion der CHM-Datei, um schnell zu einem Thema zu springen. Das Handbuch folgt 1:1 den Modulen der Anwendung.
+</div>
+
+<h2>Weitere Hilfen</h2>
+<ul>
+<li>Innerhalb der Anwendung finden Sie unter <strong>"Hilfe"</strong> eine ausf&uuml;hrliche Online-Anleitung mit den gleichen Themen.</li>
+<li>&Uuml;ber <strong>"Feedback &amp; Verbesserungen"</strong> im Seitenmen&uuml; k&ouml;nnen Sie Fehler melden oder Verbesserungen vorschlagen (Bug-Report / Feature-Request).</li>
+</ul>
+</body>
+</html>

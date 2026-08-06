@@ -1,0 +1,176 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Adminbereich - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Adminbereich</div>
+
+<h1>Adminbereich</h1>
+<p>Der Adminbereich ist die Systemverwaltung von CuraFlow und <strong>ausschlie&szlig;lich f&uuml;r Administratoren</strong> zug&auml;nglich. Benutzer ohne Admin-Rolle sehen die Meldung <em>"Zugriff verweigert. Nur f&uuml;r Administratoren."</em></p>
+
+<p>Der Adminbereich ist in <strong>sechs Tabs</strong> gegliedert:</p>
+<ol>
+<li><a href="#benutzer">Benutzer &amp; Rollen</a></li>
+<li><a href="#verbuende">Verb&uuml;nde</a></li>
+<li><a href="#links">Arbeitsplatz-Links</a></li>
+<li><a href="#einstellungen">Einstellungen</a></li>
+<li><a href="#datenbank">Datenbank</a></li>
+<li><a href="#logs">Logs</a></li>
+</ol>
+
+<h2 id="benutzer">1. Benutzer &amp; Rollen</h2>
+<p>Verwaltung aller Benutzerkonten der Anwendung.</p>
+
+<h3>Benutzer anlegen</h3>
+<ol>
+<li>Klicken Sie auf <strong>"Benutzer hinzuf&uuml;gen"</strong>.</li>
+<li>Geben Sie <strong>E-Mail</strong> und <strong>Passwort</strong> ein und w&auml;hlen Sie die <strong>Rolle</strong> (admin / user / readonly).</li>
+<li>Optional: Verkn&uuml;pfen Sie den Benutzer &uuml;ber das <strong>Doctor-Dropdown</strong> mit einem Mitarbeiter - dadurch sieht der Benutzer nur die Daten dieses Mitarbeiters (z.B. Wunschkiste, Abwesenheiten).</li>
+<li>F&uuml;r Administratoren: Legen Sie die <strong>feingranularen Berechtigungen</strong> fest (siehe <a href="concepts.html">Konzepte &amp; Berechtigungen</a>).</li>
+</ol>
+
+<h3>Benutzer verwalten</h3>
+<ul>
+<li><strong>Passwort zur&uuml;cksetzen:</strong> Erzeugt ein neues vor&uuml;bergehendes Passwort; der Benutzer muss es bei der n&auml;chsten Anmeldung &auml;ndern.</li>
+<li><strong>Rolle &auml;ndern:</strong> Wechsel zwischen admin / user / readonly.</li>
+<li><strong>Aktivieren/Deaktivieren:</strong> Deaktivierte Benutzer k&ouml;nnen sich nicht mehr anmelden.</li>
+<li><strong>Mitarbeiter-Verkn&uuml;pfung</strong> setzen oder entfernen.</li>
+<li><strong>Berechtigungen bearbeiten:</strong> &uuml;ber den Berechtigungs-Dialog (13 Berechtigungsschl&uuml;ssel).</li>
+</ul>
+
+<div class="warning">
+<strong>Achtung:</strong> Stellen Sie sicher, dass immer mindestens ein aktiver Administrator existiert. Ein deaktivierter Administrator verliert sofort den Zugriff.
+</div>
+
+<h2 id="verbuende">2. Verb&uuml;nde (Mandanten-Verb&uuml;nde)</h2>
+<p>Verwaltung abteilungs&uuml;bergreifender Planungsgruppen (z.B. "Innere Medizin": AD, KWE, OD, WE-F).</p>
+<ul>
+<li><strong>Verbund anlegen/&auml;ndern/l&ouml;schen:</strong> Name und Beschreibung.</li>
+<li><strong>Mitglieder verwalten:</strong> Welche Mandanten (Abteilungen) geh&ouml;ren zum Verbund.</li>
+<li><strong>Pool-Arbeitspl&auml;tze:</strong> Geteilte Arbeitspl&auml;tze des Verbunds (z.B. "AD", "KWE") mit Mindest-/Optimalbesetzung, Zeiten, Regeln (aufeinanderfolgende Tage, Restzeiten).</li>
+<li><strong>Quoten/Fairness:</strong> Obergrenzen und Sollwerte pro Person, Mandant oder Rolle (z.B. "max. 4 AD/Monat pro Person", "Soll 14 AD/Monat f&uuml;r IN4").</li>
+<li><strong>Zeitfenster f&uuml;r Pool-Arbeitspl&auml;tze</strong> (Shared-Timeslots).</li>
+<li>Pool-Schichten werden in der Master-Datenbank gespeichert und in den Wochenpl&auml;nen der Mitglieds-Mandanten <strong>lesend</strong> mit angezeigt.</li>
+</ul>
+<p>Voraussetzung f&uuml;r die Verwaltung: Berechtigung <code>can_manage_groups</code>.</p>
+
+<h3>Springerpool-Rotationen</h3>
+<ul>
+<li>Ebenfalls hier verwaltet: <strong>Rotationsgruppen</strong> (z.B. "Gyn&auml;kologie Springerpool") mit Pool-Planer und Stations-Mandanten.</li>
+<li>Stations-Mandanten melden <strong>Bedarf</strong> f&uuml;r Timeslots an; der Pool-Planer erf&uuml;llt ihn durch <strong>Zuweisungen</strong> von Springern.</li>
+<li>Bei Springer-Zuweisungen werden Qualifikationen automatisch vom Pool in den Stations-Mandanten &uuml;bertragen (Qualifikations-Vererbung).</li>
+</ul>
+
+<h2 id="links">3. Arbeitsplatz-Links</h2>
+<p>Verbindet Arbeitspl&auml;tze aus <strong>verschiedenen Mandanten</strong>, die denselben physischen Raum abbilden - z.B. &auml;rztlicher Arbeitsplatz "CT" (Radiologie) und MTR-Arbeitspl&auml;tze "CT1"/"CT2".</p>
+<ul>
+<li><strong>Link-Gruppe anlegen:</strong> Name (z.B. "CT - &auml;rztlich/MTR") und Mitglieder (Mandant + Arbeitsplatzname).</li>
+<li>In der <strong>Tagesansicht</strong> des Wochenplans wird am Zeilenkopf die aktuelle Besetzung der verkn&uuml;pften Partner-Arbeitspl&auml;tze angezeigt (<strong>rein lesend</strong>).</li>
+<li>Es werden nur Name und Zeitraum der eingeplanten Person angezeigt - keine weiteren Personaldaten.</li>
+<li>Wochen- und Monatsansicht bleiben bewusst unver&auml;ndert.</li>
+</ul>
+<p>Voraussetzung f&uuml;r die Verwaltung: Berechtigung <code>can_manage_workplace_links</code>.</p>
+
+<h2 id="einstellungen">4. Einstellungen</h2>
+<p>Systemweite Konfiguration des Mandanten.</p>
+
+<h3>Systemeinstellungen</h3>
+<ul>
+<li>Schl&uuml;ssel-Wert-Einstellungen des Systems (z.B. Wunsch-Frist, Feiertags-Konfiguration, Arbeitsplatz-Kategorien).</li>
+</ul>
+
+<h3>Farbeinstellungen</h3>
+<ul>
+<li>Farben f&uuml;r <strong>Rollen</strong> und <strong>Arbeitspl&auml;tze/Zeilen</strong> (Hintergrund- und Textfarbe).</li>
+<li>&Auml;nderungen wirken sofort im Wochenplan.</li>
+</ul>
+
+<h3>Abschnitts-Konfiguration</h3>
+<ul>
+<li>Sichtbarkeit, Reihenfolge und <strong>Beschriftung</strong> der Sektionen des Wochenplans (Anwesenheiten, Abwesenheiten, Dienste, Rotationen, ...).</li>
+<li>Die Men&uuml;namen (z.B. "Dienstbesetzung", "Abwesenheiten", "Rotationsplaner") &uuml;bernehmen die Abschnittsnamen.</li>
+</ul>
+
+<h3>Teamrollen (Team-Funktionen)</h3>
+<ul>
+<li>Rollen anlegen/bearbeiten: Name, Priorit&auml;t, Facharzt-Kennzeichen, Vordergrund-/Hintergrunddienst-Berechtigung, Statistik-Ausschluss.</li>
+</ul>
+
+<h3>Arbeitspl&auml;tze</h3>
+<ul>
+<li>Arbeitspl&auml;tze anlegen/bearbeiten (Name, Kategorie, Mehrfachbesetzung, Timeslots, Arbeitszeit-Prozentsatz, Verf&uuml;gbarkeits-Beeinflussung, aufeinanderfolgende Tage, Mindest-/Optimalbesetzung, Auto-Frei, Diensttyp).</li>
+<li><strong>Zeitfenster-Editor:</strong> Zeitfenster je Arbeitsplatz (mindestens eines muss erhalten bleiben).</li>
+</ul>
+
+<h3>Qualifikationen</h3>
+<ul>
+<li>Qualifikationen verwalten und Arbeitspl&auml;tzen zuordnen (Pflicht / Sollte / Sollte nicht / Ausschluss).</li>
+</ul>
+
+<h3>Weitere</h3>
+<ul>
+<li><strong>Schichtzeit-Regeln</strong> (ShiftTimeRuleManager) und <strong>Arbeitszeitmodelle</strong>.</li>
+<li><strong>Zeiterfassungs-Einstellungen</strong> (Soll-Stunden etc.).</li>
+</ul>
+
+<h2 id="datenbank">5. Datenbank</h2>
+
+<h3>Verbindung testen</h3>
+<ul>
+<li>Pr&uuml;ft die Verbindung zur Mandanten-Datenbank.</li>
+</ul>
+
+<h3>Backup erstellen</h3>
+<ul>
+<li>Erstellt ein vollst&auml;ndiges Backup der Datenbank (SQL-Datei zum Herunterladen).</li>
+</ul>
+
+<h3>Migrationen ausf&uuml;hren</h3>
+<ul>
+<li>Zeigt <strong>ausstehende Datenbank-Migrationen</strong> an und f&uuml;hrt sie aus.</li>
+<li>Nach einem Update sollten ausstehende Migrationen ausgef&uuml;hrt werden, um alle neuen Funktionen zu aktivieren.</li>
+</ul>
+
+<h3>DB-Token / Server-Tokens (Multi-Tenant)</h3>
+<ul>
+<li>Verwaltung der verschl&uuml;sselten Verbindungs-Tokens zu Mandanten-Datenbanken.</li>
+<li>Neue Token werden mit MySQL-Zugangsdaten erstellt und Benutzern zugewiesen.</li>
+</ul>
+
+<div class="warning">
+<strong>Achtung:</strong> F&uuml;hren Sie Migrationen nur aus, wenn Sie sicher sind. Erstellen Sie vorher ein Backup.
+</div>
+
+<h2 id="logs">6. Logs</h2>
+<ul>
+<li>System-Aktivit&auml;tsprotokoll (Anmeldungen, Plan&auml;nderungen, Admin-Aktionen).</li>
+<li>Es werden <strong>keine Passwort-Hashes oder sensible Personendaten</strong> protokolliert.</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="concepts.html">Konzepte &amp; Berechtigungen</a> - alle 13 Admin-Berechtigungen</li>
+<li><a href="master.html">Master-Frontend (HR)</a> - mandanten&uuml;bergreifende Verwaltung</li>
+<li><a href="getting_started.html">Erste Schritte</a></li>
+</ul>
+</body>
+</html>

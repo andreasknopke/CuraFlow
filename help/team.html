@@ -1,0 +1,198 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Team (Personalverwaltung) - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Team</div>
+
+<h1>Team (Personalverwaltung)</h1>
+<p>Der Bereich <strong>Team</strong> verwaltet <strong>alle Mitarbeiter Ihres Hauses</strong> - unabh&auml;ngig von Berufsgruppe oder Abteilung: &auml;rztliches Personal, Pflege, medizinisch-technisches Personal, Funktionsdienste, Verwaltung und Hilfskr&auml;fte. Jeder Mitarbeiter hat eine Rolle, eine Reihenfolge, ggf. Qualifikationen und einen Stellenplan-Eintrag.</p>
+
+<div class="note">
+<strong>Wichtig:</strong> Der Bereich ist f&uuml;r nicht-schreibgesch&uuml;tzte Benutzer sichtbar. Die Anlage und Bearbeitung von Mitarbeitern erfolgt in der Regel durch Administratoren.
+</div>
+
+<h2 id="mitarbeiter">Ablauf: Mitarbeiter anlegen</h2>
+<p>So legen Sie einen neuen Mitarbeiter Schritt f&uuml;r Schritt an:</p>
+<ol>
+<li>&Ouml;ffnen Sie den Bereich <strong>Team</strong> im Seitenmen&uuml;.</li>
+<li>Klicken Sie auf <strong>"+ Hinzuf&uuml;gen"</strong>. Es &ouml;ffnet sich das Mitarbeiter-Formular.</li>
+<li>F&uuml;llen Sie die <strong>Pflichtfelder</strong> aus:</li>
+</ol>
+
+<table>
+<tr><th>Feld</th><th>Bedeutung</th><th>Pflicht?</th></tr>
+<tr><td><strong>Name</strong></td><td>Vor- und Nachname des Mitarbeiters (Anzeige im Wochenplan, Abwesenheiten, Wunschkiste).</td><td>Ja</td></tr>
+<tr><td><strong>K&uuml;rzel</strong></td><td>Abk&uuml;rzung, z.B. "MUE" f&uuml;r M&uuml;ller. Wird in dichten Ansichten (z.B. Initialen-Darstellung) verwendet.</td><td>Ja</td></tr>
+<tr><td><strong>Rolle</strong></td><td>Berufsgruppe / Position (z.B. Chefarzt, Oberarzt, Facharzt, Assistenzarzt, Pflegefachkraft, MFA, ...). Die Rollen sind im Adminbereich konfigurierbar.</td><td>Ja</td></tr>
+<tr><td><strong>E-Mail</strong></td><td>E-Mail-Adresse des Mitarbeiters (wichtig f&uuml;r Benachrichtigungen und die Verkn&uuml;pfung mit einem Benutzerkonto).</td><td>Ja</td></tr>
+</table>
+
+<ol start="4">
+<li>F&uuml;llen Sie optional die <strong>weiteren Felder</strong> aus:</li>
+</ol>
+
+<table>
+<tr><th>Feld</th><th>Bedeutung</th></tr>
+<tr><td><strong>FTE (Vollzeit&auml;quivalent)</strong></td><td>Arbeitsumfang, z.B. 1,0 = Vollzeit, 0,5 = halbe Stelle. Flie&szlig;t in Stellenplan und Statistik ein.</td></tr>
+<tr><td><strong>Vertragsende</strong></td><td>Optional. Befristete Vertr&auml;ge werden sichtbar; der Vertragszeitraum begrenzt z.B. Urlaub und Rotationen.</td></tr>
+<tr><td><strong>Farbe</strong></td><td>Optional. Farbe f&uuml;r die Darstellung des Mitarbeiters im Wochenplan.</td></tr>
+<tr><td><strong>Reihenfolge</strong></td><td>Sortierposition innerhalb der Liste (wird zus&auml;tzlich per Drag &amp; Drop ge&auml;ndert).</td></tr>
+<tr><td><strong>Qualifikationen</strong></td><td>Zuweisung von Qualifikationen (siehe unten) - entscheidet, f&uuml;r welche Arbeitspl&auml;tze der Mitarbeiter eingeplant werden darf.</td></tr>
+</table>
+
+<ol start="5">
+<li>Klicken Sie auf <strong>"Speichern"</strong>.</li>
+<li>Der Mitarbeiter erscheint sofort in <strong>Wochenplan, Abwesenheiten, Wunschkiste und Statistik</strong>.</li>
+</ol>
+
+<div class="tip">
+<strong>Tipp:</strong> Die Reihenfolge der Mitarbeiterliste k&ouml;nnen Sie danach per <strong>Drag &amp; Drop</strong> anpassen - die Sortierung gilt systemweit (z.B. auch in der Wochenplan-Seitenleiste).
+</div>
+
+<h3>Mitarbeiter bearbeiten / l&ouml;schen</h3>
+<ul>
+<li>Klicken Sie auf den Stift-Button eines Mitarbeiters, um ihn zu bearbeiten.</li>
+<li>&Uuml;ber den Papierkorb-Button k&ouml;nnen Sie den Mitarbeiter l&ouml;schen (Best&auml;tigungsdialog).</li>
+<li><strong>Hinweis:</strong> Besser als das L&ouml;schen ist, den Mitarbeiter &uuml;ber den Stellenplan f&uuml;r Monate als "Nicht verf&uuml;gbar" (z.B. EZ, MS) zu markieren - so bleiben Historie und Statistik erhalten.</li>
+</ul>
+
+<h2 id="rollen">Rollen (Teamrollen) - was bedeuten sie?</h2>
+<p>Rollen beschreiben die <strong>Position und die Einsatz-Berechtigungen</strong> eines Mitarbeiters. Sie werden im Adminbereich unter <strong>"Einstellungen -&gt; Team-Funktionen"</strong> gepflegt.</p>
+
+<table>
+<tr><th>Eigenschaft</th><th>Bedeutung / Was steuert sie?</th></tr>
+<tr><td><strong>Name</strong></td><td>Bezeichnung der Rolle, z.B. "Pflegefachkraft", "MFA", "Oberarzt".</td></tr>
+<tr><td><strong>Priorit&auml;t</strong></td><td>Sortierreihenfolge (niedriger = weiter oben in Listen). Werte wie 0, 1, 2, 3 entsprechen z.B. Chefarzt, Oberarzt, Facharzt, Assistenzarzt.</td></tr>
+<tr><td><strong>Spezialist (is_specialist)</strong></td><td>Kennzeichnet die Rolle als Spezialist/in; wird mit einem Badge angezeigt.</td></tr>
+<tr><td><strong>Vordergrunddienst (can_do_foreground_duty)</strong></td><td>Darf Dienste im Haus &uuml;bernehmen; Badge "VG" (gr&uuml;n).</td></tr>
+<tr><td><strong>Hintergrunddienst (can_do_background_duty)</strong></td><td>Darf Bereitschaft von zu Hause &uuml;bernehmen; Badge "HG" (orange).</td></tr>
+<tr><td><strong>Aus Statistik ausgeschlossen (excluded_from_statistics)</strong></td><td>Mitarbeiter dieser Rolle werden in statistischen Auswertungen nicht ber&uuml;cksichtigt.</td></tr>
+</table>
+
+<p><strong>Kombination der Dienst-Kennzeichen:</strong></p>
+<ul>
+<li>VG <strong>und</strong> HG: "Kann alle Dienste &uuml;bernehmen"</li>
+<li>Nur VG: "Kann Vordergrunddienste &uuml;bernehmen"</li>
+<li>Nur HG: "Kann Hintergrunddienste &uuml;bernehmen"</li>
+<li>Weder VG noch HG, aber Statistik-Ausschluss: "Wird in Statistiken nicht gez&auml;hlt"</li>
+<li>Weder noch: "Keine Dienstberechtigung"</li>
+</ul>
+
+<div class="note">
+<strong>Beispiel:</strong> M&ouml;chten Sie, dass die Rolle "Pflegefachkraft" keine &auml;rztlichen Dienste &uuml;bernehmen darf, lassen Sie beide Dienst-Kennzeichen deaktiviert. Die Rolle steuert damit, welche Arbeitspl&auml;tze der Person bei der Einplanung zur Auswahl stehen.
+</div>
+
+<h3>Standard-Rollenfarben</h3>
+<table>
+<tr><th>Rolle (Beispiele)</th><th>Standardfarbe</th></tr>
+<tr><td>Chefarzt</td><td>Rot</td></tr>
+<tr><td>Oberarzt</td><td>Blau</td></tr>
+<tr><td>Facharzt</td><td>Gr&uuml;n</td></tr>
+<tr><td>Assistenzarzt</td><td>Gelb</td></tr>
+<tr><td>Weitere Rollen (z.B. MFA, Pflege, Hilfskr&auml;fte)</td><td>Grau/neutral</td></tr>
+</table>
+<p>Die Farben k&ouml;nnen im Adminbereich (Farbeinstellungen) pro Rolle &uuml;berschrieben werden.</p>
+
+<h2 id="stellenplan">Stellenplan (FTE / VK)</h2>
+<p>Der Stellenplan dokumentiert den <strong>Arbeitsumfang (FTE = Vollzeit&auml;quivalent)</strong> pro Mitarbeiter und Monat.</p>
+
+<table>
+<tr><th>K&uuml;rzel</th><th>Bedeutung</th></tr>
+<tr><td><strong>FTE</strong></td><td>Arbeitsumfang (0-100 %, z.B. 0,5 = halbe Stelle)</td></tr>
+<tr><td><strong>EZ</strong></td><td>Elternzeit</td></tr>
+<tr><td><strong>MS</strong></td><td>Mutterschutz</td></tr>
+<tr><td><strong>KO</strong></td><td>Krank ohne Entgelt</td></tr>
+<tr><td><strong>BV</strong></td><td>Besch&auml;ftigungsverbot</td></tr>
+<tr><td><strong>OU</strong></td><td>Andere Organisationseinheit</td></tr>
+</table>
+
+<div class="tip">
+<strong>Automatik:</strong> Bei EZ, MS, KO, BV, OU oder FTE 0,00 wird der Mitarbeiter im Abwesenheitsplaner automatisch als <strong>"Nicht verf&uuml;gbar"</strong> markiert (mit Begr&uuml;ndung). Er kann in diesen Monaten nicht eingeplant werden.
+</div>
+
+<h2 id="qualifikationen">Qualifikationen - Ablauf: Qualifikation anlegen und zuweisen</h2>
+<p>Qualifikationen beschreiben <strong>Bef&auml;higungen</strong> (z.B. "Ger&auml;tebedienung", "Berechtigung bestimmte Untersuchungen", "F&uuml;hrerschein", "Fachkunde") und steuern, <strong>wer an welchem Arbeitsplatz eingesetzt werden darf</strong>.</p>
+
+<h3>Schritt 1: Qualifikation anlegen</h3>
+<ol>
+<li>&Ouml;ffnen Sie den Bereich <strong>Team</strong> und gehen Sie zur <strong>Qualifikations-Verwaltung</strong>.</li>
+<li>Klicken Sie auf <strong>"Neue Qualifikation"</strong>.</li>
+<li>Geben Sie einen <strong>Namen</strong> ein (z.B. "Fachkunde Strahlenschutz", "OP-Einweisung", "Notfallmedizin").</li>
+<li>Optional: Beschreibung und Aktiv-Status.</li>
+<li>Speichern. Die Qualifikation steht nun zur Zuweisung bereit.</li>
+</ol>
+
+<h3>Schritt 2: Qualifikation dem Mitarbeiter zuweisen</h3>
+<ol>
+<li>&Ouml;ffnen Sie den Mitarbeiter (Stift-Button) oder die Qualifikations-&Uuml;bersicht.</li>
+<li>Markieren Sie die Qualifikationen, die der Mitarbeiter besitzt.</li>
+<li>Speichern. Die Qualifikationen erscheinen als Badges am Mitarbeiter.</li>
+</ol>
+
+<h3>Schritt 3: Qualifikations-Anforderung dem Arbeitsplatz zuweisen</h3>
+<ol>
+<li>&Ouml;ffnen Sie die <strong>Arbeitsplatz-Konfiguration</strong> (Adminbereich -&gt; Einstellungen -&gt; Arbeitspl&auml;tze).</li>
+<li>W&auml;hlen Sie den Arbeitsplatz (z.B. "Station 1") und &ouml;ffnen Sie den Qualifikations-Editor.</li>
+<li>F&uuml;gen Sie Qualifikationen mit einer <strong>Stufe</strong> hinzu:</li>
+</ol>
+
+<table>
+<tr><th>Stufe</th><th>Bedeutung bei der Einplanung</th></tr>
+<tr><td><strong>Pflicht</strong></td><td>Der Mitarbeiter MUSS die Qualifikation haben (sonst Blocker).</td></tr>
+<tr><td><strong>Sollte</strong></td><td>Bevorzugt qualifiziert; unqualifizierte Mitarbeiter sind als Fallback erlaubt (Warnung).</td></tr>
+<tr><td><strong>Sollte nicht</strong></td><td>Qualifizierte Mitarbeiter nur zuweisen, wenn niemand anderes verf&uuml;gbar ist (Warnung).</td></tr>
+<tr><td><strong>Ausschluss (Nicht)</strong></td><td>Mitarbeiter mit dieser Qualifikation d&uuml;rfen hier NIEMALS eingeteilt werden (harter Blocker).</td></tr>
+</table>
+
+<div class="tip">
+<strong>Wirkung:</strong> Haben Sie die Qualifikation "Fachkunde" als Pflicht am Arbeitsplatz "Station 1" hinterlegt, k&ouml;nnen nur Mitarbeiter mit dieser Qualifikation dort eingeplant werden. Die automatische Besetzung (AutoFill) ber&uuml;cksichtigt das ebenfalls.
+</div>
+
+<h2 id="verknuepfung">Zentrale Mitarbeiter-Verkn&uuml;pfung</h2>
+<ul>
+<li>Mitarbeiter k&ouml;nnen mit der <strong>zentralen Mitarbeiterverwaltung</strong> (Master-Datenbank) verkn&uuml;pft werden.</li>
+<li>&Uuml;ber die Verkn&uuml;pfung werden Stammdaten (Name, Vertragsdaten) aus dem Master &uuml;bernommen und synchronisiert.</li>
+<li>Nur Benutzer mit der Berechtigung <code>can_link_employees</code> k&ouml;nnen Verkn&uuml;pfungen herstellen.</li>
+</ul>
+
+<h2>Bulk-Login (Benutzerkonten im Paket)</h2>
+<ul>
+<li>&Uuml;ber den Bereich Team k&ouml;nnen f&uuml;r mehrere Mitarbeiter <strong>Benutzerkonten im Paket</strong> erstellt werden (Bulk-Login-Dialog).</li>
+<li>Dabei werden Benutzerkonten mit den E-Mail-Adressen der Mitarbeiter angelegt - praktisch f&uuml;r die Erst-Einrichtung vieler Konten.</li>
+</ul>
+
+<h2>H&auml;ufige Fragen</h2>
+<h3>Was ist der Unterschied zwischen einem Benutzer und einem Mitarbeiter?</h3>
+<p>Ein <strong>Mitarbeiter</strong> ist eine Person, die im Dienstplan gef&uuml;hrt wird (Stammdaten). Ein <strong>Benutzer</strong> ist ein Konto, mit dem sich eine Person anmeldet. Beides wird &uuml;ber die Mitarbeiter-Verkn&uuml;pfung verbunden: Der Benutzer sieht dann die Daten "seines" Mitarbeiters. Mehr dazu im <a href="admin.html">Adminbereich</a>.</p>
+
+<h3>Kann ich auch Mitarbeiter ohne &auml;rztliche Funktion anlegen?</h3>
+<p>Ja, selbstverst&auml;ndlich. CuraFlow verwaltet alle Berufsgruppen. Die Rollen (z.B. Pflege, MFA, Hilfskraft) legen Sie im Adminbereich an oder passen sie an.</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="concepts.html">Konzepte: Rollen, Qualifikationsstufen, Berechtigungen</a></li>
+<li><a href="admin.html">Adminbereich: Benutzer anlegen</a></li>
+<li><a href="vacation.html">Abwesenheiten: Stellenplan-Integration</a></li>
+</ul>
+</body>
+</html>

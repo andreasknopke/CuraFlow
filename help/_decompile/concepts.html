@@ -1,0 +1,157 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Konzepte &amp; Berechtigungen - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Konzepte &amp; Berechtigungen</div>
+
+<h1>Konzepte &amp; Berechtigungen</h1>
+<p>Dieses Kapitel erkl&auml;rt die grundlegenden Konzepte von CuraFlow: Benutzerrollen, feingranulare Berechtigungen, Qualifikationsstufen, Diensttypen, Validierungsregeln und die Multi-Tenant-Architektur.</p>
+
+<h2>Benutzerrollen</h2>
+<table>
+<tr><th>Rolle</th><th>Beschreibung</th></tr>
+<tr><td><strong>admin</strong></td><td>Vollzugriff; verwaltet Benutzer, Einstellungen, Datenbank und Verb&uuml;nde. Feingranulare Berechtigungen k&ouml;nnen einzelne Funktionen einschr&auml;nken.</td></tr>
+<tr><td><strong>user</strong></td><td>Regul&auml;rer Benutzer; sieht den Wochenplan, eigene W&uuml;nsche/Abwesenheiten und (je nach Berechtigung) bearbeitbare Bereiche.</td></tr>
+<tr><td><strong>readonly</strong></td><td>Schreibgesch&uuml;tzter Benutzer; sieht nur seinen eigenen zugeordneten Mitarbeiter, kann nichts &auml;ndern (gelber Hinweis "Schreibgesch&uuml;tzter Modus").</td></tr>
+</table>
+
+<h2>Feingranulare Admin-Berechtigungen (13)</h2>
+<p>F&uuml;r Administratoren k&ouml;nnen einzelne Funktionen &uuml;ber Berechtigungsschl&uuml;ssel freigeschaltet oder gesperrt werden:</p>
+
+<table>
+<tr><th>Schl&uuml;ssel</th><th>Bedeutung</th></tr>
+<tr><td><code>can_manage_users</code></td><td>Benutzer verwalten</td></tr>
+<tr><td><code>can_approve_absence</code></td><td>Abwesenheitsantr&auml;ge freigeben</td></tr>
+<tr><td><code>can_manage_master_data</code></td><td>Stammdaten verwalten (Master-Frontend)</td></tr>
+<tr><td><code>can_link_employees</code></td><td>Mitarbeiter-Verkn&uuml;pfung (zentral &lt;-&gt; Mandant)</td></tr>
+<tr><td><code>can_manage_groups</code></td><td>Verb&uuml;nde &amp; Rotationen verwalten</td></tr>
+<tr><td><code>can_manage_workplace_links</code></td><td>Arbeitsplatz-Links verwalten</td></tr>
+<tr><td><code>can_manage_shift_vacation</code></td><td>Schichturlaub &amp; &Uuml;bertrag verwalten</td></tr>
+<tr><td><code>can_manage_system</code></td><td>System-Einstellungen &amp; Datenbank</td></tr>
+<tr><td><code>can_manage_cowork</code></td><td>CoWork-Einladungen verwalten</td></tr>
+<tr><td><code>can_approve_wishes</code></td><td>Dienstw&uuml;nsche genehmigen</td></tr>
+<tr><td><code>can_send_schedule_emails</code></td><td>Dienstplan-E-Mails versenden</td></tr>
+<tr><td><code>can_assign_pool_shifts</code></td><td>Pool-Dienste besetzen</td></tr>
+<tr><td><code>can_edit_schedule</code></td><td>Dienstplan bearbeiten (tenant-eigene Schichten)</td></tr>
+</table>
+
+<div class="note">
+<strong>Logik:</strong> Ein fehlender oder leerer Berechtigungssatz gilt als <strong>vollberechtigt</strong> (lockout-sicher) - nur explizit auf <code>false</code> gesetzte Schl&uuml;ssel sperren eine Funktion. Super-Admins (&uuml;ber die Konfiguration festgelegt) umgehen alle Pr&uuml;fungen.
+</div>
+
+<h2>Qualifikationsstufen (4-Stufen-System)</h2>
+<table>
+<tr><th>Stufe</th><th>Konfiguration</th><th>Verhalten bei der Einplanung</th></tr>
+<tr><td><strong>Pflicht</strong></td><td>is_mandatory = true, is_excluded = false</td><td>Blocker: "Fehlende Pflicht-Qualifikation" - override-f&auml;hig</td></tr>
+<tr><td><strong>Sollte</strong></td><td>is_mandatory = false, is_excluded = false</td><td>Warnung, wenn die bevorzugte Qualifikation fehlt; bevorzugt bei AutoFill</td></tr>
+<tr><td><strong>Sollte nicht</strong></td><td>is_mandatory = true, is_excluded = true</td><td>Warnung: "Sollte nicht ... nur zuweisen, wenn kein anderer verf&uuml;gbar" - override-f&auml;hig</td></tr>
+<tr><td><strong>Ausschluss</strong></td><td>is_mandatory = false, is_excluded = true</td><td><strong>Harter Blocker</strong>: "Ausgeschlossen ... darf hier nicht eingeteilt werden" - kein Override</td></tr>
+</table>
+
+<h2>Diensttypen (service_type)</h2>
+<table>
+<tr><th>Wert</th><th>Diensttyp</th></tr>
+<tr><td>1</td><td>Bereitschaftsdienst</td></tr>
+<tr><td>2</td><td>Rufbereitschaftsdienst</td></tr>
+<tr><td>3</td><td>Schichtdienst</td></tr>
+<tr><td>4</td><td>Andere</td></tr>
+</table>
+<p>Der Diensttyp beeinflusst Farbdarstellung und die Dienst-Limit-Pr&uuml;fung (Bereitschafts-, Rufbereitschafts-, Wochenend-Limits).</p>
+
+<h2>Validierungsregeln im &Uuml;berblick</h2>
+<table>
+<tr><th>Regel</th><th>Art</th></tr>
+<tr><td>Pflicht-Qualifikation fehlt</td><td>Blocker (override-f&auml;hig)</td></tr>
+<tr><td>Ausschluss-Qualifikation vorhanden</td><td>Blocker (hart)</td></tr>
+<tr><td>Sollte-nicht-Qualifikation vorhanden</td><td>Warnung (override-f&auml;hig)</td></tr>
+<tr><td>Sollte-Qualifikation fehlt</td><td>Warnung</td></tr>
+<tr><td>Zeitkonflikt (Timeslot-&Uuml;berlappung)</td><td>Blocker</td></tr>
+<tr><td>Doppelbelegung am Tag</td><td>Blocker / ersetzt alten Eintrag</td></tr>
+<tr><td>Aufeinanderfolgende Tage verboten</td><td>Blocker</td></tr>
+<tr><td>Abwesenheitskonflikt (Urlaub, Krank, Nicht verf&uuml;gbar)</td><td>Blocker</td></tr>
+<tr><td>Dienst-Limits (Bereitschaft/Rufbereitschaft/Wochenende)</td><td>Warnung</td></tr>
+<tr><td>Unterbesetzung</td><td>Warnung</td></tr>
+</table>
+<p>Detailinformationen: <a href="schedule_advanced.html">Wochenplan: Automatik &amp; Validierung</a>.</p>
+
+<h2>Abwesenheits-Priorit&auml;ten</h2>
+<table>
+<tr><th>Status</th><th>Priorit&auml;t</th></tr>
+<tr><td>Nicht verf&uuml;gbar</td><td>100</td></tr>
+<tr><td>Krank</td><td>90</td></tr>
+<tr><td>Frei</td><td>80</td></tr>
+<tr><td>Urlaub</td><td>70</td></tr>
+<tr><td>Dienstreise</td><td>60</td></tr>
+</table>
+
+<h2>Multi-Tenant-Architektur</h2>
+<ul>
+<li>Jede Abteilung/Klinik betreibt eine <strong>eigene Datenbank</strong> (Mandant).</li>
+<li>Der Zugriff erfolgt &uuml;ber einen <strong>verschl&uuml;sselten DB-Token</strong>; bei jeder Anfrage wird der Token als Header mitgesendet.</li>
+<li>Benutzer k&ouml;nnen <strong>mehreren Mandanten</strong> zugeordnet sein und w&auml;hlen nach dem Login den aktiven Mandanten.</li>
+<li>Die Daten sind zwischen Mandanten vollst&auml;ndig isoliert.</li>
+</ul>
+
+<h2>Verb&uuml;nde &amp; Pool-Dienste (Cross-Department)</h2>
+<ul>
+<li><strong>Verb&uuml;nde (Tenant-Gruppen)</strong> b&uuml;ndeln mehrere Mandanten f&uuml;r abteilungs&uuml;bergreifende Dienste (z.B. AD, KWE, OD, WE-F).</li>
+<li>Pool-Arbeitspl&auml;tze und Pool-Schichten liegen in der Master-Datenbank; jede Schicht tr&auml;gt einen <strong>Abrechnungs-Mandanten</strong> (billing_tenant).</li>
+<li>Mitglieds-Mandanten sehen Pool-Schichten <strong>lesend</strong> in ihrem Wochenplan; Cross-Department-Admins planen sie im Verbund-Modus.</li>
+<li><strong>Fairness:</strong> Quoten (z.B. max. 4 AD/Monat pro Person) und ein Fairness-Score steuern die Verteilung.</li>
+</ul>
+
+<h2>Springerpool-Rotationen</h2>
+<ul>
+<li>Separates System f&uuml;r Springerpools: <strong>Stations-Mandanten</strong> melden Bedarf an, der <strong>Pool-Planer</strong> weist Springer zu.</li>
+<li>Jede Station sieht nur ihre eigene Zeile im Planungsboard.</li>
+<li>Bei Zuweisung werden Qualifikationen automatisch vom Pool in den Stations-Mandanten &uuml;bertragen.</li>
+</ul>
+
+<h2>Arbeitsplatz-Links</h2>
+<ul>
+<li>Verkn&uuml;pfen gleichnamige/physisch gleiche Arbeitspl&auml;tze &uuml;ber Mandantengrenzen (z.B. &auml;rztliches "CT" &lt;-&gt; MTR "CT1"/"CT2").</li>
+<li>Anzeige <strong>rein lesend</strong> in der Tagesansicht des Wochenplans.</li>
+</ul>
+
+<h2>Zentrale Mitarbeiterverwaltung (Master)</h2>
+<ul>
+<li>Die <strong>Master-Datenbank</strong> ist f&uuml;hrend f&uuml;r Stammdaten (Name, Vertrag, Soll-Stunden, Jahresurlaub).</li>
+<li>Mandanten f&uuml;hren lokale Kopien (<code>Doctor</code>) mit abteilungsspezifischen Feldern (Rolle, FTE, Qualifikationen, Farbe).</li>
+<li>&Auml;nderungen im Master werden den Mandanten zur <strong>Synchronisation</strong> angeboten (asynchron, mit Best&auml;tigung durch den Mandanten-Admin).</li>
+</ul>
+
+<h2>Echtzeit-Synchronisation &amp; Sicherheit</h2>
+<ul>
+<li><strong>Echtzeit:</strong> Plan&auml;nderungen werden per Server-Sent-Events an alle offenen Ansichten &uuml;bertragen.</li>
+<li><strong>Authentifizierung:</strong> JWT-Token (24 h), Passw&ouml;rter bcrypt-gehasht, Rate-Limiting f&uuml;r Login (10 Versuche/15 min).</li>
+<li><strong>Datenschutz:</strong> Keine personenbezogenen Daten in Logs; keine Passwort-Hashes in Logs; nur minimale Daten bei Arbeitsplatz-Links.</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="admin.html">Adminbereich</a> - Berechtigungen setzen</li>
+<li><a href="master.html">Master-Frontend (HR)</a></li>
+<li><a href="schedule_advanced.html">Validierungsdetails</a></li>
+</ul>
+</body>
+</html>

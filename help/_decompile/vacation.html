@@ -1,0 +1,131 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Abwesenheiten (Urlaubsplanung) - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Abwesenheiten</div>
+
+<h1>Abwesenheiten (Urlaubsplanung)</h1>
+<p>Der Abwesenheitsplaner zeigt die Jahres&uuml;bersicht f&uuml;r <strong>Urlaub, Krankheit und andere Abwesenheitsarten</strong> und dient als zentrale Urlaubsplanung. Abwesenheiten erscheinen automatisch im Wochenplan (Sektion "Abwesenheiten").</p>
+
+<div class="note">
+<strong>Hinweis:</strong> Der Men&uuml;punkt hei&szlig;t standardm&auml;&szlig;ig "Abwesenheiten" und entspricht dem Abschnitt "Abwesenheiten" des Wochenplans. Der Name kann im Adminbereich ge&auml;ndert werden.
+</div>
+
+<h2>Ansichten</h2>
+<table>
+<tr><th>Ansicht</th><th>Beschreibung</th></tr>
+<tr><td><strong>Einzelansicht</strong></td><td>Detaillierte 12-Monats-Ansicht f&uuml;r eine einzelne Person. Zeigt alle Abwesenheiten, Feiertage und Schulferien.</td></tr>
+<tr><td><strong>Team&uuml;bersicht</strong></td><td>Kompakte Darstellung aller Mitarbeiter mit farbcodierten Abwesenheiten auf einen Blick.</td></tr>
+</table>
+
+<ul>
+<li>Schreibgesch&uuml;tzte Benutzer sehen ausschlie&szlig;lich ihren <strong>eigenen zugeordneten Mitarbeiter</strong>.</li>
+<li>Die Mitarbeiterauswahl ber&uuml;cksichtigt die Rollenpriorit&auml;t bzw. die alphabetische Sortierung (je nach Einstellung).</li>
+</ul>
+
+<h2>Abwesenheitsarten (Status)</h2>
+<p>W&auml;hlen Sie oben den gew&uuml;nschten Status und klicken Sie dann auf die Tage:</p>
+
+<table>
+<tr><th>Status</th><th>Bedeutung</th><th>Priorit&auml;t</th></tr>
+<tr><td><strong>Urlaub</strong></td><td>Regul&auml;rer Erholungsurlaub</td><td>70</td></tr>
+<tr><td><strong>Schichturlaub</strong></td><td>Schicht-/Sonderurlaub (z&auml;hlt gegen das Schichturlaubs-Kontingent)</td><td>-</td></tr>
+<tr><td><strong>Krank</strong></td><td>Krankmeldung</td><td>90</td></tr>
+<tr><td><strong>Frei</strong></td><td>Freistellung (z.B. Ausgleich nach Dienst)</td><td>80</td></tr>
+<tr><td><strong>Dienstreise</strong></td><td>Dienstreise/Kongress</td><td>60</td></tr>
+<tr><td><strong>Nicht verf&uuml;gbar</strong></td><td>Generell nicht verf&uuml;gbar (z.B. Elternzeit, Mutterschutz, Besch&auml;ftigungsverbot)</td><td>100</td></tr>
+<tr><td><strong>L&ouml;schen</strong> (grau)</td><td>Entfernt bestehende Eintr&auml;ge</td><td>-</td></tr>
+</table>
+
+<p>Die Priorit&auml;ten entscheiden, welcher Status gewinnt, wenn mehrere Abwesenheitsarten denselben Tag betreffen (h&ouml;here Priorit&auml;t &uuml;berlagert niedrigere).</p>
+
+<div class="tip">
+<strong>Stellenplan-Integration:</strong> Steht ein Mitarbeiter im Stellenplan auf <strong>EZ (Elternzeit)</strong>, <strong>MS (Mutterschutz)</strong>, <strong>KO (Krank ohne Entgelt)</strong>, <strong>BV (Besch&auml;ftigungsverbot)</strong> oder <strong>OU (andere Organisationseinheit)</strong> bzw. auf FTE 0,00, wird er im Abwesenheitsplaner automatisch f&uuml;r die betroffenen Monate als <strong>"Nicht verf&uuml;gbar"</strong> markiert.
+</div>
+
+<h2>Tage und Zeitr&auml;ume eintragen</h2>
+
+<h3>Einzelne Tage</h3>
+<ul>
+<li>Ein Klick auf einen Tag setzt den gew&auml;hlten Status sofort. Ein erneuter Klick entfernt ihn wieder.</li>
+</ul>
+
+<h3>Zeitraum (Bereich)</h3>
+<ol>
+<li>W&auml;hlen Sie oben den gew&uuml;nschten Status (z.B. "Urlaub").</li>
+<li>Klicken Sie auf den <strong>ersten Tag</strong> des Zeitraums.</li>
+<li>Klicken Sie auf den <strong>letzten Tag</strong> (oder halten Sie <strong>STRG</strong> gedr&uuml;ckt).</li>
+<li>Der gesamte Zeitraum wird markiert und eingetragen.</li>
+</ol>
+
+<h3>Wochenweise Wiederholung</h3>
+<ul>
+<li>&Uuml;ber den Dialog "Wochenweise Wiederholung" k&ouml;nnen Abwesenheiten <strong>w&ouml;chentlich wiederkehrend</strong> eingetragen werden (z.B. "jeden Dienstag im Semester").</li>
+</ul>
+
+<h2>Urlaubs-Saldo und -Kontingent</h2>
+<ul>
+<li>CuraFlow berechnet den <strong>Jahresurlaubs-Anspruch</strong> und das verbrauchte Kontingent je Mitarbeiter.</li>
+<li><strong>Schichturlaub</strong> wird separat als Schichturlaubs-Kontingent gef&uuml;hrt und kann in Urlaubstage umgerechnet werden.</li>
+<li>Wochenenden und Feiertage verbrauchen kein Urlaubskontingent.</li>
+<li>Der Vertragszeitraum (Beginn/Ende aus der zentralen Mitarbeiterverwaltung) begrenzt den eintragbaren Zeitraum.</li>
+</ul>
+
+<h2>Konflikterkennung</h2>
+<ul>
+<li>Bevor ein Urlaub gespeichert wird, pr&uuml;ft das System, ob dadurch <strong>Dienste nicht mehr besetzt</strong> werden oder <strong>zu viele Mitarbeiter gleichzeitig abwesend</strong> w&auml;ren.</li>
+<li>Der Konfliktdialog zeigt die Kategorie der Warnung (Warnung oder Fehler) und die betroffenen Tage.</li>
+<li>Sie k&ouml;nnen mit <strong>"Trotzdem speichern"</strong> fortfahren oder <strong>"Abbrechen"</strong>.</li>
+</ul>
+
+<h2>Urlaubs-Simulation</h2>
+<ul>
+<li>Vor dem endg&uuml;ltigen Eintragen kann die Auswirkung simuliert werden: Welche bestehenden Dienst-Eintr&auml;ge des Mitarbeiters w&uuml;rden gel&ouml;scht, welche neuen Abwesenheiten entstehen?</li>
+<li>Die Simulation zeigt die Differenz an, bevor Sie speichern.</li>
+</ul>
+
+<h2>Feiertage &amp; Schulferien</h2>
+<ul>
+<li><strong>Schulferien</strong> werden gr&uuml;n hinterlegt (rein informativ).</li>
+<li><strong>Feiertage</strong> werden wie Sonntage behandelt (r&ouml;tlich).</li>
+<li>Daten kommen von der <strong>OpenHolidays-API</strong> f&uuml;r das konfigurierte Bundesland (Standard: Mecklenburg-Vorpommern).</li>
+</ul>
+
+<h2>H&auml;ufige Fragen</h2>
+<h3>Erscheinen Abwesenheiten automatisch im Wochenplan?</h3>
+<p>Ja. Abwesenheiten werden als Eintr&auml;ge in der Sektion "Abwesenheiten" angezeigt und der Mitarbeiter kann an diesen Tagen nicht eingeplant werden.</p>
+
+<h3>Was bedeutet "Nicht verf&uuml;gbar"?</h3>
+<p>Dieser Status wird automatisch gesetzt (z.B. bei Elternzeit/Mutterschutz aus dem Stellenplan) oder manuell vergeben und blockiert die Einplanung vollst&auml;ndig.</p>
+
+<h3>Kann ich meinen Urlaub selbst eintragen?</h3>
+<p>Ja - Abwesenheiten sind f&uuml;r alle authentifizierten Benutzer bearbeitbar (in der Regel f&uuml;r den eigenen Mitarbeiter). Administratoren verwalten alle Mitarbeiter.</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="wishlist.html">Wunschkiste</a> - Auch "Urlaub gew&uuml;nscht" als Wunschtyp</li>
+<li><a href="team.html">Team - Stellenplan</a> - FTE, EZ, MS, KO</li>
+<li><a href="concepts.html">Konzepte: Abwesenheits-Priorit&auml;ten</a></li>
+</ul>
+</body>
+</html>

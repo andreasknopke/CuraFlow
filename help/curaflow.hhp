@@ -1,0 +1,32 @@
+[OPTIONS]
+Compatibility=1.1 or later
+Compiled file=CuraFlow_Hilfe.chm
+Contents file=curaflow.hhc
+Default topic=index.html
+Display compile progress=No
+Full-text search=Yes
+Index file=curaflow.hhk
+Language=0x407 German (Germany)
+Title=CuraFlow - Benutzerhandbuch
+Binary TOC=Yes
+Binary Index=Yes
+
+[WINDOWS]
+Main="CuraFlow - Benutzerhandbuch","curaflow.hhc","index.html","curaflow.hhk",,,,,0x23520,0x20,,,,,,1
+
+[FILES]
+index.html
+getting_started.html
+schedule.html
+schedule_advanced.html
+services.html
+vacation.html
+wishlist.html
+training.html
+team.html
+statistics.html
+dashboard.html
+admin.html
+concepts.html
+master.html
+troubleshooting.html

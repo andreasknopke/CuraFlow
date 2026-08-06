@@ -1,0 +1,114 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Wunschkiste - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Wunschkiste</div>
+
+<h1>Wunschkiste (Dienstw&uuml;nsche)</h1>
+<p>Die Wunschkiste ist das System f&uuml;r <strong>Dienstw&uuml;nsche</strong> und <strong>"Kein Dienst"-Anfragen</strong>. Mitarbeiter tragen W&uuml;nsche f&uuml;r bestimmte Tage ein; Administratoren genehmigen oder lehnen sie ab.</p>
+
+<h2>Wunschtypen</h2>
+<table>
+<tr><th>Typ</th><th>Bedeutung</th></tr>
+<tr><td><strong>Dienstwunsch</strong></td><td>"Ich m&ouml;chte an diesem Tag Dienst haben." Wird bei der Dienstplanung bevorzugt ber&uuml;cksichtigt (und in der Dienstbesetzung bei Zuweisung automatisch genehmigt).</td></tr>
+<tr><td><strong>Kein Dienst</strong></td><td>"Ich m&ouml;chte an diesem Tag keinen Dienst haben." Nach Genehmigung werden Sie an diesem Tag nicht eingeteilt.</td></tr>
+</table>
+
+<div class="note">
+<strong>Hinweis:</strong> Ein "Urlaub gew&uuml;nscht" wird &uuml;ber den Abwesenheitsplaner bzw. als Wunsch mit Urlaubsbezug behandelt. W&uuml;nsche k&ouml;nnen auch als <strong>Zeitraum</strong> (Start- bis Enddatum) eingetragen werden.
+</div>
+
+<h2>Ansichten</h2>
+<table>
+<tr><th>Ansicht</th><th>Beschreibung</th></tr>
+<tr><td><strong>Jahreskalender</strong></td><td>12-Monats-Kalender je Mitarbeiter mit farblichen Markierungen der W&uuml;nsche.</td></tr>
+<tr><td><strong>Monats&uuml;bersicht</strong></td><td>Tabellarische &Uuml;bersicht aller Mitarbeiter &times; Tage des Monats.</td></tr>
+</table>
+
+<h3>Dienst-Tabs</h3>
+<ul>
+<li>Die Ansicht ist in <strong>Tabs je Dienst-Kategorie</strong> unterteilt (z.B. Vordergrund, Hintergrund, Sp&auml;tdienst).</li>
+<li>Die Tabs werden dynamisch aus den konfigurierten Arbeitspl&auml;tzen erzeugt; zus&auml;tzliche Pool-Dienste aus Verb&uuml;nden erscheinen ebenfalls.</li>
+<li>Nur Dienst-Tabs werden angezeigt, f&uuml;r die Sie <strong>qualifiziert</strong> sind (Qualifikationsfilter).</li>
+</ul>
+
+<h2>Wunsch eintragen</h2>
+<ol>
+<li>W&auml;hlen Sie den <strong>Dienst-Tab</strong> (z.B. Vordergrund).</li>
+<li>W&auml;hlen Sie den <strong>Wunschtyp</strong> (Dienstwunsch oder Kein Dienst).</li>
+<li>Klicken Sie auf den gew&uuml;nschten <strong>Tag im Kalender</strong> (f&uuml;r Zeitr&auml;ume: ersten und letzten Tag, ggf. mit STRG).</li>
+<li>Optional: <strong>Begr&uuml;ndung</strong> und <strong>Priorit&auml;t</strong> (Hoch/Normal) angeben.</li>
+<li>Speichern. Der Wunsch erh&auml;lt den Status <strong>"Ausstehend"</strong>.</li>
+</ol>
+
+<h3>Status eines Wunsches</h3>
+<table>
+<tr><th>Status</th><th>Bedeutung</th><th>Farbe</th></tr>
+<tr><td><strong>Ausstehend (pending)</strong></td><td>Wartet auf Genehmigung</td><td>Gelb</td></tr>
+<tr><td><strong>Genehmigt (approved)</strong></td><td>Freigegeben und bei der Planung ber&uuml;cksichtigt</td><td>Gr&uuml;n</td></tr>
+<tr><td><strong>Abgelehnt (rejected)</strong></td><td>Nicht ber&uuml;cksichtigt (idealerweise mit Begr&uuml;ndung)</td><td>Rot</td></tr>
+<tr><td><strong>Stornierung gew&uuml;nscht (cancellation_requested)</strong></td><td>Der Mitarbeiter m&ouml;chte einen genehmigten Wunsch zur&uuml;cknehmen</td><td>Rot markiert ("M&ouml;chte stornieren")</td></tr>
+</table>
+
+<h2>W&uuml;nsche bearbeiten und l&ouml;schen</h2>
+<ul>
+<li>Eigene W&uuml;nsche k&ouml;nnen Sie &ouml;ffnen, bearbeiten oder l&ouml;schen, solange sie <strong>ausstehend</strong> sind.</li>
+<li>Bei <strong>genehmigten</strong> W&uuml;nschen k&ouml;nnen Sie eine <strong>Stornierung</strong> beantragen; der Administrator best&auml;tigt diese.</li>
+</ul>
+
+<h2>Genehmigung durch Administratoren</h2>
+<ul>
+<li>Administratoren mit der Berechtigung <code>can_approve_wishes</code> sehen <strong>alle W&uuml;nsche aller Mitarbeiter</strong>.</li>
+<li>Nicht-Administratoren sehen ausschlie&szlig;lich <strong>ihre eigenen W&uuml;nsche</strong>.</li>
+<li>Die Genehmigung erfolgt direkt im Wunschdialog ("Genehmigen"/"Ablehnen") oder als <strong>Schnellentscheidung</strong> im Dashboard (siehe "Meine Aufgaben").</li>
+<li>Abgelehnte W&uuml;nsche erscheinen mit der Begr&uuml;ndung des Administrators.</li>
+</ul>
+
+<h2>E-Mail-Erinnerungen</h2>
+<ul>
+<li>Vor der <strong>Wunsch-Frist</strong> versendet das System automatisch Erinnerungs-E-Mails an Mitarbeiter, die noch keine W&uuml;nsche eingetragen haben.</li>
+<li>Die Frist (Anzahl Tage) wird &uuml;ber die Systemeinstellungen konfiguriert; die Pr&uuml;fung l&auml;uft t&auml;glich im Hintergrund.</li>
+</ul>
+
+<h2>Wechselwirkung mit der Planung</h2>
+<ul>
+<li><strong>Dienstbesetzung:</strong> Personen mit Dienstwunsch werden hervorgehoben; bei Zuweisung wird der Wunsch automatisch genehmigt.</li>
+<li><strong>AutoFill:</strong> Die automatische Besetzung bevorzugt genehmigte Dienstw&uuml;nsche und meidet genehmigte "Kein Dienst"-W&uuml;nsche.</li>
+<li><strong>Statistik:</strong> Die Wunscherf&uuml;llung (genehmigt vs. abgelehnt) wird je Mitarbeiter ausgewertet.</li>
+</ul>
+
+<h2>H&auml;ufige Fragen</h2>
+<h3>Wie viele W&uuml;nsche kann ich eintragen?</h3>
+<p>Es gibt keine feste Begrenzung. Reichen Sie W&uuml;nsche rechtzeitig vor der Frist ein.</p>
+
+<h3>Werden meine W&uuml;nsche garantiert erf&uuml;llt?</h3>
+<p>Nein. W&uuml;nsche werden nach Priorit&auml;t und Machbarkeit ber&uuml;cksichtigt; die automatische Planung versucht, m&ouml;glichst viele W&uuml;nsche zu erf&uuml;llen.</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="services.html">Dienstbesetzung - Wunsch-Integration</a></li>
+<li><a href="statistics.html">Statistik - Wunscherf&uuml;llung</a></li>
+<li><a href="dashboard.html">Mein Dashboard - Meine Aufgaben</a></li>
+</ul>
+</body>
+</html>

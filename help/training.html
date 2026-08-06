@@ -1,0 +1,106 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Rotationsplaner - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Rotationsplaner</div>
+
+<h1>Rotationsplaner</h1>
+<p>Der Rotationsplaner dient der <strong>langfristigen Planung und Dokumentation von Rotationen</strong>: Mitarbeiter durchlaufen f&uuml;r einen bestimmten Zeitraum verschiedene Arbeitsbereiche, Stationen oder Funktionsbereiche des Hauses (z.B. Station A, Ambulanz, Funktionsdiagnostik, Aufnahme).</p>
+
+<div class="note">
+<strong>Hinweis:</strong> Der Men&uuml;punkt hei&szlig;t standardm&auml;&szlig;ig "Rotationsplaner" und entspricht dem Abschnitt "Rotationen" des Wochenplans. Der Name kann im Adminbereich ge&auml;ndert werden.
+</div>
+
+<h2>Wof&uuml;r ist der Rotationsplaner da?</h2>
+<ul>
+<li>Sie dokumentieren, <strong>wer wann wo</strong> eingesetzt ist (z.B. Auszubildende, Einarbeitungsphasen, Rotationsdienste zwischen Abteilungen).</li>
+<li>Sie planen <strong>l&auml;ngerfristig &uuml;ber das ganze Jahr</strong>, unabh&auml;ngig von der Wochenfeinplanung.</li>
+<li>Die Rotationen werden im Wochenplan <strong>sichtbar markiert</strong>, sodass bei der Feinplanung klar ist, wer sich gerade in welchem Bereich befindet.</li>
+</ul>
+
+<h2 id="ansichten">Ansichten</h2>
+<table>
+<tr><th>Ansicht</th><th>Beschreibung</th></tr>
+<tr><td><strong>Einzelansicht</strong></td><td>Jahreskalender f&uuml;r einen Mitarbeiter und einen Arbeitsbereich. Klicken Sie auf den Starttag und dann auf den Endtag - der Zeitraum wird farblich markiert.</td></tr>
+<tr><td><strong>Jahres&uuml;bersicht</strong></td><td>Alle Mitarbeiter und deren Rotationen im gesamten Jahr. Per Ziehen k&ouml;nnen Bereiche selektiert oder gel&ouml;scht werden.</td></tr>
+<tr><td><strong>Mehrjahres&uuml;bersicht</strong></td><td>Langfristige &Uuml;bersicht &uuml;ber mehrere Jahre (z.B. mehrj&auml;hrige Ausbildungspl&auml;ne).</td></tr>
+</table>
+
+<h2 id="modalitaeten">Die Rotationsbereiche (Arbeitsbereiche)</h2>
+<ul>
+<li>Die verf&uuml;gbaren Rotationsbereiche werden <strong>dynamisch aus den Arbeitspl&auml;tzen der Kategorie "Rotationen"</strong> geladen - es sind also keine fest eingebauten Fachgebiete.</li>
+<li>Beispiele: "Station 1", "Ambulanz", "Funktionsdiagnostik", "OP-Bereich", "Aufnahme" - oder wie Ihre Einrichtung die Bereiche nennt.</li>
+<li>Legt der Administrator einen neuen Arbeitsplatz in der Kategorie "Rotationen" an, erscheint automatisch ein neuer Reiter im Rotationsplaner.</li>
+<li>Sie arbeiten also immer mit <strong>Ihren eigenen Bereichsnamen</strong> - das System hat keine medizinischen Fachrichtungen fest verdrahtet.</li>
+</ul>
+
+<h2 id="planen">Rotation planen - Schritt f&uuml;r Schritt</h2>
+<ol>
+<li>W&auml;hlen Sie den <strong>Mitarbeiter</strong> und den <strong>Rotationsbereich</strong> (Reiter oben).</li>
+<li>Klicken Sie auf den <strong>Starttag</strong>.</li>
+<li>Klicken Sie auf den <strong>Endtag</strong> (oder halten Sie STRG gedr&uuml;ckt, um einen Bereich auszuw&auml;hlen).</li>
+<li>Der Zeitraum wird als Rotation markiert und gespeichert.</li>
+</ol>
+
+<div class="tip">
+<strong>Vertragszeitraum:</strong> Rotationen k&ouml;nnen nur innerhalb des hinterlegten Vertragszeitraums des Mitarbeiters (Beginn/Ende aus der zentralen Mitarbeiterverwaltung) geplant werden. Kollidierende Auswahl wird automatisch begrenzt.
+</div>
+
+<h3>Rotationen l&ouml;schen</h3>
+<ul>
+<li>W&auml;hlen Sie den <strong>L&ouml;sch-Modus</strong> und markieren Sie den zu l&ouml;schenden Bereich.</li>
+<li>Bestehende Rotationen werden beim L&ouml;schen <strong>passend zugeschnitten</strong> (nur der markierte Teil wird entfernt).</li>
+</ul>
+
+<h2 id="transfer">&Uuml;bertragung in den Wochenplan</h2>
+<ul>
+<li>&Uuml;ber den <strong>Transfer-Button</strong> werden geplante Rotationen als Eintr&auml;ge in den Wochenplan &uuml;bertragen.</li>
+<li>W&auml;hlen Sie den Zeitraum: <strong>Tag / Woche / ab Datum</strong>.</li>
+<li>Optional: <strong>Bestehende Eintr&auml;ge &uuml;berschreiben</strong>.</li>
+<li>Beim Transfer wird automatisch gepr&uuml;ft, ob der Mitarbeiter an den Tagen abwesend ist oder Konflikte bestehen; betroffene Tage werden &uuml;bersprungen bzw. gemeldet.</li>
+</ul>
+
+<h2>Integration in den Wochenplan</h2>
+<ul>
+<li>Geplante Rotationen werden im Wochenplan mit einem <strong>farbigen Marker</strong> angezeigt (Sektion "Rotationen"), sodass bei der t&auml;glichen Planung sichtbar ist, wer sich gerade in welchem Bereich befindet.</li>
+<li>Rotationseintr&auml;ge sind normale Schichteintr&auml;ge mit der Sektion "Rotationen".</li>
+<li>Ob ein Mitarbeiter w&auml;hrend einer Rotation auch f&uuml;r andere Dienste eingeplant werden kann, h&auml;ngt von der <strong>Konfiguration des Arbeitsplatzes</strong> ab: Ist dort &quot;Parallel mit Rotation erlauben&quot; aktiviert, kann der Arbeitsplatz parallel zu einer Rotation besetzt werden; ist es nicht aktiviert, blockiert die Rotation andere Zuweisungen.</li>
+<li><strong>Hinweis zur Seitenleiste:</strong> Wird ein Mitarbeiter in eine Rotation gezogen, verschwindet er aus der Sektion &quot;Anwesenheiten&quot;. Er kann anschlie&szlig;end nur noch direkt aus der Seitenleiste in andere Zellen gezogen werden.</li>
+</ul>
+
+<h2>H&auml;ufige Fragen</h2>
+<h3>Kann ich eigene Rotationsbereiche anlegen?</h3>
+<p>Ja. Ein Administrator legt dazu einen Arbeitsplatz mit der Kategorie "Rotationen" an (Adminbereich -&gt; Einstellungen -&gt; Arbeitspl&auml;tze). Der neue Bereich erscheint automatisch im Rotationsplaner.</p>
+
+<h3>D&uuml;rfen Mitarbeiter in mehreren Rotationen gleichzeitig sein?</h3>
+<p>Grunds&auml;tzlich ja - ein Mitarbeiter kann durchaus mehrere Rotationen haben (z.B. f&uuml;r Supervision/Aufsicht in mehreren Bereichen). Ob sich dabei &Uuml;berschneidungen mit anderen Diensten ergeben d&uuml;rfen, h&auml;ngt von der Arbeitsplatz-Konfiguration ab (&quot;Parallel mit Rotation erlauben&quot;).</p>
+<p><strong>Wichtig:</strong> Sobald ein Mitarbeiter in eine Rotation gezogen wird, verschwindet er aus der Sektion &quot;Anwesenheiten&quot; und kann danach nur noch direkt aus der Seitenleiste in andere Zellen gezogen werden.</p>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="schedule.html">Wochenplan - Sektion Rotationen</a></li>
+<li><a href="team.html">Team - Mitarbeiter anlegen und Qualifikationen</a></li>
+<li><a href="concepts.html">Konzepte: Springerpool-Rotationen</a></li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<HEAD>
+<meta name="GENERATOR" content="Microsoft&reg; HTML Help Workshop 4.1">
+<!-- Sitemap 1.0 -->
+</HEAD>
+<BODY>
+<UL>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="CuraFlow">
+<param name="Local" value="index.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="RadioPlan">
+<param name="Local" value="index.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Anmeldung">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Login">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Passwort">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Mandant">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Multi-Tenant">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Navigation">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Einstellungen">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Readonly">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Schreibgeschützt">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Wochenplan">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Dienstplan">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Drag-and-Drop">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Sektionen">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Timeslots">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Zeitfenster">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Feiertage">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Schulferien">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Excel-Export">
+<param name="Local" value="schedule.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="AutoFill">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="KI-AutoFill">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Validierung">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Blocker">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Warnungen">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Qualifikation">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Dienstbesetzung">
+<param name="Local" value="services.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="E-Mail-Versand">
+<param name="Local" value="services.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Urlaub">
+<param name="Local" value="vacation.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Abwesenheiten">
+<param name="Local" value="vacation.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Krank">
+<param name="Local" value="vacation.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Dienstreise">
+<param name="Local" value="vacation.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Urlaubs-Simulation">
+<param name="Local" value="vacation.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Wunschkiste">
+<param name="Local" value="wishlist.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Dienstwunsch">
+<param name="Local" value="wishlist.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Kein Dienst">
+<param name="Local" value="wishlist.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Wunsch genehmigen">
+<param name="Local" value="wishlist.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Rotationsplaner">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Weiterbildung">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Rotation">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="CT">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="MRT">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Sono">
+<param name="Local" value="training.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Team">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Mitarbeiter">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Stellenplan">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="FTE">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Elternzeit">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Mutterschutz">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Teamrollen">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Zertifikate">
+<param name="Local" value="team.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Statistik">
+<param name="Local" value="statistics.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Berichte">
+<param name="Local" value="statistics.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Compliance">
+<param name="Local" value="statistics.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Wunscherfüllung">
+<param name="Local" value="statistics.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Arbeitszeit">
+<param name="Local" value="statistics.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Dashboard">
+<param name="Local" value="dashboard.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Meine Aufgaben">
+<param name="Local" value="dashboard.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Admin">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Benutzerverwaltung">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Verbund">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Arbeitsplatz-Links">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Datenbank">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Backup">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Migration">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Logs">
+<param name="Local" value="admin.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Berechtigungen">
+<param name="Local" value="concepts.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Rollen">
+<param name="Local" value="concepts.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Qualifikationsstufen">
+<param name="Local" value="concepts.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Diensttyp">
+<param name="Local" value="concepts.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Springerpool">
+<param name="Local" value="concepts.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Master">
+<param name="Local" value="master.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Personalabteilung">
+<param name="Local" value="master.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Zeiterfassung">
+<param name="Local" value="master.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Tisoware">
+<param name="Local" value="master.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Probleme">
+<param name="Local" value="troubleshooting.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/index">
+<param name="Keyword" value="Fehlerbehebung">
+<param name="Local" value="troubleshooting.html">
+</OBJECT>
+</LI>
+</UL>
+</BODY>
+</HTML>

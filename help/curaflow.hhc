@@ -1,0 +1,463 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<HEAD>
+<meta name="GENERATOR" content="Microsoft&reg; HTML Help Workshop 4.1">
+<!-- Sitemap 1.0 -->
+</HEAD>
+<BODY>
+<OBJECT type="text/site properties">
+<param name="ImageType" value="Folder">
+<param name="Window Styles" value="0x800025">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="CuraFlow - Benutzerhandbuch">
+<param name="Local" value="index.html">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Erste Schritte">
+<param name="Local" value="getting_started.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Anmeldung">
+<param name="Local" value="getting_started.html#anmeldung">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Mandanten-Auswahl">
+<param name="Local" value="getting_started.html#mandanten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Passwort ändern">
+<param name="Local" value="getting_started.html#passwort">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Hauptnavigation">
+<param name="Local" value="getting_started.html#navigation">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Benutzerkonto">
+<param name="Local" value="getting_started.html#konto">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Einstellungen">
+<param name="Local" value="getting_started.html#einstellungen">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wochenplan">
+<param name="Local" value="schedule.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Ansichtsmodi">
+<param name="Local" value="schedule.html#ansicht">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Sektionen">
+<param name="Local" value="schedule.html#sektionen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Drag &amp; Drop">
+<param name="Local" value="schedule.html#dragdrop">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Einträge löschen">
+<param name="Local" value="schedule.html#loeschen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Feiertage &amp; Schulferien">
+<param name="Local" value="schedule.html#feiertage">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Zeitfenster (Timeslots)">
+<param name="Local" value="schedule.html#timeslots">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Warnungen &amp; Konflikte">
+<param name="Local" value="schedule.html#warnungen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Ansicht anpassen">
+<param name="Local" value="schedule.html#ansicht_anpassen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Echtzeit-Synchronisation">
+<param name="Local" value="schedule.html#echtzeit">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Mobile Ansicht">
+<param name="Local" value="schedule.html#mobil">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wochenplan: Automatik &amp; Validierung">
+<param name="Local" value="schedule_advanced.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="AutoFill">
+<param name="Local" value="schedule_advanced.html#autofill">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Validierung: Blocker &amp; Warnungen">
+<param name="Local" value="schedule_advanced.html#validierung">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Qualifikationsprüfung (4 Stufen)">
+<param name="Local" value="schedule_advanced.html#qualifikation">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Override-Bestätigung">
+<param name="Local" value="schedule_advanced.html#override">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Arbeitsplatz-Konfiguration">
+<param name="Local" value="schedule_advanced.html#arbeitsplaetze">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Dienstbesetzung">
+<param name="Local" value="services.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Monatsübersicht &amp; Schnellauswahl">
+<param name="Local" value="services.html#monatsuebersicht">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="E-Mail-Versand">
+<param name="Local" value="services.html#email">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Mandantenübergreifende Sicht">
+<param name="Local" value="services.html#verbuende">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Abwesenheiten (Urlaubsplanung)">
+<param name="Local" value="vacation.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Ansichten">
+<param name="Local" value="vacation.html#ansichten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Abwesenheitsarten">
+<param name="Local" value="vacation.html#arten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Tage &amp; Zeiträume eintragen">
+<param name="Local" value="vacation.html#eintragen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Urlaubs-Saldo">
+<param name="Local" value="vacation.html#saldo">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Konflikt-Erkennung">
+<param name="Local" value="vacation.html#konflikte">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Urlaubs-Simulation">
+<param name="Local" value="vacation.html#simulation">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wunschkiste (Dienstwünsche)">
+<param name="Local" value="wishlist.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wunschtypen">
+<param name="Local" value="wishlist.html#typen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Ansichten">
+<param name="Local" value="wishlist.html#ansichten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wunsch eintragen">
+<param name="Local" value="wishlist.html#eintragen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Genehmigung">
+<param name="Local" value="wishlist.html#genehmigung">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="E-Mail-Erinnerungen">
+<param name="Local" value="wishlist.html#erinnerungen">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Rotationsplaner">
+<param name="Local" value="training.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Ansichten">
+<param name="Local" value="training.html#ansichten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Modalitäten">
+<param name="Local" value="training.html#modalitaeten">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Rotation planen">
+<param name="Local" value="training.html#planen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Transfer in den Wochenplan">
+<param name="Local" value="training.html#transfer">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Team (Personalverwaltung)">
+<param name="Local" value="team.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Mitarbeiter verwalten">
+<param name="Local" value="team.html#mitarbeiter">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Rollen">
+<param name="Local" value="team.html#rollen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Stellenplan (FTE)">
+<param name="Local" value="team.html#stellenplan">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Qualifikationen">
+<param name="Local" value="team.html#qualifikationen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Zentrale Mitarbeiter-Verknüpfung">
+<param name="Local" value="team.html#verknuepfung">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Statistik &amp; Berichte">
+<param name="Local" value="statistics.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Berichte (Tabs)">
+<param name="Local" value="statistics.html#berichte">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Export">
+<param name="Local" value="statistics.html#export">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Arbeitszeit-Prozentsatz">
+<param name="Local" value="statistics.html#arbeitszeit">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Mein Dashboard">
+<param name="Local" value="dashboard.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Meine Aufgaben">
+<param name="Local" value="dashboard.html#aufgaben">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Meine Dienste &amp; Abwesenheiten">
+<param name="Local" value="dashboard.html#dienste">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Benachrichtigungen">
+<param name="Local" value="dashboard.html#benachrichtigungen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Zertifikats-Widget">
+<param name="Local" value="dashboard.html#zertifikate">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Adminbereich">
+<param name="Local" value="admin.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Benutzer &amp; Rollen">
+<param name="Local" value="admin.html#benutzer">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Verbünde">
+<param name="Local" value="admin.html#verbuende">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Arbeitsplatz-Links">
+<param name="Local" value="admin.html#links">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Einstellungen">
+<param name="Local" value="admin.html#einstellungen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Datenbank">
+<param name="Local" value="admin.html#datenbank">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Logs">
+<param name="Local" value="admin.html#logs">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Konzepte &amp; Berechtigungen">
+<param name="Local" value="concepts.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Benutzerrollen">
+<param name="Local" value="concepts.html#rollen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Admin-Berechtigungen (13)">
+<param name="Local" value="concepts.html#berechtigungen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Qualifikationsstufen">
+<param name="Local" value="concepts.html#qualifikationen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Diensttypen">
+<param name="Local" value="concepts.html#diensttypen">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Multi-Tenant &amp; Verbünde">
+<param name="Local" value="concepts.html#multitenant">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Master-Frontend (HR)">
+<param name="Local" value="master.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Navigation">
+<param name="Local" value="master.html#navigation">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Zentrale Mitarbeiterverwaltung">
+<param name="Local" value="master.html#mitarbeiter">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Zeiterfassung (Soll/Ist)">
+<param name="Local" value="master.html#zeiterfassung">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Häufige Probleme">
+<param name="Local" value="troubleshooting.html">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Anmeldeprobleme">
+<param name="Local" value="troubleshooting.html#anmeldung">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wochenplan-Probleme">
+<param name="Local" value="troubleshooting.html#wochenplan">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Wunsch &amp; Abwesenheiten">
+<param name="Local" value="troubleshooting.html#wuensche">
+</OBJECT>
+</LI>
+<LI><OBJECT type="text/sitemap">
+<param name="Name" value="Allgemeine Probleme">
+<param name="Local" value="troubleshooting.html#allgemein">
+</OBJECT>
+</LI>
+</UL>
+</LI>
+</UL>
+</BODY>
+</HTML>

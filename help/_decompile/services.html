@@ -1,0 +1,81 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<html lang="de">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<title>Dienstbesetzung - CuraFlow</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #333; }
+h1 { color: #1a5276; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+h2 { color: #2980b9; margin-top: 30px; }
+h3 { color: #2c3e50; }
+a { color: #2980b9; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.note { background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px 15px; margin: 15px 0; }
+.warning { background: #f8d7da; border-left: 4px solid #dc3545; padding: 10px 15px; margin: 15px 0; }
+.tip { background: #d4edda; border-left: 4px solid #28a745; padding: 10px 15px; margin: 15px 0; }
+table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #3498db; color: white; }
+tr:nth-child(even) { background-color: #f9f9f9; }
+code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Consolas', monospace; }
+.breadcrumb { color: #666; font-size: 0.9em; margin-bottom: 15px; }
+</style>
+</head>
+<body>
+<div class="breadcrumb"><a href="index.html">Startseite</a> &gt; Dienstbesetzung</div>
+
+<h1>Dienstbesetzung (Service-Staffing)</h1>
+<p>Die Dienstbesetzung bietet die <strong>schnelle Besetzung aller Dienste in einer kompakten Monats&uuml;bersicht</strong>. Sie eignet sich besonders f&uuml;r die Planung von Vordergrund-, Hintergrund- und Sp&auml;tdiensten.</p>
+
+<div class="note">
+<strong>Hinweis:</strong> Der Men&uuml;punkt hei&szlig;t standardm&auml;&szlig;ig "Dienstbesetzung" und entspricht dem Abschnitt "Dienste". Wird der Abschnitt im Adminbereich umbenannt, &uuml;bernimmt das Men&uuml; den neuen Namen.
+</div>
+
+<h2>Die Monats&uuml;bersicht</h2>
+<ul>
+<li>Die Ansicht zeigt alle Dienste (Vordergrund, Hintergrund, Sp&auml;tdienst etc.) f&uuml;r einen Monat in einer &uuml;bersichtlichen Tabelle.</li>
+<li>Im Hintergrund werden Daten von <strong>drei Monaten</strong> geladen (Vormonat bis Folgemonat), damit Sie frei navigieren k&ouml;nnen.</li>
+<li>Wechseln Sie den Monat &uuml;ber die Pfeile links/rechts.</li>
+</ul>
+
+<h3>Schnellauswahl</h3>
+<ol>
+<li>Klicken Sie auf eine Zelle des gew&uuml;nschten Tages und Dienstes.</li>
+<li>W&auml;hlen Sie die gew&uuml;nschte Person aus dem <strong>Dropdown-Men&uuml;</strong>.</li>
+<li>Die Zuweisung erfolgt sofort.</li>
+</ol>
+
+<h3>Wunsch-Integration</h3>
+<ul>
+<li>Personen mit einem <strong>Dienstwunsch</strong> f&uuml;r diesen Tag werden hervorgehoben.</li>
+<li>Bei Zuweisung eines gew&uuml;nschten Dienstes wird der Wunsch <strong>automatisch genehmigt</strong>.</li>
+</ul>
+
+<h3>Validierung</h3>
+<ul>
+<li>Wie im Wochenplan werden auch hier die Konfliktregeln angewandt (Doppelbelegung, Abwesenheit, Qualifikation, Dienst-Limits).</li>
+<li>Bei Konflikten erscheint der Best&auml;tigungsdialog ("Trotzdem speichern" / "Abbrechen").</li>
+</ul>
+
+<h2>E-Mail-Versand</h2>
+<ul>
+<li>&Uuml;ber den Button <strong>"E-Mails senden"</strong> k&ouml;nnen Sie alle Mitarbeiter &uuml;ber ihre Dienste im aktuellen Monat informieren.</li>
+<li>Jede Person erh&auml;lt eine <strong>individuelle E-Mail</strong> mit den ihr zugewiesenen Diensten.</li>
+<li>Voraussetzung ist eine konfigurierte E-Mail-Anbindung (SMTP) sowie die Berechtigung <code>can_send_schedule_emails</code>.</li>
+</ul>
+
+<h2>Mandanten&uuml;bergreifende Sicht (Verb&uuml;nde)</h2>
+<ul>
+<li>Geh&ouml;rt Ihr Mandant einem <strong>Verbund (Tenant-Gruppe)</strong> an, werden zus&auml;tzlich die <strong>Pool-Dienste</strong> (geteilte Arbeitspl&auml;tze wie AD, KWE, OD, WE-F) in der &Uuml;bersicht angezeigt.</li>
+<li>Abwesenheiten aus <strong>anderen Mandanten des Verbunds</strong> werden mit eingeblendet, damit keine Person versehentlich eingeplant wird, die in einem Partner-Mandanten abwesend ist.</li>
+<li>Pool-Dienste k&ouml;nnen direkt bearbeitet werden, wenn Sie die Berechtigung <code>can_assign_pool_shifts</code> besitzen (PoolShiftEditDialog).</li>
+</ul>
+
+<h2>Weiterf&uuml;hrende Themen</h2>
+<ul>
+<li><a href="schedule.html">Wochenplan - Grundlagen</a></li>
+<li><a href="wishlist.html">Wunschkiste - Dienstw&uuml;nsche</a></li>
+<li><a href="concepts.html">Konzepte: Verb&uuml;nde &amp; Pool-Dienste</a></li>
+</ul>
+</body>
+</html>
