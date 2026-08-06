@@ -21,13 +21,23 @@ export function getAutoFreiDate(
   isPublicHoliday?: (date: Date) => boolean,
 ): string | null {
   const nextDay = addDays(parseISO(dateStr), 1);
+  const nextDayStr = format(nextDay, 'yyyy-MM-dd');
   const dayOfWeek = nextDay.getDay();
   const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-  const isHoliday = Boolean(isPublicHoliday?.(nextDay));
+  // The resolved value is logged to expose wrong argument types: if a function
+  // is passed instead of a boolean, holidayValue becomes a function (truthy).
+  const holidayValue = isPublicHoliday?.(nextDay);
+  const isHoliday = Boolean(holidayValue);
 
-  if (isWeekend || isHoliday) {
-    return null;
-  }
-
-  return format(nextDay, 'yyyy-MM-dd');
+  const result = isWeekend || isHoliday ? null : nextDayStr;
+  console.log('[AUTOFREI] getAutoFreiDate:', {
+    dateStr,
+    nextDay: nextDayStr,
+    dayOfWeek,
+    isWeekend,
+    holidayValueType: typeof holidayValue,
+    isHoliday,
+    result,
+  });
+  return result;
 }

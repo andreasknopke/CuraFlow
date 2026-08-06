@@ -619,10 +619,14 @@ export function useDragHandlers(deps: DragHandlersDeps) {
 
     // Helper to handle automatic "Frei" after "Dienst Vordergrund" or other auto-off shifts
     const handlePostShiftOff = (doctorId: string, dateStr: string, positionName: string): void => {
+        console.log(`[AUTOFREI] handlePostShiftOff(doctor=${doctorId}, date=${dateStr}, position=${positionName}) — aufgerufen nach Shift-Erstellung`);
         // Zentrale Logik: Prüft ob Auto-Frei erstellt werden soll (inkl. Feiertag-Check, ohne Wochenend-Block)
         const autoFreiDateStr = shouldCreateAutoFrei(positionName, dateStr, isPublicHoliday as any);
-        
-        if (!autoFreiDateStr) return;
+
+        if (!autoFreiDateStr) {
+            console.log(`[AUTOFREI] handlePostShiftOff: kein Auto-Frei für ${positionName} am ${dateStr} (shouldCreateAutoFrei → null)`);
+            return;
+        }
 
         const nextDay = new Date(autoFreiDateStr);
 
@@ -635,6 +639,7 @@ export function useDragHandlers(deps: DragHandlersDeps) {
         const existingShift = allShifts.find((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId);
 
         if (!existingShift) {
+            console.log(`[AUTOFREI] handlePostShiftOff: erzeuge "Frei" für doctor=${doctorId} am ${autoFreiDateStr} (kein bestehender Eintrag am Folgetag)`);
             createAutoFreiMutation.mutate({ 
                 date: autoFreiDateStr, 
                 position: 'Frei', 
@@ -642,12 +647,15 @@ export function useDragHandlers(deps: DragHandlersDeps) {
                 note: 'Autom. Freizeitausgleich'
             });
         } else if (existingShift.position !== 'Frei') {
+            console.log(`[AUTOFREI] handlePostShiftOff: Folgetag ${autoFreiDateStr} belegt mit "${existingShift.position}" → Confirm zum Ersetzen durch "Frei"`);
              if (window.confirm(`Für den Folgetag (${format(nextDay, 'dd.MM.')}) existiert bereits ein Eintrag "${existingShift.position}". Soll dieser durch "Frei" ersetzt werden?`)) {
                  updateAutoFreiMutation.mutate({
                      id: existingShift.id,
                      data: { position: 'Frei', note: 'Autom. Freizeitausgleich' }
                  });
              }
+        } else {
+            console.log(`[AUTOFREI] handlePostShiftOff: Folgetag ${autoFreiDateStr} ist bereits "Frei" für doctor=${doctorId} → nichts zu tun`);
         }
     };
 
@@ -1136,6 +1144,7 @@ export function useDragHandlers(deps: DragHandlersDeps) {
                 }
 
                 const autoFreiDateStr = shouldCreateAutoFrei(position, dateStr, isPublicHoliday as any);
+                console.log(`[AUTOFREI] executeCreateDrop(${position}, ${dateStr}, doctor=${doctorId}): shouldCreateAutoFrei → ${autoFreiDateStr ?? 'null'}`);
                 let updateAutoFreiNeeded = false;
                 let existingAutoFreiShift = null;
 
@@ -1148,6 +1157,7 @@ export function useDragHandlers(deps: DragHandlersDeps) {
                     existingAutoFreiShift = allShifts.find((s: any) => s.date === autoFreiDateStr && s.doctor_id === doctorId);
 
                     if (!existingAutoFreiShift) {
+                        console.log(`[AUTOFREI] executeCreateDrop: pushe "Frei" am ${autoFreiDateStr} in shiftsToCreate (kein bestehender Eintrag)`);
                         shiftsToCreate.push({
                             date: autoFreiDateStr,
                             position: 'Frei',
@@ -1155,7 +1165,10 @@ export function useDragHandlers(deps: DragHandlersDeps) {
                             note: 'Autom. Freizeitausgleich'
                         });
                     } else if (existingAutoFreiShift.position !== 'Frei') {
+                        console.log(`[AUTOFREI] executeCreateDrop: Folgetag ${autoFreiDateStr} belegt mit "${existingAutoFreiShift.position}" → updateAutoFreiNeeded=true`);
                         updateAutoFreiNeeded = true;
+                    } else {
+                        console.log(`[AUTOFREI] executeCreateDrop: Folgetag ${autoFreiDateStr} ist bereits "Frei" → übersprungen`);
                     }
                 }
 

@@ -743,9 +743,18 @@ export class ShiftValidator {
      */
     shouldCreateAutoFrei(position: string, dateStr: string, isPublicHoliday: boolean): string | null {
         const workplace = this.workplaces.find(w => w.name === position);
-        if (!(workplace as Workplace & { auto_off?: boolean }).auto_off) return null;
-
-        return getAutoFreiDate(dateStr, () => isPublicHoliday);
+        const autoOff = (workplace as Workplace & { auto_off?: boolean } | undefined)?.auto_off;
+        if (!autoOff) {
+            console.log(`[AUTOFREI] shouldCreateAutoFrei(${position}, ${dateStr}) → null: workplace=${workplace?.name ?? 'NICHT GEFUNDEN'}, auto_off=${String(autoOff)}`);
+            return null;
+        }
+        const result = getAutoFreiDate(dateStr, () => isPublicHoliday);
+        console.log(`[AUTOFREI] shouldCreateAutoFrei(${position}, ${dateStr}) → ${result ?? 'null'}`, {
+            workplace: workplace?.name,
+            auto_off: autoOff,
+            isPublicHolidayType: typeof isPublicHoliday,
+        });
+        return result;
     }
 
     /**
