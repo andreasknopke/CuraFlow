@@ -54,6 +54,8 @@ interface DraggableShiftProps extends DraggableShiftStyleProps {
   showLateStartIndicator?: boolean;
   lateStartTooltip?: string;
   hideTimeLabel?: boolean;
+  /** Tisoware absence description (after the [TISO:CODE] prefix), or null. */
+  tisowareDescription?: string | null;
 }
 
 interface LateStartIndicatorProps {
@@ -109,7 +111,7 @@ function LateStartIndicator({ tooltip, compact = false }: LateStartIndicatorProp
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, selectedDoctorId = null, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, onDoubleClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, ...props }: DraggableShiftProps) {
+export default function DraggableShift({ shift, doctor, index, onRemove: _onRemove, displayMode = 'compact', compactLabel = null, isDragDisabled, fontSize = 14, boxSize = 48, currentUserDoctorId, highlightMyName = true, selectedDoctorId = null, isBeingDragged = false, qualificationStatus = null, fairnessInfo = null, wishMarker = null, draggableIdPrefix = '', timeslotLabel = null, timeslotLabelTone = 'default', timeLabelOverride = null, onTimeLabelClick = null, onDoubleClick = null, showLateStartIndicator = false, lateStartTooltip = 'Später Dienst mit Rotationsmöglichkeit', hideTimeLabel = false, tisowareDescription = null, ...props }: DraggableShiftProps) {
   const isPreview = shift.isPreview;
   const isCurrentUser = currentUserDoctorId != null && doctor.id === currentUserDoctorId;
   const isSelectedDoctor = selectedDoctorId != null && doctor.id === selectedDoctorId;
@@ -137,7 +139,7 @@ export default function DraggableShift({ shift, doctor, index, onRemove: _onRemo
     return lines.join('\n');
   }, [fairnessInfo]);
 
-  const combinedTooltip = [fairnessTooltip, wishMarker?.title].filter(Boolean).join('\n');
+  const combinedTooltip = [tisowareDescription, fairnessTooltip, wishMarker?.title].filter(Boolean).join('\n');
   
   // Qualification warning/error indicator
   const QualWarning = qualificationStatus === 'excluded' ? (

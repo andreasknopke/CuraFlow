@@ -6,6 +6,7 @@ import { StickyHorizontalScrollbar } from '@/components/ui/sticky-horizontal-scr
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
 import { hasTisowareConfirmation, parseAnnualVacationDays } from './vacationBalance';
+import { getTisowareDescription } from '@/utils/tisowareNote';
 import type { Doctor, ShiftEntry } from '@/types';
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -27,6 +28,8 @@ interface VacationOverviewCellProps {
   date: Date;
   doctor: Doctor & { vacation_days?: number };
   status: string | null;
+  /** Tisoware absence description for the hover tooltip, or null. */
+  tisowareDescription?: string | null;
   contractInfo: ContractInfo | null;
   isWeekend: boolean;
   isHoliday: boolean;
@@ -80,6 +83,7 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     date,
     doctor,
     status,
+    tisowareDescription,
     contractInfo,
     isWeekend,
     isHoliday,
@@ -154,12 +158,12 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
         cellClass += " ring-2 ring-indigo-400 ring-offset-1 z-20 opacity-80 relative";
     }
 
-    // Tooltip-Titel
+    // Tooltip-Titel: Tisoware-Description, falls vorhanden, sonst der Abwesenheitstyp
     let cellTitle = '';
     if (isDisabled) {
         cellTitle = `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}`;
     } else if (isVisible) {
-        cellTitle = status;
+        cellTitle = tisowareDescription || status;
     } else if (hasRequest && requestStatus === 'pending') {
         cellTitle = `Antrag: ${requestPosition} (ausstehend)`;
     } else if (isHoliday) {
@@ -210,6 +214,7 @@ const VacationOverviewCell = memo(function VacationOverviewCell({
     // Check basic props first
     if (
         prevProps.status !== nextProps.status ||
+        prevProps.tisowareDescription !== nextProps.tisowareDescription ||
         prevProps.contractInfo !== nextProps.contractInfo ||
         prevProps.isWeekend !== nextProps.isWeekend ||
         prevProps.isHoliday !== nextProps.isHoliday ||
@@ -315,6 +320,16 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
         if (dateStr <= todayStr && !hasTisowareConfirmation(entry.note)) return null;
         return entry.position;
     }, [shiftLookup, todayStr]);
+
+    // Tisoware absence description for the cell hover tooltip: the
+    // human-readable reason the Tisoware import appends after the
+    // [TISO:CODE] prefix, or null when absent.
+    const getCellTisowareDescription = React.useCallback((date: Date, doctorId: string): string | null => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const entry = shiftLookup.get(`${dateStr}_${doctorId}`);
+        if (!entry) return null;
+        return getTisowareDescription(entry.note);
+    }, [shiftLookup]);
 
     // Hilfsfunktion: gibt die Qualifikations-IDs eines Arztes zurück
     const getDoctorQualificationIds = React.useCallback((doctorId: string): string[] => {
@@ -577,6 +592,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                     const isHol = isPublicHoliday(d);
                                                     const isSchool = isSchoolHoliday(d);
                                                     const status = getStatus(d, doc.id);
+                                                    const tisowareDescription = getCellTisowareDescription(d, doc.id);
                                                     const dStr = format(d, 'yyyy-MM-dd');
                                                     const cellKey = `${doc.id}_${dStr}`;
                                                     const cellRequest = requestByCellKey[cellKey] || null;
@@ -587,6 +603,7 @@ export default function VacationOverview({ year, doctors, shifts, contractInfoBy
                                                             date={d}
                                                             doctor={doc}
                                                             status={status}
+                                                            tisowareDescription={tisowareDescription}
                                                             contractInfo={contractInfoByDoctorId[doc.id] || null}
                                                             isWeekend={isWknd}
                                                             isHoliday={isHol}

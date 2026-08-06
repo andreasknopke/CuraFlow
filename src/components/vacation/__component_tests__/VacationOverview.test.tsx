@@ -88,18 +88,36 @@ describe('VacationOverview — Tisoware display rule', () => {
     renderOverview([
       // Past, not Tisoware-confirmed → hidden.
       { id: 's-1', date: pastHidden, doctor_id: 'doc-1', position: 'Urlaub', is_free_text: false, order: 1 } as ShiftEntry,
-      // Past, Tisoware-confirmed → shown.
+      // Past, Tisoware-confirmed → shown, tooltip shows the Tisoware description.
       { id: 's-2', date: pastShown, doctor_id: 'doc-1', position: 'Urlaub', is_free_text: false, order: 1, note: '[TISO:900] match' } as ShiftEntry,
-      // Future, no marker yet → shown.
+      // Future, no marker yet → shown, tooltip falls back to the absence type.
       { id: 's-3', date: futureStr, doctor_id: 'doc-1', position: 'Urlaub', is_free_text: false, order: 1 } as ShiftEntry,
     ]);
 
-    // Only the confirmed past + future cells render as "Urlaub".
-    expect(screen.getAllByTitle('Urlaub')).toHaveLength(2);
+    // The confirmed past cell shows the Tisoware description as tooltip,
+    // the future cell without a description falls back to the type.
+    expect(screen.getByTitle('match')).toBeInTheDocument();
+    expect(screen.getAllByTitle('Urlaub')).toHaveLength(1);
 
     // The sticky counts column counts exactly those two countable days.
     expect(screen.getByText('/2')).toBeInTheDocument();
     expect(screen.queryByText('/3')).not.toBeInTheDocument();
+  });
+
+  it.skipIf(skip)('shows the Tisoware description on a confirmed absence, falls back to the type otherwise', () => {
+    const pastShown = format(pastDates[0], 'yyyy-MM-dd');
+    const futureStr = format(future!, 'yyyy-MM-dd');
+
+    renderOverview([
+      // Past, confirmed with a subtype description.
+      { id: 's-1', date: pastShown, doctor_id: 'doc-1', position: 'Krank', is_free_text: false, order: 1, note: '[TISO:530] Krank ohne AU-Bescheinigung' } as ShiftEntry,
+      // Future, no Tisoware description yet → falls back to the type label.
+      { id: 's-2', date: futureStr, doctor_id: 'doc-1', position: 'Urlaub', is_free_text: false, order: 1 } as ShiftEntry,
+    ]);
+
+    expect(screen.getByTitle('Krank ohne AU-Bescheinigung')).toBeInTheDocument();
+    expect(screen.queryByTitle('Krank')).not.toBeInTheDocument();
+    expect(screen.getAllByTitle('Urlaub')).toHaveLength(1);
   });
 
   it.skipIf(skip)('hides a lone unconfirmed past Urlaub and shows /0 in the counts column', () => {

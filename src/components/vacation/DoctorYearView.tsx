@@ -13,6 +13,7 @@ import { DEFAULT_COLORS } from '@/components/settings/ColorSettingsDialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { getContractTooltipLabel, isDateWithinContract, type ContractInfo } from '@/components/training/trainingContractUtils';
 import { computeVacationBalance } from './vacationBalance';
+import { getTisowareDescription } from '@/utils/tisowareNote';
 import type { Doctor, ShiftEntry, ColorSetting } from '@/types';
 
 interface VacationRequestEntry {
@@ -60,6 +61,7 @@ interface MonthCalendarProps {
   month: Date;
   getShiftStatus: (date: Date) => string | null;
   hasTisowareNote: (date: Date) => boolean;
+  getTisowareDescription: (date: Date) => string | null;
   onDateClick: (date: Date, e: React.MouseEvent) => void;
   onMouseDown: (date: Date) => void;
   onMouseEnter: (date: Date) => void;
@@ -492,6 +494,16 @@ export default function DoctorYearView({
     return Boolean(shift.note && shift.note.includes('[TISO:'));
   };
 
+  // Tisoware absence description for hover tooltips: the human-readable
+  // reason the Tisoware import appends after the [TISO:CODE] prefix, or null
+  // when the day has no Tisoware-confirmed absence description.
+  const getTisowareNoteDescription = (date: Date): string | null => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const shift = shifts.find(s => s.date === dateStr);
+    if (!shift) return null;
+    return getTisowareDescription(shift.note);
+  };
+
     const isDateDisabled = (date: Date): boolean => !isDateWithinContract(date, contractInfo?.contractStart ?? undefined, contractInfo?.contractEnd ?? undefined);
 
   return (
@@ -642,6 +654,7 @@ export default function DoctorYearView({
             month={month} 
             getShiftStatus={getShiftStatus}
             hasTisowareNote={hasTisowareNote}
+            getTisowareDescription={getTisowareNoteDescription}
             onDateClick={(date, e) => {
                 // If we were dragging a range, don't trigger click toggle
                 if (isDateDisabled(date) || (isDragging && dragStart && dragCurrent && !isSameDay(dragStart, dragCurrent))) {
@@ -676,7 +689,7 @@ export default function DoctorYearView({
   );
 }
 
-function MonthCalendar({ month, getShiftStatus, hasTisowareNote, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix, pendingRequestsByDate = {}, rejectedRequestsByDate = {} }: MonthCalendarProps) {
+function MonthCalendar({ month, getShiftStatus, hasTisowareNote, getTisowareDescription, onDateClick, onMouseDown, onMouseEnter, dragStart, dragCurrent, isDragging, activeType, rangeStart, contractInfo, isDateDisabled, customColors, getCustomColor, isSchoolHoliday: checkSchoolHoliday, isPublicHoliday: checkPublicHoliday, dayTestIdPrefix, pendingRequestsByDate = {}, rejectedRequestsByDate = {} }: MonthCalendarProps) {
   const days = eachDayOfInterval({
     start: startOfMonth(month),
     end: endOfMonth(month)
@@ -699,6 +712,7 @@ function MonthCalendar({ month, getShiftStatus, hasTisowareNote, onDateClick, on
         {Array(emptyDays).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
         {days.map(date => {
           const status = getShiftStatus(date);
+          const tisoDescription = getTisowareDescription(date);
                     const disabled = isDateDisabled ? isDateDisabled(date) : false;
                     const isContractEnd = Boolean(contractInfo?.contractEnd) && format(date, 'yyyy-MM-dd') === (contractInfo?.contractEnd ?? '');
           const isWeekendDay = isWeekend(date);
@@ -787,7 +801,7 @@ function MonthCalendar({ month, getShiftStatus, hasTisowareNote, onDateClick, on
                 colorClass
               )}
               style={style}
-                            title={disabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (status || (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '') + ' ' + format(date, 'dd.MM.yyyy'))}
+                            title={disabled ? `Außerhalb der Vertragslaufzeit ${format(date, 'dd.MM.yyyy')}` : (tisoDescription || status || (isHoliday ? 'Feiertag' : isSchoolHoliday ? 'Ferien' : '') + ' ' + format(date, 'dd.MM.yyyy'))}
             >
               {format(date, 'd')}
                             {isContractEnd && (

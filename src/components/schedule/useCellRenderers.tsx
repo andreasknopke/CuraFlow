@@ -23,6 +23,8 @@ import {
   stripPanelPrefix,
 } from './scheduleBoardHelpers';
 import { getShiftsForScheduleCell } from '@/components/schedule/scheduleShiftLookup';
+import { isNonWorkingShiftPosition } from '@/utils/shiftPositionUtils';
+import { getTisowareDescription } from '@/utils/tisowareNote';
 
 export interface CellRenderersDeps {
   // State values
@@ -843,6 +845,11 @@ export function useCellRenderers(deps: CellRenderersDeps) {
         const isOwnShift = user?.doctor_id && doctor.id === user?.doctor_id;
         const effectiveTimeLabel = isReadOnly && !isOwnShift ? null : shiftTimeLabel;
         const lateRotationTooltip = lateRotationIndicatorByDoctorDay.get(`${doctor.id}__${dateStr}`) || null;
+        // Tisoware absence description for the hover tooltip: only relevant on
+        // non-working (absence) rows, e.g. "[TISO:530] Krank ohne AU-Bescheinigung".
+        const tisowareDescription = isNonWorkingShiftPosition(shift.position)
+            ? getTisowareDescription(shift.note)
+            : null;
         
         // Qualifikations-Indikator
         // 'excluded' wenn Arzt eine NOT-Qualifikation hat (harter Fehler)
@@ -917,6 +924,7 @@ export function useCellRenderers(deps: CellRenderersDeps) {
                     hideTimeLabel={isReadOnly && !isOwnShift || !showSidebarTimeAccount}
                     showLateStartIndicator={Boolean(lateRotationTooltip)}
                     lateStartTooltip={lateRotationTooltip}
+                    tisowareDescription={tisowareDescription}
                 />
             </div>
         );
